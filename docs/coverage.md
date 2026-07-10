@@ -59,10 +59,10 @@ Status legend:
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| `PdfArtifact.create`, `PdfFile.exportPdf`, `PdfFile.importPdf` | partial | Multi-page modeled PDF artifacts now support page text, table regions, PDF export, import from embedded clean-room metadata, and heuristic import from visible text/table rows. Needs robust arbitrary-PDF parsing via PDF.js/PDFium/Poppler or similar. |
-| PDF visual render verification | partial | SVG page render now draws modeled page text and tables for clean-room PDF artifacts. Needs Poppler/PDF.js rasterization to PNG for arbitrary PDFs and visual diff workflow. |
+| `PdfArtifact.create`, `PdfFile.exportPdf`, `PdfFile.importPdf` | partial | Multi-page modeled PDF artifacts now support page text, table regions, image regions, PDF export, import from embedded clean-room metadata, and heuristic import from visible text/table/image-placeholder rows. Needs robust arbitrary-PDF parsing via PDF.js/PDFium/Poppler or similar. |
+| PDF visual render verification | partial | SVG page render now draws modeled page text, tables, and image regions for clean-room PDF artifacts. Needs Poppler/PDF.js rasterization to PNG for arbitrary PDFs and visual diff workflow. |
 | Text/table extraction | partial | `extractText()` and `extractTables()` work for modeled/generated PDFs, and import heuristically detects visible pipe-delimited table rows when clean-room metadata is absent. Needs robust text positioning/table extraction for arbitrary PDFs. |
-| Create polished reports with typography/layout/charts | partial | Modeled PDF creation supports text pages and table rendering/export. Needs richer report layout, images/charts, pagination, typography controls, and raster QA. |
+| Create polished reports with typography/layout/charts | partial | Modeled PDF creation supports text pages, image regions, and table rendering/export. Needs richer report layout, charts, pagination, typography controls, and raster QA. |
 
 ## Implementation priorities
 

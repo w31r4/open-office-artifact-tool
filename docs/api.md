@@ -28,12 +28,13 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
 | `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
 | `pdf.inspect` | api | Emit bounded NDJSON for pages, text, and table records. |
 | `pdf.render` | api | Render a modeled PDF page to SVG in the current clean-room MVP. |
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, malformed tables, and out-of-bounds table boxes. |
-| `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, and table regions. |
+| `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
 | `PdfFile.exportPdf` | api | Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata or heuristically extract visible text and pipe-delimited table rows. |
 

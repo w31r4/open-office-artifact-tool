@@ -214,7 +214,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links, dangling comments, and table cells that look like prose blocks." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
 
-  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, and table regions." },
+  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, and table records." },
@@ -3149,6 +3150,23 @@ class PdfTable {
   toJSON() { return { id: this.id, name: this.name, values: this.values, bbox: this.bbox }; }
 }
 
+class PdfImage {
+  constructor(page, config = {}) {
+    this.page = page;
+    this.id = config.id || aid("pim");
+    this.name = config.name || "";
+    this.dataUrl = config.dataUrl;
+    this.uri = config.uri;
+    this.prompt = config.prompt;
+    this.alt = config.alt || config.altText || config.name || "image";
+    this.bbox = config.bbox || [72, 280, Number(config.width || 180), Number(config.height || 120)];
+    this.fit = config.fit || "contain";
+  }
+
+  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl) }; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, bbox: this.bbox, fit: this.fit }; }
+}
+
 class PdfPage {
   constructor(artifact, config = {}) {
     this.artifact = artifact;
@@ -3157,34 +3175,38 @@ class PdfPage {
     this.width = config.width || 612;
     this.height = config.height || 792;
     this.tables = (config.tables || []).map((table) => new PdfTable(this, table));
+    this.images = (config.images || []).map((image) => new PdfImage(this, image));
   }
 
   addTable(config = {}) { const table = new PdfTable(this, config); this.tables.push(table); return table; }
-  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, tables: this.tables.length }; }
+  addImage(config = {}) { const image = new PdfImage(this, config); this.images.push(image); return image; }
+  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, tables: this.tables.length, images: this.images.length }; }
   textRecord(index) { return { kind: "text", id: `${this.id}/text`, page: index + 1, text: this.text, textChars: this.text.length }; }
-  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, tables: this.tables.map((table) => table.toJSON()) }; }
+  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()) }; }
 }
 
 export class PdfArtifact {
   constructor(options = {}) {
     this.id = options.id || aid("pdf");
-    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [] }];
+    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [], images: options.images || [] }];
     this.pages = pages.map((page) => new PdfPage(this, page));
   }
 
   static create(options = {}) { return new PdfArtifact(options); }
   addPage(config = {}) { const page = new PdfPage(this, config); this.pages.push(page); return page; }
   addTable(config = {}) { return (this.pages[0] || this.addPage()).addTable(config); }
+  addImage(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addImage(config); }
   extractText(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.map((page) => page.text).join("\n\n"); }
   extractTables(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.flatMap((page, index) => page.tables.map((table) => ({ page: options.page || index + 1, id: table.id, name: table.name, values: table.values, bbox: table.bbox }))); }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["page", "text", "table"]);
+    const kinds = normalizeKinds(options.kind, ["page", "text", "table", "image"]);
     const records = [];
     this.pages.forEach((page, index) => {
       if (kinds.has("page")) records.push(page.inspectRecord(index));
       if (kinds.has("text")) records.push(page.textRecord(index));
       if (kinds.has("table")) records.push(...page.tables.map((table) => table.inspectRecord(index)));
+      if (kinds.has("image")) records.push(...page.images.map((image) => image.inspectRecord(index)));
     });
     const search = String(options.search || "").trim().toLowerCase();
     return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
@@ -3194,13 +3216,20 @@ export class PdfArtifact {
     const issues = [];
     if (this.pages.length === 0) issues.push(verificationIssue("pdf", "noPages", "PDF artifact has no pages."));
     this.pages.forEach((page, pageIndex) => {
-      if (!page.text.trim() && page.tables.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text or tables.`, { page: pageIndex + 1 }));
+      if (!page.text.trim() && page.tables.length === 0 && page.images.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, or images.`, { page: pageIndex + 1 }));
       if (/[\u2010-\u2015]/.test(page.text)) issues.push(verificationIssue("pdf", "unicodeDash", `PDF page ${pageIndex + 1} contains a Unicode dash; use ASCII hyphen for compatibility.`, { page: pageIndex + 1 }));
       for (const table of page.tables) {
         if (!table.values.length || !table.values[0]?.length) issues.push(verificationIssue("pdf", "emptyTable", `PDF table ${table.id} on page ${pageIndex + 1} has no cells.`, { page: pageIndex + 1, id: table.id }));
         const [left, top, width, height] = table.bbox || [];
         if (left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > page.width || top + height > page.height) {
           issues.push(verificationIssue("pdf", "tableOutOfBounds", `PDF table ${table.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: table.id, bbox: table.bbox }));
+        }
+      }
+      for (const image of page.images) {
+        if (!image.dataUrl && !image.uri && !image.prompt) issues.push(verificationIssue("pdf", "emptyImage", `PDF image ${image.id} on page ${pageIndex + 1} has no dataUrl, uri, or prompt.`, { page: pageIndex + 1, id: image.id }));
+        const [left, top, width, height] = image.bbox || [];
+        if (left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > page.width || top + height > page.height) {
+          issues.push(verificationIssue("pdf", "imageOutOfBounds", `PDF image ${image.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: image.id, bbox: image.bbox }));
         }
       }
     });
@@ -3226,7 +3255,8 @@ export class PdfFile {
     const strings = [...text.matchAll(/\(([^()]*)\)\s*Tj/g)].map((m) => m[1].replaceAll("\\)", ")").replaceAll("\\(", "("));
     const plain = strings.join("\n");
     const tableRows = strings.filter((line) => line.includes("|")).map((line) => line.split("|").map((cell) => cell.trim()));
-    return PdfArtifact.create({ pages: [{ text: plain, tables: tableRows.length ? [{ name: "extracted-table", values: tableRows }] : [] }] });
+    const images = strings.filter((line) => /^\[Image: .+\]$/.test(line)).map((line, index) => ({ name: `extracted-image-${index + 1}`, alt: line.replace(/^\[Image: |\]$/g, ""), bbox: [72, 280 + index * 140, 180, 120] }));
+    return PdfArtifact.create({ pages: [{ text: plain, tables: tableRows.length ? [{ name: "extracted-table", values: tableRows }] : [], images }] });
   }
 }
 
@@ -3252,7 +3282,12 @@ function pdfPageSvg(page) {
     }
     return cells.join("");
   }).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}</svg>`;
+  const images = (page.images || []).map((image) => {
+    const [left, top, imageWidth, imageHeight] = image.bbox || [72, 280, 180, 120];
+    const visual = image.dataUrl ? `<image href="${attrEscape(image.dataUrl)}" x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`;
+    return `${visual}<text x="${left + 8}" y="${top + 18}" font-family="Helvetica" font-size="11" fill="#92400e">${xmlEscape(image.alt || image.prompt || image.uri || image.name || "image")}</text>`;
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}${images}</svg>`;
 }
 
 function escapePdfString(text) {
@@ -3262,7 +3297,8 @@ function escapePdfString(text) {
 function buildMinimalPdf(artifact) {
   const page = artifact.pages[0] || new PdfPage(artifact);
   const tableLines = page.tables.flatMap((table) => table.values.map((row) => row.join(" | ")));
-  const lines = [...String(page.text || "").split(/\r?\n/), ...tableLines].filter(Boolean);
+  const imageLines = page.images.map((image) => `[Image: ${image.alt || image.prompt || image.uri || image.name || "image"}]`);
+  const lines = [...String(page.text || "").split(/\r?\n/), ...tableLines, ...imageLines].filter(Boolean);
   const content = `BT\n/F1 18 Tf\n72 720 Td\n${lines.map((line, index) => `${index === 0 ? "" : "0 -24 Td\n"}(${escapePdfString(line)}) Tj`).join("\n")}\nET`;
   const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
   const objects = [
