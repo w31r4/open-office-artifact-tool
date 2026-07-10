@@ -4,6 +4,14 @@
   "description": "Clean-room Office/PDF artifact toolkit with agent-friendly inspect, resolve, help, render, and export APIs.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/w31r4/open-office-artifact-tool.git"
+  },
+  "bugs": {
+    "url": "https://github.com/w31r4/open-office-artifact-tool/issues"
+  },
+  "homepage": "https://github.com/w31r4/open-office-artifact-tool#readme",
   "main": "./src/index.mjs",
   "exports": {
     ".": "./src/index.mjs"
