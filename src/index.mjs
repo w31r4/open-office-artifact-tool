@@ -1907,26 +1907,213 @@ function parseSlideXml(slide, xml) {
   }
 }
 
+class DocumentStyleCollection {
+  constructor(styles = {}) {
+    this.items = new Map(Object.entries({
+      Normal: { id: "Normal", name: "Normal", type: "paragraph", fontSize: 22, fontFamily: "Aptos" },
+      Title: { id: "Title", name: "Title", type: "paragraph", fontSize: 48, bold: true, fontFamily: "Aptos Display" },
+      Heading1: { id: "Heading1", name: "Heading 1", type: "paragraph", fontSize: 32, bold: true, fontFamily: "Aptos Display" },
+      Heading2: { id: "Heading2", name: "Heading 2", type: "paragraph", fontSize: 26, bold: true, fontFamily: "Aptos" },
+      ...styles,
+    }));
+  }
+
+  add(id, config = {}) { const style = { id, name: config.name || id, type: config.type || "paragraph", ...config }; this.items.set(id, style); return style; }
+  get(id) { return this.items.get(id); }
+  values() { return [...this.items.values()]; }
+}
+
+class DocumentTableCell {
+  constructor(table, row, column) { this.table = table; this.row = row; this.column = column; }
+  get value() { return this.table.values[this.row]?.[this.column] ?? ""; }
+  set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
+}
+
+class DocumentTableBlock {
+  constructor(document, config = {}) {
+    this.document = document;
+    this.kind = "table";
+    this.id = config.id || aid("dtb");
+    this.name = config.name || "";
+    this.styleId = config.styleId || config.style || "TableGrid";
+    this.values = (config.values || Array.from({ length: config.rows || 1 }, () => Array.from({ length: config.columns || 1 }, () => ""))).map((row) => [...row]);
+    this.rows = this.values.length;
+    this.columns = Math.max(0, ...this.values.map((row) => row.length));
+  }
+
+  ensureCell(row, column) { while (this.values.length <= row) this.values.push([]); while (this.values[row].length <= column) this.values[row].push(""); this.rows = this.values.length; this.columns = Math.max(this.columns, column + 1); }
+  getCell(row, column) { return new DocumentTableCell(this, row, column); }
+  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, styleId: this.styleId, values: this.values }; }
+  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, values: this.values }; }
+}
+
+class DocumentParagraphBlock {
+  constructor(document, text, config = {}) {
+    this.document = document;
+    this.kind = "paragraph";
+    this.id = config.id || aid("dp");
+    this.text = String(text ?? "");
+    this.styleId = config.styleId || config.style || "Normal";
+    this.name = config.name || "";
+  }
+
+  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, text: this.text }; }
+}
+
+class DocumentComment {
+  constructor(document, targetId, text, config = {}) {
+    this.document = document;
+    this.kind = "comment";
+    this.id = config.id || aid("dc");
+    this.targetId = targetId;
+    this.author = config.author || "User";
+    this.text = String(text ?? "");
+    this.resolved = Boolean(config.resolved);
+  }
+
+  inspectRecord() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, resolved: this.resolved, textPreview: this.text.slice(0, 300) }; }
+  toProto() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, text: this.text, resolved: this.resolved }; }
+}
+
 export class DocumentModel {
   constructor(options = {}) {
     this.id = aid("doc");
     this.name = options.name || "New document";
-    this.paragraphs = options.paragraphs || ["Start writing here..."];
+    this.styles = new DocumentStyleCollection(options.styles || {});
+    this.blocks = [];
+    this.comments = [];
+    const sourceBlocks = options.blocks || (options.paragraphs ? options.paragraphs.map((text, index) => ({ kind: "paragraph", text, styleId: index === 0 ? "Title" : "Normal" })) : [{ kind: "paragraph", text: "Start writing here...", styleId: "Normal" }]);
+    for (const block of sourceBlocks) {
+      if (block.kind === "table") this.addTable(block);
+      else this.addParagraph(block.text ?? "", block);
+    }
+    for (const comment of options.comments || []) this.addComment(comment.targetId, comment.text, comment);
   }
 
   static create(options = {}) { return new DocumentModel(options); }
-  toProto() { return { id: this.id, name: this.name, paragraphs: this.paragraphs.map((text, index) => ({ id: `p/${index + 1}`, text })) }; }
-  inspect(options = {}) { return ndjson(this.paragraphs.map((text, index) => ({ kind: "paragraph", id: `p/${index + 1}`, text, textChars: text.length })), options.maxChars ?? Infinity); }
-  help(query = "*") { return ndjson([{ kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraphs." }, { kind: "api", name: "DocumentFile.exportDocx", summary: "Export a DocumentModel to a minimal DOCX package." }]); }
+  get paragraphs() { return this.blocks.filter((block) => block.kind === "paragraph").map((block) => block.text); }
+
+  addParagraph(text, config = {}) { const block = new DocumentParagraphBlock(this, text, config); this.blocks.push(block); return block; }
+  addTable(config = {}) { const block = new DocumentTableBlock(this, config); this.blocks.push(block); return block; }
+  addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
+  resolve(id) { return this.id === id ? this : this.blocks.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
+
+  toProto() { return { id: this.id, name: this.name, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+
+  inspect(options = {}) {
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "comment"]);
+    const records = [];
+    this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
+    if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
+    if (kinds.has("style")) records.push(...this.styles.values().map((style) => ({ kind: "style", ...style })));
+    const search = String(options.search || "").trim().toLowerCase();
+    return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
+  }
+
+  help(query = "*", options = {}) {
+    const q = String(query).toLowerCase();
+    const catalog = [
+      { kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph, table, style, and comment blocks." },
+      { kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block and return an inspectable/resolveable paragraph object." },
+      { kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
+      { kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
+      { kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, and relationships." },
+    ];
+    return ndjson(catalog.filter((item) => q === "*" || item.name.toLowerCase().includes(q) || item.summary.toLowerCase().includes(q)), options.maxChars ?? Infinity);
+  }
+
+  async render(options = {}) {
+    const width = 612;
+    const margin = 72;
+    let y = 72;
+    const parts = [`<rect width="100%" height="100%" fill="white"/>`];
+    for (const block of this.blocks) {
+      if (block.kind === "paragraph") {
+        const style = this.styles.get(block.styleId) || this.styles.get("Normal");
+        const fontSize = Math.max(10, (style.fontSize || 22) / 2);
+        parts.push(`<text x="${margin}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-weight="${style.bold ? "700" : "400"}" fill="#111827">${xmlEscape(block.text)}</text>`);
+        y += fontSize * 1.6;
+      } else if (block.kind === "table") {
+        const cellW = (width - margin * 2) / Math.max(1, block.columns);
+        const cellH = 24;
+        for (let r = 0; r < block.rows; r++) {
+          for (let c = 0; c < block.columns; c++) {
+            const x = margin + c * cellW;
+            const fill = r === 0 ? "#f1f5f9" : "#ffffff";
+            parts.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${fill}" stroke="#cbd5e1"/>`);
+            parts.push(`<text x="${x + 5}" y="${y + 16}" font-family="Arial" font-size="11" fill="#111827">${xmlEscape(block.values[r]?.[c] ?? "")}</text>`);
+          }
+          y += cellH;
+        }
+        y += 16;
+      }
+    }
+    const height = Math.max(792, y + 72);
+    return new FileBlob(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${parts.join("")}</svg>`, { type: "image/svg+xml" });
+  }
+}
+
+function docxContentTypes(hasComments) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}</Types>`;
+}
+
+function docxStylesXml(document) {
+  const styles = document.styles.values().map((style) => `<w:style w:type="paragraph" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/><w:rPr>${style.bold ? "<w:b/>" : ""}<w:sz w:val="${Math.round(style.fontSize || 22)}"/><w:rFonts w:ascii="${attrEscape(style.fontFamily || "Aptos")}" w:hAnsi="${attrEscape(style.fontFamily || "Aptos")}"/></w:rPr></w:style>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${styles}</w:styles>`;
+}
+
+function docxParagraphXml(block, commentIndexes) {
+  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
+  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
+  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:t>${xmlEscape(block.text)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
+}
+
+function docxTableXml(block) {
+  const grid = Array.from({ length: block.columns || 1 }, () => `<w:gridCol w:w="${Math.floor(9360 / Math.max(1, block.columns || 1))}"/>`).join("");
+  const rows = block.values.map((row) => `<w:tr>${Array.from({ length: block.columns || row.length || 1 }, (_, column) => `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9360 / Math.max(1, block.columns || 1))}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r></w:p></w:tc>`).join("")}</w:tr>`).join("");
+  return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="9360" w:type="dxa"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
+}
+
+function docxDocumentXml(document) {
+  const commentIndex = new Map(document.comments.map((comment, index) => [comment, index]));
+  const body = document.blocks.map((block) => {
+    if (block.kind === "table") return docxTableXml(block);
+    const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
+    return docxParagraphXml(block, indexes);
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr/></w:body></w:document>`;
+}
+
+function docxCommentsXml(document) {
+  const comments = document.comments.map((comment, index) => `<w:comment w:id="${index}" w:author="${attrEscape(comment.author)}"><w:p><w:r><w:t>${xmlEscape(comment.text)}</w:t></w:r></w:p></w:comment>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${comments}</w:comments>`;
+}
+
+function parseDocxParagraph(part, commentTextById) {
+  const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
+  const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
+  const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
+  return { block: { kind: "paragraph", text, styleId }, commentIds };
+}
+
+function parseDocxTable(part) {
+  const values = [...part.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))));
+  return { kind: "table", values, rows: values.length, columns: Math.max(0, ...values.map((row) => row.length)) };
 }
 
 export class DocumentFile {
   static async exportDocx(document) {
     const zip = new JSZip();
-    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
+    zip.file("[Content_Types].xml", docxContentTypes(document.comments.length > 0));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
-    const body = document.paragraphs.map((p) => `<w:p><w:r><w:t>${xmlEscape(p)}</w:t></w:r></w:p>`).join("");
-    zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr/></w:body></w:document>`);
+    const docRels = [{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" }];
+    if (document.comments.length) docRels.push({ id: "rId2", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
+    zip.file("word/_rels/document.xml.rels", relsXml(docRels));
+    zip.file("word/styles.xml", docxStylesXml(document));
+    if (document.comments.length) zip.file("word/comments.xml", docxCommentsXml(document));
+    zip.file("word/document.xml", docxDocumentXml(document));
     return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
   }
 
@@ -1934,8 +2121,22 @@ export class DocumentFile {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const xml = await zip.file("word/document.xml")?.async("text");
-    const paragraphs = [...String(xml || "").matchAll(/<w:p[\s\S]*?<\/w:p>/g)].map((m) => decodeXml([...m[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))).filter(Boolean);
-    return DocumentModel.create({ paragraphs: paragraphs.length ? paragraphs : [""] });
+    const commentsXml = await zip.file("word/comments.xml")?.async("text");
+    const commentTextById = new Map([...String(commentsXml || "").matchAll(/<w:comment[^>]*w:id="(\d+)"[^>]*>([\s\S]*?)<\/w:comment>/g)].map((match) => [match[1], decodeXml([...match[2].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))]));
+    const blocks = [];
+    const pendingComments = [];
+    for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
+      const part = match[0];
+      if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
+      else {
+        const parsed = parseDocxParagraph(part, commentTextById);
+        blocks.push(parsed.block);
+        for (const commentId of parsed.commentIds) pendingComments.push({ blockIndex: blocks.length - 1, text: commentTextById.get(commentId) || "" });
+      }
+    }
+    const document = DocumentModel.create({ blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    pendingComments.forEach((comment) => document.addComment(document.blocks[comment.blockIndex]?.id, comment.text));
+    return document;
   }
 }
 
