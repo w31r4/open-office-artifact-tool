@@ -2320,49 +2320,124 @@ export class DocumentFile {
   }
 }
 
+class PdfTable {
+  constructor(page, config = {}) {
+    this.page = page;
+    this.id = config.id || aid("ptb");
+    this.name = config.name || "";
+    this.values = (config.values || [[]]).map((row) => [...row]);
+    this.bbox = config.bbox || [72, 140, 468, Math.max(24, this.values.length * 24)];
+  }
+
+  inspectRecord(pageIndex) { return { kind: "table", id: this.id, page: pageIndex + 1, name: this.name || undefined, rows: this.values.length, cols: Math.max(0, ...this.values.map((row) => row.length)), bbox: this.bbox, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, values: this.values, bbox: this.bbox }; }
+}
+
+class PdfPage {
+  constructor(artifact, config = {}) {
+    this.artifact = artifact;
+    this.id = config.id || aid("pg");
+    this.text = String(config.text || "");
+    this.width = config.width || 612;
+    this.height = config.height || 792;
+    this.tables = (config.tables || []).map((table) => new PdfTable(this, table));
+  }
+
+  addTable(config = {}) { const table = new PdfTable(this, config); this.tables.push(table); return table; }
+  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, tables: this.tables.length }; }
+  textRecord(index) { return { kind: "text", id: `${this.id}/text`, page: index + 1, text: this.text, textChars: this.text.length }; }
+  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, tables: this.tables.map((table) => table.toJSON()) }; }
+}
+
 export class PdfArtifact {
   constructor(options = {}) {
-    this.id = aid("pdf");
-    this.pages = options.pages || [{ text: options.text || "" }];
+    this.id = options.id || aid("pdf");
+    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [] }];
+    this.pages = pages.map((page) => new PdfPage(this, page));
   }
 
   static create(options = {}) { return new PdfArtifact(options); }
-  inspect(options = {}) { return ndjson(this.pages.map((page, i) => ({ kind: "page", id: `pg/${i + 1}`, page: i + 1, textPreview: page.text.slice(0, 300), textChars: page.text.length })), options.maxChars ?? Infinity); }
-  async render(options = {}) { return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0]?.text || ""), { type: "image/svg+xml" }); }
+  addPage(config = {}) { const page = new PdfPage(this, config); this.pages.push(page); return page; }
+  addTable(config = {}) { return (this.pages[0] || this.addPage()).addTable(config); }
+  extractText(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.map((page) => page.text).join("\n\n"); }
+  extractTables(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.flatMap((page, index) => page.tables.map((table) => ({ page: options.page || index + 1, id: table.id, name: table.name, values: table.values, bbox: table.bbox }))); }
+
+  inspect(options = {}) {
+    const kinds = normalizeKinds(options.kind, ["page", "text", "table"]);
+    const records = [];
+    this.pages.forEach((page, index) => {
+      if (kinds.has("page")) records.push(page.inspectRecord(index));
+      if (kinds.has("text")) records.push(page.textRecord(index));
+      if (kinds.has("table")) records.push(...page.tables.map((table) => table.inspectRecord(index)));
+    });
+    const search = String(options.search || "").trim().toLowerCase();
+    return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
+  }
+
+  async render(options = {}) { return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" }); }
+  toJSON() { return { id: this.id, pages: this.pages.map((page) => page.toJSON()) }; }
 }
 
 export class PdfFile {
   static async exportPdf(artifact) {
-    return new FileBlob(buildMinimalPdf(artifact.pages.map((page) => page.text).join("\n\n")), { type: PDF_MIME });
+    return new FileBlob(buildMinimalPdf(artifact), { type: PDF_MIME });
   }
 
   static async importPdf(blobOrBuffer) {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const text = decoder.decode(bytes);
+    const metadata = /%OPEN_OFFICE_ARTIFACT ([A-Za-z0-9+/=]+)/.exec(text)?.[1];
+    if (metadata) return PdfArtifact.create(JSON.parse(Buffer.from(metadata, "base64").toString("utf8")));
     const strings = [...text.matchAll(/\(([^()]*)\)\s*Tj/g)].map((m) => m[1].replaceAll("\\)", ")").replaceAll("\\(", "("));
-    return PdfArtifact.create({ pages: [{ text: strings.join("\n") }] });
+    const plain = strings.join("\n");
+    const tableRows = strings.filter((line) => line.includes("|")).map((line) => line.split("|").map((cell) => cell.trim()));
+    return PdfArtifact.create({ pages: [{ text: plain, tables: tableRows.length ? [{ name: "extracted-table", values: tableRows }] : [] }] });
   }
 }
 
-function pdfPageSvg(text) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="612" height="792" viewBox="0 0 612 792"><rect width="100%" height="100%" fill="white"/><text x="72" y="96" font-family="Helvetica" font-size="14" fill="#111827">${xmlEscape(text)}</text></svg>`;
+function pdfPageSvg(page) {
+  const width = page.width || 612;
+  const height = page.height || 792;
+  const lines = String(page.text || "").split(/\r?\n/).filter(Boolean);
+  const text = lines.map((line, index) => `<text x="72" y="${96 + index * 20}" font-family="Helvetica" font-size="14" fill="#111827">${xmlEscape(line)}</text>`).join("");
+  const tables = (page.tables || []).map((table) => {
+    const [left, top, tableWidth, tableHeight] = table.bbox;
+    const rows = table.values.length;
+    const cols = Math.max(1, ...table.values.map((row) => row.length));
+    const cellW = tableWidth / cols;
+    const cellH = tableHeight / Math.max(1, rows);
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = left + c * cellW;
+        const y = top + r * cellH;
+        cells.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${r === 0 ? "#f1f5f9" : "#ffffff"}" stroke="#cbd5e1"/>`);
+        cells.push(`<text x="${x + 5}" y="${y + Math.min(16, cellH - 4)}" font-family="Helvetica" font-size="11" fill="#111827">${xmlEscape(table.values[r]?.[c] ?? "")}</text>`);
+      }
+    }
+    return cells.join("");
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}</svg>`;
 }
 
 function escapePdfString(text) {
   return String(text).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
 }
 
-function buildMinimalPdf(text) {
-  const lines = String(text).split(/\r?\n/).filter(Boolean);
+function buildMinimalPdf(artifact) {
+  const page = artifact.pages[0] || new PdfPage(artifact);
+  const tableLines = page.tables.flatMap((table) => table.values.map((row) => row.join(" | ")));
+  const lines = [...String(page.text || "").split(/\r?\n/), ...tableLines].filter(Boolean);
   const content = `BT\n/F1 18 Tf\n72 720 Td\n${lines.map((line, index) => `${index === 0 ? "" : "0 -24 Td\n"}(${escapePdfString(line)}) Tj`).join("\n")}\nET`;
+  const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
   const objects = [
     `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
     `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`,
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
+    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width || 612} ${page.height || 792}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
     `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`,
     `5 0 obj\n<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream\nendobj\n`,
   ];
-  let pdf = "%PDF-1.4\n";
+  let pdf = `%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`;
   const offsets = [0];
   for (const obj of objects) { offsets.push(Buffer.byteLength(pdf)); pdf += obj; }
   const xref = Buffer.byteLength(pdf);
