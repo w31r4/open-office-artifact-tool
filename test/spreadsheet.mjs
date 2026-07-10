@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import { FileBlob, SpreadsheetFile, Workbook } from "../src/index.mjs";
 
 const workbook = Workbook.create();
@@ -101,6 +102,20 @@ assert.match(previewSvg, /polyline/);
 
 const xlsx = await SpreadsheetFile.exportXlsx(workbook);
 assert.equal(xlsx.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+const zip = await JSZip.loadAsync(new Uint8Array(await xlsx.arrayBuffer()));
+const tablePartNames = Object.keys(zip.files).filter((name) => /^xl\/tables\/table\d+\.xml$/.test(name));
+assert.equal(tablePartNames.length, 1);
+const tableXml = await zip.file(tablePartNames[0]).async("text");
+assert.match(tableXml, /displayName="TasksTable"/);
+assert.match(tableXml, /ref="A1:D4"/);
+assert.match(tableXml, /<tableColumns count="4">/);
+const worksheetXml = await zip.file("xl/worksheets/sheet1.xml").async("text");
+assert.match(worksheetXml, /<tableParts count="1">/);
+assert.match(worksheetXml, /<tablePart r:id="rId1"\/>/);
+const worksheetRelsXml = await zip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text");
+assert.match(worksheetRelsXml, /Target="\.\.\/tables\/table1\.xml"/);
+const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
+assert.match(contentTypesXml, /table1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.table\+xml"/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.xlsx`);
 await xlsx.save(out);
 const loaded = await SpreadsheetFile.importXlsx(await FileBlob.load(out));

@@ -688,6 +688,7 @@ class WorksheetTable {
     const range = rangeInput instanceof Range ? rangeInput : worksheet.getRange(String(rangeInput));
     this.id = config.id || aid("tbl");
     this.name = config.name || name || `Table${worksheet.tables.items.length + 1}`;
+    this.anchor = { top: range.bounds.top, left: range.bounds.left };
     this.range = rangeToAddress(range.bounds);
     this.hasHeaders = config.hasHeaders ?? hasHeaders;
     this.showHeaders = this.hasHeaders;
@@ -703,6 +704,13 @@ class WorksheetTable {
   refreshDimensions() {
     this.rowCount = this.values.length;
     this.columnCount = Math.max(0, ...this.values.map((row) => row.length));
+    const bounds = {
+      top: this.anchor.top,
+      left: this.anchor.left,
+      bottom: this.anchor.top + Math.max(1, this.rowCount) - 1,
+      right: this.anchor.left + Math.max(1, this.columnCount) - 1,
+    };
+    this.range = rangeToAddress(bounds);
   }
 
   getDataRows() { return this.showHeaders ? this.values.slice(1) : this.values; }
@@ -1357,13 +1365,19 @@ export class SpreadsheetFile {
   static async exportXlsx(workbook) {
     workbook.recalculate();
     const zip = new JSZip();
-    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length));
+    const tableParts = collectWorkbookTableParts(workbook);
+    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "xl/workbook.xml" }]));
     zip.file("xl/workbook.xml", workbookXml(workbook));
     zip.file("xl/_rels/workbook.xml.rels", workbookRelsXml(workbook.worksheets.items.length));
     zip.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0"/></cellXfs></styleSheet>`);
     zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
-    workbook.worksheets.items.forEach((sheet, index) => zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet)));
+    workbook.worksheets.items.forEach((sheet, index) => {
+      const sheetTableParts = tableParts.filter((part) => part.sheetIndex === index);
+      zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet, sheetTableParts));
+      if (sheetTableParts.length) zip.file(`xl/worksheets/_rels/sheet${index + 1}.xml.rels`, worksheetTableRelsXml(sheetTableParts));
+    });
+    tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId)));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
     return new FileBlob(bytes, { type: XLSX_MIME });
   }
@@ -1386,9 +1400,21 @@ export class SpreadsheetFile {
   }
 }
 
-function xlsxContentTypes(sheetCount) {
+function collectWorkbookTableParts(workbook) {
+  const parts = [];
+  let tablePartId = 1;
+  workbook.worksheets.items.forEach((sheet, sheetIndex) => {
+    sheet.tables.items.forEach((table, tableIndex) => {
+      parts.push({ sheet, sheetIndex, table, tableIndex, tablePartId: tablePartId++, relId: `rId${tableIndex + 1}` });
+    });
+  });
+  return parts;
+}
+
+function xlsxContentTypes(sheetCount, tableParts = []) {
   const sheets = Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}</Types>`;
+  const tables = tableParts.map((part) => `<Override PartName="/xl/tables/table${part.tablePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}${tables}</Types>`;
 }
 
 function relsXml(rels) {
@@ -1404,6 +1430,40 @@ function workbookRelsXml(sheetCount) {
   const rels = Array.from({ length: sheetCount }, (_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", target: `worksheets/sheet${i + 1}.xml` }));
   rels.push({ id: `rId${sheetCount + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" });
   return relsXml(rels);
+}
+
+function worksheetTableRelsXml(tableParts) {
+  return relsXml(tableParts.map((part) => ({
+    id: part.relId,
+    type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table",
+    target: `../tables/table${part.tablePartId}.xml`,
+  })));
+}
+
+function sanitizeTableColumnName(value, index, seen) {
+  const base = String(value ?? "").trim() || `Column${index + 1}`;
+  let name = base;
+  let suffix = 2;
+  while (seen.has(name)) name = `${base}_${suffix++}`;
+  seen.add(name);
+  return name;
+}
+
+function tableXml(table, tablePartId) {
+  const ref = table.range;
+  const seen = new Set();
+  const headers = table.showHeaders && table.values[0]
+    ? table.values[0]
+    : Array.from({ length: table.columnCount || 1 }, (_, index) => `Column${index + 1}`);
+  const columns = Array.from({ length: table.columnCount || headers.length || 1 }, (_, index) => {
+    const name = sanitizeTableColumnName(headers[index], index, seen);
+    return `<tableColumn id="${index + 1}" name="${attrEscape(name)}"/>`;
+  }).join("");
+  const headerRowCount = table.showHeaders ? 1 : 0;
+  const totalsRowShown = table.showTotals ? 1 : 0;
+  const autoFilter = table.showFilterButton ? `<autoFilter ref="${attrEscape(ref)}"/>` : "";
+  const styleName = table.style || "TableStyleMedium2";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tablePartId}" name="${attrEscape(table.name)}" displayName="${attrEscape(table.name)}" ref="${attrEscape(ref)}" headerRowCount="${headerRowCount}" totalsRowShown="${totalsRowShown}">${autoFilter}<tableColumns count="${table.columnCount || headers.length || 1}">${columns}</tableColumns><tableStyleInfo name="${attrEscape(styleName)}" showFirstColumn="0" showLastColumn="0" showRowStripes="${table.showHeaders ? 1 : 0}" showColumnStripes="${table.showBandedColumns ? 1 : 0}"/></table>`;
 }
 
 function dataValidationsXml(sheet) {
@@ -1430,7 +1490,7 @@ function conditionalFormattingXml(sheet) {
   }).join("");
 }
 
-function worksheetXml(sheet) {
+function worksheetXml(sheet, tableParts = []) {
   const rows = new Map();
   for (const [address, cell] of sheet.store.entries()) {
     const { row, col } = parseCellAddress(address);
@@ -1438,7 +1498,8 @@ function worksheetXml(sheet) {
     rows.get(row).push({ address, col, cell });
   }
   const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => `<row r="${row + 1}">${cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell)).join("")}</row>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}</worksheet>`;
+  const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}${tablePartsXml}</worksheet>`;
 }
 
 function cellXml(address, cell) {
