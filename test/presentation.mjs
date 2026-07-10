@@ -65,6 +65,27 @@ assert.deepEqual(cards.map((card) => Math.round(card.position.left)), [100, 300,
 assert.equal(Math.round(cards[0].position.top), 615);
 assert.match(presentation.help("slide.autoLayout").ndjson, /horizontal or vertical flow/);
 
+const qaClean = Presentation.create({ slideSize: { width: 400, height: 240 } });
+const qaCleanSlide = qaClean.slides.add();
+qaCleanSlide.shapes.add({ name: "clean-a", position: { left: 20, top: 20, width: 120, height: 60 }, text: "A" });
+qaCleanSlide.shapes.add({ name: "clean-b", position: { left: 180, top: 20, width: 120, height: 60 }, text: "B" });
+assert.equal(qaClean.validateLayout().ok, true);
+
+const qaBroken = Presentation.create({ slideSize: { width: 320, height: 180 } });
+const qaBrokenSlide = qaBroken.slides.add();
+qaBrokenSlide.shapes.add({ name: "overlap-a", position: { left: 20, top: 20, width: 120, height: 80 }, text: "A" });
+qaBrokenSlide.shapes.add({ name: "overlap-b", position: { left: 80, top: 40, width: 120, height: 80 }, text: "B" });
+qaBrokenSlide.shapes.add({ name: "off-canvas", position: { left: 260, top: 120, width: 100, height: 80 }, text: "Off" });
+qaBrokenSlide.shapes.add({ name: "overflow-text", position: { left: 20, top: 120, width: 80, height: 24 }, text: "This text is intentionally far too long for this tiny frame." });
+qaBrokenSlide.tables.add({ name: "tiny-table", rows: 1, columns: 1, position: { left: 130, top: 125, width: 40, height: 14 }, values: [["Very long value"]] });
+const qa = qaBroken.validateLayout({ minOverlapArea: 16, maxChars: 8000 });
+assert.equal(qa.ok, false);
+assert.match(qa.ndjson, /"type":"overlap"/);
+assert.match(qa.ndjson, /"type":"offCanvas"/);
+assert.match(qa.ndjson, /"type":"textOverflow"/);
+assert.match(qa.ndjson, /"type":"tableTextOverflow"/);
+assert.match(qaBroken.help("presentation.validateLayout").ndjson, /off-canvas/);
+
 const layout = await slide.export({ format: "layout" });
 assert.equal(layout.type, "application/vnd.open-office-artifact.layout+json");
 assert.match(await layout.text(), /summary-surface/);

@@ -948,6 +948,11 @@ export class Presentation {
     return ndjson(filtered, options.maxChars ?? Infinity);
   }
 
+  validateLayout(options = {}) {
+    const issues = this.slides.items.flatMap((slide) => slide.validateLayout(options).issues);
+    return { ok: issues.length === 0, issues, ...ndjson(issues, options.maxChars ?? Infinity) };
+  }
+
   resolve(id) {
     if (id === this.id) return this;
     for (const slide of this.slides) {
@@ -965,6 +970,7 @@ export class Presentation {
       { kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, and layout." },
       { kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
       { kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
+      { kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
       { kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
       { kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, layers, box, paragraph, shape, and rule nodes into editable slide shapes." },
       { kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -1019,6 +1025,74 @@ function resolveAutoLayoutFrame(slide, frame) {
   return slide.frame;
 }
 
+function elementFrame(element) {
+  return element.position || element.frame || element.layoutJson?.().frame;
+}
+
+function elementLabel(element) {
+  return element.name || element.id;
+}
+
+function overlapArea(a, b) {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.left + a.width, b.left + b.width);
+  const bottom = Math.min(a.top + a.height, b.top + b.height);
+  return Math.max(0, right - left) * Math.max(0, bottom - top);
+}
+
+function textOverflowIssue(slide, element, frame) {
+  const text = element.text?.value || "";
+  if (!text) return undefined;
+  const fontSize = element.text.style.fontSize || 24;
+  const lineSpacing = element.text.style.lineSpacing || 1.2;
+  const availableWidth = Math.max(1, frame.width - 18);
+  const charsPerLine = Math.max(1, Math.floor(availableWidth / (fontSize * 0.55)));
+  const requiredLines = String(text).split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+  const requiredHeight = requiredLines * fontSize * lineSpacing + 12;
+  if (requiredHeight <= frame.height) return undefined;
+  return {
+    kind: "layoutIssue",
+    type: "textOverflow",
+    severity: "warning",
+    slide: slide.index + 1,
+    id: element.id,
+    name: element.name || undefined,
+    bbox: [frame.left, frame.top, frame.width, frame.height],
+    requiredHeight: Math.round(requiredHeight),
+    message: `Text may overflow ${elementLabel(element)}: estimated ${Math.round(requiredHeight)}px required for ${Math.round(frame.height)}px frame.`,
+  };
+}
+
+function tableOverflowIssues(slide, tableElement) {
+  const issues = [];
+  const frame = tableElement.position;
+  const cellW = frame.width / Math.max(1, tableElement.columns);
+  const cellH = frame.height / Math.max(1, tableElement.rows);
+  const fontSize = 13;
+  for (let row = 0; row < tableElement.rows; row++) {
+    for (let column = 0; column < tableElement.columns; column++) {
+      const value = String(tableElement.values[row]?.[column] ?? "");
+      const requiredWidth = value.length * fontSize * 0.55 + 12;
+      if (requiredWidth > cellW || cellH < fontSize * 1.4) {
+        issues.push({
+          kind: "layoutIssue",
+          type: "tableTextOverflow",
+          severity: "warning",
+          slide: slide.index + 1,
+          id: tableElement.id,
+          name: tableElement.name || undefined,
+          row,
+          column,
+          bbox: [frame.left + column * cellW, frame.top + row * cellH, cellW, cellH],
+          message: `Table cell ${elementLabel(tableElement)}[${row},${column}] may overflow its cell.`,
+        });
+      }
+    }
+  }
+  return issues;
+}
+
 export class Slide {
   constructor(presentation, options = {}) {
     this.presentation = presentation;
@@ -1051,6 +1125,57 @@ export class Slide {
 
   title() { return this.shapes.items.find((shape) => shape.text.value)?.text.value || this.charts.items[0]?.title || ""; }
   resolve(id) { return [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items].find((element) => element.id === id); }
+
+  validateLayout(options = {}) {
+    const issues = [];
+    const slideFrame = this.frame;
+    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items];
+    const minOverlapArea = options.minOverlapArea ?? 64;
+    const padding = options.boundsPadding ?? 0;
+    for (const element of elements) {
+      const frame = elementFrame(element);
+      if (!frame) continue;
+      const offCanvas = frame.left < slideFrame.left - padding || frame.top < slideFrame.top - padding || frame.left + frame.width > slideFrame.left + slideFrame.width + padding || frame.top + frame.height > slideFrame.top + slideFrame.height + padding;
+      if (offCanvas) {
+        issues.push({
+          kind: "layoutIssue",
+          type: "offCanvas",
+          severity: "error",
+          slide: this.index + 1,
+          id: element.id,
+          name: element.name || undefined,
+          bbox: [frame.left, frame.top, frame.width, frame.height],
+          message: `${elementLabel(element)} extends outside the slide frame.`,
+        });
+      }
+      const textIssue = textOverflowIssue(this, element, frame);
+      if (textIssue) issues.push(textIssue);
+      if (element instanceof TableElement) issues.push(...tableOverflowIssues(this, element));
+    }
+    for (let leftIndex = 0; leftIndex < elements.length; leftIndex++) {
+      for (let rightIndex = leftIndex + 1; rightIndex < elements.length; rightIndex++) {
+        const left = elements[leftIndex];
+        const right = elements[rightIndex];
+        const leftFrame = elementFrame(left);
+        const rightFrame = elementFrame(right);
+        if (!leftFrame || !rightFrame) continue;
+        const area = overlapArea(leftFrame, rightFrame);
+        if (area >= minOverlapArea) {
+          issues.push({
+            kind: "layoutIssue",
+            type: "overlap",
+            severity: "error",
+            slide: this.index + 1,
+            ids: [left.id, right.id],
+            names: [elementLabel(left), elementLabel(right)],
+            overlapArea: Math.round(area),
+            message: `${elementLabel(left)} overlaps ${elementLabel(right)} by about ${Math.round(area)}px².`,
+          });
+        }
+      }
+    }
+    return { ok: issues.length === 0, issues, ...ndjson(issues, options.maxChars ?? Infinity) };
+  }
 
   async export(options = {}) {
     if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(), null, 2), { type: LAYOUT_MIME });
