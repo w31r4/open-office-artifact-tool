@@ -31,6 +31,29 @@ const file = await SpreadsheetFile.exportXlsx(workbook);
 await file.save("output.xlsx");
 ```
 
+Presentation compose-first authoring uses helper nodes that mirror the agent-oriented JSX vocabulary while staying transpiler-free:
+
+```js
+import { column, paragraph, Presentation, PresentationFile, row, box } from "open-office-artifact-tool";
+
+const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const slide = presentation.slides.add();
+slide.compose(
+  column({ name: "content-frame", width: "fill", height: "fill", gap: 16, padding: { x: 24, y: 20 } }, [
+    paragraph({ id: "sh/stable-headline", name: "primary-heading", className: "text-slate-950 text-4xl font-bold" }, ["Quarterly readiness"]),
+    row({ name: "kpi-row", width: "fill", height: 120, gap: 12 }, [
+      box({ name: "kpi-card", width: "fill", height: "fill", fill: "slate-50", padding: { x: 12, y: 10 } }, [
+        paragraph({ name: "kpi-label" }, ["Pipeline"]),
+      ]),
+    ]),
+  ]),
+  { frame: { left: 80, top: 120, width: 760, height: 360 } },
+);
+
+console.log(presentation.inspect({ kind: "textbox,shape" }).ndjson);
+await (await PresentationFile.exportPptx(presentation)).save("deck.pptx");
+```
+
 ## Design notes
 
 The package deliberately prioritizes agent workflows:

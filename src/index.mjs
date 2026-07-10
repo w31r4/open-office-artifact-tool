@@ -120,6 +120,242 @@ function toUint8Array(data) {
   throw new Error("Unsupported binary payload");
 }
 
+export function node(type, props = {}, children = []) {
+  const normalizedProps = props && !Array.isArray(props) && typeof props === "object" ? props : {};
+  const rawChildren = Array.isArray(props) || typeof props === "string" || typeof props === "number" ? props : children;
+  return { type, props: normalizedProps, children: normalizeComposeChildren(rawChildren) };
+}
+
+export const row = (props = {}, children = []) => node("row", props, children);
+export const column = (props = {}, children = []) => node("column", props, children);
+export const layers = (props = {}, children = []) => node("layers", props, children);
+export const box = (props = {}, children = []) => node("box", props, children);
+export const paragraph = (props = {}, children = []) => node("paragraph", props, children);
+export const run = (props = {}, children = []) => node("run", props, children);
+export const shape = (props = {}, children = []) => node("shape", props, children);
+export const rule = (props = {}, children = []) => node("rule", props, children);
+
+function normalizeComposeChildren(children) {
+  if (children == null || children === false) return [];
+  if (!Array.isArray(children)) return [children];
+  return children.flatMap((child) => normalizeComposeChildren(child));
+}
+
+function isComposeNode(value) {
+  return value && typeof value === "object" && typeof value.type === "string" && Array.isArray(value.children);
+}
+
+function textFromComposeChildren(children) {
+  return normalizeComposeChildren(children).map((child) => {
+    if (typeof child === "string" || typeof child === "number") return String(child);
+    if (isComposeNode(child)) return textFromComposeChildren(child.children);
+    return "";
+  }).join("");
+}
+
+function normalizePadding(padding = {}) {
+  if (typeof padding === "number") return { top: padding, right: padding, bottom: padding, left: padding };
+  return {
+    top: padding.top ?? padding.y ?? 0,
+    right: padding.right ?? padding.x ?? 0,
+    bottom: padding.bottom ?? padding.y ?? 0,
+    left: padding.left ?? padding.x ?? 0,
+  };
+}
+
+function innerFrame(frame, padding) {
+  return {
+    left: frame.left + padding.left,
+    top: frame.top + padding.top,
+    width: Math.max(0, frame.width - padding.left - padding.right),
+    height: Math.max(0, frame.height - padding.top - padding.bottom),
+  };
+}
+
+function resolveColorToken(value, fallback = "transparent") {
+  if (!value) return fallback;
+  const raw = String(value);
+  const base = raw.split("/")[0];
+  const tokens = {
+    white: "#ffffff",
+    black: "#000000",
+    transparent: "transparent",
+    "slate-50": "#f8fafc",
+    "slate-100": "#f1f5f9",
+    "slate-200": "#e2e8f0",
+    "slate-300": "#cbd5e1",
+    "slate-500": "#64748b",
+    "slate-600": "#475569",
+    "slate-700": "#334155",
+    "slate-900": "#0f172a",
+    "slate-950": "#020617",
+    "sky-50": "#f0f9ff",
+    "sky-100": "#e0f2fe",
+    "sky-500": "#0ea5e9",
+    "sky-600": "#0284c7",
+    accent1: "#156082",
+    tx1: "#1f1f1f",
+    bg1: "#ffffff",
+  };
+  return tokens[base] || raw;
+}
+
+function parseTextStyle(props = {}) {
+  const style = {};
+  const className = String(props.className || "");
+  for (const token of className.split(/\s+/).filter(Boolean)) {
+    if (token === "font-bold") style.bold = true;
+    if (token === "font-semibold") style.bold = true;
+    if (token.startsWith("text-")) {
+      const sizeMap = { xs: 12, sm: 14, base: 16, lg: 18, xl: 20, "2xl": 24, "3xl": 30, "4xl": 36, "5xl": 48, "6xl": 60 };
+      const key = token.slice(5);
+      if (sizeMap[key]) style.fontSize = sizeMap[key];
+      else if (/^\[\d+px\]$/.test(key)) style.fontSize = Number(key.slice(1, -3));
+      else style.color = resolveColorToken(key, style.color);
+    }
+    if (token.startsWith("leading-")) {
+      const key = token.slice(8);
+      if (key === "tight") style.lineSpacing = 1.1;
+      else if (key === "relaxed") style.lineSpacing = 1.35;
+      else if (/^\[\d+(?:\.\d+)?\]$/.test(key)) style.lineSpacing = Number(key.slice(1, -1));
+    }
+  }
+  if (typeof props.style === "string") {
+    const font = /font:\s*(\d+)\s+(\d+)px/i.exec(props.style);
+    if (font) { style.bold = Number(font[1]) >= 600; style.fontSize = Number(font[2]); }
+    const color = /color:\s*([^;]+)/i.exec(props.style);
+    if (color) style.color = resolveColorToken(color[1].trim(), style.color);
+    const leading = /leading:\s*([\d.]+)/i.exec(props.style);
+    if (leading) style.lineSpacing = Number(leading[1]);
+  } else if (props.style && typeof props.style === "object") {
+    Object.assign(style, props.style);
+  }
+  return style;
+}
+
+function styleFromClassName(className = "") {
+  const style = {};
+  for (const token of String(className).split(/\s+/).filter(Boolean)) {
+    if (token.startsWith("bg-")) style.fill = resolveColorToken(token.slice(3), style.fill);
+    if (token.startsWith("rounded-")) style.borderRadius = token;
+  }
+  return style;
+}
+
+function composeIntrinsicSize(composeNode) {
+  const props = composeNode.props || {};
+  const text = textFromComposeChildren(composeNode.children);
+  const textStyle = parseTextStyle(props);
+  const fontSize = textStyle.fontSize || 20;
+  const lineCount = Math.max(1, text.split(/\r?\n/).length);
+  return {
+    width: typeof props.width === "number" ? props.width : Math.max(160, Math.min(720, text.length * fontSize * 0.55 + 24)),
+    height: typeof props.height === "number" ? props.height : Math.max(36, lineCount * fontSize * (textStyle.lineSpacing || 1.2) + 18),
+  };
+}
+
+function composeChildFrames(children, frame, direction, gap) {
+  const mainSize = direction === "row" ? "width" : "height";
+  const crossSize = direction === "row" ? "height" : "width";
+  const fixed = children.reduce((sum, child) => {
+    const prop = child.props?.[mainSize];
+    if (typeof prop === "number") return sum + prop;
+    if (prop === "hug") return sum + composeIntrinsicSize(child)[mainSize];
+    return sum;
+  }, 0);
+  const fillCount = children.filter((child) => child.props?.[mainSize] === "fill" || child.props?.[mainSize] == null).length || 1;
+  const available = Math.max(0, frame[mainSize] - fixed - gap * Math.max(0, children.length - 1));
+  const fillSize = available / fillCount;
+  let cursor = direction === "row" ? frame.left : frame.top;
+  return children.map((child) => {
+    const intrinsic = composeIntrinsicSize(child);
+    const main = typeof child.props?.[mainSize] === "number" ? child.props[mainSize] : child.props?.[mainSize] === "hug" ? intrinsic[mainSize] : fillSize;
+    const cross = typeof child.props?.[crossSize] === "number" ? child.props[crossSize] : child.props?.[crossSize] === "hug" ? intrinsic[crossSize] : frame[crossSize];
+    const childFrame = direction === "row"
+      ? { left: cursor, top: frame.top, width: main, height: cross }
+      : { left: frame.left, top: cursor, width: cross, height: main };
+    cursor += main + gap;
+    return childFrame;
+  });
+}
+
+function materializeComposeNode(slide, composeNode, frame) {
+  if (typeof composeNode === "string" || typeof composeNode === "number") {
+    return materializeComposeNode(slide, paragraph({}, [String(composeNode)]), frame);
+  }
+  if (!isComposeNode(composeNode)) return [];
+  const props = composeNode.props || {};
+  const children = normalizeComposeChildren(composeNode.children).filter((child) => child !== null && child !== undefined && child !== false);
+  const type = composeNode.type;
+  if (type === "row" || type === "column") {
+    const pad = normalizePadding(props.padding);
+    const inner = innerFrame(frame, pad);
+    const childFrames = composeChildFrames(children.filter(isComposeNode), inner, type, Number(props.gap || 0));
+    return children.filter(isComposeNode).flatMap((child, index) => materializeComposeNode(slide, child, childFrames[index]));
+  }
+  if (type === "layers") {
+    const pad = normalizePadding(props.padding);
+    const inner = innerFrame(frame, pad);
+    return children.filter(isComposeNode).flatMap((child) => materializeComposeNode(slide, child, {
+      left: inner.left,
+      top: inner.top,
+      width: typeof child.props?.width === "number" ? child.props.width : inner.width,
+      height: typeof child.props?.height === "number" ? child.props.height : inner.height,
+    }));
+  }
+  if (type === "box") {
+    const classStyle = styleFromClassName(props.className);
+    const surface = slide.shapes.add({
+      id: props.id,
+      name: props.name,
+      geometry: props.geometry || "roundRect",
+      position: frame,
+      fill: props.fill || classStyle.fill || "transparent",
+      line: props.line || { fill: "transparent", width: 0 },
+      borderRadius: props.borderRadius || classStyle.borderRadius,
+    });
+    const pad = normalizePadding(props.padding ?? { x: 0, y: 0 });
+    return [surface, ...children.filter(isComposeNode).flatMap((child) => materializeComposeNode(slide, child, innerFrame(frame, pad)))];
+  }
+  if (type === "paragraph") {
+    const shape = slide.shapes.add({
+      id: props.id,
+      name: props.name,
+      geometry: "textbox",
+      position: frame,
+      fill: "transparent",
+      line: { fill: "transparent", width: 0 },
+      text: textFromComposeChildren(children),
+    });
+    shape.text.style = parseTextStyle(props);
+    return [shape];
+  }
+  if (type === "shape") {
+    const classStyle = styleFromClassName(props.className);
+    const shape = slide.shapes.add({
+      ...props,
+      position: frame,
+      fill: props.fill || classStyle.fill || "transparent",
+      text: textFromComposeChildren(children) || props.text,
+    });
+    shape.text.style = parseTextStyle(props);
+    return [shape];
+  }
+  if (type === "rule") {
+    const horizontal = (props.width ?? frame.width) >= (props.height ?? props.weight ?? 2);
+    const shape = slide.shapes.add({
+      id: props.id,
+      name: props.name,
+      geometry: "rect",
+      position: { left: frame.left, top: frame.top, width: horizontal ? frame.width : Number(props.weight || 2), height: horizontal ? Number(props.weight || 2) : frame.height },
+      fill: props.stroke || "#0f172a",
+      line: { fill: props.stroke || "#0f172a", width: 0 },
+    });
+    return [shape];
+  }
+  return children.filter(isComposeNode).flatMap((child) => materializeComposeNode(slide, child, frame));
+}
+
 export class FileBlob {
   constructor(data, options = {}) {
     this.bytes = toUint8Array(data ?? new Uint8Array());
@@ -673,7 +909,9 @@ export class Presentation {
       { kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
       { kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
       { kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-      { kind: "api", name: "slide.compose", summary: "Roadmap: compose-first layout tree and JSX runtime compatibility." },
+      { kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, layers, box, paragraph, shape, and rule nodes into editable slide shapes." },
+      { kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
+      { kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
       { kind: "api", name: "slide.charts.add", summary: "Roadmap: native chart facade compatible with agent chart workflows." },
     ];
     const records = catalog.filter((item) => q === "*" || item.name.toLowerCase().includes(q) || item.summary.toLowerCase().includes(q));
@@ -742,7 +980,11 @@ export class Slide {
   }
 
   toProto() { return { id: this.id, shapes: this.shapes.items.map((shape) => shape.layoutJson()) }; }
-  compose() { throw new Error("slide.compose is planned but not implemented in the clean-room MVP yet."); }
+
+  compose(composeNode, options = {}) {
+    const frame = options.frame || { left: 72, top: 64, width: this.presentation.slideSize.width - 144, height: this.presentation.slideSize.height - 128 };
+    return materializeComposeNode(this, composeNode, frame);
+  }
 }
 
 class TextFrame {
@@ -755,12 +997,13 @@ class TextFrame {
 export class Shape {
   constructor(slide, config = {}) {
     this.slide = slide;
-    this.id = aid("sh");
+    this.id = config.id || aid("sh");
     this.geometry = config.geometry || "rect";
     this.name = config.name || "";
     this.position = config.position || { left: 0, top: 0, width: 160, height: 80 };
     this.fill = config.fill || "transparent";
     this.line = config.line || { fill: "#334155", width: 1 };
+    this.borderRadius = config.borderRadius;
     this._text = new TextFrame(config.text || "");
   }
 
@@ -772,7 +1015,7 @@ export class Shape {
     return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split(/\r?\n/).length : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
   }
 
-  layoutJson() { return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, text: this.text.value, style: { fill: this.fill, line: this.line, text: this.text.style } }; }
+  layoutJson() { return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, text: this.text.value, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }
 
   toSvg() {
     const p = this.position;
@@ -781,7 +1024,7 @@ export class Shape {
     const sw = this.line?.width ?? 1;
     const rect = this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`
-      : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="12" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`;
+      : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`;
     const text = this.text.value ? `<text x="${p.left + 12}" y="${p.top + 36}" font-family="Arial" font-size="${this.text.style.fontSize || 24}" font-weight="${this.text.style.bold ? "700" : "400"}" fill="${xmlEscape(this.text.style.color || "#0f172a")}">${xmlEscape(this.text.value)}</text>` : "";
     return rect + text;
   }
