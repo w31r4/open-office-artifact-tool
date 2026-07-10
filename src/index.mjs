@@ -238,6 +238,47 @@ export class Workbook {
     return ndjson(records.filter(Boolean), options.maxChars ?? Infinity);
   }
 
+  trace(reference, options = {}) {
+    this.recalculate();
+    const root = parseWorkbookReference(this, reference);
+    const maxDepth = options.maxDepth ?? 8;
+    const seen = new Set();
+    const build = (sheet, address, depth) => {
+      const key = `${sheet.name}!${address}`;
+      const cell = sheet.store.get(address);
+      const node = {
+        kind: "trace",
+        sheet: sheet.name,
+        address,
+        value: cell.value,
+        formula: cell.formula || undefined,
+        depth,
+        circular: seen.has(key) || undefined,
+        precedents: [],
+      };
+      if (!cell.formula || depth >= maxDepth || seen.has(key)) return node;
+      seen.add(key);
+      for (const ref of formulaReferences(cell.formula)) {
+        const targetSheet = ref.sheetName ? this.worksheets.getItem(ref.sheetName) : sheet;
+        if (!targetSheet) {
+          node.precedents.push({ kind: "trace", sheet: ref.sheetName, address: ref.address, missing: true, depth: depth + 1, precedents: [] });
+          continue;
+        }
+        node.precedents.push(build(targetSheet, ref.address, depth + 1));
+      }
+      seen.delete(key);
+      return node;
+    };
+    const tree = build(root.sheet, root.address, 0);
+    const flat = [];
+    const visit = (node) => {
+      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
+      node.precedents.forEach(visit);
+    };
+    visit(tree);
+    return { tree, ...ndjson(flat, options.maxChars ?? Infinity) };
+  }
+
   resolve(id) {
     if (id === this.id) return this;
     for (const sheet of this.worksheets) if (sheet.id === id) return sheet;
@@ -253,6 +294,7 @@ export class Workbook {
       { kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
       { kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, and styles." },
       { kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet or range in the current clean-room MVP." },
+      { kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell." },
       { kind: "formula", name: "fx.SUM", category: "math-trig", examples: ["=SUM(A1:A10)"] },
       { kind: "formula", name: "fx.PMT", category: "financial", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
     ];
@@ -429,6 +471,50 @@ export class Range {
   getRange(address) { return this.worksheet.getRange(address); }
   getOffsetRange(rowOffset, colOffset) { return this.worksheet.getRangeByIndexes(this.bounds.top + rowOffset, this.bounds.left + colOffset, this.bounds.rowCount, this.bounds.colCount); }
   getResizedRange(rowCount, colCount) { return this.worksheet.getRangeByIndexes(this.bounds.top, this.bounds.left, rowCount, colCount); }
+}
+
+function parseWorkbookReference(workbook, reference) {
+  const raw = String(reference || "").trim();
+  const bang = raw.lastIndexOf("!");
+  let sheetName;
+  let address = raw;
+  if (bang !== -1) {
+    sheetName = raw.slice(0, bang).replace(/^'|'$/g, "");
+    address = raw.slice(bang + 1);
+  }
+  const sheet = sheetName ? workbook.worksheets.getItem(sheetName) : workbook.worksheets.getActiveWorksheet();
+  if (!sheet) throw new Error(`Unknown worksheet in trace reference: ${reference}`);
+  return { sheet, address: address.replaceAll("$", "").toUpperCase() };
+}
+
+function formulaReferences(formula) {
+  const raw = String(formula || "");
+  const refs = [];
+  const rangeRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)\s*:\s*(\$?[A-Za-z]+\$?\d+)/g;
+  const consumed = [];
+  for (const match of raw.matchAll(rangeRegex)) {
+    consumed.push(match.index);
+    const sheetName = match[1] || match[2] || undefined;
+    const start = parseCellAddress(match[3].replaceAll("$", ""));
+    const end = parseCellAddress(match[4].replaceAll("$", ""));
+    for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
+      for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) {
+        refs.push({ sheetName, address: makeCellAddress(row, col) });
+      }
+    }
+  }
+  const cellRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g;
+  for (const match of raw.matchAll(cellRegex)) {
+    if (consumed.some((index) => match.index >= index && match.index <= index + 64)) continue;
+    refs.push({ sheetName: match[1] || match[2] || undefined, address: match[3].replaceAll("$", "").toUpperCase() });
+  }
+  const seen = new Set();
+  return refs.filter((ref) => {
+    const key = `${ref.sheetName || ""}!${ref.address}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function evaluateFormula(sheet, formula) {

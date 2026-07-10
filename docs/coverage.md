@@ -29,7 +29,7 @@ Status legend:
 | Formula calculation | partial | Supports arithmetic cell refs and `SUM(range)`. Needs broad Excel formula catalog and dependency graph. |
 | `workbook.inspect` table/formula/match/sheet/workbook | partial | Core records implemented. Needs computedStyle, drawing, thread, definedName, richer include/exclude. |
 | `workbook.render` visual verification | partial | SVG grid preview only. Needs PNG and chart/drawing rendering. |
-| `workbook.trace` | todo | Required for formula audit workflows. |
+| `workbook.trace` | partial | Basic formula precedent tree implemented for same-sheet/cross-sheet A1 references and ranges. Needs richer formula parser, cycle reporting UX, and large-trace summarization. |
 | Charts/tables/sparklines/images/comments/data validations/conditional formats | todo | Public collection placeholders exist only as arrays. |
 
 ## Presentations skill target
