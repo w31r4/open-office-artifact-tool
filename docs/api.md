@@ -14,6 +14,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addFooter` | api | Add footer text exported as a DOCX footer part and referenced from section properties. |
 | `document.addHeader` | api | Add header text exported as a DOCX header part and referenced from section properties. |
 | `document.addHyperlink` | api | Append an external hyperlink backed by a DOCX relationship and w:hyperlink element. |
+| `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
 | `document.addListItem` | api | Append a real numbered or bulleted list item backed by DOCX numbering definitions. |
 | `document.addParagraph` | api | Append a styled paragraph block and return an inspectable/resolveable paragraph object. |

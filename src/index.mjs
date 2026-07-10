@@ -204,6 +204,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
+  { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append a tracked insertion with author/date metadata and native DOCX w:ins export." },
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
@@ -1433,6 +1434,25 @@ function imageDataFromDataUrl(dataUrl) {
   return { contentType, extension: extension === "svg+xml" ? "svg" : extension, bytes: Buffer.from(match[2], "base64") };
 }
 
+function imageContentTypeDefaults(imageParts = []) {
+  return [
+    ["png", "image/png"],
+    ["jpg", "image/jpeg"],
+    ["jpeg", "image/jpeg"],
+    ["gif", "image/gif"],
+    ["svg", "image/svg+xml"],
+  ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
+}
+
+function imageContentTypeFromExtension(extension) {
+  const normalized = String(extension || "").toLowerCase().replace(/^\./, "");
+  if (normalized === "jpg" || normalized === "jpeg") return "image/jpeg";
+  if (normalized === "png") return "image/png";
+  if (normalized === "gif") return "image/gif";
+  if (normalized === "svg" || normalized === "svg+xml") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
 function collectWorkbookImageParts(workbook) {
   const parts = [];
   let imagePartId = 1;
@@ -1483,6 +1503,18 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
 
 function relsXml(rels) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.map((rel) => `<Relationship Id="${rel.id}" Type="${rel.type}" Target="${attrEscape(rel.target)}"${rel.targetMode ? ` TargetMode="${attrEscape(rel.targetMode)}"` : ""}/>`).join("")}</Relationships>`;
+}
+
+function parseRelsXml(xml) {
+  return [...String(xml || "").matchAll(/<Relationship\b([^>]*)\/>/g)].map((match) => {
+    const attrs = match[1] || "";
+    return {
+      id: decodeXml(/\bId="([^"]*)"/.exec(attrs)?.[1] || ""),
+      type: decodeXml(/\bType="([^"]*)"/.exec(attrs)?.[1] || ""),
+      target: decodeXml(/\bTarget="([^"]*)"/.exec(attrs)?.[1] || ""),
+      targetMode: decodeXml(/\bTargetMode="([^"]*)"/.exec(attrs)?.[1] || ""),
+    };
+  }).filter((rel) => rel.id);
 }
 
 function workbookXml(workbook) {
@@ -2458,6 +2490,25 @@ class DocumentCitationBlock {
   toProto() { return { kind: "citation", id: this.id, name: this.name, styleId: this.styleId, text: this.text, metadata: this.metadata }; }
 }
 
+class DocumentImageBlock {
+  constructor(document, config = {}) {
+    this.document = document;
+    this.kind = "image";
+    this.id = config.id || aid("dim");
+    this.name = config.name || "";
+    this.dataUrl = config.dataUrl;
+    this.uri = config.uri;
+    this.prompt = config.prompt;
+    this.alt = config.alt || config.altText || config.name || "image";
+    this.widthPx = Number(config.widthPx || config.width || 240);
+    this.heightPx = Number(config.heightPx || config.height || 160);
+    this.styleId = config.styleId || config.style || "Normal";
+  }
+
+  inspectRecord(index) { return { kind: "image", id: this.id, index, name: this.name || undefined, styleId: this.styleId, alt: this.alt, uri: this.uri, prompt: this.prompt, widthPx: this.widthPx, heightPx: this.heightPx, hasDataUrl: Boolean(this.dataUrl) }; }
+  toProto() { return { kind: "image", id: this.id, name: this.name, styleId: this.styleId, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, widthPx: this.widthPx, heightPx: this.heightPx }; }
+}
+
 class DocumentHeaderFooterBlock {
   constructor(document, kind, text, config = {}) {
     this.document = document;
@@ -2503,6 +2554,7 @@ export class DocumentModel {
       else if (block.kind === "hyperlink") this.addHyperlink(block.text ?? "", block.url, block);
       else if (block.kind === "field") this.addField(block.instruction, block.display, block);
       else if (block.kind === "citation") this.addCitation(block.text ?? "", block.metadata || {}, block);
+      else if (block.kind === "image") this.addImage(block);
       else if (block.kind === "change") this.addChange(block.changeType || block.type, block.text ?? "", block);
       else this.addParagraph(block.text ?? "", block);
     }
@@ -2520,6 +2572,7 @@ export class DocumentModel {
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
   addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
   addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); return block; }
+  addImage(config = {}) { const block = new DocumentImageBlock(this, config); this.blocks.push(block); return block; }
   addChange(changeType, text, config = {}) { const block = new DocumentChangeBlock(this, changeType, text, config); this.blocks.push(block); return block; }
   addInsertion(text, config = {}) { return this.addChange("insert", text, config); }
   addDeletion(text, config = {}) { return this.addChange("delete", text, config); }
@@ -2532,7 +2585,7 @@ export class DocumentModel {
   toProto() { return { id: this.id, name: this.name, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "change", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "change", "comment", "header", "footer"]);
     const records = [];
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
@@ -2555,6 +2608,10 @@ export class DocumentModel {
       }
       if (block.kind === "field" && !block.instruction.trim()) {
         issues.push(verificationIssue("document", "emptyField", `Field ${block.id} is missing an instruction.`, { id: block.id }));
+      }
+      if (block.kind === "image") {
+        if (!block.dataUrl && !block.uri && !block.prompt) issues.push(verificationIssue("document", "emptyImage", `Image ${block.id} has no dataUrl, uri, or prompt.`, { id: block.id }));
+        if (block.dataUrl && !imageDataFromDataUrl(block.dataUrl)) issues.push(verificationIssue("document", "invalidImageDataUrl", `Image ${block.id} has an unsupported data URL.`, { id: block.id }));
       }
       if (block.kind === "table") {
         for (const row of block.values) for (const cell of row) {
@@ -2597,6 +2654,13 @@ export class DocumentModel {
       } else if (block.kind === "citation") {
         parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#475569">${xmlEscape(block.text)}</text>`);
         y += 20;
+      } else if (block.kind === "image") {
+        const imageWidth = Math.max(16, Math.min(width - margin * 2, Number(block.widthPx) || 240));
+        const imageHeight = Math.max(16, Math.min(360, Number(block.heightPx) || 160));
+        if (block.dataUrl) parts.push(`<image href="${attrEscape(block.dataUrl)}" x="${margin}" y="${y}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet"/>`);
+        else parts.push(`<rect x="${margin}" y="${y}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`);
+        parts.push(`<text x="${margin + 8}" y="${y + 18}" font-family="Arial" font-size="11" fill="#92400e">${xmlEscape(block.alt || block.prompt || block.uri || block.name || "image")}</text>`);
+        y += imageHeight + 20;
       } else if (block.kind === "change") {
         const marker = block.changeType === "delete" ? "-" : "+";
         const fill = block.changeType === "delete" ? "#dc2626" : "#047857";
@@ -2636,8 +2700,9 @@ export class DocumentModel {
   }
 }
 
-function docxContentTypes({ hasComments, hasHeader, hasFooter, hasNumbering }) {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasHeader ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : ""}${hasFooter ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : ""}</Types>`;
+function docxContentTypes({ hasComments, hasHeader, hasFooter, hasNumbering, imageParts = [] }) {
+  const imageDefaults = imageContentTypeDefaults(imageParts);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasHeader ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : ""}${hasFooter ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : ""}</Types>`;
 }
 
 function docxStylesXml(document) {
@@ -2679,6 +2744,30 @@ function docxChangeXml(block, commentIndexes = []) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:${tag} w:id="${docxRevisionId(block)}" w:author="${attrEscape(block.author || "User")}"${date}><w:r><w:${textTag}>${xmlEscape(block.text)}</w:${textTag}></w:r></w:${tag}>${commentEnd}${refs}</w:p>`;
 }
 
+function collectDocxImageParts(document) {
+  const parts = [];
+  let imagePartId = 1;
+  let relIndex = 1;
+  for (const block of document.blocks.filter((item) => item.kind === "image")) {
+    const data = imageDataFromDataUrl(block.dataUrl);
+    if (!data) continue;
+    parts.push({ image: block, imagePartId: imagePartId++, relId: `rIdImage${relIndex++}`, ...data });
+  }
+  return parts;
+}
+
+function docxImageXml(block, relId, commentIndexes = []) {
+  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
+  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
+  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
+  if (!relId) return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:t>${xmlEscape(block.alt || block.prompt || block.uri || block.name || "image")}</w:t></w:r>${commentEnd}${refs}</w:p>`;
+  const cx = Math.round(Math.max(16, Number(block.widthPx) || 240) * 9525);
+  const cy = Math.round(Math.max(16, Number(block.heightPx) || 160) * 9525);
+  const docPrId = docxRevisionId(block);
+  const name = block.name || `Image ${docPrId}`;
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>${commentEnd}${refs}</w:p>`;
+}
+
 function docxHyperlinkXml(block, relId) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink></w:p>`;
 }
@@ -2706,11 +2795,12 @@ function docxDocumentXml(document, relIds = {}) {
     if (block.kind === "field") return docxFieldXml(block);
     if (block.kind === "citation") return docxCitationXml(block);
     const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
+    if (block.kind === "image") return docxImageXml(block, relIds.images?.get(block.id), indexes);
     if (block.kind === "change") return docxChangeXml(block, indexes);
     return docxParagraphXml(block, indexes);
   }).join("");
   const refs = `${relIds.header ? `<w:headerReference w:type="default" r:id="${relIds.header}"/>` : ""}${relIds.footer ? `<w:footerReference w:type="default" r:id="${relIds.footer}"/>` : ""}`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body}<w:sectPr>${refs}</w:sectPr></w:body></w:document>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}<w:sectPr>${refs}</w:sectPr></w:body></w:document>`;
 }
 
 function docxCommentsXml(document) {
@@ -2718,9 +2808,18 @@ function docxCommentsXml(document) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${comments}</w:comments>`;
 }
 
-function parseDocxParagraph(part, commentTextById) {
+function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
+  const imageRelId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(part)?.[1];
+  if (imageRelId) {
+    const image = imageByRelId.get(imageRelId) || {};
+    const docPr = /<wp:docPr\b([^>]*)\/>/.exec(part)?.[1] || /<pic:cNvPr\b([^>]*)\/>/.exec(part)?.[1] || "";
+    const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(part);
+    const name = decodeXml(/\bname="([^"]*)"/.exec(docPr)?.[1] || image.name || "");
+    const alt = decodeXml(/\bdescr="([^"]*)"/.exec(docPr)?.[1] || image.alt || name || "image");
+    return { block: { kind: "image", name, alt, dataUrl: image.dataUrl, uri: image.uri, widthPx: extent ? Math.round(Number(extent[1]) / 9525) : image.widthPx, heightPx: extent ? Math.round(Number(extent[2]) / 9525) : image.heightPx, styleId }, commentIds };
+  }
   const changeMatch = /<w:(ins|del)\b([^>]*)>([\s\S]*?)<\/w:\1>/.exec(part);
   if (changeMatch) {
     const changeType = changeMatch[1] === "del" ? "delete" : "insert";
@@ -2750,10 +2849,11 @@ function parseHeaderFooterXml(xml) {
 export class DocumentFile {
   static async exportDocx(document) {
     const zip = new JSZip();
+    const imageParts = collectDocxImageParts(document);
     const hasNumbering = document.blocks.some((block) => block.kind === "listItem");
     const hasHeader = document.headers.length > 0;
     const hasFooter = document.footers.length > 0;
-    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, hasHeader, hasFooter, hasNumbering }));
+    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, hasHeader, hasFooter, hasNumbering, imageParts }));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
     const docRels = [{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" }];
     const relIds = {};
@@ -2767,12 +2867,18 @@ export class DocumentFile {
       relIds.hyperlinks.set(block.id, relId);
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", target: block.url, targetMode: "External" });
     }
+    relIds.images = new Map();
+    for (const part of imageParts) {
+      relIds.images.set(part.image.id, part.relId);
+      docRels.push({ id: part.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `media/image${part.imagePartId}.${part.extension}` });
+    }
     zip.file("word/_rels/document.xml.rels", relsXml(docRels));
     zip.file("word/styles.xml", docxStylesXml(document));
     if (hasNumbering) zip.file("word/numbering.xml", docxNumberingXml());
     if (document.comments.length) zip.file("word/comments.xml", docxCommentsXml(document));
     if (hasHeader) zip.file("word/header1.xml", docxHeaderFooterXml("header", document.headers));
     if (hasFooter) zip.file("word/footer1.xml", docxHeaderFooterXml("footer", document.footers));
+    imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
     zip.file("word/document.xml", docxDocumentXml(document, relIds));
     return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
@@ -2786,13 +2892,22 @@ export class DocumentFile {
     const xml = await zip.file("word/document.xml")?.async("text");
     const commentsXml = await zip.file("word/comments.xml")?.async("text");
     const commentTextById = new Map([...String(commentsXml || "").matchAll(/<w:comment[^>]*w:id="(\d+)"[^>]*>([\s\S]*?)<\/w:comment>/g)].map((match) => [match[1], decodeXml([...match[2].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))]));
+    const relsText = await zip.file("word/_rels/document.xml.rels")?.async("text");
+    const imageByRelId = new Map();
+    for (const rel of parseRelsXml(relsText).filter((item) => item.type.endsWith("/image"))) {
+      const target = rel.target.replace(/^\//, "");
+      const packagePath = target.startsWith("word/") ? target : path.posix.normalize(`word/${target}`).replace(/^\.\//, "");
+      const bytes = await zip.file(packagePath)?.async("uint8array");
+      const extension = /\.([A-Za-z0-9+]+)$/.exec(target)?.[1] || "bin";
+      imageByRelId.set(rel.id, bytes ? { dataUrl: `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` } : { uri: rel.target });
+    }
     const blocks = [];
     const pendingComments = [];
     for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
       const part = match[0];
       if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
       else {
-        const parsed = parseDocxParagraph(part, commentTextById);
+        const parsed = parseDocxParagraph(part, commentTextById, imageByRelId);
         blocks.push(parsed.block);
         for (const commentId of parsed.commentIds) pendingComments.push({ blockIndex: blocks.length - 1, text: commentTextById.get(commentId) || "" });
       }
