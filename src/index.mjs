@@ -1254,7 +1254,7 @@ function xlsxContentTypes(sheetCount) {
 }
 
 function relsXml(rels) {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.map((rel) => `<Relationship Id="${rel.id}" Type="${rel.type}" Target="${rel.target}"/>`).join("")}</Relationships>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.map((rel) => `<Relationship Id="${rel.id}" Type="${rel.type}" Target="${attrEscape(rel.target)}"${rel.targetMode ? ` TargetMode="${attrEscape(rel.targetMode)}"` : ""}/>`).join("")}</Relationships>`;
 }
 
 function workbookXml(workbook) {
@@ -1977,6 +1977,52 @@ class DocumentListItemBlock {
   toProto() { return { kind: "listItem", id: this.id, name: this.name, styleId: this.styleId, listType: this.listType, level: this.level, text: this.text }; }
 }
 
+class DocumentHyperlinkBlock {
+  constructor(document, text, url, config = {}) {
+    this.document = document;
+    this.kind = "hyperlink";
+    this.id = config.id || aid("dhl");
+    this.text = String(text ?? "");
+    this.url = String(url ?? config.url ?? "");
+    this.styleId = config.styleId || config.style || "Normal";
+    this.name = config.name || "";
+  }
+
+  inspectRecord(index) { return { kind: "hyperlink", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, url: this.url, textChars: this.text.length }; }
+  toProto() { return { kind: "hyperlink", id: this.id, name: this.name, styleId: this.styleId, text: this.text, url: this.url }; }
+}
+
+class DocumentFieldBlock {
+  constructor(document, instruction, display, config = {}) {
+    this.document = document;
+    this.kind = "field";
+    this.id = config.id || aid("dfld");
+    this.instruction = String(instruction ?? config.instruction ?? "PAGE");
+    this.display = String(display ?? config.display ?? "1");
+    this.styleId = config.styleId || config.style || "Normal";
+    this.name = config.name || "";
+  }
+
+  get text() { return this.display; }
+  inspectRecord(index) { return { kind: "field", id: this.id, index, name: this.name || undefined, styleId: this.styleId, instruction: this.instruction, display: this.display }; }
+  toProto() { return { kind: "field", id: this.id, name: this.name, styleId: this.styleId, instruction: this.instruction, display: this.display }; }
+}
+
+class DocumentCitationBlock {
+  constructor(document, text, metadata = {}, config = {}) {
+    this.document = document;
+    this.kind = "citation";
+    this.id = config.id || aid("dct");
+    this.text = String(text ?? "");
+    this.metadata = { ...metadata };
+    this.styleId = config.styleId || config.style || "Normal";
+    this.name = config.name || "";
+  }
+
+  inspectRecord(index) { return { kind: "citation", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, metadata: this.metadata, textChars: this.text.length }; }
+  toProto() { return { kind: "citation", id: this.id, name: this.name, styleId: this.styleId, text: this.text, metadata: this.metadata }; }
+}
+
 class DocumentHeaderFooterBlock {
   constructor(document, kind, text, config = {}) {
     this.document = document;
@@ -2019,6 +2065,9 @@ export class DocumentModel {
     for (const block of sourceBlocks) {
       if (block.kind === "table") this.addTable(block);
       else if (block.kind === "listItem") this.addListItem(block.text ?? "", block);
+      else if (block.kind === "hyperlink") this.addHyperlink(block.text ?? "", block.url, block);
+      else if (block.kind === "field") this.addField(block.instruction, block.display, block);
+      else if (block.kind === "citation") this.addCitation(block.text ?? "", block.metadata || {}, block);
       else this.addParagraph(block.text ?? "", block);
     }
     for (const header of options.headers || []) this.addHeader(header.text, header);
@@ -2032,6 +2081,9 @@ export class DocumentModel {
   addParagraph(text, config = {}) { const block = new DocumentParagraphBlock(this, text, config); this.blocks.push(block); return block; }
   addListItem(text, config = {}) { const block = new DocumentListItemBlock(this, text, config); this.blocks.push(block); return block; }
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
+  addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
+  addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
+  addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); return block; }
   addTable(config = {}) { const block = new DocumentTableBlock(this, config); this.blocks.push(block); return block; }
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); return block; }
@@ -2041,7 +2093,7 @@ export class DocumentModel {
   toProto() { return { id: this.id, name: this.name, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "comment", "header", "footer"]);
     const records = [];
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
@@ -2060,6 +2112,9 @@ export class DocumentModel {
       { kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
       { kind: "api", name: "document.addHeader", summary: "Add header text exported as a DOCX header part and referenced from section properties." },
       { kind: "api", name: "document.addFooter", summary: "Add footer text exported as a DOCX footer part and referenced from section properties." },
+      { kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
+      { kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
+      { kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
       { kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
       { kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
       { kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, and relationships." },
@@ -2082,6 +2137,15 @@ export class DocumentModel {
         const fontSize = Math.max(10, (style.fontSize || 22) / 2);
         parts.push(`<text x="${margin}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-weight="${style.bold ? "700" : "400"}" fill="#111827">${xmlEscape(block.text)}</text>`);
         y += fontSize * 1.6;
+      } else if (block.kind === "hyperlink") {
+        parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#2563eb" text-decoration="underline">${xmlEscape(block.text)}</text>`);
+        y += 20;
+      } else if (block.kind === "field") {
+        parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#334155">${xmlEscape(block.display)} (${xmlEscape(block.instruction)})</text>`);
+        y += 20;
+      } else if (block.kind === "citation") {
+        parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#475569">${xmlEscape(block.text)}</text>`);
+        y += 20;
       } else if (block.kind === "listItem") {
         const key = `${block.listType}:${block.level}`;
         const next = (listCounters.get(key) || 0) + 1;
@@ -2115,7 +2179,7 @@ export class DocumentModel {
 }
 
 function docxContentTypes({ hasComments, hasHeader, hasFooter, hasNumbering }) {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasHeader ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : ""}${hasFooter ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : ""}</Types>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasHeader ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : ""}${hasFooter ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : ""}</Types>`;
 }
 
 function docxStylesXml(document) {
@@ -2141,6 +2205,19 @@ function docxParagraphXml(block, commentIndexes) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/>${numPr}</w:pPr>${commentStart}<w:r><w:t>${xmlEscape(block.text)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
 }
 
+function docxHyperlinkXml(block, relId) {
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink></w:p>`;
+}
+
+function docxFieldXml(block) {
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:fldSimple w:instr="${attrEscape(block.instruction)}"><w:r><w:t>${xmlEscape(block.display)}</w:t></w:r></w:fldSimple></w:p>`;
+}
+
+function docxCitationXml(block) {
+  const label = block.metadata?.source ? `${block.text} (${block.metadata.source})` : block.text;
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:bookmarkStart w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}" w:name="${attrEscape(`OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`)}"/><w:r><w:t>${xmlEscape(label)}</w:t></w:r><w:bookmarkEnd w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}"/></w:p>`;
+}
+
 function docxTableXml(block) {
   const grid = Array.from({ length: block.columns || 1 }, () => `<w:gridCol w:w="${Math.floor(9360 / Math.max(1, block.columns || 1))}"/>`).join("");
   const rows = block.values.map((row) => `<w:tr>${Array.from({ length: block.columns || row.length || 1 }, (_, column) => `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9360 / Math.max(1, block.columns || 1))}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r></w:p></w:tc>`).join("")}</w:tr>`).join("");
@@ -2151,6 +2228,9 @@ function docxDocumentXml(document, relIds = {}) {
   const commentIndex = new Map(document.comments.map((comment, index) => [comment, index]));
   const body = document.blocks.map((block) => {
     if (block.kind === "table") return docxTableXml(block);
+    if (block.kind === "hyperlink") return docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id));
+    if (block.kind === "field") return docxFieldXml(block);
+    if (block.kind === "citation") return docxCitationXml(block);
     const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
     return docxParagraphXml(block, indexes);
   }).join("");
@@ -2196,12 +2276,19 @@ export class DocumentFile {
     if (document.comments.length) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
     if (hasHeader) { relIds.header = `rId${docRels.length + 1}`; docRels.push({ id: relIds.header, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: "header1.xml" }); }
     if (hasFooter) { relIds.footer = `rId${docRels.length + 1}`; docRels.push({ id: relIds.footer, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", target: "footer1.xml" }); }
+    relIds.hyperlinks = new Map();
+    for (const block of document.blocks.filter((item) => item.kind === "hyperlink")) {
+      const relId = `rId${docRels.length + 1}`;
+      relIds.hyperlinks.set(block.id, relId);
+      docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", target: block.url, targetMode: "External" });
+    }
     zip.file("word/_rels/document.xml.rels", relsXml(docRels));
     zip.file("word/styles.xml", docxStylesXml(document));
     if (hasNumbering) zip.file("word/numbering.xml", docxNumberingXml());
     if (document.comments.length) zip.file("word/comments.xml", docxCommentsXml(document));
     if (hasHeader) zip.file("word/header1.xml", docxHeaderFooterXml("header", document.headers));
     if (hasFooter) zip.file("word/footer1.xml", docxHeaderFooterXml("footer", document.footers));
+    zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
     zip.file("word/document.xml", docxDocumentXml(document, relIds));
     return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
   }
@@ -2209,6 +2296,8 @@ export class DocumentFile {
   static async importDocx(blobOrBuffer) {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
+    const metadataText = await zip.file("word/open-office-artifact.json")?.async("text");
+    if (metadataText) return DocumentModel.create(JSON.parse(metadataText));
     const xml = await zip.file("word/document.xml")?.async("text");
     const commentsXml = await zip.file("word/comments.xml")?.async("text");
     const commentTextById = new Map([...String(commentsXml || "").matchAll(/<w:comment[^>]*w:id="(\d+)"[^>]*>([\s\S]*?)<\/w:comment>/g)].map((match) => [match[1], decodeXml([...match[2].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))]));

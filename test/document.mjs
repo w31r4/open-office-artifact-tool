@@ -11,6 +11,9 @@ document.styles.add("Callout", { name: "Callout", fontSize: 24, bold: true, font
 const header = document.addHeader("Confidential research memo", { name: "default-header" });
 const footer = document.addFooter("Page footer", { name: "default-footer" });
 const heading = document.addParagraph("Findings", { styleId: "Heading1", name: "findings-heading" });
+const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
+const field = document.addField("PAGE", "1", { name: "page-field" });
+const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
 const bullet = document.addListItem("Use real numbering definitions", { listType: "bullet", name: "numbering-rule" });
 const numbered = document.addListItem("Render and verify", { listType: "number", name: "render-step" });
 const table = document.addTable({
@@ -21,9 +24,13 @@ const table = document.addTable({
 table.getCell(2, 1).value = "anchored";
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer" });
 
-const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer", maxChars: 10000 }).ndjson;
+const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation", maxChars: 12000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /findings-heading/);
+assert.match(inspect, /research-link/);
+assert.match(inspect, /https:\/\/example.com\/research/);
+assert.match(inspect, /page-field/);
+assert.match(inspect, /market-citation/);
 assert.match(inspect, /numbering-rule/);
 assert.match(inspect, /render-step/);
 assert.match(inspect, /Confidential research memo/);
@@ -32,6 +39,9 @@ assert.match(inspect, /evidence-table/);
 assert.match(inspect, /Check this heading/);
 assert.match(inspect, /Callout/);
 assert.equal(document.resolve(heading.id).styleId, "Heading1");
+assert.equal(document.resolve(hyperlink.id).url, "https://example.com/research");
+assert.equal(document.resolve(field.id).instruction, "PAGE");
+assert.equal(document.resolve(citation.id).metadata.page, 2);
 assert.equal(document.resolve(bullet.id).listType, "bullet");
 assert.equal(document.resolve(numbered.id).listType, "number");
 assert.equal(document.resolve(header.id).text, "Confidential research memo");
@@ -41,6 +51,9 @@ assert.equal(document.resolve(comment.id).author, "Reviewer");
 assert.match(document.help("document.addTable").ndjson, /Word-style table/);
 assert.match(document.help("document.addListItem").ndjson, /numbering definitions/);
 assert.match(document.help("document.addHeader").ndjson, /DOCX header/);
+assert.match(document.help("document.addHyperlink").ndjson, /w:hyperlink/);
+assert.match(document.help("document.addField").ndjson, /w:fldSimple/);
+assert.match(document.help("document.addCitation").ndjson, /structured metadata/);
 
 const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
@@ -48,6 +61,9 @@ const svg = await preview.text();
 assert.match(svg, /Research memo/);
 assert.match(svg, /DOCX styles/);
 assert.match(svg, /Confidential research memo/);
+assert.match(svg, /w31r4 research note/);
+assert.match(svg, /PAGE/);
+assert.match(svg, /Source: Market brief/);
 assert.match(svg, /Render and verify/);
 
 const docx = await DocumentFile.exportDocx(document);
@@ -55,11 +71,15 @@ assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordproce
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.docx`);
 await docx.save(out);
 const loaded = await DocumentFile.importDocx(await FileBlob.load(out));
-const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer", maxChars: 10000 }).ndjson;
+const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation", maxChars: 12000 }).ndjson;
 assert.match(loadedInspect, /clean-room DOCX facade/);
 assert.match(loadedInspect, /DOCX styles/);
 assert.match(loadedInspect, /anchored/);
 assert.match(loadedInspect, /Check this heading/);
+assert.match(loadedInspect, /w31r4 research note/);
+assert.match(loadedInspect, /https:\/\/example.com\/research/);
+assert.match(loadedInspect, /page-field/);
+assert.match(loadedInspect, /Market brief/);
 assert.match(loadedInspect, /Use real numbering definitions/);
 assert.match(loadedInspect, /Render and verify/);
 assert.match(loadedInspect, /Confidential research memo/);

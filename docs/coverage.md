@@ -49,10 +49,10 @@ Status legend:
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| `DocumentModel.create`, paragraphs, lists, headers/footers, tables, comments, styles, `inspect` | partial | Block model now supports styled paragraph blocks, real list-item blocks, header/footer blocks, table blocks/cells, named styles, comment anchors, inspect/resolve/search, `document.render()` SVG page preview, and help catalog entries. Needs sections, fields, hyperlinks, citations, images, tracked changes, and richer layout/page model. |
-| `DocumentFile.exportDocx` / `importDocx` | partial | WordprocessingML round trip now writes document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, relationships, styled paragraphs, list items, and tables; import restores paragraphs, list items, tables, comments, headers, and footers. Needs sections, fields, hyperlinks, citations, images, tracked changes, and stronger style fidelity. |
+| `DocumentModel.create`, paragraphs, lists, headers/footers, hyperlinks, fields, citations, tables, comments, styles, `inspect` | partial | Block model now supports styled paragraph blocks, real list-item blocks, header/footer blocks, hyperlink blocks, field blocks, citation blocks with metadata, table blocks/cells, named styles, comment anchors, inspect/resolve/search, `document.render()` SVG page preview, and help catalog entries. Needs sections, images, tracked changes, and richer layout/page model. |
+| `DocumentFile.exportDocx` / `importDocx` | partial | WordprocessingML round trip now writes document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlink relationships, fldSimple fields, citation bookmarks, clean-room metadata, relationships, styled paragraphs, list items, and tables; import restores paragraphs, list items, tables, comments, headers, footers, hyperlinks, fields, and citations. Needs sections, images, tracked changes, and stronger style fidelity. |
 | Design presets / table geometry / OOXML patch helpers | todo | Required for agent document skill parity. |
-| DOCX render-to-page images | partial | `document.render()` provides a clean-room SVG page preview for headers, footers, paragraphs, list items, and tables. Needs DOCX-to-PNG/PDF render gate via LibreOffice/Poppler or equivalent, page pagination fidelity, and visual diff workflow. |
+| DOCX render-to-page images | partial | `document.render()` provides a clean-room SVG page preview for headers, footers, paragraphs, hyperlinks, fields, citations, list items, and tables. Needs DOCX-to-PNG/PDF render gate via LibreOffice/Poppler or equivalent, page pagination fidelity, and visual diff workflow. |
 
 ## PDF skill target
 

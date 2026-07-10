@@ -13,7 +13,7 @@ The goal is not to vendor or copy agent's reference bundle. This package rebuild
 
 ## Current status
 
-This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The spreadsheet facade includes formula traces plus comments/data-validation/conditional-formatting/table/chart/image/sparkline metadata roundtrips and SVG visual previews. The presentation facade includes compose/JSX layout, inspectable shape/table/chart/image-placeholder objects, and a geometry-based layout QA detector for overlap/off-canvas/overflow checks. The document facade includes styled paragraphs, real list items, headers/footers, tables, comments, DOCX styles/numbering/header/footer/comments export, and SVG page previews. Fidelity, advanced OOXML, high-quality raster rendering, and template QA are roadmap work.
+This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The spreadsheet facade includes formula traces plus comments/data-validation/conditional-formatting/table/chart/image/sparkline metadata roundtrips and SVG visual previews. The presentation facade includes compose/JSX layout, inspectable shape/table/chart/image-placeholder objects, and a geometry-based layout QA detector for overlap/off-canvas/overflow checks. The document facade includes styled paragraphs, real list items, headers/footers, hyperlinks, fields, citations, tables, comments, DOCX styles/numbering/header/footer/hyperlink/comment export, and SVG page previews. Fidelity, advanced OOXML, high-quality raster rendering, and template QA are roadmap work.
 
 ## Usage
 
