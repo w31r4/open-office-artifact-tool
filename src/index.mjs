@@ -2378,7 +2378,9 @@ export class PresentationFile {
     const slideFiles = Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort();
     for (const file of slideFiles) {
       const slide = presentation.slides.add();
-      parseSlideXml(slide, await zip.file(file).async("text"));
+      const relsFile = file.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels";
+      const rels = parseRelsXml(await zip.file(relsFile)?.async("text"));
+      await parseSlideXml(slide, await zip.file(file).async("text"), { rels, zip });
     }
     return presentation;
   }
@@ -2498,16 +2500,68 @@ function slideXml(slide, imageParts = [], chartParts = []) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes}</p:spTree></p:cSld></p:sld>`;
 }
 
-function parseSlideXml(slide, xml) {
+function pptxFrameFromXml(part, fallback = { left: 0, top: 0, width: 160, height: 80 }) {
+  const off = /<a:off[^>]*x="(-?\d+)"[^>]*y="(-?\d+)"/.exec(part);
+  const ext = /<a:ext[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(part);
+  return { left: off ? Number(off[1]) / 9525 : fallback.left, top: off ? Number(off[2]) / 9525 : fallback.top, width: ext ? Number(ext[1]) / 9525 : fallback.width, height: ext ? Number(ext[2]) / 9525 : fallback.height };
+}
+
+function pptxRelationshipTarget(rels, relId) {
+  const rel = rels.find((item) => item.id === relId);
+  if (!rel?.target) return undefined;
+  const target = rel.target.replace(/^\//, "");
+  return target.startsWith("ppt/") ? target : path.posix.normalize(`ppt/slides/${target}`).replace(/^\.\//, "");
+}
+
+function parsePptxTableGraphic(slide, part) {
+  const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
+  const values = [...part.matchAll(/<a:tr\b[\s\S]*?<\/a:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<a:tc\b[\s\S]*?<\/a:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((t) => t[1]).join(""))));
+  if (!values.length) return;
+  slide.tables.add({ name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 160 }), values, rows: values.length, columns: Math.max(1, ...values.map((row) => row.length)) });
+}
+
+async function parsePptxChartGraphic(slide, part, context) {
+  const relId = /<c:chart[^>]*r:id="([^"]+)"/.exec(part)?.[1];
+  const target = pptxRelationshipTarget(context.rels, relId);
+  const chartXml = target ? await context.zip.file(target)?.async("text") : "";
+  const chartType = /<c:lineChart>/.test(chartXml) ? "line" : "bar";
+  const title = decodeXml(/<c:title>[\s\S]*?<a:t>([\s\S]*?)<\/a:t>[\s\S]*?<\/c:title>/.exec(chartXml)?.[1] || "");
+  const series = [...String(chartXml || "").matchAll(/<c:ser>[\s\S]*?<\/c:ser>/g)].map((seriesMatch, index) => {
+    const seriesXml = seriesMatch[0];
+    const name = decodeXml(/<c:tx>[\s\S]*?<c:v>([\s\S]*?)<\/c:v>[\s\S]*?<\/c:tx>/.exec(seriesXml)?.[1] || `Series ${index + 1}`);
+    const categories = [...( /<c:cat>([\s\S]*?)<\/c:cat>/.exec(seriesXml)?.[1] || "").matchAll(/<c:v>([\s\S]*?)<\/c:v>/g)].map((m) => decodeXml(m[1]));
+    const values = [...( /<c:val>([\s\S]*?)<\/c:val>/.exec(seriesXml)?.[1] || "").matchAll(/<c:v>([\s\S]*?)<\/c:v>/g)].map((m) => Number(decodeXml(m[1])) || 0);
+    return { name, values, categories };
+  });
+  const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || title || "chart");
+  slide.charts.add(chartType, { name, title, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }), categories: series[0]?.categories || [], series });
+}
+
+async function parsePptxPicture(slide, part, context) {
+  const attrs = /<p:cNvPr\b([^>]*)\/>/.exec(part)?.[1] || "";
+  const name = decodeXml(/\bname="([^"]*)"/.exec(attrs)?.[1] || "");
+  const alt = decodeXml(/\bdescr="([^"]*)"/.exec(attrs)?.[1] || "");
+  const relId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(part)?.[1];
+  const target = pptxRelationshipTarget(context.rels, relId);
+  const bytes = target ? await context.zip.file(target)?.async("uint8array") : undefined;
+  const extension = /\.([A-Za-z0-9+]+)$/.exec(target || "")?.[1] || "png";
+  slide.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target });
+}
+
+async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined }) {
   for (const match of xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
     const part = match[0];
     const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
     const text = [...part.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => decodeXml(m[1])).join("");
-    const off = /<a:off[^>]*x="(-?\d+)"[^>]*y="(-?\d+)"/.exec(part);
-    const ext = /<a:ext[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(part);
-    const shape = slide.shapes.add({ name, position: { left: off ? Number(off[1]) / 9525 : 0, top: off ? Number(off[2]) / 9525 : 0, width: ext ? Number(ext[1]) / 9525 : 160, height: ext ? Number(ext[2]) / 9525 : 80 } });
+    const shape = slide.shapes.add({ name, position: pptxFrameFromXml(part) });
     shape.text = text;
   }
+  for (const match of xml.matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g)) {
+    const part = match[0];
+    if (part.includes("/drawingml/2006/table")) parsePptxTableGraphic(slide, part);
+    else if (part.includes("/drawingml/2006/chart")) await parsePptxChartGraphic(slide, part, context);
+  }
+  for (const match of xml.matchAll(/<p:pic>[\s\S]*?<\/p:pic>/g)) await parsePptxPicture(slide, match[0], context);
 }
 
 class DocumentStyleCollection {

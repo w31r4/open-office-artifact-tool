@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import { box, column, FileBlob, paragraph, Presentation, PresentationFile, row, run, rule, shape as composeShape } from "../src/index.mjs";
 
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
@@ -65,6 +66,29 @@ assert.deepEqual(cards.map((card) => Math.round(card.position.left)), [100, 300,
 assert.equal(Math.round(cards[0].position.top), 615);
 assert.match(presentation.help("slide.autoLayout").ndjson, /horizontal or vertical flow/);
 
+const nativeTable = slide.tables.add({
+  name: "native-import-table",
+  position: { left: 840, top: 96, width: 320, height: 120 },
+  values: [["Metric", "Value"], ["ARR", "$12M"]],
+  styleOptions: { headerRow: true },
+});
+const nativeChart = slide.charts.add("bar", {
+  name: "native-import-chart",
+  title: "Native Import Chart",
+  position: { left: 840, top: 240, width: 320, height: 180 },
+  categories: ["Q1", "Q2"],
+  series: [{ name: "Revenue", values: [10, 14] }],
+});
+const nativeImage = slide.images.add({
+  name: "native-import-image",
+  alt: "Native import logo",
+  dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+  position: { left: 840, top: 450, width: 120, height: 90 },
+});
+assert.equal(presentation.resolve(nativeTable.id).values[1][0], "ARR");
+assert.equal(presentation.resolve(nativeChart.id).series[0].values[1], 14);
+assert.equal(presentation.resolve(nativeImage.id).alt, "Native import logo");
+
 const qaClean = Presentation.create({ slideSize: { width: 400, height: 240 } });
 const qaCleanSlide = qaClean.slides.add();
 qaCleanSlide.shapes.add({ name: "clean-a", position: { left: 20, top: 20, width: 120, height: 60 }, text: "A" });
@@ -93,8 +117,26 @@ const preview = await presentation.export({ slide, format: "svg" });
 assert.equal(preview.type, "image/svg+xml");
 
 const pptx = await PresentationFile.exportPptx(presentation);
+const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+const slideXml = await zip.file("ppt/slides/slide1.xml").async("text");
+assert.match(slideXml, /<a:tbl>/);
+assert.match(slideXml, /native-import-table/);
+assert.match(slideXml, /<c:chart[^>]*r:id=/);
+assert.match(slideXml, /<p:pic>/);
+const slideRelsXml = await zip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+assert.match(slideRelsXml, /Target="\.\.\/media\/image1\.png"/);
+assert.match(slideRelsXml, /Target="\.\.\/charts\/chart1\.xml"/);
+const chartXml = await zip.file("ppt/charts/chart1.xml").async("text");
+assert.match(chartXml, /Native Import Chart/);
+assert.match(chartXml, /<c:v>14<\/c:v>/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
-assert.match(loaded.inspect({ kind: "textbox" }).ndjson, /Revenue plan/);
+const loadedAll = loaded.inspect({ kind: "textbox,table,chart,image", maxChars: 12000 }).ndjson;
+assert.match(loadedAll, /Revenue plan/);
+assert.match(loadedAll, /native-import-table/);
+assert.match(loadedAll, /ARR/);
+assert.match(loadedAll, /Native Import Chart/);
+assert.match(loadedAll, /native-import-image/);
+assert.match(loadedAll, /Native import logo/);
 console.log("presentation smoke ok");
