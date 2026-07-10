@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 
 import { FileBlob, Presentation, PresentationFile } from "open-office-artifact-tool";
 import { Fragment, chart as chartNode, grid as gridNode, image as imageNode, paragraph as paragraphNode, table as tableNode } from "open-office-artifact-tool/presentation-jsx";
@@ -128,6 +129,7 @@ const directChart = dataSlide.charts.add("bar", {
 const directImage = dataSlide.images.add({
   name: "direct-product-image",
   alt: "Product screenshot placeholder",
+  dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
   prompt: "dashboard product screenshot",
   position: { left: 40, top: 180, width: 300, height: 140 },
   fit: "cover",
@@ -169,7 +171,19 @@ assert.ok(objectLayout.elements.some((element) => element.kind === "image" && el
 assert.match(await (await dataSlide.export({ format: "svg" })).text(), /ARR trend/);
 
 const out = path.join(os.tmpdir(), `open-office-artifact-jsx-${process.pid}.pptx`);
-await (await PresentationFile.exportPptx(presentation)).save(out);
+const pptx = await PresentationFile.exportPptx(presentation);
+const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+assert.ok(zip.file("ppt/media/image1.png"));
+const slide3Xml = await zip.file("ppt/slides/slide3.xml").async("text");
+assert.match(slide3Xml, /<p:pic>/);
+assert.match(slide3Xml, /name="direct-product-image"/);
+assert.match(slide3Xml, /descr="Product screenshot placeholder"/);
+assert.match(slide3Xml, /r:embed="rId1"/);
+const slide3RelsXml = await zip.file("ppt/slides/_rels/slide3.xml.rels").async("text");
+assert.match(slide3RelsXml, /Target="\.\.\/media\/image1\.png"/);
+const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
+assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
+await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
 assert.match(loaded.inspect({ kind: "textbox", maxChars: 10000 }).ndjson, /JSX runtime/);
 console.log("presentation-jsx smoke ok");
