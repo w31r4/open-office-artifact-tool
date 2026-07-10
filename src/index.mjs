@@ -162,6 +162,81 @@ export async function renderArtifact(artifact, options = {}) {
   return blob;
 }
 
+export const HELP_CATALOG = [
+  { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook; add worksheets before editing." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet or range in the current clean-room MVP." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell." },
+  { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
+  { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
+
+  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, and layout." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return presentation QA issues, currently including layout validation issues." },
+  { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
+  { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
+  { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
+  { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable chart facade with chartType, title, categories, series, layout JSON, SVG preview, and PPTX placeholder output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
+  { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
+  { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
+
+  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph, list, table, header/footer, style, and comment blocks." },
+  { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block and return an inspectable/resolveable paragraph object." },
+  { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
+  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add header text exported as a DOCX header part and referenced from section properties." },
+  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add footer text exported as a DOCX footer part and referenced from section properties." },
+  { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
+  { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
+  { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
+  { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
+  { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
+  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links, dangling comments, and table cells that look like prose blocks." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
+
+  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, and table regions." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, and table records." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG in the current clean-room MVP." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, malformed tables, and out-of-bounds table boxes." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata or heuristically extract visible text and pipe-delimited table rows." },
+
+  { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
+  { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method and attach normalized FileBlob metadata." },
+];
+
+export function helpArtifact(artifactOrKind = "*", query = "*", options = {}) {
+  const artifactKind = typeof artifactOrKind === "string" ? artifactOrKind : inferArtifactKind(artifactOrKind);
+  const q = String(query || "*").toLowerCase();
+  const search = String(options.search || "").toLowerCase();
+  const records = HELP_CATALOG.filter((item) => {
+    const kindMatch = artifactKind === "*" || item.artifactKind === artifactKind || (artifactKind === "unknown" && item.artifactKind === "shared");
+    if (!kindMatch) return false;
+    const haystack = `${item.name}\n${item.summary}\n${item.category || ""}\n${(item.examples || []).join("\n")}\n${(item.notes || []).join("\n")}`.toLowerCase();
+    const queryMatch = q === "*" || item.name.toLowerCase().includes(q.replace("fx.", "")) || haystack.includes(q);
+    const searchMatch = !search || haystack.includes(search);
+    return queryMatch && searchMatch;
+  });
+  return ndjson(records, options.maxChars ?? Infinity);
+}
+
 function normalizeKinds(kind, fallback) {
   if (!kind) return new Set(fallback);
   return new Set(String(kind).split(",").map((k) => k.trim()).filter(Boolean));
@@ -960,27 +1035,7 @@ export class Workbook {
   }
 
   help(query = "*", options = {}) {
-    const q = String(query).toLowerCase();
-    const catalog = [
-      { kind: "api", name: "Workbook.create", summary: "Create an empty workbook; add worksheets before editing." },
-      { kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
-      { kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-      { kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
-      { kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, and styles." },
-      { kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet or range in the current clean-room MVP." },
-      { kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell." },
-      { kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
-      { kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
-      { kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
-      { kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
-      { kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
-      { kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
-      { kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
-      { kind: "formula", name: "fx.SUM", category: "math-trig", examples: ["=SUM(A1:A10)"] },
-      { kind: "formula", name: "fx.PMT", category: "financial", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
-    ];
-    const records = catalog.filter((item) => q === "*" || item.name.toLowerCase().includes(q.replace("fx.", "")) || item.summary?.toLowerCase().includes(q));
-    return ndjson(records, options.maxChars ?? Infinity);
+    return helpArtifact("workbook", query, options);
   }
 
   async render(options = {}) {
@@ -1472,24 +1527,7 @@ export class Presentation {
   }
 
   help(query = "*", options = {}) {
-    const q = String(query).toLowerCase();
-    const catalog = [
-      { kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
-      { kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, and layout." },
-      { kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
-      { kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
-      { kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
-      { kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-      { kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, layers, box, paragraph, shape, and rule nodes into editable slide shapes." },
-      { kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
-      { kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
-      { kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
-      { kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-      { kind: "api", name: "slide.charts.add", summary: "Add an inspectable chart facade with chartType, title, categories, series, layout JSON, SVG preview, and PPTX placeholder output." },
-      { kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
-    ];
-    const records = catalog.filter((item) => q === "*" || item.name.toLowerCase().includes(q) || item.summary.toLowerCase().includes(q));
-    return ndjson(records, options.maxChars ?? Infinity);
+    return helpArtifact("presentation", query, options);
   }
 
   async export(options = {}) {
@@ -2221,21 +2259,7 @@ export class DocumentModel {
   }
 
   help(query = "*", options = {}) {
-    const q = String(query).toLowerCase();
-    const catalog = [
-      { kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph, list, table, header/footer, style, and comment blocks." },
-      { kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block and return an inspectable/resolveable paragraph object." },
-      { kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
-      { kind: "api", name: "document.addHeader", summary: "Add header text exported as a DOCX header part and referenced from section properties." },
-      { kind: "api", name: "document.addFooter", summary: "Add footer text exported as a DOCX footer part and referenced from section properties." },
-      { kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
-      { kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
-      { kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
-      { kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
-      { kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
-      { kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, and relationships." },
-    ];
-    return ndjson(catalog.filter((item) => q === "*" || item.name.toLowerCase().includes(q) || item.summary.toLowerCase().includes(q)), options.maxChars ?? Infinity);
+    return helpArtifact("document", query, options);
   }
 
   async render(options = {}) {
@@ -2506,6 +2530,8 @@ export class PdfArtifact {
     });
     return verificationResult("pdf", issues, options);
   }
+
+  help(query = "*", options = {}) { return helpArtifact("pdf", query, options); }
 
   async render(options = {}) { return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" }); }
   toJSON() { return { id: this.id, pages: this.pages.map((page) => page.toJSON()) }; }

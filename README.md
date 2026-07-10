@@ -80,7 +80,7 @@ The package deliberately prioritizes agent workflows:
 1. inspect compact semantic snapshots instead of dumping raw XML;
 2. resolve stable IDs back to editable objects;
 3. export both durable files and lightweight layout/preview artifacts;
-4. expose bounded help records for API discovery;
+4. expose bounded help records for API discovery via `helpArtifact(...)` and generated [`docs/api.md`](docs/api.md);
 5. verify artifacts with `verifyArtifact(artifact)` or per-artifact `verify()` methods before delivery.
 
 ## Development

@@ -15,7 +15,7 @@ Status legend:
 | Shared `FileBlob` with `load`, `save`, `arrayBuffer`, `text` | done | Used by all four artifact families. |
 | `inspect(...)` emits bounded NDJSON snapshots | partial | Implemented for workbook, presentation, document, PDF. Needs full token coverage and search/target slicing. |
 | Stable anchor IDs + `resolve(...)` | partial | Implemented for workbook/sheets and presentation/shapes. Needs table/chart/image/comment/text-range IDs. |
-| `help(query, opts)` bounded NDJSON API discovery | partial | Seed catalog implemented. Needs full API/function catalog. |
+| `help(query, opts)` bounded NDJSON API discovery | partial | Shared `HELP_CATALOG` and `helpArtifact(...)` power Workbook/Presentation/Document/PDF help methods; `docs/api.md` is generated from the catalog. Needs broader examples, schemas, and full formula/API coverage. |
 | Render/preview loop | partial | `renderArtifact(...)` plus per-artifact render/export adapters return SVG `FileBlob` previews with metadata for workbooks, presentations, documents, and PDFs. PNG/WebP rasterization and external Poppler/LibreOffice adapters are roadmap. |
 | Shared verification API | partial | `verifyArtifact(...)` plus per-artifact `verify()` methods emit bounded NDJSON issues for workbook formula/structure errors, presentation layout issues, document fake-list/broken-link/comment issues, and PDF text/table/page issues. Needs render-backed verification and full skill-specific gates. |
 | Layout JSON export | partial | Slide layout JSON implemented. Workbook/document layout exports are roadmap. |

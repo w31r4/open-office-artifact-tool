@@ -22,11 +22,13 @@
   "files": [
     "src/**",
     "docs/**",
+    "scripts/**",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs",
+    "docs:api": "node scripts/generate-api-docs.mjs",
+    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/help.mjs",
     "test:spreadsheet": "node test/spreadsheet.mjs",
     "test:presentation": "node test/presentation.mjs",
     "test:presentation-jsx": "node test/presentation-jsx.mjs",
@@ -34,6 +36,7 @@
     "test:pdf": "node test/pdf.mjs",
     "test:verify": "node test/verify.mjs",
     "test:render": "node test/render.mjs",
+    "test:help": "node test/help.mjs",
     "test:pack": "npm pack --dry-run"
   },
   "dependencies": {
