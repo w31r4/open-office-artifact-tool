@@ -26,12 +26,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs",
+    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs",
     "test:spreadsheet": "node test/spreadsheet.mjs",
     "test:presentation": "node test/presentation.mjs",
     "test:presentation-jsx": "node test/presentation-jsx.mjs",
     "test:document": "node test/document.mjs",
     "test:pdf": "node test/pdf.mjs",
+    "test:verify": "node test/verify.mjs",
     "test:pack": "npm pack --dry-run"
   },
   "dependencies": {

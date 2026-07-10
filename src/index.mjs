@@ -107,6 +107,27 @@ function ndjson(records, maxChars = Infinity) {
   return { ndjson: text, truncated };
 }
 
+function verificationResult(artifactKind, issues, options = {}) {
+  const result = {
+    artifactKind,
+    ok: issues.length === 0,
+    issues,
+    ...ndjson(issues, options.maxChars ?? Infinity),
+  };
+  return result;
+}
+
+function verificationIssue(artifactKind, type, message, details = {}) {
+  return { kind: "verificationIssue", artifactKind, type, severity: details.severity || "error", message, ...details };
+}
+
+export function verifyArtifact(artifact, options = {}) {
+  if (!artifact || typeof artifact.verify !== "function") {
+    return verificationResult("unknown", [verificationIssue("unknown", "unsupportedArtifact", "Artifact does not expose a verify() method.")], options);
+  }
+  return artifact.verify(options);
+}
+
 function normalizeKinds(kind, fallback) {
   if (!kind) return new Set(fallback);
   return new Set(String(kind).split(",").map((k) => k.trim()).filter(Boolean));
@@ -815,6 +836,33 @@ export class Workbook {
     return ndjson(filtered.filter(Boolean), options.maxChars ?? Infinity);
   }
 
+  verify(options = {}) {
+    this.recalculate();
+    const issues = [];
+    if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
+    for (const sheet of this.worksheets) {
+      const entries = sheet.store.entries();
+      if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
+      for (const [address, cell] of entries) {
+        const value = String(cell.value ?? "");
+        if (/^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A)/.test(value)) {
+          issues.push(verificationIssue("workbook", "formulaError", `Formula error ${value} at ${sheet.name}!${address}.`, { sheet: sheet.name, address, value }));
+        }
+      }
+      for (const table of sheet.tables.items) {
+        if (!table.name) issues.push(verificationIssue("workbook", "unnamedTable", `A worksheet table on ${sheet.name} is missing a stable name.`, { sheet: sheet.name, id: table.id }));
+      }
+      for (const chart of sheet.charts.items) {
+        if (!chart.title) issues.push(verificationIssue("workbook", "untitledChart", `Chart ${chart.name} on ${sheet.name} has no title.`, { severity: "warning", sheet: sheet.name, id: chart.id }));
+        if (chart.series.items.length === 0) issues.push(verificationIssue("workbook", "emptyChart", `Chart ${chart.name} on ${sheet.name} has no data series.`, { sheet: sheet.name, id: chart.id }));
+      }
+    }
+    for (const thread of this.comments.threads) {
+      if (!thread.target?.address) issues.push(verificationIssue("workbook", "unanchoredComment", `Comment thread ${thread.id} is missing a target cell.`, { id: thread.id }));
+    }
+    return verificationResult("workbook", issues, options);
+  }
+
   trace(reference, options = {}) {
     this.recalculate();
     const root = parseWorkbookReference(this, reference);
@@ -1369,6 +1417,13 @@ export class Presentation {
   validateLayout(options = {}) {
     const issues = this.slides.items.flatMap((slide) => slide.validateLayout(options).issues);
     return { ok: issues.length === 0, issues, ...ndjson(issues, options.maxChars ?? Infinity) };
+  }
+
+  verify(options = {}) {
+    const issues = [];
+    if (this.slides.items.length === 0) issues.push(verificationIssue("presentation", "noSlides", "Presentation has no slides."));
+    issues.push(...this.validateLayout(options).issues.map((issue) => ({ ...issue, artifactKind: "presentation" })));
+    return verificationResult("presentation", issues, options);
   }
 
   resolve(id) {
@@ -2104,6 +2159,32 @@ export class DocumentModel {
     return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
   }
 
+  verify(options = {}) {
+    const issues = [];
+    if (this.blocks.length === 0) issues.push(verificationIssue("document", "emptyDocument", "Document has no body blocks."));
+    for (const block of this.blocks) {
+      if (block.kind === "paragraph" && /^\s*([-*•]|\d+[.)])\s+/.test(block.text)) {
+        issues.push(verificationIssue("document", "fakeList", `Paragraph ${block.id} looks like a fake list item; use addListItem instead.`, { id: block.id }));
+      }
+      if (block.kind === "hyperlink" && !/^https?:\/\//.test(block.url)) {
+        issues.push(verificationIssue("document", "invalidHyperlink", `Hyperlink ${block.id} is missing an absolute http(s) URL.`, { id: block.id, url: block.url }));
+      }
+      if (block.kind === "field" && !block.instruction.trim()) {
+        issues.push(verificationIssue("document", "emptyField", `Field ${block.id} is missing an instruction.`, { id: block.id }));
+      }
+      if (block.kind === "table") {
+        for (const row of block.values) for (const cell of row) {
+          if (String(cell ?? "").length > 240) issues.push(verificationIssue("document", "tableCellTooLong", `Table ${block.id} contains paragraph-like cell content.`, { severity: "warning", id: block.id }));
+        }
+      }
+    }
+    const blockIds = new Set(this.blocks.map((block) => block.id));
+    for (const comment of this.comments) {
+      if (!blockIds.has(comment.targetId)) issues.push(verificationIssue("document", "danglingComment", `Comment ${comment.id} points at a missing block.`, { id: comment.id, targetId: comment.targetId }));
+    }
+    return verificationResult("document", issues, options);
+  }
+
   help(query = "*", options = {}) {
     const q = String(query).toLowerCase();
     const catalog = [
@@ -2372,6 +2453,23 @@ export class PdfArtifact {
     });
     const search = String(options.search || "").trim().toLowerCase();
     return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
+  }
+
+  verify(options = {}) {
+    const issues = [];
+    if (this.pages.length === 0) issues.push(verificationIssue("pdf", "noPages", "PDF artifact has no pages."));
+    this.pages.forEach((page, pageIndex) => {
+      if (!page.text.trim() && page.tables.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text or tables.`, { page: pageIndex + 1 }));
+      if (/[\u2010-\u2015]/.test(page.text)) issues.push(verificationIssue("pdf", "unicodeDash", `PDF page ${pageIndex + 1} contains a Unicode dash; use ASCII hyphen for compatibility.`, { page: pageIndex + 1 }));
+      for (const table of page.tables) {
+        if (!table.values.length || !table.values[0]?.length) issues.push(verificationIssue("pdf", "emptyTable", `PDF table ${table.id} on page ${pageIndex + 1} has no cells.`, { page: pageIndex + 1, id: table.id }));
+        const [left, top, width, height] = table.bbox || [];
+        if (left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > page.width || top + height > page.height) {
+          issues.push(verificationIssue("pdf", "tableOutOfBounds", `PDF table ${table.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: table.id, bbox: table.bbox }));
+        }
+      }
+    });
+    return verificationResult("pdf", issues, options);
   }
 
   async render(options = {}) { return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" }); }

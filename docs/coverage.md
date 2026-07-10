@@ -17,6 +17,7 @@ Status legend:
 | Stable anchor IDs + `resolve(...)` | partial | Implemented for workbook/sheets and presentation/shapes. Needs table/chart/image/comment/text-range IDs. |
 | `help(query, opts)` bounded NDJSON API discovery | partial | Seed catalog implemented. Needs full API/function catalog. |
 | Render/preview loop | partial | SVG previews implemented for sheets, slides, and PDF pages. PNG/WebP rasterization is roadmap. |
+| Shared verification API | partial | `verifyArtifact(...)` plus per-artifact `verify()` methods emit bounded NDJSON issues for workbook formula/structure errors, presentation layout issues, document fake-list/broken-link/comment issues, and PDF text/table/page issues. Needs render-backed verification and full skill-specific gates. |
 | Layout JSON export | partial | Slide layout JSON implemented. Workbook/document layout exports are roadmap. |
 | Durable file export/import smoke tests | done | Minimal XLSX/PPTX/DOCX/PDF round trips pass. |
 
