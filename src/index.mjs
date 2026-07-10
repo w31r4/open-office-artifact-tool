@@ -205,6 +205,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
   { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
+  { artifactKind: "document", kind: "api", name: "document.addSection", summary: "Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr." },
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append a tracked insertion with author/date metadata and native DOCX w:ins export." },
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
@@ -2509,6 +2510,32 @@ class DocumentImageBlock {
   toProto() { return { kind: "image", id: this.id, name: this.name, styleId: this.styleId, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, widthPx: this.widthPx, heightPx: this.heightPx }; }
 }
 
+class DocumentSectionBlock {
+  constructor(document, config = {}) {
+    this.document = document;
+    this.kind = "section";
+    this.id = config.id || aid("dsec");
+    this.name = config.name || "";
+    this.breakType = config.breakType || config.type || "nextPage";
+    this.orientation = config.orientation || "portrait";
+    const pageSize = config.pageSize || {};
+    this.pageSize = {
+      widthTwips: Number(config.widthTwips || pageSize.widthTwips || (this.orientation === "landscape" ? 15840 : 12240)),
+      heightTwips: Number(config.heightTwips || pageSize.heightTwips || (this.orientation === "landscape" ? 12240 : 15840)),
+    };
+    const margins = config.margins || {};
+    this.margins = {
+      top: Number(margins.top ?? config.marginTop ?? 1440),
+      right: Number(margins.right ?? config.marginRight ?? 1440),
+      bottom: Number(margins.bottom ?? config.marginBottom ?? 1440),
+      left: Number(margins.left ?? config.marginLeft ?? 1440),
+    };
+  }
+
+  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
+  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
+}
+
 class DocumentHeaderFooterBlock {
   constructor(document, kind, text, config = {}) {
     this.document = document;
@@ -2555,6 +2582,7 @@ export class DocumentModel {
       else if (block.kind === "field") this.addField(block.instruction, block.display, block);
       else if (block.kind === "citation") this.addCitation(block.text ?? "", block.metadata || {}, block);
       else if (block.kind === "image") this.addImage(block);
+      else if (block.kind === "section") this.addSection(block);
       else if (block.kind === "change") this.addChange(block.changeType || block.type, block.text ?? "", block);
       else this.addParagraph(block.text ?? "", block);
     }
@@ -2573,6 +2601,8 @@ export class DocumentModel {
   addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
   addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); return block; }
   addImage(config = {}) { const block = new DocumentImageBlock(this, config); this.blocks.push(block); return block; }
+  addSection(config = {}) { const block = new DocumentSectionBlock(this, config); this.blocks.push(block); return block; }
+  addPageBreakSection(config = {}) { return this.addSection({ ...config, breakType: "nextPage" }); }
   addChange(changeType, text, config = {}) { const block = new DocumentChangeBlock(this, changeType, text, config); this.blocks.push(block); return block; }
   addInsertion(text, config = {}) { return this.addChange("insert", text, config); }
   addDeletion(text, config = {}) { return this.addChange("delete", text, config); }
@@ -2585,7 +2615,7 @@ export class DocumentModel {
   toProto() { return { id: this.id, name: this.name, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "change", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "comment", "header", "footer"]);
     const records = [];
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
@@ -2612,6 +2642,9 @@ export class DocumentModel {
       if (block.kind === "image") {
         if (!block.dataUrl && !block.uri && !block.prompt) issues.push(verificationIssue("document", "emptyImage", `Image ${block.id} has no dataUrl, uri, or prompt.`, { id: block.id }));
         if (block.dataUrl && !imageDataFromDataUrl(block.dataUrl)) issues.push(verificationIssue("document", "invalidImageDataUrl", `Image ${block.id} has an unsupported data URL.`, { id: block.id }));
+      }
+      if (block.kind === "section") {
+        for (const [side, value] of Object.entries(block.margins || {})) if (!Number.isFinite(value) || value < 0) issues.push(verificationIssue("document", "invalidSectionMargin", `Section ${block.id} has an invalid ${side} margin.`, { id: block.id, side, value }));
       }
       if (block.kind === "table") {
         for (const row of block.values) for (const cell of row) {
@@ -2661,6 +2694,10 @@ export class DocumentModel {
         else parts.push(`<rect x="${margin}" y="${y}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`);
         parts.push(`<text x="${margin + 8}" y="${y + 18}" font-family="Arial" font-size="11" fill="#92400e">${xmlEscape(block.alt || block.prompt || block.uri || block.name || "image")}</text>`);
         y += imageHeight + 20;
+      } else if (block.kind === "section") {
+        parts.push(`<line x1="${margin}" x2="${width - margin}" y1="${y}" y2="${y}" stroke="#94a3b8" stroke-dasharray="4 4"/>`);
+        parts.push(`<text x="${margin}" y="${y + 16}" font-family="Arial" font-size="10" fill="#64748b">section break: ${xmlEscape(block.breakType)} ${xmlEscape(block.orientation)} ${block.pageSize.widthTwips}x${block.pageSize.heightTwips}</text>`);
+        y += 34;
       } else if (block.kind === "change") {
         const marker = block.changeType === "delete" ? "-" : "+";
         const fill = block.changeType === "delete" ? "#dc2626" : "#047857";
@@ -2768,6 +2805,21 @@ function docxImageXml(block, relId, commentIndexes = []) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>${commentEnd}${refs}</w:p>`;
 }
 
+function docxSectionPrXml(section, refs = "") {
+  const size = section.pageSize || {};
+  const margins = section.margins || {};
+  const orient = section.orientation === "landscape" ? ` w:orient="landscape"` : "";
+  const type = section.breakType ? `<w:type w:val="${attrEscape(section.breakType)}"/>` : "";
+  return `<w:sectPr>${refs}${type}<w:pgSz w:w="${Math.round(size.widthTwips || 12240)}" w:h="${Math.round(size.heightTwips || 15840)}"${orient}/><w:pgMar w:top="${Math.round(margins.top ?? 1440)}" w:right="${Math.round(margins.right ?? 1440)}" w:bottom="${Math.round(margins.bottom ?? 1440)}" w:left="${Math.round(margins.left ?? 1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
+}
+
+function docxSectionXml(block, commentIndexes = []) {
+  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
+  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
+  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
+  return `<w:p><w:pPr>${docxSectionPrXml(block)}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
+}
+
 function docxHyperlinkXml(block, relId) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink></w:p>`;
 }
@@ -2796,11 +2848,13 @@ function docxDocumentXml(document, relIds = {}) {
     if (block.kind === "citation") return docxCitationXml(block);
     const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
     if (block.kind === "image") return docxImageXml(block, relIds.images?.get(block.id), indexes);
+    if (block.kind === "section") return docxSectionXml(block, indexes);
     if (block.kind === "change") return docxChangeXml(block, indexes);
     return docxParagraphXml(block, indexes);
   }).join("");
   const refs = `${relIds.header ? `<w:headerReference w:type="default" r:id="${relIds.header}"/>` : ""}${relIds.footer ? `<w:footerReference w:type="default" r:id="${relIds.footer}"/>` : ""}`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}<w:sectPr>${refs}</w:sectPr></w:body></w:document>`;
+  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}${finalSection}</w:body></w:document>`;
 }
 
 function docxCommentsXml(document) {
@@ -2811,6 +2865,16 @@ function docxCommentsXml(document) {
 function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
+  const sectionMatch = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/.exec(part);
+  if (sectionMatch) {
+    const sectionXml = sectionMatch[1] || "";
+    const type = /<w:type[^>]*w:val="([^"]+)"/.exec(sectionXml)?.[1] || "nextPage";
+    const sizeAttrs = /<w:pgSz\b([^>]*)\/>/.exec(sectionXml)?.[1] || "";
+    const marginAttrs = /<w:pgMar\b([^>]*)\/>/.exec(sectionXml)?.[1] || "";
+    const orientation = /w:orient="landscape"/.test(sizeAttrs) ? "landscape" : "portrait";
+    const readAttr = (attrs, name, fallback) => Number(new RegExp(`\\bw:${name}="(\\d+)"`).exec(attrs)?.[1] || fallback);
+    return { block: { kind: "section", breakType: type, orientation, pageSize: { widthTwips: readAttr(sizeAttrs, "w", orientation === "landscape" ? 15840 : 12240), heightTwips: readAttr(sizeAttrs, "h", orientation === "landscape" ? 12240 : 15840) }, margins: { top: readAttr(marginAttrs, "top", 1440), right: readAttr(marginAttrs, "right", 1440), bottom: readAttr(marginAttrs, "bottom", 1440), left: readAttr(marginAttrs, "left", 1440) }, styleId }, commentIds };
+  }
   const imageRelId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(part)?.[1];
   if (imageRelId) {
     const image = imageByRelId.get(imageRelId) || {};

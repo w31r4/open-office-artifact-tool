@@ -22,6 +22,13 @@ const logo = document.addImage({
   widthPx: 96,
   heightPx: 64,
 });
+const landscapeSection = document.addSection({
+  name: "landscape-appendix",
+  breakType: "nextPage",
+  orientation: "landscape",
+  pageSize: { widthTwips: 15840, heightTwips: 12240 },
+  margins: { top: 720, right: 900, bottom: 720, left: 900 },
+});
 const insertion = document.addInsertion("Inserted reviewer clarification.", { author: "Reviewer", date: "2026-07-11T00:00:00.000Z", name: "tracked-insert" });
 const deletion = document.addDeletion("Remove stale claim.", { author: "Reviewer", date: "2026-07-11T00:05:00.000Z", name: "tracked-delete" });
 const bullet = document.addListItem("Use real numbering definitions", { listType: "bullet", name: "numbering-rule" });
@@ -34,7 +41,7 @@ const table = document.addTable({
 table.getCell(2, 1).value = "anchored";
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer" });
 
-const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,change", maxChars: 12000 }).ndjson;
+const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /findings-heading/);
 assert.match(inspect, /research-link/);
@@ -43,6 +50,8 @@ assert.match(inspect, /page-field/);
 assert.match(inspect, /market-citation/);
 assert.match(inspect, /memo-logo/);
 assert.match(inspect, /Memo logo/);
+assert.match(inspect, /landscape-appendix/);
+assert.match(inspect, /landscape/);
 assert.match(inspect, /tracked-insert/);
 assert.match(inspect, /Inserted reviewer clarification/);
 assert.match(inspect, /tracked-delete/);
@@ -60,6 +69,8 @@ assert.equal(document.resolve(field.id).instruction, "PAGE");
 assert.equal(document.resolve(citation.id).metadata.page, 2);
 assert.equal(document.resolve(logo.id).alt, "Memo logo");
 assert.equal(document.resolve(logo.id).widthPx, 96);
+assert.equal(document.resolve(landscapeSection.id).orientation, "landscape");
+assert.equal(document.resolve(landscapeSection.id).margins.left, 900);
 assert.equal(document.resolve(insertion.id).changeType, "insert");
 assert.equal(document.resolve(insertion.id).author, "Reviewer");
 assert.equal(document.resolve(deletion.id).changeType, "delete");
@@ -77,6 +88,7 @@ assert.match(document.help("document.addHyperlink").ndjson, /w:hyperlink/);
 assert.match(document.help("document.addField").ndjson, /w:fldSimple/);
 assert.match(document.help("document.addCitation").ndjson, /structured metadata/);
 assert.match(document.help("document.addImage").ndjson, /native DOCX media/);
+assert.match(document.help("document.addSection").ndjson, /w:sectPr/);
 assert.match(document.help("document.addInsertion").ndjson, /w:ins/);
 assert.match(document.help("document.addDeletion").ndjson, /w:del/);
 
@@ -90,6 +102,7 @@ assert.match(svg, /w31r4 research note/);
 assert.match(svg, /PAGE/);
 assert.match(svg, /Source: Market brief/);
 assert.match(svg, /Memo logo/);
+assert.match(svg, /section break: nextPage landscape/);
 assert.match(svg, /Inserted reviewer clarification/);
 assert.match(svg, /Remove stale claim/);
 assert.match(svg, /tracked insert by Reviewer/);
@@ -102,6 +115,9 @@ const zip = await JSZip.loadAsync(docxBytes);
 const documentXml = await zip.file("word/document.xml").async("text");
 assert.match(documentXml, /<a:blip r:embed="rIdImage1"\/>/);
 assert.match(documentXml, /<wp:docPr[^>]*name="memo-logo"[^>]*descr="Memo logo"/);
+assert.match(documentXml, /<w:type w:val="nextPage"\/>/);
+assert.match(documentXml, /<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"\/>/);
+assert.match(documentXml, /<w:pgMar w:top="720" w:right="900" w:bottom="720" w:left="900"/);
 assert.match(documentXml, /<w:ins\b[^>]*w:author="Reviewer"/);
 assert.match(documentXml, /<w:t>Inserted reviewer clarification\.<\/w:t>/);
 assert.match(documentXml, /<w:del\b[^>]*w:author="Reviewer"/);
@@ -117,15 +133,17 @@ const nativeOnlyZip = await JSZip.loadAsync(docxBytes);
 nativeOnlyZip.remove("word/open-office-artifact.json");
 const nativeOnlyDocx = new FileBlob(await nativeOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
 const nativeOnlyLoaded = await DocumentFile.importDocx(nativeOnlyDocx);
-const nativeOnlyInspect = nativeOnlyLoaded.inspect({ kind: "image,change", maxChars: 12000 }).ndjson;
+const nativeOnlyInspect = nativeOnlyLoaded.inspect({ kind: "image,section,change", maxChars: 12000 }).ndjson;
 assert.match(nativeOnlyInspect, /Memo logo/);
 assert.match(nativeOnlyInspect, /memo-logo/);
+assert.match(nativeOnlyInspect, /landscape/);
+assert.match(nativeOnlyInspect, /15840/);
 assert.match(nativeOnlyInspect, /Inserted reviewer clarification/);
 assert.match(nativeOnlyInspect, /Remove stale claim/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.docx`);
 await docx.save(out);
 const loaded = await DocumentFile.importDocx(await FileBlob.load(out));
-const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation,image,change", maxChars: 12000 }).ndjson;
+const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
 assert.match(loadedInspect, /clean-room DOCX facade/);
 assert.match(loadedInspect, /DOCX styles/);
 assert.match(loadedInspect, /anchored/);
@@ -136,6 +154,8 @@ assert.match(loadedInspect, /page-field/);
 assert.match(loadedInspect, /Market brief/);
 assert.match(loadedInspect, /memo-logo/);
 assert.match(loadedInspect, /Memo logo/);
+assert.match(loadedInspect, /landscape-appendix/);
+assert.match(loadedInspect, /landscape/);
 assert.match(loadedInspect, /Inserted reviewer clarification/);
 assert.match(loadedInspect, /Remove stale claim/);
 assert.match(loadedInspect, /Use real numbering definitions/);

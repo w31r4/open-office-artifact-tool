@@ -50,10 +50,10 @@ Status legend:
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| `DocumentModel.create`, paragraphs, lists, headers/footers, hyperlinks, fields, citations, images, tables, comments, styles, `inspect` | partial | Block model now supports styled paragraph blocks, real list-item blocks, header/footer blocks, hyperlink blocks, field blocks, citation blocks with metadata, image blocks with dataUrl/URI/prompt metadata, tracked insertion/deletion blocks, table blocks/cells, named styles, comment anchors, inspect/resolve/search, `document.render()` SVG page preview, and help catalog entries. Needs sections and richer layout/page model. |
-| `DocumentFile.exportDocx` / `importDocx` | partial | WordprocessingML round trip now writes document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlink relationships, fldSimple fields, citation bookmarks, native inline image DrawingML/media parts, native tracked-change `w:ins`/`w:del` markup, clean-room metadata, relationships, styled paragraphs, list items, and tables; import restores paragraphs, list items, tables, comments, headers, footers, hyperlinks, fields, citations, images, and tracked changes. Needs sections and stronger style fidelity. |
+| `DocumentModel.create`, paragraphs, lists, headers/footers, hyperlinks, fields, citations, images, sections, tables, comments, styles, `inspect` | partial | Block model now supports styled paragraph blocks, real list-item blocks, header/footer blocks, hyperlink blocks, field blocks, citation blocks with metadata, image blocks with dataUrl/URI/prompt metadata, section-break blocks with page size/orientation/margins, tracked insertion/deletion blocks, table blocks/cells, named styles, comment anchors, inspect/resolve/search, `document.render()` SVG page preview, and help catalog entries. Needs richer layout/page model. |
+| `DocumentFile.exportDocx` / `importDocx` | partial | WordprocessingML round trip now writes document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlink relationships, fldSimple fields, citation bookmarks, native inline image DrawingML/media parts, native section `w:sectPr` page setup, native tracked-change `w:ins`/`w:del` markup, clean-room metadata, relationships, styled paragraphs, list items, and tables; import restores paragraphs, list items, tables, comments, headers, footers, hyperlinks, fields, citations, images, sections, and tracked changes. Needs stronger style fidelity. |
 | Design presets / table geometry / OOXML patch helpers | todo | Required for agent document skill parity. |
-| DOCX render-to-page images | partial | `document.render()` provides a clean-room SVG page preview for headers, footers, paragraphs, hyperlinks, fields, citations, images, tracked changes, list items, and tables. Needs DOCX-to-PNG/PDF render gate via LibreOffice/Poppler or equivalent, page pagination fidelity, and visual diff workflow. |
+| DOCX render-to-page images | partial | `document.render()` provides a clean-room SVG page preview for headers, footers, paragraphs, hyperlinks, fields, citations, images, section breaks, tracked changes, list items, and tables. Needs DOCX-to-PNG/PDF render gate via LibreOffice/Poppler or equivalent, page pagination fidelity, and visual diff workflow. |
 
 ## PDF skill target
 
@@ -70,6 +70,6 @@ Status legend:
 2. Add a real formula dependency graph and a broader Excel formula catalog.
 3. Replace presentation table/chart/image placeholders with true native PPTX OOXML parts while preserving inspect/resolve/layout behavior.
 4. Add raster rendering via a pluggable renderer (`sharp`, browser, canvas, or Poppler/LibreOffice adapters).
-5. Add DOCX sections, fields, hyperlinks, citations, stronger style/table geometry audits, and a real render gate.
+5. Add DOCX stronger style/table geometry audits and a real render gate.
 6. Add robust PDF creation/extraction/rendering adapters.
 7. Expand `help` catalogs from the observed skill docs into generated, testable API records.

@@ -18,6 +18,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
 | `document.addListItem` | api | Append a real numbered or bulleted list item backed by DOCX numbering definitions. |
 | `document.addParagraph` | api | Append a styled paragraph block and return an inspectable/resolveable paragraph object. |
+| `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links, dangling comments, and table cells that look like prose blocks. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
