@@ -1,6 +1,7 @@
 import {
   box,
   column,
+  grid,
   layers,
   node,
   paragraph,
@@ -35,6 +36,7 @@ export function createElement(type, props = {}) {
 export {
   box,
   column,
+  grid,
   layers,
   node,
   paragraph,

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { FileBlob, Presentation, PresentationFile } from "open-office-artifact-tool";
-import { Fragment } from "open-office-artifact-tool/presentation-jsx";
+import { Fragment, grid as gridNode, paragraph as paragraphNode } from "open-office-artifact-tool/presentation-jsx";
 import { jsx, jsxs } from "open-office-artifact-tool/presentation-jsx/jsx-runtime";
 import { jsxDEV } from "open-office-artifact-tool/presentation-jsx/jsx-dev-runtime";
 
@@ -83,6 +83,30 @@ assert.equal(presentation.resolve("sh/jsx-headline").text.value, "JSX runtime");
 
 const layout = JSON.parse(await (await slide.export({ format: "layout" })).text());
 assert.ok(layout.elements.some((element) => element.name === "jsx-accent-pill"));
+
+const gridSlide = presentation.slides.add();
+gridSlide.compose(
+  gridNode({
+    name: "grid-root",
+    columns: [{ mode: "fixed", value: 100 }, { mode: "fr", value: 1 }, { mode: "fixed", value: 100 }],
+    rows: [{ mode: "fixed", value: 50 }, { mode: "fr", value: 1 }],
+    columnGap: 10,
+    rowGap: 20,
+  }, [
+    paragraphNode({ name: "grid-a", columnSpan: 2 }, ["A"]),
+    jsx("paragraph", { name: "grid-b", column: 2, row: 0, children: "B" }),
+    jsx("paragraph", { name: "grid-c", column: 0, row: 1, columnSpan: 3, children: "C" }),
+  ]),
+  { frame: { left: 10, top: 20, width: 420, height: 220 } },
+);
+const gridLayout = JSON.parse(await (await gridSlide.export({ format: "layout" })).text());
+const gridA = gridLayout.elements.find((element) => element.name === "grid-a");
+const gridB = gridLayout.elements.find((element) => element.name === "grid-b");
+const gridC = gridLayout.elements.find((element) => element.name === "grid-c");
+assert.deepEqual(gridA.frame, { left: 10, top: 20, width: 310, height: 50 });
+assert.deepEqual(gridB.frame, { left: 330, top: 20, width: 100, height: 50 });
+assert.deepEqual(gridC.frame, { left: 10, top: 90, width: 420, height: 150 });
+assert.match(presentation.inspect({ kind: "textbox", maxChars: 10000 }).ndjson, /grid-c/);
 
 const out = path.join(os.tmpdir(), `open-office-artifact-jsx-${process.pid}.pptx`);
 await (await PresentationFile.exportPptx(presentation)).save(out);

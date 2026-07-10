@@ -128,6 +128,7 @@ export function node(type, props = {}, children = []) {
 
 export const row = (props = {}, children = []) => node("row", props, children);
 export const column = (props = {}, children = []) => node("column", props, children);
+export const grid = (props = {}, children = []) => node("grid", props, children);
 export const layers = (props = {}, children = []) => node("layers", props, children);
 export const box = (props = {}, children = []) => node("box", props, children);
 export const paragraph = (props = {}, children = []) => node("paragraph", props, children);
@@ -279,6 +280,28 @@ function composeChildFrames(children, frame, direction, gap) {
   });
 }
 
+function normalizeTrack(track) {
+  if (typeof track === "number") return { mode: "fixed", value: track };
+  if (typeof track === "string") return track === "fixed" ? { mode: "fixed", value: 0 } : { mode: "fr", value: 1 };
+  return { mode: track?.mode || "fr", value: Number(track?.value ?? 1) };
+}
+
+function resolveGridTracks(total, tracks, fallbackCount, gap) {
+  const normalized = (tracks?.length ? tracks : Array.from({ length: fallbackCount }, () => ({ mode: "fr", value: 1 }))).map(normalizeTrack);
+  const fixed = normalized.reduce((sum, track) => track.mode === "fixed" ? sum + track.value : sum, 0);
+  const fr = normalized.reduce((sum, track) => track.mode === "fr" ? sum + Math.max(0, track.value) : sum, 0) || 1;
+  const available = Math.max(0, total - fixed - gap * Math.max(0, normalized.length - 1));
+  return normalized.map((track) => track.mode === "fixed" ? track.value : available * Math.max(0, track.value) / fr);
+}
+
+function gridChildFrame(frame, columns, rows, columnGap, rowGap, columnIndex, rowIndex, columnSpan = 1, rowSpan = 1) {
+  const left = frame.left + columns.slice(0, columnIndex).reduce((sum, value) => sum + value, 0) + columnGap * columnIndex;
+  const top = frame.top + rows.slice(0, rowIndex).reduce((sum, value) => sum + value, 0) + rowGap * rowIndex;
+  const width = columns.slice(columnIndex, columnIndex + columnSpan).reduce((sum, value) => sum + value, 0) + columnGap * Math.max(0, columnSpan - 1);
+  const height = rows.slice(rowIndex, rowIndex + rowSpan).reduce((sum, value) => sum + value, 0) + rowGap * Math.max(0, rowSpan - 1);
+  return { left, top, width, height };
+}
+
 function materializeComposeNode(slide, composeNode, frame) {
   if (typeof composeNode === "string" || typeof composeNode === "number") {
     return materializeComposeNode(slide, paragraph({}, [String(composeNode)]), frame);
@@ -292,6 +315,24 @@ function materializeComposeNode(slide, composeNode, frame) {
     const inner = innerFrame(frame, pad);
     const childFrames = composeChildFrames(children.filter(isComposeNode), inner, type, Number(props.gap || 0));
     return children.filter(isComposeNode).flatMap((child, index) => materializeComposeNode(slide, child, childFrames[index]));
+  }
+  if (type === "grid") {
+    const gridChildren = children.filter(isComposeNode);
+    const pad = normalizePadding(props.padding);
+    const inner = innerFrame(frame, pad);
+    const columnGap = Number(props.columnGap ?? props.gap ?? 0);
+    const rowGap = Number(props.rowGap ?? props.gap ?? 0);
+    const fallbackColumns = Math.max(1, props.columns?.length || Math.ceil(Math.sqrt(gridChildren.length || 1)));
+    const columns = resolveGridTracks(inner.width, props.columns, fallbackColumns, columnGap);
+    const fallbackRows = Math.max(1, props.rows?.length || Math.ceil((gridChildren.length || 1) / columns.length));
+    const rows = resolveGridTracks(inner.height, props.rows, fallbackRows, rowGap);
+    return gridChildren.flatMap((child, index) => {
+      const columnIndex = Math.min(columns.length - 1, Number(child.props?.column ?? child.props?.col ?? (index % columns.length)));
+      const rowIndex = Math.min(rows.length - 1, Number(child.props?.row ?? Math.floor(index / columns.length)));
+      const columnSpan = Math.min(columns.length - columnIndex, Math.max(1, Number(child.props?.columnSpan ?? 1)));
+      const rowSpan = Math.min(rows.length - rowIndex, Math.max(1, Number(child.props?.rowSpan ?? 1)));
+      return materializeComposeNode(slide, child, gridChildFrame(inner, columns, rows, columnGap, rowGap, columnIndex, rowIndex, columnSpan, rowSpan));
+    });
   }
   if (type === "layers") {
     const pad = normalizePadding(props.padding);
