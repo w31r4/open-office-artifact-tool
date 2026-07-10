@@ -900,6 +900,76 @@ class RangeSparklineFacade {
   add(type, sourceData, config = {}) { return this.range.worksheet.sparklineGroups.add({ ...config, type, targetRange: this.range, sourceData }); }
 }
 
+function xlsxSheetNameForFormula(name) {
+  const raw = String(name || "");
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(raw) ? raw : `'${raw.replaceAll("'", "''")}'`;
+}
+
+function xlsxQualifiedRangeRef(ref, defaultSheetName) {
+  const normalized = workbookRangeRef(ref);
+  const sheetName = normalized.sheetName || defaultSheetName;
+  return `${xlsxSheetNameForFormula(sheetName)}!${normalized.address}`;
+}
+
+function xlsxColorRgb(color, fallback = "FF0EA5E9") {
+  const raw = String(color || "").trim();
+  const hex = raw.startsWith("#") ? raw.slice(1) : raw;
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) return `FF${hex.toUpperCase()}`;
+  if (/^[0-9a-fA-F]{8}$/.test(hex)) return hex.toUpperCase();
+  return fallback;
+}
+
+function sparklineGroupExtXml(sheet) {
+  if (!sheet.sparklineGroups.items.length) return "";
+  const groups = sheet.sparklineGroups.items.map((group) => {
+    const attrs = [
+      `type="${attrEscape(group.type || "line")}"`,
+      group.displayHidden ? `displayHidden="1"` : "",
+      group.displayEmptyCellsAs ? `displayEmptyCellsAs="${attrEscape(group.displayEmptyCellsAs)}"` : "",
+      group.markers?.show ? `markers="1"` : "",
+      group.axis?.show ? `displayXAxis="1"` : "",
+      group.dateAxisRange ? `dateAxis="1"` : "",
+      group.lineWeight != null ? `lineWeight="${Number(group.lineWeight) || 1}"` : "",
+    ].filter(Boolean).join(" ");
+    const dateAxis = group.dateAxisRange ? `<x14:dateAxisRange>${xmlEscape(xlsxQualifiedRangeRef(group.dateAxisRange, sheet.name))}</x14:dateAxisRange>` : "";
+    const negative = group.negativeColor ? `<x14:colorNegative rgb="${xlsxColorRgb(group.negativeColor, "FFFF0000")}"/>` : "";
+    return `<x14:sparklineGroup ${attrs}><x14:colorSeries rgb="${xlsxColorRgb(group.seriesColor)}"/>${negative}${dateAxis}<x14:sparklines><x14:sparkline><xm:f>${xmlEscape(xlsxQualifiedRangeRef(group.sourceData, sheet.name))}</xm:f><xm:sqref>${xmlEscape(group.targetRange.address)}</xm:sqref></x14:sparkline></x14:sparklines></x14:sparklineGroup>`;
+  }).join("");
+  return `<extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">${groups}</x14:sparklineGroups></ext></extLst>`;
+}
+
+function parseXlsxBool(value) {
+  return value === "1" || value === "true";
+}
+
+function parseSparklineGroupsXml(sheet, xml) {
+  for (const match of String(xml || "").matchAll(/<x14:sparklineGroup\b([^>]*)>([\s\S]*?)<\/x14:sparklineGroup>/g)) {
+    const attrs = match[1] || "";
+    const body = match[2] || "";
+    const formula = decodeXml(/<xm:f[^>]*>([\s\S]*?)<\/xm:f>/.exec(body)?.[1] || "");
+    const targetRange = decodeXml(/<xm:sqref[^>]*>([\s\S]*?)<\/xm:sqref>/.exec(body)?.[1] || "");
+    if (!formula || !targetRange) continue;
+    const sourceData = workbookRangeRef(formula.replace(/^'([^']*(?:''[^']*)*)'!/, (_, sheetName) => `${sheetName.replaceAll("''", "'")}!`));
+    const type = /\btype="([^"]+)"/.exec(attrs)?.[1] || "line";
+    const seriesColor = /<x14:colorSeries[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1];
+    const negativeColor = /<x14:colorNegative[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1];
+    const dateAxisText = decodeXml(/<x14:dateAxisRange[^>]*>([\s\S]*?)<\/x14:dateAxisRange>/.exec(body)?.[1] || "");
+    sheet.sparklineGroups.add({
+      type,
+      targetRange,
+      sourceData,
+      dateAxisRange: dateAxisText || undefined,
+      seriesColor: seriesColor ? `#${seriesColor}` : undefined,
+      negativeColor: negativeColor ? `#${negativeColor}` : undefined,
+      markers: { show: parseXlsxBool(/\bmarkers="([^"]+)"/.exec(attrs)?.[1]) },
+      axis: { show: parseXlsxBool(/\bdisplayXAxis="([^"]+)"/.exec(attrs)?.[1]) },
+      displayHidden: parseXlsxBool(/\bdisplayHidden="([^"]+)"/.exec(attrs)?.[1]),
+      displayEmptyCellsAs: /\bdisplayEmptyCellsAs="([^"]+)"/.exec(attrs)?.[1],
+      lineWeight: Number(/\blineWeight="([^"]+)"/.exec(attrs)?.[1] || 1.5),
+    });
+  }
+}
+
 class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }
   add(ruleType, config = {}) { return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...config }); }
@@ -1653,7 +1723,8 @@ function worksheetXml(sheet, tableParts = [], drawingRelId) {
   const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => `<row r="${row + 1}">${cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell)).join("")}</row>`).join("");
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}</worksheet>`;
+  const sparklineXml = sparklineGroupExtXml(sheet);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
 function cellXml(address, cell) {
@@ -1679,6 +1750,7 @@ function parseWorksheetXml(sheet, xml) {
     if (text !== undefined) cell.value = decodeXml(text);
     else if (value !== undefined) cell.value = Number.isFinite(Number(value)) ? Number(value) : decodeXml(value);
   }
+  parseSparklineGroupsXml(sheet, xml);
 }
 
 class SlideCollection {
