@@ -2023,7 +2023,7 @@ export class TableElement {
     return parts.join("");
   }
 
-  toPptxShape(index) { return pptxTextShapeXml(index, this.name || this.id, "rect", this.position, this.values.map((row) => row.join(" | ")).join("\n")); }
+  toPptxShape(index) { return pptxTableXml(index, this); }
 }
 
 export class ChartElement {
@@ -2194,6 +2194,21 @@ function pptxPictureXml(index, name, alt, position, relId) {
   const p = position;
   const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
   return `<p:pic><p:nvPicPr><p:cNvPr id="${index + 2}" name="${attrEscape(name)}" descr="${attrEscape(alt)}"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+}
+
+function pptxTableXml(index, table) {
+  const p = table.position;
+  const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
+  const colWidth = Math.max(1, Math.floor(cx / Math.max(1, table.columns)));
+  const rowHeight = Math.max(1, Math.floor(cy / Math.max(1, table.rows)));
+  const grid = Array.from({ length: Math.max(1, table.columns) }, () => `<a:gridCol w="${colWidth}"/>`).join("");
+  const rows = Array.from({ length: Math.max(1, table.rows) }, (_, rowIndex) => {
+    const cells = Array.from({ length: Math.max(1, table.columns) }, (_, colIndex) => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(table.values[rowIndex]?.[colIndex] ?? "")}</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>`).join("");
+    return `<a:tr h="${rowHeight}">${cells}</a:tr>`;
+  }).join("");
+  const firstRow = table.styleOptions.headerRow ? 1 : 0;
+  const bandRow = table.styleOptions.bandedRows ? 1 : 0;
+  return `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${index + 2}" name="${attrEscape(table.name || table.id)}"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="${firstRow}" bandRow="${bandRow}"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid>${grid}</a:tblGrid>${rows}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
 }
 
 function slideXml(slide, imageParts = []) {
