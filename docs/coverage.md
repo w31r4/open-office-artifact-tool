@@ -37,12 +37,12 @@ Status legend:
 | Requirement | Status | Notes |
 | --- | --- | --- |
 | `Presentation.create`, slides collection, `slide.shapes.add` | done | Basic slide/shape/text facade works. |
-| `PresentationFile.exportPptx` / `importPptx` | partial | Minimal PPTX round trip for text shapes works. Needs themes, masters, layouts, images, tables, charts, notes, comments, connectors. |
-| `presentation.inspect` slide/textbox/shape/layout | partial | Basic stable records implemented. Needs all kinds and target context windows. |
-| `presentation.resolve` | partial | Resolves slides/shapes. Needs chart/table/image/thread/text-range. |
-| `slide.export({format:'layout'})` | done | Minimal layout JSON implemented. |
-| `presentation.export` image preview/montage | partial | SVG preview implemented. Needs PNG/JPEG/WebP and montage. |
-| Compose/JSX layout + token parser | partial | Helper-node compose engine implemented for row, column, grid, layers, box, paragraph, run, shape, and rule with fill/hug/fixed sizing, fr/fixed grid tracks, spans, gaps, padding, stable names/ids, text class tokens, inspect, resolve, layout JSON, and PPTX roundtrip. `slide.autoLayout` now places existing shapes with horizontal/vertical flow, frame, gap, padding, and alignment. Package exports now include `./presentation-jsx`, `./presentation-jsx/jsx-runtime`, and `./presentation-jsx/jsx-dev-runtime` with `jsx`, `jsxs`, `jsxDEV`, `Fragment`, helper nodes, and function component support. Needs table/chart/image nodes, fuller token parser, and collision detection. |
+| `PresentationFile.exportPptx` / `importPptx` | partial | Minimal PPTX round trip for text shapes works; table/chart/image facades export as visible PPTX text placeholders so durable files retain user-visible content. Needs true PPTX table/chart/image OOXML, themes, masters, layouts, notes, comments, connectors. |
+| `presentation.inspect` slide/textbox/shape/layout | partial | Stable records implemented for slide, textbox, shape, table, chart, image, and layout. Needs notes/thread/text-range kinds, search filtering, include/exclude shaping, and target context windows. |
+| `presentation.resolve` | partial | Resolves slides, shapes, tables, charts, and images. Needs thread/text-range anchors and richer imported-object identity preservation. |
+| `slide.export({format:'layout'})` | done | Minimal layout JSON implemented for shapes, textboxes, tables, charts, and images. |
+| `presentation.export` image preview/montage | partial | SVG preview implemented for shapes, tables, charts, and image placeholders. Needs PNG/JPEG/WebP and montage. |
+| Compose/JSX layout + token parser | partial | Helper-node compose engine implemented for row, column, grid, layers, box, paragraph, run, shape, table, chart, image, and rule with fill/hug/fixed sizing, fr/fixed grid tracks, spans, gaps, padding, stable names/ids, text class tokens, inspect, resolve, layout JSON, and PPTX roundtrip. `slide.autoLayout` now places existing shapes with horizontal/vertical flow, frame, gap, padding, and alignment. Package exports now include `./presentation-jsx`, `./presentation-jsx/jsx-runtime`, and `./presentation-jsx/jsx-dev-runtime` with `jsx`, `jsxs`, `jsxDEV`, `Fragment`, helper nodes, and function component support. Needs fuller token parser, real native PPTX table/chart/image XML, and collision detection. |
 | Overlap/overflow/template fidelity QA | todo | Required before claiming skill parity. |
 
 ## Documents skill target
@@ -67,7 +67,7 @@ Status legend:
 
 1. Replace the hand-written minimal ZIP/XML emitters with a safer OOXML package layer.
 2. Add a real formula dependency graph and a broader Excel formula catalog.
-3. Extend the presentation compose/layout engine with table, chart, image nodes, richer stable named layout trees, and collision detection.
+3. Replace presentation table/chart/image placeholders with true native PPTX OOXML parts while preserving inspect/resolve/layout behavior.
 4. Add raster rendering via a pluggable renderer (`sharp`, browser, canvas, or Poppler/LibreOffice adapters).
 5. Add DOCX style/table/list/comment/tracked-change helpers.
 6. Add robust PDF creation/extraction/rendering adapters.

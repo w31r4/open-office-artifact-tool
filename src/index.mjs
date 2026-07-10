@@ -134,6 +134,9 @@ export const box = (props = {}, children = []) => node("box", props, children);
 export const paragraph = (props = {}, children = []) => node("paragraph", props, children);
 export const run = (props = {}, children = []) => node("run", props, children);
 export const shape = (props = {}, children = []) => node("shape", props, children);
+export const image = (props = {}, children = []) => node("image", props, children);
+export const table = (props = {}, children = []) => node("table", props, children);
+export const chart = (props = {}, children = []) => node("chart", props, children);
 export const rule = (props = {}, children = []) => node("rule", props, children);
 
 function normalizeComposeChildren(children) {
@@ -381,6 +384,15 @@ function materializeComposeNode(slide, composeNode, frame) {
     });
     shape.text.style = parseTextStyle(props);
     return [shape];
+  }
+  if (type === "table") {
+    return [slide.tables.add({ ...props, position: frame })];
+  }
+  if (type === "chart") {
+    return [slide.charts.add(props.chartType || props.type || "bar", { ...props, position: frame })];
+  }
+  if (type === "image") {
+    return [slide.images.add({ ...props, position: frame, alt: props.alt || textFromComposeChildren(children) || props.name })];
   }
   if (type === "rule") {
     const horizontal = (props.width ?? frame.width) >= (props.height ?? props.weight ?? 2);
@@ -954,7 +966,9 @@ export class Presentation {
       { kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
       { kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
       { kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
-      { kind: "api", name: "slide.charts.add", summary: "Roadmap: native chart facade compatible with agent chart workflows." },
+      { kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
+      { kind: "api", name: "slide.charts.add", summary: "Add an inspectable chart facade with chartType, title, categories, series, layout JSON, SVG preview, and PPTX placeholder output." },
+      { kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
     ];
     const records = catalog.filter((item) => q === "*" || item.name.toLowerCase().includes(q) || item.summary.toLowerCase().includes(q));
     return ndjson(records, options.maxChars ?? Infinity);
@@ -977,6 +991,23 @@ class ShapeCollection {
   [Symbol.iterator]() { return this.items[Symbol.iterator](); }
 }
 
+class ElementCollection {
+  constructor(slide, ElementClass) { this.slide = slide; this.ElementClass = ElementClass; this.items = []; }
+  add(...args) { const element = new this.ElementClass(this.slide, ...args); this.items.push(element); return element; }
+  getItemAt(index) { return this.items[index]; }
+  [Symbol.iterator]() { return this.items[Symbol.iterator](); }
+}
+
+function normalizeFrame(config = {}, fallback = { left: 0, top: 0, width: 240, height: 160 }) {
+  const source = config.position || config.frame || config;
+  return {
+    left: source.left ?? fallback.left,
+    top: source.top ?? fallback.top,
+    width: source.width ?? fallback.width,
+    height: source.height ?? fallback.height,
+  };
+}
+
 function resolveAutoLayoutFrame(slide, frame) {
   if (frame === "slide") return slide.frame;
   if (frame?.position) return frame.position;
@@ -990,9 +1021,9 @@ export class Slide {
     this.id = aid("sl");
     this.name = options.name || "";
     this.shapes = new ShapeCollection(this);
-    this.images = [];
-    this.tables = [];
-    this.charts = [];
+    this.images = new ElementCollection(this, ImageElement);
+    this.tables = new ElementCollection(this, TableElement);
+    this.charts = new ElementCollection(this, ChartElement);
     this.speakerNotes = { text: "" };
     this.background = { fill: "white" };
   }
@@ -1003,16 +1034,19 @@ export class Slide {
   inspectRecords(kinds) {
     const records = [];
     if (kinds.has("layout")) records.push({ kind: "layout", layoutId: `${this.id}/layout`, name: "Blank", type: "blank" });
-    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), textShapes: this.shapes.items.filter((s) => s.text.value).length });
+    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length });
     for (const shape of this.shapes) {
       if (kinds.has("textbox") && shape.text.value) records.push(shape.inspectRecord("textbox"));
       else if (kinds.has("shape")) records.push(shape.inspectRecord("shape"));
     }
+    if (kinds.has("table")) records.push(...this.tables.items.map((table) => table.inspectRecord()));
+    if (kinds.has("chart")) records.push(...this.charts.items.map((chart) => chart.inspectRecord()));
+    if (kinds.has("image")) records.push(...this.images.items.map((image) => image.inspectRecord()));
     return records;
   }
 
-  title() { return this.shapes.items.find((shape) => shape.text.value)?.text.value || ""; }
-  resolve(id) { return this.shapes.items.find((shape) => shape.id === id); }
+  title() { return this.shapes.items.find((shape) => shape.text.value)?.text.value || this.charts.items[0]?.title || ""; }
+  resolve(id) { return [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items].find((element) => element.id === id); }
 
   async export(options = {}) {
     if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(), null, 2), { type: LAYOUT_MIME });
@@ -1020,15 +1054,21 @@ export class Slide {
   }
 
   layoutJson() {
-    return { schema: "open-office-artifact.layout/v1", unit: "px", slide: { id: this.id, slide: this.index + 1, frame: this.frame }, elements: this.shapes.items.map((shape) => shape.layoutJson()) };
+    return {
+      schema: "open-office-artifact.layout/v1",
+      unit: "px",
+      slide: { id: this.id, slide: this.index + 1, frame: this.frame },
+      elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items].map((element) => element.layoutJson()),
+    };
   }
 
   toSvg() {
     const { width, height } = this.presentation.slideSize;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${xmlEscape(this.background.fill || "white")}"/>${this.shapes.items.map((shape) => shape.toSvg()).join("")}</svg>`;
+    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items].map((element) => element.toSvg()).join("");
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${xmlEscape(this.background.fill || "white")}"/>${elements}</svg>`;
   }
 
-  toProto() { return { id: this.id, shapes: this.shapes.items.map((shape) => shape.layoutJson()) }; }
+  toProto() { return { id: this.id, elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items].map((element) => element.layoutJson()) }; }
 
   compose(composeNode, options = {}) {
     const frame = options.frame || { left: 72, top: 64, width: this.presentation.slideSize.width - 144, height: this.presentation.slideSize.height - 128 };
@@ -1109,8 +1149,8 @@ export class Shape {
 
   toSvg() {
     const p = this.position;
-    const fill = typeof this.fill === "string" ? this.fill : this.fill?.color || "transparent";
-    const stroke = this.line?.fill || "#334155";
+    const fill = typeof this.fill === "string" ? resolveColorToken(this.fill, this.fill) : this.fill?.color || "transparent";
+    const stroke = resolveColorToken(this.line?.fill || this.line?.color || "#334155", "#334155");
     const sw = this.line?.width ?? 1;
     const rect = this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`
@@ -1118,6 +1158,146 @@ export class Shape {
     const text = this.text.value ? `<text x="${p.left + 12}" y="${p.top + 36}" font-family="Arial" font-size="${this.text.style.fontSize || 24}" font-weight="${this.text.style.bold ? "700" : "400"}" fill="${xmlEscape(this.text.style.color || "#0f172a")}">${xmlEscape(this.text.value)}</text>` : "";
     return rect + text;
   }
+
+  toPptxShape(index) {
+    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value);
+  }
+}
+
+class TableCellFacade {
+  constructor(table, row, column) { this.table = table; this.row = row; this.column = column; this.text = new TextFrame(); }
+  get value() { return this.table.values[this.row]?.[this.column] ?? ""; }
+  set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
+}
+
+export class TableElement {
+  constructor(slide, config = {}) {
+    this.slide = slide;
+    this.id = config.id || aid("tb");
+    this.name = config.name || "";
+    this.rows = Number(config.rows || config.values?.length || 1);
+    this.columns = Number(config.columns || config.values?.[0]?.length || 1);
+    this.position = normalizeFrame(config, { left: 0, top: 0, width: 320, height: 160 });
+    this.values = Array.from({ length: this.rows }, (_, r) => Array.from({ length: this.columns }, (_, c) => config.values?.[r]?.[c] ?? ""));
+    this.style = config.style;
+    this.styleOptions = config.styleOptions || {};
+    this.cells = { set: (row, column, value) => { this.getCell(row, column).value = value; }, block: (range) => ({ table: this, range }) };
+    this.borders = { assign: (configValue) => { this.border = configValue; } };
+  }
+
+  ensureCell(row, column) {
+    while (this.values.length <= row) this.values.push([]);
+    while (this.values[row].length <= column) this.values[row].push("");
+  }
+
+  getCell(row, column) { return new TableCellFacade(this, row, column); }
+  merge(range) { this.mergeRange = range; }
+
+  inspectRecord() {
+    const p = this.position;
+    return { kind: "table", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, rows: this.rows, cols: this.columns, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", values: this.values };
+  }
+
+  layoutJson() { return { kind: "table", id: this.id, name: this.name, frame: this.position, rows: this.rows, columns: this.columns, values: this.values, style: this.style, styleOptions: this.styleOptions }; }
+
+  toSvg() {
+    const p = this.position;
+    const cellW = p.width / Math.max(1, this.columns);
+    const cellH = p.height / Math.max(1, this.rows);
+    const parts = [`<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>`];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.columns; c++) {
+        const x = p.left + c * cellW;
+        const y = p.top + r * cellH;
+        const fill = this.styleOptions.headerRow && r === 0 ? "#0f172a" : r % 2 ? "#f8fafc" : "#ffffff";
+        const color = this.styleOptions.headerRow && r === 0 ? "#ffffff" : "#0f172a";
+        parts.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${fill}" stroke="#cbd5e1"/>`);
+        parts.push(`<text x="${x + 6}" y="${y + Math.min(22, cellH - 6)}" font-family="Arial" font-size="13" fill="${color}">${xmlEscape(this.values[r]?.[c] ?? "")}</text>`);
+      }
+    }
+    return parts.join("");
+  }
+
+  toPptxShape(index) { return pptxTextShapeXml(index, this.name || this.id, "rect", this.position, this.values.map((row) => row.join(" | ")).join("\n")); }
+}
+
+export class ChartElement {
+  constructor(slide, chartType = "bar", config = {}) {
+    this.slide = slide;
+    this.id = config.id || aid("ch");
+    this.name = config.name || "";
+    this.chartType = chartType || config.chartType || "bar";
+    this.position = normalizeFrame(config, { left: 0, top: 0, width: 360, height: 220 });
+    this.title = config.title || "";
+    this.categories = config.categories || [];
+    this.series = config.series || [];
+    this.hasLegend = config.hasLegend ?? this.series.length > 1;
+  }
+
+  inspectRecord() {
+    const p = this.position;
+    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, chartType: this.chartType, title: this.title, series: this.series.length, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
+  }
+
+  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series }; }
+
+  toSvg() {
+    const p = this.position;
+    const values = this.series[0]?.values || [];
+    const max = Math.max(1, ...values.map((value) => Number(value) || 0));
+    const plot = { left: p.left + 36, top: p.top + 42, width: Math.max(0, p.width - 56), height: Math.max(0, p.height - 72) };
+    const barW = values.length ? plot.width / values.length * 0.65 : 0;
+    const gap = values.length ? plot.width / values.length * 0.35 : 0;
+    const bars = values.map((value, index) => {
+      const h = plot.height * (Number(value) || 0) / max;
+      const x = plot.left + index * (barW + gap) + gap / 2;
+      const y = plot.top + plot.height - h;
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="#0ea5e9"/>`;
+    }).join("");
+    const labels = this.categories.map((category, index) => `<text x="${plot.left + index * (barW + gap)}" y="${p.top + p.height - 12}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("");
+    return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/><text x="${p.left + 12}" y="${p.top + 24}" font-family="Arial" font-size="16" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.chartType)}</text>${bars}${labels}`;
+  }
+
+  toPptxShape(index) { return pptxTextShapeXml(index, this.name || this.id, "rect", this.position, `${this.title || this.chartType}\n${this.series.map((series) => `${series.name || "Series"}: ${(series.values || []).join(", ")}`).join("\n")}`); }
+}
+
+export class ImageElement {
+  constructor(slide, config = {}) {
+    this.slide = slide;
+    this.id = config.id || aid("im");
+    this.name = config.name || "";
+    this.position = normalizeFrame(config, { left: 0, top: 0, width: 320, height: 180 });
+    this.alt = config.alt || "";
+    this.prompt = config.prompt;
+    this.uri = config.uri;
+    this.dataUrl = config.dataUrl;
+    this.contentType = config.contentType;
+    this.fit = config.fit || "contain";
+    this.geometry = config.geometry || "rect";
+    this.borderRadius = config.borderRadius;
+  }
+
+  get frame() { return this.position; }
+  set frame(value) { this.position = normalizeFrame(value, this.position); }
+  replace(config = {}) { Object.assign(this, config); }
+
+  inspectRecord() {
+    const p = this.position;
+    return { kind: "image", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, alt: this.alt || undefined, prompt: this.prompt || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", fit: this.fit };
+  }
+
+  layoutJson() { return { kind: "image", id: this.id, name: this.name, frame: this.position, alt: this.alt, prompt: this.prompt, uri: this.uri, fit: this.fit, geometry: this.geometry, borderRadius: this.borderRadius }; }
+
+  toSvg() {
+    const p = this.position;
+    const label = this.alt || this.prompt || this.uri || "image";
+    const rect = this.geometry === "ellipse"
+      ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="#e0f2fe" stroke="#0284c7"/>`
+      : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="#e0f2fe" stroke="#0284c7"/>`;
+    return `${rect}<text x="${p.left + 12}" y="${p.top + 28}" font-family="Arial" font-size="14" fill="#075985">${xmlEscape(label)}</text>`;
+  }
+
+  toPptxShape(index) { return pptxTextShapeXml(index, this.name || this.id, this.geometry === "ellipse" ? "ellipse" : "rect", this.position, this.alt || this.prompt || "Image"); }
 }
 
 export class PresentationFile {
@@ -1155,12 +1335,16 @@ function presentationXml(presentation) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldSz cx="12192000" cy="6858000"/><p:sldIdLst>${ids}</p:sldIdLst></p:presentation>`;
 }
 
+function pptxTextShapeXml(index, name, geometry, position, text = "") {
+  const p = position;
+  const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
+  const paragraphs = String(text || "").split(/\r?\n/).map((line) => `<a:p><a:r><a:t>${xmlEscape(line)}</a:t></a:r></a:p>`).join("");
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="${attrEscape(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
+}
+
 function slideXml(slide) {
-  const shapes = slide.shapes.items.map((shape, index) => {
-    const p = shape.position;
-    const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
-    return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="${attrEscape(shape.name || shape.id)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${attrEscape(shape.geometry === "textbox" ? "rect" : shape.geometry)}"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(shape.text.value)}</a:t></a:r></a:p></p:txBody></p:sp>`;
-  }).join("");
+  const elements = [...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items];
+  const shapes = elements.map((element, index) => element.toPptxShape(index)).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes}</p:spTree></p:cSld></p:sld>`;
 }
 

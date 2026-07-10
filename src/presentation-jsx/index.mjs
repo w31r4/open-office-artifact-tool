@@ -1,7 +1,9 @@
 import {
   box,
+  chart,
   column,
   grid,
+  image,
   layers,
   node,
   paragraph,
@@ -9,6 +11,7 @@ import {
   rule,
   run,
   shape,
+  table,
 } from "../index.mjs";
 
 export const Fragment = "fragment";
@@ -35,8 +38,10 @@ export function createElement(type, props = {}) {
 
 export {
   box,
+  chart,
   column,
   grid,
+  image,
   layers,
   node,
   paragraph,
@@ -44,4 +49,5 @@ export {
   rule,
   run,
   shape,
+  table,
 };

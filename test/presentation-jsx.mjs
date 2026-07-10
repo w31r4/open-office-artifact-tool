@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { FileBlob, Presentation, PresentationFile } from "open-office-artifact-tool";
-import { Fragment, grid as gridNode, paragraph as paragraphNode } from "open-office-artifact-tool/presentation-jsx";
+import { Fragment, chart as chartNode, grid as gridNode, image as imageNode, paragraph as paragraphNode, table as tableNode } from "open-office-artifact-tool/presentation-jsx";
 import { jsx, jsxs } from "open-office-artifact-tool/presentation-jsx/jsx-runtime";
 import { jsxDEV } from "open-office-artifact-tool/presentation-jsx/jsx-dev-runtime";
 
@@ -107,6 +107,61 @@ assert.deepEqual(gridA.frame, { left: 10, top: 20, width: 310, height: 50 });
 assert.deepEqual(gridB.frame, { left: 330, top: 20, width: 100, height: 50 });
 assert.deepEqual(gridC.frame, { left: 10, top: 90, width: 420, height: 150 });
 assert.match(presentation.inspect({ kind: "textbox", maxChars: 10000 }).ndjson, /grid-c/);
+
+const dataSlide = presentation.slides.add();
+const directTable = dataSlide.tables.add({
+  name: "direct-kpi-table",
+  rows: 2,
+  columns: 3,
+  position: { left: 40, top: 40, width: 360, height: 96 },
+  values: [["Metric", "Now", "Delta"], ["Revenue", "$12M", "+18%"]],
+  styleOptions: { headerRow: true, bandedRows: true },
+});
+directTable.cells.set(1, 1, "$12.4M");
+const directChart = dataSlide.charts.add("bar", {
+  name: "direct-arr-chart",
+  title: "ARR trend",
+  position: { left: 430, top: 40, width: 320, height: 200 },
+  categories: ["Q1", "Q2", "Q3"],
+  series: [{ name: "ARR", values: [12, 18, 24] }],
+});
+const directImage = dataSlide.images.add({
+  name: "direct-product-image",
+  alt: "Product screenshot placeholder",
+  prompt: "dashboard product screenshot",
+  position: { left: 40, top: 180, width: 300, height: 140 },
+  fit: "cover",
+  borderRadius: "rounded-xl",
+});
+assert.equal(presentation.resolve(directTable.id).getCell(1, 1).value, "$12.4M");
+assert.equal(presentation.resolve(directChart.id).title, "ARR trend");
+assert.equal(presentation.resolve(directImage.id).alt, "Product screenshot placeholder");
+
+dataSlide.compose(
+  gridNode({
+    columns: [{ mode: "fr", value: 1 }, { mode: "fr", value: 1 }],
+    rows: [{ mode: "fixed", value: 130 }, { mode: "fixed", value: 170 }],
+    columnGap: 18,
+    rowGap: 18,
+  }, [
+    tableNode({ name: "jsx-table", rows: 2, columns: 2, values: [["A", "B"], [1, 2]], styleOptions: { headerRow: true } }),
+    chartNode({ name: "jsx-chart", chartType: "bar", title: "Pipeline", categories: ["New", "Won"], series: [{ name: "Deals", values: [7, 4] }] }),
+    imageNode({ name: "jsx-image", row: 1, columnSpan: 2, alt: "Generated hero", prompt: "abstract hero image", fit: "cover" }),
+  ]),
+  { frame: { left: 40, top: 340, width: 720, height: 320 } },
+);
+const objectInspect = presentation.inspect({ kind: "table,chart,image", maxChars: 12000 }).ndjson;
+assert.match(objectInspect, /direct-kpi-table/);
+assert.match(objectInspect, /jsx-table/);
+assert.match(objectInspect, /direct-arr-chart/);
+assert.match(objectInspect, /jsx-chart/);
+assert.match(objectInspect, /direct-product-image/);
+assert.match(objectInspect, /jsx-image/);
+const objectLayout = JSON.parse(await (await dataSlide.export({ format: "layout" })).text());
+assert.ok(objectLayout.elements.some((element) => element.kind === "table" && element.name === "jsx-table"));
+assert.ok(objectLayout.elements.some((element) => element.kind === "chart" && element.name === "jsx-chart"));
+assert.ok(objectLayout.elements.some((element) => element.kind === "image" && element.name === "jsx-image"));
+assert.match(await (await dataSlide.export({ format: "svg" })).text(), /ARR trend/);
 
 const out = path.join(os.tmpdir(), `open-office-artifact-jsx-${process.pid}.pptx`);
 await (await PresentationFile.exportPptx(presentation)).save(out);

@@ -13,7 +13,7 @@ The goal is not to vendor or copy agent's reference bundle. This package rebuild
 
 ## Current status
 
-This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. Fidelity, charts, comments, advanced OOXML, high-quality raster rendering, and template QA are roadmap work.
+This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The presentation facade now includes compose/JSX layout plus inspectable shape, table, chart, and image-placeholder objects. Fidelity, comments, advanced OOXML, high-quality raster rendering, and template QA are roadmap work.
 
 ## Usage
 
