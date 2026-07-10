@@ -485,11 +485,72 @@ class CellStore {
   }
 }
 
+function workbookRangeRef(rangeOrRef) {
+  if (rangeOrRef instanceof Range) return { sheetName: rangeOrRef.worksheet.name, address: rangeToAddress(rangeOrRef.bounds) };
+  if (typeof rangeOrRef === "string") {
+    const bang = rangeOrRef.lastIndexOf("!");
+    return bang === -1 ? { sheetName: undefined, address: rangeOrRef } : { sheetName: rangeOrRef.slice(0, bang).replace(/^'|'$/g, ""), address: rangeOrRef.slice(bang + 1) };
+  }
+  if (rangeOrRef?.cell) return workbookRangeRef(rangeOrRef.cell);
+  if (rangeOrRef?.range) return workbookRangeRef(rangeOrRef.range);
+  return { sheetName: undefined, address: "A1" };
+}
+
+class CommentThread {
+  constructor(workbook, target, text, author) {
+    this.workbook = workbook;
+    this.id = aid("th");
+    this.target = workbookRangeRef(target);
+    this.author = author || workbook.comments.self?.displayName || "User";
+    this.comments = [{ author: this.author, text: String(text ?? "") }];
+    this.resolved = false;
+  }
+
+  addReply(text) {
+    this.comments.push({ author: this.workbook.comments.self?.displayName || this.author, text: String(text ?? "") });
+    return this;
+  }
+
+  resolve() { this.resolved = true; return this; }
+  reopen() { this.resolved = false; return this; }
+
+  inspectRecord() {
+    return { kind: "thread", id: this.id, sheet: this.target.sheetName, address: this.target.address, author: this.author, resolved: this.resolved, replies: Math.max(0, this.comments.length - 1), textPreview: this.comments.map((comment) => comment.text).join("\n").slice(0, 300) };
+  }
+
+  toJSON() { return { id: this.id, target: this.target, author: this.author, comments: this.comments, resolved: this.resolved }; }
+}
+
+class CommentsCollection {
+  constructor(workbook) { this.workbook = workbook; this.self = undefined; this.threads = []; }
+  setSelf(self) { this.self = { displayName: self?.displayName || "User" }; return this.self; }
+  addThread(target, text) { const thread = new CommentThread(this.workbook, target, text, this.self?.displayName); this.threads.push(thread); return thread; }
+  getItem(id) { return this.threads.find((thread) => thread.id === id); }
+  toJSON() { return { self: this.self, threads: this.threads.map((thread) => thread.toJSON()) }; }
+}
+
+class WorksheetRuleCollection {
+  constructor(worksheet, kind) { this.worksheet = worksheet; this.kind = kind; this.items = []; }
+  add(config = {}) { const record = { id: aid(this.kind === "dataValidation" ? "dv" : "cf"), kind: this.kind, sheet: this.worksheet.name, ...config }; this.items.push(record); return record; }
+  deleteAll() { this.items = []; }
+  clear() { this.deleteAll(); }
+  inspectRecords() { return this.items.map((item) => ({ ...item })); }
+  toJSON() { return this.items.map((item) => ({ ...item })); }
+}
+
+class RangeConditionalFormatFacade {
+  constructor(range) { this.range = range; }
+  add(ruleType, config = {}) { return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...config }); }
+  addCustom(expression, format = {}) { return this.add("expression", { formula: expression, format }); }
+  deleteAll() { this.range.worksheet.conditionalFormattings.items = this.range.worksheet.conditionalFormattings.items.filter((item) => item.range !== rangeToAddress(this.range.bounds)); }
+  clear() { this.deleteAll(); }
+}
+
 export class Workbook {
   constructor() {
     this.id = aid("wb");
     this.worksheets = new WorksheetCollection(this);
-    this.comments = { setSelf() {}, addThread: () => ({ id: aid("th"), replies: [] }) };
+    this.comments = new CommentsCollection(this);
   }
 
   static create() {
@@ -523,8 +584,13 @@ export class Workbook {
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("formula")) records.push(...sheet.formulaRecords(options));
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
+      if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
+      if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
     }
-    return ndjson(records.filter(Boolean), options.maxChars ?? Infinity);
+    if (kinds.has("thread")) records.push(...this.comments.threads.map((thread) => thread.inspectRecord()));
+    const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
+    const filtered = search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records;
+    return ndjson(filtered.filter(Boolean), options.maxChars ?? Infinity);
   }
 
   trace(reference, options = {}) {
@@ -570,7 +636,13 @@ export class Workbook {
 
   resolve(id) {
     if (id === this.id) return this;
-    for (const sheet of this.worksheets) if (sheet.id === id) return sheet;
+    const thread = this.comments.getItem(id);
+    if (thread) return thread;
+    for (const sheet of this.worksheets) {
+      if (sheet.id === id) return sheet;
+      const rule = [...sheet.dataValidations.items, ...sheet.conditionalFormattings.items].find((item) => item.id === id);
+      if (rule) return rule;
+    }
     return undefined;
   }
 
@@ -584,6 +656,9 @@ export class Workbook {
       { kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, and styles." },
       { kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet or range in the current clean-room MVP." },
       { kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell." },
+      { kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
+      { kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
+      { kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
       { kind: "formula", name: "fx.SUM", category: "math-trig", examples: ["=SUM(A1:A10)"] },
       { kind: "formula", name: "fx.PMT", category: "financial", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
     ];
@@ -607,6 +682,8 @@ export class Worksheet {
     this.shapes = [];
     this.images = [];
     this.tables = [];
+    this.dataValidations = new WorksheetRuleCollection(this, "dataValidation");
+    this.conditionalFormattings = new WorksheetRuleCollection(this, "conditionalFormat");
     this.freezePanes = { freezeRows() {}, freezeColumns() {}, unfreeze() {} };
     this.showGridLines = true;
   }
@@ -752,6 +829,19 @@ export class Range {
     for (let r = this.bounds.top; r <= this.bounds.bottom; r++) for (let c = this.bounds.left; c <= this.bounds.right; c++) this.worksheet.store.cells.delete(makeCellAddress(r, c));
   }
 
+  get dataValidation() {
+    const address = rangeToAddress(this.bounds);
+    return this.worksheet.dataValidations.items.find((item) => item.range === address)?.rule ?? null;
+  }
+
+  set dataValidation(value) {
+    const address = rangeToAddress(this.bounds);
+    this.worksheet.dataValidations.items = this.worksheet.dataValidations.items.filter((item) => item.range !== address);
+    if (value != null) this.worksheet.dataValidations.add({ range: address, ...value });
+  }
+
+  get conditionalFormats() { return new RangeConditionalFormatFacade(this); }
+
   merge() {}
   unmerge() {}
   fillDown() {}
@@ -824,6 +914,35 @@ function evaluateFormula(sheet, formula) {
   }
 }
 
+function workbookMetadata(workbook) {
+  return {
+    version: 1,
+    comments: workbook.comments.toJSON(),
+    sheets: workbook.worksheets.items.map((sheet) => ({
+      name: sheet.name,
+      dataValidations: sheet.dataValidations.toJSON(),
+      conditionalFormattings: sheet.conditionalFormattings.toJSON(),
+    })),
+  };
+}
+
+function applyWorkbookMetadata(workbook, metadata = {}) {
+  if (metadata.comments?.self) workbook.comments.setSelf(metadata.comments.self);
+  for (const threadData of metadata.comments?.threads || []) {
+    const thread = new CommentThread(workbook, threadData.target, threadData.comments?.[0]?.text || "", threadData.author);
+    thread.id = threadData.id || thread.id;
+    thread.comments = threadData.comments || thread.comments;
+    thread.resolved = Boolean(threadData.resolved);
+    workbook.comments.threads.push(thread);
+  }
+  for (const sheetData of metadata.sheets || []) {
+    const sheet = workbook.worksheets.getItem(sheetData.name);
+    if (!sheet) continue;
+    sheet.dataValidations.items = (sheetData.dataValidations || []).map((item) => ({ ...item }));
+    sheet.conditionalFormattings.items = (sheetData.conditionalFormattings || []).map((item) => ({ ...item }));
+  }
+}
+
 export class SpreadsheetFile {
   static async exportXlsx(workbook) {
     workbook.recalculate();
@@ -833,6 +952,7 @@ export class SpreadsheetFile {
     zip.file("xl/workbook.xml", workbookXml(workbook));
     zip.file("xl/_rels/workbook.xml.rels", workbookRelsXml(workbook.worksheets.items.length));
     zip.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0"/></cellXfs></styleSheet>`);
+    zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
     workbook.worksheets.items.forEach((sheet, index) => zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet)));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
     return new FileBlob(bytes, { type: XLSX_MIME });
@@ -849,6 +969,8 @@ export class SpreadsheetFile {
       const xml = await zip.file(`xl/worksheets/sheet${index}.xml`)?.async("text");
       if (xml) parseWorksheetXml(sheet, xml);
     }
+    const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
+    if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
     workbook.recalculate();
     return workbook;
   }
@@ -856,7 +978,7 @@ export class SpreadsheetFile {
 
 function xlsxContentTypes(sheetCount) {
   const sheets = Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}</Types>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}</Types>`;
 }
 
 function relsXml(rels) {
@@ -874,6 +996,30 @@ function workbookRelsXml(sheetCount) {
   return relsXml(rels);
 }
 
+function dataValidationsXml(sheet) {
+  if (sheet.dataValidations.items.length === 0) return "";
+  const rules = sheet.dataValidations.items.map((item) => {
+    const rule = item.rule || item;
+    const type = rule.type || "custom";
+    const operator = rule.operator ? ` operator="${attrEscape(rule.operator)}"` : "";
+    const valuesFormula = Array.isArray(rule.values) ? `"${rule.values.map((value) => String(value).replaceAll('"', '""')).join(",")}"` : undefined;
+    const formula1 = rule.formula1 ?? valuesFormula;
+    const formula2 = rule.formula2;
+    return `<dataValidation type="${attrEscape(type)}"${operator} allowBlank="1" sqref="${attrEscape(item.range || "A1")}">${formula1 != null ? `<formula1>${xmlEscape(formula1)}</formula1>` : ""}${formula2 != null ? `<formula2>${xmlEscape(formula2)}</formula2>` : ""}</dataValidation>`;
+  }).join("");
+  return `<dataValidations count="${sheet.dataValidations.items.length}">${rules}</dataValidations>`;
+}
+
+function conditionalFormattingXml(sheet) {
+  return sheet.conditionalFormattings.items.map((item, index) => {
+    const ruleType = item.ruleType || "expression";
+    const type = ruleType === "cellIs" || ruleType === "CellValue" ? "cellIs" : ruleType === "containsText" ? "containsText" : "expression";
+    const operator = item.operator ? ` operator="${attrEscape(item.operator)}"` : "";
+    const formula = Array.isArray(item.formula) ? item.formula[0] : item.formula || item.expression || "TRUE";
+    return `<conditionalFormatting sqref="${attrEscape(item.range || "A1")}"><cfRule type="${attrEscape(type)}" priority="${index + 1}"${operator}><formula>${xmlEscape(formula)}</formula></cfRule></conditionalFormatting>`;
+  }).join("");
+}
+
 function worksheetXml(sheet) {
   const rows = new Map();
   for (const [address, cell] of sheet.store.entries()) {
@@ -882,7 +1028,7 @@ function worksheetXml(sheet) {
     rows.get(row).push({ address, col, cell });
   }
   const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => `<row r="${row + 1}">${cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell)).join("")}</row>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowXml}</sheetData></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}</worksheet>`;
 }
 
 function cellXml(address, cell) {

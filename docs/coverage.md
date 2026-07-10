@@ -25,12 +25,12 @@ Status legend:
 | Requirement | Status | Notes |
 | --- | --- | --- |
 | `Workbook.create`, worksheets collection, `getRange`, values/formulas | done | Matrix writes and simple formula recalc implemented. |
-| `SpreadsheetFile.exportXlsx` / `importXlsx` | partial | Minimal OOXML XLSX round trip implemented with inline strings/formulas. Needs styles, shared strings, charts, comments, conditional formatting, validations, pivots, images. |
+| `SpreadsheetFile.exportXlsx` / `importXlsx` | partial | Minimal OOXML XLSX round trip implemented with inline strings/formulas. Clean-room metadata part preserves comments, data validations, and conditional formatting across roundtrip; worksheet XML also emits simple dataValidation/conditionalFormatting nodes. Needs styles, shared strings, charts, pivots, images, and native threaded-comment OOXML. |
 | Formula calculation | partial | Supports arithmetic cell refs and `SUM(range)`. Needs broad Excel formula catalog and dependency graph. |
-| `workbook.inspect` table/formula/match/sheet/workbook | partial | Core records implemented. Needs computedStyle, drawing, thread, definedName, richer include/exclude. |
+| `workbook.inspect` table/formula/match/sheet/workbook | partial | Core records implemented for workbook, sheet, table, formula, match, thread, dataValidation, and conditionalFormat with simple search filtering. Needs computedStyle, drawing, definedName, and richer include/exclude. |
 | `workbook.render` visual verification | partial | SVG grid preview only. Needs PNG and chart/drawing rendering. |
 | `workbook.trace` | partial | Basic formula precedent tree implemented for same-sheet/cross-sheet A1 references and ranges. Needs richer formula parser, cycle reporting UX, and large-trace summarization. |
-| Charts/tables/sparklines/images/comments/data validations/conditional formats | todo | Public collection placeholders exist only as arrays. |
+| Charts/tables/sparklines/images/comments/data validations/conditional formats | partial | Workbook threaded comment facade (`comments.setSelf/addThread/addReply/resolve/reopen`), `range.dataValidation`, `sheet.dataValidations.add`, `range.conditionalFormats.add/addCustom/deleteAll/clear`, inspect/resolve, and roundtrip metadata preservation are implemented. Needs native Excel threaded-comment OOXML, sheet charts/tables/sparklines/images, richer conditional-format rendering/evaluation, and pivot/data table support. |
 
 ## Presentations skill target
 
