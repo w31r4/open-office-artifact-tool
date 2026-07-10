@@ -538,6 +538,145 @@ class WorksheetRuleCollection {
   toJSON() { return this.items.map((item) => ({ ...item })); }
 }
 
+class WorksheetTableRowsFacade {
+  constructor(table) { this.table = table; }
+  add(index, rows) {
+    const insertAt = index == null ? this.table.values.length : index;
+    this.table.values.splice(insertAt, 0, ...rows.map((row) => [...row]));
+    this.table.refreshDimensions();
+    return this.table;
+  }
+}
+
+class WorksheetTable {
+  constructor(worksheet, rangeOrConfig, hasHeaders = true, name) {
+    this.worksheet = worksheet;
+    const config = typeof rangeOrConfig === "object" && !(rangeOrConfig instanceof Range) && !Array.isArray(rangeOrConfig) ? rangeOrConfig : {};
+    const rangeInput = config.range || rangeOrConfig || "A1";
+    const range = rangeInput instanceof Range ? rangeInput : worksheet.getRange(String(rangeInput));
+    this.id = config.id || aid("tbl");
+    this.name = config.name || name || `Table${worksheet.tables.items.length + 1}`;
+    this.range = rangeToAddress(range.bounds);
+    this.hasHeaders = config.hasHeaders ?? hasHeaders;
+    this.showHeaders = this.hasHeaders;
+    this.showTotals = Boolean(config.showTotals);
+    this.showBandedColumns = Boolean(config.showBandedColumns);
+    this.showFilterButton = config.showFilterButton ?? true;
+    this.style = config.style || "TableStyleMedium2";
+    this.values = config.values ? config.values.map((row) => [...row]) : range.values.map((row) => [...row]);
+    this.rows = new WorksheetTableRowsFacade(this);
+    this.refreshDimensions();
+  }
+
+  refreshDimensions() {
+    this.rowCount = this.values.length;
+    this.columnCount = Math.max(0, ...this.values.map((row) => row.length));
+  }
+
+  getDataRows() { return this.showHeaders ? this.values.slice(1) : this.values; }
+  getHeaderRowRange() { return this.worksheet.getRange(this.range).getResizedRange(1, this.columnCount || 1); }
+  delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
+
+  inspectRecord() {
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, values: this.values };
+  }
+
+  toSvg(bounds) {
+    const tableBounds = parseRangeAddress(this.range);
+    const left = 40 + (tableBounds.left - bounds.left) * 96;
+    const top = 40 + (tableBounds.top - bounds.top) * 28;
+    const width = Math.max(96, this.columnCount * 96);
+    const height = Math.max(28, this.rowCount * 28);
+    return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
+  }
+
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, style: this.style, values: this.values }; }
+}
+
+class WorksheetTableCollection {
+  constructor(worksheet) { this.worksheet = worksheet; this.items = []; }
+  add(rangeOrConfig, hasHeaders = true, name) { const table = new WorksheetTable(this.worksheet, rangeOrConfig, hasHeaders, name); this.items.push(table); return table; }
+  getItemOrNullObject(name) { return this.items.find((table) => table.name === name) || { isNullObject: true }; }
+  deleteAll() { this.items = []; }
+  inspectRecords() { return this.items.map((table) => table.inspectRecord()); }
+  toJSON() { return this.items.map((table) => table.toJSON()); }
+}
+
+class WorksheetChartSeriesCollection {
+  constructor(chart) { this.chart = chart; this.items = []; }
+  add(name, values = []) { const series = { name, values, categoryFormula: undefined, formula: undefined, fill: undefined }; this.items.push(series); return series; }
+  getItemAt(index) { return this.items[index]; }
+  toJSON() { return this.items.map((item) => ({ ...item })); }
+}
+
+class WorksheetChart {
+  constructor(worksheet, chartType = "bar", sourceOrConfig = {}) {
+    this.worksheet = worksheet;
+    this.id = sourceOrConfig.id || aid("wch");
+    this.type = chartType;
+    this.name = sourceOrConfig.name || `Chart ${worksheet.charts.items.length + 1}`;
+    this.title = sourceOrConfig.title || "";
+    this.hasLegend = sourceOrConfig.hasLegend ?? true;
+    this.categories = sourceOrConfig.categories || [];
+    this.position = sourceOrConfig.position || { left: 420, top: 40, width: 360, height: 220 };
+    this.series = new WorksheetChartSeriesCollection(this);
+    if (sourceOrConfig.series) sourceOrConfig.series.forEach((series) => this.series.add(series.name, series.values || []));
+    if (sourceOrConfig instanceof Range) this.setData(sourceOrConfig);
+    else if (sourceOrConfig && sourceOrConfig.worksheet instanceof Worksheet) this.setData(sourceOrConfig);
+  }
+
+  setData(range) {
+    const values = range.values;
+    if (!values.length || !values[0]?.length) return this;
+    const header = values[0];
+    const dataRows = values.slice(1);
+    this.categories = dataRows.map((row) => String(row[0] ?? ""));
+    this.series.items = [];
+    for (let column = 1; column < header.length; column++) {
+      const series = this.series.add(String(header[column] || `Series ${column}`), dataRows.map((row) => Number(row[column]) || 0));
+      const start = makeCellAddress(range.bounds.top + 1, range.bounds.left + column);
+      const end = makeCellAddress(range.bounds.bottom, range.bounds.left + column);
+      series.formula = `'${range.worksheet.name}'!${start}:${end}`;
+      series.categoryFormula = `'${range.worksheet.name}'!${makeCellAddress(range.bounds.top + 1, range.bounds.left)}:${makeCellAddress(range.bounds.bottom, range.bounds.left)}`;
+    }
+    return this;
+  }
+
+  setPosition(topLeft, bottomRight) {
+    const start = parseCellAddress(String(topLeft).replace(/^.*!/, ""));
+    const end = parseCellAddress(String(bottomRight).replace(/^.*!/, ""));
+    this.position = { left: 40 + start.col * 96, top: 40 + start.row * 28, width: Math.max(120, (end.col - start.col + 1) * 96), height: Math.max(80, (end.row - start.row + 1) * 28) };
+    return this;
+  }
+
+  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, categories: this.categories, series: this.series.items.length, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
+
+  toSvg() {
+    const p = this.position;
+    const values = this.series.items[0]?.values || [];
+    const max = Math.max(1, ...values.map((value) => Number(value) || 0));
+    const plot = { left: p.left + 28, top: p.top + 36, width: Math.max(0, p.width - 44), height: Math.max(0, p.height - 62) };
+    const barW = values.length ? plot.width / values.length * 0.65 : 0;
+    const gap = values.length ? plot.width / values.length * 0.35 : 0;
+    const bars = values.map((value, index) => {
+      const h = plot.height * (Number(value) || 0) / max;
+      return `<rect x="${plot.left + index * (barW + gap) + gap / 2}" y="${plot.top + plot.height - h}" width="${barW}" height="${h}" fill="#38bdf8"/>`;
+    }).join("");
+    return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#94a3b8"/><text x="${p.left + 8}" y="${p.top + 22}" font-family="Arial" font-size="13" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.name)}</text>${bars}`;
+  }
+
+  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON() }; }
+}
+
+class WorksheetChartCollection {
+  constructor(worksheet) { this.worksheet = worksheet; this.items = []; }
+  add(chartType, sourceOrConfig = {}) { const chart = new WorksheetChart(this.worksheet, chartType, sourceOrConfig); this.items.push(chart); return chart; }
+  getItemOrNullObject(name) { return this.items.find((chart) => chart.name === name) || { isNullObject: true }; }
+  deleteAll() { this.items = []; }
+  inspectRecords() { return this.items.map((chart) => chart.inspectRecord()); }
+  toJSON() { return this.items.map((chart) => chart.toJSON()); }
+}
+
 class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }
   add(ruleType, config = {}) { return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...config }); }
@@ -582,6 +721,8 @@ export class Workbook {
     for (const sheet of this.worksheets) {
       if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
+      if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
+      if (kinds.has("drawing") || kinds.has("chart")) records.push(...sheet.charts.inspectRecords());
       if (kinds.has("formula")) records.push(...sheet.formulaRecords(options));
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
@@ -640,6 +781,10 @@ export class Workbook {
     if (thread) return thread;
     for (const sheet of this.worksheets) {
       if (sheet.id === id) return sheet;
+      const table = sheet.tables.items.find((item) => item.id === id);
+      if (table) return table;
+      const chart = sheet.charts.items.find((item) => item.id === id);
+      if (chart) return chart;
       const rule = [...sheet.dataValidations.items, ...sheet.conditionalFormattings.items].find((item) => item.id === id);
       if (rule) return rule;
     }
@@ -659,6 +804,8 @@ export class Workbook {
       { kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
       { kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
       { kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
+      { kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+      { kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
       { kind: "formula", name: "fx.SUM", category: "math-trig", examples: ["=SUM(A1:A10)"] },
       { kind: "formula", name: "fx.PMT", category: "financial", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
     ];
@@ -678,10 +825,10 @@ export class Worksheet {
     this.id = aid("ws");
     this.name = name;
     this.store = new CellStore();
-    this.charts = [];
+    this.charts = new WorksheetChartCollection(this);
     this.shapes = [];
     this.images = [];
-    this.tables = [];
+    this.tables = new WorksheetTableCollection(this);
     this.dataValidations = new WorksheetRuleCollection(this, "dataValidation");
     this.conditionalFormattings = new WorksheetRuleCollection(this, "conditionalFormat");
     this.freezePanes = { freezeRows() {}, freezeColumns() {}, unfreeze() {} };
@@ -705,7 +852,7 @@ export class Worksheet {
   }
 
   deleteAllDrawings() {
-    this.charts = [];
+    this.charts.deleteAll();
     this.shapes = [];
     this.images = [];
   }
@@ -762,8 +909,8 @@ export class Worksheet {
     const bounds = this.usedBounds();
     const cellW = 96;
     const cellH = 28;
-    const width = Math.max(320, bounds.colCount * cellW + 80);
-    const height = Math.max(180, bounds.rowCount * cellH + 80);
+    const width = Math.max(320, bounds.colCount * cellW + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40));
+    const height = Math.max(180, bounds.rowCount * cellH + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40));
     const rows = [];
     for (let r = bounds.top; r <= bounds.bottom; r++) {
       for (let c = bounds.left; c <= bounds.right; c++) {
@@ -775,7 +922,9 @@ export class Worksheet {
         rows.push(`<text x="${x + 6}" y="${y + 18}" font-family="Arial" font-size="13" fill="#24292f">${xmlEscape(value)}</text>`);
       }
     }
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}</svg>`;
+    const tableOverlays = this.tables.items.map((table) => table.toSvg(bounds)).join("");
+    const chartOverlays = this.charts.items.map((chart) => chart.toSvg()).join("");
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${chartOverlays}</svg>`;
   }
 }
 
@@ -922,6 +1071,8 @@ function workbookMetadata(workbook) {
       name: sheet.name,
       dataValidations: sheet.dataValidations.toJSON(),
       conditionalFormattings: sheet.conditionalFormattings.toJSON(),
+      tables: sheet.tables.toJSON(),
+      charts: sheet.charts.toJSON(),
     })),
   };
 }
@@ -940,6 +1091,20 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
     if (!sheet) continue;
     sheet.dataValidations.items = (sheetData.dataValidations || []).map((item) => ({ ...item }));
     sheet.conditionalFormattings.items = (sheetData.conditionalFormattings || []).map((item) => ({ ...item }));
+    sheet.tables.items = [];
+    for (const tableData of sheetData.tables || []) {
+      const table = sheet.tables.add({ ...tableData });
+      table.id = tableData.id || table.id;
+      table.showHeaders = tableData.showHeaders ?? table.showHeaders;
+      table.showTotals = Boolean(tableData.showTotals);
+      table.showBandedColumns = Boolean(tableData.showBandedColumns);
+      table.showFilterButton = tableData.showFilterButton ?? table.showFilterButton;
+    }
+    sheet.charts.items = [];
+    for (const chartData of sheetData.charts || []) {
+      const chart = sheet.charts.add(chartData.type || chartData.chartType || "bar", { ...chartData });
+      chart.id = chartData.id || chart.id;
+    }
   }
 }
 
