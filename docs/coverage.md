@@ -42,7 +42,7 @@ Status legend:
 | `presentation.resolve` | partial | Resolves slides/shapes. Needs chart/table/image/thread/text-range. |
 | `slide.export({format:'layout'})` | done | Minimal layout JSON implemented. |
 | `presentation.export` image preview/montage | partial | SVG preview implemented. Needs PNG/JPEG/WebP and montage. |
-| Compose/JSX layout + token parser | partial | Helper-node compose engine implemented for row, column, layers, box, paragraph, run, shape, and rule with fill/hug/fixed sizing, gap, padding, stable names/ids, text class tokens, inspect, resolve, layout JSON, and PPTX roundtrip. `slide.autoLayout` now places existing shapes with horizontal/vertical flow, frame, gap, padding, and alignment. Needs real JSX runtime subpath, grid/table/chart/image nodes, fuller token parser, and collision detection. |
+| Compose/JSX layout + token parser | partial | Helper-node compose engine implemented for row, column, layers, box, paragraph, run, shape, and rule with fill/hug/fixed sizing, gap, padding, stable names/ids, text class tokens, inspect, resolve, layout JSON, and PPTX roundtrip. `slide.autoLayout` now places existing shapes with horizontal/vertical flow, frame, gap, padding, and alignment. Package exports now include `./presentation-jsx`, `./presentation-jsx/jsx-runtime`, and `./presentation-jsx/jsx-dev-runtime` with `jsx`, `jsxs`, `jsxDEV`, `Fragment`, helper nodes, and function component support. Needs grid/table/chart/image nodes, fuller token parser, and collision detection. |
 | Overlap/overflow/template fidelity QA | todo | Required before claiming skill parity. |
 
 ## Documents skill target
@@ -67,7 +67,7 @@ Status legend:
 
 1. Replace the hand-written minimal ZIP/XML emitters with a safer OOXML package layer.
 2. Add a real formula dependency graph and a broader Excel formula catalog.
-3. Build a presentation compose/layout engine with stable named nodes and collision detection.
+3. Extend the presentation compose/layout engine with grid, table, chart, image nodes, stable named layout trees, and collision detection.
 4. Add raster rendering via a pluggable renderer (`sharp`, browser, canvas, or Poppler/LibreOffice adapters).
 5. Add DOCX style/table/list/comment/tracked-change helpers.
 6. Add robust PDF creation/extraction/rendering adapters.

@@ -54,6 +54,25 @@ console.log(presentation.inspect({ kind: "textbox,shape" }).ndjson);
 await (await PresentationFile.exportPptx(presentation)).save("deck.pptx");
 ```
 
+If you use a JSX transform, the package also exposes presentation-jsx-compatible subpaths:
+
+```js
+import { Fragment } from "open-office-artifact-tool/presentation-jsx";
+import { jsx, jsxs } from "open-office-artifact-tool/presentation-jsx/jsx-runtime";
+import { jsxDEV } from "open-office-artifact-tool/presentation-jsx/jsx-dev-runtime";
+
+const tree = jsxs(Fragment, {
+  children: [
+    jsx("paragraph", {
+      name: "headline",
+      className: "text-slate-950 text-4xl font-bold",
+      children: "Agent-ready JSX runtime",
+    }),
+  ],
+});
+slide.compose(tree, { frame: { left: 80, top: 120, width: 720, height: 180 } });
+```
+
 ## Design notes
 
 The package deliberately prioritizes agent workflows:
