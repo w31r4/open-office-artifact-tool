@@ -1443,19 +1443,22 @@ export class SpreadsheetFile {
     const tableParts = collectWorkbookTableParts(workbook);
     const imageParts = collectWorkbookImageParts(workbook);
     const chartParts = collectWorkbookChartParts(workbook, imageParts);
-    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts));
+    const threadParts = collectWorkbookThreadParts(workbook);
+    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts, threadParts));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "xl/workbook.xml" }]));
     zip.file("xl/workbook.xml", workbookXml(workbook));
-    zip.file("xl/_rels/workbook.xml.rels", workbookRelsXml(workbook.worksheets.items.length));
+    zip.file("xl/_rels/workbook.xml.rels", workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0));
     zip.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0"/></cellXfs></styleSheet>`);
     zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
     workbook.worksheets.items.forEach((sheet, index) => {
       const sheetTableParts = tableParts.filter((part) => part.sheetIndex === index);
       const sheetImageParts = imageParts.filter((part) => part.sheetIndex === index);
       const sheetChartParts = chartParts.filter((part) => part.sheetIndex === index);
+      const sheetThreadPart = threadParts.find((part) => part.sheetIndex === index);
       const drawingRelId = sheetImageParts.length || sheetChartParts.length ? `rId${sheetTableParts.length + 1}` : undefined;
+      if (sheetThreadPart) sheetThreadPart.relId = `rId${sheetTableParts.length + (drawingRelId ? 1 : 0) + 1}`;
       zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet, sheetTableParts, drawingRelId));
-      if (sheetTableParts.length || sheetImageParts.length || sheetChartParts.length) zip.file(`xl/worksheets/_rels/sheet${index + 1}.xml.rels`, worksheetRelsXml(sheetTableParts, drawingRelId ? { relId: drawingRelId, target: `../drawings/drawing${index + 1}.xml` } : undefined));
+      if (sheetTableParts.length || sheetImageParts.length || sheetChartParts.length || sheetThreadPart) zip.file(`xl/worksheets/_rels/sheet${index + 1}.xml.rels`, worksheetRelsXml(sheetTableParts, drawingRelId ? { relId: drawingRelId, target: `../drawings/drawing${index + 1}.xml` } : undefined, sheetThreadPart));
       if (sheetImageParts.length || sheetChartParts.length) {
         zip.file(`xl/drawings/drawing${index + 1}.xml`, drawingXml(sheetImageParts, sheetChartParts));
         zip.file(`xl/drawings/_rels/drawing${index + 1}.xml.rels`, drawingRelsXml(sheetImageParts, sheetChartParts));
@@ -1464,6 +1467,8 @@ export class SpreadsheetFile {
     tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId)));
     imageParts.forEach((part) => zip.file(`xl/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`xl/charts/chart${part.chartPartId}.xml`, xlsxChartXml(part.chart)));
+    threadParts.forEach((part) => zip.file(`xl/threadedComments/threadedComment${part.threadPartId}.xml`, threadedCommentsXml(part)));
+    if (threadParts.length) zip.file("xl/persons/person.xml", personsXml(threadParts));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
     return new FileBlob(bytes, { type: XLSX_MIME });
   }
@@ -1481,6 +1486,7 @@ export class SpreadsheetFile {
     }
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
     if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
+    else await importNativeThreadedComments(workbook, zip, sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]);
     workbook.recalculate();
     return workbook;
   }
@@ -1558,7 +1564,17 @@ function collectWorkbookChartParts(workbook, imageParts = []) {
   return parts;
 }
 
-function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = []) {
+function collectWorkbookThreadParts(workbook) {
+  const parts = [];
+  let threadPartId = 1;
+  workbook.worksheets.items.forEach((sheet, sheetIndex) => {
+    const threads = workbook.comments.threads.filter((thread) => (thread.target.sheetName || sheet.name) === sheet.name);
+    if (threads.length) parts.push({ sheet, sheetIndex, threads, threadPartId: threadPartId++, relId: undefined });
+  });
+  return parts;
+}
+
+function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = []) {
   const sheets = Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
   const tables = tableParts.map((part) => `<Override PartName="/xl/tables/table${part.tablePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`).join("");
   const imageDefaults = [
@@ -1569,7 +1585,9 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
     ["svg", "image/svg+xml"],
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/xl/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}${tables}${charts}</Types>`;
+  const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>`).join("");
+  const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}${tables}${charts}${threadedComments}${persons}</Types>`;
 }
 
 function relsXml(rels) {
@@ -1593,20 +1611,82 @@ function workbookXml(workbook) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets}</sheets></workbook>`;
 }
 
-function workbookRelsXml(sheetCount) {
+function workbookRelsXml(sheetCount, hasThreadedComments = false) {
   const rels = Array.from({ length: sheetCount }, (_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", target: `worksheets/sheet${i + 1}.xml` }));
   rels.push({ id: `rId${sheetCount + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" });
+  if (hasThreadedComments) rels.push({ id: `rId${sheetCount + 2}`, type: "http://schemas.microsoft.com/office/2017/10/relationships/person", target: "persons/person.xml" });
   return relsXml(rels);
 }
 
-function worksheetRelsXml(tableParts, drawingRel) {
+function worksheetRelsXml(tableParts, drawingRel, threadedPart) {
   const rels = tableParts.map((part) => ({
     id: part.relId,
     type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table",
     target: `../tables/table${part.tablePartId}.xml`,
   }));
   if (drawingRel) rels.push({ id: drawingRel.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing", target: drawingRel.target });
+  if (threadedPart) rels.push({ id: threadedPart.relId, type: "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment", target: `../threadedComments/threadedComment${threadedPart.threadPartId}.xml` });
   return relsXml(rels);
+}
+
+function stablePersonId(name) {
+  const raw = String(name || "User");
+  const hash = raw.split("").reduce((sum, ch) => ((sum * 33) + ch.charCodeAt(0)) >>> 0, 5381).toString(16).padStart(8, "0");
+  return `{${hash.slice(0, 8)}-0000-4000-8000-000000000000}`;
+}
+
+function threadedCommentsXml(part) {
+  const comments = part.threads.flatMap((thread) => thread.comments.map((comment, index) => {
+    const id = `{${thread.id.replace(/[^A-Za-z0-9]/g, "")}-${index}}`;
+    const parentId = index > 0 ? ` parentId="{${thread.id.replace(/[^A-Za-z0-9]/g, "")}-0}"` : "";
+    return `<threadedComment ref="${attrEscape(thread.target.address)}" id="${attrEscape(id)}" personId="${attrEscape(stablePersonId(comment.author || thread.author))}" dT="${new Date(0).toISOString()}"${parentId} done="${thread.resolved ? 1 : 0}"><text>${xmlEscape(comment.text)}</text></threadedComment>`;
+  })).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">${comments}</ThreadedComments>`;
+}
+
+function personsXml(threadParts) {
+  const names = new Set(threadParts.flatMap((part) => part.threads.flatMap((thread) => thread.comments.map((comment) => comment.author || thread.author || "User"))));
+  const persons = [...names].map((name) => `<person displayName="${attrEscape(name)}" id="${attrEscape(stablePersonId(name))}" userId="${attrEscape(name)}" providerId="None"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">${persons}</personList>`;
+}
+
+function parsePersonsXml(xml) {
+  return new Map([...String(xml || "").matchAll(/<person\b([^>]*)\/>/g)].map((match) => {
+    const attrs = match[1] || "";
+    const id = decodeXml(/\bid="([^"]+)"/.exec(attrs)?.[1] || "");
+    const displayName = decodeXml(/\bdisplayName="([^"]*)"/.exec(attrs)?.[1] || "User");
+    return [id, displayName];
+  }).filter(([id]) => id));
+}
+
+async function importNativeThreadedComments(workbook, zip, sheetRefs) {
+  const persons = parsePersonsXml(await zip.file("xl/persons/person.xml")?.async("text"));
+  for (const { index } of sheetRefs) {
+    const sheet = workbook.worksheets.items[index - 1];
+    if (!sheet) continue;
+    const rels = parseRelsXml(await zip.file(`xl/worksheets/_rels/sheet${index}.xml.rels`)?.async("text"));
+    for (const rel of rels.filter((item) => item.type.endsWith("/threadedComment"))) {
+      const target = path.posix.normalize(`xl/worksheets/${rel.target}`).replace(/^\.\//, "");
+      const xml = await zip.file(target)?.async("text");
+      const byRef = new Map();
+      for (const match of String(xml || "").matchAll(/<threadedComment\b([^>]*)>([\s\S]*?)<\/threadedComment>/g)) {
+        const attrs = match[1] || "";
+        const ref = decodeXml(/\bref="([^"]+)"/.exec(attrs)?.[1] || "A1");
+        const personId = decodeXml(/\bpersonId="([^"]+)"/.exec(attrs)?.[1] || "");
+        const author = persons.get(personId) || workbook.comments.self?.displayName || "User";
+        const text = decodeXml(/<text[^>]*>([\s\S]*?)<\/text>/.exec(match[2])?.[1] || "");
+        if (!byRef.has(ref)) {
+          const thread = workbook.comments.addThread({ cell: sheet.getRange(ref) }, text);
+          thread.author = author;
+          thread.comments[0].author = author;
+          thread.resolved = /\bdone="(?:1|true)"/.test(attrs);
+          byRef.set(ref, thread);
+        } else {
+          byRef.get(ref).comments.push({ author, text });
+        }
+      }
+    }
+  }
 }
 
 function drawingRelsXml(imageParts, chartParts = []) {
