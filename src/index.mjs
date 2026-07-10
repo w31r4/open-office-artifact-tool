@@ -121,11 +121,45 @@ function verificationIssue(artifactKind, type, message, details = {}) {
   return { kind: "verificationIssue", artifactKind, type, severity: details.severity || "error", message, ...details };
 }
 
+function inferArtifactKind(artifact) {
+  if (artifact instanceof Workbook) return "workbook";
+  if (artifact instanceof Presentation) return "presentation";
+  if (artifact instanceof DocumentModel) return "document";
+  if (artifact instanceof PdfArtifact) return "pdf";
+  return "unknown";
+}
+
 export function verifyArtifact(artifact, options = {}) {
   if (!artifact || typeof artifact.verify !== "function") {
     return verificationResult("unknown", [verificationIssue("unknown", "unsupportedArtifact", "Artifact does not expose a verify() method.")], options);
   }
   return artifact.verify(options);
+}
+
+export async function renderArtifact(artifact, options = {}) {
+  const artifactKind = inferArtifactKind(artifact);
+  if (!artifact || (typeof artifact.render !== "function" && typeof artifact.export !== "function")) {
+    throw new Error("Artifact does not expose a render() or export() method.");
+  }
+  const renderer = typeof artifact.render === "function" ? artifact.render.bind(artifact) : artifact.export.bind(artifact);
+  const blob = await renderer(options);
+  if (!(blob instanceof FileBlob)) {
+    return new FileBlob(await blob.arrayBuffer?.() ?? String(blob), {
+      type: blob.type || "application/octet-stream",
+      metadata: { artifactKind, format: options.format || blob.type || "unknown" },
+    });
+  }
+  blob.metadata = {
+    ...(blob.metadata || {}),
+    artifactKind,
+    format: options.format || blob.metadata?.format || blob.type,
+    page: options.page,
+    pageIndex: options.pageIndex,
+    slide: options.slide,
+    sheetName: options.sheetName,
+    range: options.range,
+  };
+  return blob;
 }
 
 function normalizeKinds(kind, fallback) {
@@ -434,6 +468,7 @@ export class FileBlob {
   constructor(data, options = {}) {
     this.bytes = toUint8Array(data ?? new Uint8Array());
     this.type = options.type || "application/octet-stream";
+    this.metadata = options.metadata || {};
   }
 
   async arrayBuffer() {
