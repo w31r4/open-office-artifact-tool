@@ -910,6 +910,7 @@ export class Presentation {
       { kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
       { kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
       { kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, layers, box, paragraph, shape, and rule nodes into editable slide shapes." },
+      { kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
       { kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
       { kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
       { kind: "api", name: "slide.charts.add", summary: "Roadmap: native chart facade compatible with agent chart workflows." },
@@ -933,6 +934,13 @@ class ShapeCollection {
   constructor(slide) { this.slide = slide; this.items = []; }
   add(config = {}) { const shape = new Shape(this.slide, config); this.items.push(shape); return shape; }
   [Symbol.iterator]() { return this.items[Symbol.iterator](); }
+}
+
+function resolveAutoLayoutFrame(slide, frame) {
+  if (frame === "slide") return slide.frame;
+  if (frame?.position) return frame.position;
+  if (frame && typeof frame.left === "number" && typeof frame.top === "number" && typeof frame.width === "number" && typeof frame.height === "number") return frame;
+  return slide.frame;
 }
 
 export class Slide {
@@ -984,6 +992,47 @@ export class Slide {
   compose(composeNode, options = {}) {
     const frame = options.frame || { left: 72, top: 64, width: this.presentation.slideSize.width - 144, height: this.presentation.slideSize.height - 128 };
     return materializeComposeNode(this, composeNode, frame);
+  }
+
+  autoLayout(shapes, options = {}) {
+    const items = Array.from(shapes || []).filter(Boolean);
+    if (items.length === 0) return items;
+    const frame = resolveAutoLayoutFrame(this, options.frame || "slide");
+    const inner = innerFrame(frame, {
+      left: options.horizontalPadding ?? 0,
+      right: options.horizontalPadding ?? 0,
+      top: options.verticalPadding ?? 0,
+      bottom: options.verticalPadding ?? 0,
+    });
+    const direction = options.direction || "horizontal";
+    const horizontal = direction === "horizontal";
+    const mainSize = horizontal ? "width" : "height";
+    const crossSize = horizontal ? "height" : "width";
+    const requestedGap = horizontal ? options.horizontalGap : options.verticalGap;
+    const totalMain = items.reduce((sum, shape) => sum + (shape.position?.[mainSize] ?? 0), 0);
+    const gap = requestedGap === "auto"
+      ? items.length > 1 ? Math.max(0, (inner[mainSize] - totalMain) / (items.length - 1)) : 0
+      : Number(requestedGap ?? 0);
+    const usedMain = totalMain + gap * Math.max(0, items.length - 1);
+    const align = options.align || "center";
+    const mainStart = align.includes("Right") || align === "right" || align.includes("Bottom")
+      ? inner[horizontal ? "left" : "top"] + inner[mainSize] - usedMain
+      : align === "center" || align === "left" || align === "right"
+        ? inner[horizontal ? "left" : "top"] + Math.max(0, (inner[mainSize] - usedMain) / 2)
+        : inner[horizontal ? "left" : "top"];
+    let cursor = mainStart;
+    for (const shape of items) {
+      const crossStart = align.includes("Bottom")
+        ? inner[horizontal ? "top" : "left"] + inner[crossSize] - shape.position[crossSize]
+        : align.includes("Center") || align === "center" || align === "left" || align === "right"
+          ? inner[horizontal ? "top" : "left"] + Math.max(0, (inner[crossSize] - shape.position[crossSize]) / 2)
+          : inner[horizontal ? "top" : "left"];
+      shape.position = horizontal
+        ? { ...shape.position, left: cursor, top: crossStart }
+        : { ...shape.position, left: crossStart, top: cursor };
+      cursor += shape.position[mainSize] + gap;
+    }
+    return items;
   }
 }
 

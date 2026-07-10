@@ -42,7 +42,7 @@ Status legend:
 | `presentation.resolve` | partial | Resolves slides/shapes. Needs chart/table/image/thread/text-range. |
 | `slide.export({format:'layout'})` | done | Minimal layout JSON implemented. |
 | `presentation.export` image preview/montage | partial | SVG preview implemented. Needs PNG/JPEG/WebP and montage. |
-| Compose/JSX layout + token parser | partial | Helper-node compose engine implemented for row, column, layers, box, paragraph, run, shape, and rule with fill/hug/fixed sizing, gap, padding, stable names/ids, text class tokens, inspect, resolve, layout JSON, and PPTX roundtrip. Needs real JSX runtime subpath, grid/table/chart/image nodes, fuller token parser, and collision detection. |
+| Compose/JSX layout + token parser | partial | Helper-node compose engine implemented for row, column, layers, box, paragraph, run, shape, and rule with fill/hug/fixed sizing, gap, padding, stable names/ids, text class tokens, inspect, resolve, layout JSON, and PPTX roundtrip. `slide.autoLayout` now places existing shapes with horizontal/vertical flow, frame, gap, padding, and alignment. Needs real JSX runtime subpath, grid/table/chart/image nodes, fuller token parser, and collision detection. |
 | Overlap/overflow/template fidelity QA | todo | Required before claiming skill parity. |
 
 ## Documents skill target

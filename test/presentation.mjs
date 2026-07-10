@@ -50,6 +50,21 @@ assert.match(composedSnapshot, /kpi-label-b/);
 assert.equal(presentation.resolve("sh/stable-headline").text.value, "Quarterly readiness");
 assert.match(presentation.help("slide.compose").ndjson, /Materialize/);
 
+const cards = ["A", "B", "C"].map((label) => {
+  const card = slide.shapes.add({ name: `auto-card-${label}`, position: { left: 0, top: 0, width: 100, height: 50 }, fill: "white" });
+  card.text = label;
+  return card;
+});
+slide.autoLayout(cards, {
+  direction: "horizontal",
+  frame: { left: 100, top: 600, width: 500, height: 80 },
+  horizontalGap: "auto",
+  align: "center",
+});
+assert.deepEqual(cards.map((card) => Math.round(card.position.left)), [100, 300, 500]);
+assert.equal(Math.round(cards[0].position.top), 615);
+assert.match(presentation.help("slide.autoLayout").ndjson, /horizontal or vertical flow/);
+
 const layout = await slide.export({ format: "layout" });
 assert.equal(layout.type, "application/vnd.open-office-artifact.layout+json");
 assert.match(await layout.text(), /summary-surface/);
