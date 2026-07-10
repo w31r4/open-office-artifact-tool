@@ -42,7 +42,7 @@ chartFromRange.setPosition("I1", "M10");
 const chartFromConfig = sheet.charts.add("bar", { name: "ScoresChart", title: "Scores", categories: ["A", "B"], series: [{ name: "Score", values: [9, 7] }], position: { left: 40, top: 220, width: 240, height: 160 } });
 const image = sheet.images.add({
   name: "LogoImage",
-  dataUrl: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PC9zdmc+",
+  dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
   alt: "Logo placeholder",
   anchor: { from: { row: 8, col: 0 }, extent: { widthPx: 120, heightPx: 80 } },
 });
@@ -114,7 +114,17 @@ assert.match(worksheetXml, /<tableParts count="1">/);
 assert.match(worksheetXml, /<tablePart r:id="rId1"\/>/);
 const worksheetRelsXml = await zip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text");
 assert.match(worksheetRelsXml, /Target="\.\.\/tables\/table1\.xml"/);
+assert.match(worksheetRelsXml, /Target="\.\.\/drawings\/drawing1\.xml"/);
+const drawingXml = await zip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(drawingXml, /<xdr:oneCellAnchor>/);
+assert.match(drawingXml, /name="LogoImage"/);
+assert.match(drawingXml, /descr="Logo placeholder"/);
+const drawingRelsXml = await zip.file("xl/drawings/_rels/drawing1.xml.rels").async("text");
+assert.match(drawingRelsXml, /Target="\.\.\/media\/image1\.png"/);
+const mediaBytes = await zip.file("xl/media/image1.png").async("uint8array");
+assert.ok(mediaBytes.byteLength > 10);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
+assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
 assert.match(contentTypesXml, /table1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.table\+xml"/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.xlsx`);
 await xlsx.save(out);
