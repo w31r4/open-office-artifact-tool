@@ -39,6 +39,25 @@ chartFromRange.title = "Revenue Trend";
 chartFromRange.hasLegend = false;
 chartFromRange.setPosition("I1", "M10");
 const chartFromConfig = sheet.charts.add("bar", { name: "ScoresChart", title: "Scores", categories: ["A", "B"], series: [{ name: "Score", values: [9, 7] }], position: { left: 40, top: 220, width: 240, height: 160 } });
+const image = sheet.images.add({
+  name: "LogoImage",
+  dataUrl: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PC9zdmc+",
+  alt: "Logo placeholder",
+  anchor: { from: { row: 8, col: 0 }, extent: { widthPx: 120, heightPx: 80 } },
+});
+const sparklineGroup = sheet.sparklineGroups.add({
+  type: "line",
+  targetRange: "H2:H2",
+  sourceData: chartSource.getRange("G2:G4"),
+  seriesColor: "#0284c7",
+  markers: { show: true },
+});
+const sparklineAlias = sheet.getRange("H3:H3").sparklines.add("column", chartSource.getRange("G2:G4"), { seriesColor: "#f97316" });
+assert.equal(image.alt, "Logo placeholder");
+assert.deepEqual(sparklineGroup.values(), [100, 120, 130]);
+assert.equal(sparklineAlias.type, "column");
+assert.match(workbook.help("sheet.images.add").ndjson, /worksheet image/);
+assert.match(workbook.help("sheet.sparklineGroups.add").ndjson, /sparklines/);
 assert.equal(chartFromRange.series.items[0].name, "Revenue");
 assert.match(chartFromRange.series.items[0].formula, /G2:G4/);
 assert.equal(chartFromConfig.series.getItemAt(0).values[1], 7);
@@ -54,11 +73,16 @@ assert.match(metadataInspect, /Formula checks revenue sum/);
 assert.match(metadataInspect, /TasksTable/);
 assert.match(metadataInspect, /Revenue Trend/);
 assert.match(metadataInspect, /ScoresChart/);
+assert.match(metadataInspect, /LogoImage/);
+assert.match(metadataInspect, /"kind":"sparkline"/);
 assert.equal(workbook.resolve(thread.id).resolved, true);
 assert.equal(workbook.resolve(cf.id).operator, "greaterThan");
 assert.equal(workbook.resolve(customCf.id).formula, "=A2>B2");
 assert.equal(workbook.resolve(tasksTable.id).name, "TasksTable");
 assert.equal(workbook.resolve(chartFromRange.id).title, "Revenue Trend");
+assert.equal(workbook.resolve(image.id).alt, "Logo placeholder");
+assert.equal(workbook.resolve(sparklineGroup.id).type, "line");
+assert.equal(workbook.resolve(sparklineAlias.id).type, "column");
 const trace = workbook.trace("Sheet1!C2");
 assert.equal(trace.tree.address, "C2");
 assert.equal(trace.tree.value, 5);
@@ -72,6 +96,8 @@ const previewSvg = await preview.text();
 assert.match(previewSvg, /<svg/);
 assert.match(previewSvg, /TasksTable/);
 assert.match(previewSvg, /Revenue Trend/);
+assert.match(previewSvg, /Logo placeholder/);
+assert.match(previewSvg, /polyline/);
 
 const xlsx = await SpreadsheetFile.exportXlsx(workbook);
 assert.equal(xlsx.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -88,6 +114,8 @@ assert.match(roundtripMetadata, /"kind":"thread"/);
 assert.match(roundtripMetadata, /TasksTable/);
 assert.match(roundtripMetadata, /Revenue Trend/);
 assert.match(roundtripMetadata, /ScoresChart/);
+assert.match(roundtripMetadata, /LogoImage/);
+assert.match(roundtripMetadata, /"kind":"sparkline"/);
 assert.match(roundtripMetadata, /Reviewed by model/);
 const loadedThreadId = JSON.parse(roundtripMetadata.split("\n").find((line) => line.includes('"kind":"thread"'))).id;
 assert.equal(loaded.resolve(loadedThreadId).resolved, true);

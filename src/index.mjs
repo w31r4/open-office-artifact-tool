@@ -491,6 +491,7 @@ function workbookRangeRef(rangeOrRef) {
     const bang = rangeOrRef.lastIndexOf("!");
     return bang === -1 ? { sheetName: undefined, address: rangeOrRef } : { sheetName: rangeOrRef.slice(0, bang).replace(/^'|'$/g, ""), address: rangeOrRef.slice(bang + 1) };
   }
+  if (rangeOrRef?.sheetName !== undefined && rangeOrRef?.address) return { sheetName: rangeOrRef.sheetName, address: rangeOrRef.address };
   if (rangeOrRef?.cell) return workbookRangeRef(rangeOrRef.cell);
   if (rangeOrRef?.range) return workbookRangeRef(rangeOrRef.range);
   return { sheetName: undefined, address: "A1" };
@@ -677,6 +678,84 @@ class WorksheetChartCollection {
   toJSON() { return this.items.map((chart) => chart.toJSON()); }
 }
 
+function worksheetAnchorFrame(anchor = {}) {
+  const from = anchor.from || { row: 0, col: 0 };
+  const extent = anchor.extent || {};
+  return {
+    left: 40 + Number(from.col || 0) * 96 + Number(anchor.colOffsetPx || from.colOffsetPx || 0),
+    top: 40 + Number(from.row || 0) * 28 + Number(anchor.rowOffsetPx || from.rowOffsetPx || 0),
+    width: Number(extent.widthPx || anchor.widthPx || 160),
+    height: Number(extent.heightPx || anchor.heightPx || 120),
+  };
+}
+
+class WorksheetImage {
+  constructor(worksheet, config = {}) {
+    this.worksheet = worksheet;
+    this.id = config.id || aid("wim");
+    this.name = config.name || `Image ${worksheet.images.items.length + 1}`;
+    this.dataUrl = config.dataUrl;
+    this.uri = config.uri;
+    this.prompt = config.prompt;
+    this.alt = config.alt || config.name || "image";
+    this.anchor = config.anchor || { from: { row: 0, col: 0 }, extent: { widthPx: 160, heightPx: 120 } };
+    this.fit = config.fit || "contain";
+  }
+
+  get position() { return worksheetAnchorFrame(this.anchor); }
+  inspectRecord() { const p = this.position; return { kind: "drawing", drawingType: "image", id: this.id, sheet: this.worksheet.name, name: this.name, alt: this.alt, prompt: this.prompt, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" }; }
+  replace(config = {}) { Object.assign(this, config); return this; }
+  toSvg() { const p = this.position; const image = this.dataUrl ? `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#fef3c7" stroke="#f59e0b"/>`; return `${image}<text x="${p.left + 8}" y="${p.top + 20}" font-family="Arial" font-size="12" fill="#92400e">${xmlEscape(this.alt || this.prompt || this.name)}</text>`; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, anchor: this.anchor, fit: this.fit }; }
+}
+
+class WorksheetImageCollection {
+  constructor(worksheet) { this.worksheet = worksheet; this.items = []; }
+  add(config = {}) { const image = new WorksheetImage(this.worksheet, config); this.items.push(image); return image; }
+  getItemOrNullObject(name) { return this.items.find((image) => image.name === name) || { isNullObject: true }; }
+  deleteAll() { this.items = []; }
+  inspectRecords() { return this.items.map((image) => image.inspectRecord()); }
+  toJSON() { return this.items.map((image) => image.toJSON()); }
+}
+
+class SparklineGroup {
+  constructor(worksheet, config = {}) {
+    this.worksheet = worksheet;
+    this.id = config.id || aid("sp");
+    this.type = config.type || "line";
+    this.targetRange = workbookRangeRef(config.targetRange || "A1");
+    this.sourceData = workbookRangeRef(config.sourceData || "A1");
+    this.dateAxisRange = config.dateAxisRange ? workbookRangeRef(config.dateAxisRange) : undefined;
+    this.seriesColor = config.seriesColor || "#0ea5e9";
+    this.negativeColor = config.negativeColor;
+    this.markers = config.markers || {};
+    this.axis = config.axis || {};
+    this.lineWeight = config.lineWeight ?? 1.5;
+    this.displayHidden = Boolean(config.displayHidden);
+    this.displayEmptyCellsAs = config.displayEmptyCellsAs;
+  }
+
+  delete() { this.worksheet.sparklineGroups.items = this.worksheet.sparklineGroups.items.filter((group) => group !== this); }
+  inspectRecord() { return { kind: "sparkline", id: this.id, sheet: this.worksheet.name, type: this.type, targetRange: this.targetRange.address, sourceData: this.sourceData.address, dateAxisRange: this.dateAxisRange?.address, seriesColor: this.seriesColor }; }
+  values() { const sourceSheet = this.sourceData.sheetName ? this.worksheet.workbook.worksheets.getItem(this.sourceData.sheetName) : this.worksheet; if (!sourceSheet) return []; return sourceSheet.getRange(this.sourceData.address).values.flat().map((value) => Number(value)).filter((value) => Number.isFinite(value)); }
+  targetFrame(bounds) { const target = parseRangeAddress(this.targetRange.address); return { left: 40 + (target.left - bounds.left) * 96, top: 40 + (target.top - bounds.top) * 28, width: Math.max(96, target.colCount * 96), height: Math.max(28, target.rowCount * 28) }; }
+  toSvg(bounds) { const p = this.targetFrame(bounds); const values = this.values(); if (!values.length) return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="none" stroke="#38bdf8" stroke-dasharray="3 2"/>`; const min = Math.min(...values); const max = Math.max(...values); const span = Math.max(1, max - min); const points = values.map((value, index) => `${p.left + (values.length === 1 ? p.width / 2 : index * p.width / (values.length - 1))},${p.top + p.height - ((value - min) / span) * p.height}`).join(" "); if (this.type === "column") { const barW = p.width / values.length * 0.7; return values.map((value, index) => { const h = ((value - Math.min(0, min)) / Math.max(1, max - Math.min(0, min))) * p.height; return `<rect x="${p.left + index * (p.width / values.length) + barW * 0.15}" y="${p.top + p.height - h}" width="${barW}" height="${h}" fill="${xmlEscape(this.seriesColor)}"/>`; }).join(""); } return `<polyline points="${points}" fill="none" stroke="${xmlEscape(this.seriesColor)}" stroke-width="${this.lineWeight}"/>`; }
+  toJSON() { return { id: this.id, type: this.type, targetRange: this.targetRange, sourceData: this.sourceData, dateAxisRange: this.dateAxisRange, seriesColor: this.seriesColor, negativeColor: this.negativeColor, markers: this.markers, axis: this.axis, lineWeight: this.lineWeight, displayHidden: this.displayHidden, displayEmptyCellsAs: this.displayEmptyCellsAs }; }
+}
+
+class SparklineGroupCollection {
+  constructor(worksheet) { this.worksheet = worksheet; this.items = []; }
+  add(config = {}) { const group = new SparklineGroup(this.worksheet, config); this.items.push(group); return group; }
+  deleteAll() { this.items = []; }
+  inspectRecords() { return this.items.map((group) => group.inspectRecord()); }
+  toJSON() { return this.items.map((group) => group.toJSON()); }
+}
+
+class RangeSparklineFacade {
+  constructor(range) { this.range = range; }
+  add(type, sourceData, config = {}) { return this.range.worksheet.sparklineGroups.add({ ...config, type, targetRange: this.range, sourceData }); }
+}
+
 class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }
   add(ruleType, config = {}) { return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...config }); }
@@ -723,6 +802,8 @@ export class Workbook {
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("drawing") || kinds.has("chart")) records.push(...sheet.charts.inspectRecords());
+      if (kinds.has("drawing") || kinds.has("image")) records.push(...sheet.images.inspectRecords());
+      if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
       if (kinds.has("formula")) records.push(...sheet.formulaRecords(options));
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
@@ -785,6 +866,10 @@ export class Workbook {
       if (table) return table;
       const chart = sheet.charts.items.find((item) => item.id === id);
       if (chart) return chart;
+      const image = sheet.images.items.find((item) => item.id === id);
+      if (image) return image;
+      const sparkline = sheet.sparklineGroups.items.find((item) => item.id === id);
+      if (sparkline) return sparkline;
       const rule = [...sheet.dataValidations.items, ...sheet.conditionalFormattings.items].find((item) => item.id === id);
       if (rule) return rule;
     }
@@ -806,6 +891,8 @@ export class Workbook {
       { kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
       { kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
       { kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
+      { kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
+      { kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
       { kind: "formula", name: "fx.SUM", category: "math-trig", examples: ["=SUM(A1:A10)"] },
       { kind: "formula", name: "fx.PMT", category: "financial", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
     ];
@@ -827,8 +914,10 @@ export class Worksheet {
     this.store = new CellStore();
     this.charts = new WorksheetChartCollection(this);
     this.shapes = [];
-    this.images = [];
+    this.images = new WorksheetImageCollection(this);
     this.tables = new WorksheetTableCollection(this);
+    this.sparklineGroups = new SparklineGroupCollection(this);
+    this.sparklines = this.sparklineGroups;
     this.dataValidations = new WorksheetRuleCollection(this, "dataValidation");
     this.conditionalFormattings = new WorksheetRuleCollection(this, "conditionalFormat");
     this.freezePanes = { freezeRows() {}, freezeColumns() {}, unfreeze() {} };
@@ -853,8 +942,8 @@ export class Worksheet {
 
   deleteAllDrawings() {
     this.charts.deleteAll();
+    this.images.deleteAll();
     this.shapes = [];
-    this.images = [];
   }
 
   usedBounds() {
@@ -909,8 +998,10 @@ export class Worksheet {
     const bounds = this.usedBounds();
     const cellW = 96;
     const cellH = 28;
-    const width = Math.max(320, bounds.colCount * cellW + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40));
-    const height = Math.max(180, bounds.rowCount * cellH + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40));
+    const imageFrames = this.images.items.map((image) => image.position);
+    const sparklineFrames = this.sparklineGroups.items.map((group) => group.targetFrame(bounds));
+    const width = Math.max(320, bounds.colCount * cellW + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40), ...imageFrames.map((frame) => frame.left + frame.width + 40), ...sparklineFrames.map((frame) => frame.left + frame.width + 40));
+    const height = Math.max(180, bounds.rowCount * cellH + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40), ...imageFrames.map((frame) => frame.top + frame.height + 40), ...sparklineFrames.map((frame) => frame.top + frame.height + 40));
     const rows = [];
     for (let r = bounds.top; r <= bounds.bottom; r++) {
       for (let c = bounds.left; c <= bounds.right; c++) {
@@ -924,7 +1015,9 @@ export class Worksheet {
     }
     const tableOverlays = this.tables.items.map((table) => table.toSvg(bounds)).join("");
     const chartOverlays = this.charts.items.map((chart) => chart.toSvg()).join("");
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${chartOverlays}</svg>`;
+    const imageOverlays = this.images.items.map((image) => image.toSvg()).join("");
+    const sparklineOverlays = this.sparklineGroups.items.map((group) => group.toSvg(bounds)).join("");
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${chartOverlays}${imageOverlays}${sparklineOverlays}</svg>`;
   }
 }
 
@@ -990,6 +1083,8 @@ export class Range {
   }
 
   get conditionalFormats() { return new RangeConditionalFormatFacade(this); }
+
+  get sparklines() { return new RangeSparklineFacade(this); }
 
   merge() {}
   unmerge() {}
@@ -1073,6 +1168,8 @@ function workbookMetadata(workbook) {
       conditionalFormattings: sheet.conditionalFormattings.toJSON(),
       tables: sheet.tables.toJSON(),
       charts: sheet.charts.toJSON(),
+      images: sheet.images.toJSON(),
+      sparklineGroups: sheet.sparklineGroups.toJSON(),
     })),
   };
 }
@@ -1104,6 +1201,16 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
     for (const chartData of sheetData.charts || []) {
       const chart = sheet.charts.add(chartData.type || chartData.chartType || "bar", { ...chartData });
       chart.id = chartData.id || chart.id;
+    }
+    sheet.images.items = [];
+    for (const imageData of sheetData.images || []) {
+      const image = sheet.images.add({ ...imageData });
+      image.id = imageData.id || image.id;
+    }
+    sheet.sparklineGroups.items = [];
+    for (const sparklineData of sheetData.sparklineGroups || []) {
+      const group = sheet.sparklineGroups.add({ ...sparklineData });
+      group.id = sparklineData.id || group.id;
     }
   }
 }
