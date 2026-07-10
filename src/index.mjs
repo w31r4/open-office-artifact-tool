@@ -941,7 +941,11 @@ export class Presentation {
     const records = [];
     if (kinds.has("deck")) records.push({ kind: "deck", id: this.id, slides: this.slides.count });
     for (const slide of this.slides) records.push(...slide.inspectRecords(kinds));
-    return ndjson(records, options.maxChars ?? Infinity);
+    const search = String(options.search || "").trim().toLowerCase();
+    const filtered = search
+      ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search))
+      : records;
+    return ndjson(filtered, options.maxChars ?? Infinity);
   }
 
   resolve(id) {

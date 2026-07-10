@@ -38,7 +38,7 @@ Status legend:
 | --- | --- | --- |
 | `Presentation.create`, slides collection, `slide.shapes.add` | done | Basic slide/shape/text facade works. |
 | `PresentationFile.exportPptx` / `importPptx` | partial | Minimal PPTX round trip for text shapes works; table/chart/image facades export as visible PPTX text placeholders so durable files retain user-visible content. Needs true PPTX table/chart/image OOXML, themes, masters, layouts, notes, comments, connectors. |
-| `presentation.inspect` slide/textbox/shape/layout | partial | Stable records implemented for slide, textbox, shape, table, chart, image, and layout. Needs notes/thread/text-range kinds, search filtering, include/exclude shaping, and target context windows. |
+| `presentation.inspect` slide/textbox/shape/layout | partial | Stable records implemented for slide, textbox, shape, table, chart, image, and layout, with simple JSON search filtering. Needs notes/thread/text-range kinds, include/exclude shaping, and target context windows. |
 | `presentation.resolve` | partial | Resolves slides, shapes, tables, charts, and images. Needs thread/text-range anchors and richer imported-object identity preservation. |
 | `slide.export({format:'layout'})` | done | Minimal layout JSON implemented for shapes, textboxes, tables, charts, and images. |
 | `presentation.export` image preview/montage | partial | SVG preview implemented for shapes, tables, charts, and image placeholders. Needs PNG/JPEG/WebP and montage. |
