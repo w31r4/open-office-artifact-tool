@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import { DocumentFile, DocumentModel, FileBlob } from "../src/index.mjs";
 
 const document = DocumentModel.create({
@@ -14,6 +15,8 @@ const heading = document.addParagraph("Findings", { styleId: "Heading1", name: "
 const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
 const field = document.addField("PAGE", "1", { name: "page-field" });
 const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
+const insertion = document.addInsertion("Inserted reviewer clarification.", { author: "Reviewer", date: "2026-07-11T00:00:00.000Z", name: "tracked-insert" });
+const deletion = document.addDeletion("Remove stale claim.", { author: "Reviewer", date: "2026-07-11T00:05:00.000Z", name: "tracked-delete" });
 const bullet = document.addListItem("Use real numbering definitions", { listType: "bullet", name: "numbering-rule" });
 const numbered = document.addListItem("Render and verify", { listType: "number", name: "render-step" });
 const table = document.addTable({
@@ -24,13 +27,17 @@ const table = document.addTable({
 table.getCell(2, 1).value = "anchored";
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer" });
 
-const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation", maxChars: 12000 }).ndjson;
+const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,change", maxChars: 12000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /findings-heading/);
 assert.match(inspect, /research-link/);
 assert.match(inspect, /https:\/\/example.com\/research/);
 assert.match(inspect, /page-field/);
 assert.match(inspect, /market-citation/);
+assert.match(inspect, /tracked-insert/);
+assert.match(inspect, /Inserted reviewer clarification/);
+assert.match(inspect, /tracked-delete/);
+assert.match(inspect, /Remove stale claim/);
 assert.match(inspect, /numbering-rule/);
 assert.match(inspect, /render-step/);
 assert.match(inspect, /Confidential research memo/);
@@ -42,6 +49,10 @@ assert.equal(document.resolve(heading.id).styleId, "Heading1");
 assert.equal(document.resolve(hyperlink.id).url, "https://example.com/research");
 assert.equal(document.resolve(field.id).instruction, "PAGE");
 assert.equal(document.resolve(citation.id).metadata.page, 2);
+assert.equal(document.resolve(insertion.id).changeType, "insert");
+assert.equal(document.resolve(insertion.id).author, "Reviewer");
+assert.equal(document.resolve(deletion.id).changeType, "delete");
+assert.equal(document.resolve(deletion.id).date, "2026-07-11T00:05:00.000Z");
 assert.equal(document.resolve(bullet.id).listType, "bullet");
 assert.equal(document.resolve(numbered.id).listType, "number");
 assert.equal(document.resolve(header.id).text, "Confidential research memo");
@@ -54,6 +65,8 @@ assert.match(document.help("document.addHeader").ndjson, /DOCX header/);
 assert.match(document.help("document.addHyperlink").ndjson, /w:hyperlink/);
 assert.match(document.help("document.addField").ndjson, /w:fldSimple/);
 assert.match(document.help("document.addCitation").ndjson, /structured metadata/);
+assert.match(document.help("document.addInsertion").ndjson, /w:ins/);
+assert.match(document.help("document.addDeletion").ndjson, /w:del/);
 
 const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
@@ -64,14 +77,31 @@ assert.match(svg, /Confidential research memo/);
 assert.match(svg, /w31r4 research note/);
 assert.match(svg, /PAGE/);
 assert.match(svg, /Source: Market brief/);
+assert.match(svg, /Inserted reviewer clarification/);
+assert.match(svg, /Remove stale claim/);
+assert.match(svg, /tracked insert by Reviewer/);
 assert.match(svg, /Render and verify/);
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+const docxBytes = new Uint8Array(await docx.arrayBuffer());
+const zip = await JSZip.loadAsync(docxBytes);
+const documentXml = await zip.file("word/document.xml").async("text");
+assert.match(documentXml, /<w:ins\b[^>]*w:author="Reviewer"/);
+assert.match(documentXml, /<w:t>Inserted reviewer clarification\.<\/w:t>/);
+assert.match(documentXml, /<w:del\b[^>]*w:author="Reviewer"/);
+assert.match(documentXml, /<w:delText>Remove stale claim\.<\/w:delText>/);
+const nativeOnlyZip = await JSZip.loadAsync(docxBytes);
+nativeOnlyZip.remove("word/open-office-artifact.json");
+const nativeOnlyDocx = new FileBlob(await nativeOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
+const nativeOnlyLoaded = await DocumentFile.importDocx(nativeOnlyDocx);
+const nativeOnlyInspect = nativeOnlyLoaded.inspect({ kind: "change", maxChars: 12000 }).ndjson;
+assert.match(nativeOnlyInspect, /Inserted reviewer clarification/);
+assert.match(nativeOnlyInspect, /Remove stale claim/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.docx`);
 await docx.save(out);
 const loaded = await DocumentFile.importDocx(await FileBlob.load(out));
-const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation", maxChars: 12000 }).ndjson;
+const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation,change", maxChars: 12000 }).ndjson;
 assert.match(loadedInspect, /clean-room DOCX facade/);
 assert.match(loadedInspect, /DOCX styles/);
 assert.match(loadedInspect, /anchored/);
@@ -80,6 +110,8 @@ assert.match(loadedInspect, /w31r4 research note/);
 assert.match(loadedInspect, /https:\/\/example.com\/research/);
 assert.match(loadedInspect, /page-field/);
 assert.match(loadedInspect, /Market brief/);
+assert.match(loadedInspect, /Inserted reviewer clarification/);
+assert.match(loadedInspect, /Remove stale claim/);
 assert.match(loadedInspect, /Use real numbering definitions/);
 assert.match(loadedInspect, /Render and verify/);
 assert.match(loadedInspect, /Confidential research memo/);

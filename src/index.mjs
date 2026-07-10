@@ -204,6 +204,9 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
+  { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
+  { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append a tracked insertion with author/date metadata and native DOCX w:ins export." },
+  { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links, dangling comments, and table cells that look like prose blocks." },
@@ -2375,6 +2378,24 @@ class DocumentParagraphBlock {
   toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, text: this.text }; }
 }
 
+class DocumentChangeBlock {
+  constructor(document, changeType, text, config = {}) {
+    this.document = document;
+    this.kind = "change";
+    this.id = config.id || aid("dchg");
+    const rawType = String(changeType ?? config.changeType ?? config.type ?? "insert").toLowerCase();
+    this.changeType = rawType === "delete" || rawType === "deletion" || rawType === "del" ? "delete" : "insert";
+    this.text = String(text ?? "");
+    this.author = config.author || "User";
+    this.date = config.date || new Date().toISOString();
+    this.styleId = config.styleId || config.style || "Normal";
+    this.name = config.name || "";
+  }
+
+  inspectRecord(index) { return { kind: "change", id: this.id, index, name: this.name || undefined, changeType: this.changeType, author: this.author, date: this.date, styleId: this.styleId, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: "change", id: this.id, name: this.name, changeType: this.changeType, author: this.author, date: this.date, styleId: this.styleId, text: this.text }; }
+}
+
 class DocumentListItemBlock {
   constructor(document, text, config = {}) {
     this.document = document;
@@ -2482,6 +2503,7 @@ export class DocumentModel {
       else if (block.kind === "hyperlink") this.addHyperlink(block.text ?? "", block.url, block);
       else if (block.kind === "field") this.addField(block.instruction, block.display, block);
       else if (block.kind === "citation") this.addCitation(block.text ?? "", block.metadata || {}, block);
+      else if (block.kind === "change") this.addChange(block.changeType || block.type, block.text ?? "", block);
       else this.addParagraph(block.text ?? "", block);
     }
     for (const header of options.headers || []) this.addHeader(header.text, header);
@@ -2498,6 +2520,9 @@ export class DocumentModel {
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
   addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
   addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); return block; }
+  addChange(changeType, text, config = {}) { const block = new DocumentChangeBlock(this, changeType, text, config); this.blocks.push(block); return block; }
+  addInsertion(text, config = {}) { return this.addChange("insert", text, config); }
+  addDeletion(text, config = {}) { return this.addChange("delete", text, config); }
   addTable(config = {}) { const block = new DocumentTableBlock(this, config); this.blocks.push(block); return block; }
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); return block; }
@@ -2507,7 +2532,7 @@ export class DocumentModel {
   toProto() { return { id: this.id, name: this.name, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "change", "comment", "header", "footer"]);
     const records = [];
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
@@ -2572,6 +2597,13 @@ export class DocumentModel {
       } else if (block.kind === "citation") {
         parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#475569">${xmlEscape(block.text)}</text>`);
         y += 20;
+      } else if (block.kind === "change") {
+        const marker = block.changeType === "delete" ? "-" : "+";
+        const fill = block.changeType === "delete" ? "#dc2626" : "#047857";
+        const decoration = block.changeType === "delete" ? " text-decoration=\"line-through\"" : "";
+        parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="10" fill="#64748b">tracked ${xmlEscape(block.changeType)} by ${xmlEscape(block.author)}</text>`);
+        parts.push(`<text x="${margin + 92}" y="${y}" font-family="Arial" font-size="11" fill="${fill}"${decoration}>${xmlEscape(marker)} ${xmlEscape(block.text)}</text>`);
+        y += 22;
       } else if (block.kind === "listItem") {
         const key = `${block.listType}:${block.level}`;
         const next = (listCounters.get(key) || 0) + 1;
@@ -2631,6 +2663,22 @@ function docxParagraphXml(block, commentIndexes) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/>${numPr}</w:pPr>${commentStart}<w:r><w:t>${xmlEscape(block.text)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
 }
 
+function docxRevisionId(block) {
+  const raw = String(block?.id || block?.name || block?.text || "1");
+  const sum = raw.split("").reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) >>> 0, 17);
+  return Math.max(1, sum % 2147483647);
+}
+
+function docxChangeXml(block, commentIndexes = []) {
+  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
+  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
+  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
+  const tag = block.changeType === "delete" ? "del" : "ins";
+  const textTag = block.changeType === "delete" ? "delText" : "t";
+  const date = block.date ? ` w:date="${attrEscape(block.date)}"` : "";
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:${tag} w:id="${docxRevisionId(block)}" w:author="${attrEscape(block.author || "User")}"${date}><w:r><w:${textTag}>${xmlEscape(block.text)}</w:${textTag}></w:r></w:${tag}>${commentEnd}${refs}</w:p>`;
+}
+
 function docxHyperlinkXml(block, relId) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink></w:p>`;
 }
@@ -2658,6 +2706,7 @@ function docxDocumentXml(document, relIds = {}) {
     if (block.kind === "field") return docxFieldXml(block);
     if (block.kind === "citation") return docxCitationXml(block);
     const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
+    if (block.kind === "change") return docxChangeXml(block, indexes);
     return docxParagraphXml(block, indexes);
   }).join("");
   const refs = `${relIds.header ? `<w:headerReference w:type="default" r:id="${relIds.header}"/>` : ""}${relIds.footer ? `<w:footerReference w:type="default" r:id="${relIds.footer}"/>` : ""}`;
@@ -2671,8 +2720,18 @@ function docxCommentsXml(document) {
 
 function parseDocxParagraph(part, commentTextById) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
-  const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
   const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
+  const changeMatch = /<w:(ins|del)\b([^>]*)>([\s\S]*?)<\/w:\1>/.exec(part);
+  if (changeMatch) {
+    const changeType = changeMatch[1] === "del" ? "delete" : "insert";
+    const attrs = changeMatch[2] || "";
+    const inner = changeMatch[3] || "";
+    const text = decodeXml([...inner.matchAll(/<w:(?:t|delText)[^>]*>([\s\S]*?)<\/w:(?:t|delText)>/g)].map((t) => t[1]).join(""));
+    const author = decodeXml(/w:author="([^"]*)"/.exec(attrs)?.[1] || "User");
+    const date = decodeXml(/w:date="([^"]*)"/.exec(attrs)?.[1] || "");
+    return { block: { kind: "change", changeType, text, styleId, author, date }, commentIds };
+  }
+  const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
   const numId = /<w:numId[^>]*w:val="(\d+)"/.exec(part)?.[1];
   const level = Number(/<w:ilvl[^>]*w:val="(\d+)"/.exec(part)?.[1] || 0);
   if (numId) return { block: { kind: "listItem", text, styleId, level, listType: numId === "2" ? "number" : "bullet" }, commentIds };

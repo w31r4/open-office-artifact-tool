@@ -6,12 +6,15 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
 | `document.addCitation` | api | Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata. |
 | `document.addComment` | api | Attach a comment to a paragraph or table block using a stable target ID. |
+| `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC. |
 | `document.addFooter` | api | Add footer text exported as a DOCX footer part and referenced from section properties. |
 | `document.addHeader` | api | Add header text exported as a DOCX header part and referenced from section properties. |
 | `document.addHyperlink` | api | Append an external hyperlink backed by a DOCX relationship and w:hyperlink element. |
+| `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
 | `document.addListItem` | api | Append a real numbered or bulleted list item backed by DOCX numbering definitions. |
 | `document.addParagraph` | api | Append a styled paragraph block and return an inspectable/resolveable paragraph object. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
