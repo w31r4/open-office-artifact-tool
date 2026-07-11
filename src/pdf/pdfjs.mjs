@@ -135,6 +135,22 @@ function pngChunk(type, data = new Uint8Array()) {
   return chunk;
 }
 
+function normalizeRgbColor(value) {
+  const candidate = Array.isArray(value) && value.length === 1 ? value[0] : value;
+  if (typeof candidate === "string") {
+    const hex = candidate.match(/^#([0-9a-f]{6})$/i)?.[1];
+    if (hex) return [Number.parseInt(hex.slice(0, 2), 16), Number.parseInt(hex.slice(2, 4), 16), Number.parseInt(hex.slice(4, 6), 16)];
+    const rgb = candidate.match(/^rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)/i);
+    if (rgb) return rgb.slice(1, 4).map((part) => Math.max(0, Math.min(255, Math.round(Number(part)))));
+  }
+  const parts = (Array.isArray(candidate) || ArrayBuffer.isView(candidate)) ? [...candidate].slice(0, 3).map(Number) : [];
+  if (parts.length === 3 && parts.every(Number.isFinite)) {
+    const scale = parts.every((part) => part >= 0 && part <= 1) ? 255 : 1;
+    return parts.map((part) => Math.max(0, Math.min(255, Math.round(part * scale))));
+  }
+  return [0, 0, 0];
+}
+
 function encodeRawImagePng(image, options = {}) {
   const width = Number(image?.width);
   const height = Number(image?.height);
@@ -145,7 +161,23 @@ function encodeRawImagePng(image, options = {}) {
   if (pixels > maxPixels) throw new Error(`PDF.js image has ${pixels} pixels; maxImagePixels is ${maxPixels}`);
   let channels;
   let data = source;
-  if (source.length >= pixels * 4) { channels = 4; data = source.subarray(0, pixels * 4); }
+  if (options.isMask) {
+    const stride = Math.ceil(width / 8);
+    if (source.length < stride * height) throw new Error(`PDF.js image mask buffer is truncated (${source.length} bytes for ${width}x${height})`);
+    channels = 4;
+    data = new Uint8Array(pixels * channels);
+    const color = normalizeRgbColor(options.maskColor);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const bit = source[y * stride + (x >> 3)] & (0x80 >> (x & 7));
+        const offset = (y * width + x) * channels;
+        data[offset] = color[0];
+        data[offset + 1] = color[1];
+        data[offset + 2] = color[2];
+        data[offset + 3] = bit ? 0 : 255;
+      }
+    }
+  } else if (source.length >= pixels * 4) { channels = 4; data = source.subarray(0, pixels * 4); }
   else if (source.length >= pixels * 3) { channels = 3; data = source.subarray(0, pixels * 3); }
   else if (source.length >= pixels) { channels = 1; data = source.subarray(0, pixels); }
   else if (source.length >= Math.ceil(width / 8) * height) {
@@ -177,7 +209,8 @@ async function resolvePageObject(store, id, timeoutMs = 5_000) {
 
 async function extractImages(page, pdfjs, pageIndex, viewport, width, height, options = {}) {
   const ops = pdfjs.OPS || {};
-  const imageOps = new Set([ops.paintImageXObject, ops.paintJpegXObject, ops.paintInlineImageXObject, ops.paintImageMaskXObject].filter((value) => value != null));
+  const maskOps = new Set([ops.paintImageMaskXObject, ops.paintSolidColorImageMask].filter((value) => value != null));
+  const imageOps = new Set([ops.paintImageXObject, ops.paintJpegXObject, ops.paintInlineImageXObject, ...maskOps].filter((value) => value != null));
   if (!imageOps.size || typeof page.getOperatorList !== "function") return [];
   try {
     const operatorList = await page.getOperatorList();
@@ -185,23 +218,33 @@ async function extractImages(page, pdfjs, pageIndex, viewport, width, height, op
     const restoreOp = ops.restore;
     const transformOp = ops.transform;
     let matrix = [1, 0, 0, 1, 0, 0];
+    let fillColor = [0, 0, 0];
     const stack = [];
     let count = 0;
     const images = [];
     for (let index = 0; index < operatorList.fnArray.length; index += 1) {
       const fn = operatorList.fnArray[index];
       const args = operatorList.argsArray[index] || [];
-      if (fn === saveOp) { stack.push([...matrix]); continue; }
-      if (fn === restoreOp) { matrix = stack.pop() || [1, 0, 0, 1, 0, 0]; continue; }
+      if (fn === saveOp) { stack.push({ matrix: [...matrix], fillColor: [...fillColor] }); continue; }
+      if (fn === restoreOp) { const state = stack.pop(); matrix = state?.matrix || [1, 0, 0, 1, 0, 0]; fillColor = state?.fillColor || [0, 0, 0]; continue; }
       if (fn === transformOp && args.length >= 6) { matrix = multiplyMatrix(matrix, args.map(Number)); continue; }
+      if (fn === ops.setFillRGBColor) { fillColor = normalizeRgbColor(args); continue; }
       if (!imageOps.has(fn)) continue;
       count += 1;
       if (count > Math.max(1, Number(options.maxImagesPerPage ?? 50))) break;
       const bbox = imageBbox(matrix, viewport, height);
-      const image = typeof args[0] === "object" ? args[0] : await resolvePageObject(page.objs, args[0], options.imageObjectTimeoutMs).catch(() => undefined);
+      const isMask = maskOps.has(fn);
+      const descriptor = args[0];
+      const sourceObject = typeof descriptor === "string" ? descriptor : typeof descriptor?.data === "string" ? descriptor.data : undefined;
+      const resolved = sourceObject ? await resolvePageObject(page.objs, sourceObject, options.imageObjectTimeoutMs).catch(() => undefined) : undefined;
+      const image = fn === ops.paintSolidColorImageMask
+        ? { width: 1, height: 1, data: new Uint8Array([0]) }
+        : typeof descriptor === "object"
+          ? resolved ? { ...descriptor, ...(typeof resolved === "object" ? resolved : {}), data: resolved?.data || resolved } : descriptor
+          : resolved;
       try {
-        const png = encodeRawImagePng(image, options);
-        images.push({ name: `pdfjs-image-${pageIndex + 1}-${count}`, alt: `PDF image ${count}`, bbox, bytes: png, contentType: "image/png", sourceObject: typeof args[0] === "string" ? args[0] : undefined, sourceOperator: index, pixelWidth: image.width, pixelHeight: image.height });
+        const png = encodeRawImagePng(image, { ...options, isMask, maskColor: fillColor });
+        images.push({ name: `pdfjs-image-${pageIndex + 1}-${count}`, alt: `PDF image ${count}`, bbox, bytes: png, contentType: "image/png", sourceObject, sourceOperator: index, pixelWidth: image.width, pixelHeight: image.height, ...(isMask ? { isMask: true, fillColor: `#${fillColor.map((part) => part.toString(16).padStart(2, "0")).join("")}` } : {}) });
       } catch (error) {
         images.push({ name: `pdfjs-image-${pageIndex + 1}-${count}`, alt: `PDF image ${count}`, bbox, prompt: `PDF.js image operator ${index}: ${error.message}` });
       }

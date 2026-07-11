@@ -848,7 +848,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG/JPEG images, and clean-room metadata." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
-  { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster images with placement boxes." },
+  { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
   { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a PNG diff heatmap when same-size pixels change." },
@@ -8174,10 +8174,16 @@ class PdfImage {
     this.alt = config.alt || config.altText || config.name || "image";
     this.bbox = config.bbox || [72, 280, Number(config.width || 180), Number(config.height || 120)];
     this.fit = config.fit || "contain";
+    this.isMask = Boolean(config.isMask);
+    this.fillColor = config.fillColor;
+    this.pixelWidth = config.pixelWidth;
+    this.pixelHeight = config.pixelHeight;
+    this.sourceObject = config.sourceObject;
+    this.sourceOperator = config.sourceOperator;
   }
 
-  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl) }; }
-  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, bbox: this.bbox, fit: this.fit }; }
+  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl), isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, bbox: this.bbox, fit: this.fit, isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
 }
 
 class PdfChart {
@@ -8527,7 +8533,7 @@ export class PdfArtifact {
           textItems: page.textItems.map((item) => ({ kind: "textItem", page: pageNumber, ...item })),
           regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
           tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, bbox: table.bbox, source: table.source || undefined })),
-          images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt })),
+          images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt, isMask: image.isMask || undefined, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
           charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
         };
       }),
@@ -8661,7 +8667,7 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     textItems: page.textItems || page.items || [],
     regions: page.regions || [],
     tables: ((page.tables || []).length ? (page.tables || []) : reconstructPdfTablesFromTextGeometry(page, index)).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96], source: table.source })),
-    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120] })),
+    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120], isMask: image.isMask, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
     charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
   }));
   return PdfArtifact.create({ metadata: { ...metadata, ...(source.metadata || parsed?.metadata || {}) }, pages: pages.length ? pages : [{ text: "" }] });

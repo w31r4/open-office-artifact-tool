@@ -165,7 +165,7 @@ const pdf = await PdfFile.importPdf(fileBlob, { parser, preferParser: true });
 console.log(pdf.inspect({ kind: "page,textItem,table,image" }).ndjson);
 ```
 
-The PDF.js adapter is optional and keeps `pdfjs-dist` out of the core dependency tree:
+The PDF.js adapter is optional and keeps `pdfjs-dist` out of the core dependency tree. It extracts bounded raster XObjects and converts 1-bit stencil masks to fill-colored RGBA PNGs while preserving their placement and mask metadata:
 
 ```sh
 npm install -D pdfjs-dist

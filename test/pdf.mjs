@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
 import { FileBlob, PdfArtifact, PdfFile, renderArtifact } from "../src/index.mjs";
 
@@ -285,6 +286,50 @@ assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
 
 const pdfjsParser = createPdfjsParser();
 assert.equal(typeof pdfjsParser, "function");
+const mockMaskOps = {
+  save: 1,
+  restore: 2,
+  transform: 3,
+  setFillRGBColor: 4,
+  paintImageMaskXObject: 5,
+  paintSolidColorImageMask: 6,
+};
+const mockMaskParser = createPdfjsParser({
+  pdfjs: {
+    OPS: mockMaskOps,
+    getDocument: () => ({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage: async () => ({
+          objs: { get: (id) => id === "mask-1" ? { width: 2, height: 1, data: new Uint8Array([0x40]) } : undefined },
+          getViewport: () => ({ width: 100, height: 100, convertToViewportRectangle: ([left, bottom, right, top]) => [left, 100 - top, right, 100 - bottom] }),
+          getTextContent: async () => ({ items: [] }),
+          getOperatorList: async () => ({
+            fnArray: [1, 4, 3, 5, 2, 1, 4, 3, 6, 2],
+            argsArray: [[], ["#ff0000"], [20, 0, 0, 10, 10, 20], [{ width: 2, height: 1, data: "mask-1" }], [], [], [0, 1, 0], [8, 0, 0, 8, 50, 30], [], []],
+          }),
+        }),
+      }),
+      destroy: async () => undefined,
+    }),
+  },
+});
+const maskImported = await PdfFile.importPdf(new FileBlob(new Uint8Array([0x25, 0x50, 0x44, 0x46]), { type: "application/pdf" }), { parser: mockMaskParser, preferParser: true });
+assert.equal(maskImported.pages[0].images.length, 2);
+const [stencilMask, solidMask] = maskImported.pages[0].images;
+assert.equal(stencilMask.isMask, true);
+assert.equal(stencilMask.fillColor, "#ff0000");
+assert.deepEqual(stencilMask.bbox, [10, 70, 20, 10]);
+assert.equal(stencilMask.pixelWidth, 2);
+assert.equal(stencilMask.pixelHeight, 1);
+assert.equal(stencilMask.sourceObject, "mask-1");
+const stencilPixels = await sharp(Buffer.from(stencilMask.dataUrl.split(",")[1], "base64")).raw().toBuffer({ resolveWithObject: true });
+assert.deepEqual([...stencilPixels.data], [255, 0, 0, 255, 255, 0, 0, 0]);
+assert.equal(solidMask.isMask, true);
+assert.equal(solidMask.fillColor, "#00ff00");
+assert.deepEqual([...((await sharp(Buffer.from(solidMask.dataUrl.split(",")[1], "base64")).raw().toBuffer()))], [0, 255, 0, 255]);
+assert.match(maskImported.inspect({ kind: "image", maxChars: 4000 }).ndjson, /"isMask":true/);
+assert.equal(maskImported.layoutJson().pages[0].images[0].fillColor, "#ff0000");
 try {
   const pdfjsImported = await PdfFile.importPdf(blob, { parser: pdfjsParser, preferParser: true });
   const pdfjsImage = pdfjsImported.pages.flatMap((page) => page.images).find((item) => item.dataUrl);

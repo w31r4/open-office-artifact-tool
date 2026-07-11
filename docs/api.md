@@ -469,7 +469,7 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `createPdfjsParser` | api | Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster images with placement boxes. |
+| `createPdfjsParser` | api | Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes. |
 | `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
 | `pdf.addFlowText` | api | Wrap long text into positioned lines and automatically append pages when the configured content box is full. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
@@ -492,7 +492,7 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 
 #### `createPdfjsParser`
 
-Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster images with placement boxes.
+Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes.
 
 **Examples:**
 
