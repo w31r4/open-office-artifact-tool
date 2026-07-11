@@ -124,6 +124,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.language?.type, "string");
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.font?.type || "", /Uint8Array/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.maxFontBytes?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.subsetFont?.type, "boolean");
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
 assert.equal(documentCatalog.length, 27);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));

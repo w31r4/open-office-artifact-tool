@@ -1028,8 +1028,8 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded Type0/ToUnicode font evidence, structure-role counts, and marked-content count." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role counts, and marked-content count." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
@@ -1400,6 +1400,7 @@ const HELP_DETAIL_OVERRIDES = {
         title: { type: "string", description: "Document Info title; defaults to artifact metadata title or first text line." },
         font: { type: "string|FileBlob|Uint8Array|ArrayBuffer|object", description: "Optional standalone glyf-based TrueType .ttf source for Unicode Type0/CIDFontType2 embedding; accepts a path, bytes, FileBlob, or {path|bytes|base64}." },
         maxFontBytes: { type: "number", description: "Maximum accepted embedded font input size; defaults to 16 MiB." },
+        subsetFont: { type: "boolean", description: "Subset the embedded TrueType font to used glyphs and composite dependencies; defaults to true. Set false only for diagnostics/interoperability comparison." },
       },
       returns: { blob: { type: "FileBlob", description: "application/pdf bytes with modeled content, clean-room metadata, and tagged-export metadata." } },
     },
@@ -9523,7 +9524,7 @@ export class PdfFile {
     const structureRoles = {};
     for (const match of text.matchAll(/\/Type\s*\/StructElem\b[\s\S]*?\/S\s*\/([A-Za-z0-9]+)/g)) structureRoles[match[1]] = (structureRoles[match[1]] || 0) + 1;
     const records = [
-      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
@@ -9534,7 +9535,7 @@ export class PdfFile {
     const title = options.title || artifact.metadata?.title || String(artifact.pages?.[0]?.text || "").split(/\r?\n/).find(Boolean) || "Office artifact";
     const embeddedFont = await resolvePdfEmbeddedFont(options.font ?? options.fontBytes ?? options.unicodeFont, options);
     const exportOptions = { ...options, language, title, embeddedFont };
-    return new FileBlob(buildMinimalPdf(artifact, exportOptions), { type: PDF_MIME, metadata: { tagged: options.tagged !== false, language, title, embeddedFont: embeddedFont?.name } });
+    return new FileBlob(buildMinimalPdf(artifact, exportOptions), { type: PDF_MIME, metadata: { tagged: options.tagged !== false, language, title, embeddedFont: embeddedFont?.name, fontSubset: embeddedFont ? options.subsetFont !== false : undefined } });
   }
 
   static async importPdf(blobOrBuffer, options = {}) {
@@ -9774,8 +9775,8 @@ function parsePdfTrueTypeFont(input, options = {}) {
   const maxp = required("maxp");
   const hmtx = required("hmtx");
   const cmap = required("cmap");
-  required("glyf");
-  required("loca");
+  const glyf = required("glyf");
+  const loca = required("loca");
   if (head.length < 54 || hhea.length < 36 || maxp.length < 6) throw new Error("TrueType font has truncated metrics tables.");
   const unitsPerEm = u16(head.offset + 18);
   if (!unitsPerEm) throw new Error("TrueType font has invalid unitsPerEm.");
@@ -9783,6 +9784,12 @@ function parsePdfTrueTypeFont(input, options = {}) {
   const numberOfHMetrics = u16(hhea.offset + 34);
   if (!numberOfGlyphs || !numberOfHMetrics || numberOfHMetrics > numberOfGlyphs) throw new Error("TrueType font has invalid glyph metrics.");
   if (numberOfHMetrics * 4 > hmtx.length) throw new Error("TrueType hmtx table is truncated.");
+  const locaFormat = i16(head.offset + 50);
+  if (locaFormat !== 0 && locaFormat !== 1) throw new Error("TrueType head table has an unsupported indexToLocFormat.");
+  const locaEntryBytes = locaFormat ? 4 : 2;
+  if ((numberOfGlyphs + 1) * locaEntryBytes > loca.length) throw new Error("TrueType loca table is truncated.");
+  const glyphOffsets = Array.from({ length: numberOfGlyphs + 1 }, (_, glyph) => locaFormat ? u32(loca.offset + glyph * 4) : u16(loca.offset + glyph * 2) * 2);
+  for (let glyph = 0; glyph < numberOfGlyphs; glyph += 1) if (glyphOffsets[glyph] > glyphOffsets[glyph + 1] || glyphOffsets[glyph + 1] > glyf.length) throw new Error("TrueType loca offsets are invalid.");
   const advances = Array(numberOfGlyphs);
   let lastAdvance = 0;
   for (let glyph = 0; glyph < numberOfGlyphs; glyph += 1) {
@@ -9858,6 +9865,10 @@ function parsePdfTrueTypeFont(input, options = {}) {
   const scale = (value) => Math.round(value / unitsPerEm * 1000);
   return {
     bytes,
+    tables,
+    numberOfGlyphs,
+    glyphOffsets,
+    glyphTableOffset: glyf.offset,
     name: String(options.name || "OpenOfficeArtifactEmbedded").replace(/[^A-Za-z0-9_-]/g, "") || "OpenOfficeArtifactEmbedded",
     unitsPerEm,
     advances,
@@ -9883,6 +9894,171 @@ async function resolvePdfEmbeddedFont(source, options = {}) {
   }
   if (bytes == null) throw new Error("PDF font must be a .ttf path, FileBlob, byte array, ArrayBuffer, or { path|bytes|base64 } object.");
   return parsePdfTrueTypeFont(bytes, { maxFontBytes: options.maxFontBytes, name });
+}
+
+function pdfFontTableBytes(font, tag) {
+  const table = font.tables.get(tag);
+  return table ? font.bytes.slice(table.offset, table.offset + table.length) : undefined;
+}
+
+function pdfCompositeGlyphs(font, glyph) {
+  const start = font.glyphOffsets[glyph];
+  const end = font.glyphOffsets[glyph + 1];
+  if (end - start < 10) return [];
+  const bytes = font.bytes;
+  const base = font.glyphTableOffset + start;
+  const view = new DataView(bytes.buffer, bytes.byteOffset + base, end - start);
+  if (view.getInt16(0, false) >= 0) return [];
+  const dependencies = [];
+  let offset = 10;
+  let flags;
+  do {
+    if (offset + 4 > view.byteLength) throw new Error(`Composite TrueType glyph ${glyph} is truncated.`);
+    flags = view.getUint16(offset, false);
+    const component = view.getUint16(offset + 2, false);
+    if (component >= font.numberOfGlyphs) throw new Error(`Composite TrueType glyph ${glyph} references invalid glyph ${component}.`);
+    dependencies.push(component);
+    offset += 4;
+    offset += flags & 0x0001 ? 4 : 2;
+    if (flags & 0x0008) offset += 2;
+    else if (flags & 0x0040) offset += 4;
+    else if (flags & 0x0080) offset += 8;
+    if (offset > view.byteLength) throw new Error(`Composite TrueType glyph ${glyph} has truncated component arguments.`);
+  } while (flags & 0x0020);
+  return dependencies;
+}
+
+function pdfSubsetGlyphClosure(fontState) {
+  const included = new Set([0, ...[...fontState.used.values()].map((mapping) => mapping.glyph)]);
+  const pending = [...included];
+  while (pending.length) {
+    const glyph = pending.pop();
+    for (const dependency of pdfCompositeGlyphs(fontState.font, glyph)) if (!included.has(dependency)) { included.add(dependency); pending.push(dependency); }
+  }
+  return included;
+}
+
+function pdfSubsetCmap(fontState) {
+  const entries = [...fontState.used.values()].map(({ codePoint, glyph }) => ({ codePoint, glyph })).sort((a, b) => a.codePoint - b.codePoint);
+  const groups = [];
+  for (const entry of entries) {
+    const previous = groups.at(-1);
+    if (previous && entry.codePoint === previous.end + 1 && entry.glyph === previous.glyph + entry.codePoint - previous.start) previous.end = entry.codePoint;
+    else groups.push({ start: entry.codePoint, end: entry.codePoint, glyph: entry.glyph });
+  }
+  const subtableLength = 16 + groups.length * 12;
+  const bytes = new Uint8Array(12 + subtableLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, 0, false);
+  view.setUint16(2, 1, false);
+  view.setUint16(4, 3, false);
+  view.setUint16(6, 10, false);
+  view.setUint32(8, 12, false);
+  view.setUint16(12, 12, false);
+  view.setUint16(14, 0, false);
+  view.setUint32(16, subtableLength, false);
+  view.setUint32(20, 0, false);
+  view.setUint32(24, groups.length, false);
+  groups.forEach((group, index) => {
+    const offset = 28 + index * 12;
+    view.setUint32(offset, group.start, false);
+    view.setUint32(offset + 4, group.end, false);
+    view.setUint32(offset + 8, group.glyph, false);
+  });
+  return bytes;
+}
+
+function pdfSfntChecksum(bytes) {
+  const paddedLength = Math.ceil(bytes.byteLength / 4) * 4;
+  const padded = paddedLength === bytes.byteLength ? bytes : (() => { const copy = new Uint8Array(paddedLength); copy.set(bytes); return copy; })();
+  const view = new DataView(padded.buffer, padded.byteOffset, padded.byteLength);
+  let sum = 0;
+  for (let offset = 0; offset < padded.byteLength; offset += 4) sum = (sum + view.getUint32(offset, false)) >>> 0;
+  return sum;
+}
+
+function pdfBuildSfnt(tables) {
+  const entries = [...tables.entries()].filter(([, bytes]) => bytes).sort(([a], [b]) => a.localeCompare(b));
+  const tableCount = entries.length;
+  const largestPower = 2 ** Math.floor(Math.log2(tableCount));
+  const directoryBytes = 12 + tableCount * 16;
+  let totalBytes = directoryBytes;
+  for (const [, bytes] of entries) totalBytes += Math.ceil(bytes.byteLength / 4) * 4;
+  const output = new Uint8Array(totalBytes);
+  const view = new DataView(output.buffer);
+  view.setUint32(0, 0x00010000, false);
+  view.setUint16(4, tableCount, false);
+  view.setUint16(6, largestPower * 16, false);
+  view.setUint16(8, Math.log2(largestPower), false);
+  view.setUint16(10, tableCount * 16 - largestPower * 16, false);
+  let tableOffset = directoryBytes;
+  let headOffset;
+  entries.forEach(([tag, bytes], index) => {
+    const record = 12 + index * 16;
+    for (let char = 0; char < 4; char += 1) output[record + char] = tag.charCodeAt(char);
+    view.setUint32(record + 4, pdfSfntChecksum(bytes), false);
+    view.setUint32(record + 8, tableOffset, false);
+    view.setUint32(record + 12, bytes.byteLength, false);
+    output.set(bytes, tableOffset);
+    if (tag === "head") headOffset = tableOffset;
+    tableOffset += Math.ceil(bytes.byteLength / 4) * 4;
+  });
+  if (headOffset == null) throw new Error("Subset TrueType font is missing head table.");
+  view.setUint32(headOffset + 8, (0xb1b0afba - pdfSfntChecksum(output)) >>> 0, false);
+  return output;
+}
+
+function pdfSubsetTrueTypeFont(fontState) {
+  const { font } = fontState;
+  const included = pdfSubsetGlyphClosure(fontState);
+  const loca = new Uint8Array((font.numberOfGlyphs + 1) * 4);
+  const locaView = new DataView(loca.buffer);
+  const glyphParts = [];
+  let glyphBytes = 0;
+  for (let glyph = 0; glyph < font.numberOfGlyphs; glyph += 1) {
+    locaView.setUint32(glyph * 4, glyphBytes, false);
+    if (!included.has(glyph)) continue;
+    const start = font.glyphOffsets[glyph];
+    const end = font.glyphOffsets[glyph + 1];
+    if (end > start) {
+      const data = font.bytes.slice(font.glyphTableOffset + start, font.glyphTableOffset + end);
+      glyphParts.push({ offset: glyphBytes, data });
+      glyphBytes += Math.ceil(data.byteLength / 4) * 4;
+    }
+  }
+  locaView.setUint32(font.numberOfGlyphs * 4, glyphBytes, false);
+  const glyf = new Uint8Array(glyphBytes);
+  for (const part of glyphParts) glyf.set(part.data, part.offset);
+  const head = pdfFontTableBytes(font, "head").slice();
+  new DataView(head.buffer, head.byteOffset, head.byteLength).setUint32(8, 0, false);
+  new DataView(head.buffer, head.byteOffset, head.byteLength).setInt16(50, 1, false);
+  const tables = new Map([
+    ["cmap", pdfSubsetCmap(fontState)],
+    ["glyf", glyf],
+    ["head", head],
+    ["hhea", pdfFontTableBytes(font, "hhea")],
+    ["hmtx", pdfFontTableBytes(font, "hmtx")],
+    ["loca", loca],
+    ["maxp", pdfFontTableBytes(font, "maxp")],
+  ]);
+  for (const tag of ["OS/2", "cvt ", "fpgm", "gasp", "name", "post", "prep"]) if (font.tables.has(tag)) tables.set(tag, pdfFontTableBytes(font, tag));
+  const bytes = pdfBuildSfnt(tables);
+  fontState.subsetGlyphs = included.size;
+  fontState.fontProgramBytes = bytes.byteLength;
+  return bytes;
+}
+
+function pdfSubsetFontName(fontState) {
+  let hash = 2166136261;
+  for (const mapping of fontState.used.values()) {
+    hash ^= mapping.codePoint;
+    hash = Math.imul(hash, 16777619) >>> 0;
+    hash ^= mapping.glyph;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  let prefix = "";
+  for (let index = 0; index < 6; index += 1) { prefix += String.fromCharCode(65 + hash % 26); hash = Math.floor(hash / 26); }
+  return `${prefix}+${fontState.font.name}`;
 }
 
 function pdfNumber(value) {
@@ -10144,10 +10320,12 @@ function pdfToUnicodeCmap(fontState) {
 
 function pdfEmbeddedFontObjectBodies(fontState, ids) {
   const { font } = fontState;
+  const fontProgram = fontState.subset ? pdfSubsetTrueTypeFont(fontState) : font.bytes;
+  const pdfFontName = fontState.subset ? pdfSubsetFontName(fontState) : font.name;
   const mappings = [...fontState.used.entries()].sort((a, b) => a[0] - b[0]);
   const widths = mappings.map(([cid, mapping]) => `${cid} [${Math.round((font.advances[mapping.glyph] || font.unitsPerEm) / font.unitsPerEm * 1000)}]`).join(" ");
   const cmap = Buffer.from(pdfToUnicodeCmap(fontState), "ascii");
-  const compressedFont = deflateSync(font.bytes);
+  const compressedFont = deflateSync(fontProgram);
   const cidToGid = new Uint8Array((mappings.at(-1)?.[0] + 1 || 1) * 2);
   for (const [cid, mapping] of mappings) {
     cidToGid[cid * 2] = mapping.glyph >> 8;
@@ -10155,10 +10333,10 @@ function pdfEmbeddedFontObjectBodies(fontState, ids) {
   }
   const compressedCidToGid = deflateSync(cidToGid);
   return new Map([
-    [ids.type0, Buffer.from(`<< /Type /Font /Subtype /Type0 /BaseFont /${font.name} /Encoding /Identity-H /DescendantFonts [${ids.cid} 0 R] /ToUnicode ${ids.toUnicode} 0 R >>`, "ascii")],
-    [ids.cid, Buffer.from(`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${font.name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${ids.descriptor} 0 R /DW 1000 /W [${widths}] /CIDToGIDMap ${ids.cidToGid} 0 R >>`, "ascii")],
-    [ids.descriptor, Buffer.from(`<< /Type /FontDescriptor /FontName /${font.name} /Flags 4 /FontBBox [${font.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${font.ascent} /Descent ${font.descent} /CapHeight ${font.ascent} /StemV 80 /FontFile2 ${ids.file} 0 R >>`, "ascii")],
-    [ids.file, Buffer.concat([Buffer.from(`<< /Length ${compressedFont.byteLength} /Length1 ${font.bytes.byteLength} /Filter /FlateDecode >>\nstream\n`, "ascii"), compressedFont, Buffer.from("\nendstream", "ascii")])],
+    [ids.type0, Buffer.from(`<< /Type /Font /Subtype /Type0 /BaseFont /${pdfFontName} /Encoding /Identity-H /DescendantFonts [${ids.cid} 0 R] /ToUnicode ${ids.toUnicode} 0 R >>`, "ascii")],
+    [ids.cid, Buffer.from(`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${pdfFontName} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${ids.descriptor} 0 R /DW 1000 /W [${widths}] /CIDToGIDMap ${ids.cidToGid} 0 R >>`, "ascii")],
+    [ids.descriptor, Buffer.from(`<< /Type /FontDescriptor /FontName /${pdfFontName} /Flags 4 /FontBBox [${font.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${font.ascent} /Descent ${font.descent} /CapHeight ${font.ascent} /StemV 80 /FontFile2 ${ids.file} 0 R >>`, "ascii")],
+    [ids.file, Buffer.concat([Buffer.from(`<< /Length ${compressedFont.byteLength} /Length1 ${fontProgram.byteLength} /Filter /FlateDecode >>\nstream\n`, "ascii"), compressedFont, Buffer.from("\nendstream", "ascii")])],
     [ids.toUnicode, Buffer.concat([Buffer.from(`<< /Length ${cmap.byteLength} >>\nstream\n`, "ascii"), cmap, Buffer.from("\nendstream", "ascii")])],
     [ids.cidToGid, Buffer.concat([Buffer.from(`<< /Length ${compressedCidToGid.byteLength} /Filter /FlateDecode >>\nstream\n`, "ascii"), compressedCidToGid, Buffer.from("\nendstream", "ascii")])],
   ]);
@@ -10170,7 +10348,7 @@ function buildMinimalPdf(artifact, options = {}) {
   const tagged = options.tagged !== false;
   const language = String(options.language || options.lang || artifact.metadata?.language || artifact.metadata?.lang || "en-US");
   const title = String(options.title || artifact.metadata?.title || String(pages[0]?.text || "").split(/\r?\n/).find(Boolean) || "Office artifact");
-  const fontState = options.embeddedFont ? { font: options.embeddedFont, used: new Map(), cidByCodePoint: new Map() } : undefined;
+  const fontState = options.embeddedFont ? { font: options.embeddedFont, subset: options.subsetFont !== false, used: new Map(), cidByCodePoint: new Map() } : undefined;
   let nextObjectId = 3;
   let embeddedFontIds;
   if (fontState) embeddedFontIds = { type0: nextObjectId++, cid: nextObjectId++, descriptor: nextObjectId++, file: nextObjectId++, toUnicode: nextObjectId++, cidToGid: nextObjectId++ };

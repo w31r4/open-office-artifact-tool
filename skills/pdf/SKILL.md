@@ -58,7 +58,7 @@ await (await PdfFile.exportPdf(pdf, {
 })).save("qa-report.pdf");
 ```
 
-The built-in Helvetica path is intentionally ASCII-only. For Chinese, Cyrillic, Greek, accented Latin, or other Unicode text, provide a standalone glyf-based TrueType `.ttf` through `font`; export fails instead of silently replacing unsupported text. The writer embeds a Type0/CIDFontType2 font, glyph widths, and a `ToUnicode` map. It does not yet perform complex-script shaping or accept `.ttc` collections.
+The built-in Helvetica path is intentionally ASCII-only. For Chinese, Cyrillic, Greek, accented Latin, or other Unicode text, provide a standalone glyf-based TrueType `.ttf` through `font`; export fails instead of silently replacing unsupported text. The writer embeds a Type0/CIDFontType2 font, glyph widths, and a `ToUnicode` map. Fonts are subset by default to used glyphs and recursive composite dependencies; use `subsetFont: false` or CLI `--subset-font false` only when comparing full-font interoperability. It does not yet perform complex-script shaping or accept `.ttc` collections.
 
 ## Verification commands
 
@@ -73,7 +73,7 @@ node skills/pdf/scripts/verify-pdf.mjs \
   --native-render required
 ```
 
-Fixture creation accepts the same font input with `--font /path/to/unicode.ttf` and an optional `--max-font-bytes` safety bound.
+Fixture creation accepts the same font input with `--font /path/to/unicode.ttf`, an optional `--max-font-bytes` safety bound, and `--subset-font false` for diagnostic full-font output.
 
 Create an approved visual baseline:
 

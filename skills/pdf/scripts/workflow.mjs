@@ -233,7 +233,7 @@ export async function runPdfFixture(fixturePath, options = {}) {
   const pdf = createPdfFromFixture(fixture);
   const pdfPath = path.join(outputDir, fixture.outputName || `${fixture.name || "artifact"}.pdf`);
   const fixtureExport = fixture.export || {};
-  await (await PdfFile.exportPdf(pdf, { ...fixtureExport, font: options.font ?? fixtureExport.font, maxFontBytes: options.maxFontBytes ?? fixtureExport.maxFontBytes })).save(pdfPath);
+  await (await PdfFile.exportPdf(pdf, { ...fixtureExport, font: options.font ?? fixtureExport.font, maxFontBytes: options.maxFontBytes ?? fixtureExport.maxFontBytes, subsetFont: options.subsetFont ?? fixtureExport.subsetFont })).save(pdfPath);
   const qa = await verifyPdfFile(pdfPath, { outputDir: path.join(outputDir, "qa"), nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto", pdfjs: options.pdfjs ?? fixture.qa?.pdfjs ?? "auto", requireTagged: options.requireTagged ?? fixture.qa?.requireTagged ?? true, baselineDir: options.baselineDir, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, inspectKind: fixture.qa?.inspectKind, maxChars: fixture.qa?.maxChars });
   for (const expected of fixture.expectText || []) assert.match(qa.extractedText, new RegExp(expected));
   for (const expected of fixture.expectPdfjsText || []) if (qa.pdfjs.status === "passed") assert.match(qa.pdfjs.text, new RegExp(expected));
