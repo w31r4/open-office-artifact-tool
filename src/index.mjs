@@ -145,10 +145,24 @@ function inspectRecordMatchesTarget(record, targets) {
 function filterInspectRecords(records, options = {}) {
   const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
   const targets = inspectTargetTokens(options);
-  return shapeInspectRecords(records
+  let filtered = records
     .filter(Boolean)
-    .filter((record) => !search || JSON.stringify(record).toLowerCase().includes(search))
-    .filter((record) => inspectRecordMatchesTarget(record, targets)), options);
+    .filter((record) => !search || JSON.stringify(record).toLowerCase().includes(search));
+  if (targets.length) {
+    const before = Math.max(0, Number(options.before ?? options.contextBefore ?? options.context ?? 0) || 0);
+    const after = Math.max(0, Number(options.after ?? options.contextAfter ?? options.context ?? 0) || 0);
+    if (before || after) {
+      const keep = new Set();
+      filtered.forEach((record, index) => {
+        if (!inspectRecordMatchesTarget(record, targets)) return;
+        for (let i = Math.max(0, index - before); i <= Math.min(filtered.length - 1, index + after); i += 1) keep.add(i);
+      });
+      filtered = filtered.filter((_, index) => keep.has(index));
+    } else {
+      filtered = filtered.filter((record) => inspectRecordMatchesTarget(record, targets));
+    }
+  }
+  return shapeInspectRecords(filtered, options);
 }
 
 const INSPECT_CORE_FIELDS = new Set(["kind", "id", "sheet", "address", "range", "name", "page", "slide", "targetId", "parentId"]);
@@ -628,22 +642,22 @@ export const HELP_CATALOG = [
 const HELP_DETAIL_OVERRIDES = {
   "workbook.inspect": {
     examples: ["workbook.inspect({ kind: 'formula', target: 'Sheet1!E2', include: 'formula,value,precedents' })"],
-    options: ["kind", "search/searchTerm", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    options: ["kind", "search/searchTerm", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
   },
   "presentation.inspect": {
     examples: ["presentation.inspect({ kind: 'image,comment', target: image.id, include: 'alt,bbox' })"],
-    options: ["kind", "search", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
   },
   "document.inspect": {
     examples: ["document.inspect({ kind: 'paragraph,comment', target: comment.id, maxChars: 4000 })"],
-    options: ["kind", "search", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
   },
   "pdf.inspect": {
     examples: ["pdf.inspect({ kind: 'image,table', target: image.id, include: 'alt,bbox' })"],
-    options: ["kind", "search", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
   },
   renderArtifact: {

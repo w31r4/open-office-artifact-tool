@@ -42,6 +42,7 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 - kind
 - search
 - target/targetId/id/anchor
+- before/after/context
 - include/fields
 - exclude/omit
 - maxChars
@@ -82,6 +83,7 @@ Emit bounded NDJSON for pages, text, positioned text items, layout regions, tabl
 - kind
 - search
 - target/targetId/id/anchor
+- before/after/context
 - include/fields
 - exclude/omit
 - maxChars
@@ -130,6 +132,7 @@ Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, 
 - kind
 - search
 - target/targetId/id/anchor
+- before/after/context
 - include/fields
 - exclude/omit
 - maxChars
@@ -519,6 +522,7 @@ Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, com
 - kind
 - search/searchTerm
 - target/targetId/id/anchor
+- before/after/context
 - include/fields
 - exclude/omit
 - maxChars
