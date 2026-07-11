@@ -606,7 +606,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate a clean-room subset of Excel structured references such as TableName[Column] in formulas, expanding them to table data-body cell precedents." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], and TableName[[#Data],[Column]] in formulas, expanding them to stable table cell precedents." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
@@ -760,8 +760,8 @@ const HELP_DETAIL_OVERRIDES = {
     returns: "DefinedName facade with id/name/refersTo/scope",
   },
   "workbook.structuredReferences": {
-    examples: ["=SUM(TasksTable[Revenue])"],
-    notes: ["Current clean-room subset supports TableName[Column] data-body references; #All/#Headers/#Totals forms remain roadmap."],
+    examples: ["=SUM(TasksTable[Revenue])", "=TEXTJOIN(\"|\",TRUE,TasksTable[#Headers])", "=SUM(TasksTable[[#Data],[Revenue]])"],
+    notes: ["Current clean-room subset supports #Headers/#Data/#All/#Totals sections and single-column selectors; multi-column discontiguous selectors remain roadmap."],
   },
   createPlaywrightRenderer: {
     examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
@@ -2497,30 +2497,65 @@ function formulaDefinedNameRange(sheet, refText = "", seen = new Set()) {
   return { missing: true, name: item.name, refersTo: item.refersTo };
 }
 
+function structuredRefTokens(refBody = "") {
+  const body = String(refBody || "").trim();
+  const bracketed = [...body.matchAll(/\[([^\]]*)\]/g)].map((match) => match[1].trim()).filter(Boolean);
+  if (bracketed.length) return bracketed;
+  return body.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
 function formulaStructuredRefRange(sheet, refText = "") {
-  const match = /^([A-Za-z_][A-Za-z0-9_.]*)\[([^\]]+)\]$/.exec(String(refText || "").trim());
+  const match = /^([A-Za-z_][A-Za-z0-9_.]*)\[((?:[^\[\]]+|\[[^\]]+\])+)\]$/.exec(String(refText || "").trim());
   if (!match) return undefined;
   const tableName = match[1];
-  const columnName = match[2].trim();
-  if (!columnName || columnName.startsWith("#")) return { missing: true, tableName, columnName };
+  const tokens = structuredRefTokens(match[2]);
   const found = findWorkbookTable(sheet, tableName);
-  if (!found) return { missing: true, tableName, columnName };
+  if (!found) return { missing: true, tableName, columnName: tokens.join(",") };
   const { table, sheet: tableSheet } = found;
   const headers = table.hasHeaders ? (table.values[0] || []) : Array.from({ length: table.columnCount || 0 }, (_, index) => `Column${index + 1}`);
-  const columnIndex = headers.findIndex((header) => String(header ?? "").trim() === columnName);
-  if (columnIndex < 0) return { missing: true, tableName, columnName, sheetName: tableSheet.name };
   const bounds = parseRangeAddress(table.range);
-  const top = bounds.top + (table.showHeaders ? 1 : 0);
-  const bottom = bounds.bottom;
-  if (top > bottom) return { sheetName: tableSheet.name, start: makeCellAddress(top, bounds.left + columnIndex), end: makeCellAddress(top - 1, bounds.left + columnIndex), empty: true, tableName, columnName, table, columnIndex };
-  return { sheetName: tableSheet.name, start: makeCellAddress(top, bounds.left + columnIndex), end: makeCellAddress(bottom, bounds.left + columnIndex), tableName, columnName, table, columnIndex };
+  const normalizedTokens = tokens.map((token) => String(token || "").trim()).filter(Boolean);
+  const sectionTokens = normalizedTokens.filter((token) => token.startsWith("#"));
+  const columnTokens = normalizedTokens.filter((token) => !token.startsWith("#"));
+  const section = sectionTokens.at(-1) || "#Data";
+  const firstDataRow = bounds.top + (table.showHeaders ? 1 : 0);
+  const totalsRow = table.showTotals ? bounds.bottom : undefined;
+  const lastDataRow = bounds.bottom - (table.showTotals ? 1 : 0);
+  let top = firstDataRow;
+  let bottom = lastDataRow;
+  if (/^#Headers$/i.test(section)) {
+    if (!table.showHeaders) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.top, bounds.left), end: makeCellAddress(bounds.top - 1, bounds.left), empty: true, tableName, columnName: columnTokens.join(","), table };
+    top = bottom = bounds.top;
+  } else if (/^#Totals$/i.test(section)) {
+    if (totalsRow == null) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.bottom + 1, bounds.left), end: makeCellAddress(bounds.bottom, bounds.left), empty: true, tableName, columnName: columnTokens.join(","), table };
+    top = bottom = totalsRow;
+  } else if (/^#All$/i.test(section)) {
+    top = bounds.top;
+    bottom = bounds.bottom;
+  } else if (/^#Data$/i.test(section)) {
+    top = firstDataRow;
+    bottom = lastDataRow;
+  } else if (sectionTokens.length) {
+    return { missing: true, tableName, columnName: section, sheetName: tableSheet.name };
+  }
+  const columnName = columnTokens.at(-1);
+  let left = bounds.left;
+  let right = bounds.right;
+  let columnIndex;
+  if (columnName) {
+    columnIndex = headers.findIndex((header) => String(header ?? "").trim() === columnName);
+    if (columnIndex < 0) return { missing: true, tableName, columnName, sheetName: tableSheet.name };
+    left = right = bounds.left + columnIndex;
+  }
+  if (top > bottom) return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), empty: true, tableName, columnName, table, columnIndex, section };
+  return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), tableName, columnName, table, columnIndex, section };
 }
 
 function formulaReferences(formula, sheet) {
   const raw = String(formula || "");
   const refs = [];
   const consumed = [];
-  const structuredRegex = /\b([A-Za-z_][A-Za-z0-9_.]*)\[([^\]]+)\]/g;
+  const structuredRegex = /\b([A-Za-z_][A-Za-z0-9_.]*)\[((?:[^\[\]]+|\[[^\]]+\])+)\]/g;
   for (const match of raw.matchAll(structuredRegex)) {
     consumed.push([match.index, match.index + match[0].length]);
     const structured = formulaStructuredRefRange(sheet, match[0]);
@@ -2706,6 +2741,7 @@ function splitFormulaArgs(text = "") {
   const args = [];
   let current = "";
   let depth = 0;
+  let bracketDepth = 0;
   let inString = false;
   for (let i = 0; i < String(text).length; i++) {
     const ch = String(text)[i];
@@ -2717,7 +2753,9 @@ function splitFormulaArgs(text = "") {
     }
     if (!inString && ch === "(") depth += 1;
     if (!inString && ch === ")") depth -= 1;
-    if (!inString && ch === "," && depth === 0) { args.push(current.trim()); current = ""; continue; }
+    if (!inString && ch === "[") bracketDepth += 1;
+    if (!inString && ch === "]") bracketDepth -= 1;
+    if (!inString && ch === "," && depth === 0 && bracketDepth === 0) { args.push(current.trim()); current = ""; continue; }
     current += ch;
   }
   if (current.trim() || text === "") args.push(current.trim());
@@ -2755,7 +2793,8 @@ function formulaRangeMatrix(sheet, refText, context = {}) {
         if ((value == null || value === "") && structured.table) {
           const tableBounds = parseRangeAddress(structured.table.range);
           const tableRow = row - tableBounds.top;
-          value = structured.table.values[tableRow]?.[structured.columnIndex] ?? value;
+          const tableCol = structured.columnIndex ?? (col - tableBounds.left);
+          value = structured.table.values[tableRow]?.[tableCol] ?? value;
         }
         values.push(value);
       }
