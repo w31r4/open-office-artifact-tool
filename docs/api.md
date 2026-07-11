@@ -27,6 +27,29 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
+### document details
+
+#### `document.inspect`
+
+Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
+
+**Examples:**
+
+- document.inspect({ kind: 'paragraph,comment', target: comment.id, maxChars: 4000 })
+
+**Options:**
+
+- kind
+- search
+- target/targetId/id/anchor
+- include/fields
+- exclude/omit
+- maxChars
+
+**Returns:**
+
+{ ndjson, truncated } bounded NDJSON records
+
 ## pdf
 
 | Name | Kind | Summary |
@@ -43,6 +66,29 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
 | `PdfFile.exportPdf` | api | Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction. |
+
+### pdf details
+
+#### `pdf.inspect`
+
+Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude.
+
+**Examples:**
+
+- pdf.inspect({ kind: 'image,table', target: image.id, include: 'alt,bbox' })
+
+**Options:**
+
+- kind
+- search
+- target/targetId/id/anchor
+- include/fields
+- exclude/omit
+- maxChars
+
+**Returns:**
+
+{ ndjson, truncated } bounded NDJSON records
 
 ## presentation
 
@@ -69,6 +115,29 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `slide.shapes.add` | api | Add a shape/textbox with geometry, position, fill, line, and text. |
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
 
+### presentation details
+
+#### `presentation.inspect`
+
+Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
+
+**Examples:**
+
+- presentation.inspect({ kind: 'image,comment', target: image.id, include: 'alt,bbox' })
+
+**Options:**
+
+- kind
+- search
+- target/targetId/id/anchor
+- include/fields
+- exclude/omit
+- maxChars
+
+**Returns:**
+
+{ ndjson, truncated } bounded NDJSON records
+
 ## shared
 
 | Name | Kind | Summary |
@@ -83,6 +152,86 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `renderFileWithNativeOffice` | api | Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
 | `visualQaArtifact` | api | Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG pixel-diff metrics when requested. |
+
+### shared details
+
+#### `createPlaywrightRenderer`
+
+Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default.
+
+**Examples:**
+
+- const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })
+
+**Options:**
+
+- viewport
+- deviceScaleFactor
+- allowNetwork
+- timeoutMs
+- format
+
+**Returns:**
+
+renderer adapter function for renderArtifact(...)
+
+#### `renderArtifact`
+
+Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output.
+
+**Examples:**
+
+- await renderArtifact(document, { format: 'png', renderer: createPlaywrightRenderer() })
+
+**Options:**
+
+- format
+- renderer/rasterRenderer/renderAdapter
+- page/pageIndex
+- slide
+- sheetName
+- range
+
+**Returns:**
+
+FileBlob with normalized render metadata
+
+#### `verifyArtifact`
+
+Run an artifact's verify() method and return a bounded NDJSON QA report.
+
+**Examples:**
+
+- verifyArtifact(workbook, { maxChars: 12000 })
+
+**Options:**
+
+- maxChars
+
+**Returns:**
+
+{ artifactKind, ok, issues, ndjson, truncated }
+
+#### `visualQaArtifact`
+
+Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG pixel-diff metrics when requested.
+
+**Examples:**
+
+- await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })
+
+**Options:**
+
+- baseline/expected/baselineBlob
+- pixelDiff
+- allowChange
+- minBytes
+- maxBytes
+- maxChars
+
+**Returns:**
+
+{ ok, blob, summary, issues, ndjson }
 
 ## workbook
 
@@ -134,4 +283,259 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
+
+### workbook details
+
+#### `fx.ABS`
+
+Return the absolute value of a number.
+
+**Examples:**
+
+- =ABS(A1)
+
+#### `fx.AND`
+
+Return TRUE when all conditions are true.
+
+**Examples:**
+
+- =AND(A1>0,B1>0)
+
+#### `fx.AVERAGE`
+
+Average numeric values across arguments and ranges in the clean-room formula engine.
+
+**Examples:**
+
+- =AVERAGE(A1:A10)
+
+#### `fx.CEILING`
+
+Round a number up to the nearest significance.
+
+**Examples:**
+
+- =CEILING(A1,5)
+
+#### `fx.CONCAT`
+
+Concatenate text values and ranges.
+
+**Examples:**
+
+- =CONCAT(A1,"-",B1)
+
+#### `fx.COUNT`
+
+Count numeric values across arguments and ranges.
+
+**Examples:**
+
+- =COUNT(A1:A10)
+
+#### `fx.COUNTIF`
+
+Count values in a range that match a criterion.
+
+**Examples:**
+
+- =COUNTIF(A1:A10,">0")
+
+#### `fx.FLOOR`
+
+Round a number down to the nearest significance.
+
+**Examples:**
+
+- =FLOOR(A1,5)
+
+#### `fx.IF`
+
+Return one value when a condition is true and another when false.
+
+**Examples:**
+
+- =IF(A1>0,"ok","bad")
+
+#### `fx.INT`
+
+Round a number down to the nearest integer.
+
+**Examples:**
+
+- =INT(A1)
+
+#### `fx.LEFT`
+
+Return characters from the start of a text value.
+
+**Examples:**
+
+- =LEFT(A1,3)
+
+#### `fx.LEN`
+
+Return the length of a text value.
+
+**Examples:**
+
+- =LEN(A1)
+
+#### `fx.LOWER`
+
+Convert text to lowercase.
+
+**Examples:**
+
+- =LOWER(A1)
+
+#### `fx.MAX`
+
+Return the maximum numeric value across arguments and ranges.
+
+**Examples:**
+
+- =MAX(A1:A10)
+
+#### `fx.MID`
+
+Return characters from the middle of a text value.
+
+**Examples:**
+
+- =MID(A1,2,3)
+
+#### `fx.MIN`
+
+Return the minimum numeric value across arguments and ranges.
+
+**Examples:**
+
+- =MIN(A1:A10)
+
+#### `fx.OR`
+
+Return TRUE when any condition is true.
+
+**Examples:**
+
+- =OR(A1>0,B1>0)
+
+#### `fx.PMT`
+
+Calculate a loan payment for constant payments and constant interest rate.
+
+**Examples:**
+
+- =PMT(rate,nper,pv)
+
+**Notes:**
+
+- Catalog entry only in MVP; full financial formula evaluation is roadmap.
+
+#### `fx.RIGHT`
+
+Return characters from the end of a text value.
+
+**Examples:**
+
+- =RIGHT(A1,3)
+
+#### `fx.ROUND`
+
+Round a numeric value to a fixed number of decimal places.
+
+**Examples:**
+
+- =ROUND(A1,2)
+
+#### `fx.SUM`
+
+Sum numeric values across arguments and ranges.
+
+**Examples:**
+
+- =SUM(A1:A10)
+
+#### `fx.SUMIF`
+
+Sum values whose corresponding criteria range entries match a criterion.
+
+**Examples:**
+
+- =SUMIF(A1:A10,"East",B1:B10)
+
+#### `fx.TEXTJOIN`
+
+Join text values with a delimiter and optional empty-value skipping.
+
+**Examples:**
+
+- =TEXTJOIN("/",TRUE,A1:A3)
+
+#### `fx.TRIM`
+
+Trim leading/trailing whitespace and collapse internal whitespace.
+
+**Examples:**
+
+- =TRIM(A1)
+
+#### `fx.UPPER`
+
+Convert text to uppercase.
+
+**Examples:**
+
+- =UPPER(A1)
+
+#### `fx.VLOOKUP`
+
+Look up a value in the first column of a table range and return a value from another column.
+
+**Examples:**
+
+- =VLOOKUP("Beta",A2:B4,2,FALSE)
+
+#### `fx.XLOOKUP`
+
+Look up a value in one range and return the corresponding value from another range.
+
+**Examples:**
+
+- =XLOOKUP("Gamma",A2:A4,B2:B4,"missing")
+
+#### `workbook.inspect`
+
+Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude.
+
+**Examples:**
+
+- workbook.inspect({ kind: 'formula', target: 'Sheet1!E2', include: 'formula,value,precedents' })
+
+**Options:**
+
+- kind
+- search/searchTerm
+- target/targetId/id/anchor
+- include/fields
+- exclude/omit
+- maxChars
+
+**Returns:**
+
+{ ndjson, truncated } bounded NDJSON records
+
+#### `workbook.structuredReferences`
+
+Evaluate a clean-room subset of Excel structured references such as TableName[Column] in formulas, expanding them to table data-body cell precedents.
+
+**Examples:**
+
+- =SUM(TasksTable[Revenue])
+
+**Notes:**
+
+- Current clean-room subset supports TableName[Column] data-body references; #All/#Headers/#Totals forms remain roadmap.
 

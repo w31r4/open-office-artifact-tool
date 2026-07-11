@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 
 import {
   DocumentModel,
@@ -37,6 +38,9 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "createPopplerRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createLibreOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
+assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.options?.includes("include/fields"));
+assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
+assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -66,7 +70,15 @@ assert.match(helpArtifact("shared", "createPopplerRenderer").ndjson, /Poppler CL
 assert.match(helpArtifact("shared", "createLibreOfficeRenderer").ndjson, /LibreOffice CLI renderer adapter/);
 assert.match(helpArtifact("shared", "createNativeOfficeRenderer").ndjson, /native Office renderer adapter/);
 assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /native Office bridge command/);
+assert.match(helpArtifact("shared", "pixelDiff").ndjson, /visualQaArtifact/);
+assert.match(helpArtifact("workbook", "include\/fields").ndjson, /workbook.inspect/);
 assert.match(helpArtifact(workbook, "fx.PMT").ndjson, /financial/);
 assert.equal(helpArtifact("presentation", "sheet.charts.add").ndjson, "");
+const apiDocs = await fs.readFile(new URL("../docs/api.md", import.meta.url), "utf8");
+assert.match(apiDocs, /### shared details/);
+assert.match(apiDocs, /#### `renderArtifact`/);
+assert.match(apiDocs, /await renderArtifact\(document/);
+assert.match(apiDocs, /#### `workbook.inspect`/);
+assert.match(apiDocs, /include\/fields/);
 
 console.log("help smoke ok");

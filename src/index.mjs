@@ -625,6 +625,58 @@ export const HELP_CATALOG = [
   { artifactKind: "shared", kind: "api", name: "renderFileWithNativeOffice", summary: "Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output." },
 ];
 
+const HELP_DETAIL_OVERRIDES = {
+  "workbook.inspect": {
+    examples: ["workbook.inspect({ kind: 'formula', target: 'Sheet1!E2', include: 'formula,value,precedents' })"],
+    options: ["kind", "search/searchTerm", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    returns: "{ ndjson, truncated } bounded NDJSON records",
+  },
+  "presentation.inspect": {
+    examples: ["presentation.inspect({ kind: 'image,comment', target: image.id, include: 'alt,bbox' })"],
+    options: ["kind", "search", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    returns: "{ ndjson, truncated } bounded NDJSON records",
+  },
+  "document.inspect": {
+    examples: ["document.inspect({ kind: 'paragraph,comment', target: comment.id, maxChars: 4000 })"],
+    options: ["kind", "search", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    returns: "{ ndjson, truncated } bounded NDJSON records",
+  },
+  "pdf.inspect": {
+    examples: ["pdf.inspect({ kind: 'image,table', target: image.id, include: 'alt,bbox' })"],
+    options: ["kind", "search", "target/targetId/id/anchor", "include/fields", "exclude/omit", "maxChars"],
+    returns: "{ ndjson, truncated } bounded NDJSON records",
+  },
+  renderArtifact: {
+    examples: ["await renderArtifact(document, { format: 'png', renderer: createPlaywrightRenderer() })"],
+    options: ["format", "renderer/rasterRenderer/renderAdapter", "page/pageIndex", "slide", "sheetName", "range"],
+    returns: "FileBlob with normalized render metadata",
+  },
+  visualQaArtifact: {
+    examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
+    options: ["baseline/expected/baselineBlob", "pixelDiff", "allowChange", "minBytes", "maxBytes", "maxChars"],
+    returns: "{ ok, blob, summary, issues, ndjson }",
+  },
+  verifyArtifact: {
+    examples: ["verifyArtifact(workbook, { maxChars: 12000 })"],
+    options: ["maxChars"],
+    returns: "{ artifactKind, ok, issues, ndjson, truncated }",
+  },
+  "workbook.structuredReferences": {
+    examples: ["=SUM(TasksTable[Revenue])"],
+    notes: ["Current clean-room subset supports TableName[Column] data-body references; #All/#Headers/#Totals forms remain roadmap."],
+  },
+  createPlaywrightRenderer: {
+    examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
+    options: ["viewport", "deviceScaleFactor", "allowNetwork", "timeoutMs", "format"],
+    returns: "renderer adapter function for renderArtifact(...)",
+  },
+};
+
+for (const item of HELP_CATALOG) {
+  const details = HELP_DETAIL_OVERRIDES[item.name];
+  if (details) Object.assign(item, details);
+}
+
 export function helpArtifact(artifactOrKind = "*", query = "*", options = {}) {
   const artifactKind = typeof artifactOrKind === "string" ? artifactOrKind : inferArtifactKind(artifactOrKind);
   const q = String(query || "*").toLowerCase();
@@ -632,7 +684,7 @@ export function helpArtifact(artifactOrKind = "*", query = "*", options = {}) {
   const records = HELP_CATALOG.filter((item) => {
     const kindMatch = artifactKind === "*" || item.artifactKind === artifactKind || (artifactKind === "unknown" && item.artifactKind === "shared");
     if (!kindMatch) return false;
-    const haystack = `${item.name}\n${item.summary}\n${item.category || ""}\n${(item.examples || []).join("\n")}\n${(item.notes || []).join("\n")}`.toLowerCase();
+    const haystack = `${item.name}\n${item.summary}\n${item.category || ""}\n${(item.examples || []).join("\n")}\n${(item.options || item.params || []).join("\n")}\n${item.returns || ""}\n${JSON.stringify(item.schema || {})}\n${(item.notes || []).join("\n")}`.toLowerCase();
     const queryMatch = q === "*" || item.name.toLowerCase().includes(q.replace("fx.", "")) || haystack.includes(q);
     const searchMatch = !search || haystack.includes(search);
     return queryMatch && searchMatch;
