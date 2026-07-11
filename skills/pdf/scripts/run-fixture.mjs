@@ -16,7 +16,7 @@ function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--output-dir dir] [--native-render auto|required|off] [--pdfjs auto|required|off] [--baseline-dir dir] [--write-baseline true]");
-  const result = await runPdfFixture(args.fixture, { outputDir: args["output-dir"], nativeRender: args["native-render"], pdfjs: args.pdfjs, baselineDir: args["baseline-dir"], writeBaseline: args["write-baseline"] === "true", pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined, diffAlignment: args["diff-alignment"], diffPalette: args["diff-color"] || args["diff-unchanged-color"] ? { changed: args["diff-color"], unchanged: args["diff-unchanged-color"] } : undefined });
+  const result = await runPdfFixture(args.fixture, { outputDir: args["output-dir"], nativeRender: args["native-render"], pdfjs: args.pdfjs, baselineDir: args["baseline-dir"], writeBaseline: args["write-baseline"] === "true", pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined, diffAlignment: args["diff-alignment"], diffPalette: args["diff-color"] || args["diff-unchanged-color"] ? { changed: args["diff-color"], unchanged: args["diff-unchanged-color"] } : undefined, pixelRegistration: args["registration-offset"] ? { maxOffset: Number(args["registration-offset"]), minImprovementRatio: args["registration-improvement"] ? Number(args["registration-improvement"]) : undefined } : undefined });
   console.log(JSON.stringify({ fixture: result.fixture.name, pdf: result.pdfPath, qa: result.qa.summary }));
   return result;
 }

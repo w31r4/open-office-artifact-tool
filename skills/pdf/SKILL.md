@@ -113,6 +113,7 @@ node skills/pdf/scripts/run-fixture.mjs \
 - Baseline approval replaces stale model/native page files; later page-count changes fail QA even if all remaining pages match.
 - Changed pages write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
+- For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.
 - Deliver only the requested PDF; previews, baselines, extraction dumps, and QA reports are internal unless requested.
 
 ## References

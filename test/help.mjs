@@ -112,6 +112,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffImage?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffPalette?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffAlignment?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelRegistration?.type, "boolean|number|object");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
 assert.equal(pdfCatalog.length, 18);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));

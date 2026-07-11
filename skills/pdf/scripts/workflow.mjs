@@ -80,6 +80,7 @@ async function runPngQa(artifact, options = {}) {
     pixelThreshold: options.pixelThreshold ?? 0,
     diffAlignment: options.diffAlignment,
     diffPalette: options.diffPalette,
+    pixelRegistration: options.pixelRegistration,
     minBytes: options.minBytes ?? 100,
     maxChars: options.maxChars ?? 20_000,
   });
@@ -106,7 +107,7 @@ async function renderModelPages(pdf, outputDir, options = {}) {
   for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-page-${pageIndex + 1}.png`) : undefined;
     const diffPath = path.join(outputDir, "diffs", `model-page-${pageIndex + 1}.png`);
-    const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, minBytes: options.minBytes, maxChars: options.maxChars });
+    const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const layoutPath = path.join(layoutsDir, `page-${pageIndex + 1}.json`);
     await Promise.all([qa.blob.save(pagePath), fs.writeFile(layoutPath, await (await pdf.render({ format: "layout", pageIndex })).text(), "utf8")]);
@@ -135,7 +136,7 @@ async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, opt
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
     const diffPath = path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`);
-    const qa = await runPngQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, minBytes: options.minBytes, maxChars: options.maxChars });
+    const qa = await runPngQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
     await png.save(pagePath);
     qaLines.push(qa.ndjson);
     pages.push({ page: pageIndex + 1, path: pagePath, diffPath: qa.diffPath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
@@ -212,7 +213,7 @@ export async function runPdfFixture(fixturePath, options = {}) {
   const pdf = createPdfFromFixture(fixture);
   const pdfPath = path.join(outputDir, fixture.outputName || `${fixture.name || "artifact"}.pdf`);
   await (await PdfFile.exportPdf(pdf)).save(pdfPath);
-  const qa = await verifyPdfFile(pdfPath, { outputDir: path.join(outputDir, "qa"), nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto", pdfjs: options.pdfjs ?? fixture.qa?.pdfjs ?? "auto", baselineDir: options.baselineDir, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, inspectKind: fixture.qa?.inspectKind, maxChars: fixture.qa?.maxChars });
+  const qa = await verifyPdfFile(pdfPath, { outputDir: path.join(outputDir, "qa"), nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto", pdfjs: options.pdfjs ?? fixture.qa?.pdfjs ?? "auto", baselineDir: options.baselineDir, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, inspectKind: fixture.qa?.inspectKind, maxChars: fixture.qa?.maxChars });
   for (const expected of fixture.expectText || []) assert.match(qa.extractedText, new RegExp(expected));
   for (const expected of fixture.expectPdfjsText || []) if (qa.pdfjs.status === "passed") assert.match(qa.pdfjs.text, new RegExp(expected));
   return { fixture, pdfPath, qa };

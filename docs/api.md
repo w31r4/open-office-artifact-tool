@@ -1297,7 +1297,7 @@ Add an inspectable native-style table facade with rows, columns, values, cells, 
 | `renderArtifact` | api | Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output. |
 | `renderFileWithNativeOffice` | api | Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
-| `visualQaArtifact` | api | Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a configurable aligned PNG diff heatmap. |
+| `visualQaArtifact` | api | Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap. |
 
 ### shared details
 
@@ -1525,7 +1525,7 @@ Run an artifact's verify() method and return a bounded NDJSON QA report.
 
 #### `visualQaArtifact`
 
-Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a configurable aligned PNG diff heatmap.
+Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap.
 
 **Examples:**
 
@@ -1538,6 +1538,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 - diffImage
 - diffPalette
 - diffAlignment
+- pixelRegistration
 - PNG/JPEG/WebP/PPM raster pixel comparison
 - allowChange
 - minBytes
@@ -1554,6 +1555,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 - `diffImage` (boolean) — Set false to disable PNG heatmap generation for changed raster baselines.
 - `diffPalette` (object) — Optional changed/unchanged RGB colors and alpha values for the PNG heatmap.
 - `diffAlignment` (string) — Dimension-mismatch behavior: strict (no heatmap), top-left, or center alignment on a union canvas.
+- `pixelRegistration` (boolean|number|object) — Optionally search a bounded baseline translation (up to 8 pixels) before comparison; records sampled and exact before/after metrics plus ignored edge pixels.
 - `allowChange` (boolean) — Allow baseline byte/pixel changes without emitting issues.
 - `minBytes` (number) — Warn when the render is smaller than this byte count.
 - `maxBytes` (number) — Warn when the render exceeds this byte count.

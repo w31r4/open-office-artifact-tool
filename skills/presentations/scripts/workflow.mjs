@@ -115,6 +115,7 @@ async function runPngQa(artifact, options = {}) {
     pixelThreshold: options.pixelThreshold ?? 0,
     diffAlignment: options.diffAlignment,
     diffPalette: options.diffPalette,
+    pixelRegistration: options.pixelRegistration,
     minBytes: options.minBytes ?? 100,
     maxChars: options.maxChars ?? 20_000,
   });
@@ -153,7 +154,7 @@ async function renderNativeSlides(pptxBlob, outputDir, slideCount, options = {})
     const slidePath = path.join(pagesDir, `slide-${slideIndex + 1}.png`);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `native-slide-${slideIndex + 1}.png`) : undefined;
     const diffPath = path.join(outputDir, "diffs", `native-slide-${slideIndex + 1}.png`);
-    const qa = await runPngQa({ export: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, minBytes: options.minBytes, maxChars: options.maxChars });
+    const qa = await runPngQa({ export: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
     await png.save(slidePath);
     qaLines.push(qa.ndjson);
     pages.push({ slide: slideIndex + 1, path: slidePath, diffPath: qa.diffPath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
@@ -187,6 +188,7 @@ async function renderModelSlides(presentation, outputDir, options = {}) {
       pixelThreshold: options.pixelThreshold,
       diffAlignment: options.diffAlignment,
       diffPalette: options.diffPalette,
+      pixelRegistration: options.pixelRegistration,
       minBytes: options.minBytes,
       maxChars: options.maxChars,
     });
@@ -264,6 +266,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
     pixelThreshold: options.pixelThreshold,
     diffAlignment: options.diffAlignment,
     diffPalette: options.diffPalette,
+    pixelRegistration: options.pixelRegistration,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
   });

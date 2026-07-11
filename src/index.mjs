@@ -575,11 +575,96 @@ function rgbaAt(image, canvasX, canvasY, offsetX, offsetY) {
   return image.pixels.subarray(index, index + 4);
 }
 
+function rgbaPixelChanged(actual, expected, canvasX, canvasY, actualOffsetX, actualOffsetY, expectedOffsetX, expectedOffsetY, threshold) {
+  const actualX = canvasX - actualOffsetX;
+  const actualY = canvasY - actualOffsetY;
+  const expectedX = canvasX - expectedOffsetX;
+  const expectedY = canvasY - expectedOffsetY;
+  const actualIndex = actualX >= 0 && actualY >= 0 && actualX < actual.width && actualY < actual.height ? (actualY * actual.width + actualX) * 4 : -1;
+  const expectedIndex = expectedX >= 0 && expectedY >= 0 && expectedX < expected.width && expectedY < expected.height ? (expectedY * expected.width + expectedX) * 4 : -1;
+  for (let channel = 0; channel < 4; channel += 1) {
+    const actualValue = actualIndex < 0 ? 0 : actual.pixels[actualIndex + channel];
+    const expectedValue = expectedIndex < 0 ? 0 : expected.pixels[expectedIndex + channel];
+    if (Math.abs(actualValue - expectedValue) > threshold) return true;
+  }
+  return false;
+}
+
+function countRgbaMismatches(actual, expected, geometry, threshold, expectedShiftX = 0, expectedShiftY = 0, stride = 1) {
+  let differentPixels = 0;
+  let sampledPixels = 0;
+  for (let y = 0; y < geometry.canvasHeight; y += stride) {
+    for (let x = 0; x < geometry.canvasWidth; x += stride) {
+      const expectedX = x - geometry.expectedOffsetX - expectedShiftX;
+      const expectedY = y - geometry.expectedOffsetY - expectedShiftY;
+      if ((expectedShiftX || expectedShiftY) && (expectedX < 0 || expectedY < 0 || expectedX >= expected.width || expectedY >= expected.height)) continue;
+      sampledPixels += 1;
+      if (rgbaPixelChanged(actual, expected, x, y, geometry.actualOffsetX, geometry.actualOffsetY, geometry.expectedOffsetX + expectedShiftX, geometry.expectedOffsetY + expectedShiftY, threshold)) differentPixels += 1;
+    }
+  }
+  return { differentPixels, sampledPixels };
+}
+
+function pixelRegistrationConfig(options = {}) {
+  const request = options.pixelRegistration ?? options.registration;
+  if (!request) return undefined;
+  const config = typeof request === "object" ? request : {};
+  const requestedOffset = request === true ? 2 : typeof request === "number" ? request : config.maxOffset ?? config.maxPixels ?? 2;
+  const maxOffset = Math.max(0, Math.min(8, Math.floor(Number(requestedOffset) || 0)));
+  if (!maxOffset) return undefined;
+  return {
+    maxOffset,
+    minImprovementRatio: Math.max(0, Math.min(1, Number(config.minImprovementRatio ?? config.minImprovement ?? 0.05))),
+    maxSamples: Math.max(1_000, Math.min(1_000_000, Math.floor(Number(config.maxSamples ?? config.samples ?? 100_000) || 100_000))),
+  };
+}
+
+function findPixelRegistration(actual, expected, geometry, threshold, config) {
+  const candidateCount = (config.maxOffset * 2 + 1) ** 2;
+  const samplesPerCandidate = Math.max(16, Math.floor(config.maxSamples / candidateCount));
+  const stride = Math.max(1, Math.ceil(Math.sqrt((geometry.canvasWidth * geometry.canvasHeight) / samplesPerCandidate)));
+  const baseline = countRgbaMismatches(actual, expected, geometry, threshold, 0, 0, stride);
+  let best = { x: 0, y: 0, ...baseline };
+  for (let y = -config.maxOffset; y <= config.maxOffset; y += 1) {
+    for (let x = -config.maxOffset; x <= config.maxOffset; x += 1) {
+      if (x === 0 && y === 0) continue;
+      const candidate = countRgbaMismatches(actual, expected, geometry, threshold, x, y, stride);
+      const candidateRatio = candidate.sampledPixels ? candidate.differentPixels / candidate.sampledPixels : 1;
+      const bestRatio = best.sampledPixels ? best.differentPixels / best.sampledPixels : 1;
+      const candidateDistance = Math.abs(x) + Math.abs(y);
+      const bestDistance = Math.abs(best.x) + Math.abs(best.y);
+      if (candidateRatio < bestRatio || (candidateRatio === bestRatio && candidateDistance < bestDistance)) best = { x, y, ...candidate };
+    }
+  }
+  const baselineRatio = baseline.sampledPixels ? baseline.differentPixels / baseline.sampledPixels : 0;
+  const bestRatio = best.sampledPixels ? best.differentPixels / best.sampledPixels : 1;
+  const improvementRatio = baselineRatio ? (baselineRatio - bestRatio) / baselineRatio : 0;
+  const applied = (best.x !== 0 || best.y !== 0) && improvementRatio >= config.minImprovementRatio;
+  return {
+    requested: true,
+    applied,
+    maxOffset: config.maxOffset,
+    minImprovementRatio: config.minImprovementRatio,
+    maxSamples: config.maxSamples,
+    candidateCount,
+    samplesPerCandidate,
+    estimatedComparisons: baseline.sampledPixels * candidateCount,
+    sampleStride: stride,
+    sampledPixels: baseline.sampledPixels,
+    sampledPixelsAfter: applied ? best.sampledPixels : baseline.sampledPixels,
+    sampledDifferentPixelsBefore: baseline.differentPixels,
+    sampledDifferentPixelsAfter: applied ? best.differentPixels : baseline.differentPixels,
+    sampledImprovementRatio: applied ? improvementRatio : 0,
+    offset: applied ? { x: best.x, y: best.y } : { x: 0, y: 0 },
+  };
+}
+
 function compareRgbaPixels(actual, expected, options = {}) {
   const threshold = Math.max(0, Number(options.threshold ?? options.pixelThreshold ?? 0));
   const requestedAlignment = String(options.diffAlignment ?? options.alignment ?? "strict").trim().toLowerCase();
   const alignment = ["strict", "top-left", "center"].includes(requestedAlignment) ? requestedAlignment : "strict";
   const dimensionMismatch = actual.width !== expected.width || actual.height !== expected.height;
+  const requestedRegistrationConfig = pixelRegistrationConfig(options);
   const canvasWidth = dimensionMismatch && alignment !== "strict" ? Math.max(actual.width, expected.width) : actual.width;
   const canvasHeight = dimensionMismatch && alignment !== "strict" ? Math.max(actual.height, expected.height) : actual.height;
   const result = {
@@ -603,6 +688,7 @@ function compareRgbaPixels(actual, expected, options = {}) {
     result.differentPixels = Math.max(result.pixels, expected.width * expected.height);
     result.mismatchRatio = 1;
     result.changed = true;
+    if (requestedRegistrationConfig) result.registration = { requested: true, applied: false, skipped: "dimensionMismatch", ...requestedRegistrationConfig };
     return result;
   }
   if (dimensionMismatch) {
@@ -614,8 +700,13 @@ function compareRgbaPixels(actual, expected, options = {}) {
   }
   const actualOffsetX = alignment === "center" ? Math.floor((canvasWidth - actual.width) / 2) : 0;
   const actualOffsetY = alignment === "center" ? Math.floor((canvasHeight - actual.height) / 2) : 0;
-  const expectedOffsetX = alignment === "center" ? Math.floor((canvasWidth - expected.width) / 2) : 0;
-  const expectedOffsetY = alignment === "center" ? Math.floor((canvasHeight - expected.height) / 2) : 0;
+  const baseExpectedOffsetX = alignment === "center" ? Math.floor((canvasWidth - expected.width) / 2) : 0;
+  const baseExpectedOffsetY = alignment === "center" ? Math.floor((canvasHeight - expected.height) / 2) : 0;
+  const geometry = { canvasWidth, canvasHeight, actualOffsetX, actualOffsetY, expectedOffsetX: baseExpectedOffsetX, expectedOffsetY: baseExpectedOffsetY };
+  const registrationConfig = dimensionMismatch ? undefined : requestedRegistrationConfig;
+  const registration = registrationConfig ? findPixelRegistration(actual, expected, geometry, threshold, registrationConfig) : undefined;
+  const expectedOffsetX = baseExpectedOffsetX + (registration?.offset.x || 0);
+  const expectedOffsetY = baseExpectedOffsetY + (registration?.offset.y || 0);
   const diffPixels = options.diffImage === false ? undefined : new Uint8Array(canvasWidth * canvasHeight * 4);
   const palette = options.diffPalette || options.palette || {};
   const changedColor = qaRgbColor(palette.changed, [255, 24, 72]);
@@ -624,11 +715,16 @@ function compareRgbaPixels(actual, expected, options = {}) {
   const unchangedAlpha = Math.max(0, Math.min(255, Math.round(Number(palette.unchangedAlpha ?? 255))));
   let changedPixels = 0;
   let channelDeltaSum = 0;
+  let registrationIgnoredPixels = 0;
   for (let y = 0; y < canvasHeight; y += 1) for (let x = 0; x < canvasWidth; x += 1) {
     const actualPixel = rgbaAt(actual, x, y, actualOffsetX, actualOffsetY);
-    const expectedPixel = rgbaAt(expected, x, y, expectedOffsetX, expectedOffsetY);
+    const expectedX = x - expectedOffsetX;
+    const expectedY = y - expectedOffsetY;
+    const ignoredRegistrationEdge = registration?.applied && (expectedX < 0 || expectedY < 0 || expectedX >= expected.width || expectedY >= expected.height);
+    const expectedPixel = ignoredRegistrationEdge ? actualPixel : rgbaAt(expected, x, y, expectedOffsetX, expectedOffsetY);
     const i = (y * canvasWidth + x) * 4;
     let pixelChanged = false;
+    if (ignoredRegistrationEdge) registrationIgnoredPixels += 1;
     for (let c = 0; c < 4; c += 1) {
       const delta = Math.abs(actualPixel[c] - expectedPixel[c]);
       channelDeltaSum += delta;
@@ -646,9 +742,22 @@ function compareRgbaPixels(actual, expected, options = {}) {
     if (pixelChanged) changedPixels += 1;
   }
   result.differentPixels = changedPixels;
-  result.mismatchRatio = result.pixels ? changedPixels / result.pixels : 0;
-  result.meanChannelDelta = result.pixels ? channelDeltaSum / (result.pixels * 4) : 0;
+  const comparedPixels = Math.max(0, result.pixels - registrationIgnoredPixels);
+  result.mismatchRatio = comparedPixels ? changedPixels / comparedPixels : 0;
+  result.meanChannelDelta = comparedPixels ? channelDeltaSum / (comparedPixels * 4) : 0;
   result.diffPalette = { changed: changedColor, changedAlpha, unchanged: unchangedColor || "actual-grayscale", unchangedAlpha };
+  if (registration) {
+    const before = registration.applied ? countRgbaMismatches(actual, expected, geometry, threshold) : { differentPixels: changedPixels, sampledPixels: result.pixels };
+    result.registration = {
+      ...registration,
+      differentPixelsBefore: before.differentPixels,
+      mismatchRatioBefore: result.pixels ? before.differentPixels / result.pixels : 0,
+      differentPixelsAfter: changedPixels,
+      mismatchRatioAfter: result.mismatchRatio,
+      comparedPixelsAfter: comparedPixels,
+      ignoredEdgePixels: registrationIgnoredPixels,
+    };
+  } else if (requestedRegistrationConfig && dimensionMismatch) result.registration = { requested: true, applied: false, skipped: "dimensionMismatch", ...requestedRegistrationConfig };
   result.changed = changedPixels > 0;
   if (result.changed && diffPixels) result.diffPixels = diffPixels;
   return result;
@@ -713,7 +822,7 @@ export async function visualQaArtifact(artifact, options = {}) {
           summary.pixelDiff = pixelDiff;
           summary.changed = pixelDiff.changed;
           if (compared.diffBytes) {
-            diffBlob = new FileBlob(compared.diffBytes, { type: "image/png", metadata: { artifactKind, format: "pixel-diff", actualFormat: pixelDiff.actualFormat, baselineFormat: pixelDiff.baselineFormat, alignment: pixelDiff.alignment, width: pixelDiff.diffWidth || pixelDiff.width, height: pixelDiff.diffHeight || pixelDiff.height, palette: pixelDiff.diffPalette } });
+            diffBlob = new FileBlob(compared.diffBytes, { type: "image/png", metadata: { artifactKind, format: "pixel-diff", actualFormat: pixelDiff.actualFormat, baselineFormat: pixelDiff.baselineFormat, alignment: pixelDiff.alignment, registration: pixelDiff.registration, width: pixelDiff.diffWidth || pixelDiff.width, height: pixelDiff.diffHeight || pixelDiff.height, palette: pixelDiff.diffPalette } });
             summary.diff = { type: diffBlob.type, bytes: diffBlob.bytes.length, hash: stableByteHash(diffBlob.bytes) };
           }
           if (pixelDiff.changed && options.allowChange !== true && options.allowPixelChange !== true) {
@@ -906,7 +1015,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a configurable aligned PNG diff heatmap." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },
@@ -970,7 +1079,7 @@ const HELP_DETAIL_OVERRIDES = {
   },
   visualQaArtifact: {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
-    options: ["baseline/expected/baselineBlob", "pixelDiff", "diffImage", "diffPalette", "diffAlignment", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
+    options: ["baseline/expected/baselineBlob", "pixelDiff", "diffImage", "diffPalette", "diffAlignment", "pixelRegistration", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
     returns: "{ ok, blob, diffBlob, summary, issues, ndjson }",
     schema: {
       parameters: {
@@ -982,6 +1091,7 @@ const HELP_DETAIL_OVERRIDES = {
         diffImage: { type: "boolean", description: "Set false to disable PNG heatmap generation for changed raster baselines." },
         diffPalette: { type: "object", description: "Optional changed/unchanged RGB colors and alpha values for the PNG heatmap." },
         diffAlignment: { type: "string", description: "Dimension-mismatch behavior: strict (no heatmap), top-left, or center alignment on a union canvas." },
+        pixelRegistration: { type: "boolean|number|object", description: "Optionally search a bounded baseline translation (up to 8 pixels) before comparison; records sampled and exact before/after metrics plus ignored edge pixels." },
         allowChange: { type: "boolean", description: "Allow baseline byte/pixel changes without emitting issues." },
         minBytes: { type: "number", description: "Warn when the render is smaller than this byte count." },
         maxBytes: { type: "number", description: "Warn when the render exceeds this byte count." },

@@ -25,6 +25,7 @@ export async function main(argv = process.argv.slice(2)) {
     pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined,
     diffAlignment: args["diff-alignment"],
     diffPalette: args["diff-color"] || args["diff-unchanged-color"] ? { changed: args["diff-color"], unchanged: args["diff-unchanged-color"] } : undefined,
+    pixelRegistration: args["registration-offset"] ? { maxOffset: Number(args["registration-offset"]), minImprovementRatio: args["registration-improvement"] ? Number(args["registration-improvement"]) : undefined } : undefined,
   });
   console.log(JSON.stringify({ fixture: result.fixture.name, document: result.docxPath, qa: result.qa.summary }));
   return result;

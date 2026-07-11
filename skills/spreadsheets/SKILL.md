@@ -104,6 +104,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Raster baselines use `visualQaArtifact(..., { pixelDiff: true })`; baseline filenames are stable per worksheet.
 - When pixels change, the QA output records a `.diff.png` heatmap path for focused agent review.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
+- For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.
 - `--native-render required` converts the exported XLSX with LibreOffice and rasterizes every PDF page with Poppler; page-count or pixel changes fail QA.
 - Deliver only the requested workbook unless the user asks for QA intermediates.
 

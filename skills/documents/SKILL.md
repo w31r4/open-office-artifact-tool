@@ -102,6 +102,7 @@ node skills/documents/scripts/verify-document.mjs \
 - PNG baselines compare the modeled preview and every native page through `visualQaArtifact(..., { pixelDiff: true })`; baseline page-count changes fail QA.
 - Changed pages write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
+- For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.
 - Microsoft Office native automation remains the higher-fidelity Windows gate for Word-specific behavior.
 - Deliver only the requested DOCX; previews and QA reports are internal unless requested.
 

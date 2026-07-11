@@ -109,6 +109,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - Baseline approval replaces stale model/native slide files; later slide-count changes fail QA even if all remaining slides match.
 - Changed slides write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
+- For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.
 - Microsoft Office native automation remains the higher-fidelity Windows gate for PowerPoint-specific behavior.
 - Deliver only the requested PPTX; previews, baselines, and QA reports are internal unless requested.
 
