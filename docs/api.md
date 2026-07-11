@@ -291,7 +291,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
 | `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata. |
-| `workbook.structuredReferences` | formula | Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], and TableName[[#Data],[Column]] in formulas, expanding them to stable table cell precedents. |
+| `workbook.structuredReferences` | formula | Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
@@ -578,15 +578,17 @@ Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, com
 
 #### `workbook.structuredReferences`
 
-Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], and TableName[[#Data],[Column]] in formulas, expanding them to stable table cell precedents.
+Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents.
 
 **Examples:**
 
 - =SUM(TasksTable[Revenue])
 - =TEXTJOIN("|",TRUE,TasksTable[#Headers])
 - =SUM(TasksTable[[#Data],[Revenue]])
+- =SUM(TasksTable[[#Data],[Revenue]:[Cost]])
+- =TEXTJOIN("|",TRUE,TasksTable[[#Data],[Region],[Code]])
 
 **Notes:**
 
-- Current clean-room subset supports #Headers/#Data/#All/#Totals sections and single-column selectors; multi-column discontiguous selectors remain roadmap.
+- Current clean-room subset supports #Headers/#Data/#All/#Totals sections, single-column selectors, contiguous column ranges, and comma-separated column unions; special escaping for headers containing brackets remains roadmap.
 

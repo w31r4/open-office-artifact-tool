@@ -155,23 +155,33 @@ assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
 
 const structuredBook = Workbook.create();
 const structuredSheet = structuredBook.worksheets.add("Structured");
-structuredSheet.getRange("A1:B4").values = [["Region", "Revenue"], ["East", 10], ["West", 5], ["Total", 15]];
-const structuredTable = structuredSheet.tables.add({ range: "A1:B4", name: "SalesTable", showTotals: true });
+structuredSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East", 10, 4], ["West", 5, 2], ["Total", 15, 6]];
+const structuredTable = structuredSheet.tables.add({ range: "A1:C4", name: "SalesTable", showTotals: true });
 structuredTable.showTotals = true;
-structuredSheet.getRange("D1:D4").formulas = [
-  ["=TEXTJOIN(\"|\",TRUE,SalesTable[#Headers])"],
-  ["=SUM(SalesTable[[#Data],[Revenue]])"],
-  ["=SUM(SalesTable[[#Totals],[Revenue]])"],
-  ["=SUM(SalesTable[[#All],[Revenue]])"],
+structuredSheet.getRange("D1:E4").formulas = [
+  ["=TEXTJOIN(\"|\",TRUE,SalesTable[#Headers])", "=TEXTJOIN(\"|\",TRUE,SalesTable[[#Headers],[Region]:[Cost]])"],
+  ["=SUM(SalesTable[[#Data],[Revenue]])", "=SUM(SalesTable[[#Data],[Revenue]:[Cost]])"],
+  ["=SUM(SalesTable[[#Totals],[Revenue]])", "=TEXTJOIN(\"|\",TRUE,SalesTable[[#Data],[Region],[Cost]])"],
+  ["=SUM(SalesTable[[#All],[Revenue]])", "=SUM(SalesTable[[#Totals],[Revenue]:[Cost]])"],
 ];
 structuredBook.recalculate();
-assert.deepEqual(structuredSheet.getRange("D1:D4").values.flat(), ["Region|Revenue", 15, 15, 30]);
+assert.deepEqual(structuredSheet.getRange("D1:E4").values, [["Region|Revenue|Cost", "Region|Revenue|Cost"], [15, 21], [15, "East|4|West|2"], [30, 21]]);
 const structuredNode = structuredBook.inspect({ kind: "formulaNode", target: "Structured!D2", maxChars: 12000 }).ndjson;
 assert.match(structuredNode, /SalesTable\[\[#Data\],\[Revenue\]\]/);
 assert.match(structuredNode, /Structured!B2/);
 assert.match(structuredNode, /Structured!B3/);
 assert.doesNotMatch(structuredNode, /Structured!B4/);
-assert.match(structuredBook.help("workbook.structuredReferences").ndjson, /#Headers/);
+const structuredRangeNode = structuredBook.inspect({ kind: "formulaNode", target: "Structured!E2", maxChars: 12000 }).ndjson;
+assert.match(structuredRangeNode, /SalesTable\[\[#Data\],\[Revenue\]:\[Cost\]\]/);
+assert.match(structuredRangeNode, /Structured!B2/);
+assert.match(structuredRangeNode, /Structured!C3/);
+assert.doesNotMatch(structuredRangeNode, /Structured!A2/);
+const structuredUnionNode = structuredBook.inspect({ kind: "formulaNode", target: "Structured!E3", maxChars: 12000 }).ndjson;
+assert.match(structuredUnionNode, /SalesTable\[\[#Data\],\[Region\],\[Cost\]\]/);
+assert.match(structuredUnionNode, /Structured!A2/);
+assert.match(structuredUnionNode, /Structured!C3/);
+assert.doesNotMatch(structuredUnionNode, /Structured!B2/);
+assert.match(structuredBook.help("workbook.structuredReferences").ndjson, /\[First\]:\[Last\]/);
 
 const graphBook = Workbook.create();
 const inputsSheet = graphBook.worksheets.add("Inputs");

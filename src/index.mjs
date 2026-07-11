@@ -606,7 +606,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], and TableName[[#Data],[Column]] in formulas, expanding them to stable table cell precedents." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
@@ -760,8 +760,8 @@ const HELP_DETAIL_OVERRIDES = {
     returns: "DefinedName facade with id/name/refersTo/scope",
   },
   "workbook.structuredReferences": {
-    examples: ["=SUM(TasksTable[Revenue])", "=TEXTJOIN(\"|\",TRUE,TasksTable[#Headers])", "=SUM(TasksTable[[#Data],[Revenue]])"],
-    notes: ["Current clean-room subset supports #Headers/#Data/#All/#Totals sections and single-column selectors; multi-column discontiguous selectors remain roadmap."],
+    examples: ["=SUM(TasksTable[Revenue])", "=TEXTJOIN(\"|\",TRUE,TasksTable[#Headers])", "=SUM(TasksTable[[#Data],[Revenue]])", "=SUM(TasksTable[[#Data],[Revenue]:[Cost]])", "=TEXTJOIN(\"|\",TRUE,TasksTable[[#Data],[Region],[Code]])"],
+    notes: ["Current clean-room subset supports #Headers/#Data/#All/#Totals sections, single-column selectors, contiguous column ranges, and comma-separated column unions; special escaping for headers containing brackets remains roadmap."],
   },
   createPlaywrightRenderer: {
     examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
@@ -2497,37 +2497,104 @@ function formulaDefinedNameRange(sheet, refText = "", seen = new Set()) {
   return { missing: true, name: item.name, refersTo: item.refersTo };
 }
 
-function structuredRefTokens(refBody = "") {
+function structuredRefSegments(refBody = "") {
   const body = String(refBody || "").trim();
-  const bracketed = [...body.matchAll(/\[([^\]]*)\]/g)].map((match) => match[1].trim()).filter(Boolean);
-  if (bracketed.length) return bracketed;
-  return body.split(",").map((item) => item.trim()).filter(Boolean);
+  const segments = [];
+  let last = 0;
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== "[") continue;
+    let end = i + 1;
+    while (end < body.length && body[end] !== "]") end += 1;
+    if (end >= body.length) break;
+    if (i > last) segments.push({ type: "sep", text: body.slice(last, i) });
+    segments.push({ type: "token", text: body.slice(i + 1, end).trim() });
+    i = end;
+    last = end + 1;
+  }
+  if (segments.length && last < body.length) segments.push({ type: "sep", text: body.slice(last) });
+  return segments;
+}
+
+function structuredRefParts(refBody = "") {
+  const body = String(refBody || "").trim();
+  const segments = structuredRefSegments(body);
+  if (!segments.length) {
+    const tokens = body.split(",").map((item) => item.trim()).filter(Boolean);
+    return {
+      tokens,
+      sectionTokens: tokens.filter((token) => token.startsWith("#")),
+      columnSelectors: tokens.filter((token) => !token.startsWith("#")).map((token) => {
+        const range = token.split(":").map((item) => item.trim()).filter(Boolean);
+        return range.length === 2 ? { start: range[0], end: range[1] } : { name: token };
+      }),
+    };
+  }
+  const tokens = segments.filter((segment) => segment.type === "token").map((segment) => segment.text).filter(Boolean);
+  const columnSelectors = [];
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment.type !== "token" || !segment.text || segment.text.startsWith("#")) continue;
+    const sep = segments[i + 1]?.type === "sep" ? segments[i + 1].text : "";
+    const next = segments[i + 2];
+    if (sep.includes(":") && next?.type === "token" && next.text && !next.text.startsWith("#")) {
+      columnSelectors.push({ start: segment.text, end: next.text });
+      i += 2;
+    } else {
+      columnSelectors.push({ name: segment.text });
+    }
+  }
+  return { tokens, sectionTokens: tokens.filter((token) => token.startsWith("#")), columnSelectors };
+}
+
+function structuredColumnIndex(headers, columnName) {
+  return headers.findIndex((header) => String(header ?? "").trim() === String(columnName ?? "").trim());
+}
+
+function structuredColumnIndexes(selectors, headers) {
+  const columnCount = headers.length;
+  if (!selectors.length) return { indexes: Array.from({ length: columnCount }, (_, index) => index) };
+  const indexes = [];
+  const push = (index) => { if (!indexes.includes(index)) indexes.push(index); };
+  for (const selector of selectors) {
+    if (selector.start && selector.end) {
+      const start = structuredColumnIndex(headers, selector.start);
+      const end = structuredColumnIndex(headers, selector.end);
+      if (start < 0) return { missing: selector.start };
+      if (end < 0) return { missing: selector.end };
+      const step = start <= end ? 1 : -1;
+      for (let index = start; step > 0 ? index <= end : index >= end; index += step) push(index);
+    } else {
+      const index = structuredColumnIndex(headers, selector.name);
+      if (index < 0) return { missing: selector.name };
+      push(index);
+    }
+  }
+  return { indexes };
 }
 
 function formulaStructuredRefRange(sheet, refText = "") {
   const match = /^([A-Za-z_][A-Za-z0-9_.]*)\[((?:[^\[\]]+|\[[^\]]+\])+)\]$/.exec(String(refText || "").trim());
   if (!match) return undefined;
   const tableName = match[1];
-  const tokens = structuredRefTokens(match[2]);
+  const parts = structuredRefParts(match[2]);
+  const tokens = parts.tokens;
   const found = findWorkbookTable(sheet, tableName);
   if (!found) return { missing: true, tableName, columnName: tokens.join(",") };
   const { table, sheet: tableSheet } = found;
-  const headers = table.hasHeaders ? (table.values[0] || []) : Array.from({ length: table.columnCount || 0 }, (_, index) => `Column${index + 1}`);
   const bounds = parseRangeAddress(table.range);
-  const normalizedTokens = tokens.map((token) => String(token || "").trim()).filter(Boolean);
-  const sectionTokens = normalizedTokens.filter((token) => token.startsWith("#"));
-  const columnTokens = normalizedTokens.filter((token) => !token.startsWith("#"));
-  const section = sectionTokens.at(-1) || "#Data";
+  const columnCount = bounds.right - bounds.left + 1;
+  const headers = Array.from({ length: columnCount }, (_, index) => table.hasHeaders ? (table.values[0]?.[index] ?? `Column${index + 1}`) : `Column${index + 1}`);
+  const section = parts.sectionTokens.at(-1) || "#Data";
   const firstDataRow = bounds.top + (table.showHeaders ? 1 : 0);
   const totalsRow = table.showTotals ? bounds.bottom : undefined;
   const lastDataRow = bounds.bottom - (table.showTotals ? 1 : 0);
   let top = firstDataRow;
   let bottom = lastDataRow;
   if (/^#Headers$/i.test(section)) {
-    if (!table.showHeaders) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.top, bounds.left), end: makeCellAddress(bounds.top - 1, bounds.left), empty: true, tableName, columnName: columnTokens.join(","), table };
+    if (!table.showHeaders) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.top, bounds.left), end: makeCellAddress(bounds.top - 1, bounds.left), empty: true, tableName, columnName: parts.columnSelectors.map((item) => item.name || `${item.start}:${item.end}`).join(","), table };
     top = bottom = bounds.top;
   } else if (/^#Totals$/i.test(section)) {
-    if (totalsRow == null) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.bottom + 1, bounds.left), end: makeCellAddress(bounds.bottom, bounds.left), empty: true, tableName, columnName: columnTokens.join(","), table };
+    if (totalsRow == null) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.bottom + 1, bounds.left), end: makeCellAddress(bounds.bottom, bounds.left), empty: true, tableName, columnName: parts.columnSelectors.map((item) => item.name || `${item.start}:${item.end}`).join(","), table };
     top = bottom = totalsRow;
   } else if (/^#All$/i.test(section)) {
     top = bounds.top;
@@ -2535,20 +2602,20 @@ function formulaStructuredRefRange(sheet, refText = "") {
   } else if (/^#Data$/i.test(section)) {
     top = firstDataRow;
     bottom = lastDataRow;
-  } else if (sectionTokens.length) {
+  } else if (parts.sectionTokens.length) {
     return { missing: true, tableName, columnName: section, sheetName: tableSheet.name };
   }
-  const columnName = columnTokens.at(-1);
-  let left = bounds.left;
-  let right = bounds.right;
-  let columnIndex;
-  if (columnName) {
-    columnIndex = headers.findIndex((header) => String(header ?? "").trim() === columnName);
-    if (columnIndex < 0) return { missing: true, tableName, columnName, sheetName: tableSheet.name };
-    left = right = bounds.left + columnIndex;
-  }
-  if (top > bottom) return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), empty: true, tableName, columnName, table, columnIndex, section };
-  return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), tableName, columnName, table, columnIndex, section };
+  const selected = structuredColumnIndexes(parts.columnSelectors, headers);
+  if (selected.missing) return { missing: true, tableName, columnName: selected.missing, sheetName: tableSheet.name };
+  const columns = selected.indexes;
+  if (!columns.length) return { missing: true, tableName, columnName: tokens.join(","), sheetName: tableSheet.name };
+  const left = bounds.left + Math.min(...columns);
+  const right = bounds.left + Math.max(...columns);
+  const columnNames = columns.map((index) => String(headers[index] ?? `Column${index + 1}`));
+  const columnName = columnNames.join(",");
+  const columnIndex = columns.length === 1 ? columns[0] : undefined;
+  if (top > bottom) return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), empty: true, tableName, columnName, table, columnIndex, columns, columnNames, section };
+  return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), tableName, columnName, table, columnIndex, columns, columnNames, section };
 }
 
 function formulaReferences(formula, sheet) {
@@ -2562,9 +2629,11 @@ function formulaReferences(formula, sheet) {
     if (!structured || structured.missing || structured.empty) continue;
     const start = parseCellAddress(structured.start);
     const end = parseCellAddress(structured.end);
+    const tableBounds = structured.table ? parseRangeAddress(structured.table.range) : undefined;
+    const cols = tableBounds && structured.columns?.length ? structured.columns.map((index) => tableBounds.left + index) : Array.from({ length: Math.abs(end.col - start.col) + 1 }, (_, index) => Math.min(start.col, end.col) + index);
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
-      for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) {
-        refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: match[0], tableName: structured.tableName, columnName: structured.columnName });
+      for (const col of cols) {
+        refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: match[0], tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames });
       }
     }
   }
@@ -2784,16 +2853,18 @@ function formulaRangeMatrix(sheet, refText, context = {}) {
     if (!targetSheet) return [["#REF!"]];
     const start = parseCellAddress(structured.start);
     const end = parseCellAddress(structured.end);
+    const tableBounds = structured.table ? parseRangeAddress(structured.table.range) : undefined;
+    const cols = tableBounds && structured.columns?.length ? structured.columns.map((index) => tableBounds.left + index) : Array.from({ length: Math.abs(end.col - start.col) + 1 }, (_, index) => Math.min(start.col, end.col) + index);
     const rows = [];
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
       const values = [];
-      for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) {
+      for (const col of cols) {
         const address = makeCellAddress(row, col);
-        let value = context.getValue ? context.getValue({ sheetName: structured.sheetName, address, structuredRef: refText, tableName: structured.tableName, columnName: structured.columnName }) : targetSheet.store.get(address).value;
+        let value = context.getValue ? context.getValue({ sheetName: structured.sheetName, address, structuredRef: refText, tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames }) : targetSheet.store.get(address).value;
         if ((value == null || value === "") && structured.table) {
           const tableBounds = parseRangeAddress(structured.table.range);
           const tableRow = row - tableBounds.top;
-          const tableCol = structured.columnIndex ?? (col - tableBounds.left);
+          const tableCol = col - tableBounds.left;
           value = structured.table.values[tableRow]?.[tableCol] ?? value;
         }
         values.push(value);
