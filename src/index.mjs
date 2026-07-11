@@ -108,6 +108,49 @@ function ndjson(records, maxChars = Infinity) {
   return { ndjson: text, truncated };
 }
 
+function inspectTargetTokens(options = {}) {
+  const raw = options.target ?? options.targetId ?? options.id ?? options.anchor;
+  if (raw == null || raw === "") return [];
+  const values = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  for (const value of values) {
+    if (value == null) continue;
+    if (typeof value === "object") {
+      out.push(value.id, value.targetId, value.name, value.address, value.range, value.ref, value.sheetName && value.address ? `${value.sheetName}!${value.address}` : undefined);
+    } else {
+      out.push(...String(value).split(","));
+    }
+  }
+  return out.map((value) => String(value ?? "").trim()).filter(Boolean);
+}
+
+function inspectRecordMatchesTarget(record, targets) {
+  if (!targets.length) return true;
+  if (!record) return false;
+  const candidates = new Set();
+  const add = (value) => { if (value != null && value !== "") candidates.add(String(value)); };
+  for (const key of ["id", "targetId", "parentId", "layoutId", "name", "address", "range", "sheet", "slide", "page", "kind", "drawingType", "regionKind"]) add(record[key]);
+  if (record.sheet && record.address) add(`${record.sheet}!${record.address}`);
+  if (record.sheet && record.range) add(`${record.sheet}!${record.range}`);
+  if (record.target) {
+    add(record.target.id);
+    add(record.target.address);
+    add(record.target.range);
+    if (record.target.sheetName && record.target.address) add(`${record.target.sheetName}!${record.target.address}`);
+  }
+  const haystack = JSON.stringify(record);
+  return targets.some((target) => candidates.has(target) || haystack.includes(target));
+}
+
+function filterInspectRecords(records, options = {}) {
+  const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
+  const targets = inspectTargetTokens(options);
+  return records
+    .filter(Boolean)
+    .filter((record) => !search || JSON.stringify(record).toLowerCase().includes(search))
+    .filter((record) => inspectRecordMatchesTarget(record, targets));
+}
+
 function verificationResult(artifactKind, issues, options = {}) {
   const result = {
     artifactKind,
@@ -429,7 +472,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search or target/id anchors." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
   { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, and rule bounding boxes in pixels." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
@@ -472,7 +515,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, and layout." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search or target/id anchors." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
@@ -508,6 +551,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
+  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search or target/id anchors." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, and design preset metadata." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
@@ -516,7 +560,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search or target/id anchors." },
   { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images." },
@@ -1419,9 +1463,7 @@ export class Workbook {
     }
     if (kinds.has("thread")) records.push(...this.comments.threads.map((thread) => thread.inspectRecord()));
     if (kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) records.push(...formulaGraphRecords(graph, { ...options, kinds }));
-    const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
-    const filtered = search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records;
-    return ndjson(filtered.filter(Boolean), options.maxChars ?? Infinity);
+    return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
 
   verify(options = {}) {
@@ -3002,11 +3044,7 @@ export class Presentation {
     if (kinds.has("theme")) records.push(this.theme.inspectRecord());
     if (kinds.has("layout") || kinds.has("layoutTemplate")) records.push(...this.layouts.inspectRecords());
     for (const slide of this.slides) records.push(...slide.inspectRecords(kinds));
-    const search = String(options.search || "").trim().toLowerCase();
-    const filtered = search
-      ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search))
-      : records;
-    return ndjson(filtered, options.maxChars ?? Infinity);
+    return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
 
   validateLayout(options = {}) {
@@ -4344,8 +4382,7 @@ export class DocumentModel {
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => block.inspectRecord(index)));
     if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
     if (kinds.has("style")) records.push(...this.styles.values().map((style) => ({ kind: "style", ...style })));
-    const search = String(options.search || "").trim().toLowerCase();
-    return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
+    return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
 
   verify(options = {}) {
@@ -4830,8 +4867,7 @@ export class PdfArtifact {
       if (kinds.has("table")) records.push(...page.tables.map((table) => table.inspectRecord(index)));
       if (kinds.has("image")) records.push(...page.images.map((image) => image.inspectRecord(index)));
     });
-    const search = String(options.search || "").trim().toLowerCase();
-    return ndjson(search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records, options.maxChars ?? Infinity);
+    return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
 
   verify(options = {}) {

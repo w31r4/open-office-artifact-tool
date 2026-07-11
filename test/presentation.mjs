@@ -120,6 +120,12 @@ assert.match(presentation.help("slide.comments.addThread").ndjson, /Threaded com
 assert.equal(presentation.resolve(nativeTable.id).values[1][0], "ARR");
 assert.equal(presentation.resolve(nativeChart.id).series[0].values[1], 14);
 assert.equal(presentation.resolve(nativeImage.id).alt, "Native import logo");
+const targetedPresentationInspect = presentation.inspect({ kind: "table,chart,image,connector,comment", target: nativeImage.id, maxChars: 4000 }).ndjson;
+assert.match(targetedPresentationInspect, /Native import logo/);
+assert.doesNotMatch(targetedPresentationInspect, /Native Import Chart/);
+const targetedCommentInspect = presentation.inspect({ kind: "comment,connector", target: thread.id, maxChars: 4000 }).ndjson;
+assert.match(targetedCommentInspect, /Tighten this headline/);
+assert.doesNotMatch(targetedCommentInspect, /shape-to-table/);
 
 const qaClean = Presentation.create({ slideSize: { width: 400, height: 240 } });
 const qaCleanSlide = qaClean.slides.add();
