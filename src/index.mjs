@@ -9795,10 +9795,6 @@ function pdfTableSemanticRows(page, table) {
   }));
 }
 
-function pdfTableCommands(page, table) {
-  return pdfTableSemanticRows(page, table).flatMap((row) => row.children.flatMap((cell) => cell.commands));
-}
-
 function pdfChartCommands(page, chart) {
   const [left, top, width, height] = chart.bbox.map(Number);
   const commands = [pdfRectCommand(page, chart.bbox, { fillColor: "#ffffff", strokeColor: "#cbd5e1", lineWidth: 1 }), pdfTextCommand(page, chart.title, left + 10, top + 10, { fontSize: 13, bold: true })];

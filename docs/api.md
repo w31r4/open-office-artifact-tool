@@ -487,9 +487,9 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts. |
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
-| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Table/Figure structure, positioned text, vector tables/charts, and embedded PNG/JPEG images. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, positioned text, vector tables/charts, and embedded PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-element count, and marked-content count. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-role counts, and marked-content count. |
 
 ### pdf details
 
@@ -789,7 +789,7 @@ Create a modeled PDF artifact with pages, text, table regions, and image regions
 
 #### `PdfFile.exportPdf`
 
-Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Table/Figure structure, positioned text, vector tables/charts, and embedded PNG/JPEG images.
+Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, positioned text, vector tables/charts, and embedded PNG/JPEG images.
 
 **Examples:**
 
@@ -827,7 +827,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-element count, and marked-content count.
+Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-role counts, and marked-content count.
 
 **Examples:**
 

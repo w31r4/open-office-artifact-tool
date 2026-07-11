@@ -68,6 +68,7 @@ assert.match(pdf.help("pdf.addImage").ndjson, /image region/);
 assert.match(pdf.help("pdf.addChart").ndjson, /chart region/);
 assert.match(pdf.help("pdf.addText").ndjson, /positioned PDF text/);
 assert.match(pdf.help("pdf.addFlowText").ndjson, /automatically append pages/);
+assert.match(pdf.help("PdfFile.exportPdf").ndjson, /Table\/TR\/TH\/TD hierarchy/);
 
 const flowPdf = PdfArtifact.create({ pages: [{ width: 240, height: 120, text: "" }] });
 const flowText = [
