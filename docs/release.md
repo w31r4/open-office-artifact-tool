@@ -42,3 +42,12 @@ npm publish --access public
 ```
 
 Do not publish if `npm run release:check` reports any required blocker, or if the current `package.json` version is already published.
+
+## GitHub release workflow
+
+A manual `.github/workflows/release.yml` workflow is available:
+
+- `publish_npm=false` runs the release gates and `release-check` in dry-run/no-network mode.
+- `publish_npm=true` requires `secrets.NPM_TOKEN`, runs `npm run release:check`, creates/pushes tag `v<package.version>`, creates a GitHub release if needed, and runs `npm publish --access public`.
+
+Use `publish_npm=true` only after confirming the package version, changelog/release notes, and npm auth are correct.

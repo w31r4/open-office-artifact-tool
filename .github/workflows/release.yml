@@ -1,0 +1,77 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: "Publish to npm after all gates pass"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: npm ci
+      - run: npm test
+      - run: npm run docs:api
+      - run: git diff --exit-code docs/api.md
+      - run: npm run test:pack
+      - run: dotnet test native/OfficeBridge
+      - name: Release check (dry run)
+        if: ${{ inputs.publish_npm != 'true' }}
+        run: node scripts/release-check.mjs --json --skip-network
+      - name: Release check (publish)
+        if: ${{ inputs.publish_npm == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm run release:check
+      - name: Compute version
+        id: version
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+      - name: Create git tag
+        if: ${{ inputs.publish_npm == 'true' }}
+        run: |
+          tag="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists locally."
+          else
+            git tag "$tag"
+          fi
+          git push origin "$tag"
+      - name: Create GitHub release
+        if: ${{ inputs.publish_npm == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.version.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists."
+          else
+            gh release create "$tag" --title "open-office-artifact-tool $tag" --notes "Clean-room Office/PDF artifact toolkit release $tag."
+          fi
+      - name: Publish npm
+        if: ${{ inputs.publish_npm == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          test -n "$NODE_AUTH_TOKEN"
+          npm publish --access public

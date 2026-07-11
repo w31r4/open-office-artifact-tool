@@ -79,7 +79,7 @@ Status legend:
 | --- | --- | --- |
 | README clean-room/family/renderer/native bridge docs | partial | README covers clean-room goal, four artifact families, renderer adapters, optional Playwright renderer, PDF parser adapters, Node-side native Office wrapper, C# sidecar usage/tests, examples, release-check flow, and development commands. `docs/release.md` records current npm auth/publish blockers. Needs update once publishing/tagging succeeds. |
 | Examples for DOCX/XLSX/PPTX/PDF/rendering | partial | `examples/` includes create DOCX report, create XLSX dashboard with charts/sparklines/comments, create PPTX compose deck with notes/comments/connectors, parse/render PDF, render via Playwright, and render via native Office bridge. Native bridge and Playwright examples skip gracefully when optional runtimes are unavailable. |
-| Basic CI without Microsoft Office | partial | `.github/workflows/ci.yml` runs npm install/test/docs/release-check/pack and conditionally skips dotnet bridge tests when `native/OfficeBridge` or `dotnet` is unavailable. Needs release/tag automation after npm auth is configured. |
+| Basic CI without Microsoft Office | partial | `.github/workflows/ci.yml` runs npm install/test/docs/release-check/pack and conditionally skips dotnet bridge tests when `native/OfficeBridge` or `dotnet` is unavailable. `.github/workflows/release.yml` provides manual dry-run and npm-publish/tag/GitHub-release automation gated by `publish_npm=true` and `secrets.NPM_TOKEN`. Needs actual tagged release/npm publish once npm auth is configured. |
 
 ## Implementation priorities
 
