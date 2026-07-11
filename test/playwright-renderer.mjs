@@ -16,6 +16,10 @@ function assertWebp(bytes) {
   assert.equal(new TextDecoder().decode(bytes.slice(8, 12)), "WEBP");
 }
 
+function assertJpeg(bytes) {
+  assert.deepEqual([...bytes.slice(0, 3)], [0xff, 0xd8, 0xff]);
+}
+
 function assertPdf(bytes) {
   assert.equal(new TextDecoder().decode(bytes.slice(0, 4)), "%PDF");
 }
@@ -51,6 +55,11 @@ const webp = await renderArtifact(document, { format: "webp", renderer });
 assert.equal(webp.type, "image/webp");
 assert.equal(webp.metadata.renderer, "playwright");
 assertWebp(webp.bytes);
+
+const jpeg = await renderArtifact(document, { format: "jpeg", renderer });
+assert.equal(jpeg.type, "image/jpeg");
+assert.equal(jpeg.metadata.renderer, "playwright");
+assertJpeg(jpeg.bytes);
 
 const pdf = await renderArtifact(document, { format: "pdf", renderer });
 assert.equal(pdf.type, "application/pdf");

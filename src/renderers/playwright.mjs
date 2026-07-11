@@ -136,6 +136,23 @@ async function loadPlaywright(options = {}) {
   }
 }
 
+async function encodeScreenshotAsWebp(page, pngBytes, quality = 0.8) {
+  const pngBase64 = Buffer.from(pngBytes).toString("base64");
+  const webpBase64 = await page.evaluate(async ({ source, quality: requestedQuality }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${source}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Chromium canvas 2D context is unavailable for WebP encoding.");
+    context.drawImage(image, 0, 0);
+    return canvas.toDataURL("image/webp", requestedQuality).split(",")[1];
+  }, { source: pngBase64, quality: Math.min(1, Math.max(0, Number(quality) || 0.8)) });
+  return Buffer.from(webpBase64, "base64");
+}
+
 function shouldBlockUrl(url) {
   return !/^(about:blank|data:|blob:)/i.test(String(url || ""));
 }
@@ -219,14 +236,19 @@ export async function renderWithPlaywright(request = {}, defaultOptions = {}) {
         ...(options.pdfOptions || {}),
       });
     } else {
-      const screenshotType = format === "jpg" ? "jpeg" : format;
-      bytes = await page.screenshot({
-        type: screenshotType,
+      const screenshotType = format === "jpg" || format === "jpeg" ? "jpeg" : "png";
+      const screenshotOptions = {
         fullPage: false,
         omitBackground: options.omitBackground ?? false,
         animations: "disabled",
         ...(options.screenshotOptions || {}),
-      });
+        type: screenshotType,
+      };
+      if (screenshotType === "png") delete screenshotOptions.quality;
+      const screenshot = await page.screenshot(screenshotOptions);
+      bytes = format === "webp"
+        ? await encodeScreenshotAsWebp(page, screenshot, options.webpQuality ?? 0.8)
+        : screenshot;
     }
 
     return new FileBlob(bytes, { type: outputType, metadata: metadataFor(request, options, viewport, outputType, inputType, format) });
