@@ -8,6 +8,7 @@ const document = DocumentModel.create({
   name: "Research memo",
   paragraphs: ["Research memo", "This document exercises the clean-room DOCX facade."],
 });
+document.applyDesignPreset("report");
 document.styles.add("Callout", { name: "Callout", fontSize: 24, bold: true, fontFamily: "Aptos" });
 const header = document.addHeader("Confidential research memo", { name: "default-header" });
 const footer = document.addFooter("Page footer", { name: "default-footer" });
@@ -41,8 +42,11 @@ const table = document.addTable({
 table.getCell(2, 1).value = "anchored";
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer" });
 
-const inspect = document.inspect({ kind: "paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
+const inspect = document.inspect({ kind: "document,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 16000 }).ndjson;
 assert.match(inspect, /Research memo/);
+assert.match(inspect, /"kind":"document"/);
+assert.match(inspect, /"designPreset":"report"/);
+assert.match(inspect, /"kind":"layout"/);
 assert.match(inspect, /findings-heading/);
 assert.match(inspect, /research-link/);
 assert.match(inspect, /https:\/\/example.com\/research/);
@@ -91,6 +95,9 @@ assert.match(document.help("document.addImage").ndjson, /native DOCX media/);
 assert.match(document.help("document.addSection").ndjson, /w:sectPr/);
 assert.match(document.help("document.addInsertion").ndjson, /w:ins/);
 assert.match(document.help("document.addDeletion").ndjson, /w:del/);
+assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
+assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
+assert.equal(document.verify({ visualQa: true }).ok, true);
 
 const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
@@ -107,6 +114,12 @@ assert.match(svg, /Inserted reviewer clarification/);
 assert.match(svg, /Remove stale claim/);
 assert.match(svg, /tracked insert by Reviewer/);
 assert.match(svg, /Render and verify/);
+const layoutBlob = await document.render({ format: "layout" });
+assert.equal(layoutBlob.type, "application/vnd.open-office-artifact.layout+json");
+const layout = JSON.parse(await layoutBlob.text());
+assert.equal(layout.document.designPreset, "report");
+assert.ok(layout.pages.length >= 1);
+assert.ok(layout.elements.some((element) => element.id === table.id));
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

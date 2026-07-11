@@ -19,6 +19,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.theme"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.layouts.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.applyLayout"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "document.layoutJson"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
@@ -45,6 +47,8 @@ assert.match(presentation.help("slide.connectors.add").ndjson, /connector line/)
 assert.match(presentation.help("presentation.theme").ndjson, /theme colors/);
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
+assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
+assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
 assert.match(pdf.help("extractTables").ndjson, /table values/);
 assert.match(pdf.help("createPdfjsParser").ndjson, /positioned text/);
 assert.match(helpArtifact("*", "renderArtifact").ndjson, /FileBlob metadata/);

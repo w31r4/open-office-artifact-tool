@@ -259,7 +259,9 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
-  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, and prose-like table cells." },
+  { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
+  { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, and design preset metadata." },
+  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
@@ -3442,10 +3444,55 @@ class DocumentComment {
   toProto() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, text: this.text, resolved: this.resolved }; }
 }
 
+function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {
+  if (block.kind === "table") return Math.max(24, block.rows * 24 + 16);
+  if (block.kind === "image") return Math.max(32, Math.min(360, Number(block.heightPx) || 160)) + 20;
+  if (block.kind === "section") return 34;
+  if (block.kind === "change") return 22;
+  const style = document.styles.get(block.styleId) || document.styles.get("Normal") || {};
+  const fontSize = Math.max(10, (style.fontSize || 22) / 2);
+  const text = block.text || block.display || "";
+  const charsPerLine = Math.max(8, Math.floor((pageWidth - margin * 2) / (fontSize * 0.55)));
+  const lines = String(text).split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+  return Math.max(20, lines * fontSize * 1.6);
+}
+
+function documentLayoutJson(document, options = {}) {
+  const pageWidth = Number(options.pageWidth || 612);
+  const pageHeight = Number(options.pageHeight || 792);
+  const margin = Number(options.margin || 72);
+  const pages = [];
+  const elements = [];
+  let page = 1;
+  let y = margin;
+  const ensurePage = () => {
+    if (!pages.find((item) => item.page === page)) pages.push({ page, width: pageWidth, height: pageHeight, margin, headers: document.headers.map((header) => header.id), footers: document.footers.map((footer) => footer.id) });
+  };
+  ensurePage();
+  for (const block of document.blocks) {
+    const height = documentBlockHeight(document, block, pageWidth, margin);
+    if (y + height > pageHeight - margin && y > margin) { page += 1; y = margin; ensurePage(); }
+    elements.push({ kind: "layoutElement", id: block.id, blockKind: block.kind, name: block.name || undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, textPreview: String(block.text || block.display || block.alt || "").slice(0, 120) });
+    y += height;
+    if (block.kind === "section" && block.breakType === "nextPage") { page += 1; y = margin; ensurePage(); }
+  }
+  return { schema: "open-office-artifact.document-layout/v1", unit: "px", document: { id: document.id, name: document.name, designPreset: document.designPreset }, pages, elements };
+}
+
+function documentLayoutRecords(document, options = {}) {
+  const layout = documentLayoutJson(document, options);
+  return [
+    { kind: "layout", id: `${document.id}/layout`, pages: layout.pages.length, elements: layout.elements.length, designPreset: document.designPreset },
+    ...layout.pages.map((page) => ({ kind: "page", id: `${document.id}/page/${page.page}`, ...page })),
+    ...layout.elements,
+  ];
+}
+
 export class DocumentModel {
   constructor(options = {}) {
     this.id = aid("doc");
     this.name = options.name || "New document";
+    this.designPreset = options.designPreset || "default";
     this.styles = new DocumentStyleCollection(options.styles || {});
     this.blocks = [];
     this.comments = [];
@@ -3471,6 +3518,36 @@ export class DocumentModel {
   static create(options = {}) { return new DocumentModel(options); }
   get paragraphs() { return this.blocks.filter((block) => block.kind === "paragraph").map((block) => block.text); }
 
+  applyDesignPreset(name = "report", options = {}) {
+    const presetName = String(name || "report");
+    const presets = {
+      report: {
+        Title: { fontSize: 52, bold: true, fontFamily: "Aptos Display" },
+        Heading1: { fontSize: 34, bold: true, fontFamily: "Aptos Display" },
+        Heading2: { fontSize: 28, bold: true, fontFamily: "Aptos" },
+        Normal: { fontSize: 22, fontFamily: "Aptos" },
+        Caption: { name: "Caption", fontSize: 18, italic: true, fontFamily: "Aptos" },
+        Callout: { name: "Callout", fontSize: 24, bold: true, fontFamily: "Aptos" },
+        TableGrid: { name: "Table Grid", type: "table", fontSize: 20, fontFamily: "Aptos" },
+      },
+      memo: {
+        Title: { fontSize: 44, bold: true, fontFamily: "Aptos Display" },
+        Heading1: { fontSize: 30, bold: true, fontFamily: "Aptos" },
+        Normal: { fontSize: 21, fontFamily: "Aptos" },
+        Metadata: { name: "Metadata", fontSize: 18, fontFamily: "Aptos" },
+        TableGrid: { name: "Table Grid", type: "table", fontSize: 20, fontFamily: "Aptos" },
+      },
+    };
+    const preset = presets[presetName] || presets.report;
+    for (const [id, style] of Object.entries(preset)) this.styles.add(id, { ...(this.styles.get(id) || {}), ...style, ...(options.styles?.[id] || {}) });
+    this.designPreset = presetName;
+    return this;
+  }
+
+  layoutJson(options = {}) {
+    return documentLayoutJson(this, options);
+  }
+
   addParagraph(text, config = {}) { const block = new DocumentParagraphBlock(this, text, config); this.blocks.push(block); return block; }
   addListItem(text, config = {}) { const block = new DocumentListItemBlock(this, text, config); this.blocks.push(block); return block; }
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
@@ -3489,11 +3566,13 @@ export class DocumentModel {
   addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
   resolve(id) { return this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
 
-  toProto() { return { id: this.id, name: this.name, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
     const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "comment", "header", "footer"]);
     const records = [];
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset });
+    if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => block.inspectRecord(index)));
@@ -3554,6 +3633,14 @@ export class DocumentModel {
     for (const comment of this.comments) {
       if (!blockIds.has(comment.targetId)) issues.push(verificationIssue("document", "danglingComment", `Comment ${comment.id} points at a missing block.`, { id: comment.id, targetId: comment.targetId }));
     }
+    if (options.visualQa || options.renderQa) {
+      const layout = this.layoutJson(options);
+      for (const element of layout.elements) {
+        const pageInfo = layout.pages.find((page) => page.page === element.page);
+        if (pageInfo && element.bbox[3] > pageInfo.height - pageInfo.margin * 2) issues.push(verificationIssue("document", "layoutElementTooTall", `Block ${element.id} is taller than the usable page area.`, { severity: "warning", id: element.id, page: element.page, bbox: element.bbox }));
+        if (pageInfo && element.bbox[1] + element.bbox[3] > pageInfo.height - pageInfo.margin + 1) issues.push(verificationIssue("document", "layoutElementOverflow", `Block ${element.id} may overflow page ${element.page}.`, { severity: "warning", id: element.id, page: element.page, bbox: element.bbox }));
+      }
+    }
     return verificationResult("document", issues, options);
   }
 
@@ -3562,6 +3649,7 @@ export class DocumentModel {
   }
 
   async render(options = {}) {
+    if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME });
     const width = 612;
     const margin = 72;
     let y = 72;

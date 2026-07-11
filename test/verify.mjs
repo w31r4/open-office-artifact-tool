@@ -58,6 +58,9 @@ assert.match(documentIssues, /invalidSectionPageSize/);
 assert.match(documentIssues, /invalidSectionMargin/);
 assert.match(documentIssues, /emptyTable/);
 assert.match(documentIssues, /raggedTableRows/);
+const visualDoc = DocumentModel.create({ paragraphs: ["Visual QA"] });
+visualDoc.addTable({ name: "tall-table", values: Array.from({ length: 40 }, (_, index) => ["Row", String(index + 1)]) });
+assert.match(visualDoc.verify({ visualQa: true, maxChars: 8000 }).ndjson, /layoutElementTooTall/);
 
 const pdf = PdfArtifact.create({ pages: [{ text: "This uses an en dash – bad", tables: [{ values: [[]], bbox: [0, 0, 0, 10] }] }] });
 const pdfIssues = verifyArtifact(pdf, { maxChars: 8000 }).ndjson;
