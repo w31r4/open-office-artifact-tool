@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +11,10 @@ import {
   visualQaArtifact,
 } from "open-office-artifact-tool";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
+import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
+import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 const EXTENSION_BY_FORMAT = {
   svg: "svg",
@@ -29,6 +34,15 @@ function rendererForFormat(format, options = {}) {
   });
 }
 
+function commandExists(command) {
+  return spawnSync(process.platform === "win32" ? "where" : "which", [command], { encoding: "utf8", shell: false }).status === 0;
+}
+
+export function nativeSpreadsheetRenderStatus() {
+  const commands = { soffice: commandExists("soffice"), pdftoppm: commandExists("pdftoppm"), pdfinfo: commandExists("pdfinfo") };
+  return { available: Object.values(commands).every(Boolean), commands };
+}
+
 async function optionalBaseline(baselinePath) {
   if (!baselinePath) return undefined;
   try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
@@ -36,6 +50,59 @@ async function optionalBaseline(baselinePath) {
 
 function safeFileSegment(value) {
   return String(value || "sheet").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "sheet";
+}
+
+function pdfPageCount(pdfPath) {
+  const result = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`pdfinfo failed for ${pdfPath}: ${result.stderr || result.stdout}`);
+  const pages = Number(/^Pages:\s+(\d+)/m.exec(result.stdout)?.[1]);
+  if (!Number.isInteger(pages) || pages < 1) throw new Error(`pdfinfo did not report a valid page count for ${pdfPath}.`);
+  return pages;
+}
+
+async function nativeBaselineFiles(baselineDir) {
+  if (!baselineDir) return [];
+  try {
+    return (await fs.readdir(baselineDir)).filter((name) => /^native-page-\d+\.png$/.test(name)).map((name) => path.join(baselineDir, name));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function renderNativePages(xlsxBlob, outputDir, options = {}) {
+  const pdf = await createLibreOfficeRenderer({ timeoutMs: options.nativeTimeout ?? 60_000 })({ input: xlsxBlob, inputType: XLSX_MIME, outputType: "application/pdf", format: "pdf", artifactKind: "workbook" });
+  const pdfPath = path.join(outputDir, "native-render.pdf");
+  await pdf.save(pdfPath);
+  const pageCount = pdfPageCount(pdfPath);
+  const pagesDir = path.join(outputDir, "native-pages");
+  await fs.mkdir(pagesDir, { recursive: true });
+  const baselineDir = options.baselineDir;
+  if (options.writeBaseline && baselineDir) {
+    await fs.mkdir(baselineDir, { recursive: true });
+    await Promise.all((await nativeBaselineFiles(baselineDir)).map((filePath) => fs.unlink(filePath)));
+  }
+  const existingBaselines = options.writeBaseline ? [] : await nativeBaselineFiles(baselineDir);
+  const poppler = createPopplerRenderer({ dpi: options.dpi ?? 150, timeoutMs: options.nativeTimeout ?? 60_000 });
+  const pages = [];
+  const qaLines = [];
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    const png = await poppler({ input: pdf, inputType: "application/pdf", outputType: "image/png", format: "png", artifactKind: "workbook", pageIndex });
+    const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
+    const baselinePath = baselineDir ? path.join(baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
+    const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
+    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), pixelThreshold: options.pixelThreshold, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
+    await png.save(pagePath);
+    if (options.writeBaseline && baselinePath) await png.save(baselinePath);
+    qaLines.push(qa.ndjson);
+    pages.push({ page: pageIndex + 1, path: pagePath, baselinePath, baselineCompared: Boolean(baseline), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+  }
+  const baselinePageCount = baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
+  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
+  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "workbook", severity: "warning", pageCount, baselinePageCount }));
+  const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
+  await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
+  return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pdfPath, qaPath, pageCount, baselinePageCount, pageCountMatches, pages };
 }
 
 function applyRangeOperation(sheet, operation = {}) {
@@ -186,6 +253,14 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
       });
     }
   }
+  const requestedNative = String(options.nativeRender ?? "auto").toLowerCase();
+  const nativeStatus = nativeSpreadsheetRenderStatus();
+  let nativeRender = { status: "skipped", reason: "native render disabled" };
+  if (requestedNative !== "off" && requestedNative !== "false") {
+    if (nativeStatus.available) nativeRender = await renderNativePages(xlsxBlob, outputDir, { ...options, baselineDir });
+    else if (requestedNative === "required" || requestedNative === "true") throw new Error(`Native spreadsheet render requires soffice, pdftoppm, and pdfinfo: ${JSON.stringify(nativeStatus.commands)}`);
+    else nativeRender = { status: "skipped", reason: "native render commands unavailable", commands: nativeStatus.commands };
+  }
   const summary = {
     input: absoluteInput,
     outputDir,
@@ -199,6 +274,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     pixelDiff: visualQa.summary.pixelDiff,
     allSheets: options.allSheets === true,
     sheetRenders,
+    nativeRender,
     packageOk: packageInspect.ok,
     verifyOk: verify.ok,
     visualQaOk: sheetRenders.every((item) => item.ok),
@@ -206,8 +282,8 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     files: paths,
   };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || sheetRenders.some((item) => !item.ok))) {
-    throw new Error(`Spreadsheet QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${sheetRenders.every((item) => item.ok)}. See ${outputDir}`);
+  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || sheetRenders.some((item) => !item.ok) || (nativeRender.status === "passed" && nativeRender.ok === false))) {
+    throw new Error(`Spreadsheet QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${sheetRenders.every((item) => item.ok)}, native=${nativeRender.status}. See ${outputDir}`);
   }
   return { workbook, inspect, packageInspect, verify, visualQa, layoutBlob, summary };
 }
@@ -231,6 +307,7 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     writeBaseline: options.writeBaseline,
     pixelThreshold: options.pixelThreshold,
     allSheets: options.allSheets,
+    nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
   });
   return { fixture, workbookPath, qa };
 }
