@@ -87,6 +87,10 @@ const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200
 const png = await renderArtifact(document, { format: "png", renderer });
 const webp = await renderArtifact(document, { format: "webp", renderer });
 const pdf = await renderArtifact(document, { format: "pdf", renderer });
+
+// For DOCX-fidelity render gates, feed the real WordprocessingML package into
+// a DOCX-capable adapter such as LibreOffice or native Office instead of SVG:
+const docxPdf = await renderArtifact(document, { format: "pdf", source: "docx", renderer: libreOfficeOrNativeRenderer });
 ```
 
 The Playwright adapter is an optional peer dependency to keep the core npm package light:

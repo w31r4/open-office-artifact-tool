@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
-import { DocumentFile, DocumentModel, FileBlob } from "../src/index.mjs";
+import { DocumentFile, DocumentModel, FileBlob, renderArtifact } from "../src/index.mjs";
 
 const document = DocumentModel.create({
   name: "Research memo",
@@ -154,6 +154,29 @@ assert.ok(pageSlicedLayout.elements.length > 0);
 assert.ok(pageSlicedLayout.elements.every((element) => element.page === targetedLayout.elements[0].page));
 const textRangeSlicedLayout = document.layoutJson({ target: `${heading.id}/text` });
 assert.deepEqual(textRangeSlicedLayout.elements.map((element) => element.id), [heading.id]);
+const docxSourceBlob = await document.render({ format: "docx", source: "docx" });
+assert.equal(docxSourceBlob.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+const docxSourceZip = await JSZip.loadAsync(new Uint8Array(await docxSourceBlob.arrayBuffer()));
+assert.ok(docxSourceZip.file("word/document.xml"));
+let docxRendererSawInput = false;
+const renderedDocxPdf = await renderArtifact(document, {
+  format: "pdf",
+  source: "docx",
+  renderer: async ({ input, inputType, outputType, artifactKind }) => {
+    docxRendererSawInput = true;
+    assert.equal(artifactKind, "document");
+    assert.equal(inputType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    assert.equal(outputType, "application/pdf");
+    const zip = await JSZip.loadAsync(new Uint8Array(await input.arrayBuffer()));
+    assert.ok(zip.file("word/document.xml"));
+    return new FileBlob("%PDF-docx-render", { type: outputType, metadata: { renderer: "mock-docx" } });
+  },
+});
+assert.equal(docxRendererSawInput, true);
+assert.equal(renderedDocxPdf.type, "application/pdf");
+assert.equal(renderedDocxPdf.metadata.renderSource, "docx");
+assert.match(await renderedDocxPdf.text(), /%PDF-docx-render/);
+assert.match(document.help("document.render").ndjson, /source: 'docx'/);
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

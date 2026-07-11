@@ -685,6 +685,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
+  { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
 
@@ -5076,6 +5077,25 @@ function documentTextRangeRecords(document) {
   }));
 }
 
+function documentRenderUsesDocxSource(options = {}) {
+  const source = String(options.source || options.inputFormat || options.renderSource || "").trim().toLowerCase();
+  return source === "docx" || options.docx === true || options.useDocx === true || options.native === true || options.nativeOffice === true || options.office === true;
+}
+
+async function renderDocumentFromDocx(document, options = {}) {
+  const docx = await DocumentFile.exportDocx(document);
+  docx.metadata = { ...(docx.metadata || {}), artifactKind: "document", format: "docx", renderSource: "docx" };
+  const desiredType = renderTypeForOptions(options, docx.type);
+  const format = String(options.format || "docx").trim().toLowerCase();
+  if (!format || format === "docx" || desiredType === docx.type) return docx;
+  const adapter = options.renderer || options.rasterRenderer || options.renderAdapter;
+  if (typeof adapter !== "function") return docx;
+  const converted = await adapter({ input: docx, source: docx, inputType: docx.type, outputType: desiredType, format: options.format, artifactKind: "document", options: { ...options, source: "docx" } });
+  const blob = await fileBlobFromRenderOutput(converted, desiredType, { artifactKind: "document", format: options.format, renderedFrom: docx.type, renderSource: "docx" });
+  if (!blob.type || blob.type === "application/octet-stream") blob.type = desiredType;
+  return blob;
+}
+
 export class DocumentModel {
   constructor(options = {}) {
     this.id = aid("doc");
@@ -5238,6 +5258,7 @@ export class DocumentModel {
 
   async render(options = {}) {
     if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "document", format: "layout", target: options.target ?? options.targetId ?? options.id ?? options.anchor, search: options.search ?? options.searchTerm } });
+    if (documentRenderUsesDocxSource(options)) return renderDocumentFromDocx(this, options);
     const width = 612;
     const margin = 72;
     let y = 72;
