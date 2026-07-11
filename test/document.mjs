@@ -47,6 +47,10 @@ const numbered = document.addListItem("Render and verify", { listType: "number",
 const table = document.addTable({
   name: "evidence-table",
   styleId: "TableGrid",
+  widthDxa: 9360,
+  indentDxa: 120,
+  columnWidthsDxa: [3600, 5760],
+  headerFill: "F2F4F7",
   values: [["Area", "Status"], ["DOCX styles", "partial"], ["Comments", "roundtrip"]],
 });
 table.getCell(2, 1).value = "anchored";
@@ -235,6 +239,14 @@ assert.match(documentXml, /<w:ins\b[^>]*w:author="Reviewer"/);
 assert.match(documentXml, /<w:t>Inserted reviewer clarification\.<\/w:t>/);
 assert.match(documentXml, /<w:del\b[^>]*w:author="Reviewer"/);
 assert.match(documentXml, /<w:delText>Remove stale claim\.<\/w:delText>/);
+assert.match(documentXml, /<w:tblInd w:w="120" w:type="dxa"\/>/);
+assert.match(documentXml, /<w:tblLayout w:type="fixed"\/>/);
+assert.match(documentXml, /<w:tblBorders>/);
+assert.match(documentXml, /<w:gridCol w:w="3600"\/><w:gridCol w:w="5760"\/>/);
+assert.match(documentXml, /<w:tcW w:w="3600" w:type="dxa"\/>/);
+assert.match(documentXml, /<w:tcW w:w="5760" w:type="dxa"\/>/);
+assert.match(documentXml, /<w:shd w:val="clear" w:color="auto" w:fill="F2F4F7"\/>/);
+assert.match(documentXml, /<w:rPr><w:b\/><\/w:rPr><w:t>Area<\/w:t>/);
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Id="rIdImage1"/);
 assert.match(documentRelsXml, /Target="media\/image1\.png"/);

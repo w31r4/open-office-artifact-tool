@@ -5748,6 +5748,13 @@ class DocumentTableCell {
   set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
 }
 
+function documentTableDefaultColumnWidths(columns, widthDxa) {
+  const count = Math.max(1, Number(columns) || 1);
+  const total = Math.max(count, Math.round(Number(widthDxa) || 9360));
+  const base = Math.floor(total / count);
+  return Array.from({ length: count }, (_, index) => base + (index < total - base * count ? 1 : 0));
+}
+
 class DocumentTableBlock {
   constructor(document, config = {}) {
     this.document = document;
@@ -5758,12 +5765,26 @@ class DocumentTableBlock {
     this.values = (config.values || Array.from({ length: config.rows || 1 }, () => Array.from({ length: config.columns || 1 }, () => ""))).map((row) => [...row]);
     this.rows = this.values.length;
     this.columns = Math.max(0, ...this.values.map((row) => row.length));
+    this.widthDxa = Math.round(Number(config.widthDxa ?? 9360));
+    this.indentDxa = Math.round(Number(config.indentDxa ?? 120));
+    this.columnWidthsDxa = Array.isArray(config.columnWidthsDxa)
+      ? config.columnWidthsDxa.map((value) => Math.round(Number(value)))
+      : documentTableDefaultColumnWidths(this.columns, this.widthDxa);
+    this.cellMarginsDxa = {
+      top: Math.round(Number(config.cellMarginsDxa?.top ?? 80)),
+      bottom: Math.round(Number(config.cellMarginsDxa?.bottom ?? 80)),
+      start: Math.round(Number(config.cellMarginsDxa?.start ?? config.cellMarginsDxa?.left ?? 120)),
+      end: Math.round(Number(config.cellMarginsDxa?.end ?? config.cellMarginsDxa?.right ?? 120)),
+    };
+    this.borderColor = String(config.borderColor || "D9D9D9").replace(/^#/, "").toUpperCase();
+    this.borderSize = Math.round(Number(config.borderSize ?? 4));
+    this.headerFill = String(config.headerFill || "F2F4F7").replace(/^#/, "").toUpperCase();
   }
 
   ensureCell(row, column) { while (this.values.length <= row) this.values.push([]); while (this.values[row].length <= column) this.values[row].push(""); this.rows = this.values.length; this.columns = Math.max(this.columns, column + 1); }
   getCell(row, column) { return new DocumentTableCell(this, row, column); }
-  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, styleId: this.styleId, values: this.values }; }
-  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, values: this.values }; }
+  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
+  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
 }
 
 function normalizeDocumentRuns(text, config = {}) {
@@ -6207,6 +6228,18 @@ export class DocumentModel {
       if (block.kind === "table") {
         if (!block.rows || !block.columns) issues.push(verificationIssue("document", "emptyTable", `Table ${block.id} has no rows or columns.`, { id: block.id, rows: block.rows, columns: block.columns }));
         if (block.columns > 12) issues.push(verificationIssue("document", "wideTable", `Table ${block.id} has ${block.columns} columns and may not fit the page.`, { severity: "warning", id: block.id, columns: block.columns }));
+        if (!Number.isFinite(block.widthDxa) || block.widthDxa <= 0) issues.push(verificationIssue("document", "invalidTableWidth", `Table ${block.id} has an invalid width.`, { id: block.id, widthDxa: block.widthDxa }));
+        if (!Number.isFinite(block.indentDxa) || block.indentDxa < 0) issues.push(verificationIssue("document", "invalidTableIndent", `Table ${block.id} has an invalid indent.`, { id: block.id, indentDxa: block.indentDxa }));
+        if (!Array.isArray(block.columnWidthsDxa) || block.columnWidthsDxa.length !== block.columns) issues.push(verificationIssue("document", "invalidTableColumnWidths", `Table ${block.id} needs one column width per column.`, { id: block.id, columns: block.columns, columnWidthsDxa: block.columnWidthsDxa }));
+        else {
+          if (block.columnWidthsDxa.some((value) => !Number.isFinite(value) || value <= 0)) issues.push(verificationIssue("document", "invalidTableColumnWidth", `Table ${block.id} contains an invalid column width.`, { id: block.id, columnWidthsDxa: block.columnWidthsDxa }));
+          const widthSum = block.columnWidthsDxa.reduce((sum, value) => sum + value, 0);
+          if (Number.isFinite(block.widthDxa) && widthSum !== block.widthDxa) issues.push(verificationIssue("document", "tableColumnWidthMismatch", `Table ${block.id} column widths do not equal the table width.`, { id: block.id, widthDxa: block.widthDxa, columnWidthsDxa: block.columnWidthsDxa, widthSum }));
+        }
+        for (const [side, value] of Object.entries(block.cellMarginsDxa || {})) if (!Number.isFinite(value) || value < 0) issues.push(verificationIssue("document", "invalidTableCellMargin", `Table ${block.id} has an invalid ${side} cell margin.`, { id: block.id, side, value }));
+        if (!Number.isFinite(block.borderSize) || block.borderSize < 0) issues.push(verificationIssue("document", "invalidTableBorderSize", `Table ${block.id} has an invalid border size.`, { id: block.id, borderSize: block.borderSize }));
+        if (!/^[A-F0-9]{6}$/.test(block.borderColor)) issues.push(verificationIssue("document", "invalidTableBorderColor", `Table ${block.id} has an invalid border color.`, { id: block.id, borderColor: block.borderColor }));
+        if (!/^[A-F0-9]{6}$/.test(block.headerFill)) issues.push(verificationIssue("document", "invalidTableHeaderFill", `Table ${block.id} has an invalid header fill.`, { id: block.id, headerFill: block.headerFill }));
         block.values.forEach((row, rowIndex) => {
           if (row.length !== block.columns) issues.push(verificationIssue("document", "raggedTableRows", `Table ${block.id} row ${rowIndex} has ${row.length} cells; expected ${block.columns}.`, { id: block.id, row: rowIndex, cells: row.length, expected: block.columns }));
           for (const cell of row) {
@@ -6432,9 +6465,21 @@ function docxCitationXml(block) {
 }
 
 function docxTableXml(block) {
-  const grid = Array.from({ length: block.columns || 1 }, () => `<w:gridCol w:w="${Math.floor(9360 / Math.max(1, block.columns || 1))}"/>`).join("");
-  const rows = block.values.map((row) => `<w:tr>${Array.from({ length: block.columns || row.length || 1 }, (_, column) => `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9360 / Math.max(1, block.columns || 1))}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r></w:p></w:tc>`).join("")}</w:tr>`).join("");
-  return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="9360" w:type="dxa"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
+  const columns = Math.max(1, block.columns || 1);
+  const widthDxa = Number.isFinite(block.widthDxa) && block.widthDxa > 0 ? Math.round(block.widthDxa) : 9360;
+  const configuredWidths = Array.isArray(block.columnWidthsDxa) && block.columnWidthsDxa.length === columns && block.columnWidthsDxa.every((value) => Number.isFinite(value) && value > 0)
+    ? block.columnWidthsDxa.map(Math.round)
+    : documentTableDefaultColumnWidths(columns, widthDxa);
+  const columnWidths = configuredWidths.reduce((sum, value) => sum + value, 0) === widthDxa ? configuredWidths : documentTableDefaultColumnWidths(columns, widthDxa);
+  const margins = block.cellMarginsDxa || {};
+  const border = `<w:top w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:left w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:bottom w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:right w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:insideH w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:insideV w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/>`;
+  const grid = columnWidths.map((width) => `<w:gridCol w:w="${width}"/>`).join("");
+  const rows = block.values.map((row, rowIndex) => `<w:tr>${Array.from({ length: columns }, (_, column) => {
+    const headerProperties = rowIndex === 0 ? `<w:shd w:val="clear" w:color="auto" w:fill="${attrEscape(block.headerFill || "F2F4F7")}"/>` : "";
+    const runProperties = rowIndex === 0 ? "<w:rPr><w:b/></w:rPr>" : "";
+    return `<w:tc><w:tcPr><w:tcW w:w="${columnWidths[column]}" w:type="dxa"/>${headerProperties}</w:tcPr><w:p><w:r>${runProperties}<w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r></w:p></w:tc>`;
+  }).join("")}</w:tr>`).join("");
+  return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="${widthDxa}" w:type="dxa"/><w:tblInd w:w="${Math.max(0, Math.round(block.indentDxa ?? 120))}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${Math.max(0, Math.round(margins.top ?? 80))}" w:type="dxa"/><w:start w:w="${Math.max(0, Math.round(margins.start ?? 120))}" w:type="dxa"/><w:bottom w:w="${Math.max(0, Math.round(margins.bottom ?? 80))}" w:type="dxa"/><w:end w:w="${Math.max(0, Math.round(margins.end ?? 120))}" w:type="dxa"/></w:tblCellMar><w:tblBorders>${border}</w:tblBorders></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
 }
 
 function docxDocumentXml(document, relIds = {}) {
@@ -6536,7 +6581,29 @@ function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
 
 function parseDocxTable(part) {
   const values = [...part.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))));
-  return { kind: "table", values, rows: values.length, columns: Math.max(0, ...values.map((row) => row.length)) };
+  const readDxa = (tag, fallback) => Number(new RegExp(`<w:${tag}\\b[^>]*w:w="(\\d+)"`).exec(part)?.[1] ?? fallback);
+  const columns = Math.max(0, ...values.map((row) => row.length));
+  const columnWidthsDxa = [...part.matchAll(/<w:gridCol\b[^>]*w:w="(\d+)"[^>]*\/?\s*>/g)].map((match) => Number(match[1]));
+  const firstRow = /<w:tr[\s\S]*?<\/w:tr>/.exec(part)?.[0] || "";
+  return {
+    kind: "table",
+    styleId: decodeXml(/<w:tblStyle\b[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "TableGrid"),
+    values,
+    rows: values.length,
+    columns,
+    widthDxa: readDxa("tblW", columnWidthsDxa.reduce((sum, value) => sum + value, 0) || 9360),
+    indentDxa: readDxa("tblInd", 0),
+    columnWidthsDxa: columnWidthsDxa.length === columns ? columnWidthsDxa : undefined,
+    cellMarginsDxa: {
+      top: readDxa("top", 80),
+      bottom: readDxa("bottom", 80),
+      start: readDxa("start", readDxa("left", 120)),
+      end: readDxa("end", readDxa("right", 120)),
+    },
+    borderColor: String(/<w:tblBorders>[\s\S]*?<w:(?:top|left|start)\b[^>]*w:color="([^"]+)"/.exec(part)?.[1] || "D9D9D9").toUpperCase(),
+    borderSize: Number(/<w:tblBorders>[\s\S]*?<w:(?:top|left|start)\b[^>]*w:sz="(\d+)"/.exec(part)?.[1] || 4),
+    headerFill: String(/<w:shd\b[^>]*w:fill="([^"]+)"/.exec(firstRow)?.[1] || "F2F4F7").toUpperCase(),
+  };
 }
 
 function parseHeaderFooterXml(xml) {

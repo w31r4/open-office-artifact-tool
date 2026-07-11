@@ -19,6 +19,10 @@
       "kind": "table",
       "name": "readiness-table",
       "styleId": "TableGrid",
+      "widthDxa": 9360,
+      "indentDxa": 120,
+      "columnWidthsDxa": [1800, 5160, 2400],
+      "headerFill": "F2F4F7",
       "values": [
         ["Gate", "Evidence", "Status"],
         ["Semantic", "inspect + verify", "Pass"],
@@ -47,4 +51,3 @@
     "maxChars": 20000
   }
 }
-
