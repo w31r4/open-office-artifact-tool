@@ -671,10 +671,14 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.LOWER", category: "text", summary: "Convert text to lowercase.", examples: ["=LOWER(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TRIM", category: "text", summary: "Trim leading/trailing whitespace and collapse internal whitespace.", examples: ["=TRIM(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.IFERROR", category: "logical", summary: "Return a fallback value when an expression evaluates to a formula error.", examples: ["=IFERROR(XLOOKUP(\"missing\",A1:A10,B1:B10),\"not found\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.IFNA", category: "logical", summary: "Return a fallback only when an expression evaluates to #N/A; preserve every other result or error.", examples: ["=IFNA(XLOOKUP(\"missing\",A1:A10,B1:B10),\"not found\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ISNUMBER", category: "information", summary: "Return TRUE when a value is numeric.", examples: ["=ISNUMBER(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ISTEXT", category: "information", summary: "Return TRUE when a value is text and not a formula error.", examples: ["=ISTEXT(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ISBLANK", category: "information", summary: "Return TRUE when a referenced value is empty.", examples: ["=ISBLANK(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ISERROR", category: "information", summary: "Return TRUE when a value is any recognized formula error.", examples: ["=ISERROR(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ISNA", category: "information", summary: "Return TRUE only when a value is the #N/A error.", examples: ["=ISNA(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ISERR", category: "information", summary: "Return TRUE for recognized formula errors other than #N/A.", examples: ["=ISERR(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.NA", category: "information", summary: "Return the #N/A error value to mark unavailable data explicitly.", examples: ["=NA()"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ABS", category: "math-trig", summary: "Return the absolute value of a number.", examples: ["=ABS(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.INT", category: "math-trig", summary: "Round a number down to the nearest integer.", examples: ["=INT(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CEILING", category: "math-trig", summary: "Round a number up to the nearest significance.", examples: ["=CEILING(A1,5)"] },
@@ -4117,6 +4121,7 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "IF": return evaluateFormulaCondition(sheet, args[0], context) ? scalar(1, true) : scalar(2, false);
     case "IFERROR": { const value = scalar(0); return formulaErrorCode(value) ? scalar(1, "") : value; }
+    case "IFNA": { const value = scalar(0); return formulaErrorCode(value) === "#N/A" ? scalar(1, "") : value; }
     case "AND": return args.every((arg) => evaluateFormulaCondition(sheet, arg, context));
     case "OR": return args.some((arg) => evaluateFormulaCondition(sheet, arg, context));
     case "NOT": return !evaluateFormulaCondition(sheet, args[0], context);
@@ -4124,6 +4129,9 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "ISTEXT": { const value = scalar(0); return typeof value === "string" && !formulaErrorCode(value); }
     case "ISBLANK": { const value = scalar(0); return value == null; }
     case "ISERROR": return Boolean(formulaErrorCode(scalar(0)));
+    case "ISNA": return formulaErrorCode(scalar(0)) === "#N/A";
+    case "ISERR": { const error = formulaErrorCode(scalar(0)); return Boolean(error && error !== "#N/A"); }
+    case "NA": return "#N/A";
     case "CONCAT":
     case "CONCATENATE": return values().map(formulaText).join("");
     case "TEXTJOIN": {

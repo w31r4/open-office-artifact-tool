@@ -258,7 +258,7 @@ assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /
 const formulaEdgeBook = Workbook.create();
 const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");
 formulaEdgeSheet.getRange("A1:B3").values = [[1, 10], [2, 20], [3, 30]];
-formulaEdgeSheet.getRange("D1:D8").formulas = [
+formulaEdgeSheet.getRange("D1:D15").formulas = [
   ["=SUMPRODUCT(A1:B2,A1:A4)"],
   ["=AVERAGEIF(A1:A3,\">10\",B1:B3)"],
   ["=IFERROR(AVERAGEIF(A1:A3,\">10\",B1:B3),\"empty\")"],
@@ -267,9 +267,16 @@ formulaEdgeSheet.getRange("D1:D8").formulas = [
   ["=ISTEXT(\"\")"],
   ["=ISBLANK(\"\")"],
   ["=NOT(TRUE)"],
+  ["=NA()"],
+  ["=IFNA(NA(),\"missing\")"],
+  ["=IFNA(#VALUE!,\"missing\")"],
+  ["=ISNA(NA())"],
+  ["=ISNA(#REF!)"],
+  ["=ISERR(#REF!)"],
+  ["=ISERR(NA())"],
 ];
 formulaEdgeBook.recalculate();
-assert.deepEqual(formulaEdgeSheet.getRange("D1:D8").values.flat(), ["#VALUE!", "#DIV/0!", "empty", "#REF!", true, true, false, false]);
+assert.deepEqual(formulaEdgeSheet.getRange("D1:D15").values.flat(), ["#VALUE!", "#DIV/0!", "empty", "#REF!", true, true, false, false, "#N/A", "missing", "#VALUE!", true, false, true, false]);
 
 const spillBook = Workbook.create();
 const spillSheet = spillBook.worksheets.add("Spill");

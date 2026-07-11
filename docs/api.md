@@ -1560,10 +1560,13 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.HSTACK` | formula | Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
 | `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
+| `fx.IFNA` | formula | Return a fallback only when an expression evaluates to #N/A; preserve every other result or error. |
 | `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
 | `fx.ISBLANK` | formula | Return TRUE when a referenced value is empty. |
+| `fx.ISERR` | formula | Return TRUE for recognized formula errors other than #N/A. |
 | `fx.ISERROR` | formula | Return TRUE when a value is any recognized formula error. |
+| `fx.ISNA` | formula | Return TRUE only when a value is the #N/A error. |
 | `fx.ISNUMBER` | formula | Return TRUE when a value is numeric. |
 | `fx.ISTEXT` | formula | Return TRUE when a value is text and not a formula error. |
 | `fx.LEFT` | formula | Return characters from the start of a text value. |
@@ -1573,6 +1576,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
+| `fx.NA` | formula | Return the #N/A error value to mark unavailable data explicitly. |
 | `fx.NOT` | formula | Reverse the truth value of a condition. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
@@ -1967,6 +1971,23 @@ Return a fallback value when an expression evaluates to a formula error.
 
 - `value` (unknown) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.IFNA`
+
+Return a fallback only when an expression evaluates to #N/A; preserve every other result or error.
+
+**Examples:**
+
+- =IFNA(XLOOKUP("missing",A1:A10,B1:B10),"not found")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =IFNA(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.INDEX`
 
 Return a value from a range by 1-based row and optional column index.
@@ -2018,6 +2039,23 @@ Return TRUE when a referenced value is empty.
 
 - `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.ISERR`
+
+Return TRUE for recognized formula errors other than #N/A.
+
+**Examples:**
+
+- =ISERR(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ISERR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.ISERROR`
 
 Return TRUE when a value is any recognized formula error.
@@ -2029,6 +2067,23 @@ Return TRUE when a value is any recognized formula error.
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =ISERROR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.ISNA`
+
+Return TRUE only when a value is the #N/A error.
+
+**Examples:**
+
+- =ISNA(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ISNA(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
@@ -2187,6 +2242,23 @@ Return the minimum numeric value across arguments and ranges.
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.NA`
+
+Return the #N/A error value to mark unavailable data explicitly.
+
+**Examples:**
+
+- =NA()
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =NA(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.NOT`
 
