@@ -575,6 +575,7 @@ export const HELP_CATALOG = [
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
   { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
@@ -611,6 +612,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, and design preset metadata." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
@@ -3599,6 +3601,7 @@ export class Slide {
     for (const shape of this.shapes) {
       if (kinds.has("textbox") && shape.text.value) records.push(shape.inspectRecord("textbox"));
       else if (kinds.has("shape")) records.push(shape.inspectRecord("shape"));
+      if (kinds.has("textRange") && shape.text.value) records.push(textRangeRecord(shape, { parentKind: "shape", record: { slide: this.index + 1, bbox: [shape.position.left, shape.position.top, shape.position.width, shape.position.height], bboxUnit: "px" } }));
     }
     if (kinds.has("table")) records.push(...this.tables.items.map((table) => table.inspectRecord()));
     if (kinds.has("chart")) records.push(...this.charts.items.map((chart) => chart.inspectRecord()));
@@ -3610,7 +3613,14 @@ export class Slide {
   }
 
   title() { return this.shapes.items.find((shape) => shape.text.value)?.text.value || this.charts.items[0]?.title || ""; }
-  resolve(id) { return [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.comments.items].find((element) => element.id === id); }
+  resolve(id) {
+    if (String(id || "").endsWith("/text")) {
+      const parentId = String(id).slice(0, -5);
+      const shape = this.shapes.items.find((item) => item.id === parentId);
+      if (shape) return createTextRange(shape, id, { parentKind: "shape" });
+    }
+    return [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.comments.items].find((element) => element.id === id);
+  }
 
   validateLayout(options = {}) {
     const issues = [];
@@ -3737,6 +3747,31 @@ export class Slide {
     }
     return items;
   }
+}
+
+function createTextRange(parent, id, options = {}) {
+  const getText = options.getText || (() => parent.text?.value ?? parent.text ?? parent.display ?? "");
+  const setText = options.setText || ((value) => {
+    if (parent.text && typeof parent.text.set === "function") parent.text.set(value);
+    else if (parent.text && typeof parent.text === "object" && "value" in parent.text) parent.text.value = String(value ?? "");
+    else if ("text" in parent) parent.text = String(value ?? "");
+    else if ("display" in parent) parent.display = String(value ?? "");
+  });
+  return {
+    kind: "textRange",
+    id,
+    parentId: parent.id,
+    parentKind: options.parentKind || parent.kind || parent.constructor?.name,
+    get text() { return getText(); },
+    set text(value) { setText(value); },
+    replace(search, replacement) { const next = String(getText()).replace(search, replacement); setText(next); return this; },
+  };
+}
+
+function textRangeRecord(parent, options = {}) {
+  const range = createTextRange(parent, `${parent.id}/text`, options);
+  const text = String(range.text || "");
+  return { kind: "textRange", id: range.id, parentId: parent.id, parentKind: range.parentKind, text, textPreview: text.slice(0, 300), textChars: text.length, ...(options.record || {}) };
 }
 
 class TextFrame {
@@ -4581,6 +4616,30 @@ function documentLayoutRecords(document, options = {}) {
   ];
 }
 
+function documentTextParent(document, parentId) {
+  return [...document.blocks, ...document.headers, ...document.footers, ...document.comments].find((item) => item.id === parentId);
+}
+
+function documentTextRange(document, id) {
+  const parentId = String(id || "").endsWith("/text") ? String(id).slice(0, -5) : undefined;
+  const parent = parentId ? documentTextParent(document, parentId) : undefined;
+  if (!parent) return undefined;
+  return createTextRange(parent, id, {
+    parentKind: parent.kind,
+    getText: () => parent.text ?? parent.display ?? "",
+    setText: (value) => { if (parent.kind === "field" || ("display" in parent && !("text" in parent))) parent.display = String(value ?? ""); else parent.text = String(value ?? ""); },
+  });
+}
+
+function documentTextRangeRecords(document) {
+  const parents = [...document.blocks, ...document.headers, ...document.footers, ...document.comments].filter((item) => item && ("text" in item || "display" in item));
+  return parents.map((parent, index) => textRangeRecord(parent, {
+    parentKind: parent.kind,
+    getText: () => parent.text ?? parent.display ?? "",
+    record: { index, styleId: parent.styleId, targetId: parent.targetId },
+  }));
+}
+
 export class DocumentModel {
   constructor(options = {}) {
     this.id = aid("doc");
@@ -4657,7 +4716,7 @@ export class DocumentModel {
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); return block; }
   addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
-  resolve(id) { return this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
+  resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
 
   toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
@@ -4670,6 +4729,7 @@ export class DocumentModel {
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => block.inspectRecord(index)));
     if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
+    if (kinds.has("textRange")) records.push(...documentTextRangeRecords(this));
     if (kinds.has("style")) records.push(...this.styles.values().map((style) => ({ kind: "style", ...style })));
     return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }

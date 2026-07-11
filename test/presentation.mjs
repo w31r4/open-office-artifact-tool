@@ -43,6 +43,11 @@ const target = presentation.resolve(shape.id);
 assert.equal(target.text.value, "Revenue outlook");
 target.text.replace("outlook", "plan");
 assert.match(presentation.inspect({ kind: "textbox" }).ndjson, /Revenue plan/);
+const shapeTextRange = presentation.resolve(`${shape.id}/text`);
+assert.equal(shapeTextRange.text, "Revenue plan");
+const textRangeInspect = presentation.inspect({ kind: "textRange", target: `${shape.id}/text`, include: "text,parentId", maxChars: 4000 }).ndjson;
+assert.match(textRangeInspect, /Revenue plan/);
+assert.match(textRangeInspect, new RegExp(shape.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 
 const composed = slide.compose(
   column({ name: "content-frame", width: "fill", height: "fill", gap: 16, padding: { x: 24, y: 20 } }, [
