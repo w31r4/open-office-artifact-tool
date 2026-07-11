@@ -648,7 +648,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or layout JSON." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
@@ -3477,7 +3477,7 @@ export class Presentation {
   async export(options = {}) {
     if (options.format === "montage" || options.montage === true) return new FileBlob(presentationMontageSvg(this, options), { type: "image/svg+xml", metadata: { format: "montage", slides: this.slides.count, artifactKind: "presentation" } });
     const slide = options.slide || this.slides.getItem(0) || this.slides.add();
-    if (options.format === "layout") return slide.export({ format: "layout" });
+    if (options.format === "layout") return slide.export({ ...options, format: "layout" });
     return slide.export(options);
   }
 
@@ -3669,6 +3669,28 @@ class ConnectorElement {
   toPptxShape(index) { return pptxConnectorXml(index, this); }
 }
 
+function slideLayoutSlice(slide, layout, options = {}) {
+  const targets = inspectTargetTokens(options);
+  const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
+  if (!targets.length && !search) return layout;
+  const before = Math.max(0, Number(options.before ?? options.contextBefore ?? options.context ?? 0) || 0);
+  const after = Math.max(0, Number(options.after ?? options.contextAfter ?? options.context ?? 0) || 0);
+  const targetsSlide = targets.some((target) => target === slide.id || target === slide.name || target === String(slide.index + 1) || target === "slide");
+  if (targetsSlide && !search) return { ...layout, slice: { targets, before, after, matchedElements: layout.elements.length, returnedElements: layout.elements.length } };
+  const matches = [];
+  layout.elements.forEach((element, index) => {
+    const matchesSearch = !search || JSON.stringify(element).toLowerCase().includes(search);
+    const matchesTarget = !targets.length || targetsSlide || inspectRecordMatchesTarget(element, targets);
+    if (matchesSearch && matchesTarget) matches.push(index);
+  });
+  const keep = new Set();
+  for (const index of matches) {
+    for (let i = Math.max(0, index - before); i <= Math.min(layout.elements.length - 1, index + after); i += 1) keep.add(i);
+  }
+  const elements = layout.elements.filter((_, index) => keep.has(index));
+  return { ...layout, elements, slice: { targets, search: search || undefined, before, after, matchedElements: matches.length, returnedElements: elements.length } };
+}
+
 export class Slide {
   constructor(presentation, options = {}) {
     this.presentation = presentation;
@@ -3780,17 +3802,28 @@ export class Slide {
   }
 
   async export(options = {}) {
-    if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(), null, 2), { type: LAYOUT_MIME });
+    if (options.format === "layout" || options.format === LAYOUT_MIME) return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "presentation", format: "layout", slide: this.index + 1, target: options.target ?? options.targetId ?? options.id ?? options.anchor, search: options.search ?? options.searchTerm } });
     return new FileBlob(this.toSvg(), { type: "image/svg+xml" });
   }
 
-  layoutJson() {
-    return {
+  layoutJson(options = {}) {
+    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items].map((element) => {
+      const record = element.layoutJson();
+      const comments = this.comments.items.filter((comment) => comment.targetId === element.id);
+      return {
+        ...record,
+        slide: this.index + 1,
+        textRangeId: element.text?.value ? `${element.id}/text` : undefined,
+        commentIds: comments.length ? comments.map((comment) => comment.id) : undefined,
+        commentTextPreview: comments.length ? comments.flatMap((comment) => comment.comments.map((item) => item.text)).join("\n").slice(0, 300) : undefined,
+      };
+    });
+    return slideLayoutSlice(this, {
       schema: "open-office-artifact.layout/v1",
       unit: "px",
       slide: { id: this.id, slide: this.index + 1, frame: this.frame, notes: this.speakerNotes.text || undefined },
-      elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items].map((element) => element.layoutJson()),
-    };
+      elements,
+    }, options);
   }
 
   toSvg() {
