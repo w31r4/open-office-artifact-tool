@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text.Json;
 
 namespace OfficeBridge;
@@ -7,10 +8,16 @@ public sealed class OfficeAutomation
 {
     public BridgeResponse Status()
     {
-        var windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-        var word = windows && IsComAvailable("Word.Application");
-        var excel = windows && IsComAvailable("Excel.Application");
-        var powerPoint = windows && IsComAvailable("PowerPoint.Application");
+        var windows = OperatingSystem.IsWindows();
+        var word = false;
+        var excel = false;
+        var powerPoint = false;
+        if (windows)
+        {
+            word = IsComAvailable("Word.Application");
+            excel = IsComAvailable("Excel.Application");
+            powerPoint = IsComAvailable("PowerPoint.Application");
+        }
         return new BridgeResponse
         {
             Available = windows && (word || excel || powerPoint),
@@ -40,7 +47,7 @@ public sealed class OfficeAutomation
 
     public BridgeResponse Render(BridgeRequest request)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (!OperatingSystem.IsWindows())
         {
             throw new BridgeException("OFFICE_UNAVAILABLE", "Microsoft Office native automation is only available on Windows.", new Dictionary<string, object?> { ["platform"] = RuntimeInformation.OSDescription });
         }
@@ -65,6 +72,7 @@ public sealed class OfficeAutomation
         };
     }
 
+    [SupportedOSPlatform("windows")]
     private static bool IsComAvailable(string progId)
     {
         try
@@ -113,6 +121,7 @@ public sealed class OfficeAutomation
         };
     }
 
+    [SupportedOSPlatform("windows")]
     private static BridgeResponse RenderWord(BridgeRequest request, string outputType)
     {
         dynamic? app = null;
@@ -140,6 +149,7 @@ public sealed class OfficeAutomation
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private static BridgeResponse RenderExcel(BridgeRequest request, string outputType)
     {
         dynamic? app = null;
@@ -164,6 +174,7 @@ public sealed class OfficeAutomation
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private static BridgeResponse RenderPowerPoint(BridgeRequest request, string outputType)
     {
         dynamic? app = null;

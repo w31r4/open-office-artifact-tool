@@ -27,7 +27,9 @@ assert.match(releaseWorkflow, /gh release create/);
 for (const workflow of [ciWorkflow, releaseWorkflow]) {
   assert.match(workflow, /playwright install --with-deps chromium/);
   assert.match(workflow, /libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils/);
-  assert.match(workflow, /actions\/setup-dotnet@v4/);
+  assert.match(workflow, /actions\/checkout@v5/);
+  assert.match(workflow, /actions\/setup-node@v5/);
+  assert.match(workflow, /actions\/setup-dotnet@v5/);
   assert.match(workflow, /soffice --version/);
   assert.match(workflow, /pdfinfo -v/);
   assert.match(workflow, /dotnet test native\/OfficeBridge/);
