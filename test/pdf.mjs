@@ -120,6 +120,18 @@ assert.equal(parsed.resolve(parsedPage.tables[0].id).name, "parsed-table");
 assert.equal(parsed.resolve(parsedPage.images[0].id).alt, "Extracted raster");
 assert.match(parsed.help("pdf.resolve").ndjson, /stable PDF artifact IDs/);
 assert.equal(parsed.verify().ok, true);
+const badGeometryPdf = PdfArtifact.create({
+  pages: [{
+    width: 100,
+    height: 100,
+    text: "Bad geometry",
+    textItems: [{ id: "txt/bad", text: "outside", bbox: [95, 95, 20, 20] }],
+    regions: [{ id: "rg/bad", kind: "textLine", label: "outside", bbox: [-1, 0, 20, 20] }],
+  }],
+});
+const badGeometryIssues = badGeometryPdf.verify({ maxChars: 4000 }).ndjson;
+assert.match(badGeometryIssues, /textItemOutOfBounds/);
+assert.match(badGeometryIssues, /regionOutOfBounds/);
 assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
 
 const pdfjsParser = createPdfjsParser();
