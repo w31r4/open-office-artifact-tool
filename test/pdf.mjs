@@ -136,7 +136,7 @@ const parsed = await PdfFile.importPdf(new FileBlob(new Uint8Array([0x25, 0x50, 
           ],
           regions: [{ kind: "textLine", label: "Parsed arbitrary PDF", bbox: [10, 20, 144, 12] }],
           tables: [{ name: "parsed-table", values: [["Metric", "Value"], ["Revenue", "12"]], bbox: [10, 48, 180, 44] }],
-          images: [{ name: "parsed-image", alt: "Extracted raster", prompt: "image placeholder", bbox: [200, 40, 60, 60] }],
+          images: [{ name: "parsed-image", alt: "Extracted raster", bytes: [0x89, 0x50, 0x4e, 0x47], contentType: "image/png", bbox: [200, 40, 60, 60] }],
         },
       ],
     };
@@ -154,6 +154,11 @@ assert.equal(parsed.resolve(parsedPage.textItems[0].id).text, "Parsed");
 assert.equal(parsed.resolve(parsedPage.regions[0].id).label, "Parsed arbitrary PDF");
 assert.equal(parsed.resolve(parsedPage.tables[0].id).name, "parsed-table");
 assert.equal(parsed.resolve(parsedPage.images[0].id).alt, "Extracted raster");
+assert.match(parsed.resolve(parsedPage.images[0].id).dataUrl, /^data:image\/png;base64,/);
+assert.equal(parsed.resolve(parsedPage.images[0].id).prompt, undefined);
+const parsedImageLayout = parsed.layoutJson({ target: parsedPage.images[0].id });
+assert.equal(parsedImageLayout.pages[0].images[0].hasDataUrl, true);
+assert.match(parsed.help("PdfFile.importPdf").ndjson, /image bytes/);
 assert.match(parsed.help("pdf.resolve").ndjson, /stable PDF artifact IDs/);
 assert.equal(parsed.verify().ok, true);
 const badGeometryPdf = PdfArtifact.create({

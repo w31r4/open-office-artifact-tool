@@ -699,7 +699,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
@@ -5858,6 +5858,21 @@ export class PdfFile {
   }
 }
 
+function pdfImageDataUrl(image = {}) {
+  if (image.dataUrl) return image.dataUrl;
+  const base64 = image.base64 || image.base64Data || image.dataBase64;
+  const contentType = image.contentType || image.mimeType || image.mime || image.type || imageDataFromDataUrl(image.dataUrl)?.contentType || imageContentTypeFromExtension(image.extension || image.ext || image.format || "png");
+  if (typeof base64 === "string" && base64.trim()) return `data:${contentType};base64,${base64.replace(/^data:[^,]+,/, "")}`;
+  const bytes = image.bytes || image.data || image.buffer || image.uint8Array || image.binary;
+  if (bytes == null) return undefined;
+  try {
+    const payload = Array.isArray(bytes) ? Uint8Array.from(bytes) : toUint8Array(bytes);
+    return `data:${contentType};base64,${Buffer.from(payload).toString("base64")}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function pdfArtifactFromParserOutput(parsed, metadata = {}) {
   if (parsed instanceof PdfArtifact) {
     parsed.metadata = { ...(parsed.metadata || {}), ...metadata };
@@ -5872,7 +5887,7 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     textItems: page.textItems || page.items || [],
     regions: page.regions || [],
     tables: (page.tables || []).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96] })),
-    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: image.dataUrl, uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120] })),
+    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120] })),
   }));
   return PdfArtifact.create({ metadata: { ...metadata, ...(source.metadata || parsed?.metadata || {}) }, pages: pages.length ? pages : [{ text: "" }] });
 }
