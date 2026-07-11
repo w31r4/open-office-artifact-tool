@@ -162,6 +162,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   const summary = {
     input: absoluteInput,
     outputDir,
+    packageOk: packageInspect.ok,
     previewFormat,
     verifyOk: verify.ok,
     visualQaOk: visualQa.ok,
@@ -170,8 +171,8 @@ export async function verifyDocumentFile(inputPath, options = {}) {
     files: paths,
   };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  if (options.failOnIssues !== false && (!verify.ok || !visualQa.ok || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok)))) {
-    throw new Error(`Document QA failed: semantic=${verify.ok}, modelVisual=${visualQa.ok}, native=${nativeRender.status}. See ${outputDir}`);
+  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || !visualQa.ok || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok)))) {
+    throw new Error(`Document QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, modelVisual=${visualQa.ok}, native=${nativeRender.status}. See ${outputDir}`);
   }
   return { document, inspect, packageInspect, verify, visualQa, layoutBlob, summary };
 }

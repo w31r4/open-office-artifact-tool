@@ -29,6 +29,7 @@ try {
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/media/image1.png"));
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/notesSlides/notesSlide1.xml"));
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/comments/comment2.xml"));
+  assert.equal(first.qa.summary.packageOk, true);
   assert.match(first.qa.inspect.ndjson, /PPTX workflows now close the QA loop/);
   assert.match(first.qa.inspect.ndjson, /evidence-table/);
   assert.match(first.qa.inspect.ndjson, /Evidence produced per gate/);

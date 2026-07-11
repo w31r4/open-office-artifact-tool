@@ -125,14 +125,15 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     sheetName,
     range: range || null,
     renderFormat,
+    packageOk: packageInspect.ok,
     verifyOk: verify.ok,
     visualQaOk: visualQa.ok,
     renderHash: visualQa.summary.hash,
     files: paths,
   };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  if (options.failOnIssues !== false && (!verify.ok || !visualQa.ok)) {
-    throw new Error(`Spreadsheet QA failed: semantic=${verify.ok}, visual=${visualQa.ok}. See ${outputDir}`);
+  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || !visualQa.ok)) {
+    throw new Error(`Spreadsheet QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${visualQa.ok}. See ${outputDir}`);
   }
   return { workbook, inspect, packageInspect, verify, visualQa, layoutBlob, summary };
 }

@@ -14,6 +14,7 @@ try {
   const result = await runSpreadsheetFixture(fixturePath, { outputDir });
   assert.equal(result.fixture.name, "formula-summary");
   assert.equal(result.qa.summary.verifyOk, true);
+  assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
   assert.equal(result.qa.summary.renderFormat, "svg");
   for (const filePath of Object.values(result.qa.summary.files)) {
@@ -39,6 +40,7 @@ try {
     renderFormat: "svg",
   });
   assert.equal(secondQa.summary.verifyOk, true);
+  assert.equal(secondQa.summary.packageOk, true);
   assert.equal(secondQa.summary.sheetName, "Inputs");
 
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));

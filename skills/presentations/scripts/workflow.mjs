@@ -199,10 +199,10 @@ export async function verifyPresentationFile(inputPath, options = {}) {
     else if (requestedNative === "required" || requestedNative === "true") throw new Error(`Native presentation render requires soffice, pdftoppm, and pdfinfo: ${JSON.stringify(nativeStatus.commands)}`);
     else nativeRender = { status: "skipped", reason: "native render commands unavailable", commands: nativeStatus.commands };
   }
-  const summary = { input: absoluteInput, outputDir, slides: presentation.slides.count, verifyOk: verify.ok, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, files: paths };
+  const summary = { input: absoluteInput, outputDir, slides: presentation.slides.count, packageOk: packageInspect.ok, verifyOk: verify.ok, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, files: paths };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
   const visualFailed = modelRender.slides.some((slide) => !slide.ok) || !modelRender.montage.ok || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok));
-  if (options.failOnIssues !== false && (!verify.ok || visualFailed)) throw new Error(`Presentation QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}. See ${outputDir}`);
+  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || visualFailed)) throw new Error(`Presentation QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}. See ${outputDir}`);
   return { presentation, inspect, packageInspect, verify, modelRender, nativeRender, summary };
 }
 

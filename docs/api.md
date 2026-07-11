@@ -30,7 +30,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
 | `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available. |
-| `DocumentFile.inspectDocx` | api | Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews. |
+| `DocumentFile.inspectDocx` | api | Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues. |
 | `DocumentFile.patchDocx` | api | Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
@@ -408,7 +408,7 @@ Import DOCX bytes into the clean-room document facade, restoring native parts an
 
 #### `DocumentFile.inspectDocx`
 
-Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews.
+Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues.
 
 **Schema parameters:**
 
@@ -422,7 +422,7 @@ Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, 
 
 **Schema returns:**
 
-- `package` (object) — DOCX package part records and bounded NDJSON.
+- `package` (object) — DOCX package result with ok, issues, parts, records, and bounded NDJSON.
 
 #### `DocumentFile.patchDocx`
 
@@ -827,7 +827,7 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to a native OOXML PPTX FileBlob. |
 | `PresentationFile.importPptx` | api | Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available. |
-| `PresentationFile.inspectPptx` | api | Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews. |
+| `PresentationFile.inspectPptx` | api | Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues. |
 | `PresentationFile.patchPptx` | api | Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
@@ -1061,7 +1061,7 @@ Import PPTX bytes into the clean-room presentation facade, restoring native part
 
 #### `PresentationFile.inspectPptx`
 
-Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews.
+Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues.
 
 **Examples:**
 
@@ -1079,7 +1079,7 @@ Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, con
 
 **Schema returns:**
 
-- `package` (object) — PPTX package and part records with paths, sizes, content types, and optional previews.
+- `package` (object) — PPTX package result with ok, issues, parts, records, and bounded NDJSON.
 
 #### `PresentationFile.patchPptx`
 
@@ -1589,7 +1589,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to an XLSX FileBlob. |
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
-| `SpreadsheetFile.inspectXlsx` | api | Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets. |
+| `SpreadsheetFile.inspectXlsx` | api | Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
@@ -2547,7 +2547,7 @@ Load an XLSX file into a Workbook facade.
 
 #### `SpreadsheetFile.inspectXlsx`
 
-Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets.
+Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues.
 
 **Schema parameters:**
 
@@ -2561,7 +2561,7 @@ Inspect an XLSX package as bounded, content-type-aware part records with decompr
 
 **Schema returns:**
 
-- `package` (object) — Content-type-aware XLSX package records and bounded NDJSON.
+- `package` (object) — XLSX package result with ok, issues, parts, records, and bounded NDJSON.
 
 #### `SpreadsheetFile.patchXlsx`
 

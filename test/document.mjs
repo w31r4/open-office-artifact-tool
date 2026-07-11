@@ -213,7 +213,7 @@ assert.equal(renderedDocxPdf.type, "application/pdf");
 assert.equal(renderedDocxPdf.metadata.renderSource, "docx");
 assert.match(await renderedDocxPdf.text(), /%PDF-docx-render/);
 assert.match(document.help("document.render").ndjson, /source: 'docx'/);
-assert.match(document.help("DocumentFile.inspectDocx").ndjson, /DOCX zip package/);
+assert.match(document.help("DocumentFile.inspectDocx").ndjson, /DOCX package/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /path traversal/);
 
 const docx = await DocumentFile.exportDocx(document);
@@ -255,6 +255,7 @@ assert.ok(docxMediaBytes.byteLength > 10);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
 assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
 const packageInspect = await DocumentFile.inspectDocx(docx, { includeText: true, maxChars: 12000 });
+assert.equal(packageInspect.ok, true);
 assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml"));
 assert.match(packageInspect.ndjson, /docxPart/);
 assert.match(packageInspect.ndjson, /word\/styles\.xml/);

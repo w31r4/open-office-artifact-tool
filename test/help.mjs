@@ -142,7 +142,7 @@ assert.match(helpArtifact("shared", "createPlaywrightRenderer").ndjson, /Playwri
 assert.match(helpArtifact("shared", "createSharpRenderer").ndjson, /sharp renderer adapter/);
 assert.match(helpArtifact("shared", "createPopplerRenderer").ndjson, /Poppler CLI renderer adapter/);
 assert.match(helpArtifact("shared", "createLibreOfficeRenderer").ndjson, /LibreOffice CLI renderer adapter/);
-assert.match(helpArtifact("presentation", "PresentationFile.inspectPptx").ndjson, /PPTX zip package/);
+assert.match(helpArtifact("presentation", "PresentationFile.inspectPptx").ndjson, /PPTX package/);
 assert.match(helpArtifact("pdf", "PdfFile.inspectPdf").ndjson, /PDF bytes/);
 assert.match(helpArtifact("shared", "createNativeOfficeRenderer").ndjson, /native Office renderer adapter/);
 assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /native Office bridge command/);

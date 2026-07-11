@@ -18,6 +18,7 @@ try {
   const result = await runDocumentFixture(fixturePath, { outputDir, nativeRender: "off" });
   assert.equal(result.fixture.name, "business-brief");
   assert.equal(result.qa.summary.verifyOk, true);
+  assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
   assert.equal(result.qa.summary.nativeRender.status, "skipped");
   for (const filePath of Object.values(result.qa.summary.files)) {
@@ -57,4 +58,3 @@ try {
 }
 
 console.log("document skill smoke ok");
-

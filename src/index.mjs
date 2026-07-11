@@ -600,7 +600,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
@@ -689,7 +689,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to a native OOXML PPTX FileBlob." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available." },
@@ -721,7 +721,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
@@ -903,7 +903,7 @@ const HELP_DETAIL_OVERRIDES = {
         maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
-      returns: { package: { type: "object", description: "PPTX package and part records with paths, sizes, content types, and optional previews." } },
+      returns: { package: { type: "object", description: "PPTX package result with ok, issues, parts, records, and bounded NDJSON." } },
     },
   },
   "PdfFile.inspectPdf": {
@@ -1361,7 +1361,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     maxPartBytes: { type: "number", description: "Maximum uncompressed bytes per part." },
     maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
     maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
-  }, "package", "object", "DOCX package part records and bounded NDJSON."),
+  }, "package", "object", "DOCX package result with ok, issues, parts, records, and bounded NDJSON."),
 };
 
 const PRESENTATION_HELP_SCHEMAS = {
@@ -1533,7 +1533,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     maxPartBytes: { type: "number", description: "Maximum uncompressed bytes per part." },
     maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
     maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
-  }, "package", "object", "Content-type-aware XLSX package records and bounded NDJSON."),
+  }, "package", "object", "XLSX package result with ok, issues, parts, records, and bounded NDJSON."),
   "SpreadsheetFile.patchXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
     patches: { type: "array|object", required: true, description: "Safe part edits with text, xml, json, bytes, content, remove, or delete." },
@@ -7510,6 +7510,51 @@ function ooxmlFallbackContentType(partPath) {
   return imageContentTypeFromExtension(path.posix.extname(partPath).slice(1));
 }
 
+function ooxmlPartExtension(partPath) {
+  if (partPath.endsWith(".rels")) return "rels";
+  return path.posix.extname(partPath).slice(1).toLowerCase();
+}
+
+function ooxmlRelationshipSource(partPath) {
+  if (partPath === "_rels/.rels") return "";
+  const match = /^(?:(.*)\/)?_rels\/([^/]+)\.rels$/.exec(partPath);
+  if (!match) return undefined;
+  return match[1] ? `${match[1]}/${match[2]}` : match[2];
+}
+
+function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
+  const paths = new Set(files.map((file) => file.name));
+  const issues = [];
+  if (!paths.has("[Content_Types].xml")) issues.push({ kind: "ooxmlIssue", family, type: "missingContentTypes", severity: "error", message: `${family} package is missing [Content_Types].xml.` });
+  if (!paths.has("_rels/.rels")) issues.push({ kind: "ooxmlIssue", family, type: "missingRootRelationships", severity: "error", message: `${family} package is missing _rels/.rels.` });
+  for (const partPath of paths) {
+    if (partPath === "[Content_Types].xml") continue;
+    const extension = ooxmlPartExtension(partPath);
+    if (!contentTypes.overrides.has(partPath) && !contentTypes.defaults.has(extension)) {
+      issues.push({ kind: "ooxmlIssue", family, type: "missingContentType", severity: "error", path: partPath, message: `${family} part ${partPath} has no [Content_Types].xml declaration.` });
+    }
+  }
+  for (const [partPath, bytes] of bytesByPath) {
+    if (!partPath.endsWith(".rels")) continue;
+    const source = ooxmlRelationshipSource(partPath);
+    if (source == null) continue;
+    const sourceDir = source ? path.posix.dirname(source) : "";
+    const xml = decoder.decode(bytes);
+    for (const match of xml.matchAll(/<Relationship\b[^>]*\/?\s*>/g)) {
+      const attrs = Object.fromEntries([...match[0].matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((attribute) => [attribute[1], decodeXml(attribute[2])]));
+      if (String(attrs.TargetMode || "").toLowerCase() === "external") continue;
+      if (!attrs.Target) {
+        issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetMissing", severity: "error", path: partPath, relationshipId: attrs.Id, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} has no target.` });
+        continue;
+      }
+      const rawTarget = String(attrs.Target).split("#")[0];
+      const target = rawTarget.startsWith("/") ? rawTarget.slice(1) : path.posix.normalize(path.posix.join(sourceDir === "." ? "" : sourceDir, rawTarget));
+      if (!paths.has(target)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetNotFound", severity: "error", path: partPath, relationshipId: attrs.Id, target, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} targets missing part ${target}.` });
+    }
+  }
+  return issues;
+}
+
 async function ooxmlPackageRecords(zip, options = {}, config = {}) {
   const includeText = Boolean(options.includeText || options.preview || options.includeXml);
   const maxPreviewChars = Math.max(0, Number(options.maxPreviewChars ?? 400) || 0);
@@ -7535,6 +7580,7 @@ async function ooxmlPackageRecords(zip, options = {}, config = {}) {
   const contentTypes = ooxmlContentTypeMaps(contentTypesText);
   const counts = Object.fromEntries(Object.entries(config.counts || {}).map(([name, pattern]) => [name, files.filter((file) => pattern.test(file.name)).length]));
   const records = [{ kind: config.packageKind || "ooxmlPackage", family, parts: files.length, ...counts }];
+  const bytesByPath = new Map();
   let totalBytes = 0;
   for (const file of files) {
     const partPath = safePaths.get(file);
@@ -7542,13 +7588,18 @@ async function ooxmlPackageRecords(zip, options = {}, config = {}) {
     if (bytes.byteLength > maxPartBytes) throw new Error(`${family} part ${partPath} exceeds maxPartBytes (${maxPartBytes}).`);
     totalBytes += bytes.byteLength;
     if (totalBytes > maxTotalBytes) throw new Error(`${family} package exceeds maxTotalBytes (${maxTotalBytes}).`);
-    const extension = path.posix.extname(partPath).slice(1).toLowerCase();
+    const extension = ooxmlPartExtension(partPath);
     const contentType = contentTypes.overrides.get(partPath) || contentTypes.defaults.get(extension) || ooxmlFallbackContentType(partPath);
     const record = { kind: config.partKind || "ooxmlPart", path: partPath, size: bytes.byteLength, contentType };
     if (includeText && /\.(xml|json|rels)$/i.test(partPath)) record.textPreview = decoder.decode(bytes).slice(0, maxPreviewChars);
     records.push(record);
+    bytesByPath.set(partPath, bytes);
   }
+  const issues = ooxmlPackageIssues(files, bytesByPath, contentTypes, family);
   records[0].uncompressedBytes = totalBytes;
+  records[0].ok = issues.length === 0;
+  records[0].issues = issues.length;
+  records.push(...issues);
   return records;
 }
 
@@ -7566,7 +7617,7 @@ async function inspectOoxmlPackage(blobOrBuffer, options = {}, config = {}) {
   const zip = await JSZip.loadAsync(bytes);
   const records = await ooxmlPackageRecords(zip, options, config);
   const partKind = config.partKind || "ooxmlPart";
-  return { parts: records.filter((record) => record.kind === partKind), records, ...ndjson(records, options.maxChars ?? Infinity) };
+  return { ok: records[0].ok, issues: records.filter((record) => record.kind === "ooxmlIssue"), parts: records.filter((record) => record.kind === partKind), records, ...ndjson(records, options.maxChars ?? Infinity) };
 }
 
 async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, config = {}) {
