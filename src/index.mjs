@@ -145,10 +145,53 @@ function inspectRecordMatchesTarget(record, targets) {
 function filterInspectRecords(records, options = {}) {
   const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
   const targets = inspectTargetTokens(options);
-  return records
+  return shapeInspectRecords(records
     .filter(Boolean)
     .filter((record) => !search || JSON.stringify(record).toLowerCase().includes(search))
-    .filter((record) => inspectRecordMatchesTarget(record, targets));
+    .filter((record) => inspectRecordMatchesTarget(record, targets)), options);
+}
+
+const INSPECT_CORE_FIELDS = new Set(["kind", "id", "sheet", "address", "range", "name", "page", "slide", "targetId", "parentId"]);
+const INSPECT_FIELD_ALIASES = {
+  values: ["values", "value"],
+  value: ["value", "values"],
+  formulas: ["formulas", "formula"],
+  formula: ["formula", "formulas"],
+  bbox: ["bbox", "bboxUnit"],
+  text: ["text", "textPreview", "textChars"],
+  style: ["style", "styleId"],
+};
+
+function inspectFieldList(value) {
+  if (value == null || value === "") return [];
+  const values = Array.isArray(value) ? value : String(value).split(",");
+  return values.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function expandedInspectFields(fields) {
+  const out = new Set();
+  for (const field of fields) {
+    out.add(field);
+    for (const alias of INSPECT_FIELD_ALIASES[field] || []) out.add(alias);
+  }
+  return out;
+}
+
+function shapeInspectRecord(record, options = {}) {
+  const includeFields = expandedInspectFields(inspectFieldList(options.fields ?? options.includeFields ?? options.include));
+  const excludeFields = expandedInspectFields(inspectFieldList(options.exclude ?? options.omit));
+  if (!includeFields.size && !excludeFields.size) return record;
+  const shaped = {};
+  for (const [key, value] of Object.entries(record)) {
+    const keepByInclude = !includeFields.size || includeFields.has(key) || INSPECT_CORE_FIELDS.has(key);
+    const dropByExclude = excludeFields.has(key) && !INSPECT_CORE_FIELDS.has(key);
+    if (keepByInclude && !dropByExclude) shaped[key] = value;
+  }
+  return shaped;
+}
+
+function shapeInspectRecords(records, options = {}) {
+  return records.map((record) => shapeInspectRecord(record, options));
 }
 
 function verificationResult(artifactKind, issues, options = {}) {
@@ -472,7 +515,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search or target/id anchors." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
   { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, and rule bounding boxes in pixels." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
@@ -516,7 +559,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search or target/id anchors." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
@@ -552,7 +595,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
-  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search or target/id anchors." },
+  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, and design preset metadata." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
@@ -561,7 +604,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search or target/id anchors." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images." },
