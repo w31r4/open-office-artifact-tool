@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { inflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -725,6 +725,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
@@ -865,6 +866,17 @@ const HELP_DETAIL_OVERRIDES = {
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
       returns: { package: { type: "object", description: "PPTX package and part records with paths, sizes, content types, and optional previews." } },
+    },
+  },
+  "PdfFile.inspectPdf": {
+    examples: ["await PdfFile.inspectPdf(pdf, { maxObjects: 200, maxChars: 12000 })"],
+    schema: {
+      parameters: {
+        pdf: { type: "FileBlob|Uint8Array", required: true, description: "PDF file bytes." },
+        maxObjects: { type: "number", description: "Maximum indirect object records to inspect." },
+        maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+      },
+      returns: { inspection: { type: "object", description: "PDF file summary plus bounded indirect object records." } },
     },
   },
   "workbook.structuredReferences": {
@@ -6886,7 +6898,7 @@ class PdfPage {
 
   normalizeTextItem(item = {}, index = this.textItems?.length || 0) {
     const bbox = pdfTextItemBBox(item);
-    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, dir: item.dir };
+    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, bold: Boolean(item.bold), italic: Boolean(item.italic), dir: item.dir };
   }
 
   addText(textOrConfig = "", config = {}) {
@@ -7131,6 +7143,19 @@ export class PdfArtifact {
 }
 
 export class PdfFile {
+  static async inspectPdf(blobOrBuffer, options = {}) {
+    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+    const text = decoder.decode(bytes);
+    const version = /^%PDF-(\d+\.\d+)/.exec(text)?.[1];
+    const pages = [...text.matchAll(/\/Type\s*\/Page\b/g)].length;
+    const objects = [...text.matchAll(/\b\d+\s+\d+\s+obj\b/g)].length;
+    const records = [
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text) },
+      ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
+    ];
+    return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
+  }
+
   static async exportPdf(artifact) {
     return new FileBlob(buildMinimalPdf(artifact), { type: PDF_MIME });
   }
@@ -7280,13 +7305,14 @@ function pdfChartSvg(chart) {
 function pdfPageSvg(page) {
   const width = page.width || 612;
   const height = page.height || 792;
-  const lines = String(page.text || "").split(/\r?\n/).filter(Boolean);
+  const positionedValues = new Set((page.textItems || []).map((item) => String(item.text || "").trim()).filter(Boolean));
+  const lines = String(page.text || "").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !positionedValues.has(line));
   const positionedText = (page.textItems || []).map((item) => {
     const [left, top, itemWidth, itemHeight] = item.bbox || [72, 72, 0, 14];
     const fontSize = Math.max(6, Number(item.fontSize || itemHeight || 12));
-    return `<text x="${left}" y="${top + fontSize}" font-family="${xmlEscape(item.fontName || "Helvetica")}" font-size="${fontSize}" fill="${xmlEscape(item.color || "#111827")}" data-text-item-id="${attrEscape(item.id || "")}">${xmlEscape(item.text || "")}</text>`;
+    return `<text x="${left}" y="${top + fontSize}" font-family="${xmlEscape(item.fontName || "Helvetica")}" font-size="${fontSize}" font-weight="${item.bold ? "700" : "400"}" font-style="${item.italic ? "italic" : "normal"}" fill="${xmlEscape(item.color || "#111827")}" data-text-item-id="${attrEscape(item.id || "")}">${xmlEscape(item.text || "")}</text>`;
   }).join("");
-  const lineText = lines.map((line, index) => `<text x="72" y="${96 + index * 20}" font-family="Helvetica" font-size="14" fill="#111827">${xmlEscape(line)}</text>`).join("");
+  const lineText = lines.map((line, index) => `<text x="72" y="${96 + index * (index ? 22 : 30)}" font-family="Helvetica" font-size="${index === 0 ? 24 : 14}" font-weight="${index === 0 ? "700" : "400"}" fill="${index === 0 ? "#0f172a" : "#334155"}">${xmlEscape(line)}</text>`).join("");
   const text = `${lineText}${positionedText}`;
   const tables = (page.tables || []).map((table) => {
     const [left, top, tableWidth, tableHeight] = table.bbox;
@@ -7307,38 +7333,201 @@ function pdfPageSvg(page) {
   }).join("");
   const images = (page.images || []).map((image) => {
     const [left, top, imageWidth, imageHeight] = image.bbox || [72, 280, 180, 120];
-    const visual = image.dataUrl ? `<image href="${attrEscape(image.dataUrl)}" x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`;
-    return `${visual}<text x="${left + 8}" y="${top + 18}" font-family="Helvetica" font-size="11" fill="#92400e">${xmlEscape(image.alt || image.prompt || image.uri || image.name || "image")}</text>`;
+    if (image.dataUrl) return `<image href="${attrEscape(image.dataUrl)}" x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet"/><text x="${left}" y="${top + imageHeight + 14}" font-family="Helvetica" font-size="10" fill="#475569">${xmlEscape(image.alt || image.name || "image")}</text>`;
+    return `<rect x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/><text x="${left + 8}" y="${top + 18}" font-family="Helvetica" font-size="11" fill="#92400e">${xmlEscape(image.alt || image.prompt || image.uri || image.name || "image")}</text>`;
   }).join("");
   const charts = (page.charts || []).map(pdfChartSvg).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}${images}${charts}</svg>`;
 }
 
 function escapePdfString(text) {
-  return String(text).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+  return String(text).replace(/[^\x20-\x7e]/g, "?").replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+}
+
+function pdfNumber(value) {
+  const number = Number(value) || 0;
+  return String(Math.round(number * 1000) / 1000);
+}
+
+function pdfRgb(color, fallback = "#111827") {
+  const raw = String(color || fallback).replace(/^#/, "");
+  const normalized = /^[A-Fa-f0-9]{3}$/.test(raw) ? raw.split("").map((ch) => ch + ch).join("") : /^[A-Fa-f0-9]{6}$/.test(raw) ? raw : String(fallback).replace(/^#/, "");
+  return [0, 2, 4].map((index) => Number.parseInt(normalized.slice(index, index + 2), 16) / 255);
+}
+
+function pdfColorCommand(color, stroke = false) {
+  return `${pdfRgb(color).map(pdfNumber).join(" ")} ${stroke ? "RG" : "rg"}`;
+}
+
+function pdfTextCommand(page, text, left, top, options = {}) {
+  const fontSize = Math.max(1, Number(options.fontSize || 12));
+  const baseline = page.height - Number(top) - fontSize;
+  return `BT /${options.bold ? "F2" : "F1"} ${pdfNumber(fontSize)} Tf ${pdfColorCommand(options.color || "#111827")} ${pdfNumber(left)} ${pdfNumber(baseline)} Td (${escapePdfString(text)}) Tj ET`;
+}
+
+function pdfLineCommand(page, x1, top1, x2, top2, options = {}) {
+  return `q ${pdfColorCommand(options.color || "#94a3b8", true)} ${pdfNumber(options.width || 1)} w ${pdfNumber(x1)} ${pdfNumber(page.height - top1)} m ${pdfNumber(x2)} ${pdfNumber(page.height - top2)} l S Q`;
+}
+
+function pdfRectCommand(page, bbox, options = {}) {
+  const [left, top, width, height] = bbox.map(Number);
+  const operator = options.fill === false ? "S" : options.stroke === false ? "f" : "B";
+  return `q ${pdfColorCommand(options.fillColor || "#ffffff")} ${pdfColorCommand(options.strokeColor || "#cbd5e1", true)} ${pdfNumber(options.lineWidth || 1)} w ${pdfNumber(left)} ${pdfNumber(page.height - top - height)} ${pdfNumber(width)} ${pdfNumber(height)} re ${operator} Q`;
+}
+
+function pdfFitText(text, width, fontSize) {
+  const maxChars = Math.max(1, Math.floor(Number(width) / Math.max(1, Number(fontSize) * 0.55)));
+  const value = String(text ?? "");
+  return value.length <= maxChars ? value : `${value.slice(0, Math.max(1, maxChars - 1))}...`;
+}
+
+function pdfPageTextCommands(page) {
+  const positioned = new Set((page.textItems || []).map((item) => String(item.text || "").trim()).filter(Boolean));
+  const lines = String(page.text || "").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !positioned.has(line));
+  return lines.map((line, index) => pdfTextCommand(page, line, 72, 72 + index * (index ? 22 : 30), { fontSize: index === 0 ? 24 : 14, bold: index === 0, color: index === 0 ? "#0f172a" : "#334155" }));
+}
+
+function pdfPositionedTextCommands(page) {
+  return (page.textItems || []).filter((item) => item.text).map((item) => {
+    const [left, top, width, height] = item.bbox || [72, 72, 120, 14];
+    const fontSize = Math.max(6, Number(item.fontSize || height || 12));
+    return pdfTextCommand(page, pdfFitText(item.text, width || page.width - left, fontSize), left, top, { fontSize, color: item.color || "#111827", bold: Boolean(item.bold) });
+  });
+}
+
+function pdfTableCommands(page, table) {
+  const [left, top, tableWidth, tableHeight] = table.bbox.map(Number);
+  const rows = Math.max(1, table.values.length);
+  const columns = Math.max(1, ...table.values.map((row) => row.length));
+  const cellWidth = tableWidth / columns;
+  const cellHeight = tableHeight / rows;
+  const commands = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const bbox = [left + column * cellWidth, top + row * cellHeight, cellWidth, cellHeight];
+      commands.push(pdfRectCommand(page, bbox, { fillColor: row === 0 ? "#e2e8f0" : row % 2 ? "#f8fafc" : "#ffffff", strokeColor: "#94a3b8", lineWidth: 0.75 }));
+      const fontSize = Math.max(8, Math.min(12, cellHeight * 0.32));
+      commands.push(pdfTextCommand(page, pdfFitText(table.values[row]?.[column] ?? "", cellWidth - 12, fontSize), bbox[0] + 6, bbox[1] + Math.max(5, (cellHeight - fontSize) / 2), { fontSize, bold: row === 0, color: "#0f172a" }));
+    }
+  }
+  return commands;
+}
+
+function pdfChartCommands(page, chart) {
+  const [left, top, width, height] = chart.bbox.map(Number);
+  const commands = [pdfRectCommand(page, chart.bbox, { fillColor: "#ffffff", strokeColor: "#cbd5e1", lineWidth: 1 }), pdfTextCommand(page, chart.title, left + 10, top + 10, { fontSize: 13, bold: true })];
+  const plot = { left: left + 42, top: top + 40, width: Math.max(1, width - 62), height: Math.max(1, height - 76) };
+  commands.push(pdfLineCommand(page, plot.left, plot.top + plot.height, plot.left + plot.width, plot.top + plot.height));
+  commands.push(pdfLineCommand(page, plot.left, plot.top, plot.left, plot.top + plot.height));
+  const values = chart.series.flatMap((series) => series.values).filter(Number.isFinite);
+  const max = Math.max(1, ...values);
+  const categories = chart.categories.length ? chart.categories : Array.from({ length: Math.max(0, ...chart.series.map((series) => series.values.length)) }, (_, index) => String(index + 1));
+  if (/^line$/i.test(chart.chartType)) {
+    chart.series.forEach((series) => {
+      const points = series.values.map((value, index) => ({ x: plot.left + (categories.length <= 1 ? plot.width / 2 : index / Math.max(1, categories.length - 1) * plot.width), top: plot.top + plot.height - Math.max(0, Number(value) || 0) / max * plot.height }));
+      for (let index = 1; index < points.length; index += 1) commands.push(pdfLineCommand(page, points[index - 1].x, points[index - 1].top, points[index].x, points[index].top, { color: series.color, width: 2 }));
+    });
+  } else {
+    const groupWidth = plot.width / Math.max(1, categories.length);
+    const barWidth = Math.max(2, groupWidth / Math.max(1, chart.series.length) * 0.72);
+    chart.series.forEach((series, seriesIndex) => series.values.forEach((value, index) => {
+      const barHeight = Math.max(0, Number(value) || 0) / max * plot.height;
+      const x = plot.left + index * groupWidth + seriesIndex * barWidth + groupWidth * 0.1;
+      commands.push(pdfRectCommand(page, [x, plot.top + plot.height - barHeight, Math.max(1, barWidth - 2), barHeight], { fillColor: series.color, stroke: false }));
+    }));
+  }
+  categories.slice(0, 8).forEach((category, index) => commands.push(pdfTextCommand(page, pdfFitText(category, plot.width / Math.max(1, categories.length), 8), plot.left + index * (plot.width / Math.max(1, categories.length)), top + height - 18, { fontSize: 8, color: "#475569" })));
+  chart.series.slice(0, 4).forEach((series, index) => {
+    commands.push(pdfRectCommand(page, [left + width - 94, top + 12 + index * 14, 8, 8], { fillColor: series.color, stroke: false }));
+    commands.push(pdfTextCommand(page, pdfFitText(series.name, 74, 8), left + width - 82, top + 10 + index * 14, { fontSize: 8, color: "#334155" }));
+  });
+  return commands;
+}
+
+function pdfPngAsset(image, objectId, resourceName) {
+  const data = imageDataFromDataUrl(image.dataUrl);
+  if (!data || data.contentType !== "image/png") return undefined;
+  try {
+    const decoded = decodePngRgba(data.bytes);
+    const rgb = new Uint8Array(decoded.width * decoded.height * 3);
+    for (let pixel = 0; pixel < decoded.width * decoded.height; pixel += 1) {
+      const source = pixel * 4;
+      const target = pixel * 3;
+      const alpha = decoded.pixels[source + 3] / 255;
+      rgb[target] = Math.round(decoded.pixels[source] * alpha + 255 * (1 - alpha));
+      rgb[target + 1] = Math.round(decoded.pixels[source + 1] * alpha + 255 * (1 - alpha));
+      rgb[target + 2] = Math.round(decoded.pixels[source + 2] * alpha + 255 * (1 - alpha));
+    }
+    const compressed = deflateSync(rgb);
+    return { image, objectId, resourceName, width: decoded.width, height: decoded.height, compressed };
+  } catch (error) {
+    throw new Error(`Unable to embed PNG image ${image.name || image.id || "image"}: ${error.message}`);
+  }
+}
+
+function pdfImageCommands(page, image, asset) {
+  const [left, top, width, height] = image.bbox.map(Number);
+  if (!asset) return [pdfRectCommand(page, image.bbox, { fillColor: "#fef3c7", strokeColor: "#f59e0b" }), pdfTextCommand(page, pdfFitText(image.alt || image.prompt || image.uri || image.name || "image", width - 16, 10), left + 8, top + 8, { fontSize: 10, color: "#92400e" })];
+  const sourceRatio = asset.width / asset.height;
+  const frameRatio = width / height;
+  const drawWidth = image.fit === "cover" ? (sourceRatio > frameRatio ? width : height * sourceRatio) : (sourceRatio > frameRatio ? width : height * sourceRatio);
+  const drawHeight = image.fit === "cover" ? (sourceRatio > frameRatio ? width / sourceRatio : height) : (sourceRatio > frameRatio ? width / sourceRatio : height);
+  const x = left + (width - drawWidth) / 2;
+  const drawTop = top + (height - drawHeight) / 2;
+  return [`q ${pdfNumber(drawWidth)} 0 0 ${pdfNumber(drawHeight)} ${pdfNumber(x)} ${pdfNumber(page.height - drawTop - drawHeight)} cm /${asset.resourceName} Do Q`];
 }
 
 function buildMinimalPdf(artifact) {
-  const page = artifact.pages[0] || new PdfPage(artifact);
-  const tableLines = page.tables.flatMap((table) => table.values.map((row) => row.join(" | ")));
-  const imageLines = page.images.map((image) => `[Image: ${image.alt || image.prompt || image.uri || image.name || "image"}]`);
-  const chartLines = page.charts.flatMap((chart) => [`[Chart: ${chart.title || chart.name || chart.chartType || "chart"}]`, ...chart.series.map((series) => `${series.name}: ${series.values.join(", ")}`)]);
-  const lines = [...String(page.text || "").split(/\r?\n/), ...tableLines, ...imageLines, ...chartLines].filter(Boolean);
-  const content = `BT\n/F1 18 Tf\n72 720 Td\n${lines.map((line, index) => `${index === 0 ? "" : "0 -24 Td\n"}(${escapePdfString(line)}) Tj`).join("\n")}\nET`;
+  const pages = artifact.pages.length ? artifact.pages : [new PdfPage(artifact)];
   const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
-  const objects = [
-    `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
-    `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`,
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width || 612} ${page.height || 792}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
-    `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`,
-    `5 0 obj\n<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream\nendobj\n`,
-  ];
-  let pdf = `%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`;
-  const offsets = [0];
-  for (const obj of objects) { offsets.push(Buffer.byteLength(pdf)); pdf += obj; }
-  const xref = Buffer.byteLength(pdf);
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i < offsets.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return encoder.encode(pdf);
+  let nextObjectId = 5;
+  const plans = pages.map((page) => {
+    const imageAssets = [];
+    for (const image of page.images) {
+      const asset = pdfPngAsset(image, nextObjectId, `Im${imageAssets.length + 1}`);
+      if (asset) { imageAssets.push(asset); nextObjectId += 1; }
+    }
+    const pageObjectId = nextObjectId++;
+    const contentObjectId = nextObjectId++;
+    return { page, imageAssets, pageObjectId, contentObjectId };
+  });
+  const objects = new Map();
+  objects.set(1, Buffer.from("<< /Type /Catalog /Pages 2 0 R >>", "ascii"));
+  objects.set(2, Buffer.from(`<< /Type /Pages /Kids [${plans.map((plan) => `${plan.pageObjectId} 0 R`).join(" ")}] /Count ${plans.length} >>`, "ascii"));
+  objects.set(3, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "ascii"));
+  objects.set(4, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", "ascii"));
+  for (const plan of plans) {
+    const { page, imageAssets } = plan;
+    const assetByImage = new Map(imageAssets.map((asset) => [asset.image, asset]));
+    const commands = [
+      ...pdfPageTextCommands(page),
+      ...pdfPositionedTextCommands(page),
+      ...page.tables.flatMap((table) => pdfTableCommands(page, table)),
+      ...page.images.flatMap((image) => pdfImageCommands(page, image, assetByImage.get(image))),
+      ...page.charts.flatMap((chart) => pdfChartCommands(page, chart)),
+    ];
+    const content = Buffer.from(`${commands.join("\n")}\n`, "ascii");
+    const xobjects = imageAssets.length ? `/XObject << ${imageAssets.map((asset) => `/${asset.resourceName} ${asset.objectId} 0 R`).join(" ")} >>` : "";
+    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R >>`, "ascii"));
+    objects.set(plan.contentObjectId, Buffer.concat([Buffer.from(`<< /Length ${content.byteLength} >>\nstream\n`, "ascii"), content, Buffer.from("endstream", "ascii")]));
+    for (const asset of imageAssets) objects.set(asset.objectId, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${asset.compressed.byteLength} >>\nstream\n`, "ascii"), asset.compressed, Buffer.from("\nendstream", "ascii")]));
+  }
+  const header = Buffer.from(`%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");
+  const chunks = [header];
+  const offsets = Array(nextObjectId).fill(0);
+  let byteLength = header.byteLength;
+  for (let objectId = 1; objectId < nextObjectId; objectId += 1) {
+    const body = objects.get(objectId);
+    if (!body) throw new Error(`Missing PDF object ${objectId}.`);
+    offsets[objectId] = byteLength;
+    const object = Buffer.concat([Buffer.from(`${objectId} 0 obj\n`, "ascii"), body, Buffer.from("\nendobj\n", "ascii")]);
+    chunks.push(object);
+    byteLength += object.byteLength;
+  }
+  const xrefOffset = byteLength;
+  let xref = `xref\n0 ${nextObjectId}\n0000000000 65535 f \n`;
+  for (let objectId = 1; objectId < nextObjectId; objectId += 1) xref += `${String(offsets[objectId]).padStart(10, "0")} 00000 n \n`;
+  xref += `trailer\n<< /Size ${nextObjectId} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  chunks.push(Buffer.from(xref, "ascii"));
+  return new Uint8Array(Buffer.concat(chunks));
 }

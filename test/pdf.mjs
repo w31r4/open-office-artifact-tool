@@ -114,6 +114,12 @@ assert.equal(pdf.verify().ok, true);
 
 const blob = await PdfFile.exportPdf(pdf);
 assert.equal(blob.type, "application/pdf");
+const fileInspect = await PdfFile.inspectPdf(blob, { maxChars: 12000 });
+assert.equal(fileInspect.summary.version, "1.4");
+assert.equal(fileInspect.summary.pages, 2);
+assert.equal(fileInspect.summary.hasEmbeddedModel, true);
+assert.equal(fileInspect.summary.hasEof, true);
+assert.match(fileInspect.ndjson, /"type":"Page"/);
 let pdfRendererSawInput = false;
 const renderedPdfPng = await renderArtifact(pdf, {
   format: "png",

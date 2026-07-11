@@ -88,6 +88,7 @@
     }
   },
   "devDependencies": {
+    "pdfjs-dist": "^5.7.284",
     "playwright": "^1.61.1"
   }
 }
