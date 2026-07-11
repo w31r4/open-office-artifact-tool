@@ -90,6 +90,35 @@ assert.equal(trace.tree.value, 5);
 assert.deepEqual(trace.tree.precedents.map((node) => node.address), ["A2", "B2"]);
 assert.match(trace.ndjson, /"precedents":\["Sheet1!A2","Sheet1!B2"\]/);
 assert.match(workbook.help("workbook.trace").ndjson, /precedent tree/);
+assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
+
+const graphBook = Workbook.create();
+const inputsSheet = graphBook.worksheets.add("Inputs");
+inputsSheet.getRange("A1:A3").values = [[2], [4], [6]];
+const calcSheet = graphBook.worksheets.add("Calc");
+calcSheet.getRange("A1:A5").formulas = [["=SUM(Inputs!A1:A3)"], ["=AVERAGE(Inputs!A1:A3)"], ["=MIN(Inputs!A1:A3)"], ["=MAX(Inputs!A1:A3)"], ["=COUNT(Inputs!A1:A3)"]];
+graphBook.recalculate();
+assert.deepEqual(calcSheet.getRange("A1:A5").values.flat(), [12, 4, 2, 6, 3]);
+const formulaGraph = graphBook.formulaGraph();
+assert.equal(formulaGraph.nodes.length, 5);
+assert.ok(formulaGraph.edges.some((edge) => edge.from === "Calc!A1" && edge.to === "Inputs!A3"));
+assert.match(graphBook.inspect({ kind: "formulaNode,formulaEdge", maxChars: 12000 }).ndjson, /"kind":"formulaEdge"/);
+assert.match(graphBook.inspect({ kind: "formula", maxChars: 12000 }).ndjson, /"precedents":\["Inputs!A1","Inputs!A2","Inputs!A3"\]/);
+
+const cycleBook = Workbook.create();
+const cycleSheet = cycleBook.worksheets.add("Cycle");
+cycleSheet.getRange("A1").formulas = [["=B1+1"]];
+cycleSheet.getRange("B1").formulas = [["=A1+1"]];
+cycleBook.recalculate();
+assert.equal(cycleSheet.getRange("A1").values[0][0], "#CYCLE!");
+const cycleGraph = cycleBook.formulaGraph();
+assert.equal(cycleGraph.cycles.length, 1);
+assert.match(cycleBook.inspect({ kind: "formulaGraph,formulaCycle" }).ndjson, /formulaCycle/);
+assert.match(cycleBook.verify().ndjson, /formulaCycle/);
+
+const missingSheetBook = Workbook.create();
+missingSheetBook.worksheets.add("Main").getRange("A1").formulas = [["=Missing!A1+1"]];
+assert.match(missingSheetBook.verify().ndjson, /missingFormulaSheet/);
 
 const preview = await workbook.render({ sheetName: "Sheet1", range: "A1:C3" });
 assert.equal(preview.type, "image/svg+xml");

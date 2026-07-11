@@ -69,6 +69,10 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
+| `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
+| `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
+| `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules. |
@@ -81,9 +85,10 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
+| `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet or range in the current clean-room MVP. |
-| `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell. |
+| `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
 

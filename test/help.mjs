@@ -16,6 +16,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderArtifact"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.formulaGraph"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGE"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPlaywrightRenderer"));
 
 const workbook = Workbook.create();
@@ -24,6 +26,8 @@ const document = DocumentModel.create({ paragraphs: ["Doc"] });
 const pdf = PdfArtifact.create({ text: "PDF" });
 
 assert.match(workbook.help("sheet.charts.add").ndjson, /worksheet chart/);
+assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
+assert.match(workbook.help("fx.AVERAGE").ndjson, /Average numeric values/);
 assert.match(presentation.help("slide.compose").ndjson, /compose tree/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(pdf.help("extractTables").ndjson, /table values/);

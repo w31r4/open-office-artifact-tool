@@ -207,7 +207,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet or range in the current clean-room MVP." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
@@ -216,6 +217,10 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGE", category: "statistical", summary: "Average numeric values across arguments and ranges in the clean-room formula engine.", examples: ["=AVERAGE(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MIN", category: "statistical", summary: "Return the minimum numeric value across arguments and ranges.", examples: ["=MIN(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MAX", category: "statistical", summary: "Return the maximum numeric value across arguments and ranges.", examples: ["=MAX(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.COUNT", category: "statistical", summary: "Count numeric values across arguments and ranges.", examples: ["=COUNT(A1:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
@@ -1042,13 +1047,63 @@ export class Workbook {
   }
 
   recalculate() {
-    for (const sheet of this.worksheets) sheet.recalculate();
+    if (this._recalculating) return this._lastFormulaGraph;
+    this._recalculating = true;
+    try {
+      const graph = buildWorkbookFormulaGraph(this);
+      const formulaNodes = new Map(graph.nodes.map((node) => [node.key, node]));
+      const cycleKeys = new Set(graph.cycles.flatMap((cycle) => cycle.keys));
+      const evaluated = new Set();
+      const evaluateNode = (node) => {
+        if (!node) return null;
+        if (cycleKeys.has(node.key)) {
+          node.cell.value = "#CYCLE!";
+          evaluated.add(node.key);
+          return node.cell.value;
+        }
+        if (evaluated.has(node.key)) return node.cell.value;
+        const value = evaluateFormula(node.sheetObject, node.formula, node.address, {
+          getValue: (ref) => {
+            const targetSheet = ref.sheetName ? this.worksheets.getItem(ref.sheetName) : node.sheetObject;
+            if (!targetSheet) return "#REF!";
+            const targetAddress = String(ref.address || "").replaceAll("$", "").toUpperCase();
+            const targetKey = formulaCellKey(targetSheet.name, targetAddress);
+            const targetNode = formulaNodes.get(targetKey);
+            if (targetNode) return evaluateNode(targetNode);
+            return targetSheet.store.get(targetAddress).value;
+          },
+        });
+        node.cell.value = value;
+        evaluated.add(node.key);
+        return value;
+      };
+      for (const node of graph.nodes) evaluateNode(node);
+      this._lastFormulaGraph = buildWorkbookFormulaGraph(this);
+      return this._lastFormulaGraph;
+    } finally {
+      this._recalculating = false;
+    }
+  }
+
+  formulaGraph(options = {}) {
+    if (options.recalculate !== false) this.recalculate();
+    const graph = this._lastFormulaGraph || buildWorkbookFormulaGraph(this);
+    const records = formulaGraphRecords(graph, options);
+    return {
+      kind: "formulaGraph",
+      nodes: graph.nodes.map(publicFormulaNode),
+      edges: graph.edges.map((edge) => ({ ...edge })),
+      cycles: graph.cycles.map((cycle) => ({ ...cycle, path: [...cycle.path], keys: [...cycle.keys] })),
+      errors: graph.errors.map((error) => ({ ...error })),
+      ...ndjson(records, options.maxChars ?? Infinity),
+    };
   }
 
   inspect(options = {}) {
     this.recalculate();
     const kinds = normalizeKinds(options.kind, ["workbook", "sheet", "table", "formula"]);
     const records = [];
+    const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
     if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length });
     for (const sheet of this.worksheets) {
       if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount });
@@ -1057,12 +1112,13 @@ export class Workbook {
       if (kinds.has("drawing") || kinds.has("chart")) records.push(...sheet.charts.inspectRecords());
       if (kinds.has("drawing") || kinds.has("image")) records.push(...sheet.images.inspectRecords());
       if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
-      if (kinds.has("formula")) records.push(...sheet.formulaRecords(options));
+      if (kinds.has("formula")) records.push(...sheet.formulaRecords({ ...options, graph }));
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
       if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
     }
     if (kinds.has("thread")) records.push(...this.comments.threads.map((thread) => thread.inspectRecord()));
+    if (kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) records.push(...formulaGraphRecords(graph, { ...options, kinds }));
     const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
     const filtered = search ? records.filter((record) => JSON.stringify(record).toLowerCase().includes(search)) : records;
     return ndjson(filtered.filter(Boolean), options.maxChars ?? Infinity);
@@ -1070,6 +1126,7 @@ export class Workbook {
 
   verify(options = {}) {
     this.recalculate();
+    const graph = this.formulaGraph({ recalculate: false, maxChars: Infinity });
     const issues = [];
     if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
     for (const sheet of this.worksheets) {
@@ -1077,7 +1134,7 @@ export class Workbook {
       if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
       for (const [address, cell] of entries) {
         const value = String(cell.value ?? "");
-        if (/^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A)/.test(value)) {
+        if (/^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|CYCLE!)/.test(value)) {
           issues.push(verificationIssue("workbook", "formulaError", `Formula error ${value} at ${sheet.name}!${address}.`, { sheet: sheet.name, address, value }));
         }
       }
@@ -1091,6 +1148,15 @@ export class Workbook {
     }
     for (const thread of this.comments.threads) {
       if (!thread.target?.address) issues.push(verificationIssue("workbook", "unanchoredComment", `Comment thread ${thread.id} is missing a target cell.`, { id: thread.id }));
+    }
+    for (const cycle of graph.cycles) {
+      issues.push(verificationIssue("workbook", "formulaCycle", `Formula cycle detected: ${cycle.path.join(" -> ")}.`, { cycle: cycle.path, keys: cycle.keys }));
+    }
+    for (const error of graph.errors) {
+      if (error.type === "missingSheet") {
+        const { type: _type, ...details } = error;
+        issues.push(verificationIssue("workbook", "missingFormulaSheet", `Formula at ${error.from} references missing worksheet ${error.sheet}.`, details));
+      }
     }
     return verificationResult("workbook", issues, options);
   }
@@ -1217,9 +1283,11 @@ export class Worksheet {
   }
 
   recalculate() {
+    if (this.workbook && !this.workbook._recalculating) return this.workbook.recalculate();
     for (const [address, cell] of this.store.entries()) {
       if (cell.formula) cell.value = evaluateFormula(this, cell.formula, address);
     }
+    return undefined;
   }
 
   tableRecord(options = {}) {
@@ -1235,7 +1303,18 @@ export class Worksheet {
       const coord = parseCellAddress(address);
       if (!cell.formula) continue;
       if (coord.row < bounds.top || coord.row > bounds.bottom || coord.col < bounds.left || coord.col > bounds.right) continue;
-      records.push({ kind: "formula", sheet: this.name, address, formula: cell.formula, value: cell.value });
+      const graphNode = options.graph?.nodes?.find((node) => node.sheet === this.name && node.address === address);
+      records.push({
+        kind: "formula",
+        sheet: this.name,
+        address,
+        formula: cell.formula,
+        value: cell.value,
+        precedents: graphNode?.precedents?.map((ref) => ref.key) || formulaReferences(cell.formula).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address)),
+        dependents: graphNode?.dependents || [],
+        error: formulaErrorCode(cell.value) || undefined,
+        circular: graphNode?.circular || undefined,
+      });
     }
     return records;
   }
@@ -1376,7 +1455,7 @@ function formulaReferences(formula) {
   const rangeRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)\s*:\s*(\$?[A-Za-z]+\$?\d+)/g;
   const consumed = [];
   for (const match of raw.matchAll(rangeRegex)) {
-    consumed.push(match.index);
+    consumed.push([match.index, match.index + match[0].length]);
     const sheetName = match[1] || match[2] || undefined;
     const start = parseCellAddress(match[3].replaceAll("$", ""));
     const end = parseCellAddress(match[4].replaceAll("$", ""));
@@ -1388,7 +1467,7 @@ function formulaReferences(formula) {
   }
   const cellRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g;
   for (const match of raw.matchAll(cellRegex)) {
-    if (consumed.some((index) => match.index >= index && match.index <= index + 64)) continue;
+    if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
     refs.push({ sheetName: match[1] || match[2] || undefined, address: match[3].replaceAll("$", "").toUpperCase() });
   }
   const seen = new Set();
@@ -1400,19 +1479,185 @@ function formulaReferences(formula) {
   });
 }
 
-function evaluateFormula(sheet, formula) {
+function formulaCellKey(sheetName, address) {
+  return `${String(sheetName || "").replaceAll("'", "''")}!${String(address || "").replaceAll("$", "").toUpperCase()}`;
+}
+
+function formulaCellId(sheetName, address) {
+  return `fx/${encodeURIComponent(formulaCellKey(sheetName, address))}`;
+}
+
+function displayFormulaRef(sheetName, address) {
+  const safeSheet = String(sheetName || "").includes(" ") ? `'${String(sheetName).replaceAll("'", "''")}'` : String(sheetName || "");
+  return `${safeSheet}!${String(address || "").replaceAll("$", "").toUpperCase()}`;
+}
+
+function formulaErrorCode(value) {
+  const text = String(value ?? "");
+  return /^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|CYCLE!)/.test(text) ? text.match(/^#[A-Z0-9\/?!]+/)?.[0] : undefined;
+}
+
+function publicFormulaNode(node) {
+  return {
+    kind: "formulaNode",
+    id: node.id,
+    key: node.key,
+    sheet: node.sheet,
+    address: node.address,
+    formula: node.formula,
+    value: node.cell?.value,
+    precedents: node.precedents.map((ref) => ({ ...ref })),
+    dependents: [...node.dependents],
+    circular: node.circular || undefined,
+    error: formulaErrorCode(node.cell?.value) || undefined,
+  };
+}
+
+function buildWorkbookFormulaGraph(workbook) {
+  const nodes = [];
+  const nodeByKey = new Map();
+  const errors = [];
+  for (const sheet of workbook.worksheets) {
+    for (const [address, cell] of sheet.store.entries()) {
+      if (!cell.formula) continue;
+      const key = formulaCellKey(sheet.name, address);
+      const node = { kind: "formulaNode", id: formulaCellId(sheet.name, address), key, sheet: sheet.name, sheetObject: sheet, address, cell, formula: cell.formula, precedents: [], dependents: [], circular: false };
+      nodes.push(node);
+      nodeByKey.set(key, node);
+    }
+  }
+
+  const edges = [];
+  for (const node of nodes) {
+    for (const ref of formulaReferences(node.formula)) {
+      const sheetName = ref.sheetName || node.sheet;
+      const targetSheet = workbook.worksheets.getItem(sheetName);
+      const targetAddress = String(ref.address || "").replaceAll("$", "").toUpperCase();
+      const targetKey = formulaCellKey(sheetName, targetAddress);
+      const precedent = {
+        sheet: sheetName,
+        address: targetAddress,
+        key: targetKey,
+        missing: !targetSheet || undefined,
+        hasFormula: nodeByKey.has(targetKey) || undefined,
+      };
+      node.precedents.push(precedent);
+      edges.push({ kind: "formulaEdge", from: node.key, to: targetKey, fromSheet: node.sheet, fromAddress: node.address, toSheet: sheetName, toAddress: targetAddress, missing: !targetSheet || undefined });
+      const targetNode = nodeByKey.get(targetKey);
+      if (targetNode) targetNode.dependents.push(node.key);
+      if (!targetSheet) errors.push({ kind: "formulaGraphError", type: "missingSheet", from: node.key, sheet: sheetName, address: targetAddress, ref: displayFormulaRef(sheetName, targetAddress) });
+    }
+  }
+
+  const cycles = detectFormulaCycles(nodes, nodeByKey);
+  const cycleKeys = new Set(cycles.flatMap((cycle) => cycle.keys));
+  for (const node of nodes) if (cycleKeys.has(node.key)) node.circular = true;
+  for (const node of nodes) {
+    const error = formulaErrorCode(node.cell?.value);
+    if (error) errors.push({ kind: "formulaGraphError", type: "formulaError", key: node.key, sheet: node.sheet, address: node.address, value: error });
+  }
+  return { kind: "formulaGraph", nodes, edges, cycles, errors };
+}
+
+function detectFormulaCycles(nodes, nodeByKey) {
+  const cycles = [];
+  const emitted = new Set();
+  const visiting = new Set();
+  const visited = new Set();
+  const stack = [];
+
+  const emitCycle = (keys) => {
+    if (keys.length === 0) return;
+    const canonical = [...keys].sort().join("|");
+    if (emitted.has(canonical)) return;
+    emitted.add(canonical);
+    cycles.push({ kind: "formulaCycle", keys, path: [...keys, keys[0]] });
+  };
+
+  const visit = (node) => {
+    if (visiting.has(node.key)) {
+      const start = stack.indexOf(node.key);
+      emitCycle(stack.slice(start));
+      return;
+    }
+    if (visited.has(node.key)) return;
+    visiting.add(node.key);
+    stack.push(node.key);
+    for (const ref of node.precedents) {
+      const target = nodeByKey.get(ref.key);
+      if (target) visit(target);
+    }
+    stack.pop();
+    visiting.delete(node.key);
+    visited.add(node.key);
+  };
+
+  for (const node of nodes) visit(node);
+  return cycles;
+}
+
+function formulaGraphRecords(graph, options = {}) {
+  const kinds = options.kinds || normalizeKinds(options.kind, ["formulaGraph", "formulaNode", "formulaEdge", "formulaCycle"]);
+  const records = [];
+  if (kinds.has("formulaGraph")) {
+    records.push({ kind: "formulaGraph", formulas: graph.nodes.length, edges: graph.edges.length, cycles: graph.cycles.length, errors: graph.errors.length });
+  }
+  if (kinds.has("formulaNode")) records.push(...graph.nodes.map(publicFormulaNode));
+  if (kinds.has("formulaEdge")) records.push(...graph.edges.map((edge) => ({ ...edge })));
+  if (kinds.has("formulaCycle")) records.push(...graph.cycles.map((cycle) => ({ ...cycle })));
+  return records;
+}
+
+function formulaReferenceValues(sheet, refText, context = {}) {
+  const refs = formulaReferences(`=${refText}`);
+  if (refs.length === 0 && /^-?\d+(?:\.\d+)?$/.test(String(refText).trim())) return [Number(refText)];
+  return refs.map((ref) => {
+    if (context.getValue) return context.getValue({ sheetName: ref.sheetName, address: ref.address });
+    const targetSheet = ref.sheetName ? sheet.workbook?.worksheets.getItem(ref.sheetName) : sheet;
+    return targetSheet ? targetSheet.store.get(ref.address).value : "#REF!";
+  });
+}
+
+function aggregateFormulaValues(values, fnName) {
+  const errors = values.map(formulaErrorCode).filter(Boolean);
+  if (errors.length) return errors[0];
+  const nums = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  if (fnName === "COUNT") return nums.length;
+  if (nums.length === 0) return 0;
+  if (fnName === "AVERAGE") return nums.reduce((acc, value) => acc + value, 0) / nums.length;
+  if (fnName === "MIN") return Math.min(...nums);
+  if (fnName === "MAX") return Math.max(...nums);
+  return nums.reduce((acc, value) => acc + value, 0);
+}
+
+function evaluateFormula(sheet, formula, _address, context = {}) {
   const raw = String(formula || "").trim();
   if (!raw.startsWith("=")) return raw;
-  const expr = raw.slice(1);
-  const sumMatch = /^SUM\(([^)]+)\)$/i.exec(expr);
-  if (sumMatch) {
-    const range = sheet.getRange(sumMatch[1]);
-    return range.values.flat().reduce((acc, value) => acc + (Number(value) || 0), 0);
+  const expr = raw.slice(1).trim();
+  const functionMatch = /^([A-Z][A-Z0-9.]*)\((.*)\)$/i.exec(expr);
+  if (functionMatch) {
+    const fnName = functionMatch[1].toUpperCase();
+    const supported = new Set(["SUM", "AVERAGE", "MIN", "MAX", "COUNT"]);
+    if (!supported.has(fnName)) return "#NAME?";
+    const values = functionMatch[2].split(/\s*,\s*/).flatMap((part) => formulaReferenceValues(sheet, part, context));
+    return aggregateFormulaValues(values, fnName);
   }
-  const safe = expr.replace(/\b\$?[A-Za-z]+\$?\d+\b/g, (ref) => Number(sheet.store.get(ref.replaceAll("$", "").toUpperCase()).value) || 0);
-  if (!/^[0-9+\-*/().\s]+$/.test(safe)) return `#NAME?`;
+
+  let replacementError;
+  const safe = expr.replace(/(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g, (match, quotedSheet, bareSheet, address) => {
+    const refSheetName = quotedSheet || bareSheet || undefined;
+    const refAddress = address.replaceAll("$", "").toUpperCase();
+    const targetSheet = refSheetName ? sheet.workbook?.worksheets.getItem(refSheetName) : sheet;
+    const value = context.getValue ? context.getValue({ sheetName: refSheetName, address: refAddress }) : (targetSheet ? targetSheet.store.get(refAddress).value : "#REF!");
+    const error = formulaErrorCode(value);
+    if (error) replacementError = error;
+    return Number(value) || 0;
+  });
+  if (replacementError) return replacementError;
+  if (!/^[0-9+\-*/().\s]+$/.test(safe)) return "#NAME?";
   try {
-    return Function(`"use strict"; return (${safe});`)();
+    const value = Function(`"use strict"; return (${safe});`)();
+    return Number.isFinite(value) ? value : "#DIV/0!";
   } catch {
     return "#VALUE!";
   }

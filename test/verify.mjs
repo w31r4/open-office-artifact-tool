@@ -17,6 +17,11 @@ sheet.getRange("D2").formulas = [["=UNKNOWN(A2)"]];
 const workbookIssues = verifyArtifact(workbook).ndjson;
 assert.match(workbookIssues, /formulaError/);
 assert.match(workbookIssues, /#NAME\?/);
+sheet.getRange("E2").formulas = [["=F2+1"]];
+sheet.getRange("F2").formulas = [["=E2+1"]];
+const cycleIssues = verifyArtifact(workbook).ndjson;
+assert.match(cycleIssues, /formulaCycle/);
+assert.match(cycleIssues, /#CYCLE!/);
 
 const presentation = Presentation.create({ slideSize: { width: 320, height: 180 } });
 const slide = presentation.slides.add();
