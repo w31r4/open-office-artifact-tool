@@ -702,6 +702,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
@@ -6459,8 +6460,22 @@ class PdfPage {
     this.tables = (config.tables || []).map((table) => new PdfTable(this, table));
     this.images = (config.images || []).map((image) => new PdfImage(this, image));
     this.charts = (config.charts || []).map((chart) => new PdfChart(this, chart));
-    this.textItems = (config.textItems || []).map((item, index) => ({ id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox: item.bbox || [Number(item.x || 0), Number(item.y || item.top || 0), Number(item.width || 0), Number(item.height || 0)], fontName: item.fontName, dir: item.dir }));
+    this.textItems = (config.textItems || []).map((item, index) => this.normalizeTextItem(item, index));
     this.regions = (config.regions || []).map((region, index) => ({ id: region.id || `${this.id}/rg/${index + 1}`, kind: region.kind || "region", bbox: region.bbox || [0, 0, this.width, this.height], label: region.label }));
+  }
+
+  normalizeTextItem(item = {}, index = this.textItems?.length || 0) {
+    const bbox = pdfTextItemBBox(item);
+    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, dir: item.dir };
+  }
+
+  addText(textOrConfig = "", config = {}) {
+    const item = typeof textOrConfig === "object" ? textOrConfig : { ...config, text: textOrConfig };
+    const normalized = this.normalizeTextItem(item, this.textItems.length);
+    this.textItems.push(normalized);
+    if (!this.text) this.text = normalized.text;
+    else if (!this.text.includes(normalized.text)) this.text += `\n${normalized.text}`;
+    return normalized;
   }
 
   addTable(config = {}) { const table = new PdfTable(this, config); this.tables.push(table); return table; }
@@ -6563,6 +6578,7 @@ export class PdfArtifact {
 
   static create(options = {}) { return new PdfArtifact(options); }
   addPage(config = {}) { const page = new PdfPage(this, config); this.pages.push(page); return page; }
+  addText(textOrConfig = "", config = {}) { const pageIndex = Number((typeof textOrConfig === "object" ? textOrConfig.pageIndex ?? textOrConfig.page : config.pageIndex ?? config.page) ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addText(textOrConfig, config); }
   addTable(config = {}) { return (this.pages[0] || this.addPage()).addTable(config); }
   addImage(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addImage(config); }
   addChart(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addChart(config); }
@@ -6845,7 +6861,13 @@ function pdfPageSvg(page) {
   const width = page.width || 612;
   const height = page.height || 792;
   const lines = String(page.text || "").split(/\r?\n/).filter(Boolean);
-  const text = lines.map((line, index) => `<text x="72" y="${96 + index * 20}" font-family="Helvetica" font-size="14" fill="#111827">${xmlEscape(line)}</text>`).join("");
+  const positionedText = (page.textItems || []).map((item) => {
+    const [left, top, itemWidth, itemHeight] = item.bbox || [72, 72, 0, 14];
+    const fontSize = Math.max(6, Number(item.fontSize || itemHeight || 12));
+    return `<text x="${left}" y="${top + fontSize}" font-family="${xmlEscape(item.fontName || "Helvetica")}" font-size="${fontSize}" fill="${xmlEscape(item.color || "#111827")}" data-text-item-id="${attrEscape(item.id || "")}">${xmlEscape(item.text || "")}</text>`;
+  }).join("");
+  const lineText = lines.map((line, index) => `<text x="72" y="${96 + index * 20}" font-family="Helvetica" font-size="14" fill="#111827">${xmlEscape(line)}</text>`).join("");
+  const text = `${lineText}${positionedText}`;
   const tables = (page.tables || []).map((table) => {
     const [left, top, tableWidth, tableHeight] = table.bbox;
     const rows = table.values.length;

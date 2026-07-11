@@ -35,8 +35,10 @@ const chart = pdf.addChart({
   series: [{ name: "Pipeline", values: [8, 12, 18], color: "#2563eb" }],
   bbox: [72, 420, 360, 150],
 });
-assert.match(pdf.inspect({ kind: "page,text,table,image,chart", maxChars: 10000 }).ndjson, /pipeline-chart/);
-assert.match(pdf.inspect({ kind: "page,text,table,image,chart", maxChars: 10000 }).ndjson, /metrics-table/);
+const positionedText = pdf.addText("Positioned KPI", { bbox: [72, 150, 120, 14], fontSize: 13, color: "#7c3aed", fontName: "Helvetica" });
+assert.match(pdf.inspect({ kind: "page,text,table,image,chart,textItem", maxChars: 12000 }).ndjson, /Positioned KPI/);
+assert.match(pdf.inspect({ kind: "page,text,table,image,chart,textItem", maxChars: 12000 }).ndjson, /pipeline-chart/);
+assert.match(pdf.inspect({ kind: "page,text,table,image,chart,textItem", maxChars: 12000 }).ndjson, /metrics-table/);
 assert.match(pdf.inspect({ kind: "image", search: "logo" }).ndjson, /Report logo/);
 assert.equal(image.alt, "Report logo");
 assert.equal(pdf.resolve(pdf.id), pdf);
@@ -45,6 +47,7 @@ assert.equal(pdf.resolve(`${pdf.pages[0].id}/text`).text, pdf.pages[0].text);
 assert.equal(pdf.resolve(inlineTable.id), inlineTable);
 assert.equal(pdf.resolve(image.id), image);
 assert.equal(pdf.resolve(chart.id), chart);
+assert.equal(pdf.resolve(positionedText.id).text, "Positioned KPI");
 assert.equal(pdf.resolve("missing/pdf-id"), undefined);
 assert.match(pdf.inspect({ kind: "table", search: "Retention" }).ndjson, /94%/);
 const targetedPdfInspect = pdf.inspect({ kind: "table,image", target: image.id, maxChars: 4000 }).ndjson;
@@ -62,11 +65,15 @@ assert.equal(pdf.extractTables().length, 2);
 assert.deepEqual(pdf.extractTables()[0].values[1], ["Revenue", "$12M"]);
 assert.match(pdf.help("pdf.addImage").ndjson, /image region/);
 assert.match(pdf.help("pdf.addChart").ndjson, /chart region/);
+assert.match(pdf.help("pdf.addText").ndjson, /positioned PDF text/);
 
 const preview = await pdf.render({ pageIndex: 0 });
 assert.equal(preview.type, "image/svg+xml");
 const svg = await preview.text();
 assert.match(svg, /PDF research artifact/);
+assert.match(svg, /Positioned KPI/);
+assert.match(svg, /data-text-item-id=/);
+assert.match(svg, /#7c3aed/);
 assert.match(svg, /Revenue/);
 assert.match(svg, /Report logo/);
 assert.match(svg, /Pipeline by quarter/);
@@ -79,6 +86,7 @@ assert.equal(layout.kind, "pdfLayout");
 assert.equal(layout.pages.length, 1);
 assert.equal(layout.pages[0].kind, "pdfPageLayout");
 assert.equal(layout.pages[0].tables.length, 2);
+assert.ok(layout.pages[0].textItems.some((item) => item.text === "Positioned KPI" && item.color === "#7c3aed"));
 assert.ok(layout.pages[0].images.some((item) => item.alt === "Report logo"));
 assert.ok(layout.pages[0].charts.some((item) => item.title === "Pipeline by quarter"));
 const imageLayoutBlob = await pdf.render({ format: "layout", target: image.id });
