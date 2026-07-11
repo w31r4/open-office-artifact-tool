@@ -602,7 +602,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, and rule bounding boxes in pixels." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
@@ -1829,12 +1829,19 @@ export class Workbook {
   layoutJson(options = {}) {
     const selected = options.sheetName ? (this.worksheets.getItem(options.sheetName) || this.worksheets.getActiveWorksheet()) : undefined;
     const sheets = selected ? [selected] : this.worksheets.items;
+    const targets = inspectTargetTokens(options);
+    const search = String(options.search || options.searchTerm || "").trim();
+    const targetsWorkbook = targets.some((target) => target === this.id || target === "workbookLayout" || target === "workbook");
+    const sheetOptions = targetsWorkbook ? { ...options, target: undefined, targetId: undefined, id: undefined, anchor: undefined } : options;
+    let sheetLayouts = sheets.map((sheet) => sheet.layoutJson(sheetOptions));
+    if ((targets.length || search) && !targetsWorkbook && !selected) sheetLayouts = sheetLayouts.filter((sheetLayout) => !sheetLayout.slice || sheetLayout.slice.returnedRecords > 0);
     return {
       kind: "workbookLayout",
       id: this.id,
       activeSheet: this.worksheets.items[0]?.name,
       sheetCount: this.worksheets.items.length,
-      sheets: sheets.map((sheet) => sheet.layoutJson(options)),
+      sheets: sheetLayouts,
+      slice: (targets.length || search) ? { targets, search: search || undefined, returnedSheets: sheetLayouts.length } : undefined,
     };
   }
 
@@ -1843,12 +1850,57 @@ export class Workbook {
     if (format === "layout" || format === LAYOUT_MIME) {
       return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), {
         type: LAYOUT_MIME,
-        metadata: { artifactKind: "workbook", format: "layout", sheetName: options.sheetName, range: options.range },
+        metadata: { artifactKind: "workbook", format: "layout", sheetName: options.sheetName, range: options.range, target: options.target ?? options.targetId ?? options.id ?? options.anchor, search: options.search ?? options.searchTerm },
       });
     }
     const sheet = this.worksheets.getItem(options.sheetName) || this.worksheets.getActiveWorksheet();
     return new FileBlob(sheet.toSvg(options), { type: "image/svg+xml" });
   }
+}
+
+function worksheetLayoutEntries(layout) {
+  const entries = [];
+  for (const collection of ["cells", "tables", "charts", "images", "sparklines", "rules"]) {
+    layout[collection].forEach((record, itemIndex) => entries.push({ collection, itemIndex, record }));
+  }
+  return entries;
+}
+
+function worksheetLayoutSlice(layout, options = {}) {
+  const targets = inspectTargetTokens(options);
+  const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
+  if (!targets.length && !search) return layout;
+  const before = Math.max(0, Number(options.before ?? options.contextBefore ?? options.context ?? 0) || 0);
+  const after = Math.max(0, Number(options.after ?? options.contextAfter ?? options.context ?? 0) || 0);
+  const targetsSheet = targets.some((target) => target === layout.id || target === layout.name || target === layout.sheet);
+  if (targetsSheet && !search) {
+    const returnedRecords = worksheetLayoutEntries(layout).length;
+    return { ...layout, slice: { targets, before, after, matchedRecords: returnedRecords, returnedRecords } };
+  }
+  const entries = worksheetLayoutEntries(layout);
+  const matches = [];
+  entries.forEach((entry, index) => {
+    const matchesSearch = !search || JSON.stringify(entry.record).toLowerCase().includes(search);
+    const matchesTarget = !targets.length || targetsSheet || inspectRecordMatchesTarget(entry.record, targets);
+    if (matchesSearch && matchesTarget) matches.push(index);
+  });
+  const keep = new Set();
+  for (const index of matches) {
+    for (let i = Math.max(0, index - before); i <= Math.min(entries.length - 1, index + after); i += 1) keep.add(i);
+  }
+  const keepByCollection = new Map();
+  for (const entryIndex of keep) {
+    const entry = entries[entryIndex];
+    if (!keepByCollection.has(entry.collection)) keepByCollection.set(entry.collection, new Set());
+    keepByCollection.get(entry.collection).add(entry.itemIndex);
+  }
+  const sliced = { ...layout };
+  for (const collection of ["cells", "tables", "charts", "images", "sparklines", "rules"]) {
+    const kept = keepByCollection.get(collection) || new Set();
+    sliced[collection] = layout[collection].filter((_, index) => kept.has(index));
+  }
+  sliced.slice = { targets, search: search || undefined, before, after, matchedRecords: matches.length, returnedRecords: keep.size };
+  return sliced;
 }
 
 export class Worksheet {
@@ -2003,10 +2055,11 @@ export class Worksheet {
     const drawingFrames = [...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
     const width = Math.max(320, bounds.colCount * cellW + 80, ...drawingFrames.map((bbox) => bbox[0] + bbox[2] + 40));
     const height = Math.max(180, bounds.rowCount * cellH + 80, ...drawingFrames.map((bbox) => bbox[1] + bbox[3] + 40));
-    return {
+    const layout = {
       kind: "worksheetLayout",
       id: this.id,
       name: this.name,
+      sheet: this.name,
       bounds: { ...bounds, address: rangeToAddress(bounds) },
       unit: "px",
       origin: { left: 40, top: 40 },
@@ -2020,6 +2073,7 @@ export class Worksheet {
       sparklines,
       rules,
     };
+    return worksheetLayoutSlice(layout, options);
   }
 
   toSvg() {
