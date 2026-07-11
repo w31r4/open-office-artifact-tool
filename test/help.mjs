@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 169);
+assert.equal(HELP_CATALOG.length, 170);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
@@ -34,6 +34,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "DocumentFile.importDocx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addTable"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addFlowText"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "visualQaArtifact"));
@@ -106,7 +107,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRender
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelDiff?.type, "boolean|object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffImage?.type, "boolean");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
-assert.equal(pdfCatalog.length, 17);
+assert.equal(pdfCatalog.length, 18);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.returns?.blob?.type, "FileBlob");

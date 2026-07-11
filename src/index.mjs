@@ -834,6 +834,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addFlowText", summary: "Wrap long text into positioned lines and automatically append pages when the configured content box is full." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values and a page-space bounding box to the first PDF page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
@@ -1070,6 +1071,23 @@ const HELP_DETAIL_OVERRIDES = {
         italic: { type: "boolean", description: "Italic text flag." },
       },
       returns: { textItem: { type: "object", description: "Positioned text item with stable ID." } },
+    },
+  },
+  "pdf.addFlowText": {
+    examples: ["pdf.addFlowText(longReport, { fontSize: 11, margins: { top: 72, right: 72, bottom: 72, left: 72 } })"],
+    schema: {
+      parameters: {
+        text: { type: "string", required: true, description: "Paragraph text separated by newlines." },
+        pageIndex: { type: "number", description: "Zero-based starting page index; defaults to the first page." },
+        margins: { type: "number|object", description: "Uniform margin or top/right/bottom/left page margins in points." },
+        left: { type: "number", description: "Explicit content-box left edge overriding margins.left." },
+        top: { type: "number", description: "Explicit first-page top edge overriding margins.top." },
+        width: { type: "number", description: "Explicit content width; defaults to page width minus horizontal margins." },
+        fontSize: { type: "number", description: "Line font size in points." },
+        lineHeight: { type: "number", description: "Line advance in points." },
+        paragraphGap: { type: "number", description: "Extra vertical space after each paragraph." },
+      },
+      returns: { flow: { type: "object", description: "Flow ID, positioned items, page IDs, page indexes, and line count." } },
     },
   },
   "pdf.addTable": {
@@ -8199,7 +8217,7 @@ class PdfPage {
 
   normalizeTextItem(item = {}, index = this.textItems?.length || 0) {
     const bbox = pdfTextItemBBox(item);
-    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, bold: Boolean(item.bold), italic: Boolean(item.italic), dir: item.dir };
+    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, bold: Boolean(item.bold), italic: Boolean(item.italic), dir: item.dir, flowId: item.flowId, paragraphIndex: item.paragraphIndex, lineIndex: item.lineIndex };
   }
 
   addText(textOrConfig = "", config = {}) {
@@ -8219,6 +8237,50 @@ class PdfPage {
   textItemRecords(index) { return this.textItems.map((item) => ({ kind: "textItem", page: index + 1, ...item })); }
   regionRecords(index) { return this.regions.map((region) => ({ ...region, kind: "region", regionKind: region.kind || "region", page: index + 1 })); }
   toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()), charts: this.charts.map((chart) => chart.toJSON()) }; }
+}
+
+function pdfTextWidth(text, fontSize = 12) {
+  let units = 0;
+  for (const char of String(text || "")) {
+    if (char === " ") units += 0.28;
+    else if (/[ilI1.,'`!|:;]/.test(char)) units += 0.28;
+    else if (/[mwMW@#%&]/.test(char)) units += 0.88;
+    else if (char.codePointAt(0) > 0xff) units += 1;
+    else if (/[A-Z]/.test(char)) units += 0.64;
+    else units += 0.54;
+  }
+  return units * fontSize;
+}
+
+function splitPdfFlowToken(token, maxWidth, fontSize) {
+  const chunks = [];
+  let current = "";
+  for (const char of String(token)) {
+    if (current && pdfTextWidth(current + char, fontSize) > maxWidth) { chunks.push(current); current = char; }
+    else current += char;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function wrapPdfFlowParagraph(text, maxWidth, fontSize) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean).flatMap((word) => pdfTextWidth(word, fontSize) > maxWidth ? splitPdfFlowToken(word, maxWidth, fontSize) : [word]);
+  if (!words.length) return [];
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && pdfTextWidth(candidate, fontSize) > maxWidth) { lines.push(current); current = word; }
+    else current = candidate;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function pdfMargins(value) {
+  if (Number.isFinite(Number(value))) return { top: Number(value), right: Number(value), bottom: Number(value), left: Number(value) };
+  const numberOr = (candidate, fallback) => Number.isFinite(Number(candidate)) ? Number(candidate) : fallback;
+  return { top: numberOr(value?.top, 72), right: numberOr(value?.right, 72), bottom: numberOr(value?.bottom, 72), left: numberOr(value?.left, 72) };
 }
 
 function pdfLayoutRecordsForPage(pageLayout, pageArrayIndex) {
@@ -8312,6 +8374,45 @@ export class PdfArtifact {
   static create(options = {}) { return new PdfArtifact(options); }
   addPage(config = {}) { const page = new PdfPage(this, config); this.pages.push(page); return page; }
   addText(textOrConfig = "", config = {}) { const pageIndex = Number((typeof textOrConfig === "object" ? textOrConfig.pageIndex ?? textOrConfig.page : config.pageIndex ?? config.page) ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addText(textOrConfig, config); }
+  addFlowText(text, config = {}) {
+    const flowId = config.id || aid("flow");
+    let pageIndex = Math.max(0, Math.trunc(Number(config.pageIndex ?? 0) || 0));
+    let page = this.pages[pageIndex] || this.addPage({ width: config.pageWidth, height: config.pageHeight });
+    const margins = pdfMargins(config.margins ?? config.margin);
+    const fontSize = Math.max(1, Number(config.fontSize ?? 12));
+    const lineHeight = Math.max(fontSize, Number(config.lineHeight ?? fontSize * 1.35));
+    const paragraphGap = Math.max(0, Number(config.paragraphGap ?? lineHeight * 0.45));
+    const left = Number(config.left ?? margins.left);
+    const top = Number(config.top ?? margins.top);
+    const contentWidth = Math.max(1, Number(config.width ?? (page.width - left - margins.right)));
+    const bottom = Math.max(0, Number(config.bottom ?? margins.bottom));
+    const existingBottom = Math.max(top, ...page.textItems.map((item) => Number(item.bbox?.[1] || 0) + Number(item.bbox?.[3] || 0) + paragraphGap));
+    let cursor = existingBottom;
+    const items = [];
+    const pageIndexes = new Set();
+    const newPage = () => {
+      page = this.addPage({ width: page.width, height: page.height });
+      pageIndex = this.pages.length - 1;
+      cursor = margins.top;
+    };
+    const ensureLineSpace = () => { if (cursor + lineHeight > page.height - bottom) newPage(); };
+    const paragraphs = String(text ?? "").split(/\r?\n/);
+    let globalLineIndex = 0;
+    paragraphs.forEach((paragraph, paragraphIndex) => {
+      const lines = wrapPdfFlowParagraph(paragraph, contentWidth, fontSize);
+      if (!lines.length) { cursor += paragraphGap; return; }
+      lines.forEach((line) => {
+        ensureLineSpace();
+        const item = page.addText(line, { bbox: [left, cursor, Math.min(contentWidth, Math.max(1, pdfTextWidth(line, fontSize))), lineHeight], fontName: config.fontName || "Helvetica", fontSize, color: config.color, bold: config.bold, italic: config.italic, flowId, paragraphIndex, lineIndex: globalLineIndex++ });
+        items.push(item);
+        pageIndexes.add(pageIndex);
+        cursor += lineHeight;
+      });
+      cursor += paragraphGap;
+    });
+    const indexes = [...pageIndexes];
+    return { id: flowId, items, pageIds: indexes.map((index) => this.pages[index].id), pageIndexes: indexes, startPageIndex: indexes[0] ?? pageIndex, endPageIndex: indexes.at(-1) ?? pageIndex, lineCount: items.length };
+  }
   addTable(config = {}) { return (this.pages[0] || this.addPage()).addTable(config); }
   addImage(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addImage(config); }
   addChart(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addChart(config); }

@@ -21,7 +21,7 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 
 1. Create a `PdfArtifact` or import an existing PDF with `PdfFile.importPdf` and an explicit parser when arbitrary-PDF extraction is required.
 2. Inspect pages, positioned text, regions, tables, images, and charts before editing.
-3. Add content with page-space bounding boxes and stable names.
+3. Use `pdf.addFlowText(...)` for long prose so wrapping, margins, long tokens, and page creation remain deterministic; use explicit bounding boxes for intentionally positioned labels, tables, images, and charts.
 4. Run `pdf.verify()`; fix page bounds, malformed data, empty objects, Unicode dashes, and non-numeric chart issues.
 5. Export with `PdfFile.exportPdf()` and import the exported file again.
 6. Inspect the binary structure with `PdfFile.inspectPdf()`.

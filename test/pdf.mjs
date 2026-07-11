@@ -66,6 +66,27 @@ assert.deepEqual(pdf.extractTables()[0].values[1], ["Revenue", "$12M"]);
 assert.match(pdf.help("pdf.addImage").ndjson, /image region/);
 assert.match(pdf.help("pdf.addChart").ndjson, /chart region/);
 assert.match(pdf.help("pdf.addText").ndjson, /positioned PDF text/);
+assert.match(pdf.help("pdf.addFlowText").ndjson, /automatically append pages/);
+
+const flowPdf = PdfArtifact.create({ pages: [{ width: 240, height: 120, text: "" }] });
+const flowText = [
+  "Automatic pagination keeps agent-authored reports inside the requested content box while preserving inspectable positioned lines.",
+  "AveryLongUnbrokenTokenThatMustBeSplitAcrossSeveralLinesWithoutOverflowingThePageWidth",
+  "The final paragraph proves that page creation continues after both ordinary wrapping and a long token.",
+].join("\n");
+const flow = flowPdf.addFlowText(flowText, { margins: 20, fontSize: 10, lineHeight: 13, paragraphGap: 5 });
+assert.ok(flowPdf.pages.length > 1);
+assert.equal(flow.items.length, flow.lineCount);
+assert.equal(flow.pageIds.length, flowPdf.pages.length);
+assert.equal(flowPdf.resolve(flow.items[0].id).flowId, flow.id);
+assert.ok(flow.items.every((item) => item.bbox[0] >= 20 && item.bbox[1] >= 20 && item.bbox[0] + item.bbox[2] <= 220 && item.bbox[1] + item.bbox[3] <= 100));
+assert.ok(flow.items.some((item) => item.text.startsWith("AveryLong")));
+assert.equal(flowPdf.verify().ok, true);
+const flowBlob = await PdfFile.exportPdf(flowPdf);
+assert.equal((await PdfFile.inspectPdf(flowBlob)).summary.pages, flowPdf.pages.length);
+const flowRoundtrip = await PdfFile.importPdf(flowBlob);
+assert.equal(flowRoundtrip.pages.length, flowPdf.pages.length);
+assert.equal(flowRoundtrip.pages.flatMap((page) => page.textItems).filter((item) => item.flowId === flow.id).length, flow.lineCount);
 
 const preview = await pdf.render({ pageIndex: 0 });
 assert.equal(preview.type, "image/svg+xml");

@@ -471,6 +471,7 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 | --- | --- | --- |
 | `createPdfjsParser` | api | Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster images with placement boxes. |
 | `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
+| `pdf.addFlowText` | api | Wrap long text into positioned lines and automatically append pages when the configured content box is full. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
 | `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
 | `pdf.addTable` | api | Add a modeled table with cell values and a page-space bounding box to the first PDF page. |
@@ -527,6 +528,30 @@ Add a modeled bar/line chart region with categories, series, title, bbox, inspec
 **Schema returns:**
 
 - `chart` (PdfChart) — Inspectable chart facade with stable ID.
+
+#### `pdf.addFlowText`
+
+Wrap long text into positioned lines and automatically append pages when the configured content box is full.
+
+**Examples:**
+
+- pdf.addFlowText(longReport, { fontSize: 11, margins: { top: 72, right: 72, bottom: 72, left: 72 } })
+
+**Schema parameters:**
+
+- `text` (string) required — Paragraph text separated by newlines.
+- `pageIndex` (number) — Zero-based starting page index; defaults to the first page.
+- `margins` (number|object) — Uniform margin or top/right/bottom/left page margins in points.
+- `left` (number) — Explicit content-box left edge overriding margins.left.
+- `top` (number) — Explicit first-page top edge overriding margins.top.
+- `width` (number) — Explicit content width; defaults to page width minus horizontal margins.
+- `fontSize` (number) — Line font size in points.
+- `lineHeight` (number) — Line advance in points.
+- `paragraphGap` (number) — Extra vertical space after each paragraph.
+
+**Schema returns:**
+
+- `flow` (object) — Flow ID, positioned items, page IDs, page indexes, and line count.
 
 #### `pdf.addImage`
 
