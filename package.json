@@ -21,6 +21,7 @@
     "./renderers/playwright": "./src/renderers/playwright.mjs",
     "./renderers/sharp": "./src/renderers/sharp.mjs",
     "./renderers/poppler": "./src/renderers/poppler.mjs",
+    "./renderers/libreoffice": "./src/renderers/libreoffice.mjs",
     "./pdf/pdfjs": "./src/pdf/pdfjs.mjs",
     "./native/office-bridge": "./src/native/office-bridge.mjs"
   },

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { DocumentModel, FileBlob, renderArtifact } from "open-office-artifact-tool";
+import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
 import { createSharpRenderer } from "open-office-artifact-tool/renderers/sharp";
 
@@ -56,6 +57,24 @@ await assert.rejects(
   () => popplerRenderer({ input: new FileBlob("<svg/>", { type: "image/svg+xml" }), inputType: "image/svg+xml", outputType: "image/png", format: "png" }),
   /supports application\/pdf input/,
 );
+const mockLibreOffice = path.join(tempDir, "mock-libreoffice.mjs");
+await fs.writeFile(mockLibreOffice, `
+import fs from 'node:fs/promises';
+import path from 'node:path';
+const outDir = process.argv[process.argv.indexOf('--outdir') + 1];
+const inputPath = process.argv.at(-1);
+const base = path.basename(inputPath, path.extname(inputPath));
+await fs.mkdir(outDir, { recursive: true });
+await fs.writeFile(path.join(outDir, base + '.pdf'), new TextEncoder().encode('%PDF-libreoffice-mock'));
+`, "utf8");
+const libreOfficeRenderer = createLibreOfficeRenderer({ command: process.execPath, args: [mockLibreOffice], timeoutMs: 10_000 });
+const docxInput = new FileBlob(new Uint8Array([1, 2, 3]), { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+const officePdf = await libreOfficeRenderer({ input: docxInput, inputType: docxInput.type, outputType: "application/pdf", format: "pdf", artifactKind: "document", options: { pageIndex: 0 } });
+assert.equal(officePdf.type, "application/pdf");
+assert.equal(officePdf.metadata.renderer, "libreoffice");
+assert.equal(officePdf.metadata.inputType, docxInput.type);
+assert.match(await officePdf.text(), /%PDF-libreoffice-mock/);
+
 await fs.rm(tempDir, { recursive: true, force: true });
 
 console.log("renderer adapters smoke ok");

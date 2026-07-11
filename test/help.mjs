@@ -33,6 +33,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.TEXTJOIN"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPlaywrightRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createSharpRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPopplerRenderer"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "createLibreOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
 
@@ -60,6 +61,7 @@ assert.match(helpArtifact("*", "renderArtifact").ndjson, /FileBlob metadata/);
 assert.match(helpArtifact("shared", "createPlaywrightRenderer").ndjson, /Playwright renderer adapter/);
 assert.match(helpArtifact("shared", "createSharpRenderer").ndjson, /sharp renderer adapter/);
 assert.match(helpArtifact("shared", "createPopplerRenderer").ndjson, /Poppler CLI renderer adapter/);
+assert.match(helpArtifact("shared", "createLibreOfficeRenderer").ndjson, /LibreOffice CLI renderer adapter/);
 assert.match(helpArtifact("shared", "createNativeOfficeRenderer").ndjson, /native Office renderer adapter/);
 assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /native Office bridge command/);
 assert.match(helpArtifact(workbook, "fx.PMT").ndjson, /financial/);
