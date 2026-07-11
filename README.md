@@ -175,7 +175,7 @@ It extracts page size, positioned text items, text-line regions, heuristic table
 
 ## Safe OOXML package inspection and patching
 
-XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, verify internal relationship targets/sources, duplicate relationship IDs, and content-type declarations/targets, and enforce part-count, per-part, and total uncompressed-byte budgets. Results include `ok`, structured `issues`, and `ooxmlIssue` NDJSON records. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits. Content types are synchronized automatically; incoming relationships and an outgoing `.rels` part for deleted sources are removed, and additions can declare a source/type/id recipe. The final package is revalidated atomically by default, with validation state and update counts in FileBlob metadata. Use `validateResult: false` only when deliberately constructing a broken QA fixture.
+XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, verify internal relationship targets/sources, duplicate relationship IDs, and content-type declarations/targets, and enforce part-count, per-part, and total uncompressed-byte budgets. Results include `ok`, structured `issues`, and `ooxmlIssue` NDJSON records. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits. Content types are synchronized automatically; incoming relationships and an outgoing `.rels` part for deleted sources are removed. Public-standard semantic recipes infer content types and relationship URIs for common parts such as `image`, `chart`, `theme`, `customXml`, DOCX `header/footer/comments`, XLSX `worksheet/table/pivotTable/threadedComments`, and PPTX `slide/slideLayout/slideMaster/notesSlide/comments`. The final package is revalidated atomically by default, with recipe/validation/update counts in FileBlob metadata. Use `validateResult: false` only when deliberately constructing a broken QA fixture.
 
 ```js
 const report = await SpreadsheetFile.inspectXlsx(xlsx, {
@@ -195,6 +195,11 @@ const patched = await PresentationFile.patchPptx(pptx, [
       id: "rIdReview",
       type: "urn:open-office:relationships/review",
     },
+  },
+  {
+    path: "ppt/charts/review.xml",
+    xml: "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart/></c:chartSpace>",
+    recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdReviewChart" },
   },
 ]);
 ```

@@ -848,7 +848,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
@@ -961,7 +961,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated, atomically verified PPTX part patches with standard OOXML content-type/relationship recipes." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to a native OOXML PPTX FileBlob." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
@@ -993,7 +993,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply atomically verified DOCX part patches with path traversal validation and standard OOXML content-type/relationship recipes." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
@@ -1166,6 +1166,7 @@ const HELP_DETAIL_OVERRIDES = {
         syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
         syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
         validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
+        recipe: { type: "string|object", description: "Standard OOXML part recipe (for example header, image, chart, or customXml) with optional source/id/target fields." },
         relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with patchedParts, relationship/content-type updates, and result-validation metadata." } },
@@ -1805,6 +1806,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
+    recipe: { type: "string|object", description: "Standard OOXML part recipe (for example slide, chart, image, theme, or comments) with optional source/id/target fields." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
   }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts and result-validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
@@ -1843,6 +1845,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
+    recipe: { type: "string|object", description: "Standard OOXML part recipe (for example worksheet, table, chart, image, or comments) with optional source/id/target fields." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
   }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts and result-validation metadata."),
   "worksheet.getRange": helpSchema({
@@ -4872,7 +4875,7 @@ export class SpreadsheetFile {
 
   static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
-    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
+    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportXlsx(workbook) {
@@ -6637,7 +6640,7 @@ export class PresentationFile {
 
   static async patchPptx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
-    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
+    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportPptx(presentation) {
@@ -8034,6 +8037,73 @@ function ooxmlPartExtension(partPath) {
   return path.posix.extname(partPath).slice(1).toLowerCase();
 }
 
+const OOXML_RELATIONSHIP_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const OOXML_MICROSOFT_RELATIONSHIP_BASE = "http://schemas.microsoft.com/office/2017/10/relationships";
+const OOXML_COMMON_PART_RECIPES = {
+  image: { relationshipType: `${OOXML_RELATIONSHIP_BASE}/image` },
+  chart: { contentType: "application/vnd.openxmlformats-officedocument.drawingml.chart+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/chart` },
+  theme: { contentType: "application/vnd.openxmlformats-officedocument.theme+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/theme` },
+  customxml: { contentType: "application/xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/customXml` },
+};
+const OOXML_FAMILY_PART_RECIPES = {
+  DOCX: {
+    header: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/header` },
+    footer: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/footer` },
+    comments: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/comments` },
+    numbering: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/numbering` },
+    styles: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/styles` },
+    settings: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/settings` },
+  },
+  XLSX: {
+    worksheet: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/worksheet` },
+    styles: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/styles` },
+    sharedstrings: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/sharedStrings` },
+    comments: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/comments` },
+    table: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/table` },
+    pivottable: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/pivotTable` },
+    pivotcachedefinition: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/pivotCacheDefinition` },
+    pivotcacherecords: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/pivotCacheRecords` },
+    threadedcomments: { contentType: "application/vnd.ms-excel.threadedcomments+xml", relationshipType: `${OOXML_MICROSOFT_RELATIONSHIP_BASE}/threadedComment` },
+    person: { contentType: "application/vnd.ms-excel.person+xml", relationshipType: `${OOXML_MICROSOFT_RELATIONSHIP_BASE}/person` },
+  },
+  PPTX: {
+    slide: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.slide+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/slide` },
+    slidelayout: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/slideLayout` },
+    slidemaster: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/slideMaster` },
+    notesslide: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/notesSlide` },
+    comments: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.comments+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/comments` },
+  },
+};
+
+function ooxmlRecipeKind(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function applyOoxmlPartRecipe(patch, family) {
+  const rawRecipe = patch.recipe ?? patch.partRecipe ?? patch.partKind;
+  if (rawRecipe == null) return patch;
+  const recipe = typeof rawRecipe === "object" ? rawRecipe : { kind: rawRecipe };
+  const kind = ooxmlRecipeKind(recipe.kind || recipe.name || recipe.type);
+  const spec = OOXML_FAMILY_PART_RECIPES[family]?.[kind] || OOXML_COMMON_PART_RECIPES[kind];
+  if (!spec) {
+    const supported = [...Object.keys(OOXML_COMMON_PART_RECIPES), ...Object.keys(OOXML_FAMILY_PART_RECIPES[family] || {})].sort().join(", ");
+    throw new Error(`${family} OOXML part recipe ${recipe.kind || recipe.name || recipe.type || "(missing)"} is unsupported. Supported recipes: ${supported}.`);
+  }
+  const derivedRelationship = recipe.relationship === false ? undefined : {
+    source: recipe.source ?? recipe.sourcePart,
+    id: recipe.id ?? recipe.relationshipId,
+    type: spec.relationshipType,
+    target: recipe.target,
+    targetMode: recipe.targetMode,
+  };
+  let relationship = patch.relationship;
+  let relationships = patch.relationships;
+  if (relationship) relationship = { ...derivedRelationship, ...relationship, type: relationship.type || spec.relationshipType };
+  else if (relationships) relationships = relationships.map((item) => ({ ...derivedRelationship, ...item, type: item.type || spec.relationshipType }));
+  else if (derivedRelationship?.source !== undefined) relationship = derivedRelationship;
+  return { ...patch, contentType: patch.contentType || patch.mimeType || patch.type || spec.contentType, relationship, relationships, recipeKind: kind };
+}
+
 function ooxmlRelationshipSource(partPath) {
   if (partPath === "_rels/.rels") return "";
   const match = /^(?:(.*)\/)?_rels\/([^/]+)\.rels$/.exec(partPath);
@@ -8280,10 +8350,11 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
       ? { path: partPath, ...content }
       : { path: partPath, content }
   ));
+  const preparedList = list.map((patch) => applyOoxmlPartRecipe(patch, family));
   const maxPatchBytes = Math.max(1, Number(options.maxPatchBytes ?? 5 * 1024 * 1024) || 5 * 1024 * 1024);
   const maxParts = Math.max(1, Number(options.maxParts ?? 5000) || 5000);
   const existingParts = new Set(Object.values(zip.files).filter((file) => !file.dir).map((file) => ooxmlSafePartPath(file.name, family)));
-  const normalizedPatches = list.map((patch) => ({ patch, partPath: ooxmlSafePartPath(patch.path || patch.part || patch.name, family) }));
+  const normalizedPatches = preparedList.map((patch) => ({ patch, partPath: ooxmlSafePartPath(patch.path || patch.part || patch.name, family) }));
   const resultingParts = new Set(existingParts);
   for (const { patch, partPath } of normalizedPatches) {
     if (patch.remove || patch.delete) resultingParts.delete(partPath);
@@ -8308,7 +8379,7 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
       throw new Error(`${family} patch produced an invalid OOXML package (${validationIssues.length} issue${validationIssues.length === 1 ? "" : "s"}): ${summary}. Pass { validateResult: false } only when intentionally constructing an invalid fixture.`);
     }
   }
-  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length, contentTypesUpdated, relationshipsUpdated, validated, validationIssues: validationIssues.length };
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: preparedList.length, recipesApplied: preparedList.filter((patch) => patch.recipeKind).length, contentTypesUpdated, relationshipsUpdated, validated, validationIssues: validationIssues.length };
 }
 
 export class DocumentFile {
@@ -8318,7 +8389,7 @@ export class DocumentFile {
 
   static async patchDocx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "DOCX" });
-    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
+    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportDocx(document) {

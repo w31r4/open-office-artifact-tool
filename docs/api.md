@@ -31,7 +31,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
 | `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available. |
 | `DocumentFile.inspectDocx` | api | Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues. |
-| `DocumentFile.patchDocx` | api | Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob. |
+| `DocumentFile.patchDocx` | api | Apply atomically verified DOCX part patches with path traversal validation and standard OOXML content-type/relationship recipes. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
 ### document details
@@ -426,7 +426,7 @@ Inspect a DOCX package as bounded part records with safe paths, content types, o
 
 #### `DocumentFile.patchDocx`
 
-Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob.
+Apply atomically verified DOCX part patches with path traversal validation and standard OOXML content-type/relationship recipes.
 
 **Examples:**
 
@@ -441,6 +441,7 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
+- `recipe` (string|object) — Standard OOXML part recipe (for example header, image, chart, or customXml) with optional source/id/target fields.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
@@ -857,7 +858,7 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to a native OOXML PPTX FileBlob. |
 | `PresentationFile.importPptx` | api | Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available. |
 | `PresentationFile.inspectPptx` | api | Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues. |
-| `PresentationFile.patchPptx` | api | Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets. |
+| `PresentationFile.patchPptx` | api | Apply path-validated, atomically verified PPTX part patches with standard OOXML content-type/relationship recipes. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1112,7 +1113,7 @@ Inspect a PPTX package as bounded part records with content types, optional prev
 
 #### `PresentationFile.patchPptx`
 
-Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets.
+Apply path-validated, atomically verified PPTX part patches with standard OOXML content-type/relationship recipes.
 
 **Schema parameters:**
 
@@ -1123,6 +1124,7 @@ Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte 
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
+- `recipe` (string|object) — Standard OOXML part recipe (for example slide, chart, image, theme, or comments) with optional source/id/target fields.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
@@ -1655,7 +1657,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to an XLSX FileBlob. |
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues. |
-| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets. |
+| `SpreadsheetFile.patchXlsx` | api | Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
@@ -3038,7 +3040,7 @@ Inspect an XLSX package as bounded, content-type-aware part records with decompr
 
 #### `SpreadsheetFile.patchXlsx`
 
-Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets.
+Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes.
 
 **Schema parameters:**
 
@@ -3049,6 +3051,7 @@ Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte 
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
+- `recipe` (string|object) — Standard OOXML part recipe (for example worksheet, table, chart, image, or comments) with optional source/id/target fields.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**

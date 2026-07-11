@@ -489,10 +489,23 @@ assert.equal(patchedXlsx.metadata.patchedParts, 1);
 assert.equal(patchedXlsx.metadata.validated, true);
 assert.equal(patchedXlsx.metadata.validationIssues, 0);
 assert.match((await SpreadsheetFile.inspectXlsx(patchedXlsx, { includeText: true, maxChars: 16000 })).ndjson, /review\.json/);
+const recipeImageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
+const recipeImageXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{
+  path: "xl/media/review.png",
+  bytes: recipeImageBytes,
+  recipe: { kind: "image", source: "xl/worksheets/sheet1.xml", id: "rIdReviewImage" },
+}]);
+assert.equal(recipeImageXlsx.metadata.recipesApplied, 1);
+const recipeImageInspect = await SpreadsheetFile.inspectXlsx(recipeImageXlsx);
+assert.equal(recipeImageInspect.ok, true);
+assert.ok(recipeImageInspect.parts.some((part) => part.path === "xl/media/review.png" && part.contentType === "image/png"));
+const recipeImageZip = await JSZip.loadAsync(new Uint8Array(await recipeImageXlsx.arrayBuffer()));
+assert.match(await recipeImageZip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text"), /Id="rIdReviewImage"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]*Target="\.\.\/media\/review\.png"/);
 const replacementXlsx = await SpreadsheetFile.patchXlsx(xlsx, { "customXml/open-office-artifact.json": { json: { replaced: true } } }, { maxParts: xlsxInspect.parts.length });
 assert.equal(replacementXlsx.metadata.patchedParts, 1);
 await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/new-part.json", json: {} }], { maxParts: xlsxInspect.parts.length }), /would create .* maxParts/);
 await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "../evil.xml", text: "bad" }]), /Unsafe XLSX part path/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/unknown.xml", xml: "<x/>", recipe: "not-a-real-part" }]), /OOXML part recipe.*unsupported/);
 await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/large.txt", text: "12345" }], { maxPatchBytes: 4 }), /exceeds maxPatchBytes/);
 await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxParts: 1 }), /maxParts/);
 await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxPartBytes: 1 }), /maxPartBytes/);

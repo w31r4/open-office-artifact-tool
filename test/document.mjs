@@ -269,6 +269,17 @@ assert.equal(patchedDocx.metadata.validationIssues, 0);
 const patchedInspect = await DocumentFile.inspectDocx(patchedDocx, { includeText: true, maxChars: 12000 });
 assert.match(patchedInspect.ndjson, /customXml\/review-note\.xml/);
 assert.match(patchedInspect.ndjson, /&lt;review&gt;ok&lt;\/review&gt;|<review>ok<\/review>/);
+const recipeHeaderDocx = await DocumentFile.patchDocx(docx, [{
+  path: "word/headerReview.xml",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Review header</w:t></w:r></w:p></w:hdr>',
+  recipe: { kind: "header", source: "word/document.xml", id: "rIdReviewHeader" },
+}]);
+assert.equal(recipeHeaderDocx.metadata.recipesApplied, 1);
+const recipeHeaderInspect = await DocumentFile.inspectDocx(recipeHeaderDocx);
+assert.equal(recipeHeaderInspect.ok, true);
+assert.ok(recipeHeaderInspect.parts.some((part) => part.path === "word/headerReview.xml" && part.contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"));
+const recipeHeaderZip = await JSZip.loadAsync(new Uint8Array(await recipeHeaderDocx.arrayBuffer()));
+assert.match(await recipeHeaderZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdReviewHeader"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/header"[^>]*Target="headerReview\.xml"/);
 const relatedCustomDocx = await DocumentFile.patchDocx(docx, [
   { path: "customXml/source.xml", xml: "<source/>" },
   { path: "customXml/target.xml", xml: "<target/>", relationship: { source: "customXml/source.xml", id: "rIdTarget", type: "urn:open-office:test-target" } },

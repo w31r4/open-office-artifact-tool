@@ -135,11 +135,14 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.validateResult?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.recipe?.type, "string|object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.recipe?.type, "string|object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.relationship?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.validateResult?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.recipe?.type, "string|object");
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();

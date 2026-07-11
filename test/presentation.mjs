@@ -259,6 +259,17 @@ const patchedPptxInspect = await PresentationFile.inspectPptx(patchedPptx, { inc
 assert.match(patchedPptxInspect.ndjson, /review\.json/);
 assert.equal(patchedPptxInspect.ok, true);
 assert.ok(patchedPptxInspect.parts.some((part) => part.path === "customXml/review.json" && part.contentType === "application/json"));
+const recipeChartPptx = await PresentationFile.patchPptx(pptx, [{
+  path: "ppt/charts/review.xml",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea/></c:chart></c:chartSpace>',
+  recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdReviewChart" },
+}]);
+assert.equal(recipeChartPptx.metadata.recipesApplied, 1);
+const recipeChartInspect = await PresentationFile.inspectPptx(recipeChartPptx);
+assert.equal(recipeChartInspect.ok, true);
+assert.ok(recipeChartInspect.parts.some((part) => part.path === "ppt/charts/review.xml" && part.contentType === "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"));
+const recipeChartZip = await JSZip.loadAsync(new Uint8Array(await recipeChartPptx.arrayBuffer()));
+assert.match(await recipeChartZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /Id="rIdReviewChart"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/chart"[^>]*Target="\.\.\/charts\/review\.xml"/);
 const patchedPptxZip = await JSZip.loadAsync(new Uint8Array(await patchedPptx.arrayBuffer()));
 assert.match(await patchedPptxZip.file("ppt/_rels/presentation.xml.rels").async("text"), /Id="rIdReview"[^>]*Target="\.\.\/customXml\/review\.json"/);
 const removedReviewPptx = await PresentationFile.patchPptx(patchedPptx, [{ path: "customXml/review.json", remove: true }]);
