@@ -11,12 +11,14 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 149);
+assert.equal(HELP_CATALOG.length, 152);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
@@ -57,6 +59,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "createLibreOfficeRenderer")
 assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.inspectPptx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.exportPptx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.importPptx"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.patchPptx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.slides.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
@@ -95,15 +98,17 @@ assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 25);
+assert.equal(presentationCatalog.length, 26);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 70);
+assert.equal(workbookCatalog.length, 72);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -170,5 +175,7 @@ assert.match(apiDocs, /#### `presentation\.slides\.add`/);
 assert.match(apiDocs, /#### `PresentationFile\.importPptx`/);
 assert.match(apiDocs, /#### `workbook\.worksheets\.add`/);
 assert.match(apiDocs, /#### `workbook\.recalculate`/);
+assert.match(apiDocs, /#### `SpreadsheetFile\.inspectXlsx`/);
+assert.match(apiDocs, /#### `PresentationFile\.patchPptx`/);
 
 console.log("help smoke ok");

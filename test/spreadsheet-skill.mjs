@@ -28,6 +28,8 @@ try {
   ]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
+  assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
+  assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {
@@ -49,4 +51,3 @@ try {
 }
 
 console.log("spreadsheet skill smoke ok");
-

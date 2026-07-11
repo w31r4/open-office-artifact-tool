@@ -379,6 +379,22 @@ assert.match(workbook.help("workbook.layoutJson").ndjson, /target\/search contex
 
 const xlsx = await SpreadsheetFile.exportXlsx(workbook);
 assert.equal(xlsx.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+const xlsxInspect = await SpreadsheetFile.inspectXlsx(xlsx, { includeText: true, maxChars: 16000 });
+assert.equal(xlsxInspect.records[0].kind, "xlsxPackage");
+assert.equal(xlsxInspect.records[0].sheets, 1);
+assert.ok(xlsxInspect.records[0].uncompressedBytes > 0);
+assert.ok(xlsxInspect.parts.some((part) => part.path === "xl/workbook.xml" && part.contentType.includes("spreadsheetml.sheet.main+xml")));
+const patchedXlsx = await SpreadsheetFile.patchXlsx(xlsx, { "customXml/review.json": { json: { status: "ok" } } });
+assert.equal(patchedXlsx.type, xlsx.type);
+assert.equal(patchedXlsx.metadata.patchedParts, 1);
+assert.match((await SpreadsheetFile.inspectXlsx(patchedXlsx, { includeText: true, maxChars: 16000 })).ndjson, /review\.json/);
+const replacementXlsx = await SpreadsheetFile.patchXlsx(xlsx, { "customXml/open-office-artifact.json": { json: { replaced: true } } }, { maxParts: xlsxInspect.parts.length });
+assert.equal(replacementXlsx.metadata.patchedParts, 1);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/new-part.json", json: {} }], { maxParts: xlsxInspect.parts.length }), /would create .* maxParts/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "../evil.xml", text: "bad" }]), /Unsafe XLSX part path/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/large.txt", text: "12345" }], { maxPatchBytes: 4 }), /exceeds maxPatchBytes/);
+await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxParts: 1 }), /maxParts/);
+await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxPartBytes: 1 }), /maxPartBytes/);
 const xlsxBytes = new Uint8Array(await xlsx.arrayBuffer());
 const zip = await JSZip.loadAsync(xlsxBytes);
 const tablePartNames = Object.keys(zip.files).filter((name) => /^xl\/tables\/table\d+\.xml$/.test(name));

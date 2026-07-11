@@ -258,6 +258,8 @@ const packageInspect = await DocumentFile.inspectDocx(docx, { includeText: true,
 assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml"));
 assert.match(packageInspect.ndjson, /docxPart/);
 assert.match(packageInspect.ndjson, /word\/styles\.xml/);
+assert.ok(packageInspect.records[0].uncompressedBytes > 0);
+assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml" && part.contentType.includes("wordprocessingml.document.main+xml")));
 const patchedDocx = await DocumentFile.patchDocx(docx, [{ path: "customXml/review-note.xml", text: "<review>ok</review>" }]);
 assert.equal(patchedDocx.type, docx.type);
 assert.equal(patchedDocx.metadata.patchedParts, 1);
@@ -265,6 +267,8 @@ const patchedInspect = await DocumentFile.inspectDocx(patchedDocx, { includeText
 assert.match(patchedInspect.ndjson, /customXml\/review-note\.xml/);
 assert.match(patchedInspect.ndjson, /&lt;review&gt;ok&lt;\/review&gt;|<review>ok<\/review>/);
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "../evil.xml", text: "bad" }]), /Unsafe DOCX part path/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "customXml/large.txt", text: "12345" }], { maxPatchBytes: 4 }), /exceeds maxPatchBytes/);
+await assert.rejects(() => DocumentFile.inspectDocx(docx, { maxTotalBytes: 1 }), /maxTotalBytes/);
 const nativeOnlyZip = await JSZip.loadAsync(docxBytes);
 nativeOnlyZip.remove("word/open-office-artifact.json");
 const nativeOnlyDocx = new FileBlob(await nativeOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });

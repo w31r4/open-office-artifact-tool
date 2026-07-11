@@ -22,7 +22,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 2. Inspect the relevant sheets, ranges, formulas, styles, and drawings.
 3. Apply values, formulas, formatting, tables, validations, comments, and drawings through public facade APIs.
 4. Recalculate and spot-check important results and formula traces.
-5. Export XLSX, import the exported file again, and run the project verifier.
+5. Export XLSX, inspect its bounded native package records, import the exported file again, and run the project verifier.
 6. Inspect the preview at full size. Fix formula errors, clipping, unreadable formatting, and broken objects before delivery.
 
 ```js
@@ -79,6 +79,7 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
 - Run `verifyArtifact(workbook)` and resolve every error-level issue.
 - Trace important result cells when the calculation chain is non-trivial.
 - Export and re-import the XLSX before final verification.
+- Save `SpreadsheetFile.inspectXlsx()` evidence so the native package shape, content types, and decompression budgets are part of QA.
 - Produce a layout record and a visual preview for every user-facing sheet.
 - Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
 - Deliver only the requested workbook unless the user asks for QA intermediates.
@@ -89,4 +90,3 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
 - Current implementation coverage: `../../docs/coverage.md`
 - Fixture runner: `scripts/run-fixture.mjs`
 - Generic workbook verifier: `scripts/verify-workbook.mjs`
-

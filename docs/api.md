@@ -415,6 +415,9 @@ Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, 
 - `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
 - `includeText` (boolean) — Include bounded XML/JSON/relationship previews.
 - `maxPreviewChars` (number) — Maximum preview characters per textual part.
+- `maxParts` (number) — Maximum package part count.
+- `maxPartBytes` (number) — Maximum uncompressed bytes per part.
+- `maxTotalBytes` (number) — Maximum total uncompressed package bytes.
 - `maxChars` (number) — Maximum bounded NDJSON output size.
 
 **Schema returns:**
@@ -434,6 +437,7 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 - `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
 - `patches` (array|object) required — Path-validated package part edits with text/xml/json/bytes/remove.
 - `maxPatchBytes` (number) — Per-part patch size limit.
+- `maxParts` (number) — Maximum resulting package part count.
 
 **Schema returns:**
 
@@ -824,6 +828,7 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to a native OOXML PPTX FileBlob. |
 | `PresentationFile.importPptx` | api | Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available. |
 | `PresentationFile.inspectPptx` | api | Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews. |
+| `PresentationFile.patchPptx` | api | Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1067,11 +1072,29 @@ Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, con
 - `pptx` (FileBlob|Uint8Array) required — PPTX package bytes.
 - `includeText` (boolean) — Include bounded XML, relationship, and JSON text previews.
 - `maxPreviewChars` (number) — Maximum preview characters per textual package part.
+- `maxParts` (number) — Maximum package part count.
+- `maxPartBytes` (number) — Maximum uncompressed bytes per part.
+- `maxTotalBytes` (number) — Maximum total uncompressed package bytes.
 - `maxChars` (number) — Maximum bounded NDJSON output size.
 
 **Schema returns:**
 
 - `package` (object) — PPTX package and part records with paths, sizes, content types, and optional previews.
+
+#### `PresentationFile.patchPptx`
+
+Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets.
+
+**Schema parameters:**
+
+- `pptx` (FileBlob|Uint8Array) required — PPTX package bytes.
+- `patches` (array|object) required — Safe part edits with text, xml, json, bytes, content, remove, or delete.
+- `maxPatchBytes` (number) — Maximum bytes per replacement part.
+- `maxParts` (number) — Maximum resulting package part count.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Patched PPTX FileBlob with patchedParts metadata.
 
 #### `slide.addNotes`
 
@@ -1566,6 +1589,8 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to an XLSX FileBlob. |
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
+| `SpreadsheetFile.inspectXlsx` | api | Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets. |
+| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
@@ -2519,6 +2544,39 @@ Load an XLSX file into a Workbook facade.
 **Schema returns:**
 
 - `workbook` (Workbook) — Imported editable workbook facade.
+
+#### `SpreadsheetFile.inspectXlsx`
+
+Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets.
+
+**Schema parameters:**
+
+- `xlsx` (FileBlob|Uint8Array) required — XLSX package bytes.
+- `includeText` (boolean) — Include bounded XML/JSON/relationship previews.
+- `maxPreviewChars` (number) — Maximum preview characters per textual part.
+- `maxParts` (number) — Maximum package part count.
+- `maxPartBytes` (number) — Maximum uncompressed bytes per part.
+- `maxTotalBytes` (number) — Maximum total uncompressed package bytes.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `package` (object) — Content-type-aware XLSX package records and bounded NDJSON.
+
+#### `SpreadsheetFile.patchXlsx`
+
+Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets.
+
+**Schema parameters:**
+
+- `xlsx` (FileBlob|Uint8Array) required — XLSX package bytes.
+- `patches` (array|object) required — Safe part edits with text, xml, json, bytes, content, remove, or delete.
+- `maxPatchBytes` (number) — Maximum bytes per replacement part.
+- `maxParts` (number) — Maximum resulting package part count.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Patched XLSX FileBlob with patchedParts metadata.
 
 #### `workbook.comments.addThread`
 

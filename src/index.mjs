@@ -600,6 +600,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte budgets." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
@@ -688,6 +690,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to a native OOXML PPTX FileBlob." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
@@ -883,6 +886,7 @@ const HELP_DETAIL_OVERRIDES = {
         docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
         patches: { type: "array|object", required: true, description: "Path-validated package part edits with text/xml/json/bytes/remove." },
         maxPatchBytes: { type: "number", description: "Per-part patch size limit." },
+        maxParts: { type: "number", description: "Maximum resulting package part count." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with metadata.patchedParts." } },
     },
@@ -894,6 +898,9 @@ const HELP_DETAIL_OVERRIDES = {
         pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
         includeText: { type: "boolean", description: "Include bounded XML, relationship, and JSON text previews." },
         maxPreviewChars: { type: "number", description: "Maximum preview characters per textual package part." },
+        maxParts: { type: "number", description: "Maximum package part count." },
+        maxPartBytes: { type: "number", description: "Maximum uncompressed bytes per part." },
+        maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
       returns: { package: { type: "object", description: "PPTX package and part records with paths, sizes, content types, and optional previews." } },
@@ -1350,6 +1357,9 @@ const DOCUMENT_HELP_SCHEMAS = {
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
     includeText: { type: "boolean", description: "Include bounded XML/JSON/relationship previews." },
     maxPreviewChars: { type: "number", description: "Maximum preview characters per textual part." },
+    maxParts: { type: "number", description: "Maximum package part count." },
+    maxPartBytes: { type: "number", description: "Maximum uncompressed bytes per part." },
+    maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
     maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
   }, "package", "object", "DOCX package part records and bounded NDJSON."),
 };
@@ -1490,6 +1500,12 @@ const PRESENTATION_HELP_SCHEMAS = {
     style: { type: "object", description: "Explicit text style metadata." },
   }, "node", "object", "Paragraph compose node."),
   "PresentationFile.inspectPptx": HELP_DETAIL_OVERRIDES["PresentationFile.inspectPptx"].schema,
+  "PresentationFile.patchPptx": helpSchema({
+    pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
+    patches: { type: "array|object", required: true, description: "Safe part edits with text, xml, json, bytes, content, remove, or delete." },
+    maxPatchBytes: { type: "number", description: "Maximum bytes per replacement part." },
+    maxParts: { type: "number", description: "Maximum resulting package part count." },
+  }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
   }, "blob", "FileBlob", "Native OOXML PPTX package bytes."),
@@ -1509,6 +1525,21 @@ const WORKBOOK_HELP_SCHEMAS = {
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
+  "SpreadsheetFile.inspectXlsx": helpSchema({
+    xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
+    includeText: { type: "boolean", description: "Include bounded XML/JSON/relationship previews." },
+    maxPreviewChars: { type: "number", description: "Maximum preview characters per textual part." },
+    maxParts: { type: "number", description: "Maximum package part count." },
+    maxPartBytes: { type: "number", description: "Maximum uncompressed bytes per part." },
+    maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+  }, "package", "object", "Content-type-aware XLSX package records and bounded NDJSON."),
+  "SpreadsheetFile.patchXlsx": helpSchema({
+    xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
+    patches: { type: "array|object", required: true, description: "Safe part edits with text, xml, json, bytes, content, remove, or delete." },
+    maxPatchBytes: { type: "number", description: "Maximum bytes per replacement part." },
+    maxParts: { type: "number", description: "Maximum resulting package part count." },
+  }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts metadata."),
   "worksheet.getRange": helpSchema({
     address: { type: "string", required: true, description: "A1 cell or range address such as A1:D10." },
   }, "range", "Range", "Editable range facade for values, formulas, formatting, and rules."),
@@ -4316,6 +4347,15 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
 }
 
 export class SpreadsheetFile {
+  static async inspectXlsx(blobOrBuffer, options = {}) {
+    return inspectOoxmlPackage(blobOrBuffer, options, { family: "XLSX", packageKind: "xlsxPackage", partKind: "xlsxPart", counts: { sheets: /^xl\/worksheets\/sheet\d+\.xml$/ } });
+  }
+
+  static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
+    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
+    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts } });
+  }
+
   static async exportXlsx(workbook) {
     workbook.recalculate();
     const zip = new JSZip();
@@ -6073,21 +6113,12 @@ export class ImageElement {
 
 export class PresentationFile {
   static async inspectPptx(blobOrBuffer, options = {}) {
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
-    const zip = await JSZip.loadAsync(bytes);
-    const files = Object.values(zip.files).filter((file) => !file.dir).sort((a, b) => a.name.localeCompare(b.name));
-    const slideParts = files.filter((file) => /^ppt\/slides\/slide\d+\.xml$/.test(file.name)).length;
-    const records = [{ kind: "pptxPackage", parts: files.length, slides: slideParts }];
-    const includeText = Boolean(options.includeText || options.preview || options.includeXml);
-    const maxPreviewChars = Math.max(0, Number(options.maxPreviewChars ?? 400) || 0);
-    for (const file of files) {
-      const partBytes = await file.async("uint8array");
-      const contentType = file.name.endsWith(".rels") ? "application/vnd.openxmlformats-package.relationships+xml" : file.name.endsWith(".xml") ? "application/xml" : file.name.endsWith(".json") ? "application/json" : file.name.endsWith(".png") ? "image/png" : file.name.endsWith(".jpg") || file.name.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream";
-      const record = { kind: "pptxPart", path: file.name, size: partBytes.byteLength, contentType };
-      if (includeText && /\.(xml|json|rels)$/i.test(file.name)) record.textPreview = decoder.decode(partBytes).slice(0, maxPreviewChars);
-      records.push(record);
-    }
-    return { parts: records.filter((record) => record.kind === "pptxPart"), records, ...ndjson(records, options.maxChars ?? Infinity) };
+    return inspectOoxmlPackage(blobOrBuffer, options, { family: "PPTX", packageKind: "pptxPackage", partKind: "pptxPart", counts: { slides: /^ppt\/slides\/slide\d+\.xml$/ } });
+  }
+
+  static async patchPptx(blobOrBuffer, patches = [], options = {}) {
+    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
+    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts } });
   }
 
   static async exportPptx(presentation) {
@@ -7448,58 +7479,132 @@ function parseHeaderFooterXml(xml) {
   return [...String(xml || "").matchAll(/<w:p[\s\S]*?<\/w:p>/g)].map((match) => ({ text: decodeXml([...match[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join("")) })).filter((item) => item.text.length > 0);
 }
 
-function docxSafePartPath(partPath) {
+function ooxmlSafePartPath(partPath, family = "OOXML") {
   const raw = String(partPath || "").replaceAll("\\", "/").trim();
-  if (!raw || raw.startsWith("/") || raw.includes("\0")) throw new Error(`Unsafe DOCX part path: ${partPath}`);
+  if (!raw || raw.startsWith("/") || raw.includes("\0")) throw new Error(`Unsafe ${family} part path: ${partPath}`);
   const normalized = path.posix.normalize(raw).replace(/^\.\//, "");
-  if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../") || normalized === "..") throw new Error(`Unsafe DOCX part path: ${partPath}`);
+  if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../") || normalized === "..") throw new Error(`Unsafe ${family} part path: ${partPath}`);
+  if (normalized.length > 1024) throw new Error(`Unsafe ${family} part path: path exceeds 1024 characters`);
   return normalized;
 }
 
-async function docxPackageRecords(zip, options = {}) {
+function ooxmlContentTypeMaps(xml = "") {
+  const defaults = new Map();
+  const overrides = new Map();
+  const attributes = (tag) => Object.fromEntries([...tag.matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
+  for (const match of String(xml).matchAll(/<Default\b[^>]*\/?\s*>/g)) {
+    const attrs = attributes(match[0]);
+    if (attrs.Extension && attrs.ContentType) defaults.set(String(attrs.Extension).toLowerCase(), attrs.ContentType);
+  }
+  for (const match of String(xml).matchAll(/<Override\b[^>]*\/?\s*>/g)) {
+    const attrs = attributes(match[0]);
+    if (attrs.PartName && attrs.ContentType) overrides.set(String(attrs.PartName).replace(/^\//, ""), attrs.ContentType);
+  }
+  return { defaults, overrides };
+}
+
+function ooxmlFallbackContentType(partPath) {
+  if (partPath.endsWith(".rels")) return "application/vnd.openxmlformats-package.relationships+xml";
+  if (partPath.endsWith(".xml")) return "application/xml";
+  if (partPath.endsWith(".json")) return "application/json";
+  return imageContentTypeFromExtension(path.posix.extname(partPath).slice(1));
+}
+
+async function ooxmlPackageRecords(zip, options = {}, config = {}) {
   const includeText = Boolean(options.includeText || options.preview || options.includeXml);
   const maxPreviewChars = Math.max(0, Number(options.maxPreviewChars ?? 400) || 0);
   const files = Object.values(zip.files).filter((file) => !file.dir).sort((a, b) => a.name.localeCompare(b.name));
-  const records = [{ kind: "docxPackage", parts: files.length }];
+  const family = config.family || "OOXML";
+  const maxParts = Math.max(1, Number(options.maxParts ?? 5000) || 5000);
+  const maxPartBytes = Math.max(1, Number(options.maxPartBytes ?? 64 * 1024 * 1024) || 64 * 1024 * 1024);
+  const maxTotalBytes = Math.max(1, Number(options.maxTotalBytes ?? 256 * 1024 * 1024) || 256 * 1024 * 1024);
+  if (files.length > maxParts) throw new Error(`${family} package has ${files.length} parts; maxParts is ${maxParts}.`);
+  const safePaths = new Map();
+  let declaredTotalBytes = 0;
   for (const file of files) {
+    const partPath = ooxmlSafePartPath(file.name, family);
+    safePaths.set(file, partPath);
+    const declaredSize = Number(file._data?.uncompressedSize);
+    if (!Number.isFinite(declaredSize)) continue;
+    if (declaredSize > maxPartBytes) throw new Error(`${family} part ${partPath} exceeds maxPartBytes (${maxPartBytes}).`);
+    declaredTotalBytes += declaredSize;
+    if (declaredTotalBytes > maxTotalBytes) throw new Error(`${family} package exceeds maxTotalBytes (${maxTotalBytes}).`);
+  }
+  const contentTypesEntry = zip.file("[Content_Types].xml");
+  const contentTypesText = contentTypesEntry ? await contentTypesEntry.async("text") : "";
+  const contentTypes = ooxmlContentTypeMaps(contentTypesText);
+  const counts = Object.fromEntries(Object.entries(config.counts || {}).map(([name, pattern]) => [name, files.filter((file) => pattern.test(file.name)).length]));
+  const records = [{ kind: config.packageKind || "ooxmlPackage", family, parts: files.length, ...counts }];
+  let totalBytes = 0;
+  for (const file of files) {
+    const partPath = safePaths.get(file);
     const bytes = await file.async("uint8array");
-    const record = { kind: "docxPart", path: file.name, size: bytes.byteLength, contentType: file.name.endsWith(".xml") ? "application/xml" : file.name.endsWith(".json") ? "application/json" : "application/octet-stream" };
-    if (includeText && /\.(xml|json|rels)$/i.test(file.name)) record.textPreview = decoder.decode(bytes).slice(0, maxPreviewChars);
+    if (bytes.byteLength > maxPartBytes) throw new Error(`${family} part ${partPath} exceeds maxPartBytes (${maxPartBytes}).`);
+    totalBytes += bytes.byteLength;
+    if (totalBytes > maxTotalBytes) throw new Error(`${family} package exceeds maxTotalBytes (${maxTotalBytes}).`);
+    const extension = path.posix.extname(partPath).slice(1).toLowerCase();
+    const contentType = contentTypes.overrides.get(partPath) || contentTypes.defaults.get(extension) || ooxmlFallbackContentType(partPath);
+    const record = { kind: config.partKind || "ooxmlPart", path: partPath, size: bytes.byteLength, contentType };
+    if (includeText && /\.(xml|json|rels)$/i.test(partPath)) record.textPreview = decoder.decode(bytes).slice(0, maxPreviewChars);
     records.push(record);
   }
+  records[0].uncompressedBytes = totalBytes;
   return records;
 }
 
-function docxPatchData(patch, options = {}) {
+function ooxmlPatchData(patch, family = "OOXML") {
   if (patch.json !== undefined) return encoder.encode(JSON.stringify(patch.json, null, 2));
   if (patch.text !== undefined || patch.xml !== undefined) return encoder.encode(String(patch.text ?? patch.xml));
   if (patch.bytes !== undefined || patch.data !== undefined || patch.buffer !== undefined) return toUint8Array(patch.bytes ?? patch.data ?? patch.buffer);
   if (patch.content !== undefined) return typeof patch.content === "string" ? encoder.encode(patch.content) : toUint8Array(patch.content);
   if (patch.remove || patch.delete) return undefined;
-  throw new Error(`DOCX patch for ${patch.path || patch.part || "unknown part"} has no content or remove flag.`);
+  throw new Error(`${family} patch for ${patch.path || patch.part || "unknown part"} has no content or remove flag.`);
+}
+
+async function inspectOoxmlPackage(blobOrBuffer, options = {}, config = {}) {
+  const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+  const zip = await JSZip.loadAsync(bytes);
+  const records = await ooxmlPackageRecords(zip, options, config);
+  const partKind = config.partKind || "ooxmlPart";
+  return { parts: records.filter((record) => record.kind === partKind), records, ...ndjson(records, options.maxChars ?? Infinity) };
+}
+
+async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, config = {}) {
+  const family = config.family || "OOXML";
+  const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+  const zip = await JSZip.loadAsync(bytes);
+  const list = Array.isArray(patches) ? patches : Object.entries(patches || {}).map(([partPath, content]) => (
+    content && typeof content === "object" && !(content instanceof Uint8Array) && !(content instanceof ArrayBuffer) && !ArrayBuffer.isView(content)
+      ? { path: partPath, ...content }
+      : { path: partPath, content }
+  ));
+  const maxPatchBytes = Math.max(1, Number(options.maxPatchBytes ?? 5 * 1024 * 1024) || 5 * 1024 * 1024);
+  const maxParts = Math.max(1, Number(options.maxParts ?? 5000) || 5000);
+  const existingParts = new Set(Object.values(zip.files).filter((file) => !file.dir).map((file) => ooxmlSafePartPath(file.name, family)));
+  const normalizedPatches = list.map((patch) => ({ patch, partPath: ooxmlSafePartPath(patch.path || patch.part || patch.name, family) }));
+  const resultingParts = new Set(existingParts);
+  for (const { patch, partPath } of normalizedPatches) {
+    if (patch.remove || patch.delete) resultingParts.delete(partPath);
+    else resultingParts.add(partPath);
+  }
+  if (resultingParts.size > maxParts) throw new Error(`${family} patch would create ${resultingParts.size} parts; maxParts is ${maxParts}.`);
+  for (const { patch, partPath } of normalizedPatches) {
+    if (patch.remove || patch.delete) { zip.remove(partPath); continue; }
+    const data = ooxmlPatchData(patch, family);
+    if (data?.byteLength > maxPatchBytes) throw new Error(`${family} patch for ${partPath} exceeds maxPatchBytes (${maxPatchBytes}).`);
+    zip.file(partPath, data);
+  }
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length };
 }
 
 export class DocumentFile {
   static async inspectDocx(blobOrBuffer, options = {}) {
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
-    const zip = await JSZip.loadAsync(bytes);
-    const records = await docxPackageRecords(zip, options);
-    return { parts: records.filter((record) => record.kind === "docxPart"), records, ...ndjson(records, options.maxChars ?? Infinity) };
+    return inspectOoxmlPackage(blobOrBuffer, options, { family: "DOCX", packageKind: "docxPackage", partKind: "docxPart" });
   }
 
   static async patchDocx(blobOrBuffer, patches = [], options = {}) {
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
-    const zip = await JSZip.loadAsync(bytes);
-    const list = Array.isArray(patches) ? patches : Object.entries(patches || {}).map(([partPath, content]) => ({ path: partPath, content }));
-    const maxPatchBytes = Number(options.maxPatchBytes ?? 5 * 1024 * 1024);
-    for (const patch of list) {
-      const partPath = docxSafePartPath(patch.path || patch.part || patch.name);
-      if (patch.remove || patch.delete) { zip.remove(partPath); continue; }
-      const data = docxPatchData(patch, options);
-      if (maxPatchBytes && data?.byteLength > maxPatchBytes) throw new Error(`DOCX patch for ${partPath} exceeds maxPatchBytes (${maxPatchBytes}).`);
-      zip.file(partPath, data);
-    }
-    return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: list.length } });
+    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "DOCX" });
+    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts } });
   }
 
   static async exportDocx(document) {

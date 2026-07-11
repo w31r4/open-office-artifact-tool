@@ -68,7 +68,9 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   const outputDir = path.resolve(options.outputDir || path.join(path.dirname(absoluteInput), `${path.basename(absoluteInput, path.extname(absoluteInput))}-qa`));
   await fs.mkdir(outputDir, { recursive: true });
 
-  const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(absoluteInput));
+  const xlsxBlob = await FileBlob.load(absoluteInput);
+  const packageInspect = await SpreadsheetFile.inspectXlsx(xlsxBlob, { includeText: options.includePackageText === true, maxChars: options.maxChars ?? 16_000 });
+  const workbook = await SpreadsheetFile.importXlsx(xlsxBlob);
   workbook.recalculate();
   const sheetName = options.sheetName || workbook.worksheets.getItemAt(0)?.name;
   if (!sheetName) throw new Error("Workbook verification requires at least one worksheet.");
@@ -96,6 +98,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   if (!previewExtension) throw new Error(`Unsupported spreadsheet preview format: ${renderFormat}`);
   const paths = {
     inspect: path.join(outputDir, "inspect.ndjson"),
+    packageInspect: path.join(outputDir, "package-inspect.ndjson"),
     verify: path.join(outputDir, "verify.ndjson"),
     layout: path.join(outputDir, "layout.json"),
     visualQa: path.join(outputDir, "visual-qa.ndjson"),
@@ -110,6 +113,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   });
   await Promise.all([
     fs.writeFile(paths.inspect, inspect.ndjson, "utf8"),
+    fs.writeFile(paths.packageInspect, packageInspect.ndjson, "utf8"),
     fs.writeFile(paths.verify, `${verifyNdjson}\n`, "utf8"),
     fs.writeFile(paths.layout, await layoutBlob.text(), "utf8"),
     fs.writeFile(paths.visualQa, visualQa.ndjson, "utf8"),
@@ -130,7 +134,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   if (options.failOnIssues !== false && (!verify.ok || !visualQa.ok)) {
     throw new Error(`Spreadsheet QA failed: semantic=${verify.ok}, visual=${visualQa.ok}. See ${outputDir}`);
   }
-  return { workbook, inspect, verify, visualQa, layoutBlob, summary };
+  return { workbook, inspect, packageInspect, verify, visualQa, layoutBlob, summary };
 }
 
 export async function runSpreadsheetFixture(fixturePath, options = {}) {

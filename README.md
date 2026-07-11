@@ -173,6 +173,25 @@ npm install -D pdfjs-dist
 
 It extracts page size, positioned text items, text-line regions, heuristic tables from pipe-delimited or column-like text, and image operator placeholders. The built-in heuristic parser remains available when no adapter is supplied.
 
+## Safe OOXML package inspection and patching
+
+XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, and enforce part-count, per-part, and total uncompressed-byte budgets. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits.
+
+```js
+const report = await SpreadsheetFile.inspectXlsx(xlsx, {
+  includeText: true,
+  maxParts: 5000,
+  maxPartBytes: 64 * 1024 * 1024,
+  maxTotalBytes: 256 * 1024 * 1024,
+});
+
+const patched = await PresentationFile.patchPptx(pptx, [
+  { path: "customXml/review.json", json: { status: "approved" } },
+]);
+```
+
+Equivalent APIs are `PresentationFile.inspectPptx`, `DocumentFile.inspectDocx`, `SpreadsheetFile.patchXlsx`, `PresentationFile.patchPptx`, and `DocumentFile.patchDocx`.
+
 ## Examples
 
 Runnable examples live in [`examples/`](examples/):
