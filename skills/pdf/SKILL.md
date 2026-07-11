@@ -52,8 +52,13 @@ const pdf = PdfArtifact.create({
   }],
 });
 
-await (await PdfFile.exportPdf(pdf)).save("qa-report.pdf");
+await (await PdfFile.exportPdf(pdf, {
+  // Required when content is not ASCII. Supply a legally usable standalone .ttf.
+  font: process.env.PDF_UNICODE_FONT,
+})).save("qa-report.pdf");
 ```
+
+The built-in Helvetica path is intentionally ASCII-only. For Chinese, Cyrillic, Greek, accented Latin, or other Unicode text, provide a standalone glyf-based TrueType `.ttf` through `font`; export fails instead of silently replacing unsupported text. The writer embeds a Type0/CIDFontType2 font, glyph widths, and a `ToUnicode` map. It does not yet perform complex-script shaping or accept `.ttc` collections.
 
 ## Verification commands
 
@@ -67,6 +72,8 @@ node skills/pdf/scripts/verify-pdf.mjs \
   --require-tagged true \
   --native-render required
 ```
+
+Fixture creation accepts the same font input with `--font /path/to/unicode.ttf` and an optional `--max-font-bytes` safety bound.
 
 Create an approved visual baseline:
 

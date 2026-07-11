@@ -1028,8 +1028,8 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-role counts, and marked-content count." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded Type0/ToUnicode font evidence, structure-role counts, and marked-content count." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
@@ -1398,6 +1398,8 @@ const HELP_DETAIL_OVERRIDES = {
         tagged: { type: "boolean", description: "Emit StructTreeRoot/ParentTree/MCID tagging; defaults to true." },
         language: { type: "string", description: "Catalog language; defaults to artifact metadata language or en-US." },
         title: { type: "string", description: "Document Info title; defaults to artifact metadata title or first text line." },
+        font: { type: "string|FileBlob|Uint8Array|ArrayBuffer|object", description: "Optional standalone glyf-based TrueType .ttf source for Unicode Type0/CIDFontType2 embedding; accepts a path, bytes, FileBlob, or {path|bytes|base64}." },
+        maxFontBytes: { type: "number", description: "Maximum accepted embedded font input size; defaults to 16 MiB." },
       },
       returns: { blob: { type: "FileBlob", description: "application/pdf bytes with modeled content, clean-room metadata, and tagged-export metadata." } },
     },
@@ -9521,7 +9523,7 @@ export class PdfFile {
     const structureRoles = {};
     for (const match of text.matchAll(/\/Type\s*\/StructElem\b[\s\S]*?\/S\s*\/([A-Za-z0-9]+)/g)) structureRoles[match[1]] = (structureRoles[match[1]] || 0) + 1;
     const records = [
-      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
@@ -9530,8 +9532,9 @@ export class PdfFile {
   static async exportPdf(artifact, options = {}) {
     const language = options.language || options.lang || artifact.metadata?.language || artifact.metadata?.lang || "en-US";
     const title = options.title || artifact.metadata?.title || String(artifact.pages?.[0]?.text || "").split(/\r?\n/).find(Boolean) || "Office artifact";
-    const exportOptions = { ...options, language, title };
-    return new FileBlob(buildMinimalPdf(artifact, exportOptions), { type: PDF_MIME, metadata: { tagged: options.tagged !== false, language, title } });
+    const embeddedFont = await resolvePdfEmbeddedFont(options.font ?? options.fontBytes ?? options.unicodeFont, options);
+    const exportOptions = { ...options, language, title, embeddedFont };
+    return new FileBlob(buildMinimalPdf(artifact, exportOptions), { type: PDF_MIME, metadata: { tagged: options.tagged !== false, language, title, embeddedFont: embeddedFont?.name } });
   }
 
   static async importPdf(blobOrBuffer, options = {}) {
@@ -9718,6 +9721,170 @@ function escapePdfString(text) {
   return String(text).replace(/[^\x20-\x7e]/g, "?").replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
 }
 
+function pdfUtf16Hex(text, bom = true) {
+  const units = [...String(text)].flatMap((character) => {
+    const codePoint = character.codePointAt(0);
+    if (codePoint <= 0xffff) return [codePoint];
+    const adjusted = codePoint - 0x10000;
+    return [0xd800 + (adjusted >> 10), 0xdc00 + (adjusted & 0x3ff)];
+  });
+  return `${bom ? "feff" : ""}${units.map((unit) => unit.toString(16).padStart(4, "0")).join("")}`.toUpperCase();
+}
+
+function pdfStringToken(text) {
+  const value = String(text ?? "");
+  return /[^\x20-\x7e]/.test(value) ? `<${pdfUtf16Hex(value)}>` : `(${escapePdfString(value)})`;
+}
+
+function pdfFontRead(view, method, offset, bytes) {
+  if (!Number.isInteger(offset) || offset < 0 || offset + bytes > view.byteLength) throw new Error("Truncated TrueType font table.");
+  return view[method](offset, false);
+}
+
+function parsePdfTrueTypeFont(input, options = {}) {
+  const bytes = toUint8Array(input);
+  const configuredMax = Number(options.maxFontBytes ?? 16 * 1024 * 1024);
+  const maxBytes = Number.isFinite(configuredMax) && configuredMax > 0 ? Math.max(1024, Math.floor(configuredMax)) : 16 * 1024 * 1024;
+  if (bytes.byteLength > maxBytes) throw new Error(`TrueType font exceeds maxFontBytes (${bytes.byteLength} > ${maxBytes}).`);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u16 = (offset) => pdfFontRead(view, "getUint16", offset, 2);
+  const i16 = (offset) => pdfFontRead(view, "getInt16", offset, 2);
+  const u32 = (offset) => pdfFontRead(view, "getUint32", offset, 4);
+  const scaler = u32(0);
+  if (scaler === 0x74746366) throw new Error("TrueType collections (.ttc) are not supported; provide a standalone .ttf font.");
+  if (scaler !== 0x00010000 && scaler !== 0x74727565) throw new Error("Only glyf-based TrueType .ttf fonts are supported for PDF embedding.");
+  const tables = new Map();
+  const tableCount = u16(4);
+  for (let index = 0; index < tableCount; index += 1) {
+    const record = 12 + index * 16;
+    if (record + 16 > bytes.byteLength) throw new Error("Truncated TrueType table directory.");
+    const tag = String.fromCharCode(bytes[record], bytes[record + 1], bytes[record + 2], bytes[record + 3]);
+    const offset = u32(record + 8);
+    const length = u32(record + 12);
+    if (offset + length > bytes.byteLength) throw new Error(`TrueType table ${tag} exceeds the font bytes.`);
+    tables.set(tag, { offset, length });
+  }
+  const required = (tag) => {
+    const table = tables.get(tag);
+    if (!table) throw new Error(`TrueType font is missing required ${tag} table.`);
+    return table;
+  };
+  const head = required("head");
+  const hhea = required("hhea");
+  const maxp = required("maxp");
+  const hmtx = required("hmtx");
+  const cmap = required("cmap");
+  required("glyf");
+  required("loca");
+  if (head.length < 54 || hhea.length < 36 || maxp.length < 6) throw new Error("TrueType font has truncated metrics tables.");
+  const unitsPerEm = u16(head.offset + 18);
+  if (!unitsPerEm) throw new Error("TrueType font has invalid unitsPerEm.");
+  const numberOfGlyphs = u16(maxp.offset + 4);
+  const numberOfHMetrics = u16(hhea.offset + 34);
+  if (!numberOfGlyphs || !numberOfHMetrics || numberOfHMetrics > numberOfGlyphs) throw new Error("TrueType font has invalid glyph metrics.");
+  if (numberOfHMetrics * 4 > hmtx.length) throw new Error("TrueType hmtx table is truncated.");
+  const advances = Array(numberOfGlyphs);
+  let lastAdvance = 0;
+  for (let glyph = 0; glyph < numberOfGlyphs; glyph += 1) {
+    if (glyph < numberOfHMetrics) lastAdvance = u16(hmtx.offset + glyph * 4);
+    advances[glyph] = lastAdvance;
+  }
+  if (cmap.length < 4) throw new Error("TrueType cmap table is truncated.");
+  const cmapCount = u16(cmap.offset + 2);
+  let chosen;
+  for (let index = 0; index < cmapCount; index += 1) {
+    const record = cmap.offset + 4 + index * 8;
+    if (record + 8 > cmap.offset + cmap.length) throw new Error("TrueType cmap encoding records are truncated.");
+    const platform = u16(record);
+    const encoding = u16(record + 2);
+    const relativeOffset = u32(record + 4);
+    if (relativeOffset + 4 > cmap.length) continue;
+    const subtableOffset = cmap.offset + relativeOffset;
+    const format = u16(subtableOffset);
+    if (format === 12 && relativeOffset + 8 > cmap.length) continue;
+    const length = format === 12 ? u32(subtableOffset + 4) : format === 4 ? u16(subtableOffset + 2) : 0;
+    if (!length || relativeOffset + length > cmap.length) continue;
+    const score = format === 12 ? 100 + (platform === 3 && encoding === 10 ? 10 : 0) : format === 4 ? 50 + (platform === 3 ? 5 : 0) : 0;
+    if (score && (!chosen || score > chosen.score)) chosen = { format, offset: subtableOffset, length, score };
+  }
+  if (!chosen) throw new Error("TrueType font lacks a supported Unicode cmap format 4 or 12.");
+  let glyphForCodePoint;
+  if (chosen.format === 12) {
+    const groupCount = u32(chosen.offset + 12);
+    if (16 + groupCount * 12 > chosen.length) throw new Error("TrueType cmap format 12 groups are truncated.");
+    const groups = Array.from({ length: groupCount }, (_, index) => {
+      const offset = chosen.offset + 16 + index * 12;
+      return { start: u32(offset), end: u32(offset + 4), glyph: u32(offset + 8) };
+    });
+    glyphForCodePoint = (codePoint) => {
+      let low = 0;
+      let high = groups.length - 1;
+      while (low <= high) {
+        const middle = (low + high) >> 1;
+        const group = groups[middle];
+        if (codePoint < group.start) high = middle - 1;
+        else if (codePoint > group.end) low = middle + 1;
+        else return group.glyph + codePoint - group.start;
+      }
+      return 0;
+    };
+  } else {
+    const segmentCount = u16(chosen.offset + 6) / 2;
+    if (!Number.isInteger(segmentCount) || segmentCount < 1 || 16 + segmentCount * 8 > chosen.length) throw new Error("TrueType cmap format 4 segments are invalid.");
+    const endCodes = chosen.offset + 14;
+    const startCodes = endCodes + segmentCount * 2 + 2;
+    const deltas = startCodes + segmentCount * 2;
+    const rangeOffsets = deltas + segmentCount * 2;
+    glyphForCodePoint = (codePoint) => {
+      if (codePoint > 0xffff) return 0;
+      for (let segment = 0; segment < segmentCount; segment += 1) {
+        const end = u16(endCodes + segment * 2);
+        if (codePoint > end) continue;
+        const start = u16(startCodes + segment * 2);
+        if (codePoint < start) return 0;
+        const delta = i16(deltas + segment * 2);
+        const rangeOffsetAddress = rangeOffsets + segment * 2;
+        const rangeOffset = u16(rangeOffsetAddress);
+        if (!rangeOffset) return (codePoint + delta) & 0xffff;
+        const glyphAddress = rangeOffsetAddress + rangeOffset + (codePoint - start) * 2;
+        if (glyphAddress + 2 > chosen.offset + chosen.length) throw new Error("TrueType cmap glyph index exceeds its subtable.");
+        let glyph = u16(glyphAddress);
+        if (glyph) glyph = (glyph + delta) & 0xffff;
+        return glyph;
+      }
+      return 0;
+    };
+  }
+  const scale = (value) => Math.round(value / unitsPerEm * 1000);
+  return {
+    bytes,
+    name: String(options.name || "OpenOfficeArtifactEmbedded").replace(/[^A-Za-z0-9_-]/g, "") || "OpenOfficeArtifactEmbedded",
+    unitsPerEm,
+    advances,
+    glyphForCodePoint,
+    bbox: [i16(head.offset + 36), i16(head.offset + 38), i16(head.offset + 40), i16(head.offset + 42)].map(scale),
+    ascent: scale(i16(hhea.offset + 4)),
+    descent: scale(i16(hhea.offset + 6)),
+  };
+}
+
+async function resolvePdfEmbeddedFont(source, options = {}) {
+  if (source == null) return undefined;
+  let bytes;
+  let name;
+  if (source instanceof FileBlob) { bytes = source.bytes; name = source.name; }
+  else if (typeof source === "string") { bytes = await fs.readFile(source); name = path.basename(source, path.extname(source)); }
+  else if (ArrayBuffer.isView(source) || source instanceof ArrayBuffer || Array.isArray(source)) bytes = source;
+  else if (typeof source === "object") {
+    name = source.name;
+    if (source.path) bytes = await fs.readFile(source.path);
+    else if (source.bytes != null || source.data != null) bytes = source.bytes ?? source.data;
+    else if (source.base64) bytes = Buffer.from(String(source.base64).replace(/^data:[^,]+,/, ""), "base64");
+  }
+  if (bytes == null) throw new Error("PDF font must be a .ttf path, FileBlob, byte array, ArrayBuffer, or { path|bytes|base64 } object.");
+  return parsePdfTrueTypeFont(bytes, { maxFontBytes: options.maxFontBytes, name });
+}
+
 function pdfNumber(value) {
   const number = Number(value) || 0;
   return String(Math.round(number * 1000) / 1000);
@@ -9733,10 +9900,43 @@ function pdfColorCommand(color, stroke = false) {
   return `${pdfRgb(color).map(pdfNumber).join(" ")} ${stroke ? "RG" : "rg"}`;
 }
 
+function pdfEmbeddedCid(fontState, codePoint) {
+  const glyph = fontState.font.glyphForCodePoint(codePoint);
+  if (!glyph || glyph > 0xffff || glyph >= fontState.font.advances.length) throw new Error(`Embedded PDF font ${fontState.font.name} does not contain U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}.`);
+  let cid = fontState.cidByCodePoint.get(codePoint);
+  if (cid == null) {
+    cid = fontState.used.size + 1;
+    if (cid > 0xffff) throw new Error("Embedded PDF font uses more than 65,535 distinct Unicode code points.");
+    fontState.cidByCodePoint.set(codePoint, cid);
+    fontState.used.set(cid, { codePoint, glyph });
+  }
+  return cid;
+}
+
+function pdfTextOperand(text, fontState) {
+  const value = String(text ?? "");
+  if (!fontState) {
+    if (/[^\x20-\x7e]/.test(value)) throw new Error("PDF text contains non-ASCII characters; provide PdfFile.exportPdf(..., { font }) with a Unicode TrueType .ttf font.");
+    return `(${escapePdfString(value)})`;
+  }
+  const cids = [...value].map((character) => pdfEmbeddedCid(fontState, character.codePointAt(0)));
+  return `<${cids.map((cid) => cid.toString(16).padStart(4, "0")).join("").toUpperCase()}>`;
+}
+
+function pdfExportTextWidth(text, fontSize, fontState) {
+  if (!fontState) return pdfTextWidth(text, fontSize);
+  const units = [...String(text ?? "")].reduce((sum, character) => {
+    const cid = pdfEmbeddedCid(fontState, character.codePointAt(0));
+    const glyph = fontState.used.get(cid).glyph;
+    return sum + (fontState.font.advances[glyph] || fontState.font.unitsPerEm);
+  }, 0);
+  return units / fontState.font.unitsPerEm * fontSize;
+}
+
 function pdfTextCommand(page, text, left, top, options = {}) {
   const fontSize = Math.max(1, Number(options.fontSize || 12));
   const baseline = page.height - Number(top) - fontSize;
-  return `BT /${options.bold ? "F2" : "F1"} ${pdfNumber(fontSize)} Tf ${pdfColorCommand(options.color || "#111827")} ${pdfNumber(left)} ${pdfNumber(baseline)} Td (${escapePdfString(text)}) Tj ET`;
+  return `BT /${options.bold ? "F2" : "F1"} ${pdfNumber(fontSize)} Tf ${pdfColorCommand(options.color || "#111827")} ${pdfNumber(left)} ${pdfNumber(baseline)} Td ${pdfTextOperand(text, options.fontState)} Tj ET`;
 }
 
 function pdfLineCommand(page, x1, top1, x2, top2, options = {}) {
@@ -9749,30 +9949,30 @@ function pdfRectCommand(page, bbox, options = {}) {
   return `q ${pdfColorCommand(options.fillColor || "#ffffff")} ${pdfColorCommand(options.strokeColor || "#cbd5e1", true)} ${pdfNumber(options.lineWidth || 1)} w ${pdfNumber(left)} ${pdfNumber(page.height - top - height)} ${pdfNumber(width)} ${pdfNumber(height)} re ${operator} Q`;
 }
 
-function pdfFitText(text, width, fontSize) {
+function pdfFitText(text, width, fontSize, fontState) {
   const value = String(text ?? "");
   const available = Math.max(1, Number(width));
-  if (pdfTextWidth(value, fontSize) <= available) return value;
+  if (pdfExportTextWidth(value, fontSize, fontState) <= available) return value;
   const chars = [...value];
-  while (chars.length && pdfTextWidth(`${chars.join("")}...`, fontSize) > available) chars.pop();
+  while (chars.length && pdfExportTextWidth(`${chars.join("")}...`, fontSize, fontState) > available) chars.pop();
   return chars.length ? `${chars.join("")}...` : "...";
 }
 
-function pdfPageTextCommands(page) {
+function pdfPageTextCommands(page, fontState) {
   const positioned = new Set((page.textItems || []).map((item) => String(item.text || "").trim()).filter(Boolean));
   const lines = String(page.text || "").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !positioned.has(line));
-  return lines.map((line, index) => pdfTextCommand(page, line, 72, 72 + index * (index ? 22 : 30), { fontSize: index === 0 ? 24 : 14, bold: index === 0, color: index === 0 ? "#0f172a" : "#334155" }));
+  return lines.map((line, index) => pdfTextCommand(page, line, 72, 72 + index * (index ? 22 : 30), { fontSize: index === 0 ? 24 : 14, bold: index === 0, color: index === 0 ? "#0f172a" : "#334155", fontState }));
 }
 
-function pdfPositionedTextCommands(page) {
+function pdfPositionedTextCommands(page, fontState) {
   return (page.textItems || []).filter((item) => item.text).map((item) => {
     const [left, top, width, height] = item.bbox || [72, 72, 120, 14];
     const fontSize = Math.max(6, Number(item.fontSize || height || 12));
-    return pdfTextCommand(page, pdfFitText(item.text, width || page.width - left, fontSize), left, top, { fontSize, color: item.color || "#111827", bold: Boolean(item.bold) });
+    return pdfTextCommand(page, pdfFitText(item.text, width || page.width - left, fontSize, fontState), left, top, { fontSize, color: item.color || "#111827", bold: Boolean(item.bold), fontState });
   });
 }
 
-function pdfTableSemanticRows(page, table) {
+function pdfTableSemanticRows(page, table, fontState) {
   const [left, top, tableWidth, tableHeight] = table.bbox.map(Number);
   const rows = Math.max(1, table.values.length);
   const columns = Math.max(1, ...table.values.map((row) => row.length));
@@ -9788,16 +9988,16 @@ function pdfTableSemanticRows(page, table) {
         tableHeaderScope: row === 0 ? "Column" : undefined,
         commands: [
           pdfRectCommand(page, bbox, { fillColor: row === 0 ? "#e2e8f0" : row % 2 ? "#f8fafc" : "#ffffff", strokeColor: "#94a3b8", lineWidth: 0.75 }),
-          pdfTextCommand(page, pdfFitText(table.values[row]?.[column] ?? "", cellWidth - 12, fontSize), bbox[0] + 6, bbox[1] + Math.max(5, (cellHeight - fontSize) / 2), { fontSize, bold: row === 0, color: "#0f172a" }),
+          pdfTextCommand(page, pdfFitText(table.values[row]?.[column] ?? "", cellWidth - 12, fontSize, fontState), bbox[0] + 6, bbox[1] + Math.max(5, (cellHeight - fontSize) / 2), { fontSize, bold: row === 0, color: "#0f172a", fontState }),
         ],
       };
     }),
   }));
 }
 
-function pdfChartCommands(page, chart) {
+function pdfChartCommands(page, chart, fontState) {
   const [left, top, width, height] = chart.bbox.map(Number);
-  const commands = [pdfRectCommand(page, chart.bbox, { fillColor: "#ffffff", strokeColor: "#cbd5e1", lineWidth: 1 }), pdfTextCommand(page, chart.title, left + 10, top + 10, { fontSize: 13, bold: true })];
+  const commands = [pdfRectCommand(page, chart.bbox, { fillColor: "#ffffff", strokeColor: "#cbd5e1", lineWidth: 1 }), pdfTextCommand(page, chart.title, left + 10, top + 10, { fontSize: 13, bold: true, fontState })];
   const plot = { left: left + 42, top: top + 40, width: Math.max(1, width - 62), height: Math.max(1, height - 76) };
   commands.push(pdfLineCommand(page, plot.left, plot.top + plot.height, plot.left + plot.width, plot.top + plot.height));
   commands.push(pdfLineCommand(page, plot.left, plot.top, plot.left, plot.top + plot.height));
@@ -9818,10 +10018,10 @@ function pdfChartCommands(page, chart) {
       commands.push(pdfRectCommand(page, [x, plot.top + plot.height - barHeight, Math.max(1, barWidth - 2), barHeight], { fillColor: series.color, stroke: false }));
     }));
   }
-  categories.slice(0, 8).forEach((category, index) => commands.push(pdfTextCommand(page, pdfFitText(category, plot.width / Math.max(1, categories.length), 8), plot.left + index * (plot.width / Math.max(1, categories.length)), top + height - 18, { fontSize: 8, color: "#475569" })));
+  categories.slice(0, 8).forEach((category, index) => commands.push(pdfTextCommand(page, pdfFitText(category, plot.width / Math.max(1, categories.length), 8, fontState), plot.left + index * (plot.width / Math.max(1, categories.length)), top + height - 18, { fontSize: 8, color: "#475569", fontState })));
   chart.series.slice(0, 4).forEach((series, index) => {
     commands.push(pdfRectCommand(page, [left + width - 94, top + 12 + index * 14, 8, 8], { fillColor: series.color, stroke: false }));
-    commands.push(pdfTextCommand(page, pdfFitText(series.name, 74, 8), left + width - 82, top + 10 + index * 14, { fontSize: 8, color: "#334155" }));
+    commands.push(pdfTextCommand(page, pdfFitText(series.name, 74, 8, fontState), left + width - 82, top + 10 + index * 14, { fontSize: 8, color: "#334155", fontState }));
   });
   return commands;
 }
@@ -9888,9 +10088,9 @@ function pdfImageAsset(image, objectId, resourceName) {
   }
 }
 
-function pdfImageCommands(page, image, asset) {
+function pdfImageCommands(page, image, asset, fontState) {
   const [left, top, width, height] = image.bbox.map(Number);
-  if (!asset) return [pdfRectCommand(page, image.bbox, { fillColor: "#fef3c7", strokeColor: "#f59e0b" }), pdfTextCommand(page, pdfFitText(image.alt || image.prompt || image.uri || image.name || "image", width - 16, 10), left + 8, top + 8, { fontSize: 10, color: "#92400e" })];
+  if (!asset) return [pdfRectCommand(page, image.bbox, { fillColor: "#fef3c7", strokeColor: "#f59e0b" }), pdfTextCommand(page, pdfFitText(image.alt || image.prompt || image.uri || image.name || "image", width - 16, 10, fontState), left + 8, top + 8, { fontSize: 10, color: "#92400e", fontState })];
   const sourceRatio = asset.width / asset.height;
   const frameRatio = width / height;
   const cover = image.fit === "cover";
@@ -9907,13 +10107,13 @@ function pdfImageCommands(page, image, asset) {
   return [`q ${draw} Q`];
 }
 
-function pdfSemanticGroups(page, assetByImage) {
+function pdfSemanticGroups(page, assetByImage, fontState) {
   const groups = [];
-  pdfPageTextCommands(page).forEach((command, index) => groups.push({ role: index === 0 ? "H1" : "P", commands: [command] }));
-  pdfPositionedTextCommands(page).forEach((command) => groups.push({ role: "P", commands: [command] }));
-  page.tables.forEach((table) => groups.push({ role: "Table", title: table.name || "Data table", children: pdfTableSemanticRows(page, table) }));
-  page.images.forEach((image) => groups.push({ role: "Figure", alt: image.alt || image.name || "Image", commands: pdfImageCommands(page, image, assetByImage.get(image)) }));
-  page.charts.forEach((chart) => groups.push({ role: "Figure", alt: chart.title || chart.name || "Chart", commands: pdfChartCommands(page, chart) }));
+  pdfPageTextCommands(page, fontState).forEach((command, index) => groups.push({ role: index === 0 ? "H1" : "P", commands: [command] }));
+  pdfPositionedTextCommands(page, fontState).forEach((command) => groups.push({ role: "P", commands: [command] }));
+  page.tables.forEach((table) => groups.push({ role: "Table", title: table.name || "Data table", children: pdfTableSemanticRows(page, table, fontState) }));
+  page.images.forEach((image) => groups.push({ role: "Figure", alt: image.alt || image.name || "Image", commands: pdfImageCommands(page, image, assetByImage.get(image), fontState) }));
+  page.charts.forEach((chart) => groups.push({ role: "Figure", alt: chart.title || chart.name || "Chart", commands: pdfChartCommands(page, chart, fontState) }));
   let mcid = 0;
   for (const leaf of pdfSemanticLeaves(groups)) leaf.mcid = mcid++;
   return groups;
@@ -9932,13 +10132,49 @@ function pdfMarkedContent(group) {
   return `/${group.role} << /MCID ${group.mcid} >> BDC\n${group.commands.join("\n")}\nEMC`;
 }
 
+function pdfToUnicodeCmap(fontState) {
+  const mappings = [...fontState.used.entries()].sort((a, b) => a[0] - b[0]);
+  const chunks = [];
+  for (let offset = 0; offset < mappings.length; offset += 100) {
+    const slice = mappings.slice(offset, offset + 100);
+    chunks.push(`${slice.length} beginbfchar\n${slice.map(([cid, mapping]) => `<${cid.toString(16).padStart(4, "0").toUpperCase()}> <${pdfUtf16Hex(String.fromCodePoint(mapping.codePoint), false)}> `).join("\n")}\nendbfchar`);
+  }
+  return `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /${fontState.font.name}-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n${chunks.join("\n")}\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend`;
+}
+
+function pdfEmbeddedFontObjectBodies(fontState, ids) {
+  const { font } = fontState;
+  const mappings = [...fontState.used.entries()].sort((a, b) => a[0] - b[0]);
+  const widths = mappings.map(([cid, mapping]) => `${cid} [${Math.round((font.advances[mapping.glyph] || font.unitsPerEm) / font.unitsPerEm * 1000)}]`).join(" ");
+  const cmap = Buffer.from(pdfToUnicodeCmap(fontState), "ascii");
+  const compressedFont = deflateSync(font.bytes);
+  const cidToGid = new Uint8Array((mappings.at(-1)?.[0] + 1 || 1) * 2);
+  for (const [cid, mapping] of mappings) {
+    cidToGid[cid * 2] = mapping.glyph >> 8;
+    cidToGid[cid * 2 + 1] = mapping.glyph & 0xff;
+  }
+  const compressedCidToGid = deflateSync(cidToGid);
+  return new Map([
+    [ids.type0, Buffer.from(`<< /Type /Font /Subtype /Type0 /BaseFont /${font.name} /Encoding /Identity-H /DescendantFonts [${ids.cid} 0 R] /ToUnicode ${ids.toUnicode} 0 R >>`, "ascii")],
+    [ids.cid, Buffer.from(`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${font.name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${ids.descriptor} 0 R /DW 1000 /W [${widths}] /CIDToGIDMap ${ids.cidToGid} 0 R >>`, "ascii")],
+    [ids.descriptor, Buffer.from(`<< /Type /FontDescriptor /FontName /${font.name} /Flags 4 /FontBBox [${font.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${font.ascent} /Descent ${font.descent} /CapHeight ${font.ascent} /StemV 80 /FontFile2 ${ids.file} 0 R >>`, "ascii")],
+    [ids.file, Buffer.concat([Buffer.from(`<< /Length ${compressedFont.byteLength} /Length1 ${font.bytes.byteLength} /Filter /FlateDecode >>\nstream\n`, "ascii"), compressedFont, Buffer.from("\nendstream", "ascii")])],
+    [ids.toUnicode, Buffer.concat([Buffer.from(`<< /Length ${cmap.byteLength} >>\nstream\n`, "ascii"), cmap, Buffer.from("\nendstream", "ascii")])],
+    [ids.cidToGid, Buffer.concat([Buffer.from(`<< /Length ${compressedCidToGid.byteLength} /Filter /FlateDecode >>\nstream\n`, "ascii"), compressedCidToGid, Buffer.from("\nendstream", "ascii")])],
+  ]);
+}
+
 function buildMinimalPdf(artifact, options = {}) {
   const pages = artifact.pages.length ? artifact.pages : [new PdfPage(artifact)];
   const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
   const tagged = options.tagged !== false;
   const language = String(options.language || options.lang || artifact.metadata?.language || artifact.metadata?.lang || "en-US");
   const title = String(options.title || artifact.metadata?.title || String(pages[0]?.text || "").split(/\r?\n/).find(Boolean) || "Office artifact");
-  let nextObjectId = 5;
+  const fontState = options.embeddedFont ? { font: options.embeddedFont, used: new Map(), cidByCodePoint: new Map() } : undefined;
+  let nextObjectId = 3;
+  let embeddedFontIds;
+  if (fontState) embeddedFontIds = { type0: nextObjectId++, cid: nextObjectId++, descriptor: nextObjectId++, file: nextObjectId++, toUnicode: nextObjectId++, cidToGid: nextObjectId++ };
+  else nextObjectId = 5;
   const plans = pages.map((page) => {
     const imageAssets = [];
     for (const image of page.images) {
@@ -9948,25 +10184,29 @@ function buildMinimalPdf(artifact, options = {}) {
     const pageObjectId = nextObjectId++;
     const contentObjectId = nextObjectId++;
     const assetByImage = new Map(imageAssets.map((asset) => [asset.image, asset]));
-    return { page, imageAssets, assetByImage, pageObjectId, contentObjectId, semanticGroups: pdfSemanticGroups(page, assetByImage) };
+    return { page, imageAssets, assetByImage, pageObjectId, contentObjectId, semanticGroups: pdfSemanticGroups(page, assetByImage, fontState) };
   });
   const structTreeRootObjectId = tagged ? nextObjectId++ : undefined;
   const parentTreeObjectId = tagged ? nextObjectId++ : undefined;
   if (tagged) for (const plan of plans) for (const group of pdfSemanticNodes(plan.semanticGroups)) group.structureObjectId = nextObjectId++;
   const infoObjectId = nextObjectId++;
   const objects = new Map();
-  const taggedCatalog = tagged ? ` /StructTreeRoot ${structTreeRootObjectId} 0 R /MarkInfo << /Marked true >> /Lang (${escapePdfString(language)})` : "";
+  const taggedCatalog = tagged ? ` /StructTreeRoot ${structTreeRootObjectId} 0 R /MarkInfo << /Marked true >> /Lang ${pdfStringToken(language)}` : "";
   objects.set(1, Buffer.from(`<< /Type /Catalog /Pages 2 0 R${taggedCatalog} /ViewerPreferences << /DisplayDocTitle true >> >>`, "ascii"));
   objects.set(2, Buffer.from(`<< /Type /Pages /Kids [${plans.map((plan) => `${plan.pageObjectId} 0 R`).join(" ")}] /Count ${plans.length} >>`, "ascii"));
-  objects.set(3, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "ascii"));
-  objects.set(4, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", "ascii"));
+  if (fontState) for (const [objectId, body] of pdfEmbeddedFontObjectBodies(fontState, embeddedFontIds)) objects.set(objectId, body);
+  else {
+    objects.set(3, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "ascii"));
+    objects.set(4, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", "ascii"));
+  }
   for (const [pageIndex, plan] of plans.entries()) {
     const { page, imageAssets, semanticGroups } = plan;
     const commands = tagged ? semanticGroups.map(pdfMarkedContent) : pdfSemanticLeaves(semanticGroups).flatMap((group) => group.commands);
     const content = Buffer.from(`${commands.join("\n")}\n`, "ascii");
     const xobjects = imageAssets.length ? `/XObject << ${imageAssets.map((asset) => `/${asset.resourceName} ${asset.objectId} 0 R`).join(" ")} >>` : "";
     const structParents = tagged ? ` /StructParents ${pageIndex}` : "";
-    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R${structParents} >>`, "ascii"));
+    const fontResources = fontState ? `/F1 ${embeddedFontIds.type0} 0 R /F2 ${embeddedFontIds.type0} 0 R` : "/F1 3 0 R /F2 4 0 R";
+    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << ${fontResources} >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R${structParents} >>`, "ascii"));
     objects.set(plan.contentObjectId, Buffer.concat([Buffer.from(`<< /Length ${content.byteLength} >>\nstream\n`, "ascii"), content, Buffer.from("endstream", "ascii")]));
     for (const asset of imageAssets) objects.set(asset.objectId, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace ${asset.colorSpace} /BitsPerComponent 8 /Filter ${asset.filter} /Length ${asset.streamBytes.byteLength} >>\nstream\n`, "ascii"), asset.streamBytes, Buffer.from("\nendstream", "ascii")]));
   }
@@ -9977,8 +10217,8 @@ function buildMinimalPdf(artifact, options = {}) {
     objects.set(parentTreeObjectId, Buffer.from(`<< /Nums [${parentTreeNums}] >>`, "ascii"));
     for (const plan of plans) {
       const writeStructureGroup = (group, parentObjectId) => {
-        const alt = group.alt ? ` /Alt (${escapePdfString(group.alt)})` : "";
-        const titleEntry = group.title ? ` /T (${escapePdfString(group.title)})` : "";
+        const alt = group.alt ? ` /Alt ${pdfStringToken(group.alt)}` : "";
+        const titleEntry = group.title ? ` /T ${pdfStringToken(group.title)}` : "";
         const attributes = group.tableHeaderScope ? ` /A << /O /Table /Scope /${group.tableHeaderScope} >>` : "";
         const kid = group.children?.length ? `[${group.children.map((child) => `${child.structureObjectId} 0 R`).join(" ")}]` : group.mcid;
         objects.set(group.structureObjectId, Buffer.from(`<< /Type /StructElem /S /${group.role} /P ${parentObjectId} 0 R /Pg ${plan.pageObjectId} 0 R /K ${kid}${alt}${titleEntry}${attributes} >>`, "ascii"));
@@ -9987,7 +10227,7 @@ function buildMinimalPdf(artifact, options = {}) {
       for (const group of plan.semanticGroups) writeStructureGroup(group, structTreeRootObjectId);
     }
   }
-  objects.set(infoObjectId, Buffer.from(`<< /Title (${escapePdfString(title)}) /Creator (open-office-artifact-tool) /Producer (open-office-artifact-tool clean-room PDF writer) >>`, "ascii"));
+  objects.set(infoObjectId, Buffer.from(`<< /Title ${pdfStringToken(title)} /Creator (open-office-artifact-tool) /Producer (open-office-artifact-tool clean-room PDF writer) >>`, "ascii"));
   const header = Buffer.from(`%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");
   const chunks = [header];
   const offsets = Array(nextObjectId).fill(0);

@@ -52,6 +52,21 @@ try {
   assert.equal(first.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   if (nativeStatus.available) assert.equal(first.qa.nativeRender.pageCount, 3);
 
+  const unicodeFixturePath = path.join(root, "unicode-fixture.json");
+  await fs.writeFile(unicodeFixturePath, JSON.stringify({
+    name: "unicode-fixture",
+    metadata: { title: "Unicode résumé", language: "el-GR" },
+    pages: [{ text: "Unicode résumé\nПривет κόσμος café" }],
+    expectText: ["Привет κόσμος café"],
+    expectPdfjsText: ["Привет κόσμος café"],
+    qa: { requireTagged: true, pdfjs: "required", nativeRender: "auto" },
+  }), "utf8");
+  const unicode = await runPdfFixture(unicodeFixturePath, { outputDir: path.join(root, "unicode-fixture"), font: path.resolve("node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf"), nativeRender: nativeStatus.available ? "required" : "auto", pdfjs: "required" });
+  assert.equal(unicode.qa.fileInspect.summary.embeddedFonts, 1);
+  assert.equal(unicode.qa.fileInspect.summary.toUnicodeMaps, 1);
+  assert.match(unicode.qa.pdfjs.text, /Привет κόσμος café/);
+  assert.equal(unicode.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const compared = await verifyPdfFile(first.pdfPath, { outputDir: path.join(root, "compare"), nativeRender: nativeStatus.available ? "required" : "auto", pdfjs: "required", baselineDir });
   assert.equal(compared.verify.ok, true);
   assert.equal(compared.pdfjs.status, "passed");

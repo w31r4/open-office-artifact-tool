@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -69,6 +70,7 @@ assert.match(pdf.help("pdf.addChart").ndjson, /chart region/);
 assert.match(pdf.help("pdf.addText").ndjson, /positioned PDF text/);
 assert.match(pdf.help("pdf.addFlowText").ndjson, /automatically append pages/);
 assert.match(pdf.help("PdfFile.exportPdf").ndjson, /Table\/TR\/TH\/TD hierarchy/);
+assert.match(pdf.help("PdfFile.exportPdf").ndjson, /Unicode TrueType embedding/);
 
 const flowPdf = PdfArtifact.create({ pages: [{ width: 240, height: 120, text: "" }] });
 const flowText = [
@@ -165,6 +167,37 @@ assert.match(taggedText, /\/S \/TH/);
 assert.match(taggedText, /\/S \/TD/);
 assert.match(taggedText, /\/A << \/O \/Table \/Scope \/Column >>/);
 assert.match(taggedText, /\/Alt \(Report logo\)/);
+
+const unicodePdf = PdfArtifact.create({ metadata: { title: "Unicode résumé", language: "el-GR" }, text: "Unicode résumé\nПривет κόσμος café\nA A\u00a0A" });
+await assert.rejects(() => PdfFile.exportPdf(unicodePdf), /provide PdfFile\.exportPdf.*font/);
+await assert.rejects(() => PdfFile.exportPdf(PdfArtifact.create({ text: "ASCII" }), { font: Uint8Array.from([0x74, 0x74, 0x63, 0x66]) }), /collections \(\.ttc\) are not supported/);
+await assert.rejects(() => PdfFile.exportPdf(PdfArtifact.create({ text: "ASCII" }), { font: Uint8Array.from([0, 1, 0, 0]) }), /Truncated TrueType/);
+const liberationFontPath = path.resolve("node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf");
+await assert.rejects(() => PdfFile.exportPdf(unicodePdf, { font: liberationFontPath, maxFontBytes: 1024 }), /exceeds maxFontBytes/);
+await assert.rejects(() => PdfFile.exportPdf(PdfArtifact.create({ text: "中文" }), { font: liberationFontPath }), /does not contain U\+4E2D/);
+const unicodeBlob = await PdfFile.exportPdf(unicodePdf, { font: liberationFontPath });
+assert.equal(unicodeBlob.metadata.embeddedFont, "LiberationSans-Regular");
+const unicodeInspect = await PdfFile.inspectPdf(unicodeBlob);
+assert.equal(unicodeInspect.summary.embeddedFonts, 1);
+assert.equal(unicodeInspect.summary.toUnicodeMaps, 1);
+const unicodeBytesText = await unicodeBlob.text();
+assert.match(unicodeBytesText, /\/Subtype \/Type0/);
+assert.match(unicodeBytesText, /\/Subtype \/CIDFontType2/);
+assert.match(unicodeBytesText, /\/CIDToGIDMap \d+ 0 R/);
+assert.match(unicodeBytesText, /beginbfchar/);
+assert.match(unicodeBytesText, /<0020>/);
+assert.match(unicodeBytesText, /<00A0>/);
+const unicodeParsed = await PdfFile.importPdf(unicodeBlob, { parser: createPdfjsParser(), preferParser: true, parserName: "pdfjs" });
+assert.match(unicodeParsed.extractText(), /Привет κόσμος café/);
+
+const localCjkFont = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf";
+if (await fs.access(localCjkFont).then(() => true, () => false)) {
+  const cjkPdf = PdfArtifact.create({ metadata: { title: "中文报告", language: "zh-CN" }, text: "中文报告\n数据验证通过" });
+  const cjkBlob = await PdfFile.exportPdf(cjkPdf, { font: localCjkFont, maxFontBytes: 32 * 1024 * 1024 });
+  const cjkParsed = await PdfFile.importPdf(cjkBlob, { parser: createPdfjsParser(), preferParser: true, parserName: "pdfjs" });
+  assert.match(cjkParsed.extractText(), /中文报告/);
+  assert.match(cjkParsed.extractText(), /数据验证通过/);
+}
 const untaggedBlob = await PdfFile.exportPdf(PdfArtifact.create({ text: "Deliberately untagged fixture" }), { tagged: false, title: "Untagged fixture" });
 const untaggedInspect = await PdfFile.inspectPdf(untaggedBlob);
 assert.equal(untaggedBlob.metadata.tagged, false);
