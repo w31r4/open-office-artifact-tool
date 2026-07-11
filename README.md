@@ -192,6 +192,25 @@ npm run test:examples
 
 Outputs are written to `OUTPUT_DIR` or a temp example directory.
 
+## Runnable agent skills
+
+Project-local clean-room agent workflows live under [`skills/`](skills/). The first runnable adapter is [`skills/spreadsheets/SKILL.md`](skills/spreadsheets/SKILL.md), which uses this package's public APIs for authoring, durable XLSX roundtrip, bounded inspect evidence, semantic verification, layout export, and SVG or Playwright-backed visual QA.
+
+```sh
+node skills/spreadsheets/scripts/run-fixture.mjs \
+  --fixture skills/spreadsheets/fixtures/formula-summary.json \
+  --output-dir tmp/spreadsheet-skill-fixture
+
+node skills/spreadsheets/scripts/verify-workbook.mjs \
+  --input tmp/spreadsheet-skill-fixture/formula-summary.xlsx \
+  --output-dir tmp/spreadsheet-skill-fixture/qa-png \
+  --sheet Summary \
+  --range A1:D4 \
+  --render-format png
+```
+
+The skill directory is included in the npm package. Documents, Presentations, and PDF workflow adapters remain roadmap work.
+
 ## Release readiness
 
 Use [`docs/release.md`](docs/release.md) and `npm run release:check` before publishing. The checker runs the required local gates, reports npm authentication/package-version status, and prints blockers. Publishing is intentionally blocked in this environment until `npm whoami` succeeds.

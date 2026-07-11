@@ -1,0 +1,96 @@
+{
+  "name": "formula-summary",
+  "outputName": "formula-summary.xlsx",
+  "sheets": [
+    {
+      "name": "Inputs",
+      "ranges": [
+        {
+          "range": "A1:C4",
+          "values": [
+            ["Month", "Revenue", "Cost"],
+            ["Jan", 100, 60],
+            ["Feb", 120, 70],
+            ["Mar", 150, 90]
+          ]
+        },
+        {
+          "range": "A1:C1",
+          "format": {
+            "fill": "#0F766E",
+            "font": { "bold": true, "color": "#FFFFFF" },
+            "alignment": { "horizontal": "center" }
+          }
+        },
+        {
+          "range": "B2:C4",
+          "format": { "numberFormat": "$#,##0" }
+        }
+      ],
+      "tables": [
+        { "range": "A1:C4", "name": "InputsTable", "style": "TableStyleMedium4" }
+      ]
+    },
+    {
+      "name": "Summary",
+      "ranges": [
+        {
+          "range": "A1:D4",
+          "values": [
+            ["Month", "Revenue", "Cost", "Margin"],
+            ["Jan", null, null, null],
+            ["Feb", null, null, null],
+            ["Mar", null, null, null]
+          ]
+        },
+        {
+          "range": "B2:D4",
+          "formulas": [
+            ["=Inputs!B2", "=Inputs!C2", "=(B2-C2)/B2"],
+            ["=Inputs!B3", "=Inputs!C3", "=(B3-C3)/B3"],
+            ["=Inputs!B4", "=Inputs!C4", "=(B4-C4)/B4"]
+          ]
+        },
+        {
+          "range": "A1:D1",
+          "format": {
+            "fill": "#0F172A",
+            "font": { "bold": true, "color": "#FFFFFF" },
+            "alignment": { "horizontal": "center" },
+            "border": { "style": "thin", "color": "#334155" }
+          }
+        },
+        {
+          "range": "B2:C4",
+          "format": { "numberFormat": "$#,##0" }
+        },
+        {
+          "range": "D2:D4",
+          "format": { "numberFormat": "0.0%" }
+        }
+      ],
+      "tables": [
+        { "range": "A1:D4", "name": "SummaryTable", "style": "TableStyleMedium2" }
+      ]
+    }
+  ],
+  "expectations": [
+    {
+      "sheet": "Summary",
+      "range": "B2:D4",
+      "values": [
+        [100, 60, 0.4],
+        [120, 70, 0.4166666666666667],
+        [150, 90, 0.4]
+      ]
+    }
+  ],
+  "qa": {
+    "sheetName": "Summary",
+    "range": "A1:D4",
+    "renderFormat": "svg",
+    "inspectKind": "workbook,sheet,table,formula,style,computedStyle",
+    "maxChars": 12000
+  }
+}
+

@@ -1,0 +1,92 @@
+---
+name: open-office-spreadsheets
+description: Create, edit, inspect, render, and verify XLSX/CSV spreadsheet artifacts with open-office-artifact-tool.
+---
+
+# Open Office Spreadsheets
+
+Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work. It is the clean-room workflow for `open-office-artifact-tool`; it does not control a live Microsoft Excel session.
+
+## Contract
+
+- Use `open-office-artifact-tool` public exports. Do not import the reference package or its compiled internals.
+- Prefer one writable `.mjs` builder that can be rerun after focused edits.
+- Write rectangular value/formula matrices in blocks and keep derived values as formulas.
+- Preserve the style and formulas of an imported workbook unless the user asks for a redesign.
+- Keep inspect output bounded and save large QA evidence to files instead of printing it.
+- A workbook is deliverable only after durable XLSX export/import, semantic verification, and visual review pass.
+
+## Authoring workflow
+
+1. Create or import the workbook.
+2. Inspect the relevant sheets, ranges, formulas, styles, and drawings.
+3. Apply values, formulas, formatting, tables, validations, comments, and drawings through public facade APIs.
+4. Recalculate and spot-check important results and formula traces.
+5. Export XLSX, import the exported file again, and run the project verifier.
+6. Inspect the preview at full size. Fix formula errors, clipping, unreadable formatting, and broken objects before delivery.
+
+```js
+import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
+
+const workbook = Workbook.create();
+const sheet = workbook.worksheets.add("Summary");
+sheet.getRange("A1:C3").values = [
+  ["Month", "Revenue", "Cost"],
+  ["Jan", 100, 60],
+  ["Feb", 120, 70],
+];
+sheet.getRange("D1").values = [["Margin"]];
+sheet.getRange("D2:D3").formulas = [["=(B2-C2)/B2"], ["=(B3-C3)/B3"]];
+sheet.getRange("A1:D1").format = {
+  fill: "#0F766E",
+  font: { bold: true, color: "#FFFFFF" },
+  alignment: { horizontal: "center" },
+};
+sheet.getRange("B2:C3").format = { numberFormat: "$#,##0" };
+sheet.getRange("D2:D3").format = { numberFormat: "0.0%" };
+workbook.recalculate();
+
+const output = await SpreadsheetFile.exportXlsx(workbook);
+await output.save("output.xlsx");
+```
+
+## Verification commands
+
+Verify any exported workbook and write bounded inspect, verify, layout, visual-QA, and preview evidence:
+
+```sh
+node skills/spreadsheets/scripts/verify-workbook.mjs \
+  --input output.xlsx \
+  --output-dir tmp/spreadsheet-qa \
+  --sheet Summary \
+  --range A1:D20 \
+  --render-format png
+```
+
+`--render-format svg` is dependency-light. `png`, `webp`, `jpeg`, and `pdf` use the optional Playwright renderer and require its Chromium runtime.
+
+Run the checked-in clean-room fixture end to end:
+
+```sh
+node skills/spreadsheets/scripts/run-fixture.mjs \
+  --fixture skills/spreadsheets/fixtures/formula-summary.json \
+  --output-dir tmp/spreadsheet-skill-fixture
+```
+
+## QA gates
+
+- Inspect the key table/formula range with bounded `maxChars`.
+- Run `verifyArtifact(workbook)` and resolve every error-level issue.
+- Trace important result cells when the calculation chain is non-trivial.
+- Export and re-import the XLSX before final verification.
+- Produce a layout record and a visual preview for every user-facing sheet.
+- Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
+- Deliver only the requested workbook unless the user asks for QA intermediates.
+
+## References
+
+- Generated public API catalog: `../../docs/api.md`
+- Current implementation coverage: `../../docs/coverage.md`
+- Fixture runner: `scripts/run-fixture.mjs`
+- Generic workbook verifier: `scripts/verify-workbook.mjs`
+

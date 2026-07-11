@@ -28,6 +28,8 @@ npm run release:check
 
 The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotnet` is available, checks npm auth, checks the published npm version, and reports blockers.
 
+`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills and native bridge source while rejecting reference reference/handoff material and local dotnet `bin/obj` build output.
+
 ## Latest observed blockers in this environment
 
 - `npm whoami` fails with `ENEEDAUTH`; this machine is not logged in to npm.
