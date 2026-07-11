@@ -31,6 +31,18 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - run: npm ci
+      - name: Install Chromium and native render tools
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils
+      - name: Verify render/runtime tools
+        run: |
+          node -e "const fs = require('fs'); const { chromium } = require('playwright'); if (!fs.existsSync(chromium.executablePath())) process.exit(1)"
+          soffice --version
+          pdftoppm -v
+          pdfinfo -v
+          dotnet --version
       - run: npm test
       - run: npm run docs:api
       - run: git diff --exit-code docs/api.md

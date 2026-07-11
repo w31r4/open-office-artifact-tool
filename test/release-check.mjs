@@ -18,11 +18,20 @@ assert.ok(report.checks.some((check) => check.name === "third-party license poli
 assert.ok(report.checks.some((check) => check.name === "npm auth" && check.skipped));
 assert.match(report.nextPublishCommand, /npm publish/);
 const releaseWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/release.yml"), "utf8");
+const ciWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
 assert.match(releaseWorkflow, /workflow_dispatch/);
 assert.match(releaseWorkflow, /publish_npm/);
 assert.match(releaseWorkflow, /default: "false"/);
 assert.match(releaseWorkflow, /secrets\.NPM_TOKEN/);
 assert.match(releaseWorkflow, /gh release create/);
+for (const workflow of [ciWorkflow, releaseWorkflow]) {
+  assert.match(workflow, /playwright install --with-deps chromium/);
+  assert.match(workflow, /libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils/);
+  assert.match(workflow, /actions\/setup-dotnet@v4/);
+  assert.match(workflow, /soffice --version/);
+  assert.match(workflow, /pdfinfo -v/);
+  assert.match(workflow, /dotnet test native\/OfficeBridge/);
+}
 
 const rejectedPolicyPath = path.join(os.tmpdir(), `open-office-license-policy-${process.pid}.json`);
 const normalPolicy = JSON.parse(fs.readFileSync(path.join(repoRoot, "scripts", "license-policy.json"), "utf8"));

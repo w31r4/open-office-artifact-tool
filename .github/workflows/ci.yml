@@ -14,17 +14,25 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
       - run: npm ci
+      - name: Install Chromium and native render tools
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils
+      - name: Verify render/runtime tools
+        run: |
+          node -e "const fs = require('fs'); const { chromium } = require('playwright'); if (!fs.existsSync(chromium.executablePath())) process.exit(1)"
+          soffice --version
+          pdftoppm -v
+          pdfinfo -v
+          dotnet --version
       - run: npm test
       - run: npm run docs:api
       - run: node scripts/release-check.mjs --json --skip-network --skip-commands
       - run: git diff --exit-code docs/api.md
       - run: npm run test:pack
-      - name: Optional native Office bridge tests
-        shell: bash
-        run: |
-          if [ -d native/OfficeBridge ] && command -v dotnet >/dev/null 2>&1; then
-            dotnet test native/OfficeBridge
-          else
-            echo "Skipping dotnet native Office bridge tests: native/OfficeBridge or dotnet is unavailable."
-          fi
+      - run: dotnet test native/OfficeBridge
