@@ -20,7 +20,7 @@ const pdf = PdfArtifact.create({
   ],
 });
 
-pdf.addTable({ name: "inline-table", values: [["A", "B"], ["1", "2"]], bbox: [72, 310, 240, 60] });
+const inlineTable = pdf.addTable({ name: "inline-table", values: [["A", "B"], ["1", "2"]], bbox: [72, 310, 240, 60] });
 const image = pdf.addImage({
   name: "logo-image",
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -30,6 +30,12 @@ const image = pdf.addImage({
 assert.match(pdf.inspect({ kind: "page,text,table,image", maxChars: 8000 }).ndjson, /metrics-table/);
 assert.match(pdf.inspect({ kind: "image", search: "logo" }).ndjson, /Report logo/);
 assert.equal(image.alt, "Report logo");
+assert.equal(pdf.resolve(pdf.id), pdf);
+assert.equal(pdf.resolve(pdf.pages[0].id), pdf.pages[0]);
+assert.equal(pdf.resolve(`${pdf.pages[0].id}/text`).text, pdf.pages[0].text);
+assert.equal(pdf.resolve(inlineTable.id), inlineTable);
+assert.equal(pdf.resolve(image.id), image);
+assert.equal(pdf.resolve("missing/pdf-id"), undefined);
 assert.match(pdf.inspect({ kind: "table", search: "Retention" }).ndjson, /94%/);
 assert.match(pdf.extractText(), /Second page notes/);
 assert.equal(pdf.extractTables().length, 2);
@@ -88,6 +94,12 @@ assert.match(parsedInspect, /"kind":"textItem"/);
 assert.match(parsedInspect, /"kind":"region"/);
 assert.match(parsedInspect, /parsed-table/);
 assert.match(parsedInspect, /parsed-image/);
+const parsedPage = parsed.pages[0];
+assert.equal(parsed.resolve(parsedPage.textItems[0].id).text, "Parsed");
+assert.equal(parsed.resolve(parsedPage.regions[0].id).label, "Parsed arbitrary PDF");
+assert.equal(parsed.resolve(parsedPage.tables[0].id).name, "parsed-table");
+assert.equal(parsed.resolve(parsedPage.images[0].id).alt, "Extracted raster");
+assert.match(parsed.help("pdf.resolve").ndjson, /stable PDF artifact IDs/);
 assert.equal(parsed.verify().ok, true);
 assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
 
