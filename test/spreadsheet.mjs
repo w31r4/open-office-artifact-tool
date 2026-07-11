@@ -264,6 +264,41 @@ assert.match(catalogBook.help("fx.AVERAGEIFS").ndjson, /all supplied criteria/);
 assert.match(catalogBook.help("fx.TEXTJOIN").ndjson, /delimiter/);
 assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /XLOOKUP/);
 
+const dateBook = Workbook.create();
+const dateSheet = dateBook.worksheets.add("Dates");
+dateSheet.getRange("A1:A2").values = [[45292], [45299]];
+dateSheet.getRange("B1:B23").formulas = [
+  ["=DATE(1900,2,29)"],
+  ["=YEAR(60)"],
+  ["=MONTH(60)"],
+  ["=DAY(60)"],
+  ["=DATE(2024,2,29)"],
+  ["=DATE(2024,13,1)"],
+  ["=DATE(2024,1,0)"],
+  ["=EDATE(DATE(2024,1,31),1)"],
+  ["=EOMONTH(DATE(2024,2,10),0)"],
+  ["=DAYS(DATE(2024,3,1),DATE(2024,2,28))"],
+  ["=WEEKDAY(DATE(2024,1,1),1)"],
+  ["=WEEKDAY(DATE(2024,1,1),2)"],
+  ["=WEEKDAY(60,1)"],
+  ["=NETWORKDAYS(DATE(2024,1,1),DATE(2024,1,10))"],
+  ["=NETWORKDAYS(DATE(2024,1,1),DATE(2024,1,10),A1)"],
+  ["=NETWORKDAYS(DATE(2024,1,10),DATE(2024,1,1),A1)"],
+  ["=WORKDAY(DATE(2024,1,5),1)"],
+  ["=WORKDAY(DATE(2024,1,5),1,A2)"],
+  ["=WORKDAY(DATE(2024,1,8),-1)"],
+  ["=DATE(\"bad\",1,1)"],
+  ["=YEAR(-1)"],
+  ["=WEEKDAY(DATE(2024,1,1),9)"],
+  ["=DATE(0,1,1)"],
+];
+dateBook.recalculate();
+assert.deepEqual(dateSheet.getRange("B1:B23").values.flat(), [60, 1900, 2, 29, 45351, 45658, 45291, 45351, 45351, 2, 2, 1, 5, 8, 7, -7, 45299, 45300, 45296, "#VALUE!", "#NUM!", "#NUM!", 1]);
+assert.match(dateBook.help("fx.DATE").ndjson, /serial-60 leap compatibility/);
+assert.match(dateBook.help("fx.NETWORKDAYS").ndjson, /optional holidays/);
+const dateRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(dateBook));
+assert.deepEqual(dateRoundtrip.worksheets.getItem("Dates").getRange("B1:B23").values, dateSheet.getRange("B1:B23").values);
+
 const formulaEdgeBook = Workbook.create();
 const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");
 formulaEdgeSheet.getRange("A1:B3").values = [[1, 10], [2, 20], [3, 30]];

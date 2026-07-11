@@ -896,6 +896,16 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to decimal places or, with negative digits, positions left of the decimal point.", examples: ["=ROUND(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDUP", category: "math-trig", summary: "Round a numeric value away from zero at the requested positive or negative digit position.", examples: ["=ROUNDUP(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDDOWN", category: "math-trig", summary: "Round a numeric value toward zero at the requested positive or negative digit position.", examples: ["=ROUNDDOWN(A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DATE", category: "date-time", summary: "Return an Excel 1900-system date serial with year/month/day overflow and serial-60 leap compatibility.", examples: ["=DATE(2026,7,12)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.YEAR", category: "date-time", summary: "Return the year component of an Excel 1900-system serial date.", examples: ["=YEAR(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MONTH", category: "date-time", summary: "Return the month component of an Excel 1900-system serial date.", examples: ["=MONTH(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DAY", category: "date-time", summary: "Return the day component of an Excel 1900-system serial date, including day 29 for compatibility serial 60.", examples: ["=DAY(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.EDATE", category: "date-time", summary: "Shift a serial date by whole months and clamp the day to the target month end.", examples: ["=EDATE(A1,3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.EOMONTH", category: "date-time", summary: "Return the final date serial of a month offset from a start date.", examples: ["=EOMONTH(A1,0)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DAYS", category: "date-time", summary: "Return the whole-day difference between two Excel date serials.", examples: ["=DAYS(B1,A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.WEEKDAY", category: "date-time", summary: "Return a weekday number for Excel return types 1, 2, 3, and 11 through 17.", examples: ["=WEEKDAY(A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.NETWORKDAYS", category: "date-time", summary: "Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays.", examples: ["=NETWORKDAYS(A1,B1,Holidays)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.WORKDAY", category: "date-time", summary: "Move forward or backward by working days while skipping weekends and optional holidays.", examples: ["=WORKDAY(A1,10,Holidays)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges all match their criteria.", examples: ["=COUNTIFS(A1:A10,\"East\",B1:B10,\">=10\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIF", category: "statistical", summary: "Average values whose corresponding criteria range entries match a criterion.", examples: ["=AVERAGEIF(A1:A10,\"East\",B1:B10)"] },
@@ -4539,6 +4549,136 @@ function roundFormulaNumber(value, digits = 0, mode = "nearest") {
   return Object.is(number, -0) || number < 0 ? -result : result;
 }
 
+const EXCEL_DATE_EPOCH_UTC = Date.UTC(1899, 11, 31);
+const EXCEL_MAX_DATE_SERIAL = 2_958_465;
+
+function excelFormulaDateNumber(value) {
+  const error = formulaErrorCode(value);
+  if (error) return error;
+  if (value == null || value === "" || value === false) return 0;
+  if (value === true) return 1;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : "#VALUE!";
+}
+
+function excelGregorianSerial(year, month, day = 1) {
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year, month - 1, day);
+  const days = Math.round((date.getTime() - EXCEL_DATE_EPOCH_UTC) / 86_400_000);
+  return days + (date.getTime() >= Date.UTC(1900, 2, 1) ? 1 : 0);
+}
+
+function excelDateSerial(yearValue, monthValue, dayValue) {
+  let year = Math.trunc(yearValue);
+  const month = Math.trunc(monthValue);
+  const day = Math.trunc(dayValue);
+  if (year >= 0 && year <= 1899) year += 1900;
+  if (!Number.isFinite(year) || year < 0 || year > 9999 || !Number.isFinite(month) || !Number.isFinite(day)) return "#NUM!";
+  const normalized = new Date(0);
+  normalized.setUTCHours(0, 0, 0, 0);
+  normalized.setUTCFullYear(year, month - 1, 1);
+  const serial = excelGregorianSerial(normalized.getUTCFullYear(), normalized.getUTCMonth() + 1, 1) + day - 1;
+  return serial < 0 || serial > EXCEL_MAX_DATE_SERIAL ? "#NUM!" : serial;
+}
+
+function excelDateParts(serialValue) {
+  const serial = Math.floor(serialValue);
+  if (!Number.isFinite(serial) || serial < 0 || serial > EXCEL_MAX_DATE_SERIAL) return undefined;
+  if (serial === 0) return { year: 1900, month: 1, day: 0 };
+  if (serial === 60) return { year: 1900, month: 2, day: 29 };
+  const date = new Date(EXCEL_DATE_EPOCH_UTC + (serial > 60 ? serial - 1 : serial) * 86_400_000);
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+}
+
+function excelDaysInMonth(year, month) {
+  if (year === 1900 && month === 2) return 29;
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year, month, 0);
+  return date.getUTCDate();
+}
+
+function excelShiftMonth(serialValue, monthsValue, endOfMonth = false) {
+  const serial = excelFormulaDateNumber(serialValue);
+  const months = excelFormulaDateNumber(monthsValue);
+  if (formulaErrorCode(serial)) return serial;
+  if (formulaErrorCode(months)) return months;
+  const parts = excelDateParts(serial);
+  if (!parts) return "#NUM!";
+  const first = new Date(0);
+  first.setUTCHours(0, 0, 0, 0);
+  first.setUTCFullYear(parts.year, parts.month - 1 + Math.trunc(months), 1);
+  const year = first.getUTCFullYear();
+  const month = first.getUTCMonth() + 1;
+  const day = endOfMonth ? excelDaysInMonth(year, month) : Math.min(Math.max(1, parts.day), excelDaysInMonth(year, month));
+  return excelDateSerial(year, month, day);
+}
+
+function excelWeekdayIndex(serial) {
+  const day = Math.floor(serial);
+  const adjusted = day > 60 ? day - 1 : day;
+  return ((adjusted % 7) + 7) % 7;
+}
+
+function excelHolidaySet(values = []) {
+  const error = values.map(formulaErrorCode).find(Boolean);
+  if (error) return { error, holidays: new Set() };
+  const holidays = new Set();
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const serial = excelFormulaDateNumber(value);
+    if (formulaErrorCode(serial)) return { error: serial, holidays: new Set() };
+    const day = Math.floor(serial);
+    if (day >= 0 && day <= EXCEL_MAX_DATE_SERIAL) holidays.add(day);
+  }
+  return { holidays };
+}
+
+function excelBusinessDay(serial, holidays) {
+  const weekday = excelWeekdayIndex(serial);
+  return weekday !== 0 && weekday !== 6 && !holidays.has(serial);
+}
+
+function excelNetworkDays(startValue, endValue, holidayValues = []) {
+  const startNumber = excelFormulaDateNumber(startValue);
+  const endNumber = excelFormulaDateNumber(endValue);
+  if (formulaErrorCode(startNumber)) return startNumber;
+  if (formulaErrorCode(endNumber)) return endNumber;
+  const start = Math.floor(startNumber), end = Math.floor(endNumber);
+  if (!excelDateParts(start) || !excelDateParts(end)) return "#NUM!";
+  const holidayResult = excelHolidaySet(holidayValues);
+  if (holidayResult.error) return holidayResult.error;
+  const direction = start <= end ? 1 : -1;
+  const low = Math.min(start, end), high = Math.max(start, end);
+  const total = high - low + 1;
+  const fullWeeks = Math.floor(total / 7);
+  let weekdays = fullWeeks * 5;
+  for (let serial = low + fullWeeks * 7; serial <= high; serial += 1) if (excelBusinessDay(serial, new Set())) weekdays += 1;
+  for (const holiday of holidayResult.holidays) if (holiday >= low && holiday <= high && excelWeekdayIndex(holiday) !== 0 && excelWeekdayIndex(holiday) !== 6) weekdays -= 1;
+  return weekdays * direction;
+}
+
+function excelWorkday(startValue, daysValue, holidayValues = []) {
+  const startNumber = excelFormulaDateNumber(startValue);
+  const daysNumber = excelFormulaDateNumber(daysValue);
+  if (formulaErrorCode(startNumber)) return startNumber;
+  if (formulaErrorCode(daysNumber)) return daysNumber;
+  let serial = Math.floor(startNumber);
+  const days = Math.trunc(daysNumber);
+  if (!excelDateParts(serial) || Math.abs(days) > EXCEL_MAX_DATE_SERIAL) return "#NUM!";
+  const holidayResult = excelHolidaySet(holidayValues);
+  if (holidayResult.error) return holidayResult.error;
+  const direction = days < 0 ? -1 : 1;
+  let remaining = Math.abs(days);
+  while (remaining > 0) {
+    serial += direction;
+    if (!excelDateParts(serial)) return "#NUM!";
+    if (excelBusinessDay(serial, holidayResult.holidays)) remaining -= 1;
+  }
+  return serial;
+}
+
 function compareFormulaValues(left, op, right) {
   const leftNum = Number(left), rightNum = Number(right);
   const numeric = Number.isFinite(leftNum) && Number.isFinite(rightNum) && String(left ?? "").trim() !== "" && String(right ?? "").trim() !== "";
@@ -4705,6 +4845,43 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "INT": return Math.floor(formulaNumber(scalar(0, 0)));
     case "CEILING": return Math.ceil(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
+    case "DATE": {
+      const parts = [0, 1, 2].map((index) => excelFormulaDateNumber(scalar(index, 0)));
+      return parts.find(formulaErrorCode) || excelDateSerial(parts[0], parts[1], parts[2]);
+    }
+    case "YEAR":
+    case "MONTH":
+    case "DAY": {
+      const serial = excelFormulaDateNumber(scalar(0, 0));
+      if (formulaErrorCode(serial)) return serial;
+      const parts = excelDateParts(serial);
+      return parts ? parts[fnName.toLowerCase()] : "#NUM!";
+    }
+    case "EDATE": return excelShiftMonth(scalar(0, 0), scalar(1, 0));
+    case "EOMONTH": return excelShiftMonth(scalar(0, 0), scalar(1, 0), true);
+    case "DAYS": {
+      const end = excelFormulaDateNumber(scalar(0, 0));
+      const start = excelFormulaDateNumber(scalar(1, 0));
+      if (formulaErrorCode(end)) return end;
+      if (formulaErrorCode(start)) return start;
+      return excelDateParts(end) && excelDateParts(start) ? Math.floor(end) - Math.floor(start) : "#NUM!";
+    }
+    case "WEEKDAY": {
+      const serial = excelFormulaDateNumber(scalar(0, 0));
+      const returnTypeValue = excelFormulaDateNumber(scalar(1, 1));
+      if (formulaErrorCode(serial)) return serial;
+      if (formulaErrorCode(returnTypeValue)) return returnTypeValue;
+      const returnType = Math.trunc(returnTypeValue);
+      if (!excelDateParts(serial)) return "#NUM!";
+      const weekday = excelWeekdayIndex(serial);
+      if (returnType === 1) return weekday + 1;
+      if (returnType === 2 || returnType === 11) return (weekday + 6) % 7 + 1;
+      if (returnType === 3) return (weekday + 6) % 7;
+      if (returnType >= 12 && returnType <= 17) return (weekday - (returnType - 10) + 7) % 7 + 1;
+      return "#NUM!";
+    }
+    case "NETWORKDAYS": return excelNetworkDays(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]));
+    case "WORKDAY": return excelWorkday(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]));
     case "IF": return evaluateFormulaCondition(sheet, args[0], context) ? scalar(1, true) : scalar(2, false);
     case "IFERROR": { const value = scalar(0); return formulaErrorCode(value) ? scalar(1, "") : value; }
     case "IFNA": { const value = scalar(0); return formulaErrorCode(value) === "#N/A" ? scalar(1, "") : value; }
