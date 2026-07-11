@@ -63,7 +63,7 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 | `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images. |
 | `pdf.render` | api | Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }. |
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images. |
-| `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, and malformed tables. |
+| `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
 | `PdfFile.exportPdf` | api | Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction. |

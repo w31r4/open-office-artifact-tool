@@ -127,11 +127,13 @@ const badGeometryPdf = PdfArtifact.create({
     text: "Bad geometry",
     textItems: [{ id: "txt/bad", text: "outside", bbox: [95, 95, 20, 20] }],
     regions: [{ id: "rg/bad", kind: "textLine", label: "outside", bbox: [-1, 0, 20, 20] }],
+    images: [{ id: "im/bad-data", dataUrl: "data:not-base64", bbox: [10, 10, 20, 20] }],
   }],
 });
 const badGeometryIssues = badGeometryPdf.verify({ maxChars: 4000 }).ndjson;
 assert.match(badGeometryIssues, /textItemOutOfBounds/);
 assert.match(badGeometryIssues, /regionOutOfBounds/);
+assert.match(badGeometryIssues, /invalidImageDataUrl/);
 assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
 
 const pdfjsParser = createPdfjsParser();
