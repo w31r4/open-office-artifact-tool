@@ -696,6 +696,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
@@ -6134,7 +6136,60 @@ function parseHeaderFooterXml(xml) {
   return [...String(xml || "").matchAll(/<w:p[\s\S]*?<\/w:p>/g)].map((match) => ({ text: decodeXml([...match[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join("")) })).filter((item) => item.text.length > 0);
 }
 
+function docxSafePartPath(partPath) {
+  const raw = String(partPath || "").replaceAll("\\", "/").trim();
+  if (!raw || raw.startsWith("/") || raw.includes("\0")) throw new Error(`Unsafe DOCX part path: ${partPath}`);
+  const normalized = path.posix.normalize(raw).replace(/^\.\//, "");
+  if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../") || normalized === "..") throw new Error(`Unsafe DOCX part path: ${partPath}`);
+  return normalized;
+}
+
+async function docxPackageRecords(zip, options = {}) {
+  const includeText = Boolean(options.includeText || options.preview || options.includeXml);
+  const maxPreviewChars = Math.max(0, Number(options.maxPreviewChars ?? 400) || 0);
+  const files = Object.values(zip.files).filter((file) => !file.dir).sort((a, b) => a.name.localeCompare(b.name));
+  const records = [{ kind: "docxPackage", parts: files.length }];
+  for (const file of files) {
+    const bytes = await file.async("uint8array");
+    const record = { kind: "docxPart", path: file.name, size: bytes.byteLength, contentType: file.name.endsWith(".xml") ? "application/xml" : file.name.endsWith(".json") ? "application/json" : "application/octet-stream" };
+    if (includeText && /\.(xml|json|rels)$/i.test(file.name)) record.textPreview = decoder.decode(bytes).slice(0, maxPreviewChars);
+    records.push(record);
+  }
+  return records;
+}
+
+function docxPatchData(patch, options = {}) {
+  if (patch.json !== undefined) return encoder.encode(JSON.stringify(patch.json, null, 2));
+  if (patch.text !== undefined || patch.xml !== undefined) return encoder.encode(String(patch.text ?? patch.xml));
+  if (patch.bytes !== undefined || patch.data !== undefined || patch.buffer !== undefined) return toUint8Array(patch.bytes ?? patch.data ?? patch.buffer);
+  if (patch.content !== undefined) return typeof patch.content === "string" ? encoder.encode(patch.content) : toUint8Array(patch.content);
+  if (patch.remove || patch.delete) return undefined;
+  throw new Error(`DOCX patch for ${patch.path || patch.part || "unknown part"} has no content or remove flag.`);
+}
+
 export class DocumentFile {
+  static async inspectDocx(blobOrBuffer, options = {}) {
+    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+    const zip = await JSZip.loadAsync(bytes);
+    const records = await docxPackageRecords(zip, options);
+    return { parts: records.filter((record) => record.kind === "docxPart"), records, ...ndjson(records, options.maxChars ?? Infinity) };
+  }
+
+  static async patchDocx(blobOrBuffer, patches = [], options = {}) {
+    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+    const zip = await JSZip.loadAsync(bytes);
+    const list = Array.isArray(patches) ? patches : Object.entries(patches || {}).map(([partPath, content]) => ({ path: partPath, content }));
+    const maxPatchBytes = Number(options.maxPatchBytes ?? 5 * 1024 * 1024);
+    for (const patch of list) {
+      const partPath = docxSafePartPath(patch.path || patch.part || patch.name);
+      if (patch.remove || patch.delete) { zip.remove(partPath); continue; }
+      const data = docxPatchData(patch, options);
+      if (maxPatchBytes && data?.byteLength > maxPatchBytes) throw new Error(`DOCX patch for ${partPath} exceeds maxPatchBytes (${maxPatchBytes}).`);
+      zip.file(partPath, data);
+    }
+    return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: list.length } });
+  }
+
   static async exportDocx(document) {
     const zip = new JSZip();
     const imageParts = collectDocxImageParts(document);

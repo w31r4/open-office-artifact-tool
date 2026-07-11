@@ -191,6 +191,8 @@ assert.equal(renderedDocxPdf.type, "application/pdf");
 assert.equal(renderedDocxPdf.metadata.renderSource, "docx");
 assert.match(await renderedDocxPdf.text(), /%PDF-docx-render/);
 assert.match(document.help("document.render").ndjson, /source: 'docx'/);
+assert.match(document.help("DocumentFile.inspectDocx").ndjson, /DOCX zip package/);
+assert.match(document.help("DocumentFile.patchDocx").ndjson, /path traversal/);
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -218,6 +220,17 @@ const docxMediaBytes = await zip.file("word/media/image1.png").async("uint8array
 assert.ok(docxMediaBytes.byteLength > 10);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
 assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
+const packageInspect = await DocumentFile.inspectDocx(docx, { includeText: true, maxChars: 12000 });
+assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml"));
+assert.match(packageInspect.ndjson, /docxPart/);
+assert.match(packageInspect.ndjson, /word\/styles\.xml/);
+const patchedDocx = await DocumentFile.patchDocx(docx, [{ path: "customXml/review-note.xml", text: "<review>ok</review>" }]);
+assert.equal(patchedDocx.type, docx.type);
+assert.equal(patchedDocx.metadata.patchedParts, 1);
+const patchedInspect = await DocumentFile.inspectDocx(patchedDocx, { includeText: true, maxChars: 12000 });
+assert.match(patchedInspect.ndjson, /customXml\/review-note\.xml/);
+assert.match(patchedInspect.ndjson, /&lt;review&gt;ok&lt;\/review&gt;|<review>ok<\/review>/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "../evil.xml", text: "bad" }]), /Unsafe DOCX part path/);
 const nativeOnlyZip = await JSZip.loadAsync(docxBytes);
 nativeOnlyZip.remove("word/open-office-artifact.json");
 const nativeOnlyDocx = new FileBlob(await nativeOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
