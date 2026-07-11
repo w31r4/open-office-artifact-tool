@@ -1297,7 +1297,7 @@ Add an inspectable native-style table facade with rows, columns, values, cells, 
 | `renderArtifact` | api | Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output. |
 | `renderFileWithNativeOffice` | api | Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
-| `visualQaArtifact` | api | Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a PNG diff heatmap when same-size pixels change. |
+| `visualQaArtifact` | api | Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a configurable aligned PNG diff heatmap. |
 
 ### shared details
 
@@ -1525,7 +1525,7 @@ Run an artifact's verify() method and return a bounded NDJSON QA report.
 
 #### `visualQaArtifact`
 
-Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a PNG diff heatmap when same-size pixels change.
+Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a configurable aligned PNG diff heatmap.
 
 **Examples:**
 
@@ -1536,6 +1536,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 - baseline/expected/baselineBlob
 - pixelDiff
 - diffImage
+- diffPalette
+- diffAlignment
 - PNG/JPEG/WebP/PPM raster pixel comparison
 - allowChange
 - minBytes
@@ -1549,7 +1551,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 - `renderer` (function) — Optional renderer adapter used for format conversion.
 - `baseline` (FileBlob|Uint8Array) — Expected render bytes; expected and baselineBlob are aliases.
 - `pixelDiff` (boolean|object) — Enable PNG/JPEG/WebP/PPM pixel comparison, optional channel thresholds, and decoded-pixel limits.
-- `diffImage` (boolean) — Set false to disable PNG heatmap generation for changed same-size raster baselines.
+- `diffImage` (boolean) — Set false to disable PNG heatmap generation for changed raster baselines.
+- `diffPalette` (object) — Optional changed/unchanged RGB colors and alpha values for the PNG heatmap.
+- `diffAlignment` (string) — Dimension-mismatch behavior: strict (no heatmap), top-left, or center alignment on a union canvas.
 - `allowChange` (boolean) — Allow baseline byte/pixel changes without emitting issues.
 - `minBytes` (number) — Warn when the render is smaller than this byte count.
 - `maxBytes` (number) — Warn when the render exceeds this byte count.
