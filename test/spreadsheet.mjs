@@ -528,6 +528,13 @@ assert.equal(xlsxInspect.records[0].relationshipReferenceIssues, 0);
 assert.ok(xlsxInspect.parts.some((part) => part.path === "xl/workbook.xml" && part.contentType.includes("spreadsheetml.sheet.main+xml")));
 const xlsxReferenceZip = await JSZip.loadAsync(new Uint8Array(await xlsx.arrayBuffer()));
 const xlsxSheetXml = await xlsxReferenceZip.file("xl/worksheets/sheet1.xml").async("text");
+const singleQuotedContentTypesXml = (await xlsxReferenceZip.file("[Content_Types].xml").async("text")).replace(/="([^"]*)"/g, "='$1'");
+const singleQuotedWorkbookRelsXml = (await xlsxReferenceZip.file("xl/_rels/workbook.xml.rels").async("text")).replace(/="([^"]*)"/g, "='$1'");
+const singleQuotedXlsx = await SpreadsheetFile.patchXlsx(xlsx, [
+  { path: "[Content_Types].xml", xml: singleQuotedContentTypesXml },
+  { path: "xl/_rels/workbook.xml.rels", xml: singleQuotedWorkbookRelsXml },
+]);
+assert.equal((await SpreadsheetFile.inspectXlsx(singleQuotedXlsx)).ok, true);
 const brokenXlsxReferenceXml = xlsxSheetXml.replace(/<\/worksheet>\s*$/, '<drawing xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdMissingSourceReference"/></worksheet>');
 await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/worksheets/sheet1.xml", xml: brokenXlsxReferenceXml }]), /invalid OOXML package.*relationshipReferenceIdNotFound/);
 const invalidReferenceXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/worksheets/sheet1.xml", xml: brokenXlsxReferenceXml }], { validateResult: false });

@@ -8255,16 +8255,19 @@ function ooxmlSafePartPath(partPath, family = "OOXML") {
   return normalized;
 }
 
+function ooxmlXmlAttributes(tag = "") {
+  return Object.fromEntries([...String(tag).matchAll(/([A-Za-z_][\w:.-]*)\s*=\s*(["'])(.*?)\2/g)].map((match) => [match[1], decodeXml(match[3])]));
+}
+
 function ooxmlContentTypeMaps(xml = "") {
   const defaults = new Map();
   const overrides = new Map();
-  const attributes = (tag) => Object.fromEntries([...tag.matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
   for (const match of String(xml).matchAll(/<Default\b[^>]*\/?\s*>/g)) {
-    const attrs = attributes(match[0]);
+    const attrs = ooxmlXmlAttributes(match[0]);
     if (attrs.Extension && attrs.ContentType) defaults.set(String(attrs.Extension).toLowerCase(), attrs.ContentType);
   }
   for (const match of String(xml).matchAll(/<Override\b[^>]*\/?\s*>/g)) {
-    const attrs = attributes(match[0]);
+    const attrs = ooxmlXmlAttributes(match[0]);
     if (attrs.PartName && attrs.ContentType) overrides.set(String(attrs.PartName).replace(/^\//, ""), attrs.ContentType);
   }
   return { defaults, overrides };
@@ -8506,7 +8509,7 @@ function ooxmlPatchData(patch, family = "OOXML") {
 
 function ooxmlRemoveContentTypeOverride(xml, partPath) {
   return String(xml).replace(/<Override\b[^>]*\/?\s*>/g, (tag) => {
-    const partName = /\bPartName="([^"]*)"/.exec(tag)?.[1];
+    const partName = ooxmlXmlAttributes(tag).PartName;
     return String(partName || "").replace(/^\//, "") === partPath ? "" : tag;
   });
 }
@@ -8562,7 +8565,7 @@ function ooxmlRelationshipPartPath(source, family) {
 function ooxmlRelationshipEntries(xml = "") {
   return [...String(xml).matchAll(/<Relationship\b[^>]*\/?\s*>/g)].map((match) => ({
     tag: match[0],
-    attrs: Object.fromEntries([...match[0].matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((attribute) => [attribute[1], decodeXml(attribute[2])])),
+    attrs: ooxmlXmlAttributes(match[0]),
   }));
 }
 

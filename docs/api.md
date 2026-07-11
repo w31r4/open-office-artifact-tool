@@ -30,8 +30,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
 | `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available. |
-| `DocumentFile.inspectDocx` | api | Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues. |
-| `DocumentFile.patchDocx` | api | Apply atomically verified DOCX part patches with path traversal validation and standard OOXML content-type/relationship recipes. |
+| `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
+| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
 ### document details
@@ -408,7 +408,7 @@ Import DOCX bytes into the clean-room document facade, restoring native parts an
 
 #### `DocumentFile.inspectDocx`
 
-Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues.
+Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets.
 
 **Schema parameters:**
 
@@ -426,7 +426,7 @@ Inspect a DOCX package as bounded part records with safe paths, content types, o
 
 #### `DocumentFile.patchDocx`
 
-Apply atomically verified DOCX part patches with path traversal validation and standard OOXML content-type/relationship recipes.
+Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references.
 
 **Examples:**
 
@@ -860,8 +860,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to a native OOXML PPTX FileBlob. |
 | `PresentationFile.importPptx` | api | Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available. |
-| `PresentationFile.inspectPptx` | api | Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues. |
-| `PresentationFile.patchPptx` | api | Apply path-validated, atomically verified PPTX part patches with standard OOXML content-type/relationship recipes. |
+| `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
+| `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1094,7 +1094,7 @@ Import PPTX bytes into the clean-room presentation facade, restoring native part
 
 #### `PresentationFile.inspectPptx`
 
-Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues.
+Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets.
 
 **Examples:**
 
@@ -1116,7 +1116,7 @@ Inspect a PPTX package as bounded part records with content types, optional prev
 
 #### `PresentationFile.patchPptx`
 
-Apply path-validated, atomically verified PPTX part patches with standard OOXML content-type/relationship recipes.
+Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references.
 
 **Schema parameters:**
 
@@ -1666,8 +1666,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.importTsv` | api | Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser. |
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
-| `SpreadsheetFile.inspectXlsx` | api | Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues. |
-| `SpreadsheetFile.patchXlsx` | api | Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes. |
+| `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
+| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
@@ -3163,7 +3163,7 @@ Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, qu
 
 #### `SpreadsheetFile.inspectXlsx`
 
-Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues.
+Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets.
 
 **Schema parameters:**
 
@@ -3181,7 +3181,7 @@ Inspect an XLSX package as bounded, content-type-aware part records with decompr
 
 #### `SpreadsheetFile.patchXlsx`
 
-Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes.
+Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references.
 
 **Schema parameters:**
 
