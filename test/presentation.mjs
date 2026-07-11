@@ -102,7 +102,13 @@ const nativeChart = slide.charts.add("bar", {
   title: "Native Import Chart",
   position: { left: 840, top: 240, width: 320, height: 180 },
   categories: ["Q1", "Q2"],
-  series: [{ name: "Revenue", values: [10, 14] }],
+  axes: { category: { title: "Quarter" }, value: { title: "Revenue" } },
+  legend: { visible: true, position: "r" },
+  dataLabels: { showValue: true },
+  series: [
+    { name: "Revenue", values: [10, 14], color: "#0ea5e9" },
+    { name: "Forecast", values: [12, 16], color: "#f97316" },
+  ],
 });
 const nativeImage = slide.images.add({
   name: "native-import-image",
@@ -124,6 +130,12 @@ assert.match(presentation.help("slide.connectors.add").ndjson, /connector line/)
 assert.match(presentation.help("slide.comments.addThread").ndjson, /Threaded comments|threaded comments/);
 assert.equal(presentation.resolve(nativeTable.id).values[1][0], "ARR");
 assert.equal(presentation.resolve(nativeChart.id).series[0].values[1], 14);
+assert.equal(presentation.resolve(nativeChart.id).axes.value.title, "Revenue");
+assert.equal(presentation.resolve(nativeChart.id).legend.visible, true);
+assert.equal(presentation.resolve(nativeChart.id).dataLabels.showValue, true);
+assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /"axes"/);
+assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /Forecast/);
+assert.match(presentation.help("slide.charts.add").ndjson, /axes/);
 assert.equal(presentation.resolve(nativeImage.id).alt, "Native import logo");
 const targetedPresentationInspect = presentation.inspect({ kind: "table,chart,image,connector,comment", target: nativeImage.id, maxChars: 4000 }).ndjson;
 assert.match(targetedPresentationInspect, /Native import logo/);
@@ -192,6 +204,10 @@ assert.deepEqual(textRangeSlideLayout.elements.map((element) => element.id), [sh
 assert.match(presentation.help("presentation.export").ndjson, /target\/search-sliced layout JSON/);
 const preview = await presentation.export({ slide, format: "svg" });
 assert.equal(preview.type, "image/svg+xml");
+const previewSvg = await preview.text();
+assert.match(previewSvg, /Revenue plan/);
+assert.match(previewSvg, /Quarter/);
+assert.match(previewSvg, /Forecast/);
 const montage = await presentation.export({ format: "montage", columns: 2, scale: 0.2 });
 assert.equal(montage.type, "image/svg+xml");
 const montageSvg = await montage.text();
@@ -233,6 +249,12 @@ assert.match(slideRelsXml, /relationships\/comments/);
 const chartXml = await zip.file("ppt/charts/chart1.xml").async("text");
 assert.match(chartXml, /Native Import Chart/);
 assert.match(chartXml, /<c:v>14<\/c:v>/);
+assert.match(chartXml, /Quarter/);
+assert.match(chartXml, /Revenue/);
+assert.match(chartXml, /Forecast/);
+assert.match(chartXml, /<c:showVal val="1"\/>/);
+assert.match(chartXml, /<c:legendPos val="r"\/>/);
+assert.match(chartXml, /0ea5e9/i);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
@@ -244,6 +266,8 @@ assert.match(loadedAll, /Quarterly plan template/);
 assert.match(loadedAll, /native-import-table/);
 assert.match(loadedAll, /ARR/);
 assert.match(loadedAll, /Native Import Chart/);
+assert.match(loadedAll, /Quarter/);
+assert.match(loadedAll, /Forecast/);
 assert.match(loadedAll, /native-import-image/);
 assert.match(loadedAll, /Native import logo/);
 assert.match(loadedAll, /Speaker note/);
