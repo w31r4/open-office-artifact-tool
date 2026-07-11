@@ -66,6 +66,12 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "fx.FILTER")?.schema?.ret
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.TEXTJOIN")?.schema?.returns?.value?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.LEN")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
+const sharedCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "shared");
+assert.equal(sharedCatalog.length, 10);
+assert.ok(sharedCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
+assert.equal(HELP_CATALOG.find((item) => item.name === "createPopplerRenderer")?.schema?.parameters?.dpi?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRenderer")?.schema?.parameters?.args?.type, "string[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelDiff?.type, "boolean|object");
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -119,5 +125,8 @@ assert.match(apiDocs, /`blob` \(FileBlob\)/);
 assert.match(apiDocs, /DocumentFile\.patchDocx/);
 assert.match(apiDocs, /#### `fx\.FILTER`/);
 assert.match(apiDocs, /Spilled two-dimensional formula result/);
+assert.match(apiDocs, /#### `createPopplerRenderer`/);
+assert.match(apiDocs, /`dpi` \(number\)/);
+assert.match(apiDocs, /#### `visualQaArtifact`/);
 
 console.log("help smoke ok");

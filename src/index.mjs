@@ -796,11 +796,32 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
     options: ["baseline/expected/baselineBlob", "pixelDiff", "PNG/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
     returns: "{ ok, blob, summary, issues, ndjson }",
+    schema: {
+      parameters: {
+        artifact: { type: "Workbook|Presentation|DocumentModel|PdfArtifact", required: true, description: "Artifact to render and compare." },
+        format: { type: "string", description: "Requested render format such as svg, png, ppm, jpeg, webp, or pdf." },
+        renderer: { type: "function", description: "Optional renderer adapter used for format conversion." },
+        baseline: { type: "FileBlob|Uint8Array", description: "Expected render bytes; expected and baselineBlob are aliases." },
+        pixelDiff: { type: "boolean|object", description: "Enable PNG/PPM pixel comparison and optional thresholds." },
+        allowChange: { type: "boolean", description: "Allow baseline byte/pixel changes without emitting issues." },
+        minBytes: { type: "number", description: "Warn when the render is smaller than this byte count." },
+        maxBytes: { type: "number", description: "Warn when the render exceeds this byte count." },
+        maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+      },
+      returns: { report: { type: "object", description: "Visual QA result with ok, blob, summary, issues, ndjson, and truncation metadata." } },
+    },
   },
   verifyArtifact: {
     examples: ["verifyArtifact(workbook, { maxChars: 12000 })"],
     options: ["maxChars"],
     returns: "{ artifactKind, ok, issues, ndjson, truncated }",
+    schema: {
+      parameters: {
+        artifact: { type: "Workbook|Presentation|DocumentModel|PdfArtifact", required: true, description: "Artifact exposing a verify() method." },
+        maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+      },
+      returns: { report: { type: "object", description: "Semantic QA result with artifactKind, ok, issues, ndjson, and truncated." } },
+    },
   },
   "workbook.definedNames.add": {
     examples: ["workbook.definedNames.add('RevenueData', 'Sheet1!G2:G4')", "sheet.getRange('E3').formulas = [['=SUM(RevenueData)']]"] ,
@@ -887,6 +908,107 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
     options: ["viewport", "deviceScaleFactor", "allowNetwork", "timeoutMs", "format"],
     returns: "renderer adapter function for renderArtifact(...)",
+    schema: {
+      parameters: {
+        viewport: { type: "object", description: "Chromium viewport width and height; SVG geometry is inferred when omitted." },
+        deviceScaleFactor: { type: "number", description: "Chromium device scale factor." },
+        allowNetwork: { type: "boolean", description: "Permit network requests; disabled by default for deterministic rendering." },
+        timeoutMs: { type: "number", description: "Navigation and rendering timeout." },
+        background: { type: "string", description: "Page background CSS color." },
+        chromium: { type: "object", description: "Injected Playwright Chromium launcher for tests or custom runtimes." },
+      },
+      returns: { renderer: { type: "function", description: "SVG/HTML to PNG/WebP/JPEG/PDF renderer adapter." } },
+    },
+  },
+  createSharpRenderer: {
+    examples: ["const renderer = createSharpRenderer({ resize: { width: 1200 }, flatten: true })"],
+    schema: {
+      parameters: {
+        sharp: { type: "function", description: "Injected sharp factory; otherwise the optional peer dependency is loaded." },
+        resize: { type: "object", description: "sharp resize options." },
+        flatten: { type: "boolean|object", description: "Flatten transparency using background options." },
+        background: { type: "string|object", description: "Flatten background color." },
+        pngOptions: { type: "object", description: "sharp PNG encoder options." },
+        webpOptions: { type: "object", description: "sharp WebP encoder options." },
+        jpegOptions: { type: "object", description: "sharp JPEG encoder options." },
+      },
+      returns: { renderer: { type: "function", description: "SVG/PNG/JPEG/WebP raster renderer adapter." } },
+    },
+  },
+  createCanvasRenderer: {
+    examples: ["const renderer = createCanvasRenderer({ width: 1200, height: 800, background: 'white' })"],
+    schema: {
+      parameters: {
+        canvas: { type: "object", description: "Injected node-canvas compatible module." },
+        width: { type: "number", description: "Output width override." },
+        height: { type: "number", description: "Output height override." },
+        background: { type: "string", description: "Canvas background color." },
+        outputOptions: { type: "object", description: "node-canvas encoder options." },
+      },
+      returns: { renderer: { type: "function", description: "SVG/PNG/JPEG/WebP to PNG/JPEG renderer adapter." } },
+    },
+  },
+  createPopplerRenderer: {
+    examples: ["const renderer = createPopplerRenderer({ command: 'pdftoppm', dpi: 150 })"],
+    schema: {
+      parameters: {
+        command: { type: "string", description: "pdftoppm executable path or command name." },
+        dpi: { type: "number", description: "Raster resolution." },
+        page: { type: "number", description: "One-based PDF page number; pageIndex is the zero-based alias." },
+        timeoutMs: { type: "number", description: "CLI timeout." },
+        tempRoot: { type: "string", description: "Temporary directory root." },
+        argsBuilder: { type: "function", description: "Custom pdftoppm argument builder." },
+        keepTemp: { type: "boolean", description: "Keep temporary input/output files for diagnostics." },
+      },
+      returns: { renderer: { type: "function", description: "PDF to PNG/PPM/TIFF page renderer adapter." } },
+    },
+  },
+  createLibreOfficeRenderer: {
+    examples: ["const renderer = createLibreOfficeRenderer({ command: 'soffice', timeoutMs: 60000 })"],
+    schema: {
+      parameters: {
+        command: { type: "string", description: "soffice/LibreOffice executable path or command name." },
+        format: { type: "string", description: "Default target format, normally pdf." },
+        convertTo: { type: "string", description: "Explicit LibreOffice --convert-to filter value." },
+        timeoutMs: { type: "number", description: "CLI timeout." },
+        tempRoot: { type: "string", description: "Temporary directory root." },
+        argsBuilder: { type: "function", description: "Custom LibreOffice argument builder." },
+        keepTemp: { type: "boolean", description: "Keep temporary files for diagnostics." },
+      },
+      returns: { renderer: { type: "function", description: "Office/HTML conversion renderer adapter." } },
+    },
+  },
+  createNativeOfficeRenderer: {
+    examples: ["const renderer = createNativeOfficeRenderer({ command: 'dotnet', args: ['OfficeBridge.dll'], timeoutMs: 60000 })"],
+    schema: {
+      parameters: {
+        command: { type: "string", description: "Native Office bridge executable." },
+        args: { type: "string[]", description: "Arguments passed before the bridge reads its JSON request from stdin." },
+        timeoutMs: { type: "number", description: "Bridge request timeout." },
+        format: { type: "string", description: "Default requested output format." },
+        inputType: { type: "string", description: "Default input MIME type." },
+        outputType: { type: "string", description: "Default output MIME type." },
+        nativeOptions: { type: "object", description: "Operation-specific native Office options." },
+      },
+      returns: { renderer: { type: "function", description: "DOCX/XLSX/PPTX/PDF native Office renderer adapter." } },
+    },
+  },
+  renderFileWithNativeOffice: {
+    examples: ["await renderFileWithNativeOffice(docx, { command, format: 'pdf', artifactKind: 'document' })"],
+    schema: {
+      parameters: {
+        input: { type: "FileBlob|Uint8Array", required: true, description: "Office/PDF input bytes." },
+        command: { type: "string", required: true, description: "Native Office bridge executable." },
+        args: { type: "string[]", description: "Arguments passed to the bridge executable." },
+        operation: { type: "string", description: "Bridge operation, defaulting to render." },
+        format: { type: "string", description: "Requested output format." },
+        artifactKind: { type: "string", description: "document, workbook, presentation, or pdf." },
+        timeoutMs: { type: "number", description: "Bridge request timeout." },
+        nativeOptions: { type: "object", description: "Operation-specific native Office options." },
+        keepTemp: { type: "boolean", description: "Keep temporary files for diagnostics." },
+      },
+      returns: { blob: { type: "FileBlob", description: "Native Office bridge output bytes and renderer metadata." } },
+    },
   },
 };
 
