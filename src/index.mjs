@@ -1174,11 +1174,12 @@ const HELP_DETAIL_OVERRIDES = {
         maxParts: { type: "number", description: "Maximum resulting package part count." },
         syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
         syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+        syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
         validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-        recipe: { type: "string|object", description: "Standard OOXML part recipe (for example header, image, chart, or customXml) with optional source/id/target fields." },
-        relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
+        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports DOCX header/footer." },
+        relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
       },
-      returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with patchedParts, relationship/content-type updates, and result-validation metadata." } },
+      returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata." } },
     },
   },
   "PresentationFile.inspectPptx": {
@@ -1819,10 +1820,11 @@ const PRESENTATION_HELP_SCHEMAS = {
     maxParts: { type: "number", description: "Maximum resulting package part count." },
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+    syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-    recipe: { type: "string|object", description: "Standard OOXML part recipe (for example slide, chart, image, theme, or comments) with optional source/id/target fields." },
-    relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
-  }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts and result-validation metadata."),
+    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports PPTX slide list entries." },
+    relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
+  }, "blob", "FileBlob", "Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
   }, "blob", "FileBlob", "Native OOXML PPTX package bytes."),
@@ -1858,10 +1860,11 @@ const WORKBOOK_HELP_SCHEMAS = {
     maxParts: { type: "number", description: "Maximum resulting package part count." },
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+    syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-    recipe: { type: "string|object", description: "Standard OOXML part recipe (for example worksheet, table, chart, image, or comments) with optional source/id/target fields." },
-    relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
-  }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts and result-validation metadata."),
+    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports XLSX worksheet and table list entries." },
+    relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
+  }, "blob", "FileBlob", "Patched XLSX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "SpreadsheetFile.importDelimited": helpSchema({
     input: { type: "FileBlob|Uint8Array|string", required: true, description: "UTF-8 delimited text or bytes." },
     delimiter: { type: "string", description: "Single field delimiter; defaults to comma." },
@@ -5180,10 +5183,16 @@ export class SpreadsheetFile {
     const sharedStrings = parseSharedStringsXml(await zip.file("xl/sharedStrings.xml")?.async("text"));
     const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"));
     const workbookText = await zip.file("xl/workbook.xml")?.async("text");
-    const sheetNames = [...String(workbookText || "").matchAll(/<sheet[^>]*name="([^"]+)"[^>]*sheetId="(\d+)"/g)].map((m) => ({ name: decodeXml(m[1]), index: Number(m[2]) }));
-    for (const { name, index } of sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]) {
+    const workbookRelationships = new Map(parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text")).map((relationship) => [relationship.id, relationship]));
+    const sheetNames = [...String(workbookText || "").matchAll(/<sheet\b[^>]*\/?>/g)].map((match, position) => {
+      const attrs = ooxmlXmlAttributes(match[0]);
+      const relationshipId = Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
+      const relationship = workbookRelationships.get(relationshipId);
+      return { name: attrs.name || `Sheet${position + 1}`, index: position + 1, sheetId: Number(attrs.sheetId || position + 1), relationshipId, partPath: relationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target) : `xl/worksheets/sheet${attrs.sheetId || position + 1}.xml` };
+    });
+    for (const { name, partPath } of sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1, partPath: "xl/worksheets/sheet1.xml" }]) {
       const sheet = workbook.worksheets.add(name);
-      const xml = await zip.file(`xl/worksheets/sheet${index}.xml`)?.async("text");
+      const xml = await zip.file(partPath)?.async("text");
       if (xml) parseWorksheetXml(sheet, xml, { sharedStrings, styles });
     }
     parseWorkbookDefinedNames(workbook, workbookText);
@@ -5541,14 +5550,9 @@ function relsXml(rels) {
 }
 
 function parseRelsXml(xml) {
-  return [...String(xml || "").matchAll(/<Relationship\b([^>]*)\/>/g)].map((match) => {
-    const attrs = match[1] || "";
-    return {
-      id: decodeXml(/\bId="([^"]*)"/.exec(attrs)?.[1] || ""),
-      type: decodeXml(/\bType="([^"]*)"/.exec(attrs)?.[1] || ""),
-      target: decodeXml(/\bTarget="([^"]*)"/.exec(attrs)?.[1] || ""),
-      targetMode: decodeXml(/\bTargetMode="([^"]*)"/.exec(attrs)?.[1] || ""),
-    };
+  return [...String(xml || "").matchAll(/<Relationship\b[^>]*\/?\s*>/g)].map((match) => {
+    const attrs = ooxmlXmlAttributes(match[0]);
+    return { id: attrs.Id || "", type: attrs.Type || "", target: attrs.Target || "", targetMode: attrs.TargetMode || "" };
   }).filter((rel) => rel.id);
 }
 
@@ -5632,12 +5636,13 @@ function parsePersonsXml(xml) {
 
 async function importNativeThreadedComments(workbook, zip, sheetRefs) {
   const persons = parsePersonsXml(await zip.file("xl/persons/person.xml")?.async("text"));
-  for (const { index } of sheetRefs) {
-    const sheet = workbook.worksheets.items[index - 1];
+  for (const [position, sheetRef] of sheetRefs.entries()) {
+    const sheet = workbook.worksheets.items[position];
     if (!sheet) continue;
-    const rels = parseRelsXml(await zip.file(`xl/worksheets/_rels/sheet${index}.xml.rels`)?.async("text"));
+    const sourcePart = sheetRef.partPath || `xl/worksheets/sheet${sheetRef.sheetId || sheetRef.index || position + 1}.xml`;
+    const rels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(sourcePart, "XLSX"))?.async("text"));
     for (const rel of rels.filter((item) => item.type.endsWith("/threadedComment"))) {
-      const target = path.posix.normalize(`xl/worksheets/${rel.target}`).replace(/^\.\//, "");
+      const target = ooxmlResolveRelationshipTarget(sourcePart, rel.target);
       const xml = await zip.file(target)?.async("text");
       const byRef = new Map();
       for (const match of String(xml || "").matchAll(/<threadedComment\b([^>]*)>([\s\S]*?)<\/threadedComment>/g)) {
@@ -6927,12 +6932,18 @@ export class PresentationFile {
     const zip = await JSZip.loadAsync(bytes);
     const presentation = Presentation.create();
     const presentationRels = parseRelsXml(await zip.file("ppt/_rels/presentation.xml.rels")?.async("text"));
+    const presentationXml = await zip.file("ppt/presentation.xml")?.async("text");
     const themeRel = presentationRels.find((rel) => rel.type.endsWith("/theme"));
     const themeTarget = themeRel?.target ? (themeRel.target.replace(/^\//, "").startsWith("ppt/") ? themeRel.target.replace(/^\//, "") : path.posix.normalize(`ppt/${themeRel.target}`).replace(/^\.\//, "")) : undefined;
     const themeXml = themeTarget ? await zip.file(themeTarget)?.async("text") : await zip.file("ppt/theme/theme1.xml")?.async("text");
     if (themeXml) presentation.theme = parsePptxTheme(presentation, themeXml);
     const layoutByTarget = new Map();
-    const slideFiles = Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort();
+    const relationshipsById = new Map(presentationRels.map((relationship) => [relationship.id, relationship]));
+    const referencedSlideFiles = [...String(presentationXml || "").matchAll(/<p:sldId\b[^>]*\/?\s*>/g)].map((match) => {
+      const relationship = relationshipsById.get(ooxmlTagRelationshipId(match[0]));
+      return relationship?.type.endsWith("/slide") && relationship.targetMode?.toLowerCase() !== "external" ? ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target) : undefined;
+    }).filter(Boolean);
+    const slideFiles = referencedSlideFiles.length ? [...new Set(referencedSlideFiles)] : Object.keys(zip.files).filter((name) => /^ppt\/slides\/[^/]+\.xml$/.test(name)).sort();
     for (const file of slideFiles) {
       const slide = presentation.slides.add();
       const relsFile = file.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels";
@@ -8577,6 +8588,7 @@ async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, fami
   if (options.syncRelationships === false) return 0;
   let updates = 0;
   const removedParts = new Set(normalizedPatches.filter(({ patch }) => patch.remove || patch.delete).map(({ partPath }) => partPath));
+  const removedRelationshipIds = new Map();
   for (const removedPart of removedParts) {
     const outgoingRelationships = ooxmlRelationshipPartPath(removedPart, family);
     if (zip.file(outgoingRelationships)) { zip.remove(outgoingRelationships); updates += 1; }
@@ -8589,7 +8601,11 @@ async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, fami
     const next = xml.replace(/<Relationship\b[^>]*\/?\s*>/g, (tag) => {
       const entry = ooxmlRelationshipEntries(tag)[0];
       if (!entry || String(entry.attrs.TargetMode || "").toLowerCase() === "external") return tag;
-      return removedParts.has(ooxmlResolveRelationshipTarget(source, entry.attrs.Target)) ? "" : tag;
+      const resolvedTarget = ooxmlResolveRelationshipTarget(source, entry.attrs.Target);
+      if (!removedParts.has(resolvedTarget)) return tag;
+      const key = `${source}\u0000${resolvedTarget}`;
+      if (entry.attrs.Id) removedRelationshipIds.set(key, [...(removedRelationshipIds.get(key) || []), entry.attrs.Id]);
+      return "";
     });
     if (next !== xml) { zip.file(relsPath, next); updates += 1; }
   }
@@ -8605,7 +8621,9 @@ async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, fami
       const target = relationship.target || (source ? path.posix.relative(path.posix.dirname(source), partPath) : partPath);
       const remove = relationship.remove === true || relationship.delete === true || patch.remove || patch.delete;
       const matches = (entry) => (relationship.id && entry.attrs.Id === relationship.id) || (!relationship.id && ooxmlResolveRelationshipTarget(source, entry.attrs.Target) === partPath);
-      relationship.resolvedIds = entries.filter(matches).map((entry) => entry.attrs.Id).filter(Boolean);
+      const existingById = relationship.id ? entries.find((entry) => entry.attrs.Id === relationship.id) : undefined;
+      if (!remove && existingById && ooxmlResolveRelationshipTarget(source, existingById.attrs.Target) !== partPath && relationship.replaceExisting !== true && relationship.replace !== true) throw new Error(`${family} relationship Id ${relationship.id} in ${relsPath} already targets ${existingById.attrs.Target}; pass replaceExisting:true only for an intentional rebind.`);
+      relationship.resolvedIds = [...new Set([...entries.filter(matches).map((entry) => entry.attrs.Id).filter(Boolean), ...(removedRelationshipIds.get(`${source}\u0000${partPath}`) || [])])];
       const withoutMatch = xml.replace(/<Relationship\b[^>]*\/?\s*>/g, (tag) => {
         const entry = ooxmlRelationshipEntries(tag)[0];
         return entry && matches(entry) ? "" : tag;
@@ -8679,7 +8697,7 @@ function ooxmlMutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
   const sections = [...next.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)];
   if (sections.length) {
     const section = sections.at(-1)[0];
-    return next.replace(section, section.replace(/<\/w:sectPr>$/, `${referenceTag}</w:sectPr>`));
+    return next.replace(section, section.replace(/^<w:sectPr\b[^>]*>/, (opening) => `${opening}${referenceTag}`));
   }
   const selfClosingSections = [...next.matchAll(/<w:sectPr\b[^>]*\/>/g)];
   if (selfClosingSections.length) {

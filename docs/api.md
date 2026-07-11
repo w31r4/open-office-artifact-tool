@@ -440,13 +440,14 @@ Apply DOCX part patches with path traversal validation and atomically reject dan
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe (for example header, image, chart, or customXml) with optional source/id/target fields.
-- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports DOCX header/footer.
+- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**
 
-- `docx` (FileBlob) — Patched DOCX FileBlob with patchedParts, relationship/content-type updates, and result-validation metadata.
+- `docx` (FileBlob) — Patched DOCX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata.
 
 #### `DocumentModel.create`
 
@@ -1126,13 +1127,14 @@ Apply path-validated PPTX part patches and atomically reject dangling content ty
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe (for example slide, chart, image, theme, or comments) with optional source/id/target fields.
-- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports PPTX slide list entries.
+- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Patched PPTX FileBlob with patchedParts and result-validation metadata.
+- `blob` (FileBlob) — Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata.
 
 #### `slide.addNotes`
 
@@ -3191,13 +3193,14 @@ Apply path-validated XLSX part patches and atomically reject dangling content ty
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe (for example worksheet, table, chart, image, or comments) with optional source/id/target fields.
-- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports XLSX worksheet and table list entries.
+- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Patched XLSX FileBlob with patchedParts and result-validation metadata.
+- `blob` (FileBlob) — Patched XLSX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata.
 
 #### `workbook.comments.addThread`
 
