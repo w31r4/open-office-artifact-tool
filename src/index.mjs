@@ -662,7 +662,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip." },
@@ -4231,7 +4231,7 @@ export class Presentation {
         if (table.values.some((row) => row.length !== table.columns)) issues.push(verificationIssue("presentation", "raggedTableRows", `Table ${table.name || table.id} has rows that do not match its declared column count.`, { slide: slide.index + 1, id: table.id, columns: table.columns, rowLengths: table.values.map((row) => row.length) }));
       }
       for (const chart of slide.charts.items) {
-        if (!/^(bar|line)$/i.test(chart.chartType)) issues.push(verificationIssue("presentation", "unsupportedChartType", `Chart ${chart.name || chart.id} uses unsupported chart type ${chart.chartType}.`, { severity: "warning", slide: slide.index + 1, id: chart.id, chartType: chart.chartType }));
+        if (!/^(bar|line|pie)$/i.test(chart.chartType)) issues.push(verificationIssue("presentation", "unsupportedChartType", `Chart ${chart.name || chart.id} uses unsupported chart type ${chart.chartType}.`, { severity: "warning", slide: slide.index + 1, id: chart.id, chartType: chart.chartType }));
         if (!chart.series.length) issues.push(verificationIssue("presentation", "emptyChart", `Chart ${chart.name || chart.id} on slide ${slide.index + 1} has no data series.`, { slide: slide.index + 1, id: chart.id }));
         for (const series of chart.series) {
           const values = Array.isArray(series.values) ? series.values : [];
@@ -4836,6 +4836,15 @@ function normalizeChartDataLabels(config = {}) {
   return { showValue: Boolean(raw.showValue ?? config.showValues), showCategoryName: Boolean(raw.showCategoryName ?? raw.showCategory ?? config.showCategoryLabels), position: raw.position || "bestFit" };
 }
 
+function pieSlicePath(cx, cy, radius, startAngle, endAngle) {
+  const startX = cx + radius * Math.cos(startAngle);
+  const startY = cy + radius * Math.sin(startAngle);
+  const endX = cx + radius * Math.cos(endAngle);
+  const endY = cy + radius * Math.sin(endAngle);
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  return `M ${cx} ${cy} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
+}
+
 export class ChartElement {
   constructor(slide, chartType = "bar", config = {}) {
     this.slide = slide;
@@ -4867,6 +4876,26 @@ export class ChartElement {
     const plot = { left: p.left + 42, top: p.top + 42, width: Math.max(0, p.width - 72), height: Math.max(0, p.height - 82) };
     const title = `<text x="${p.left + 12}" y="${p.top + 24}" font-family="Arial" font-size="16" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.chartType)}</text>`;
     const axes = `<line x1="${plot.left}" y1="${plot.top + plot.height}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#94a3b8"/><line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.top + plot.height}" stroke="#94a3b8"/>${this.axes.category.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${p.top + p.height - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.category.title)}</text>` : ""}${this.axes.value.title ? `<text x="${p.left + 8}" y="${plot.top + 10}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.value.title)}</text>` : ""}`;
+    const legend = this.legend.visible ? this.series.map((series, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(resolveColorToken(series.color, series.color))}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(series.name)}</text>`).join("") : "";
+    if (/^pie$/i.test(this.chartType)) {
+      const series = this.series[0] || { values: [] };
+      const values = (series.values || []).map((value) => Math.max(0, Number(value) || 0));
+      const total = values.reduce((sum, value) => sum + value, 0) || 1;
+      const radius = Math.max(8, Math.min(plot.width, plot.height) / 2);
+      const cx = plot.left + plot.width / 2;
+      const cy = plot.top + plot.height / 2;
+      let angle = -Math.PI / 2;
+      const slices = values.map((value, index) => {
+        const next = angle + (value / total) * Math.PI * 2;
+        const color = resolveColorToken(["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9");
+        const label = this.dataLabels.showValue ? `<text x="${cx + (radius + 8) * Math.cos((angle + next) / 2)}" y="${cy + (radius + 8) * Math.sin((angle + next) / 2)}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(categories[index] ?? value)}</text>` : "";
+        const path = `<path d="${pieSlicePath(cx, cy, radius, angle, next)}" fill="${xmlEscape(color)}" stroke="#ffffff"/>${label}`;
+        angle = next;
+        return path;
+      }).join("");
+      const categoryLegend = categories.map((category, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4])}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(category)}</text>`).join("");
+      return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${slices}${this.legend.visible ? categoryLegend : ""}`;
+    }
     let body = "";
     if (/^line$/i.test(this.chartType)) {
       body = this.series.map((series) => {
@@ -4889,7 +4918,6 @@ export class ChartElement {
       })).join("");
     }
     const labels = categories.map((category, index) => `<text x="${plot.left + index * (plot.width / Math.max(1, categories.length))}" y="${p.top + p.height - 18}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("");
-    const legend = this.legend.visible ? this.series.map((series, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(resolveColorToken(series.color, series.color))}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(series.name)}</text>`).join("") : "";
     return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${axes}${body}${labels}${legend}`;
   }
 
@@ -5205,8 +5233,8 @@ function pptxChartTextTitleXml(text = "") {
 }
 
 function pptxChartXml(chart) {
-  const chartElementName = chart.chartType === "line" ? "lineChart" : "barChart";
-  const grouping = chart.chartType === "line" ? "<c:grouping val=\"standard\"/>" : "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>";
+  const chartElementName = chart.chartType === "line" ? "lineChart" : chart.chartType === "pie" ? "pieChart" : "barChart";
+  const grouping = chart.chartType === "line" ? "<c:grouping val=\"standard\"/>" : chart.chartType === "pie" ? "" : "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>";
   const dataLabels = chart.dataLabels || {};
   const dataLabelsXml = dataLabels.showValue || dataLabels.showCategoryName ? `<c:dLbls><c:showVal val=\"${dataLabels.showValue ? 1 : 0}\"/><c:showCatName val=\"${dataLabels.showCategoryName ? 1 : 0}\"/><c:showLegendKey val=\"0\"/><c:showSerName val=\"0\"/><c:showPercent val=\"0\"/><c:showBubbleSize val=\"0\"/></c:dLbls>` : "";
   const seriesXml = (chart.series.length ? chart.series : [{ name: chart.title || "Series", values: [] }]).map((series, index) => {
@@ -5220,7 +5248,10 @@ function pptxChartXml(chart) {
   const categoryAxisTitle = chart.axes?.category?.title ? pptxChartTextTitleXml(chart.axes.category.title) : "";
   const valueAxisTitle = chart.axes?.value?.title ? pptxChartTextTitleXml(chart.axes.value.title) : "";
   const legendXml = chart.legend?.visible || chart.hasLegend ? `<c:legend><c:legendPos val=\"${attrEscape(chart.legend?.position || "r")}\"/><c:layout/></c:legend>` : "";
-  return `<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><c:chart>${pptxChartTextTitleXml(chart.title || chart.chartType)}<c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}${dataLabelsXml}<c:axId val=\"1\"/><c:axId val=\"2\"/></c:${chartElementName}><c:catAx><c:axId val=\"1\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:axPos val=\"b\"/>${categoryAxisTitle}<c:crossAx val=\"2\"/></c:catAx><c:valAx><c:axId val=\"2\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:axPos val=\"l\"/>${valueAxisTitle}<c:crossAx val=\"1\"/></c:valAx></c:plotArea>${legendXml}<c:plotVisOnly val=\"1\"/></c:chart></c:chartSpace>`;
+  const chartBody = chart.chartType === "pie"
+    ? `<c:${chartElementName}>${seriesXml}${dataLabelsXml}</c:${chartElementName}>`
+    : `<c:${chartElementName}>${grouping}${seriesXml}${dataLabelsXml}<c:axId val=\"1\"/><c:axId val=\"2\"/></c:${chartElementName}><c:catAx><c:axId val=\"1\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:axPos val=\"b\"/>${categoryAxisTitle}<c:crossAx val=\"2\"/></c:catAx><c:valAx><c:axId val=\"2\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:axPos val=\"l\"/>${valueAxisTitle}<c:crossAx val=\"1\"/></c:valAx>`;
+  return `<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><c:chart>${pptxChartTextTitleXml(chart.title || chart.chartType)}<c:plotArea><c:layout/>${chartBody}</c:plotArea>${legendXml}<c:plotVisOnly val=\"1\"/></c:chart></c:chartSpace>`;
 }
 
 function slideXml(slide, imageParts = [], chartParts = []) {
@@ -5292,7 +5323,7 @@ async function parsePptxChartGraphic(slide, part, context) {
   const relId = /<c:chart[^>]*r:id="([^"]+)"/.exec(part)?.[1];
   const target = pptxRelationshipTarget(context.rels, relId);
   const chartXml = target ? await context.zip.file(target)?.async("text") : "";
-  const chartType = /<c:lineChart>/.test(chartXml) ? "line" : "bar";
+  const chartType = /<c:pieChart>/.test(chartXml) ? "pie" : /<c:lineChart>/.test(chartXml) ? "line" : "bar";
   const title = decodeXml(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<a:t>([\s\S]*?)<\/a:t>[\s\S]*?<\/c:title>/.exec(chartXml)?.[1] || "");
   const legendMatch = /<c:legend>[\s\S]*?<c:legendPos[^>]*val="([^"]+)"/.exec(chartXml);
   const dataLabelsBlock = /<c:dLbls>([\s\S]*?)<\/c:dLbls>/.exec(chartXml)?.[1] || "";

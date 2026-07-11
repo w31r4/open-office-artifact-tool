@@ -116,6 +116,18 @@ const nativeImage = slide.images.add({
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
   position: { left: 840, top: 450, width: 120, height: 90 },
 });
+const pieSlide = presentation.slides.add();
+const pieChart = pieSlide.charts.add("pie", {
+  name: "market-share-pie",
+  title: "Market Share",
+  position: { left: 120, top: 120, width: 360, height: 240 },
+  categories: ["Product A", "Product B", "Other"],
+  dataLabels: { showValue: true, showCategoryName: true },
+  legend: { visible: true, position: "r" },
+  series: [{ name: "Share", values: [45, 35, 20] }],
+});
+assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
+assert.match(presentation.inspect({ kind: "chart", target: pieChart.id, maxChars: 8000 }).ndjson, /Market Share/);
 slide.addNotes("Speaker note: call out pipeline risk.");
 const connector = slide.connectors.add({ name: "shape-to-table", from: shape, to: nativeTable, line: { fill: "#0284c7", width: 2, endArrow: "triangle" } });
 const thread = slide.comments.addThread(shape, "Tighten this headline before shipping.", { author: "Reviewer" });
@@ -135,6 +147,7 @@ assert.equal(presentation.resolve(nativeChart.id).legend.visible, true);
 assert.equal(presentation.resolve(nativeChart.id).dataLabels.showValue, true);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /"axes"/);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /Forecast/);
+assert.match(presentation.help("slide.charts.add").ndjson, /bar\/line\/pie/);
 assert.match(presentation.help("slide.charts.add").ndjson, /axes/);
 assert.equal(presentation.resolve(nativeImage.id).alt, "Native import logo");
 const targetedPresentationInspect = presentation.inspect({ kind: "table,chart,image,connector,comment", target: nativeImage.id, maxChars: 4000 }).ndjson;
@@ -208,6 +221,10 @@ const previewSvg = await preview.text();
 assert.match(previewSvg, /Revenue plan/);
 assert.match(previewSvg, /Quarter/);
 assert.match(previewSvg, /Forecast/);
+const pieSvg = await (await presentation.export({ slide: pieSlide, format: "svg" })).text();
+assert.match(pieSvg, /Market Share/);
+assert.match(pieSvg, /<path d="M /);
+assert.match(pieSvg, /Product A/);
 const montage = await presentation.export({ format: "montage", columns: 2, scale: 0.2 });
 assert.equal(montage.type, "image/svg+xml");
 const montageSvg = await montage.text();
@@ -255,6 +272,11 @@ assert.match(chartXml, /Forecast/);
 assert.match(chartXml, /<c:showVal val="1"\/>/);
 assert.match(chartXml, /<c:legendPos val="r"\/>/);
 assert.match(chartXml, /0ea5e9/i);
+const pieChartXml = await zip.file("ppt/charts/chart2.xml").async("text");
+assert.match(pieChartXml, /<c:pieChart>/);
+assert.match(pieChartXml, /Market Share/);
+assert.match(pieChartXml, /Product A/);
+assert.match(pieChartXml, /<c:v>45<\/c:v>/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
@@ -266,6 +288,8 @@ assert.match(loadedAll, /Quarterly plan template/);
 assert.match(loadedAll, /native-import-table/);
 assert.match(loadedAll, /ARR/);
 assert.match(loadedAll, /Native Import Chart/);
+assert.match(loadedAll, /Market Share/);
+assert.match(loadedAll, /Product A/);
 assert.match(loadedAll, /Quarter/);
 assert.match(loadedAll, /Forecast/);
 assert.match(loadedAll, /native-import-image/);
