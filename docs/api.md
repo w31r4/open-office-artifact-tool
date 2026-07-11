@@ -100,7 +100,7 @@ Emit bounded NDJSON for pages, text, positioned text items, layout regions, tabl
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `Presentation.create` | api | Create a deck with a default or explicit slide size. |
-| `presentation.export` | api | Export a slide preview, deck montage, or layout JSON. |
+| `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |

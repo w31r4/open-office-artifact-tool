@@ -178,6 +178,14 @@ assert.equal(layout.type, "application/vnd.open-office-artifact.layout+json");
 assert.match(await layout.text(), /summary-surface/);
 const preview = await presentation.export({ slide, format: "svg" });
 assert.equal(preview.type, "image/svg+xml");
+const montage = await presentation.export({ format: "montage", columns: 2, scale: 0.2 });
+assert.equal(montage.type, "image/svg+xml");
+const montageSvg = await montage.text();
+assert.match(montageSvg, /data-slide="1"/);
+assert.match(montageSvg, /Slide 1/);
+assert.match(montageSvg, /Revenue plan/);
+assert.equal(montage.metadata.format, "montage");
+assert.match(presentation.help("presentation.export").ndjson, /montage/);
 
 const pptx = await PresentationFile.exportPptx(presentation);
 const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));

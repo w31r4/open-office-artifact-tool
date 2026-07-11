@@ -577,7 +577,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide preview, deck montage, or layout JSON." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
@@ -3299,6 +3299,33 @@ class SlideLayoutCollection {
   [Symbol.iterator]() { return this.items[Symbol.iterator](); }
 }
 
+function svgInner(svg = "") {
+  return String(svg || "").replace(/^<svg\b[^>]*>/i, "").replace(/<\/svg>\s*$/i, "");
+}
+
+function presentationMontageSvg(presentation, options = {}) {
+  const slides = presentation.slides.items.length ? presentation.slides.items : [presentation.slides.add()];
+  const gap = Number(options.gap ?? 24);
+  const scale = Number(options.scale ?? 0.25);
+  const columns = Math.max(1, Number(options.columns ?? 1) || 1);
+  const slideW = Number(presentation.slideSize.width || 1280);
+  const slideH = Number(presentation.slideSize.height || 720);
+  const thumbW = slideW * scale;
+  const thumbH = slideH * scale;
+  const labelH = 20;
+  const rows = Math.ceil(slides.length / columns);
+  const width = Math.max(1, columns * thumbW + (columns + 1) * gap);
+  const height = Math.max(1, rows * (thumbH + labelH) + (rows + 1) * gap);
+  const thumbs = slides.map((slide, index) => {
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const x = gap + col * (thumbW + gap);
+    const y = gap + row * (thumbH + labelH + gap);
+    return `<g data-slide="${index + 1}"><rect x="${x - 1}" y="${y - 1}" width="${thumbW + 2}" height="${thumbH + 2}" fill="#ffffff" stroke="#94a3b8"/><g transform="translate(${x},${y}) scale(${scale})">${svgInner(slide.toSvg())}</g><text x="${x}" y="${y + thumbH + 15}" font-family="Arial" font-size="12" fill="#475569">Slide ${index + 1}${slide.title() ? ` — ${xmlEscape(slide.title()).slice(0, 80)}` : ""}</text></g>`;
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f8fafc"/>${thumbs}</svg>`;
+}
+
 export class Presentation {
   constructor(options = {}) {
     this.id = aid("pr");
@@ -3377,6 +3404,7 @@ export class Presentation {
   }
 
   async export(options = {}) {
+    if (options.format === "montage" || options.montage === true) return new FileBlob(presentationMontageSvg(this, options), { type: "image/svg+xml", metadata: { format: "montage", slides: this.slides.count, artifactKind: "presentation" } });
     const slide = options.slide || this.slides.getItem(0) || this.slides.add();
     if (options.format === "layout") return slide.export({ format: "layout" });
     return slide.export(options);
