@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
+import { nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const fixturePath = path.join(repoRoot, "skills", "spreadsheets", "fixtures", "formula-summary.json");
@@ -12,7 +12,7 @@ const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-spreadshe
 const baselineDir = path.join(outputDir, "baselines");
 
 try {
-  const result = await runSpreadsheetFixture(fixturePath, { outputDir });
+  const result = await runSpreadsheetFixture(fixturePath, { outputDir, nativeRender: "off" });
   assert.equal(result.fixture.name, "formula-summary");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
@@ -39,11 +39,13 @@ try {
     sheetName: "Inputs",
     range: "A1:C4",
     renderFormat: "svg",
+    nativeRender: "off",
   });
   assert.equal(secondQa.summary.verifyOk, true);
   assert.equal(secondQa.summary.packageOk, true);
   assert.equal(secondQa.summary.sheetName, "Inputs");
 
+  const nativeStatus = nativeSpreadsheetRenderStatus();
   const baselineWrite = await verifyWorkbookFile(result.workbookPath, {
     outputDir: path.join(outputDir, "baseline-write"),
     sheetName: "Summary",
@@ -52,6 +54,7 @@ try {
     baselineDir,
     writeBaseline: true,
     allSheets: true,
+    nativeRender: nativeStatus.available ? "required" : "off",
   });
   assert.equal(baselineWrite.summary.writeBaseline, true);
   assert.ok((await fs.stat(baselineWrite.summary.baselinePath)).size > 100);
@@ -62,6 +65,7 @@ try {
     renderFormat: "png",
     baselineDir,
     allSheets: true,
+    nativeRender: nativeStatus.available ? "required" : "off",
   });
   assert.equal(baselineCompare.summary.baselineCompared, true);
   assert.equal(baselineCompare.summary.pixelDiff.changed, false);
@@ -73,6 +77,13 @@ try {
     assert.ok((await fs.stat(sheetRender.preview)).size > 100);
     assert.ok((await fs.stat(sheetRender.layout)).size > 20);
   }
+  if (nativeStatus.available) {
+    assert.equal(baselineCompare.summary.nativeRender.status, "passed");
+    assert.equal(baselineCompare.summary.nativeRender.ok, true);
+    assert.equal(baselineCompare.summary.nativeRender.pageCountMatches, true);
+    assert.ok(baselineCompare.summary.nativeRender.pageCount >= 1);
+    assert.ok(baselineCompare.summary.nativeRender.pages.every((page) => page.baselineCompared && page.pixelDiff.changed === false && page.ok));
+  }
 
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
   assert.ok(packageJson.files.includes("skills/**"));
@@ -80,6 +91,7 @@ try {
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /verify-workbook\.mjs/);
   assert.match(skillText, /baseline-dir/);
+  assert.match(skillText, /LibreOffice/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

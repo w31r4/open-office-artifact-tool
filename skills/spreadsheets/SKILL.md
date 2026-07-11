@@ -25,6 +25,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 5. Export XLSX, inspect its bounded native package records, import the exported file again, and run the project verifier.
 6. Inspect the preview at full size. Fix formula errors, clipping, unreadable formatting, and broken objects before delivery.
 7. Render every user-facing worksheet. Once the previews are approved, save raster baselines and require pixel comparisons on later exports.
+8. For final delivery, render the real XLSX through LibreOffice to PDF and Poppler page PNGs; compare every native page and its page count.
 
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
@@ -80,12 +81,14 @@ Create and later compare an approved sheet/range baseline:
 node skills/spreadsheets/scripts/verify-workbook.mjs \
   --input output.xlsx --sheet Summary --range A1:D20 \
   --render-format png --all-sheets true \
+  --native-render required \
   --baseline-dir tmp/spreadsheet-baselines \
   --write-baseline true
 
 node skills/spreadsheets/scripts/verify-workbook.mjs \
   --input output.xlsx --sheet Summary --range A1:D20 \
   --render-format png --all-sheets true \
+  --native-render required \
   --baseline-dir tmp/spreadsheet-baselines
 ```
 
@@ -99,6 +102,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Produce a layout record and visual preview for every user-facing sheet with `--all-sheets true`; the selected `--range` narrows only the primary sheet.
 - Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
 - Raster baselines use `visualQaArtifact(..., { pixelDiff: true })`; baseline filenames are stable per worksheet.
+- `--native-render required` converts the exported XLSX with LibreOffice and rasterizes every PDF page with Poppler; page-count or pixel changes fail QA.
 - Deliver only the requested workbook unless the user asks for QA intermediates.
 
 ## References
