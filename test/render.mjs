@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
+import sharp from "sharp";
 
 import {
   DocumentModel,
@@ -105,6 +106,29 @@ assert.equal(ppmQa.ok, false);
 assert.equal(ppmQa.summary.pixelDiff.format, "ppm");
 assert.equal(ppmQa.summary.pixelDiff.differentPixels, 1);
 assert.match(ppmQa.ndjson, /visualPixelDiff/);
+const whiteRaw = { create: { width: 1, height: 1, channels: 3, background: { r: 255, g: 255, b: 255 } } };
+const blackRaw = { create: { width: 1, height: 1, channels: 3, background: { r: 0, g: 0, b: 0 } } };
+const whiteJpeg = new Uint8Array(await sharp(whiteRaw).jpeg({ quality: 100, chromaSubsampling: "4:4:4" }).toBuffer());
+const whiteJpegWithMetadata = new Uint8Array(await sharp(whiteRaw).withMetadata({ orientation: 1 }).jpeg({ quality: 100, chromaSubsampling: "4:4:4" }).toBuffer());
+const whiteWebp = new Uint8Array(await sharp(whiteRaw).webp({ lossless: true }).toBuffer());
+const blackWebp = new Uint8Array(await sharp(blackRaw).webp({ lossless: true }).toBuffer());
+assert.notDeepEqual(whiteJpeg, whiteJpegWithMetadata);
+const jpegArtifact = { render: () => new FileBlob(whiteJpeg, { type: "image/jpeg" }) };
+const jpegMetadataQa = await visualQaArtifact(jpegArtifact, { baseline: new FileBlob(whiteJpegWithMetadata, { type: "image/jpeg" }), pixelDiff: true });
+assert.equal(jpegMetadataQa.ok, true);
+assert.equal(jpegMetadataQa.summary.byteChanged, true);
+assert.equal(jpegMetadataQa.summary.changed, false);
+assert.equal(jpegMetadataQa.summary.pixelDiff.format, "jpeg");
+const mixedRasterQa = await visualQaArtifact(jpegArtifact, { baseline: new FileBlob(whiteWebp, { type: "image/webp" }), pixelDiff: true });
+assert.equal(mixedRasterQa.ok, true);
+assert.equal(mixedRasterQa.summary.pixelDiff.format, "jpeg/webp");
+assert.equal(mixedRasterQa.summary.pixelDiff.changed, false);
+const webpArtifact = { render: () => new FileBlob(whiteWebp, { type: "image/webp" }) };
+const changedWebpQa = await visualQaArtifact(webpArtifact, { baseline: new FileBlob(blackWebp, { type: "image/webp" }), pixelDiff: true });
+assert.equal(changedWebpQa.ok, false);
+assert.equal(changedWebpQa.summary.pixelDiff.format, "webp");
+assert.equal(changedWebpQa.summary.pixelDiff.differentPixels, 1);
+assert.match(changedWebpQa.ndjson, /visualPixelDiff/);
 await assert.rejects(() => renderArtifact(document, { format: "webp" }), /no renderer adapter/);
 
 const pdf = PdfArtifact.create({ pages: [{ text: "Render PDF", tables: [{ values: [["Metric", "Value"]] }] }] });
