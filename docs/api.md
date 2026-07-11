@@ -1546,10 +1546,13 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.AVERAGEIF` | formula | Average values whose corresponding criteria range entries match a criterion. |
 | `fx.AVERAGEIFS` | formula | Average values where all supplied criteria ranges match their criteria. |
 | `fx.CEILING` | formula | Round a number up to the nearest significance. |
+| `fx.CHOOSECOLS` | formula | Select and reorder one or more 1-based or negative column indexes from an array. |
+| `fx.CHOOSEROWS` | formula | Select and reorder one or more 1-based or negative row indexes from an array. |
 | `fx.CONCAT` | formula | Concatenate text values and ranges. |
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
 | `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
+| `fx.DROP` | formula | Drop rows and optional columns from the start or end of an array and spill the remainder. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
@@ -1568,6 +1571,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
+| `fx.NOT` | formula | Reverse the truth value of a condition. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
@@ -1578,6 +1582,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
 | `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges match their criteria. |
 | `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
+| `fx.TAKE` | formula | Take rows and optional columns from the start or end of an array and spill the result. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
 | `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
@@ -1717,6 +1722,40 @@ Round a number up to the nearest significance.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.CHOOSECOLS`
+
+Select and reorder one or more 1-based or negative column indexes from an array.
+
+**Examples:**
+
+- =CHOOSECOLS(A2:C10,3,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =CHOOSECOLS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.CHOOSEROWS`
+
+Select and reorder one or more 1-based or negative row indexes from an array.
+
+**Examples:**
+
+- =CHOOSEROWS(A2:C10,3,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =CHOOSEROWS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
 #### `fx.CONCAT`
 
 Concatenate text values and ranges.
@@ -1784,6 +1823,23 @@ Count rows where multiple criteria ranges all match their criteria.
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.DROP`
+
+Drop rows and optional columns from the start or end of an array and spill the remainder.
+
+**Examples:**
+
+- =DROP(A2:C10,1,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DROP(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.FILTER`
 
@@ -2091,6 +2147,23 @@ Return the minimum numeric value across arguments and ranges.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.NOT`
+
+Reverse the truth value of a condition.
+
+**Examples:**
+
+- =NOT(A1>0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =NOT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.OR`
 
 Return TRUE when any condition is true.
@@ -2264,6 +2337,23 @@ Multiply corresponding numeric values in equally sized arrays and return the sum
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.TAKE`
+
+Take rows and optional columns from the start or end of an array and spill the result.
+
+**Examples:**
+
+- =TAKE(A2:C10,3,-2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TAKE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.TEXTJOIN`
 

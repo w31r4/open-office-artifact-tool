@@ -631,6 +631,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.IF", category: "logical", summary: "Return one value when a condition is true and another when false.", examples: ["=IF(A1>0,\"ok\",\"bad\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AND", category: "logical", summary: "Return TRUE when all conditions are true.", examples: ["=AND(A1>0,B1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.OR", category: "logical", summary: "Return TRUE when any condition is true.", examples: ["=OR(A1>0,B1>0)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.NOT", category: "logical", summary: "Reverse the truth value of a condition.", examples: ["=NOT(A1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to a fixed number of decimal places.", examples: ["=ROUND(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges all match their criteria.", examples: ["=COUNTIFS(A1:A10,\"East\",B1:B10,\">=10\")"] },
@@ -649,6 +650,10 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.FILTER", category: "dynamic-array", summary: "Filter rows from a source range with a boolean or comparison include array and spill the matching rows.", examples: ["=FILTER(A2:C10,B2:B10=\"East\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.UNIQUE", category: "dynamic-array", summary: "Return unique rows from a range as a spilled dynamic array.", examples: ["=UNIQUE(A2:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.SORT", category: "dynamic-array", summary: "Sort a range by a 1-based column index and spill the sorted rows.", examples: ["=SORT(A2:C10,3,-1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TAKE", category: "dynamic-array", summary: "Take rows and optional columns from the start or end of an array and spill the result.", examples: ["=TAKE(A2:C10,3,-2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DROP", category: "dynamic-array", summary: "Drop rows and optional columns from the start or end of an array and spill the remainder.", examples: ["=DROP(A2:C10,1,1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.CHOOSECOLS", category: "dynamic-array", summary: "Select and reorder one or more 1-based or negative column indexes from an array.", examples: ["=CHOOSECOLS(A2:C10,3,1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.CHOOSEROWS", category: "dynamic-array", summary: "Select and reorder one or more 1-based or negative row indexes from an array.", examples: ["=CHOOSEROWS(A2:C10,3,1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TEXTJOIN", category: "text", summary: "Join text values with a delimiter and optional empty-value skipping.", examples: ["=TEXTJOIN(\"/\",TRUE,A1:A3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CONCAT", category: "text", summary: "Concatenate text values and ranges.", examples: ["=CONCAT(A1,\"-\",B1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LEFT", category: "text", summary: "Return characters from the start of a text value.", examples: ["=LEFT(A1,3)"] },
@@ -4164,6 +4169,37 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const sortIndex = Math.max(0, Math.floor(formulaNumber(scalar(1, 1))) - 1);
       const sortOrder = formulaNumber(scalar(2, 1)) < 0 ? -1 : 1;
       return [...matrix].sort((a, b) => formulaSortCompare(a[sortIndex], b[sortIndex]) * sortOrder);
+    }
+    case "TAKE": {
+      let matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const rows = String(args[1] ?? "").trim() === "" ? undefined : Math.trunc(formulaNumber(scalar(1, 0)));
+      const columns = String(args[2] ?? "").trim() === "" ? undefined : Math.trunc(formulaNumber(scalar(2, 0)));
+      if (!matrix.length || rows === 0 || columns === 0 || (rows == null && columns == null)) return "#CALC!";
+      if (rows != null) matrix = rows > 0 ? matrix.slice(0, rows) : matrix.slice(Math.max(0, matrix.length + rows));
+      if (columns != null) matrix = matrix.map((row) => columns > 0 ? row.slice(0, columns) : row.slice(Math.max(0, row.length + columns)));
+      return matrix.length && matrix.some((row) => row.length) ? matrix : "#CALC!";
+    }
+    case "DROP": {
+      let matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const rows = String(args[1] ?? "").trim() === "" ? undefined : Math.trunc(formulaNumber(scalar(1, 0)));
+      const columns = String(args[2] ?? "").trim() === "" ? undefined : Math.trunc(formulaNumber(scalar(2, 0)));
+      if (!matrix.length || rows === 0 || columns === 0 || (rows == null && columns == null)) return "#CALC!";
+      if (rows != null) matrix = rows >= 0 ? matrix.slice(rows) : matrix.slice(0, Math.max(0, matrix.length + rows));
+      if (columns != null) matrix = matrix.map((row) => columns >= 0 ? row.slice(columns) : row.slice(0, Math.max(0, row.length + columns)));
+      return matrix.length && matrix.some((row) => row.length) ? matrix : "#CALC!";
+    }
+    case "CHOOSECOLS": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const width = Math.max(0, ...matrix.map((row) => row.length));
+      const indexes = args.slice(1).map((_, index) => Math.trunc(formulaNumber(scalar(index + 1, 0)))).map((value) => value > 0 ? value - 1 : width + value);
+      if (!matrix.length || !indexes.length || indexes.some((index) => index < 0 || index >= width)) return "#VALUE!";
+      return matrix.map((row) => indexes.map((index) => row[index] ?? null));
+    }
+    case "CHOOSEROWS": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const indexes = args.slice(1).map((_, index) => Math.trunc(formulaNumber(scalar(index + 1, 0)))).map((value) => value > 0 ? value - 1 : matrix.length + value);
+      if (!matrix.length || !indexes.length || indexes.some((index) => index < 0 || index >= matrix.length)) return "#VALUE!";
+      return indexes.map((index) => [...matrix[index]]);
     }
     case "SUMIF": {
       const range = values([args[0]]);

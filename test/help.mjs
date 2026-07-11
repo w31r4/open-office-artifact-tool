@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 152);
+assert.equal(HELP_CATALOG.length, 157);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
@@ -52,6 +52,11 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ISBLANK"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ISERROR"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGEIF"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGEIFS"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.NOT"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.TAKE"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.DROP"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.CHOOSECOLS"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.CHOOSEROWS"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPlaywrightRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createSharpRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPopplerRenderer"));
@@ -73,7 +78,7 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
 const formulaCatalog = HELP_CATALOG.filter((item) => item.name.startsWith("fx."));
-assert.equal(formulaCatalog.length, 45);
+assert.equal(formulaCatalog.length, 50);
 assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.formula?.required));
 assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.arguments?.type === "unknown[]"));
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.AND")?.schema?.returns?.value?.type, "boolean");
@@ -103,7 +108,7 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 72);
+assert.equal(workbookCatalog.length, 77);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
@@ -177,6 +182,7 @@ assert.match(apiDocs, /#### `presentation\.slides\.add`/);
 assert.match(apiDocs, /#### `PresentationFile\.importPptx`/);
 assert.match(apiDocs, /#### `workbook\.worksheets\.add`/);
 assert.match(apiDocs, /#### `workbook\.recalculate`/);
+assert.match(apiDocs, /#### `fx\.TAKE`/);
 assert.match(apiDocs, /#### `SpreadsheetFile\.inspectXlsx`/);
 assert.match(apiDocs, /#### `PresentationFile\.patchPptx`/);
 

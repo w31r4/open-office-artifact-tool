@@ -258,7 +258,7 @@ assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /
 const formulaEdgeBook = Workbook.create();
 const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");
 formulaEdgeSheet.getRange("A1:B3").values = [[1, 10], [2, 20], [3, 30]];
-formulaEdgeSheet.getRange("D1:D7").formulas = [
+formulaEdgeSheet.getRange("D1:D8").formulas = [
   ["=SUMPRODUCT(A1:B2,A1:A4)"],
   ["=AVERAGEIF(A1:A3,\">10\",B1:B3)"],
   ["=IFERROR(AVERAGEIF(A1:A3,\">10\",B1:B3),\"empty\")"],
@@ -266,9 +266,10 @@ formulaEdgeSheet.getRange("D1:D7").formulas = [
   ["=ISERROR(#N/A)"],
   ["=ISTEXT(\"\")"],
   ["=ISBLANK(\"\")"],
+  ["=NOT(TRUE)"],
 ];
 formulaEdgeBook.recalculate();
-assert.deepEqual(formulaEdgeSheet.getRange("D1:D7").values.flat(), ["#VALUE!", "#DIV/0!", "empty", "#REF!", true, true, false]);
+assert.deepEqual(formulaEdgeSheet.getRange("D1:D8").values.flat(), ["#VALUE!", "#DIV/0!", "empty", "#REF!", true, true, false, false]);
 
 const spillBook = Workbook.create();
 const spillSheet = spillBook.worksheets.add("Spill");
@@ -287,22 +288,41 @@ spillSheet.getRange("H1:J4").values = [["Item", "Region", "Score"], ["Alpha", "E
 spillSheet.getRange("L1").formulas = [["=FILTER(H2:J4,I2:I4=\"East\")"]];
 spillSheet.getRange("P1").formulas = [["=UNIQUE(I2:I4)"]];
 spillSheet.getRange("R1").formulas = [["=SORT(H2:J4,3,-1)"]];
+spillSheet.getRange("V1").formulas = [["=TAKE(H2:J4,2,-2)"]];
+spillSheet.getRange("Y1").formulas = [["=DROP(H2:J4,1,1)"]];
+spillSheet.getRange("AB1").formulas = [["=CHOOSECOLS(H2:J4,3,1)"]];
+spillSheet.getRange("AE1").formulas = [["=CHOOSEROWS(H2:J4,3,1)"]];
+spillSheet.getRange("AI1").formulas = [["=TAKE(H2:J4,,2)"]];
+spillSheet.getRange("AL1").formulas = [["=DROP(H2:J4,,1)"]];
+spillSheet.getRange("AO1:AP1").formulas = [["=TAKE(H2:J4,0)", "=CHOOSECOLS(H2:J4,0)"]];
 spillBook.recalculate();
 assert.deepEqual(spillSheet.getRange("L1:N2").values, [["Alpha", "East", 10], ["Gamma", "East", 20]]);
 assert.deepEqual(spillSheet.getRange("P1:P2").values, [["East"], ["West"]]);
 assert.deepEqual(spillSheet.getRange("R1:T3").values, [["Gamma", "East", 20], ["Beta", "West", 15], ["Alpha", "East", 10]]);
+assert.deepEqual(spillSheet.getRange("V1:W2").values, [["East", 10], ["West", 15]]);
+assert.deepEqual(spillSheet.getRange("Y1:Z2").values, [["West", 15], ["East", 20]]);
+assert.deepEqual(spillSheet.getRange("AB1:AC3").values, [[10, "Alpha"], [15, "Beta"], [20, "Gamma"]]);
+assert.deepEqual(spillSheet.getRange("AE1:AG2").values, [["Gamma", "East", 20], ["Alpha", "East", 10]]);
+assert.deepEqual(spillSheet.getRange("AI1:AJ3").values, [["Alpha", "East"], ["Beta", "West"], ["Gamma", "East"]]);
+assert.deepEqual(spillSheet.getRange("AL1:AM3").values, [["East", 10], ["West", 15], ["East", 20]]);
+assert.deepEqual(spillSheet.getRange("AO1:AP1").values, [["#CALC!", "#VALUE!"]]);
 assert.match(spillBook.inspect({ kind: "formula", target: "Spill!L1", maxChars: 8000 }).ndjson, /"spillRange":"L1:N2"/);
 assert.match(spillBook.help("fx.SEQUENCE").ndjson, /dynamic array/);
 assert.match(spillBook.help("fx.TRANSPOSE").ndjson, /spillRange/);
 assert.match(spillBook.help("fx.FILTER").ndjson, /include array/);
 assert.match(spillBook.help("fx.UNIQUE").ndjson, /unique rows/);
 assert.match(spillBook.help("fx.SORT").ndjson, /column index/);
+assert.match(spillBook.help("fx.TAKE").ndjson, /start or end/);
+assert.match(spillBook.help("fx.DROP").ndjson, /spill the remainder/);
+assert.match(spillBook.help("fx.CHOOSECOLS").ndjson, /Select and reorder/);
+assert.match(spillBook.help("fx.CHOOSEROWS").ndjson, /Select and reorder/);
 const spillXlsx = await SpreadsheetFile.exportXlsx(spillBook);
 const spillZip = await JSZip.loadAsync(new Uint8Array(await spillXlsx.arrayBuffer()));
 const spillWorksheetXml = await spillZip.file("xl/worksheets/sheet1.xml").async("text");
 assert.match(spillWorksheetXml, /<f t="array" ref="A1:C2">SEQUENCE\(2,3,10,2\)<\/f>/);
 assert.match(spillWorksheetXml, /<f t="array" ref="E1:F3">TRANSPOSE\(A1:C2\)<\/f>/);
 assert.match(spillWorksheetXml, /<f t="array" ref="L1:N2">FILTER\(H2:J4,I2:I4="East"\)<\/f>/);
+assert.match(spillWorksheetXml, /<f t="array" ref="V1:W2">TAKE\(H2:J4,2,-2\)<\/f>/);
 const blockedSpillBook = Workbook.create();
 const blockedSheet = blockedSpillBook.worksheets.add("Blocked");
 blockedSheet.getRange("C1").values = [["blocked"]];
