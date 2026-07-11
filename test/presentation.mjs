@@ -5,7 +5,27 @@ import JSZip from "jszip";
 import { box, column, FileBlob, paragraph, Presentation, PresentationFile, row, run, rule, shape as composeShape } from "../src/index.mjs";
 
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+presentation.theme.setColors({ accent1: "#0ea5e9", accent2: "#f97316" }).setFonts({ major: "Aptos Display", minor: "Aptos" });
+const titleLayout = presentation.layouts.add({
+  id: "layout/title-content",
+  name: "Title and Content",
+  type: "titleAndContent",
+  placeholders: [
+    { id: "ph/title", type: "title", name: "Title Placeholder", position: { left: 72, top: 36, width: 720, height: 52 }, required: true, style: { fontSize: 28, bold: true } },
+    { id: "ph/body", type: "body", name: "Body Placeholder", position: { left: 72, top: 520, width: 560, height: 80 } },
+  ],
+});
 const slide = presentation.slides.add();
+const [titlePlaceholder] = slide.applyLayout(titleLayout);
+titlePlaceholder.text = "Quarterly plan template";
+const themeLayoutSnapshot = presentation.inspect({ kind: "theme,layout,textbox", maxChars: 8000 }).ndjson;
+assert.match(themeLayoutSnapshot, /Open Office Clean Room/);
+assert.match(themeLayoutSnapshot, /Title and Content/);
+assert.match(themeLayoutSnapshot, /Quarterly plan template/);
+assert.equal(presentation.resolve("layout/title-content").name, "Title and Content");
+assert.match(presentation.help("presentation.theme").ndjson, /theme colors/);
+assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
+assert.match(presentation.help("slide.applyLayout").ndjson, /placeholder/);
 const shape = slide.shapes.add({
   geometry: "roundRect",
   name: "summary-surface",
@@ -116,6 +136,7 @@ qaBrokenSlide.shapes.add({ name: "overflow-text", position: { left: 20, top: 120
 qaBrokenSlide.tables.add({ name: "tiny-table", rows: 1, columns: 1, position: { left: 130, top: 125, width: 40, height: 14 }, values: [["Very long value"]] });
 qaBrokenSlide.connectors.add({ name: "bad-connector", start: { x: 10, y: 10 }, end: { x: 400, y: 20 } });
 qaBrokenSlide.comments.addThread("missing-shape", "Dangling comment target.");
+qaBrokenSlide.shapes.add({ name: "empty-title", position: { left: 10, top: 10, width: 100, height: 30 }, placeholder: { type: "title", required: true } });
 const qa = qaBroken.validateLayout({ minOverlapArea: 16, maxChars: 8000 });
 assert.equal(qa.ok, false);
 assert.match(qa.ndjson, /"type":"overlap"/);
@@ -124,6 +145,7 @@ assert.match(qa.ndjson, /"type":"textOverflow"/);
 assert.match(qa.ndjson, /"type":"tableTextOverflow"/);
 assert.match(qa.ndjson, /"type":"connectorOffCanvas"/);
 assert.match(qaBroken.verify({ maxChars: 8000 }).ndjson, /danglingComment/);
+assert.match(qaBroken.verify({ maxChars: 8000 }).ndjson, /placeholderMissingContent/);
 assert.match(qaBroken.help("presentation.validateLayout").ndjson, /off-canvas/);
 
 const layout = await slide.export({ format: "layout" });
@@ -134,6 +156,14 @@ assert.equal(preview.type, "image/svg+xml");
 
 const pptx = await PresentationFile.exportPptx(presentation);
 const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+const themeXml = await zip.file("ppt/theme/theme1.xml").async("text");
+assert.match(themeXml, /0ea5e9/i);
+assert.match(themeXml, /Aptos Display/);
+const masterXml = await zip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+assert.match(masterXml, /sldLayoutId/);
+const layoutXml = await zip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
+assert.match(layoutXml, /Title and Content/);
+assert.match(layoutXml, /<p:ph type="title"/);
 const slideXml = await zip.file("ppt/slides/slide1.xml").async("text");
 assert.match(slideXml, /<a:tbl>/);
 assert.match(slideXml, /native-import-table/);
@@ -150,6 +180,7 @@ assert.match(commentsXml, /ooa:resolved="1"/);
 const slideRelsXml = await zip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
 assert.match(slideRelsXml, /Target="\.\.\/media\/image1\.png"/);
 assert.match(slideRelsXml, /Target="\.\.\/charts\/chart1\.xml"/);
+assert.match(slideRelsXml, /relationships\/slideLayout/);
 assert.match(slideRelsXml, /relationships\/notesSlide/);
 assert.match(slideRelsXml, /relationships\/comments/);
 const chartXml = await zip.file("ppt/charts/chart1.xml").async("text");
@@ -158,8 +189,11 @@ assert.match(chartXml, /<c:v>14<\/c:v>/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
-const loadedAll = loaded.inspect({ kind: "textbox,table,chart,image,notes,comment,connector", maxChars: 12000 }).ndjson;
+const loadedAll = loaded.inspect({ kind: "theme,layout,textbox,table,chart,image,notes,comment,connector", maxChars: 12000 }).ndjson;
 assert.match(loadedAll, /Revenue plan/);
+assert.match(loadedAll, /Imported Theme|Open Office Clean Room/);
+assert.match(loadedAll, /Title and Content/);
+assert.match(loadedAll, /Quarterly plan template/);
 assert.match(loadedAll, /native-import-table/);
 assert.match(loadedAll, /ARR/);
 assert.match(loadedAll, /Native Import Chart/);
