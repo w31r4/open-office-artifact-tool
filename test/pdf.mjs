@@ -134,6 +134,10 @@ assert.match(jpegBytesText, /\/Filter \/DCTDecode/);
 assert.match(jpegBytesText, /\/Width 2 \/Height 2/);
 assert.match(jpegBytesText, /\/ColorSpace \/DeviceRGB/);
 assert.match(jpegBytesText, /72 612 160 80 re W n 160 0 0 160 72 572 cm \/Im1 Do/);
+const limitedPdfjs = await PdfFile.importPdf(jpegBlob, { parser: createPdfjsParser({ maxImagePixels: 1 }), preferParser: true });
+assert.equal(limitedPdfjs.pages[0].images.length, 1);
+assert.equal(limitedPdfjs.pages[0].images[0].dataUrl, undefined);
+assert.match(limitedPdfjs.pages[0].images[0].prompt, /maxImagePixels/);
 const corruptJpeg = PdfArtifact.create({ text: "Corrupt JPEG" });
 corruptJpeg.addImage({ dataUrl: "data:image/jpeg;base64,/9j/2Q==", bbox: [72, 100, 80, 80] });
 await assert.rejects(() => PdfFile.exportPdf(corruptJpeg), /Unable to embed JPEG image/);
@@ -261,7 +265,12 @@ assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
 const pdfjsParser = createPdfjsParser();
 assert.equal(typeof pdfjsParser, "function");
 try {
-  await PdfFile.importPdf(blob, { parser: pdfjsParser, preferParser: true });
+  const pdfjsImported = await PdfFile.importPdf(blob, { parser: pdfjsParser, preferParser: true });
+  const pdfjsImage = pdfjsImported.pages.flatMap((page) => page.images).find((item) => item.dataUrl);
+  assert.ok(pdfjsImage, "Expected PDF.js to extract embedded image pixels");
+  assert.match(pdfjsImage.dataUrl, /^data:image\/png;base64,/);
+  assert.ok(pdfjsImage.bbox[0] >= 0 && pdfjsImage.bbox[1] >= 0 && pdfjsImage.bbox[2] > 0 && pdfjsImage.bbox[3] > 0);
+  assert.equal(pdfjsImported.verify().ok, true);
 } catch (error) {
   if (!/pdfjs-dist|PDF\.js parser requires/.test(String(error?.message || error))) throw error;
 }

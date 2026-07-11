@@ -469,7 +469,7 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `createPdfjsParser` | api | Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders. |
+| `createPdfjsParser` | api | Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster images with placement boxes. |
 | `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
 | `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
@@ -491,7 +491,7 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 
 #### `createPdfjsParser`
 
-Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders.
+Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster images with placement boxes.
 
 **Examples:**
 

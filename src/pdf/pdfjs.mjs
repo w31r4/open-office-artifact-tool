@@ -1,4 +1,7 @@
+import { deflateSync } from "node:zlib";
+
 const DEFAULT_PAGE_SIZE = { width: 612, height: 792 };
+const encoder = new TextEncoder();
 
 function toUint8Array(data) {
   if (data instanceof Uint8Array) return data;
@@ -89,18 +92,121 @@ function inferTables(lines, pageIndex) {
   return [{ name: `pdfjs-position-table-${pageIndex + 1}`, values: commonWidth, bbox: bboxForItems(lines.flatMap((line) => line.items)) }];
 }
 
-async function extractImagePlaceholders(page, pdfjs, pageIndex, width, height) {
+function multiplyMatrix(left, right) {
+  return [
+    left[0] * right[0] + left[2] * right[1],
+    left[1] * right[0] + left[3] * right[1],
+    left[0] * right[2] + left[2] * right[3],
+    left[1] * right[2] + left[3] * right[3],
+    left[0] * right[4] + left[2] * right[5] + left[4],
+    left[1] * right[4] + left[3] * right[5] + left[5],
+  ];
+}
+
+function imageBbox(matrix, viewport, pageHeight) {
+  const points = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [matrix[0] * x + matrix[2] * y + matrix[4], matrix[1] * x + matrix[3] * y + matrix[5]]);
+  const left = Math.min(...points.map(([x]) => x));
+  const right = Math.max(...points.map(([x]) => x));
+  const bottom = Math.min(...points.map(([, y]) => y));
+  const top = Math.max(...points.map(([, y]) => y));
+  if (typeof viewport?.convertToViewportRectangle === "function") {
+    const rect = viewport.convertToViewportRectangle([left, bottom, right, top]);
+    return [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(1, Math.abs(rect[2] - rect[0])), Math.max(1, Math.abs(rect[3] - rect[1]))];
+  }
+  return [left, Math.max(0, pageHeight - top), Math.max(1, right - left), Math.max(1, top - bottom)];
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data = new Uint8Array()) {
+  const payload = Buffer.from(data);
+  const chunk = Buffer.alloc(12 + payload.length);
+  chunk.writeUInt32BE(payload.length, 0);
+  Buffer.from(encoder.encode(type)).copy(chunk, 4);
+  payload.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(new Uint8Array(chunk.subarray(4, 8 + payload.length))), 8 + payload.length);
+  return chunk;
+}
+
+function encodeRawImagePng(image, options = {}) {
+  const width = Number(image?.width);
+  const height = Number(image?.height);
+  const source = image?.data && toUint8Array(image.data);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || !source) throw new Error("PDF.js image object is missing raw geometry or pixels");
+  const pixels = width * height;
+  const maxPixels = Math.max(1, Number(options.maxImagePixels ?? 20_000_000));
+  if (pixels > maxPixels) throw new Error(`PDF.js image has ${pixels} pixels; maxImagePixels is ${maxPixels}`);
+  let channels;
+  let data = source;
+  if (source.length >= pixels * 4) { channels = 4; data = source.subarray(0, pixels * 4); }
+  else if (source.length >= pixels * 3) { channels = 3; data = source.subarray(0, pixels * 3); }
+  else if (source.length >= pixels) { channels = 1; data = source.subarray(0, pixels); }
+  else if (source.length >= Math.ceil(width / 8) * height) {
+    channels = 1;
+    data = new Uint8Array(pixels);
+    const stride = Math.ceil(width / 8);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) data[y * width + x] = (source[y * stride + (x >> 3)] & (0x80 >> (x & 7))) ? 0 : 255;
+  } else throw new Error(`PDF.js image pixel buffer is truncated (${source.length} bytes for ${width}x${height})`);
+  const rowBytes = width * channels;
+  const raw = Buffer.alloc((rowBytes + 1) * height);
+  for (let row = 0; row < height; row += 1) Buffer.from(data.subarray(row * rowBytes, (row + 1) * rowBytes)).copy(raw, row * (rowBytes + 1) + 1);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = channels === 4 ? 6 : channels === 3 ? 2 : 0;
+  return new Uint8Array(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND")]));
+}
+
+async function resolvePageObject(store, id, timeoutMs = 5_000) {
+  if (!store || typeof store.get !== "function" || !id) return undefined;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => { if (!settled) reject(new Error(`Timed out resolving PDF.js image object ${id}`)); }, timeoutMs);
+    const done = (value) => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
+    try { const value = store.get(id, done); if (value) done(value); } catch (error) { clearTimeout(timer); reject(error); }
+  });
+}
+
+async function extractImages(page, pdfjs, pageIndex, viewport, width, height, options = {}) {
   const ops = pdfjs.OPS || {};
   const imageOps = new Set([ops.paintImageXObject, ops.paintJpegXObject, ops.paintInlineImageXObject, ops.paintImageMaskXObject].filter((value) => value != null));
   if (!imageOps.size || typeof page.getOperatorList !== "function") return [];
   try {
     const operatorList = await page.getOperatorList();
+    const saveOp = ops.save;
+    const restoreOp = ops.restore;
+    const transformOp = ops.transform;
+    let matrix = [1, 0, 0, 1, 0, 0];
+    const stack = [];
     let count = 0;
-    return operatorList.fnArray.flatMap((fn, index) => {
-      if (!imageOps.has(fn)) return [];
+    const images = [];
+    for (let index = 0; index < operatorList.fnArray.length; index += 1) {
+      const fn = operatorList.fnArray[index];
+      const args = operatorList.argsArray[index] || [];
+      if (fn === saveOp) { stack.push([...matrix]); continue; }
+      if (fn === restoreOp) { matrix = stack.pop() || [1, 0, 0, 1, 0, 0]; continue; }
+      if (fn === transformOp && args.length >= 6) { matrix = multiplyMatrix(matrix, args.map(Number)); continue; }
+      if (!imageOps.has(fn)) continue;
       count += 1;
-      return [{ name: `pdfjs-image-${pageIndex + 1}-${count}`, alt: `PDF image ${count}`, bbox: [0, 0, width, height], prompt: `Extracted image operator at index ${index}` }];
-    });
+      if (count > Math.max(1, Number(options.maxImagesPerPage ?? 50))) break;
+      const bbox = imageBbox(matrix, viewport, height);
+      const image = typeof args[0] === "object" ? args[0] : await resolvePageObject(page.objs, args[0], options.imageObjectTimeoutMs).catch(() => undefined);
+      try {
+        const png = encodeRawImagePng(image, options);
+        images.push({ name: `pdfjs-image-${pageIndex + 1}-${count}`, alt: `PDF image ${count}`, bbox, bytes: png, contentType: "image/png", sourceObject: typeof args[0] === "string" ? args[0] : undefined, sourceOperator: index, pixelWidth: image.width, pixelHeight: image.height });
+      } catch (error) {
+        images.push({ name: `pdfjs-image-${pageIndex + 1}-${count}`, alt: `PDF image ${count}`, bbox, prompt: `PDF.js image operator ${index}: ${error.message}` });
+      }
+    }
+    return images;
   } catch {
     return [];
   }
@@ -129,7 +235,7 @@ export async function parsePdfWithPdfjs(request = {}, defaultOptions = {}) {
     const textItems = (textContent.items || []).map((item, index) => normalizeTextItem(item, height, index)).filter((item) => item.text);
     const lines = buildLines(textItems);
     const tables = inferTables(lines, pageNumber - 1);
-    const images = await extractImagePlaceholders(page, pdfjs, pageNumber - 1, width, height);
+    const images = await extractImages(page, pdfjs, pageNumber - 1, viewport, width, height, options);
     pages.push({
       id: `pdfjs/page/${pageNumber}`,
       width,

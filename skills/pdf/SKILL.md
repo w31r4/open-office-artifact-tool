@@ -25,7 +25,7 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 4. Run `pdf.verify()`; fix page bounds, malformed data, empty objects, Unicode dashes, and non-numeric chart issues.
 5. Export with `PdfFile.exportPdf()` and import the exported file again.
 6. Inspect the binary structure with `PdfFile.inspectPdf()`.
-7. Parse the real PDF through PDF.js and check extracted text, geometry, tables, and page count.
+7. Parse the real PDF through PDF.js and check extracted text, geometry, tables, embedded-image data URLs/placement boxes, and page count.
 8. Render every modeled page with Playwright and every real PDF page with Poppler.
 9. Inspect every page PNG at full size. When a baseline is approved, compare both modeled and native PNG pixels on later runs.
 
@@ -106,7 +106,7 @@ node skills/pdf/scripts/run-fixture.mjs \
 
 - `PdfFile.inspectPdf(...)` checks the PDF header/version, page and object counts, embedded clean-room model, and EOF marker.
 - `pdf.inspect(...)`, `pdf.extractText()`, `pdf.extractTables()`, and `pdf.verify()` prove modeled agent-facing semantics.
-- PDF.js independently parses the real exported bytes into page text geometry, regions, inferred tables, and image operators.
+- PDF.js independently parses the real exported bytes into page text geometry, regions, inferred tables, and bounded PNG image data when XObject pixels are available; placeholders must be reported when masks or unsupported color spaces prevent extraction.
 - Per-page Playwright PNGs catch modeled preview regressions.
 - Poppler PNGs are the real PDF render gate; inspect every page at full size.
 - Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve changes only after full-page review.

@@ -22,6 +22,7 @@ try {
   assert.equal(first.qa.pdfjs.pdf.pages.length, 2);
   assert.match(first.qa.pdfjs.text, /Office artifact QA report/);
   assert.match(first.qa.pdfjs.text, /PDF\.js and Poppler agree/);
+  assert.ok(first.qa.pdfjs.pdf.pages.flatMap((page) => page.images).some((image) => /^data:image\/png;base64,/.test(image.dataUrl || "")));
   assert.match(first.qa.inspect.ndjson, /qa-gates/);
   assert.match(first.qa.inspect.ndjson, /Verified workflow/);
   assert.match(first.qa.inspect.ndjson, /Independent checks accumulate/);
