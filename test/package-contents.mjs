@@ -12,6 +12,7 @@ const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 
 for (const required of [
+  "THIRD_PARTY_NOTICES.md",
   "src/index.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
   "native/OfficeBridge/tests/BridgeProtocolTests.cs",

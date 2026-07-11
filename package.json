@@ -38,6 +38,7 @@
     "native/OfficeBridge/tests/*.cs",
     "native/OfficeBridge/tests/*.csproj",
     "README.md",
+    "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
   "scripts": {

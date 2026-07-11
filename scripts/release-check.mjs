@@ -36,6 +36,9 @@ function summarizeCheck(name, result, required = true) {
 }
 
 const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+const lock = JSON.parse(fs.readFileSync(path.join(repoRoot, "package-lock.json"), "utf8"));
+const licensePolicyPath = process.env.OFFICE_ARTIFACT_LICENSE_POLICY || path.join(repoRoot, "scripts", "license-policy.json");
+const licensePolicy = JSON.parse(fs.readFileSync(licensePolicyPath, "utf8"));
 const checks = [];
 const blockers = [];
 
@@ -50,6 +53,28 @@ checks.push(summarizeCheck("package metadata", {
   command: "read package.json",
 }));
 if (!checks.at(-1).ok) blockers.push("package.json metadata is incomplete for npm publish.");
+
+const noticesPath = path.join(repoRoot, "THIRD_PARTY_NOTICES.md");
+const declaredDependencyNames = [...new Set([...Object.keys(pkg.dependencies || {}), ...Object.keys(pkg.peerDependencies || {})])];
+const policyNames = Object.keys(licensePolicy.declaredPackages || {});
+const lockLicenseIssues = Object.entries(lock.packages || {}).flatMap(([packagePath, metadata]) => {
+  if (!packagePath.startsWith("node_modules/")) return [];
+  if (!metadata.license) return [`${packagePath}: missing license metadata`];
+  if (!licensePolicy.allowedLockLicenses.includes(metadata.license)) return [`${packagePath}: unapproved license expression ${metadata.license}`];
+  return [];
+});
+const missingPolicy = declaredDependencyNames.filter((name) => !policyNames.includes(name));
+const stalePolicy = policyNames.filter((name) => !declaredDependencyNames.includes(name));
+const noticesText = fs.existsSync(noticesPath) ? fs.readFileSync(noticesPath, "utf8") : "";
+const missingNotices = declaredDependencyNames.filter((name) => !noticesText.toLowerCase().includes(name.toLowerCase()));
+const licenseOk = fs.existsSync(noticesPath) && pkg.files?.includes("THIRD_PARTY_NOTICES.md") && !lockLicenseIssues.length && !missingPolicy.length && !stalePolicy.length && !missingNotices.length;
+checks.push(summarizeCheck("third-party license policy", {
+  ok: licenseOk,
+  stdout: licenseOk ? `${Object.keys(lock.packages || {}).filter((name) => name.startsWith("node_modules/")).length} locked packages audited` : "license audit failed",
+  stderr: [...lockLicenseIssues, ...missingPolicy.map((name) => `missing policy: ${name}`), ...stalePolicy.map((name) => `stale policy: ${name}`), ...missingNotices.map((name) => `missing notice: ${name}`)].join("\n"),
+  command: "audit package-lock.json + THIRD_PARTY_NOTICES.md",
+}));
+if (!licenseOk) blockers.push("Third-party license policy or notices are incomplete.");
 
 if (!skipCommands) {
   for (const [name, commandArgs] of [

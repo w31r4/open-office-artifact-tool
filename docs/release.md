@@ -1,6 +1,6 @@
 # Release readiness
 
-Status date: 2026-07-11
+Status date: 2026-07-12
 
 ## Current package
 
@@ -26,9 +26,9 @@ Use the consolidated checker:
 npm run release:check
 ```
 
-The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotnet` is available, checks npm auth, checks the published npm version, and reports blockers.
+The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotnet` is available, audits every locked dependency license against `scripts/license-policy.json` and `THIRD_PARTY_NOTICES.md`, checks npm auth, checks the published npm version, and reports blockers.
 
-`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills and native bridge source while rejecting reference reference/handoff material and local dotnet `bin/obj` build output.
+`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, and third-party notices while rejecting reference reference/handoff material and local dotnet `bin/obj` build output.
 
 ## Latest observed blockers in this environment
 

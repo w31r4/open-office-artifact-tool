@@ -1,0 +1,20 @@
+{
+  "allowedLockLicenses": [
+    "0BSD",
+    "ISC",
+    "MIT",
+    "(MIT AND Zlib)",
+    "(MIT OR GPL-3.0-or-later)",
+    "Apache-2.0",
+    "LGPL-3.0-or-later",
+    "Apache-2.0 AND LGPL-3.0-or-later",
+    "Apache-2.0 AND LGPL-3.0-or-later AND MIT"
+  ],
+  "declaredPackages": {
+    "jszip": "(MIT OR GPL-3.0-or-later)",
+    "pdfjs-dist": "Apache-2.0",
+    "playwright": "Apache-2.0",
+    "sharp": "Apache-2.0",
+    "canvas": "MIT"
+  }
+}

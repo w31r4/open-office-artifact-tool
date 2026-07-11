@@ -259,6 +259,8 @@ All four skill directories are included in the npm package.
 
 Use [`docs/release.md`](docs/release.md) and `npm run release:check` before publishing. The checker runs the required local gates, reports npm authentication/package-version status, and prints blockers. Publishing is intentionally blocked in this environment until `npm whoami` succeeds.
 
+Third-party libraries and separately installed render/native runtimes are documented in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The release gate audits every locked npm license expression and every declared dependency against that notice.
+
 ## Design notes
 
 The package deliberately prioritizes agent workflows:
