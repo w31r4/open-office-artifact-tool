@@ -144,6 +144,11 @@ qaBrokenSlide.shapes.add({ name: "overlap-b", position: { left: 80, top: 40, wid
 qaBrokenSlide.shapes.add({ name: "off-canvas", position: { left: 260, top: 120, width: 100, height: 80 }, text: "Off" });
 qaBrokenSlide.shapes.add({ name: "overflow-text", position: { left: 20, top: 120, width: 80, height: 24 }, text: "This text is intentionally far too long for this tiny frame." });
 qaBrokenSlide.tables.add({ name: "tiny-table", rows: 1, columns: 1, position: { left: 130, top: 125, width: 40, height: 14 }, values: [["Very long value"]] });
+const brokenChart = qaBrokenSlide.charts.add("bar", { name: "bad-chart", title: "Bad Chart", position: { left: 30, top: 30, width: 90, height: 50 }, categories: ["A", "B", "C"], series: [{ name: "Mismatch", values: [1, "oops"] }] });
+const raggedTable = qaBrokenSlide.tables.add({ name: "ragged-table", rows: 2, columns: 2, position: { left: 5, top: 150, width: 40, height: 20 }, values: [["A", "B"], ["only one"]] });
+raggedTable.values[1] = ["only one"];
+qaBrokenSlide.images.add({ name: "empty-image", position: { left: 200, top: 20, width: 40, height: 40 } });
+qaBrokenSlide.images.add({ name: "bad-data-image", dataUrl: "data:not-base64", position: { left: 250, top: 20, width: 40, height: 40 } });
 qaBrokenSlide.connectors.add({ name: "bad-connector", start: { x: 10, y: 10 }, end: { x: 400, y: 20 } });
 qaBrokenSlide.comments.addThread("missing-shape", "Dangling comment target.");
 qaBrokenSlide.shapes.add({ name: "empty-title", position: { left: 10, top: 10, width: 100, height: 30 }, placeholder: { type: "title", required: true } });
@@ -154,8 +159,13 @@ assert.match(qa.ndjson, /"type":"offCanvas"/);
 assert.match(qa.ndjson, /"type":"textOverflow"/);
 assert.match(qa.ndjson, /"type":"tableTextOverflow"/);
 assert.match(qa.ndjson, /"type":"connectorOffCanvas"/);
-assert.match(qaBroken.verify({ maxChars: 8000 }).ndjson, /danglingComment/);
-assert.match(qaBroken.verify({ maxChars: 8000 }).ndjson, /placeholderMissingContent/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /danglingComment/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /placeholderMissingContent/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /chartDataMismatch/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /chartDataNonNumeric/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /raggedTableRows/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /emptyImage/);
+assert.match(qaBroken.verify({ maxChars: 12000 }).ndjson, /invalidImageDataUrl/);
 assert.match(qaBroken.help("presentation.validateLayout").ndjson, /off-canvas/);
 
 const layout = await slide.export({ format: "layout" });
