@@ -148,7 +148,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const loaded = await FileBlob.load(absoluteInput);
   const docxBlob = new FileBlob(loaded.bytes, { type: DOCX_MIME, name: path.basename(absoluteInput) });
-  const document = await DocumentFile.importDocx(docxBlob);
+  const document = await DocumentFile.importDocx(docxBlob, { preferNative: options.preferNative === true });
   const maxChars = options.maxChars ?? 20_000;
   const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,section,change,style,layout", maxChars });
   const packageInspect = await DocumentFile.inspectDocx(docxBlob, { includeText: options.includePackageText === true, maxChars });

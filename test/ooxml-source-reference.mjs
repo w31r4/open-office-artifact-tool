@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import JSZip from "jszip";
 
 import {
   DocumentFile,
@@ -20,10 +21,17 @@ const document = DocumentModel.create({ paragraphs: ["Source reference native ch
 const docx = await DocumentFile.patchDocx(await DocumentFile.exportDocx(document), [{
   path: "word/headerNative.xml",
   xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Native header</w:t></w:r></w:p></w:hdr>',
-  recipe: { kind: "header", source: "word/document.xml", sourceReference: true },
+  recipe: { kind: "header", source: "word/document.xml", sourceReference: { type: "first" } },
 }]);
 assert.equal(docx.metadata.sourceReferencesUpdated, 1);
 assert.equal((await DocumentFile.inspectDocx(docx)).ok, true);
+const importedPatchedDocument = await DocumentFile.importDocx(docx, { preferNative: true });
+const importedNativeHeader = importedPatchedDocument.headers.find((item) => item.text === "Native header");
+assert.ok(importedNativeHeader);
+assert.equal(importedNativeHeader.referenceType, "first");
+assert.equal(importedNativeHeader.partPath, "word/headerNative.xml");
+const docxZip = await JSZip.loadAsync(new Uint8Array(await docx.arrayBuffer()));
+assert.match(await docxZip.file("word/document.xml").async("text"), /<w:headerReference\b[^>]*w:type="first"[^>]*\/>[\s\S]*?<w:titlePg\/>/);
 
 const workbook = Workbook.create();
 workbook.worksheets.add("Main").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 120]];

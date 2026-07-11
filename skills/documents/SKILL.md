@@ -18,7 +18,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 
 ## Authoring workflow
 
-1. Create a `DocumentModel` or import an existing DOCX with `DocumentFile.importDocx`.
+1. Create a `DocumentModel` or import an existing DOCX with `DocumentFile.importDocx`. After package-level OOXML patches, pass `{ preferNative: true }` so relationship-driven native parts take precedence over stale embedded model metadata.
 2. Inspect the relevant blocks, styles, comments, and layout before editing.
 3. Apply focused changes through public APIs.
 4. Run `document.verify({ visualQa: true })` and fix every material issue.
@@ -36,6 +36,8 @@ document.addParagraph("Decision brief", { styleId: "Title", name: "title" });
 document.addParagraph("Recommendation", { styleId: "Heading1", name: "recommendation-heading" });
 document.addParagraph("Proceed with the clean-room implementation.", { styleId: "Normal" });
 document.addListItem("Validate the exported DOCX", { listType: "bullet" });
+document.addHeader("Decision brief", { referenceType: "first" });
+document.addFooter("Confidential", { referenceType: "even" });
 document.addTable({
   name: "decision-table",
   styleId: "TableGrid",
@@ -87,6 +89,7 @@ Compare a later export against that baseline:
 node skills/documents/scripts/verify-document.mjs \
   --input decision-brief.docx \
   --output-dir tmp/document-compare \
+  --prefer-native true \
   --preview-format png \
   --native-render required \
   --baseline-dir tmp/document-baselines
@@ -95,7 +98,7 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing blocks, styles, anchors, and comments survived roundtrip.
+- `document.inspect(...)` proves agent-facing blocks, styles, anchors, comments, and default/first/even header/footer references survived roundtrip. Native import follows `document.xml.rels` targets rather than assuming `header1.xml` or `footer1.xml`.
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.

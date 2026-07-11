@@ -989,8 +989,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph, list, table, header/footer, style, and comment blocks." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block with optional run-level styles and return an inspectable/resolveable paragraph object." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
-  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add header text exported as a DOCX header part and referenced from section properties." },
-  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add footer text exported as a DOCX footer part and referenced from section properties." },
+  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add default, first-page, or even-page header text exported as relationship-driven DOCX header parts and section references." },
+  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add default, first-page, or even-page footer text exported as relationship-driven DOCX footer parts and section references." },
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
@@ -1559,11 +1559,13 @@ const DOCUMENT_HELP_SCHEMAS = {
     text: { type: "string", required: true, description: "Header text." },
     name: { type: "string", description: "Inspectable block name." },
     styleId: { type: "string", description: "Named style ID." },
+    referenceType: { type: "string", description: "default, first, or even section reference type." },
   }, "header", "DocumentHeaderFooterBlock", "Appended header block."),
   "document.addFooter": helpSchema({
     text: { type: "string", required: true, description: "Footer text." },
     name: { type: "string", description: "Inspectable block name." },
     styleId: { type: "string", description: "Named style ID." },
+    referenceType: { type: "string", description: "default, first, or even section reference type." },
   }, "footer", "DocumentHeaderFooterBlock", "Appended footer block."),
   "document.addHyperlink": helpSchema({
     text: { type: "string", required: true, description: "Visible link text." },
@@ -8919,15 +8921,16 @@ function ooxmlMutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
   const sections = [...next.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)];
   if (sections.length) {
     const section = sections.at(-1)[0];
-    return next.replace(section, section.replace(/^<w:sectPr\b[^>]*>/, (opening) => `${opening}${referenceTag}`));
+    const titlePage = referenceType === "first" && !/<w:titlePg\b/.test(section) ? "<w:titlePg/>" : "";
+    return next.replace(section, section.replace(/^<w:sectPr\b[^>]*>/, (opening) => `${opening}${referenceTag}${titlePage}`));
   }
   const selfClosingSections = [...next.matchAll(/<w:sectPr\b[^>]*\/>/g)];
   if (selfClosingSections.length) {
     const section = selfClosingSections.at(-1)[0];
-    return next.replace(section, `${section.replace(/\/>$/, ">")}${referenceTag}</w:sectPr>`);
+    return next.replace(section, `${section.replace(/\/>$/, ">")}${referenceTag}${referenceType === "first" ? "<w:titlePg/>" : ""}</w:sectPr>`);
   }
   if (!/<\/w:body>/.test(next)) throw new Error("DOCX header/footer sourceReference requires w:body or w:sectPr.");
-  return next.replace(/<\/w:body>/, `<w:sectPr>${referenceTag}</w:sectPr></w:body>`);
+  return next.replace(/<\/w:body>/, `<w:sectPr>${referenceTag}${referenceType === "first" ? "<w:titlePg/>" : ""}</w:sectPr></w:body>`);
 }
 
 function ooxmlMutateXlsxTableReference(xml, ids, addId) {
@@ -9086,12 +9089,14 @@ export class DocumentFile {
     const hasNumbering = document.blocks.some((block) => block.kind === "listItem");
     const headerParts = collectDocxHeaderFooterParts(document, "header");
     const footerParts = collectDocxHeaderFooterParts(document, "footer");
-    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, headerParts, footerParts, hasNumbering, imageParts }));
+    const hasEvenHeaderFooter = [...headerParts, ...footerParts].some((part) => part.referenceType === "even");
+    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, headerParts, footerParts, hasNumbering, hasSettings: hasEvenHeaderFooter, imageParts }));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
     const docRels = [{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" }];
     const relIds = {};
     if (hasNumbering) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering", target: "numbering.xml" });
     if (document.comments.length) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
+    if (hasEvenHeaderFooter) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings", target: "settings.xml" });
     relIds.headers = headerParts.map((part) => {
       const relId = `rId${docRels.length + 1}`;
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: part.target });
@@ -9117,6 +9122,7 @@ export class DocumentFile {
     zip.file("word/styles.xml", docxStylesXml(document));
     if (hasNumbering) zip.file("word/numbering.xml", docxNumberingXml());
     if (document.comments.length) zip.file("word/comments.xml", docxCommentsXml(document));
+    if (hasEvenHeaderFooter) zip.file("word/settings.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:evenAndOddHeaders/></w:settings>');
     headerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("header", part.blocks)));
     footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
     imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));

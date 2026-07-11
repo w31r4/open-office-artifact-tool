@@ -91,6 +91,9 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.schema?
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.schema?.returns?.blob);
 assert.ok(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.colors);
 assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.patches);
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.referenceType?.type, "string");
 assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));

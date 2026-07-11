@@ -11,8 +11,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addComment` | api | Attach a comment to a paragraph or table block using a stable target ID. |
 | `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC. |
-| `document.addFooter` | api | Add footer text exported as a DOCX footer part and referenced from section properties. |
-| `document.addHeader` | api | Add header text exported as a DOCX header part and referenced from section properties. |
+| `document.addFooter` | api | Add default, first-page, or even-page footer text exported as relationship-driven DOCX footer parts and section references. |
+| `document.addHeader` | api | Add default, first-page, or even-page header text exported as relationship-driven DOCX header parts and section references. |
 | `document.addHyperlink` | api | Append an external hyperlink backed by a DOCX relationship and w:hyperlink element. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
@@ -29,7 +29,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets and reference types. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
@@ -112,13 +112,14 @@ Append a Word field block exported as w:fldSimple with instruction text such as 
 
 #### `document.addFooter`
 
-Add footer text exported as a DOCX footer part and referenced from section properties.
+Add default, first-page, or even-page footer text exported as relationship-driven DOCX footer parts and section references.
 
 **Schema parameters:**
 
 - `text` (string) required — Footer text.
 - `name` (string) — Inspectable block name.
 - `styleId` (string) — Named style ID.
+- `referenceType` (string) — default, first, or even section reference type.
 
 **Schema returns:**
 
@@ -126,13 +127,14 @@ Add footer text exported as a DOCX footer part and referenced from section prope
 
 #### `document.addHeader`
 
-Add header text exported as a DOCX header part and referenced from section properties.
+Add default, first-page, or even-page header text exported as relationship-driven DOCX header parts and section references.
 
 **Schema parameters:**
 
 - `text` (string) required — Header text.
 - `name` (string) — Inspectable block name.
 - `styleId` (string) — Named style ID.
+- `referenceType` (string) — default, first, or even section reference type.
 
 **Schema returns:**
 
@@ -396,11 +398,12 @@ Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.x
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available.
+Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets and reference types.
 
 **Schema parameters:**
 
 - `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
+- `preferNative` (boolean) — Parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks.
 
 **Schema returns:**
 

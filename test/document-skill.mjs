@@ -33,6 +33,9 @@ try {
   assert.match(inspect, /native render review/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/document\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
+  const nativePreferred = await verifyDocumentFile(result.docxPath, { outputDir: path.join(outputDir, "native-preferred"), preferNative: true, nativeRender: "off" });
+  assert.equal(nativePreferred.summary.verifyOk, true);
+  assert.match(nativePreferred.inspect.ndjson, /Office artifact readiness brief/);
 
   const nativeStatus = nativeDocumentRenderStatus();
   const baselineWrite = await verifyDocumentFile(result.docxPath, {
@@ -71,6 +74,7 @@ try {
   const skillText = await fs.readFile(path.join(repoRoot, "skills", "documents", "SKILL.md"), "utf8");
   assert.match(skillText, /LibreOffice PDF plus Poppler page PNGs/);
   assert.match(skillText, /baseline-dir/);
+  assert.match(skillText, /preferNative/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }
