@@ -37,6 +37,9 @@ const tasksTable = sheet.tables.add("A1:D3", true, "TasksTable");
 tasksTable.style = "TableStyleMedium4";
 tasksTable.showBandedColumns = true;
 tasksTable.rows.add(null, [["8", "13", "21", "Done"]]);
+sheet.getRange("E2").formulas = [["=SUM(TasksTable[Sum])"]];
+workbook.recalculate();
+assert.equal(sheet.getRange("E2").values[0][0], 38);
 assert.deepEqual(tasksTable.getDataRows()[0].slice(0, 3), [2, 3, 5]);
 assert.equal(tasksTable.getHeaderRowRange().values[0][0], "A");
 
@@ -102,6 +105,12 @@ assert.equal(trace.tree.address, "C2");
 assert.equal(trace.tree.value, 5);
 assert.deepEqual(trace.tree.precedents.map((node) => node.address), ["A2", "B2"]);
 assert.match(trace.ndjson, /"precedents":\["Sheet1!A2","Sheet1!B2"\]/);
+const structuredTrace = workbook.trace("Sheet1!E2");
+assert.equal(structuredTrace.tree.value, 38);
+assert.deepEqual(structuredTrace.tree.precedents.map((node) => node.address), ["C2", "C3", "C4"]);
+assert.match(workbook.inspect({ kind: "formula", target: "Sheet1!E2", maxChars: 8000 }).ndjson, /TasksTable\[Sum\]/);
+assert.match(workbook.inspect({ kind: "formulaNode", target: "Sheet1!E2", maxChars: 12000 }).ndjson, /Sheet1!C4/);
+assert.match(workbook.help("workbook.structuredReferences").ndjson, /TableName\[Column\]/);
 assert.match(workbook.help("workbook.trace").ndjson, /precedent tree/);
 assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
 
