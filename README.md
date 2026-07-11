@@ -75,7 +75,7 @@ slide.compose(tree, { frame: { left: 80, top: 120, width: 720, height: 180 } });
 
 ## Renderer adapters
 
-`renderArtifact(artifact, { format })` returns the artifact's native SVG preview by default. Raster/PDF formats must be supplied by an explicit adapter so the package never pretends to support PNG/WebP/PDF output without a renderer. `visualQaArtifact(...)` records deterministic render metadata and hashes, checks empty/malformed renders, and can compare against a baseline render.
+`renderArtifact(artifact, { format })` returns the artifact's native SVG preview by default. Raster/PDF formats must be supplied by an explicit adapter so the package never pretends to support PNG/WebP/PDF output without a renderer. `visualQaArtifact(...)` records deterministic render metadata and hashes, checks empty/malformed renders, can compare against a baseline render, and can compute PNG pixel-diff metrics with `pixelDiff: true`.
 
 ```js
 import { DocumentModel, renderArtifact } from "open-office-artifact-tool";
@@ -195,7 +195,7 @@ The package deliberately prioritizes agent workflows:
 2. resolve stable IDs back to editable objects;
 3. export both durable files and lightweight layout/preview artifacts;
 4. expose bounded help records for API discovery via `helpArtifact(...)` and generated [`docs/api.md`](docs/api.md);
-5. verify artifacts with `verifyArtifact(artifact)` or per-artifact `verify()` methods before delivery, and use `visualQaArtifact(...)` when a render hash/baseline gate is useful.
+5. verify artifacts with `verifyArtifact(artifact)` or per-artifact `verify()` methods before delivery, and use `visualQaArtifact(...)` when a render hash/baseline gate or PNG pixel-diff gate is useful.
 
 ## Development
 

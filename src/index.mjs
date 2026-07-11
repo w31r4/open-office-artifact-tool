@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 import JSZip from "jszip";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -206,6 +207,153 @@ function svgDimensions(svgText = "") {
   };
 }
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+function isPngBytes(bytes) {
+  return PNG_SIGNATURE.every((byte, index) => bytes?.[index] === byte);
+}
+
+function paethPredictor(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+
+function decodePngRgba(bytes) {
+  if (!isPngBytes(bytes)) throw new Error("not a PNG file");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let compression = 0;
+  let filterMethod = 0;
+  let interlace = 0;
+  const idat = [];
+  while (offset + 12 <= bytes.byteLength) {
+    const length = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+    const type = decoder.decode(bytes.slice(offset + 4, offset + 8));
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    if (length < 0 || dataEnd + 4 > bytes.byteLength) throw new Error("truncated PNG chunk");
+    const data = bytes.slice(dataStart, dataEnd);
+    if (type === "IHDR") {
+      width = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+      height = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+      bitDepth = data[8];
+      colorType = data[9];
+      compression = data[10];
+      filterMethod = data[11];
+      interlace = data[12];
+    } else if (type === "IDAT") {
+      idat.push(Buffer.from(data));
+    } else if (type === "IEND") {
+      break;
+    }
+    offset = dataEnd + 4;
+  }
+  if (!width || !height) throw new Error("PNG is missing IHDR geometry");
+  if (bitDepth !== 8 || compression !== 0 || filterMethod !== 0 || interlace !== 0) throw new Error("only 8-bit non-interlaced PNGs are supported for pixel diff");
+  const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+  if (!channels) throw new Error(`unsupported PNG color type ${colorType}`);
+  const rowBytes = width * channels;
+  const inflated = inflateSync(Buffer.concat(idat));
+  const expected = (rowBytes + 1) * height;
+  if (inflated.byteLength < expected) throw new Error("PNG image data is truncated");
+  const raw = new Uint8Array(width * height * channels);
+  let inOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[inOffset++];
+    const rowStart = y * rowBytes;
+    const priorStart = (y - 1) * rowBytes;
+    for (let x = 0; x < rowBytes; x += 1) {
+      const left = x >= channels ? raw[rowStart + x - channels] : 0;
+      const up = y > 0 ? raw[priorStart + x] : 0;
+      const upLeft = y > 0 && x >= channels ? raw[priorStart + x - channels] : 0;
+      const value = inflated[inOffset++];
+      if (filter === 0) raw[rowStart + x] = value;
+      else if (filter === 1) raw[rowStart + x] = (value + left) & 0xff;
+      else if (filter === 2) raw[rowStart + x] = (value + up) & 0xff;
+      else if (filter === 3) raw[rowStart + x] = (value + Math.floor((left + up) / 2)) & 0xff;
+      else if (filter === 4) raw[rowStart + x] = (value + paethPredictor(left, up, upLeft)) & 0xff;
+      else throw new Error(`unsupported PNG row filter ${filter}`);
+    }
+  }
+  const rgba = new Uint8Array(width * height * 4);
+  for (let i = 0, p = 0; p < width * height; p += 1, i += channels) {
+    const out = p * 4;
+    if (colorType === 0) {
+      rgba[out] = raw[i];
+      rgba[out + 1] = raw[i];
+      rgba[out + 2] = raw[i];
+      rgba[out + 3] = 255;
+    } else if (colorType === 2) {
+      rgba[out] = raw[i];
+      rgba[out + 1] = raw[i + 1];
+      rgba[out + 2] = raw[i + 2];
+      rgba[out + 3] = 255;
+    } else if (colorType === 4) {
+      rgba[out] = raw[i];
+      rgba[out + 1] = raw[i];
+      rgba[out + 2] = raw[i];
+      rgba[out + 3] = raw[i + 1];
+    } else {
+      rgba[out] = raw[i];
+      rgba[out + 1] = raw[i + 1];
+      rgba[out + 2] = raw[i + 2];
+      rgba[out + 3] = raw[i + 3];
+    }
+  }
+  return { width, height, pixels: rgba };
+}
+
+function comparePngPixels(bytes, baselineBytes, options = {}) {
+  const threshold = Math.max(0, Number(options.pixelThreshold ?? options.threshold ?? 0));
+  const actual = decodePngRgba(bytes);
+  const expected = decodePngRgba(baselineBytes);
+  const result = {
+    format: "png",
+    width: actual.width,
+    height: actual.height,
+    baselineWidth: expected.width,
+    baselineHeight: expected.height,
+    threshold,
+    pixels: actual.width * actual.height,
+    differentPixels: 0,
+    mismatchRatio: 0,
+    maxChannelDelta: 0,
+    meanChannelDelta: 0,
+  };
+  if (actual.width !== expected.width || actual.height !== expected.height) {
+    result.dimensionMismatch = true;
+    result.differentPixels = Math.max(result.pixels, expected.width * expected.height);
+    result.mismatchRatio = 1;
+    result.changed = true;
+    return result;
+  }
+  let changedPixels = 0;
+  let channelDeltaSum = 0;
+  for (let i = 0; i < actual.pixels.length; i += 4) {
+    let pixelChanged = false;
+    for (let c = 0; c < 4; c += 1) {
+      const delta = Math.abs(actual.pixels[i + c] - expected.pixels[i + c]);
+      channelDeltaSum += delta;
+      if (delta > result.maxChannelDelta) result.maxChannelDelta = delta;
+      if (delta > threshold) pixelChanged = true;
+    }
+    if (pixelChanged) changedPixels += 1;
+  }
+  result.differentPixels = changedPixels;
+  result.mismatchRatio = result.pixels ? changedPixels / result.pixels : 0;
+  result.meanChannelDelta = actual.pixels.length ? channelDeltaSum / actual.pixels.length : 0;
+  result.changed = changedPixels > 0;
+  return result;
+}
+
 export async function renderArtifact(artifact, options = {}) {
   const artifactKind = inferArtifactKind(artifact);
   if (!artifact || (typeof artifact.render !== "function" && typeof artifact.export !== "function")) {
@@ -253,6 +401,22 @@ export async function visualQaArtifact(artifact, options = {}) {
     const baselineHash = stableByteHash(baselineBytes);
     summary.baselineHash = baselineHash;
     summary.changed = baselineHash !== hash;
+    const pixelDiffEnabled = options.pixelDiff === true || typeof options.pixelDiff === "object";
+    if (pixelDiffEnabled) {
+      if (isPngBytes(bytes) && isPngBytes(baselineBytes)) {
+        try {
+          const pixelDiff = comparePngPixels(bytes, baselineBytes, typeof options.pixelDiff === "object" ? options.pixelDiff : options);
+          summary.pixelDiff = pixelDiff;
+          if (pixelDiff.changed && options.allowChange !== true && options.allowPixelChange !== true) {
+            issues.push(verificationIssue(artifactKind, "visualPixelDiff", `Rendered PNG differs from the baseline in ${pixelDiff.differentPixels} pixels.`, { severity: options.diffSeverity || "warning", ...pixelDiff }));
+          }
+        } catch (error) {
+          summary.pixelDiff = { skipped: true, reason: error.message };
+        }
+      } else {
+        summary.pixelDiff = { skipped: true, reason: "pixelDiff currently supports PNG baselines only" };
+      }
+    }
     if (baselineHash !== hash && options.allowChange !== true) issues.push(verificationIssue(artifactKind, "visualDiff", "Rendered output differs from the supplied baseline.", { severity: options.diffSeverity || "warning", hash, baselineHash }));
   }
   const records = [summary, ...issues];
@@ -358,7 +522,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, and optionally compare against a baseline render." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG pixel-diff metrics when requested." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },

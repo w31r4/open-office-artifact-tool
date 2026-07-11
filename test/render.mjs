@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { deflateSync } from "node:zlib";
 
 import {
   DocumentModel,
@@ -9,6 +10,31 @@ import {
   visualQaArtifact,
   Workbook,
 } from "open-office-artifact-tool";
+
+function pngChunk(type, data = Buffer.alloc(0)) {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  return Buffer.concat([length, Buffer.from(type, "ascii"), data, Buffer.alloc(4)]);
+}
+
+function makePng(width, height, rgba) {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const rowBytes = width * 4;
+  const raw = Buffer.alloc((rowBytes + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    raw[y * (rowBytes + 1)] = 0;
+    Buffer.from(rgba).copy(raw, y * (rowBytes + 1) + 1, y * rowBytes, (y + 1) * rowBytes);
+  }
+  return new Uint8Array(Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND")]));
+}
+
+const blackPixelPng = makePng(1, 1, [0, 0, 0, 255]);
+const whitePixelPng = makePng(1, 1, [255, 255, 255, 255]);
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
@@ -58,6 +84,15 @@ assert.match(visualQa.ndjson, /"kind":"visualQa"/);
 const changedVisualQa = await visualQaArtifact(document, { baseline: new FileBlob("different", { type: "image/svg+xml" }) });
 assert.equal(changedVisualQa.ok, false);
 assert.match(changedVisualQa.ndjson, /visualDiff/);
+const pngArtifact = { render: () => new FileBlob(whitePixelPng, { type: "image/png" }) };
+const pixelQa = await visualQaArtifact(pngArtifact, { baseline: new FileBlob(blackPixelPng, { type: "image/png" }), pixelDiff: true, maxChars: 4000 });
+assert.equal(pixelQa.ok, false);
+assert.equal(pixelQa.summary.pixelDiff.differentPixels, 1);
+assert.equal(pixelQa.summary.pixelDiff.mismatchRatio, 1);
+assert.match(pixelQa.ndjson, /visualPixelDiff/);
+const unchangedPixelQa = await visualQaArtifact(pngArtifact, { baseline: new FileBlob(whitePixelPng, { type: "image/png" }), pixelDiff: true });
+assert.equal(unchangedPixelQa.ok, true);
+assert.equal(unchangedPixelQa.summary.pixelDiff.changed, false);
 await assert.rejects(() => renderArtifact(document, { format: "webp" }), /no renderer adapter/);
 
 const pdf = PdfArtifact.create({ pages: [{ text: "Render PDF", tables: [{ values: [["Metric", "Value"]] }] }] });
