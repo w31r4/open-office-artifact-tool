@@ -45,15 +45,23 @@
       ]
     }
   ],
+  "flows": [
+    {
+      "id": "flow/appendix",
+      "text": "Automatically paginated appendix\nLong-form agent output continues onto a new page when the selected page has no remaining content space. The resulting lines remain extractable, inspectable, and stable through PDF roundtrip.\nAveryLongUnbrokenEvidenceTokenThatMustWrapWithoutEscapingTheConfiguredPageMargins",
+      "options": { "pageIndex": 1, "margins": 72, "fontSize": 11, "lineHeight": 15, "paragraphGap": 8, "color": "#334155" }
+    }
+  ],
   "expectInspect": [
     { "kind": "page,text", "pattern": "Office artifact QA report" },
     { "kind": "textItem", "pattern": "PDF.js and Poppler agree" },
     { "kind": "table", "pattern": "qa-gates" },
     { "kind": "image", "pattern": "Verified workflow" },
     { "kind": "chart", "pattern": "Independent checks accumulate" },
-    { "kind": "region", "pattern": "Parser evidence" }
+    { "kind": "region", "pattern": "Parser evidence" },
+    { "kind": "textItem", "pattern": "Automatically paginated appendix" }
   ],
-  "expectText": ["Office artifact QA report", "Parser evidence complements visual review"],
-  "expectPdfjsText": ["Office artifact QA report", "PDF.js and Poppler agree", "Independent checks accumulate"],
+  "expectText": ["Office artifact QA report", "Parser evidence complements visual review", "Automatically paginated appendix"],
+  "expectPdfjsText": ["Office artifact QA report", "PDF.js and Poppler agree", "Independent checks accumulate", "Automatically paginated appendix"],
   "qa": { "nativeRender": "auto", "pdfjs": "auto", "inspectKind": "page,text,textItem,region,table,image,chart", "maxChars": 30000 }
 }

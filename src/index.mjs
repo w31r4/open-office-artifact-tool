@@ -8778,9 +8778,12 @@ function pdfRectCommand(page, bbox, options = {}) {
 }
 
 function pdfFitText(text, width, fontSize) {
-  const maxChars = Math.max(1, Math.floor(Number(width) / Math.max(1, Number(fontSize) * 0.55)));
   const value = String(text ?? "");
-  return value.length <= maxChars ? value : `${value.slice(0, Math.max(1, maxChars - 1))}...`;
+  const available = Math.max(1, Number(width));
+  if (pdfTextWidth(value, fontSize) <= available) return value;
+  const chars = [...value];
+  while (chars.length && pdfTextWidth(`${chars.join("")}...`, fontSize) > available) chars.pop();
+  return chars.length ? `${chars.join("")}...` : "...";
 }
 
 function pdfPageTextCommands(page) {

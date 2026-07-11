@@ -28,6 +28,7 @@ export function nativePdfRenderStatus() {
 
 export function createPdfFromFixture(fixture = {}) {
   const pdf = PdfArtifact.create({ metadata: { fixture: fixture.name || "pdf-fixture", ...(fixture.metadata || {}) }, pages: fixture.pages || [] });
+  for (const [index, flow] of (fixture.flows || []).entries()) pdf.addFlowText(flow.text || "", { id: flow.id || flow.name || `fixture-flow-${index + 1}`, ...(flow.options || flow) });
   const inspectKind = fixture.qa?.inspectKind || "page,text,textItem,region,table,image,chart";
   for (const expected of fixture.expectInspect || []) assert.match(pdf.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));
   return pdf;
