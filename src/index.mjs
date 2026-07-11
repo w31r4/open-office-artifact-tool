@@ -597,6 +597,7 @@ export async function visualQaArtifact(artifact, options = {}) {
 
 export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook; add worksheets before editing." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
@@ -604,6 +605,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
   { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.recalculate", summary: "Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.resolve", summary: "Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents." },
@@ -1495,11 +1498,127 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "presentation", "Presentation", "Imported editable presentation facade."),
 };
 
+const WORKBOOK_HELP_SCHEMAS = {
+  "Workbook.create": helpSchema({}, "workbook", "Workbook", "Empty editable workbook facade."),
+  "workbook.worksheets.add": helpSchema({
+    name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
+  }, "worksheet", "Worksheet", "Appended editable worksheet."),
+  "SpreadsheetFile.importXlsx": helpSchema({
+    xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
+  }, "workbook", "Workbook", "Imported editable workbook facade."),
+  "SpreadsheetFile.exportXlsx": helpSchema({
+    workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
+  }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
+  "worksheet.getRange": helpSchema({
+    address: { type: "string", required: true, description: "A1 cell or range address such as A1:D10." },
+  }, "range", "Range", "Editable range facade for values, formulas, formatting, and rules."),
+  "workbook.render": helpSchema({
+    sheetName: { type: "string", description: "Worksheet name; defaults to the active worksheet." },
+    range: { type: "string", description: "A1 preview range." },
+    format: { type: "string", description: "svg by default or layout." },
+    target: { type: "string", description: "Stable layout target ID/anchor." },
+    search: { type: "string", description: "Case-insensitive layout filter." },
+  }, "blob", "FileBlob", "Worksheet SVG preview or workbook layout JSON."),
+  "workbook.layoutJson": helpSchema({
+    sheetName: { type: "string", description: "Optional worksheet selector." },
+    range: { type: "string", description: "Optional A1 layout range." },
+    target: { type: "string", description: "Stable target ID/anchor." },
+    search: { type: "string", description: "Case-insensitive layout-record filter." },
+    before: { type: "number", description: "Context records before matches." },
+    after: { type: "number", description: "Context records after matches." },
+  }, "layout", "object", "Workbook/worksheet layout tree with cells and drawing/rule bounds."),
+  "workbook.verify": helpSchema({
+    maxChars: { type: "number", description: "Maximum bounded NDJSON issue output size." },
+  }, "report", "object", "Workbook formula/structure/drawing/rule QA result."),
+  "workbook.recalculate": helpSchema({}, "graph", "object", "Updated formula dependency graph including cycles and errors."),
+  "workbook.resolve": helpSchema({
+    id: { type: "string", required: true, description: "Stable workbook, sheet, table, pivot, chart, image, sparkline, rule, comment, or defined-name ID." },
+  }, "object", "object|undefined", "Resolved editable facade/record or undefined."),
+  "workbook.trace": helpSchema({
+    reference: { type: "string|Range", required: true, description: "Target A1 reference, optionally sheet-qualified, or range facade." },
+    maxDepth: { type: "number", description: "Maximum precedent recursion depth; defaults to 8." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON trace size." },
+  }, "trace", "object", "Precedent tree plus bounded flat NDJSON trace."),
+  "workbook.formulaGraph": helpSchema({
+    recalculate: { type: "boolean", description: "Recalculate before reading the graph; defaults to true." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON graph-record size." },
+  }, "graph", "object", "Formula nodes, edges, cycles, errors, and bounded NDJSON."),
+  "workbook.structuredReferences": helpSchema({
+    formula: { type: "string", required: true, description: "Formula containing an Excel table structured reference." },
+    table: { type: "string", required: true, description: "Worksheet table name." },
+    selector: { type: "string", required: true, description: "Column/section/range/union selector inside brackets." },
+  }, "value", "unknown", "Calculated scalar/array value with stable table-cell precedents."),
+  "workbook.sharedArrayFormulas": helpSchema({
+    xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared or array formula records." },
+    formula: { type: "string", description: "Shared/array formula expression." },
+    ref: { type: "string", description: "Shared or spill A1 range." },
+  }, "metadata", "object", "formulaType/sharedRef/arrayRef/spill inspect metadata."),
+  "workbook.definedNames.add": helpSchema({
+    name: { type: "string", required: true, description: "Defined name." },
+    refersTo: { type: "string", required: true, description: "Sheet-qualified A1 reference." },
+    scope: { type: "string", description: "Optional worksheet scope." },
+    comment: { type: "string", description: "Optional description." },
+  }, "definedName", "DefinedName", "Created or updated defined-name facade."),
+  "range.dataValidation": helpSchema({
+    type: { type: "string", required: true, description: "Validation type such as list, whole, decimal, date, or custom." },
+    values: { type: "unknown[]", description: "Allowed list values." },
+    formula1: { type: "string|number", description: "Primary validation formula/value." },
+    formula2: { type: "string|number", description: "Secondary formula/value for between rules." },
+    operator: { type: "string", description: "Comparison operator." },
+    allowBlank: { type: "boolean", description: "Allow blank cells." },
+  }, "validation", "object", "Inspectable data-validation rule anchored to the range."),
+  "workbook.comments.addThread": helpSchema({
+    target: { type: "Range|object", required: true, description: "Target single-cell range or cell descriptor." },
+    text: { type: "string", required: true, description: "Initial comment text." },
+  }, "thread", "CommentThread", "Attached threaded comment using comments.setSelf author identity."),
+  "sheet.tables.add": helpSchema({
+    range: { type: "string|Range", required: true, description: "A1 range or range facade." },
+    hasHeaders: { type: "boolean", description: "Whether the first row contains headers." },
+    name: { type: "string", description: "Stable Excel table name." },
+    style: { type: "string", description: "Table style name." },
+  }, "table", "WorksheetTable", "Editable worksheet table facade."),
+  "sheet.pivotTables.add": helpSchema({
+    name: { type: "string", description: "Stable pivot name." },
+    sourceRange: { type: "string|Range", required: true, description: "Source data range." },
+    targetRange: { type: "string|Range", required: true, description: "Destination anchor/range." },
+    rowFields: { type: "string[]", description: "Row field names." },
+    columnFields: { type: "string[]", description: "Column field names." },
+    valueFields: { type: "object[]", description: "Value field and aggregation definitions." },
+    filters: { type: "object", description: "Pivot filter metadata." },
+  }, "pivot", "WorksheetPivotTable", "Editable clean-room pivot facade."),
+  "sheet.charts.add": helpSchema({
+    chartType: { type: "string", required: true, description: "Chart type such as bar, line, or pie." },
+    source: { type: "Range|object", description: "Source range or explicit chart config." },
+    title: { type: "string", description: "Chart title." },
+    categories: { type: "string[]", description: "Explicit categories." },
+    series: { type: "object[]", description: "Explicit series definitions." },
+    position: { type: "object", description: "Pixel chart frame." },
+  }, "chart", "WorksheetChart", "Editable worksheet chart facade."),
+  "sheet.images.add": helpSchema({
+    dataUrl: { type: "string", description: "Embedded image data URL." },
+    uri: { type: "string", description: "External image URI metadata." },
+    prompt: { type: "string", description: "Generation/source prompt metadata." },
+    alt: { type: "string", description: "Alternative text." },
+    anchor: { type: "object", description: "Zero-based cell anchor and pixel extent." },
+    fit: { type: "string", description: "contain or cover intent." },
+  }, "image", "WorksheetImage", "Editable worksheet image facade."),
+  "sheet.sparklineGroups.add": helpSchema({
+    type: { type: "string", description: "line, column, or stacked." },
+    targetRange: { type: "string|Range", required: true, description: "Destination range." },
+    sourceData: { type: "string|Range", required: true, description: "Source data range." },
+    dateAxisRange: { type: "string|Range", description: "Optional date-axis range." },
+    seriesColor: { type: "string", description: "Series color." },
+    markers: { type: "object", description: "Marker visibility/style metadata." },
+    axis: { type: "object", description: "Axis metadata." },
+  }, "sparkline", "SparklineGroup", "Editable sparkline group facade."),
+};
+
 for (const item of HELP_CATALOG) {
   const details = HELP_DETAIL_OVERRIDES[item.name];
   if (details) Object.assign(item, details);
   if (item.artifactKind === "document" && !item.schema && DOCUMENT_HELP_SCHEMAS[item.name]) item.schema = DOCUMENT_HELP_SCHEMAS[item.name];
   if (item.artifactKind === "presentation" && !item.schema && PRESENTATION_HELP_SCHEMAS[item.name]) item.schema = PRESENTATION_HELP_SCHEMAS[item.name];
+  if (item.artifactKind === "workbook" && !item.schema && WORKBOOK_HELP_SCHEMAS[item.name]) item.schema = WORKBOOK_HELP_SCHEMAS[item.name];
   if (item.name.startsWith("fx.") && !item.schema) {
     const functionName = item.name.slice(3);
     const returnType = item.category === "dynamic-array"

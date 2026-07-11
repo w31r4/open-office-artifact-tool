@@ -1572,11 +1572,14 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing. |
+| `workbook.recalculate` | api | Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
+| `workbook.resolve` | api | Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
 | `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata. |
 | `workbook.structuredReferences` | formula | Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
+| `workbook.worksheets.add` | api | Append an editable worksheet with a stable name and ID. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
 
 ### workbook details
@@ -2371,6 +2374,23 @@ Add a conditional formatting rule; cellIs/expression/containsText/colorScale rul
 
 - `conditionalFormat` (object) — Inspectable conditional-format rule with stable id.
 
+#### `range.dataValidation`
+
+Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }).
+
+**Schema parameters:**
+
+- `type` (string) required — Validation type such as list, whole, decimal, date, or custom.
+- `values` (unknown[]) — Allowed list values.
+- `formula1` (string|number) — Primary validation formula/value.
+- `formula2` (string|number) — Secondary formula/value for between rules.
+- `operator` (string) — Comparison operator.
+- `allowBlank` (boolean) — Allow blank cells.
+
+**Schema returns:**
+
+- `validation` (object) — Inspectable data-validation rule anchored to the range.
+
 #### `range.format`
 
 Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes.
@@ -2391,6 +2411,136 @@ Assign basic cell style metadata such as fill, font, numberFormat, alignment, an
 
 - `range` (Range) — The formatted range facade.
 
+#### `sheet.charts.add`
+
+Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas.
+
+**Schema parameters:**
+
+- `chartType` (string) required — Chart type such as bar, line, or pie.
+- `source` (Range|object) — Source range or explicit chart config.
+- `title` (string) — Chart title.
+- `categories` (string[]) — Explicit categories.
+- `series` (object[]) — Explicit series definitions.
+- `position` (object) — Pixel chart frame.
+
+**Schema returns:**
+
+- `chart` (WorksheetChart) — Editable worksheet chart facade.
+
+#### `sheet.images.add`
+
+Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents.
+
+**Schema parameters:**
+
+- `dataUrl` (string) — Embedded image data URL.
+- `uri` (string) — External image URI metadata.
+- `prompt` (string) — Generation/source prompt metadata.
+- `alt` (string) — Alternative text.
+- `anchor` (object) — Zero-based cell anchor and pixel extent.
+- `fit` (string) — contain or cover intent.
+
+**Schema returns:**
+
+- `image` (WorksheetImage) — Editable worksheet image facade.
+
+#### `sheet.pivotTables.add`
+
+Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip.
+
+**Schema parameters:**
+
+- `name` (string) — Stable pivot name.
+- `sourceRange` (string|Range) required — Source data range.
+- `targetRange` (string|Range) required — Destination anchor/range.
+- `rowFields` (string[]) — Row field names.
+- `columnFields` (string[]) — Column field names.
+- `valueFields` (object[]) — Value field and aggregation definitions.
+- `filters` (object) — Pivot filter metadata.
+
+**Schema returns:**
+
+- `pivot` (WorksheetPivotTable) — Editable clean-room pivot facade.
+
+#### `sheet.sparklineGroups.add`
+
+Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand.
+
+**Schema parameters:**
+
+- `type` (string) — line, column, or stacked.
+- `targetRange` (string|Range) required — Destination range.
+- `sourceData` (string|Range) required — Source data range.
+- `dateAxisRange` (string|Range) — Optional date-axis range.
+- `seriesColor` (string) — Series color.
+- `markers` (object) — Marker visibility/style metadata.
+- `axis` (object) — Axis metadata.
+
+**Schema returns:**
+
+- `sparkline` (SparklineGroup) — Editable sparkline group facade.
+
+#### `sheet.tables.add`
+
+Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
+
+**Schema parameters:**
+
+- `range` (string|Range) required — A1 range or range facade.
+- `hasHeaders` (boolean) — Whether the first row contains headers.
+- `name` (string) — Stable Excel table name.
+- `style` (string) — Table style name.
+
+**Schema returns:**
+
+- `table` (WorksheetTable) — Editable worksheet table facade.
+
+#### `SpreadsheetFile.exportXlsx`
+
+Serialize a Workbook facade to an XLSX FileBlob.
+
+**Schema parameters:**
+
+- `workbook` (Workbook) required — Workbook facade to recalculate and serialize.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Native OOXML XLSX package bytes.
+
+#### `SpreadsheetFile.importXlsx`
+
+Load an XLSX file into a Workbook facade.
+
+**Schema parameters:**
+
+- `xlsx` (FileBlob|Uint8Array) required — XLSX package bytes.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — Imported editable workbook facade.
+
+#### `workbook.comments.addThread`
+
+Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...').
+
+**Schema parameters:**
+
+- `target` (Range|object) required — Target single-cell range or cell descriptor.
+- `text` (string) required — Initial comment text.
+
+**Schema returns:**
+
+- `thread` (CommentThread) — Attached threaded comment using comments.setSelf author identity.
+
+#### `Workbook.create`
+
+Create an empty workbook; add worksheets before editing.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — Empty editable workbook facade.
+
 #### `workbook.definedNames.add`
 
 Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData).
@@ -2407,9 +2557,33 @@ Create a workbook or sheet-scoped defined name over an A1 range; exported as nat
 - scope/sheetName
 - comment
 
+**Schema parameters:**
+
+- `name` (string) required — Defined name.
+- `refersTo` (string) required — Sheet-qualified A1 reference.
+- `scope` (string) — Optional worksheet scope.
+- `comment` (string) — Optional description.
+
+**Schema returns:**
+
+- `definedName` (DefinedName) — Created or updated defined-name facade.
+
 **Returns:**
 
 DefinedName facade with id/name/refersTo/scope
+
+#### `workbook.formulaGraph`
+
+Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA.
+
+**Schema parameters:**
+
+- `recalculate` (boolean) — Recalculate before reading the graph; defaults to true.
+- `maxChars` (number) — Maximum bounded NDJSON graph-record size.
+
+**Schema returns:**
+
+- `graph` (object) — Formula nodes, edges, cycles, errors, and bounded NDJSON.
 
 #### `workbook.inspect`
 
@@ -2447,6 +2621,73 @@ Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, com
 
 { ndjson, truncated } bounded NDJSON records
 
+#### `workbook.layoutJson`
+
+Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing.
+
+**Schema parameters:**
+
+- `sheetName` (string) — Optional worksheet selector.
+- `range` (string) — Optional A1 layout range.
+- `target` (string) — Stable target ID/anchor.
+- `search` (string) — Case-insensitive layout-record filter.
+- `before` (number) — Context records before matches.
+- `after` (number) — Context records after matches.
+
+**Schema returns:**
+
+- `layout` (object) — Workbook/worksheet layout tree with cells and drawing/rule bounds.
+
+#### `workbook.recalculate`
+
+Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors.
+
+**Schema returns:**
+
+- `graph` (object) — Updated formula dependency graph including cycles and errors.
+
+#### `workbook.render`
+
+Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }.
+
+**Schema parameters:**
+
+- `sheetName` (string) — Worksheet name; defaults to the active worksheet.
+- `range` (string) — A1 preview range.
+- `format` (string) — svg by default or layout.
+- `target` (string) — Stable layout target ID/anchor.
+- `search` (string) — Case-insensitive layout filter.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Worksheet SVG preview or workbook layout JSON.
+
+#### `workbook.resolve`
+
+Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs.
+
+**Schema parameters:**
+
+- `id` (string) required — Stable workbook, sheet, table, pivot, chart, image, sparkline, rule, comment, or defined-name ID.
+
+**Schema returns:**
+
+- `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+#### `workbook.sharedArrayFormulas`
+
+Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata.
+
+**Schema parameters:**
+
+- `xlsx` (FileBlob|Uint8Array) — XLSX bytes containing shared or array formula records.
+- `formula` (string) — Shared/array formula expression.
+- `ref` (string) — Shared or spill A1 range.
+
+**Schema returns:**
+
+- `metadata` (object) — formulaType/sharedRef/arrayRef/spill inspect metadata.
+
 #### `workbook.structuredReferences`
 
 Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents.
@@ -2459,7 +2700,67 @@ Evaluate Excel-style table structured references such as TableName[Column], Tabl
 - =SUM(TasksTable[[#Data],[Revenue]:[Cost]])
 - =TEXTJOIN("|",TRUE,TasksTable[[#Data],[Region],[Code]])
 
+**Schema parameters:**
+
+- `formula` (string) required — Formula containing an Excel table structured reference.
+- `table` (string) required — Worksheet table name.
+- `selector` (string) required — Column/section/range/union selector inside brackets.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated scalar/array value with stable table-cell precedents.
+
 **Notes:**
 
 - Current clean-room subset supports #Headers/#Data/#All/#Totals sections, single-column selectors, contiguous column ranges, and comma-separated column unions; special escaping for headers containing brackets remains roadmap.
+
+#### `workbook.trace`
+
+Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged.
+
+**Schema parameters:**
+
+- `reference` (string|Range) required — Target A1 reference, optionally sheet-qualified, or range facade.
+- `maxDepth` (number) — Maximum precedent recursion depth; defaults to 8.
+- `maxChars` (number) — Maximum bounded NDJSON trace size.
+
+**Schema returns:**
+
+- `trace` (object) — Precedent tree plus bounded flat NDJSON trace.
+
+#### `workbook.verify`
+
+Return bounded QA issues for sheets, formulas, tables, charts, and comments.
+
+**Schema parameters:**
+
+- `maxChars` (number) — Maximum bounded NDJSON issue output size.
+
+**Schema returns:**
+
+- `report` (object) — Workbook formula/structure/drawing/rule QA result.
+
+#### `workbook.worksheets.add`
+
+Append an editable worksheet with a stable name and ID.
+
+**Schema parameters:**
+
+- `name` (string) — Unique worksheet name; defaults to SheetN.
+
+**Schema returns:**
+
+- `worksheet` (Worksheet) — Appended editable worksheet.
+
+#### `worksheet.getRange`
+
+Select an A1 range for values, formulas, formatting, merge, fill, and copy operations.
+
+**Schema parameters:**
+
+- `address` (string) required — A1 cell or range address such as A1:D10.
+
+**Schema returns:**
+
+- `range` (Range) — Editable range facade for values, formulas, formatting, and rules.
 
