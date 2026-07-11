@@ -610,7 +610,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes." },
-  { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
+  { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; cellIs/expression rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
@@ -1550,6 +1550,106 @@ class RangeConditionalFormatFacade {
   clear() { this.deleteAll(); }
 }
 
+function cellAddressWithinBounds(address, bounds) {
+  if (!bounds) return false;
+  try {
+    const coord = parseCellAddress(String(address || "").replaceAll("$", ""));
+    return coord.row >= bounds.top && coord.row <= bounds.bottom && coord.col >= bounds.left && coord.col <= bounds.right;
+  } catch {
+    return false;
+  }
+}
+
+function mergeCellStyle(base = {}, patch = {}) {
+  const out = { ...(base || {}) };
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value && typeof value === "object" && !Array.isArray(value) && out[key] && typeof out[key] === "object" && !Array.isArray(out[key])) out[key] = { ...out[key], ...value };
+    else out[key] = value;
+  }
+  return out;
+}
+
+function conditionalFormulaForCell(formula, ruleBounds, address) {
+  const raw = String(formula || "").trim();
+  if (!ruleBounds || !address) return raw;
+  let target;
+  try { target = parseCellAddress(String(address).replaceAll("$", "")); } catch { return raw; }
+  const rowOffset = target.row - ruleBounds.top;
+  const colOffset = target.col - ruleBounds.left;
+  return raw.replace(/(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?)([A-Za-z]+)(\$?)(\d+)/g, (match, quotedSheet, bareSheet, absCol, colText, absRow, rowText) => {
+    if (quotedSheet || bareSheet) return match;
+    const col = columnLabelToNumber(colText);
+    const row = Number(rowText) - 1;
+    const shiftedCol = absCol ? col : Math.max(0, col + colOffset);
+    const shiftedRow = absRow ? row : Math.max(0, row + rowOffset);
+    return `${absCol || ""}${columnNumberToLabel(shiftedCol)}${absRow || ""}${shiftedRow + 1}`;
+  });
+}
+
+function conditionalScalar(sheet, value, address, ruleBounds) {
+  if (value == null || value === "") return undefined;
+  const shifted = conditionalFormulaForCell(String(value).replace(/^=/, ""), ruleBounds, address);
+  const scalar = formulaScalar(sheet, shifted, {});
+  return scalar === undefined ? value : scalar;
+}
+
+function compareConditionalValues(actualValue, expectedValue, operator = "equalTo") {
+  const actualNum = Number(actualValue);
+  const expectedNum = Number(expectedValue);
+  const numeric = Number.isFinite(actualNum) && Number.isFinite(expectedNum) && String(expectedValue ?? "") !== "";
+  const actual = numeric ? actualNum : formulaText(actualValue);
+  const expected = numeric ? expectedNum : formulaText(expectedValue);
+  switch (String(operator || "equalTo").toLowerCase()) {
+    case "greaterthan": return actual > expected;
+    case "greaterthanorequal":
+    case "greaterthanorequalto": return actual >= expected;
+    case "lessthan": return actual < expected;
+    case "lessthanorequal":
+    case "lessthanorequalto": return actual <= expected;
+    case "notequal":
+    case "not equal": return actual !== expected;
+    case "equal":
+    case "equalto": return actual === expected;
+    default: return matchesCriteria(actualValue, `${operator}${expectedValue}`);
+  }
+}
+
+function evaluateConditionalFormatRule(sheet, rule, address) {
+  const bounds = safeRangeBounds(rule.range || "");
+  if (!cellAddressWithinBounds(address, bounds)) return false;
+  const cell = sheet.store.get(String(address).toUpperCase());
+  const ruleType = String(rule.ruleType || rule.type || "expression");
+  const normalizedType = ruleType.toLowerCase();
+  if (normalizedType === "cellis" || normalizedType === "cellvalue") {
+    const first = conditionalScalar(sheet, rule.formula ?? rule.formula1 ?? rule.rule?.formula ?? rule.rule?.formula1, address, bounds);
+    const second = conditionalScalar(sheet, rule.formula2 ?? rule.rule?.formula2, address, bounds);
+    const operator = rule.operator || rule.rule?.operator || "equalTo";
+    if (String(operator).toLowerCase() === "between") return compareConditionalValues(cell.value, first, "greaterThanOrEqual") && compareConditionalValues(cell.value, second, "lessThanOrEqual");
+    if (String(operator).toLowerCase() === "notbetween") return !(compareConditionalValues(cell.value, first, "greaterThanOrEqual") && compareConditionalValues(cell.value, second, "lessThanOrEqual"));
+    return compareConditionalValues(cell.value, first, operator);
+  }
+  if (normalizedType === "containstext") {
+    const expected = rule.text ?? rule.formula ?? rule.rule?.text ?? rule.rule?.formula;
+    return formulaText(cell.value).includes(formulaText(expected));
+  }
+  const formula = rule.formula || rule.expression || rule.rule?.formula || rule.rule?.expression;
+  if (!formula) return false;
+  const shifted = conditionalFormulaForCell(String(formula).replace(/^=/, ""), bounds, address);
+  return Boolean(evaluateFormulaCondition(sheet, shifted));
+}
+
+function worksheetConditionalFormatMatches(sheet, address) {
+  return sheet.conditionalFormattings.items
+    .filter((rule) => evaluateConditionalFormatRule(sheet, rule, address))
+    .map((rule) => ({ id: rule.id, range: rule.range, ruleType: rule.ruleType || rule.type || "expression", operator: rule.operator || rule.rule?.operator, formula: rule.formula || rule.expression || rule.rule?.formula, format: rule.format || rule.rule?.format || {} }));
+}
+
+function worksheetComputedCellStyle(sheet, address, baseStyle = {}) {
+  const matches = worksheetConditionalFormatMatches(sheet, address);
+  const style = matches.reduce((acc, match) => mergeCellStyle(acc, match.format), { ...(baseStyle || {}) });
+  return { style, matches };
+}
+
 function safeRangeBounds(address) {
   try { return parseRangeAddress(address); } catch { return undefined; }
 }
@@ -1992,12 +2092,18 @@ export class Worksheet {
 
   styleRecords(options = {}) {
     const bounds = options.range ? parseRangeAddress(options.range) : this.usedBounds();
+    const kinds = normalizeKinds(options.kind, ["style"]);
+    const includeBaseStyle = kinds.has("style");
+    const includeComputedStyle = kinds.has("computedStyle");
     const records = [];
     for (const [address, cell] of this.store.entries()) {
       const coord = parseCellAddress(address);
       if (coord.row < bounds.top || coord.row > bounds.bottom || coord.col < bounds.left || coord.col > bounds.right) continue;
-      if (!cell.style || Object.keys(cell.style).length === 0) continue;
-      records.push({ kind: "style", sheet: this.name, address, style: { ...cell.style } });
+      if (includeBaseStyle && cell.style && Object.keys(cell.style).length > 0) records.push({ kind: "style", sheet: this.name, address, style: { ...cell.style } });
+      if (includeComputedStyle) {
+        const computed = worksheetComputedCellStyle(this, address, cell.style);
+        if (computed.matches.length || Object.keys(computed.style || {}).length) records.push({ kind: "computedStyle", sheet: this.name, address, style: computed.style, conditionalFormats: computed.matches.map((match) => ({ id: match.id, ruleType: match.ruleType, operator: match.operator, formula: match.formula, format: match.format })) });
+      }
     }
     return records;
   }
@@ -2034,6 +2140,7 @@ export class Worksheet {
       for (let c = bounds.left; c <= bounds.right; c += 1) {
         const address = makeCellAddress(r, c);
         const cell = this.store.get(address);
+        const computed = worksheetComputedCellStyle(this, address, cell.style);
         cells.push({
           kind: "cell",
           sheet: this.name,
@@ -2044,6 +2151,8 @@ export class Worksheet {
           value: cell.value,
           formula: cell.formula || undefined,
           style: cell.style && Object.keys(cell.style).length ? { ...cell.style } : undefined,
+          computedStyle: computed.matches.length || Object.keys(computed.style || {}).length ? computed.style : undefined,
+          conditionalFormats: computed.matches.length ? computed.matches.map((match) => ({ id: match.id, ruleType: match.ruleType, operator: match.operator, formula: match.formula, format: match.format })) : undefined,
         });
       }
     }
@@ -2089,11 +2198,17 @@ export class Worksheet {
     for (let r = bounds.top; r <= bounds.bottom; r++) {
       for (let c = bounds.left; c <= bounds.right; c++) {
         const address = makeCellAddress(r, c);
-        const value = this.store.get(address).value ?? "";
+        const cell = this.store.get(address);
+        const value = cell.value ?? "";
+        const computed = worksheetComputedCellStyle(this, address, cell.style);
         const x = 40 + (c - bounds.left) * cellW;
         const y = 40 + (r - bounds.top) * cellH;
-        rows.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="white" stroke="#d0d7de"/>`);
-        rows.push(`<text x="${x + 6}" y="${y + 18}" font-family="Arial" font-size="13" fill="#24292f">${xmlEscape(value)}</text>`);
+        const fill = resolveColorToken(computed.style?.fill || "white", "white");
+        const font = computed.style?.font || {};
+        const fontWeight = font.bold || computed.style?.bold ? "700" : "400";
+        const fontFill = resolveColorToken(font.color || computed.style?.color || "#24292f", "#24292f");
+        rows.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${xmlEscape(fill)}" stroke="#d0d7de"/>`);
+        rows.push(`<text x="${x + 6}" y="${y + 18}" font-family="${xmlEscape(font.name || "Arial")}" font-size="13" font-weight="${fontWeight}" fill="${xmlEscape(fontFill)}">${xmlEscape(value)}</text>`);
       }
     }
     const tableOverlays = this.tables.items.map((table) => table.toSvg(bounds)).join("");

@@ -270,7 +270,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
-| `range.conditionalFormats.add` | api | Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules. |
+| `range.conditionalFormats.add` | api | Add a conditional formatting rule to a range; cellIs/expression rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.format` | api | Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
