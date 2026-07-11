@@ -633,6 +633,9 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.XLOOKUP", category: "lookup-reference", summary: "Look up a value in one range and return the corresponding value from another range.", examples: ["=XLOOKUP(\"Gamma\",A2:A4,B2:B4,\"missing\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.SEQUENCE", category: "dynamic-array", summary: "Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine.", examples: ["=SEQUENCE(2,3,10,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TRANSPOSE", category: "dynamic-array", summary: "Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata.", examples: ["=TRANSPOSE(A1:C2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.FILTER", category: "dynamic-array", summary: "Filter rows from a source range with a boolean or comparison include array and spill the matching rows.", examples: ["=FILTER(A2:C10,B2:B10=\"East\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.UNIQUE", category: "dynamic-array", summary: "Return unique rows from a range as a spilled dynamic array.", examples: ["=UNIQUE(A2:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SORT", category: "dynamic-array", summary: "Sort a range by a 1-based column index and spill the sorted rows.", examples: ["=SORT(A2:C10,3,-1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TEXTJOIN", category: "text", summary: "Join text values with a delimiter and optional empty-value skipping.", examples: ["=TEXTJOIN(\"/\",TRUE,A1:A3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CONCAT", category: "text", summary: "Concatenate text values and ranges.", examples: ["=CONCAT(A1,\"-\",B1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LEFT", category: "text", summary: "Return characters from the start of a text value.", examples: ["=LEFT(A1,3)"] },
@@ -3057,6 +3060,55 @@ function aggregateFormulaValues(values, fnName) {
   return nums.reduce((acc, value) => acc + value, 0);
 }
 
+function compareFormulaValues(left, op, right) {
+  const leftNum = Number(left), rightNum = Number(right);
+  const numeric = Number.isFinite(leftNum) && Number.isFinite(rightNum) && String(left ?? "").trim() !== "" && String(right ?? "").trim() !== "";
+  const a = numeric ? leftNum : formulaText(left);
+  const b = numeric ? rightNum : formulaText(right);
+  switch (op) {
+    case ">=": return a >= b;
+    case "<=": return a <= b;
+    case "<>": return a !== b;
+    case ">": return a > b;
+    case "<": return a < b;
+    default: return a === b;
+  }
+}
+
+function formulaCriteriaArray(sheet, expr, context = {}) {
+  const text = String(expr || "").trim();
+  const comparison = /^(.*?)\s*(>=|<=|<>|=|>|<)\s*(.*?)$/.exec(text);
+  if (comparison) {
+    const leftMatrix = formulaRangeMatrix(sheet, comparison[1], context);
+    const rightMatrix = formulaRangeMatrix(sheet, comparison[3], context);
+    const leftValues = leftMatrix ? leftMatrix.flat() : [formulaScalar(sheet, comparison[1], context)];
+    const rightValues = rightMatrix ? rightMatrix.flat() : [formulaScalar(sheet, comparison[3], context)];
+    const length = Math.max(leftValues.length, rightValues.length);
+    return Array.from({ length }, (_, index) => compareFormulaValues(leftValues[leftValues.length === 1 ? 0 : index], comparison[2], rightValues[rightValues.length === 1 ? 0 : index]));
+  }
+  const matrix = formulaRangeMatrix(sheet, text, context);
+  if (matrix) return matrix.flat().map(formulaTruthy);
+  return [formulaTruthy(formulaScalar(sheet, text, context))];
+}
+
+function formulaSortCompare(left, right) {
+  const leftNum = Number(left), rightNum = Number(right);
+  if (Number.isFinite(leftNum) && Number.isFinite(rightNum)) return leftNum - rightNum;
+  return formulaText(left).localeCompare(formulaText(right));
+}
+
+function uniqueFormulaRows(matrix) {
+  const seen = new Set();
+  const rows = [];
+  for (const row of normalizeFormulaMatrix(matrix)) {
+    const key = JSON.stringify(row.map((value) => [typeof value, value]));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(row);
+  }
+  return rows;
+}
+
 function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
   const values = (parts = args) => parts.flatMap((part) => formulaReferenceValues(sheet, part, context));
   const scalar = (index, fallback = undefined) => {
@@ -3107,6 +3159,22 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const rows = matrix.length;
       const cols = Math.max(0, ...matrix.map((row) => row.length));
       return Array.from({ length: cols }, (_, col) => Array.from({ length: rows }, (_, row) => matrix[row]?.[col] ?? null));
+    }
+    case "FILTER": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const include = formulaCriteriaArray(sheet, args[1], context);
+      const rows = matrix.filter((_, index) => formulaTruthy(include[index]));
+      if (rows.length) return rows;
+      return [[args[2] ? scalar(2, "") : "#CALC!"]];
+    }
+    case "UNIQUE": {
+      return uniqueFormulaRows(formulaRangeMatrix(sheet, args[0], context) || []);
+    }
+    case "SORT": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const sortIndex = Math.max(0, Math.floor(formulaNumber(scalar(1, 1))) - 1);
+      const sortOrder = formulaNumber(scalar(2, 1)) < 0 ? -1 : 1;
+      return [...matrix].sort((a, b) => formulaSortCompare(a[sortIndex], b[sortIndex]) * sortOrder);
     }
     case "SUMIF": {
       const range = values([args[0]]);

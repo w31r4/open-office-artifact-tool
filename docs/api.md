@@ -251,6 +251,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.CONCAT` | formula | Concatenate text values and ranges. |
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
 | `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
+| `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
@@ -265,11 +266,13 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
 | `fx.ROUND` | formula | Round a numeric value to a fixed number of decimal places. |
 | `fx.SEQUENCE` | formula | Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine. |
+| `fx.SORT` | formula | Sort a range by a 1-based column index and spill the sorted rows. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
 | `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
+| `fx.UNIQUE` | formula | Return unique rows from a range as a spilled dynamic array. |
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
@@ -353,6 +356,14 @@ Count values in a range that match a criterion.
 **Examples:**
 
 - =COUNTIF(A1:A10,">0")
+
+#### `fx.FILTER`
+
+Filter rows from a source range with a boolean or comparison include array and spill the matching rows.
+
+**Examples:**
+
+- =FILTER(A2:C10,B2:B10="East")
 
 #### `fx.FLOOR`
 
@@ -470,6 +481,14 @@ Return a dynamic array sequence that spills into neighboring cells in the clean-
 
 - =SEQUENCE(2,3,10,2)
 
+#### `fx.SORT`
+
+Sort a range by a 1-based column index and spill the sorted rows.
+
+**Examples:**
+
+- =SORT(A2:C10,3,-1)
+
 #### `fx.SUM`
 
 Sum numeric values across arguments and ranges.
@@ -509,6 +528,14 @@ Trim leading/trailing whitespace and collapse internal whitespace.
 **Examples:**
 
 - =TRIM(A1)
+
+#### `fx.UNIQUE`
+
+Return unique rows from a range as a spilled dynamic array.
+
+**Examples:**
+
+- =UNIQUE(A2:A10)
 
 #### `fx.UPPER`
 
