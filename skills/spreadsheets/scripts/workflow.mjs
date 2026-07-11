@@ -137,6 +137,55 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     fs.writeFile(paths.visualQa, visualQa.ndjson, "utf8"),
     visualQa.blob.save(paths.preview),
   ]);
+  const sheetRenders = [{
+    sheetName,
+    range: range || null,
+    preview: paths.preview,
+    layout: paths.layout,
+    baselinePath,
+    baselineCompared: Boolean(baseline),
+    pixelDiff: visualQa.summary.pixelDiff,
+    hash: visualQa.summary.hash,
+    ok: visualQa.ok,
+  }];
+  if (options.allSheets === true) {
+    const sheetsDir = path.join(outputDir, "sheets");
+    await fs.mkdir(sheetsDir, { recursive: true });
+    for (const targetSheet of workbook.worksheets) {
+      if (targetSheet.name === sheetName) continue;
+      const segment = safeFileSegment(targetSheet.name);
+      const targetBaselinePath = baselineDir ? path.join(baselineDir, `${segment}.${previewExtension}`) : undefined;
+      const targetBaseline = options.writeBaseline ? undefined : await optionalBaseline(targetBaselinePath);
+      const targetLayout = await workbook.render({ format: "layout", sheetName: targetSheet.name });
+      const targetQa = await visualQaArtifact(workbook, {
+        format: renderFormat,
+        renderer,
+        sheetName: targetSheet.name,
+        baseline: targetBaseline,
+        pixelDiff: Boolean(targetBaseline && ["png", "webp", "jpeg", "jpg"].includes(renderFormat)),
+        pixelThreshold: options.pixelThreshold,
+        minBytes: options.minBytes ?? 20,
+        maxChars: options.maxChars ?? 16_000,
+      });
+      const targetPreviewPath = path.join(sheetsDir, `${segment}.${previewExtension}`);
+      const targetLayoutPath = path.join(sheetsDir, `${segment}.layout.json`);
+      const targetQaPath = path.join(sheetsDir, `${segment}.visual-qa.ndjson`);
+      await Promise.all([targetQa.blob.save(targetPreviewPath), fs.writeFile(targetLayoutPath, await targetLayout.text(), "utf8"), fs.writeFile(targetQaPath, targetQa.ndjson, "utf8")]);
+      if (options.writeBaseline && targetBaselinePath) await targetQa.blob.save(targetBaselinePath);
+      sheetRenders.push({
+        sheetName: targetSheet.name,
+        range: null,
+        preview: targetPreviewPath,
+        layout: targetLayoutPath,
+        visualQa: targetQaPath,
+        baselinePath: targetBaselinePath,
+        baselineCompared: Boolean(targetBaseline),
+        pixelDiff: targetQa.summary.pixelDiff,
+        hash: targetQa.summary.hash,
+        ok: targetQa.ok,
+      });
+    }
+  }
   const summary = {
     input: absoluteInput,
     outputDir,
@@ -148,15 +197,17 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     writeBaseline: Boolean(options.writeBaseline),
     baselineCompared: Boolean(baseline),
     pixelDiff: visualQa.summary.pixelDiff,
+    allSheets: options.allSheets === true,
+    sheetRenders,
     packageOk: packageInspect.ok,
     verifyOk: verify.ok,
-    visualQaOk: visualQa.ok,
+    visualQaOk: sheetRenders.every((item) => item.ok),
     renderHash: visualQa.summary.hash,
     files: paths,
   };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || !visualQa.ok)) {
-    throw new Error(`Spreadsheet QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${visualQa.ok}. See ${outputDir}`);
+  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || sheetRenders.some((item) => !item.ok))) {
+    throw new Error(`Spreadsheet QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${sheetRenders.every((item) => item.ok)}. See ${outputDir}`);
   }
   return { workbook, inspect, packageInspect, verify, visualQa, layoutBlob, summary };
 }
@@ -179,6 +230,7 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     baselineDir: options.baselineDir,
     writeBaseline: options.writeBaseline,
     pixelThreshold: options.pixelThreshold,
+    allSheets: options.allSheets,
   });
   return { fixture, workbookPath, qa };
 }

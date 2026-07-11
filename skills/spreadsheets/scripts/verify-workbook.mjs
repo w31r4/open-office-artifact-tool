@@ -15,7 +15,7 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (!args.input) throw new Error("Usage: verify-workbook.mjs --input workbook.xlsx [--output-dir dir] [--sheet name] [--range A1:D20] [--render-format svg|png|webp|jpeg|pdf] [--baseline-dir dir] [--write-baseline true]");
+  if (!args.input) throw new Error("Usage: verify-workbook.mjs --input workbook.xlsx [--output-dir dir] [--sheet name] [--range A1:D20] [--render-format svg|png|webp|jpeg|pdf] [--all-sheets true] [--baseline-dir dir] [--write-baseline true]");
   const result = await verifyWorkbookFile(args.input, {
     outputDir: args["output-dir"],
     sheetName: args.sheet,
@@ -24,6 +24,7 @@ export async function main(argv = process.argv.slice(2)) {
     baselineDir: args["baseline-dir"],
     writeBaseline: args["write-baseline"] === "true",
     pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined,
+    allSheets: args["all-sheets"] === "true",
     maxChars: args["max-chars"] ? Number(args["max-chars"]) : undefined,
   });
   console.log(JSON.stringify(result.summary));

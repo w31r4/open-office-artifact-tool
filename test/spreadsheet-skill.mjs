@@ -51,6 +51,7 @@ try {
     renderFormat: "png",
     baselineDir,
     writeBaseline: true,
+    allSheets: true,
   });
   assert.equal(baselineWrite.summary.writeBaseline, true);
   assert.ok((await fs.stat(baselineWrite.summary.baselinePath)).size > 100);
@@ -60,10 +61,18 @@ try {
     range: "A1:D4",
     renderFormat: "png",
     baselineDir,
+    allSheets: true,
   });
   assert.equal(baselineCompare.summary.baselineCompared, true);
   assert.equal(baselineCompare.summary.pixelDiff.changed, false);
   assert.equal(baselineCompare.summary.visualQaOk, true);
+  assert.equal(baselineCompare.summary.allSheets, true);
+  assert.deepEqual(baselineCompare.summary.sheetRenders.map((item) => item.sheetName).sort(), ["Inputs", "Summary"]);
+  assert.ok(baselineCompare.summary.sheetRenders.every((item) => item.baselineCompared && item.pixelDiff.changed === false && item.ok));
+  for (const sheetRender of baselineCompare.summary.sheetRenders) {
+    assert.ok((await fs.stat(sheetRender.preview)).size > 100);
+    assert.ok((await fs.stat(sheetRender.layout)).size > 20);
+  }
 
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
   assert.ok(packageJson.files.includes("skills/**"));
