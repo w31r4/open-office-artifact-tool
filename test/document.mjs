@@ -15,6 +15,14 @@ const header = document.addHeader("Confidential research memo", { name: "default
 const footer = document.addFooter("Page footer", { name: "default-footer" });
 const heading = document.addParagraph("Findings", { styleId: "Heading1", name: "findings-heading" });
 const riskCallout = document.addParagraph("Risk callout inherits bold styling.", { styleId: "RiskCallout", name: "risk-callout" });
+const runParagraph = document.addParagraph("", {
+  name: "run-styled-paragraph",
+  styleId: "Normal",
+  runs: [
+    { text: "Run styled ", style: { bold: true, color: "#0ea5e9" } },
+    { text: "paragraph", style: { italic: true, color: "#f97316" } },
+  ],
+});
 const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
 const field = document.addField("PAGE", "1", { name: "page-field" });
 const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
@@ -71,8 +79,14 @@ assert.match(inspect, /Check this heading/);
 assert.match(inspect, /Callout/);
 assert.match(inspect, /Risk Callout/);
 assert.match(inspect, /Risk callout inherits bold styling/);
+assert.match(inspect, /run-styled-paragraph/);
+assert.match(inspect, /Run styled paragraph/);
+assert.match(inspect, /"runs"/);
+assert.match(inspect, /0ea5e9/);
 assert.match(inspect, /"effectiveStyle"/);
 assert.equal(document.resolve(heading.id).styleId, "Heading1");
+assert.equal(document.resolve(runParagraph.id).text, "Run styled paragraph");
+assert.equal(document.resolve(runParagraph.id).runs[1].style.italic, true);
 assert.equal(document.resolve(riskCallout.id).styleId, "RiskCallout");
 assert.equal(document.styles.effective("RiskCallout").bold, true);
 assert.equal(document.styles.effective("RiskCallout").italic, true);
@@ -110,6 +124,7 @@ assert.doesNotMatch(shapedDocumentInspect, /Check this heading/);
 const targetedCommentInspect = document.inspect({ kind: "comment,paragraph", target: comment.id, maxChars: 4000 }).ndjson;
 assert.match(targetedCommentInspect, /Check this heading/);
 assert.doesNotMatch(targetedCommentInspect, /findings-heading/);
+assert.match(document.help("document.addParagraph").ndjson, /run-level styles/);
 assert.match(document.help("document.addTable").ndjson, /Word-style table/);
 assert.match(document.help("document.addListItem").ndjson, /numbering definitions/);
 assert.match(document.help("document.addHeader").ndjson, /DOCX header/);
@@ -128,6 +143,9 @@ const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
 const svg = await preview.text();
 assert.match(svg, /Research memo/);
+assert.match(svg, /Run styled /);
+assert.match(svg, /#0ea5e9/);
+assert.match(svg, /#f97316/);
 assert.match(svg, /Risk callout inherits bold styling/);
 assert.match(svg, /#b91c1c/);
 assert.match(svg, /DOCX styles/);
@@ -204,6 +222,10 @@ assert.match(stylesXml, /w:styleId="RiskCallout"/);
 assert.match(stylesXml, /<w:basedOn w:val="Callout"\/>/);
 assert.match(stylesXml, /<w:i\/>/);
 assert.match(stylesXml, /<w:color w:val="b91c1c"\/>/);
+assert.match(documentXml, /<w:t>Run styled <\/w:t>/);
+assert.match(documentXml, /<w:color w:val="0ea5e9"\/>/);
+assert.match(documentXml, /<w:t>paragraph<\/w:t>/);
+assert.match(documentXml, /<w:color w:val="f97316"\/>/);
 assert.match(documentXml, /<a:blip r:embed="rIdImage1"\/>/);
 assert.match(documentXml, /<wp:docPr[^>]*name="memo-logo"[^>]*descr="Memo logo"/);
 assert.match(documentXml, /<w:type w:val="nextPage"\/>/);
@@ -243,6 +265,8 @@ assert.match(nativeOnlyInspect, /15840/);
 assert.match(nativeOnlyInspect, /Inserted reviewer clarification/);
 assert.match(nativeOnlyInspect, /Remove stale claim/);
 assert.match(nativeOnlyInspect, /Risk Callout/);
+assert.match(nativeOnlyInspect, /Run styled paragraph/);
+assert.match(nativeOnlyInspect, /0ea5e9/);
 assert.match(nativeOnlyInspect, /"basedOn":"Callout"/);
 assert.equal(nativeOnlyLoaded.styles.effective("RiskCallout").bold, true);
 assert.equal(nativeOnlyLoaded.styles.effective("RiskCallout").italic, true);
@@ -252,6 +276,7 @@ const loaded = await DocumentFile.importDocx(await FileBlob.load(out));
 const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
 assert.match(loadedInspect, /clean-room DOCX facade/);
 assert.match(loadedInspect, /Risk callout inherits bold styling/);
+assert.match(loadedInspect, /Run styled paragraph/);
 assert.match(loadedInspect, /DOCX styles/);
 assert.match(loadedInspect, /anchored/);
 assert.match(loadedInspect, /Check this heading/);

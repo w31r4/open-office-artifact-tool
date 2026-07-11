@@ -17,7 +17,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
 | `document.addListItem` | api | Append a real numbered or bulleted list item backed by DOCX numbering definitions. |
-| `document.addParagraph` | api | Append a styled paragraph block and return an inspectable/resolveable paragraph object. |
+| `document.addParagraph` | api | Append a styled paragraph block with optional run-level styles and return an inspectable/resolveable paragraph object. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |

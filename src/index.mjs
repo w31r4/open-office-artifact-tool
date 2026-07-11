@@ -674,7 +674,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
   { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph, list, table, header/footer, style, and comment blocks." },
-  { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block and return an inspectable/resolveable paragraph object." },
+  { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block with optional run-level styles and return an inspectable/resolveable paragraph object." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add header text exported as a DOCX header part and referenced from section properties." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add footer text exported as a DOCX footer part and referenced from section properties." },
@@ -5406,18 +5406,26 @@ class DocumentTableBlock {
   toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, values: this.values }; }
 }
 
+function normalizeDocumentRuns(text, config = {}) {
+  const runs = (config.runs || config.textRuns || []).map((run) => ({ text: String(run.text ?? run.value ?? ""), style: { ...(run.style || run.textStyle || {}) } })).filter((run) => run.text.length > 0);
+  if (runs.length) return runs;
+  const rawText = String(text ?? "");
+  return rawText ? [{ text: rawText, style: {} }] : [];
+}
+
 class DocumentParagraphBlock {
   constructor(document, text, config = {}) {
     this.document = document;
     this.kind = "paragraph";
     this.id = config.id || aid("dp");
-    this.text = String(text ?? "");
+    this.runs = normalizeDocumentRuns(text, config);
+    this.text = this.runs.map((run) => run.text).join("") || String(text ?? "");
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
   }
 
-  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, text: this.text }; }
+  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, textChars: this.text.length, runs: this.runs.length > 1 ? this.runs : undefined }; }
+  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, text: this.text, runs: this.runs.length > 1 ? this.runs : undefined }; }
 }
 
 class DocumentChangeBlock {
@@ -5662,7 +5670,13 @@ function documentTextRange(document, id) {
   return createTextRange(parent, id, {
     parentKind: parent.kind,
     getText: () => parent.text ?? parent.display ?? "",
-    setText: (value) => { if (parent.kind === "field" || ("display" in parent && !("text" in parent))) parent.display = String(value ?? ""); else parent.text = String(value ?? ""); },
+    setText: (value) => {
+      if (parent.kind === "field" || ("display" in parent && !("text" in parent))) parent.display = String(value ?? "");
+      else {
+        parent.text = String(value ?? "");
+        if (parent.kind === "paragraph") parent.runs = parent.text ? [{ text: parent.text, style: {} }] : [];
+      }
+    },
   });
 }
 
@@ -5875,7 +5889,12 @@ export class DocumentModel {
       if (block.kind === "paragraph") {
         const style = this.styles.effective(block.styleId) || this.styles.get("Normal");
         const fontSize = Math.max(10, (style.fontSize || 22) / 2);
-        parts.push(`<text x="${margin}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(block.text)}</text>`);
+        const runs = block.runs?.length ? block.runs : [{ text: block.text, style: {} }];
+        const tspans = runs.map((run, index) => {
+          const runStyle = { ...style, ...(run.style || {}) };
+          return `<tspan${index ? "" : ` x=\"${margin}\"`} font-family="${xmlEscape(runStyle.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${runStyle.italic ? "italic" : "normal"}" font-weight="${runStyle.bold ? "700" : "400"}" fill="${xmlEscape(runStyle.color || "#111827")}">${xmlEscape(run.text)}</tspan>`;
+        }).join("");
+        parts.push(`<text x="${margin}" y="${y}">${tspans}</text>`);
         y += fontSize * 1.6;
       } else if (block.kind === "hyperlink") {
         parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#2563eb" text-decoration="underline">${xmlEscape(block.text)}</text>`);
@@ -5963,12 +5982,25 @@ function docxHeaderFooterXml(kind, blocks) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:${tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${body}</w:${tag}>`;
 }
 
+function docxRunPrXml(style = {}) {
+  const color = style.color ? `<w:color w:val="${attrEscape(String(style.color).replace(/^#/, ""))}"/>` : "";
+  const size = style.fontSize ? `<w:sz w:val="${Math.round(style.fontSize)}"/>` : "";
+  const fonts = style.fontFamily ? `<w:rFonts w:ascii="${attrEscape(style.fontFamily)}" w:hAnsi="${attrEscape(style.fontFamily)}"/>` : "";
+  const body = `${style.bold ? "<w:b/>" : ""}${style.italic ? "<w:i/>" : ""}${color}${size}${fonts}`;
+  return body ? `<w:rPr>${body}</w:rPr>` : "";
+}
+
+function docxRunXml(run = {}) {
+  return `<w:r>${docxRunPrXml(run.style || run.textStyle || {})}<w:t>${xmlEscape(run.text ?? "")}</w:t></w:r>`;
+}
+
 function docxParagraphXml(block, commentIndexes) {
   const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
   const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
   const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
   const numPr = block.kind === "listItem" ? `<w:numPr><w:ilvl w:val="${Math.max(0, block.level || 0)}"/><w:numId w:val="${block.listType === "number" ? 2 : 1}"/></w:numPr>` : "";
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/>${numPr}</w:pPr>${commentStart}<w:r><w:t>${xmlEscape(block.text)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
+  const runs = block.runs?.length ? block.runs.map(docxRunXml).join("") : `<w:r><w:t>${xmlEscape(block.text)}</w:t></w:r>`;
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/>${numPr}</w:pPr>${commentStart}${runs}${commentEnd}${refs}</w:p>`;
 }
 
 function docxRevisionId(block) {
@@ -6088,6 +6120,20 @@ function parseDocxStylesXml(xml = "") {
   return styles;
 }
 
+function parseDocxRuns(part = "") {
+  return [...String(part || "").matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)].map((match) => {
+    const runXml = match[0];
+    const text = decodeXml([...runXml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
+    if (!text) return undefined;
+    const rPr = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(runXml)?.[1] || "";
+    const color = /<w:color[^>]*w:val="([A-Fa-f0-9]{3,6})"/.exec(rPr)?.[1];
+    const fontSize = Number(/<w:sz[^>]*w:val="([^"]+)"/.exec(rPr)?.[1]);
+    const fontFamily = decodeXml(/<w:rFonts[^>]*w:ascii="([^"]*)"/.exec(rPr)?.[1] || /<w:rFonts[^>]*w:hAnsi="([^"]*)"/.exec(rPr)?.[1] || "");
+    const style = { ...(/<w:b\b/.test(rPr) ? { bold: true } : {}), ...(/<w:i\b/.test(rPr) ? { italic: true } : {}), ...(color ? { color: `#${color}` } : {}), ...(Number.isFinite(fontSize) ? { fontSize } : {}), ...(fontFamily ? { fontFamily } : {}) };
+    return { text, style };
+  }).filter(Boolean);
+}
+
 function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
@@ -6120,11 +6166,12 @@ function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
     const date = decodeXml(/w:date="([^"]*)"/.exec(attrs)?.[1] || "");
     return { block: { kind: "change", changeType, text, styleId, author, date }, commentIds };
   }
-  const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
+  const runs = parseDocxRuns(part);
+  const text = runs.length ? runs.map((run) => run.text).join("") : decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
   const numId = /<w:numId[^>]*w:val="(\d+)"/.exec(part)?.[1];
   const level = Number(/<w:ilvl[^>]*w:val="(\d+)"/.exec(part)?.[1] || 0);
   if (numId) return { block: { kind: "listItem", text, styleId, level, listType: numId === "2" ? "number" : "bullet" }, commentIds };
-  return { block: { kind: "paragraph", text, styleId }, commentIds };
+  return { block: { kind: "paragraph", text, styleId, runs: runs.length ? runs : undefined }, commentIds };
 }
 
 function parseDocxTable(part) {
