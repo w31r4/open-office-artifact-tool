@@ -90,6 +90,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
+| `range.format` | api | Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |

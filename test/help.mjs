@@ -25,6 +25,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderArtifact"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.format"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.formulaGraph"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGE"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPlaywrightRenderer"));

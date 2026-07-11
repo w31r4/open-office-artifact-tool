@@ -210,6 +210,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
+  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
@@ -1126,6 +1127,7 @@ export class Workbook {
       if (kinds.has("drawing") || kinds.has("image")) records.push(...sheet.images.inspectRecords());
       if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
       if (kinds.has("formula")) records.push(...sheet.formulaRecords({ ...options, graph }));
+      if (kinds.has("style") || kinds.has("computedStyle")) records.push(...sheet.styleRecords(options));
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
       if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
@@ -1332,6 +1334,18 @@ export class Worksheet {
     return records;
   }
 
+  styleRecords(options = {}) {
+    const bounds = options.range ? parseRangeAddress(options.range) : this.usedBounds();
+    const records = [];
+    for (const [address, cell] of this.store.entries()) {
+      const coord = parseCellAddress(address);
+      if (coord.row < bounds.top || coord.row > bounds.bottom || coord.col < bounds.left || coord.col > bounds.right) continue;
+      if (!cell.style || Object.keys(cell.style).length === 0) continue;
+      records.push({ kind: "style", sheet: this.name, address, style: { ...cell.style } });
+    }
+    return records;
+  }
+
   matchRecords(options = {}) {
     const term = options.searchTerm || options.search || "";
     if (!term) return [];
@@ -1405,6 +1419,28 @@ export class Range {
 
   set formulas(matrix) {
     this.writeMatrix(matrix, "formula");
+  }
+
+  get format() {
+    const first = this.worksheet.store.get(makeCellAddress(this.bounds.top, this.bounds.left));
+    return { ...(first.style || {}) };
+  }
+
+  set format(style) {
+    this.writeStyle(style);
+  }
+
+  get style() { return this.format; }
+  set style(value) { this.format = value; }
+  setFormat(style = {}) { this.writeStyle(style); return this; }
+
+  writeStyle(style = {}) {
+    for (let r = this.bounds.top; r <= this.bounds.bottom; r++) {
+      for (let c = this.bounds.left; c <= this.bounds.right; c++) {
+        const cell = this.worksheet.store.get(makeCellAddress(r, c));
+        cell.style = { ...(cell.style || {}), ...(style || {}) };
+      }
+    }
   }
 
   writeMatrix(matrix, field) {
@@ -1741,11 +1777,14 @@ export class SpreadsheetFile {
     const imageParts = collectWorkbookImageParts(workbook);
     const chartParts = collectWorkbookChartParts(workbook, imageParts);
     const threadParts = collectWorkbookThreadParts(workbook);
-    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts, threadParts));
+    const sharedStrings = collectWorkbookSharedStrings(workbook);
+    const styleTable = collectWorkbookStyles(workbook);
+    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts, threadParts, sharedStrings));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "xl/workbook.xml" }]));
     zip.file("xl/workbook.xml", workbookXml(workbook));
-    zip.file("xl/_rels/workbook.xml.rels", workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0));
-    zip.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf xfId="0"/></cellXfs></styleSheet>`);
+    zip.file("xl/_rels/workbook.xml.rels", workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0, sharedStrings.strings.length > 0));
+    zip.file("xl/styles.xml", xlsxStylesXml(styleTable));
+    if (sharedStrings.strings.length) zip.file("xl/sharedStrings.xml", sharedStringsXml(sharedStrings));
     zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
     workbook.worksheets.items.forEach((sheet, index) => {
       const sheetTableParts = tableParts.filter((part) => part.sheetIndex === index);
@@ -1754,7 +1793,7 @@ export class SpreadsheetFile {
       const sheetThreadPart = threadParts.find((part) => part.sheetIndex === index);
       const drawingRelId = sheetImageParts.length || sheetChartParts.length ? `rId${sheetTableParts.length + 1}` : undefined;
       if (sheetThreadPart) sheetThreadPart.relId = `rId${sheetTableParts.length + (drawingRelId ? 1 : 0) + 1}`;
-      zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet, sheetTableParts, drawingRelId));
+      zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet, sheetTableParts, drawingRelId, sharedStrings, styleTable));
       if (sheetTableParts.length || sheetImageParts.length || sheetChartParts.length || sheetThreadPart) zip.file(`xl/worksheets/_rels/sheet${index + 1}.xml.rels`, worksheetRelsXml(sheetTableParts, drawingRelId ? { relId: drawingRelId, target: `../drawings/drawing${index + 1}.xml` } : undefined, sheetThreadPart));
       if (sheetImageParts.length || sheetChartParts.length) {
         zip.file(`xl/drawings/drawing${index + 1}.xml`, drawingXml(sheetImageParts, sheetChartParts));
@@ -1774,12 +1813,14 @@ export class SpreadsheetFile {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const workbook = Workbook.create();
+    const sharedStrings = parseSharedStringsXml(await zip.file("xl/sharedStrings.xml")?.async("text"));
+    const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"));
     const workbookText = await zip.file("xl/workbook.xml")?.async("text");
     const sheetNames = [...String(workbookText || "").matchAll(/<sheet[^>]*name="([^"]+)"[^>]*sheetId="(\d+)"/g)].map((m) => ({ name: decodeXml(m[1]), index: Number(m[2]) }));
     for (const { name, index } of sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]) {
       const sheet = workbook.worksheets.add(name);
       const xml = await zip.file(`xl/worksheets/sheet${index}.xml`)?.async("text");
-      if (xml) parseWorksheetXml(sheet, xml);
+      if (xml) parseWorksheetXml(sheet, xml, { sharedStrings, styles });
     }
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
     if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
@@ -1871,7 +1912,136 @@ function collectWorkbookThreadParts(workbook) {
   return parts;
 }
 
-function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = []) {
+function collectWorkbookSharedStrings(workbook) {
+  const strings = [];
+  const indexByText = new Map();
+  for (const sheet of workbook.worksheets) {
+    for (const [, cell] of sheet.store.entries()) {
+      if (cell.formula || typeof cell.value !== "string") continue;
+      if (!indexByText.has(cell.value)) {
+        indexByText.set(cell.value, strings.length);
+        strings.push(cell.value);
+      }
+    }
+  }
+  return { strings, indexByText };
+}
+
+function sharedStringsXml(sharedStrings) {
+  const items = sharedStrings.strings.map((value) => `<si><t>${xmlEscape(value)}</t></si>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.strings.length}" uniqueCount="${sharedStrings.strings.length}">${items}</sst>`;
+}
+
+function parseSharedStringsXml(xml = "") {
+  return [...String(xml || "").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) => decodeXml([...match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((text) => text[1]).join("")));
+}
+
+function normalizeXlsxColor(value, fallback = "000000") {
+  const raw = String(value || fallback).trim();
+  const token = resolveColorToken(raw, raw);
+  return String(token || fallback).replace(/^#/, "").replace(/^FF/i, "").slice(0, 6).padEnd(6, "0").toUpperCase();
+}
+
+function normalizeXlsxStyle(style = {}) {
+  const font = style.font || {};
+  return {
+    font: {
+      bold: Boolean(style.bold ?? font.bold),
+      italic: Boolean(style.italic ?? font.italic),
+      color: style.fontColor || font.color || style.color || undefined,
+      size: Number(style.fontSize || font.size || 11),
+      name: style.fontFamily || font.name || "Aptos",
+    },
+    fill: style.fill || style.backgroundColor || style.fillColor || undefined,
+    numberFormat: style.numberFormat || style.numFmt || undefined,
+  };
+}
+
+function xlsxStyleKey(style = {}) {
+  const normalized = normalizeXlsxStyle(style);
+  if (!normalized.font.bold && !normalized.font.italic && !normalized.font.color && normalized.font.size === 11 && normalized.font.name === "Aptos" && !normalized.fill && !normalized.numberFormat) return "";
+  return JSON.stringify(normalized);
+}
+
+function collectWorkbookStyles(workbook) {
+  const styles = [{}];
+  const indexByKey = new Map([["", 0]]);
+  for (const sheet of workbook.worksheets) {
+    for (const [, cell] of sheet.store.entries()) {
+      const key = xlsxStyleKey(cell.style || {});
+      if (!indexByKey.has(key)) {
+        indexByKey.set(key, styles.length);
+        styles.push(normalizeXlsxStyle(cell.style || {}));
+      }
+    }
+  }
+  return { styles, indexByKey };
+}
+
+function xlsxStyleIndex(cell, styleTable) {
+  return styleTable.indexByKey.get(xlsxStyleKey(cell.style || {})) || 0;
+}
+
+function xlsxFontXml(style = {}) {
+  const font = normalizeXlsxStyle(style).font;
+  return `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}<sz val="${Number(font.size) || 11}"/><color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/><name val="${attrEscape(font.name || "Aptos")}"/></font>`;
+}
+
+function xlsxFillXml(style = {}) {
+  const fill = normalizeXlsxStyle(style).fill;
+  if (!fill) return `<fill><patternFill patternType="none"/></fill>`;
+  const color = normalizeXlsxColor(fill, "FFFFFF");
+  return `<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
+}
+
+function xlsxStylesXml(styleTable) {
+  const styles = styleTable.styles || [{}];
+  const customFormats = new Map();
+  styles.forEach((style) => { if (style.numberFormat && !customFormats.has(style.numberFormat)) customFormats.set(style.numberFormat, 164 + customFormats.size); });
+  const numFmts = customFormats.size ? `<numFmts count="${customFormats.size}">${[...customFormats.entries()].map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${attrEscape(code)}"/>`).join("")}</numFmts>` : "";
+  const fonts = styles.map((style, index) => index === 0 ? `<font><sz val="11"/><name val="Aptos"/></font>` : xlsxFontXml(style)).join("");
+  const fills = [`<fill><patternFill patternType="none"/></fill>`, `<fill><patternFill patternType="gray125"/></fill>`, ...styles.slice(1).map(xlsxFillXml)].join("");
+  const xfs = styles.map((style, index) => {
+    if (index === 0) return `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`;
+    const normalized = normalizeXlsxStyle(style);
+    const numFmtId = normalized.numberFormat ? customFormats.get(normalized.numberFormat) : 0;
+    const fillId = normalized.fill ? index + 1 : 0;
+    return `<xf numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="0" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}/>`;
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs></styleSheet>`;
+}
+
+function parseAttrs(attrs = "") {
+  return Object.fromEntries([...String(attrs || "").matchAll(/\b([A-Za-z_:][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
+}
+
+function parseXlsxStylesXml(xml = "") {
+  const text = String(xml || "");
+  const numFmtById = new Map([...text.matchAll(/<numFmt\b([^>]*)\/>/g)].map((match) => { const attrs = parseAttrs(match[1]); return [Number(attrs.numFmtId), attrs.formatCode]; }));
+  const fontsBody = /<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(text)?.[1] || "";
+  const fonts = [...fontsBody.matchAll(/<font>([\s\S]*?)<\/font>/g)].map((match) => ({
+    bold: /<b\b/.test(match[1]),
+    italic: /<i\b/.test(match[1]),
+    color: /<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(match[1])?.[1] ? `#${/<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(match[1])?.[1]}` : undefined,
+    size: Number(/<sz[^>]*val="([^"]+)"/.exec(match[1])?.[1] || 11),
+    name: /<name[^>]*val="([^"]+)"/.exec(match[1])?.[1] || "Aptos",
+  }));
+  const fillsBody = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(text)?.[1] || "";
+  const fills = [...fillsBody.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((match) => /<fgColor[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(match[1])?.[1]).map((color) => color ? `#${color}` : undefined);
+  const xfsBody = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(text)?.[1] || "";
+  return [...xfsBody.matchAll(/<xf\b([^>]*)\/?>(?:<\/xf>)?/g)].map((match) => {
+    const attrs = parseAttrs(match[1]);
+    const font = fonts[Number(attrs.fontId || 0)] || {};
+    const fill = fills[Number(attrs.fillId || 0)];
+    const numberFormat = numFmtById.get(Number(attrs.numFmtId || 0));
+    const style = { font: { ...font } };
+    if (fill) style.fill = fill;
+    if (numberFormat) style.numberFormat = numberFormat;
+    return style;
+  });
+}
+
+function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = [], sharedStrings = { strings: [] }) {
   const sheets = Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
   const tables = tableParts.map((part) => `<Override PartName="/xl/tables/table${part.tablePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`).join("");
   const imageDefaults = [
@@ -1884,7 +2054,8 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
   const charts = chartParts.map((part) => `<Override PartName="/xl/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
   const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>`).join("");
   const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets}${tables}${charts}${threadedComments}${persons}</Types>`;
+  const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${shared}${sheets}${tables}${charts}${threadedComments}${persons}</Types>`;
 }
 
 function relsXml(rels) {
@@ -1908,10 +2079,12 @@ function workbookXml(workbook) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets}</sheets></workbook>`;
 }
 
-function workbookRelsXml(sheetCount, hasThreadedComments = false) {
+function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrings = false) {
   const rels = Array.from({ length: sheetCount }, (_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", target: `worksheets/sheet${i + 1}.xml` }));
   rels.push({ id: `rId${sheetCount + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" });
-  if (hasThreadedComments) rels.push({ id: `rId${sheetCount + 2}`, type: "http://schemas.microsoft.com/office/2017/10/relationships/person", target: "persons/person.xml" });
+  let nextId = sheetCount + 2;
+  if (hasSharedStrings) rels.push({ id: `rId${nextId++}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings", target: "sharedStrings.xml" });
+  if (hasThreadedComments) rels.push({ id: `rId${nextId++}`, type: "http://schemas.microsoft.com/office/2017/10/relationships/person", target: "persons/person.xml" });
   return relsXml(rels);
 }
 
@@ -2090,42 +2263,51 @@ function conditionalFormattingXml(sheet) {
   }).join("");
 }
 
-function worksheetXml(sheet, tableParts = [], drawingRelId) {
+function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
   const rows = new Map();
   for (const [address, cell] of sheet.store.entries()) {
     const { row, col } = parseCellAddress(address);
     if (!rows.has(row)) rows.set(row, []);
     rows.get(row).push({ address, col, cell });
   }
-  const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => `<row r="${row + 1}">${cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell)).join("")}</row>`).join("");
+  const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => `<row r="${row + 1}">${cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell, sharedStrings, styleTable)).join("")}</row>`).join("");
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
   const sparklineXml = sparklineGroupExtXml(sheet);
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
-function cellXml(address, cell) {
+function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
   const f = cell.formula ? `<f>${xmlEscape(String(cell.formula).replace(/^=/, ""))}</f>` : "";
-  if (typeof cell.value === "number") return `<c r="${address}">${f}<v>${cell.value}</v></c>`;
-  if (typeof cell.value === "boolean") return `<c r="${address}" t="b">${f}<v>${cell.value ? 1 : 0}</v></c>`;
-  if (cell.value == null && !f) return "";
-  if (cell.value == null) return `<c r="${address}">${f}</c>`;
-  return `<c r="${address}" t="inlineStr">${f}<is><t>${xmlEscape(cell.value)}</t></is></c>`;
+  const styleIndex = xlsxStyleIndex(cell, styleTable);
+  const s = styleIndex ? ` s="${styleIndex}"` : "";
+  if (typeof cell.value === "number") return `<c r="${address}"${s}>${f}<v>${cell.value}</v></c>`;
+  if (typeof cell.value === "boolean") return `<c r="${address}" t="b"${s}>${f}<v>${cell.value ? 1 : 0}</v></c>`;
+  if (cell.value == null && !f) return styleIndex ? `<c r="${address}"${s}/>` : "";
+  if (cell.value == null) return `<c r="${address}"${s}>${f}</c>`;
+  if (f) return `<c r="${address}" t="str"${s}>${f}<v>${xmlEscape(cell.value)}</v></c>`;
+  const sharedIndex = sharedStrings.indexByText?.get(String(cell.value));
+  if (sharedIndex !== undefined) return `<c r="${address}" t="s"${s}><v>${sharedIndex}</v></c>`;
+  return `<c r="${address}" t="inlineStr"${s}><is><t>${xmlEscape(cell.value)}</t></is></c>`;
 }
 
-function parseWorksheetXml(sheet, xml) {
+function parseWorksheetXml(sheet, xml, options = {}) {
   for (const match of xml.matchAll(/<c\s+([^>]*)>([\s\S]*?)<\/c>/g)) {
     const attrs = match[1];
     const body = match[2];
     const address = /r="([^"]+)"/.exec(attrs)?.[1];
     if (!address) continue;
     const cell = sheet.store.get(address);
+    const styleIndex = Number(/\bs="([^"]+)"/.exec(attrs)?.[1] || 0);
+    if (options.styles?.[styleIndex]) cell.style = { ...options.styles[styleIndex] };
     const formula = /<f[^>]*>([\s\S]*?)<\/f>/.exec(body)?.[1];
     if (formula) cell.formula = `=${decodeXml(formula)}`;
     const text = /<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/.exec(body)?.[1];
     const value = /<v[^>]*>([\s\S]*?)<\/v>/.exec(body)?.[1];
-    if (text !== undefined) cell.value = decodeXml(text);
-    else if (value !== undefined) cell.value = Number.isFinite(Number(value)) ? Number(value) : decodeXml(value);
+    const type = /\bt="([^"]+)"/.exec(attrs)?.[1];
+    if (type === "s" && value !== undefined) cell.value = options.sharedStrings?.[Number(value)] ?? "";
+    else if (text !== undefined) cell.value = decodeXml(text);
+    else if (value !== undefined) cell.value = Number.isFinite(Number(value)) && type !== "str" ? Number(value) : decodeXml(value);
   }
   parseSparklineGroupsXml(sheet, xml);
 }
