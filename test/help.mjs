@@ -12,6 +12,9 @@ import {
 assert.ok(HELP_CATALOG.length >= 40);
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.connectors.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
@@ -30,6 +33,8 @@ assert.match(workbook.help("sheet.charts.add").ndjson, /worksheet chart/);
 assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
 assert.match(workbook.help("fx.AVERAGE").ndjson, /Average numeric values/);
 assert.match(presentation.help("slide.compose").ndjson, /compose tree/);
+assert.match(presentation.help("slide.addNotes").ndjson, /speaker notes/);
+assert.match(presentation.help("slide.connectors.add").ndjson, /connector line/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(pdf.help("extractTables").ndjson, /table values/);
 assert.match(pdf.help("createPdfjsParser").ndjson, /positioned text/);
