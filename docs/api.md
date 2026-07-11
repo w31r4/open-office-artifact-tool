@@ -1600,20 +1600,27 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.ISNA` | formula | Return TRUE only when a value is the #N/A error. |
 | `fx.ISNUMBER` | formula | Return TRUE when a value is numeric. |
 | `fx.ISTEXT` | formula | Return TRUE when a value is text and not a formula error. |
+| `fx.LARGE` | formula | Return the k-th largest numeric value in an array or range. |
 | `fx.LEFT` | formula | Return characters from the start of a text value. |
 | `fx.LEN` | formula | Return the length of a text value. |
 | `fx.LOWER` | formula | Convert text to lowercase. |
 | `fx.MATCH` | formula | Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes. |
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
+| `fx.MEDIAN` | formula | Return the middle numeric value, or the average of the two middle values, across arguments and ranges. |
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
+| `fx.MODE.SNGL` | formula | Return the most frequently occurring numeric value, or #N/A when no value repeats. |
 | `fx.NA` | formula | Return the #N/A error value to mark unavailable data explicitly. |
 | `fx.NOT` | formula | Reverse the truth value of a condition. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
+| `fx.RANK.EQ` | formula | Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
-| `fx.ROUND` | formula | Round a numeric value to a fixed number of decimal places. |
+| `fx.ROUND` | formula | Round a numeric value to decimal places or, with negative digits, positions left of the decimal point. |
+| `fx.ROUNDDOWN` | formula | Round a numeric value toward zero at the requested positive or negative digit position. |
+| `fx.ROUNDUP` | formula | Round a numeric value away from zero at the requested positive or negative digit position. |
 | `fx.SEQUENCE` | formula | Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine. |
+| `fx.SMALL` | formula | Return the k-th smallest numeric value in an array or range. |
 | `fx.SORT` | formula | Sort a range by a 1-based column index and spill the sorted rows. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
@@ -2156,6 +2163,23 @@ Return TRUE when a value is text and not a formula error.
 
 - `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.LARGE`
+
+Return the k-th largest numeric value in an array or range.
+
+**Examples:**
+
+- =LARGE(A1:A10,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =LARGE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.LEFT`
 
 Return characters from the start of a text value.
@@ -2241,6 +2265,23 @@ Return the maximum numeric value across arguments and ranges.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.MEDIAN`
+
+Return the middle numeric value, or the average of the two middle values, across arguments and ranges.
+
+**Examples:**
+
+- =MEDIAN(A1:A10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MEDIAN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.MID`
 
 Return characters from the middle of a text value.
@@ -2269,6 +2310,23 @@ Return the minimum numeric value across arguments and ranges.
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =MIN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.MODE.SNGL`
+
+Return the most frequently occurring numeric value, or #N/A when no value repeats.
+
+**Examples:**
+
+- =MODE.SNGL(A1:A10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MODE.SNGL(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
@@ -2347,6 +2405,23 @@ Calculate a loan payment for constant payments and constant interest rate.
 
 - Catalog entry only in MVP; full financial formula evaluation is roadmap.
 
+#### `fx.RANK.EQ`
+
+Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero.
+
+**Examples:**
+
+- =RANK.EQ(A1,A1:A10,0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =RANK.EQ(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.RIGHT`
 
 Return characters from the end of a text value.
@@ -2366,7 +2441,7 @@ Return characters from the end of a text value.
 
 #### `fx.ROUND`
 
-Round a numeric value to a fixed number of decimal places.
+Round a numeric value to decimal places or, with negative digits, positions left of the decimal point.
 
 **Examples:**
 
@@ -2375,6 +2450,40 @@ Round a numeric value to a fixed number of decimal places.
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =ROUND(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.ROUNDDOWN`
+
+Round a numeric value toward zero at the requested positive or negative digit position.
+
+**Examples:**
+
+- =ROUNDDOWN(A1,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ROUNDDOWN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.ROUNDUP`
+
+Round a numeric value away from zero at the requested positive or negative digit position.
+
+**Examples:**
+
+- =ROUNDUP(A1,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ROUNDUP(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
@@ -2397,6 +2506,23 @@ Return a dynamic array sequence that spills into neighboring cells in the clean-
 **Schema returns:**
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.SMALL`
+
+Return the k-th smallest numeric value in an array or range.
+
+**Examples:**
+
+- =SMALL(A1:A10,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SMALL(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.SORT`
 

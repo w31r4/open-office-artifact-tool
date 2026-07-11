@@ -287,6 +287,37 @@ formulaEdgeSheet.getRange("D1:D15").formulas = [
 formulaEdgeBook.recalculate();
 assert.deepEqual(formulaEdgeSheet.getRange("D1:D15").values.flat(), ["#VALUE!", "#DIV/0!", "empty", "#REF!", true, true, false, false, "#N/A", "missing", "#VALUE!", true, false, true, false]);
 
+const statisticsBook = Workbook.create();
+const statisticsSheet = statisticsBook.worksheets.add("Statistics");
+statisticsSheet.getRange("A1:A6").values = [[10], [20], [20], [40], ["text"], [null]];
+statisticsSheet.getRange("D1:D15").formulas = [
+  ["=MEDIAN(A1:A6)"],
+  ["=MODE.SNGL(A1:A6)"],
+  ["=LARGE(A1:A6,2)"],
+  ["=SMALL(A1:A6,2)"],
+  ["=RANK.EQ(20,A1:A6)"],
+  ["=RANK.EQ(20,A1:A6,1)"],
+  ["=ROUND(1250,-2)"],
+  ["=ROUND(-1250,-2)"],
+  ["=ROUNDUP(12.341,2)"],
+  ["=ROUNDUP(-1250,-2)"],
+  ["=ROUNDDOWN(12.349,2)"],
+  ["=ROUNDDOWN(-1250,-2)"],
+  ["=LARGE(A1:A6,9)"],
+  ["=MODE.SNGL(1,2,3)"],
+  ["=MEDIAN(A1:A6,#REF!)"],
+];
+statisticsBook.recalculate();
+assert.deepEqual(statisticsSheet.getRange("D1:D15").values.flat(), [20, 20, 20, 20, 2, 2, 1300, -1300, 12.35, -1300, 12.34, -1200, "#NUM!", "#N/A", "#REF!"]);
+statisticsSheet.getRange("E1:E2").formulas = [["=ROUND(1.005,2)"], ["=MODE.SNGL(3,3,2,2)"]];
+statisticsBook.recalculate();
+assert.deepEqual(statisticsSheet.getRange("E1:E2").values.flat(), [1.01, 2]);
+assert.match(statisticsBook.help("fx.MEDIAN").ndjson, /middle numeric value/);
+assert.match(statisticsBook.help("fx.MODE.SNGL").ndjson, /most frequently/);
+assert.match(statisticsBook.help("fx.RANK.EQ").ndjson, /descending by default/);
+assert.match(statisticsBook.help("fx.ROUNDUP").ndjson, /away from zero/);
+assert.match(statisticsBook.inspect({ kind: "formula", target: "Statistics!D1", maxChars: 4000 }).ndjson, /MEDIAN/);
+
 const spillBook = Workbook.create();
 const spillSheet = spillBook.worksheets.add("Spill");
 spillSheet.getRange("A1").formulas = [["=SEQUENCE(2,3,10,2)"]];

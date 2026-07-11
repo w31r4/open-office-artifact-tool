@@ -67,6 +67,40 @@
         {
           "range": "D2:D4",
           "format": { "numberFormat": "0.0%" }
+        },
+        {
+          "range": "F1:G9",
+          "values": [
+            ["Statistic", "Value"],
+            ["Median revenue", null],
+            ["Second largest", null],
+            ["Smallest", null],
+            ["March rank", null],
+            ["Rounded median", null],
+            ["Margin round up", null],
+            ["Margin round down", null],
+            ["Mode margin", null]
+          ]
+        },
+        {
+          "range": "G2:G9",
+          "formulas": [
+            ["=MEDIAN(B2:B4)"],
+            ["=LARGE(B2:B4,2)"],
+            ["=SMALL(B2:B4,1)"],
+            ["=RANK.EQ(B4,B2:B4)"],
+            ["=ROUND(G2,-2)"],
+            ["=ROUNDUP(D3,2)"],
+            ["=ROUNDDOWN(D3,2)"],
+            ["=MODE.SNGL(D2:D4)"]
+          ]
+        },
+        {
+          "range": "F1:G1",
+          "format": {
+            "fill": "#7C3AED",
+            "font": { "bold": true, "color": "#FFFFFF" }
+          }
         }
       ],
       "tables": [
@@ -83,14 +117,18 @@
         [120, 70, 0.4166666666666667],
         [150, 90, 0.4]
       ]
+    },
+    {
+      "sheet": "Summary",
+      "range": "G2:G9",
+      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4]]
     }
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:D4",
+    "range": "A1:G9",
     "renderFormat": "svg",
     "inspectKind": "workbook,sheet,table,formula,style,computedStyle",
     "maxChars": 12000
   }
 }
-

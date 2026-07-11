@@ -766,11 +766,18 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.MIN", category: "statistical", summary: "Return the minimum numeric value across arguments and ranges.", examples: ["=MIN(A1:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.MAX", category: "statistical", summary: "Return the maximum numeric value across arguments and ranges.", examples: ["=MAX(A1:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNT", category: "statistical", summary: "Count numeric values across arguments and ranges.", examples: ["=COUNT(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MEDIAN", category: "statistical", summary: "Return the middle numeric value, or the average of the two middle values, across arguments and ranges.", examples: ["=MEDIAN(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MODE.SNGL", category: "statistical", summary: "Return the most frequently occurring numeric value, or #N/A when no value repeats.", examples: ["=MODE.SNGL(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.LARGE", category: "statistical", summary: "Return the k-th largest numeric value in an array or range.", examples: ["=LARGE(A1:A10,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SMALL", category: "statistical", summary: "Return the k-th smallest numeric value in an array or range.", examples: ["=SMALL(A1:A10,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.RANK.EQ", category: "statistical", summary: "Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero.", examples: ["=RANK.EQ(A1,A1:A10,0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.IF", category: "logical", summary: "Return one value when a condition is true and another when false.", examples: ["=IF(A1>0,\"ok\",\"bad\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AND", category: "logical", summary: "Return TRUE when all conditions are true.", examples: ["=AND(A1>0,B1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.OR", category: "logical", summary: "Return TRUE when any condition is true.", examples: ["=OR(A1>0,B1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.NOT", category: "logical", summary: "Reverse the truth value of a condition.", examples: ["=NOT(A1>0)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to a fixed number of decimal places.", examples: ["=ROUND(A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to decimal places or, with negative digits, positions left of the decimal point.", examples: ["=ROUND(A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDUP", category: "math-trig", summary: "Round a numeric value away from zero at the requested positive or negative digit position.", examples: ["=ROUNDUP(A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDDOWN", category: "math-trig", summary: "Round a numeric value toward zero at the requested positive or negative digit position.", examples: ["=ROUNDDOWN(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges all match their criteria.", examples: ["=COUNTIFS(A1:A10,\"East\",B1:B10,\">=10\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIF", category: "statistical", summary: "Average values whose corresponding criteria range entries match a criterion.", examples: ["=AVERAGEIF(A1:A10,\"East\",B1:B10)"] },
@@ -4194,6 +4201,23 @@ function aggregateFormulaValues(values, fnName) {
   return nums.reduce((acc, value) => acc + value, 0);
 }
 
+function statisticalFormulaNumbers(values) {
+  const error = values.map(formulaErrorCode).find(Boolean);
+  if (error) return { error, numbers: [] };
+  return { numbers: values.filter((value) => typeof value === "number" && Number.isFinite(value)) };
+}
+
+function roundFormulaNumber(value, digits = 0, mode = "nearest") {
+  const number = formulaNumber(value);
+  if (formulaErrorCode(number)) return number;
+  const places = Math.trunc(Number(digits) || 0);
+  const factor = 10 ** Math.min(308, Math.abs(places));
+  const scaled = places >= 0 ? Math.abs(number) * factor : Math.abs(number) / factor;
+  const rounded = mode === "up" ? Math.ceil(scaled) : mode === "down" ? Math.floor(scaled) : Math.round(scaled + Number.EPSILON * Math.max(1, scaled));
+  const result = places >= 0 ? rounded / factor : rounded * factor;
+  return Object.is(number, -0) || number < 0 ? -result : result;
+}
+
 function compareFormulaValues(left, op, right) {
   const leftNum = Number(left), rightNum = Number(right);
   const numeric = Number.isFinite(leftNum) && Number.isFinite(rightNum) && String(left ?? "").trim() !== "" && String(right ?? "").trim() !== "";
@@ -4317,7 +4341,46 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "COUNT":
       return aggregateFormulaValues(values(), fnName);
     case "ABS": return Math.abs(formulaNumber(scalar(0, 0)));
-    case "ROUND": return Number(formulaNumber(scalar(0, 0)).toFixed(Math.max(0, Number(scalar(1, 0)) || 0)));
+    case "ROUND": return roundFormulaNumber(scalar(0, 0), scalar(1, 0));
+    case "ROUNDUP": return roundFormulaNumber(scalar(0, 0), scalar(1, 0), "up");
+    case "ROUNDDOWN": return roundFormulaNumber(scalar(0, 0), scalar(1, 0), "down");
+    case "MEDIAN": {
+      const stats = statisticalFormulaNumbers(values());
+      if (stats.error) return stats.error;
+      if (!stats.numbers.length) return "#NUM!";
+      stats.numbers.sort((left, right) => left - right);
+      const middle = Math.floor(stats.numbers.length / 2);
+      return stats.numbers.length % 2 ? stats.numbers[middle] : (stats.numbers[middle - 1] + stats.numbers[middle]) / 2;
+    }
+    case "LARGE":
+    case "SMALL": {
+      const stats = statisticalFormulaNumbers(values([args[0]]));
+      if (stats.error) return stats.error;
+      const rank = Math.trunc(formulaNumber(scalar(1, 0)));
+      if (rank < 1 || rank > stats.numbers.length) return "#NUM!";
+      stats.numbers.sort((left, right) => fnName === "LARGE" ? right - left : left - right);
+      return stats.numbers[rank - 1];
+    }
+    case "RANK":
+    case "RANK.EQ": {
+      const number = formulaNumber(scalar(0, 0));
+      if (formulaErrorCode(number)) return number;
+      const stats = statisticalFormulaNumbers(values([args[1]]));
+      if (stats.error) return stats.error;
+      if (!stats.numbers.includes(number)) return "#N/A";
+      const ascending = formulaTruthy(scalar(2, false));
+      return 1 + stats.numbers.filter((value) => ascending ? value < number : value > number).length;
+    }
+    case "MODE":
+    case "MODE.SNGL": {
+      const stats = statisticalFormulaNumbers(values());
+      if (stats.error) return stats.error;
+      const counts = new Map();
+      for (const number of stats.numbers) counts.set(number, (counts.get(number) || 0) + 1);
+      const count = Math.max(0, ...counts.values());
+      if (count <= 1) return "#N/A";
+      return Math.min(...[...counts].filter(([, occurrences]) => occurrences === count).map(([number]) => number));
+    }
     case "INT": return Math.floor(formulaNumber(scalar(0, 0)));
     case "CEILING": return Math.ceil(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
