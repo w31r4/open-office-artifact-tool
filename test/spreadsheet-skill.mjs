@@ -46,6 +46,24 @@ try {
   assert.equal(secondQa.summary.packageOk, true);
   assert.equal(secondQa.summary.sheetName, "Inputs");
 
+  const csvPath = path.join(outputDir, "summary.csv");
+  await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G9" })).save(csvPath);
+  const csvQa = await verifyWorkbookFile(csvPath, {
+    outputDir: path.join(outputDir, "csv-qa"),
+    sheetName: "Summary",
+    range: "A1:G9",
+    renderFormat: "svg",
+    nativeRender: "off",
+    coerceTypes: true,
+  });
+  assert.equal(csvQa.summary.inputFormat, "csv");
+  assert.equal(csvQa.summary.inputType, "text/csv");
+  assert.equal(csvQa.packageInspect.summary.kind, "delimitedFile");
+  assert.equal(csvQa.packageInspect.summary.rows, 9);
+  assert.equal(csvQa.summary.verifyOk, true);
+  assert.equal(csvQa.summary.visualQaOk, true);
+  assert.match(await fs.readFile(csvQa.summary.files.packageInspect, "utf8"), /delimitedRow/);
+
   const nativeStatus = nativeSpreadsheetRenderStatus();
   const baselineWrite = await verifyWorkbookFile(result.workbookPath, {
     outputDir: path.join(outputDir, "baseline-write"),
@@ -107,6 +125,7 @@ try {
   assert.match(skillText, /verify-workbook\.mjs/);
   assert.match(skillText, /baseline-dir/);
   assert.match(skillText, /LibreOffice/);
+  assert.match(skillText, /\.csv/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

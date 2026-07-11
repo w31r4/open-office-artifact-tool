@@ -11,6 +11,7 @@ const MIME_BY_FORMAT = {
   xhtml: "application/xhtml+xml",
   txt: "text/plain",
   csv: "text/csv",
+  tsv: "text/tab-separated-values",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",

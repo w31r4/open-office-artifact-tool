@@ -1657,8 +1657,15 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
+| `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
+| `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with safe calculated-value defaults and RFC-style quoting. |
+| `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
 | `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to an XLSX FileBlob. |
+| `SpreadsheetFile.importCsv` | api | Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser. |
+| `SpreadsheetFile.importDelimited` | api | Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines. |
+| `SpreadsheetFile.importTsv` | api | Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser. |
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
+| `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
@@ -2999,6 +3006,57 @@ Create an inspectable worksheet table over an A1 range with rows.add, getDataRow
 
 - `table` (WorksheetTable) — Editable worksheet table facade.
 
+#### `SpreadsheetFile.exportCsv`
+
+Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested.
+
+**Schema parameters:**
+
+- `workbook` (Workbook) required — Workbook facade to serialize.
+- `sheetName` (string) — Worksheet name; defaults to the first sheet.
+- `range` (string) — Optional A1 range.
+- `formulas` (boolean) — Emit formulas instead of calculated values where present.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — UTF-8 CSV FileBlob.
+
+#### `SpreadsheetFile.exportDelimited`
+
+Serialize one workbook sheet/range as bounded CSV/TSV text with safe calculated-value defaults and RFC-style quoting.
+
+**Schema parameters:**
+
+- `workbook` (Workbook) required — Workbook facade to serialize.
+- `delimiter` (string) — Single field delimiter; defaults to comma.
+- `sheetName` (string) — Worksheet name; defaults to the first sheet.
+- `range` (string) — Optional A1 range; defaults to the used range.
+- `formulas` (boolean) — Emit formulas instead of calculated values where present; defaults to false.
+- `lineEnding` (string) — LF or CRLF output; defaults to CRLF.
+- `includeBom` (boolean) — Prefix a UTF-8 BOM; defaults to false.
+- `maxBytes` (number) — Maximum encoded output bytes; defaults to 10 MiB.
+- `maxRows` (number) — Maximum exported rows; defaults to 100000.
+- `maxColumns` (number) — Maximum exported columns; defaults to 16384.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — UTF-8 CSV/TSV FileBlob with row/column metadata.
+
+#### `SpreadsheetFile.exportTsv`
+
+Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed.
+
+**Schema parameters:**
+
+- `workbook` (Workbook) required — Workbook facade to serialize.
+- `sheetName` (string) — Worksheet name; defaults to the first sheet.
+- `range` (string) — Optional A1 range.
+- `formulas` (boolean) — Emit formulas instead of calculated values where present.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — UTF-8 TSV FileBlob.
+
 #### `SpreadsheetFile.exportXlsx`
 
 Serialize a Workbook facade to an XLSX FileBlob.
@@ -3011,6 +3069,52 @@ Serialize a Workbook facade to an XLSX FileBlob.
 
 - `blob` (FileBlob) — Native OOXML XLSX package bytes.
 
+#### `SpreadsheetFile.importCsv`
+
+Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|string) required — UTF-8 CSV text or bytes.
+- `sheetName` (string) — Imported worksheet name.
+- `coerceTypes` (boolean) — Convert unquoted boolean/numeric-looking cells; defaults to false.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — Imported editable workbook facade.
+
+#### `SpreadsheetFile.importDelimited`
+
+Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|string) required — UTF-8 delimited text or bytes.
+- `delimiter` (string) — Single field delimiter; defaults to comma.
+- `sheetName` (string) — Imported worksheet name; defaults to Sheet1.
+- `coerceTypes` (boolean) — Convert unquoted boolean/numeric-looking cells; defaults to false.
+- `maxBytes` (number) — Maximum encoded input bytes; defaults to 10 MiB.
+- `maxRows` (number) — Maximum parsed rows; defaults to 100000.
+- `maxColumns` (number) — Maximum parsed columns per row; defaults to 16384.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — Imported editable workbook facade.
+
+#### `SpreadsheetFile.importTsv`
+
+Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|string) required — UTF-8 TSV text or bytes.
+- `sheetName` (string) — Imported worksheet name.
+- `coerceTypes` (boolean) — Convert unquoted boolean/numeric-looking cells; defaults to false.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — Imported editable workbook facade.
+
 #### `SpreadsheetFile.importXlsx`
 
 Load an XLSX file into a Workbook facade.
@@ -3022,6 +3126,24 @@ Load an XLSX file into a Workbook facade.
 **Schema returns:**
 
 - `workbook` (Workbook) — Imported editable workbook facade.
+
+#### `SpreadsheetFile.inspectDelimited`
+
+Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|string) required — UTF-8 CSV/TSV text or bytes.
+- `delimiter` (string) — Single field delimiter; defaults to comma.
+- `maxBytes` (number) — Maximum encoded input bytes.
+- `maxRows` (number) — Maximum parsed rows.
+- `maxColumns` (number) — Maximum parsed columns per row.
+- `maxPreviewRows` (number) — Maximum row records in bounded output; defaults to 20.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `inspection` (object) — Delimited-file summary, bounded row records, and NDJSON evidence.
 
 #### `SpreadsheetFile.inspectXlsx`
 

@@ -15,6 +15,8 @@ import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/l
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const CSV_MIME = "text/csv";
+const TSV_MIME = "text/tab-separated-values";
 
 const EXTENSION_BY_FORMAT = {
   svg: "svg",
@@ -70,8 +72,8 @@ async function nativeBaselineFiles(baselineDir) {
   }
 }
 
-async function renderNativePages(xlsxBlob, outputDir, options = {}) {
-  const pdf = await createLibreOfficeRenderer({ timeoutMs: options.nativeTimeout ?? 60_000 })({ input: xlsxBlob, inputType: XLSX_MIME, outputType: "application/pdf", format: "pdf", artifactKind: "workbook" });
+async function renderNativePages(inputBlob, outputDir, options = {}) {
+  const pdf = await createLibreOfficeRenderer({ timeoutMs: options.nativeTimeout ?? 60_000 })({ input: inputBlob, inputType: options.inputType || inputBlob.type || XLSX_MIME, outputType: "application/pdf", format: "pdf", artifactKind: "workbook" });
   const pdfPath = path.join(outputDir, "native-render.pdf");
   await pdf.save(pdfPath);
   const pageCount = pdfPageCount(pdfPath);
@@ -146,9 +148,16 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   const outputDir = path.resolve(options.outputDir || path.join(path.dirname(absoluteInput), `${path.basename(absoluteInput, path.extname(absoluteInput))}-qa`));
   await fs.mkdir(outputDir, { recursive: true });
 
-  const xlsxBlob = await FileBlob.load(absoluteInput);
-  const packageInspect = await SpreadsheetFile.inspectXlsx(xlsxBlob, { includeText: options.includePackageText === true, maxChars: options.maxChars ?? 16_000 });
-  const workbook = await SpreadsheetFile.importXlsx(xlsxBlob);
+  const requestedFormat = String(options.inputFormat || path.extname(absoluteInput).slice(1) || "xlsx").toLowerCase();
+  if (!new Set(["xlsx", "csv", "tsv"]).has(requestedFormat)) throw new Error(`Unsupported spreadsheet input format: ${requestedFormat}. Expected xlsx, csv, or tsv.`);
+  const inputType = requestedFormat === "csv" ? CSV_MIME : requestedFormat === "tsv" ? TSV_MIME : XLSX_MIME;
+  const inputBlob = await FileBlob.load(absoluteInput, { type: inputType });
+  const packageInspect = requestedFormat === "xlsx"
+    ? await SpreadsheetFile.inspectXlsx(inputBlob, { includeText: options.includePackageText === true, maxChars: options.maxChars ?? 16_000 })
+    : await SpreadsheetFile.inspectDelimited(inputBlob, { delimiter: requestedFormat === "tsv" ? "\t" : ",", maxChars: options.maxChars ?? 16_000 });
+  const workbook = requestedFormat === "xlsx"
+    ? await SpreadsheetFile.importXlsx(inputBlob)
+    : await SpreadsheetFile.importDelimited(inputBlob, { delimiter: requestedFormat === "tsv" ? "\t" : ",", sheetName: options.sheetName || "Sheet1", coerceTypes: options.coerceTypes === true });
   workbook.recalculate();
   const sheetName = options.sheetName || workbook.worksheets.getItemAt(0)?.name;
   if (!sheetName) throw new Error("Workbook verification requires at least one worksheet.");
@@ -270,12 +279,14 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   const nativeStatus = nativeSpreadsheetRenderStatus();
   let nativeRender = { status: "skipped", reason: "native render disabled" };
   if (requestedNative !== "off" && requestedNative !== "false") {
-    if (nativeStatus.available) nativeRender = await renderNativePages(xlsxBlob, outputDir, { ...options, baselineDir });
+    if (nativeStatus.available) nativeRender = await renderNativePages(inputBlob, outputDir, { ...options, baselineDir, inputType });
     else if (requestedNative === "required" || requestedNative === "true") throw new Error(`Native spreadsheet render requires soffice, pdftoppm, and pdfinfo: ${JSON.stringify(nativeStatus.commands)}`);
     else nativeRender = { status: "skipped", reason: "native render commands unavailable", commands: nativeStatus.commands };
   }
   const summary = {
     input: absoluteInput,
+    inputFormat: requestedFormat,
+    inputType,
     outputDir,
     sheetName,
     range: range || null,

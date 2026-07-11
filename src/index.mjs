@@ -4,6 +4,8 @@ import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const CSV_MIME = "text/csv";
+const TSV_MIME = "text/tab-separated-values";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PDF_MIME = "application/pdf";
@@ -849,6 +851,13 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importDelimited", summary: "Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportDelimited", summary: "Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importCsv", summary: "Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportCsv", summary: "Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importTsv", summary: "Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportTsv", summary: "Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectDelimited", summary: "Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
@@ -1853,6 +1862,74 @@ const WORKBOOK_HELP_SCHEMAS = {
     recipe: { type: "string|object", description: "Standard OOXML part recipe (for example worksheet, table, chart, image, or comments) with optional source/id/target fields." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
   }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts and result-validation metadata."),
+  "SpreadsheetFile.importDelimited": helpSchema({
+    input: { type: "FileBlob|Uint8Array|string", required: true, description: "UTF-8 delimited text or bytes." },
+    delimiter: { type: "string", description: "Single field delimiter; defaults to comma." },
+    sheetName: { type: "string", description: "Imported worksheet name; defaults to Sheet1." },
+    coerceTypes: { type: "boolean", description: "Convert unquoted boolean/numeric-looking cells; defaults to false." },
+    maxBytes: { type: "number", description: "Maximum encoded input bytes; defaults to 10 MiB." },
+    maxRows: { type: "number", description: "Maximum parsed rows; defaults to 100000." },
+    maxColumns: { type: "number", description: "Maximum parsed columns per row; defaults to 16384." },
+  }, "workbook", "Workbook", "Imported editable workbook facade."),
+  "SpreadsheetFile.exportDelimited": helpSchema({
+    workbook: { type: "Workbook", required: true, description: "Workbook facade to serialize." },
+    delimiter: { type: "string", description: "Single field delimiter; defaults to comma." },
+    sheetName: { type: "string", description: "Worksheet name; defaults to the first sheet." },
+    range: { type: "string", description: "Optional A1 range; defaults to the used range." },
+    formulas: { type: "boolean", description: "Emit formulas instead of calculated values where present; defaults to false." },
+    lineEnding: { type: "string", description: "LF or CRLF output; defaults to CRLF." },
+    includeBom: { type: "boolean", description: "Prefix a UTF-8 BOM; defaults to false." },
+    maxBytes: { type: "number", description: "Maximum encoded output bytes; defaults to 10 MiB." },
+    maxRows: { type: "number", description: "Maximum exported rows; defaults to 100000." },
+    maxColumns: { type: "number", description: "Maximum exported columns; defaults to 16384." },
+  }, "blob", "FileBlob", "UTF-8 CSV/TSV FileBlob with row/column metadata."),
+  "SpreadsheetFile.importCsv": helpSchema({
+    input: { type: "FileBlob|Uint8Array|string", required: true, description: "UTF-8 CSV text or bytes." },
+    sheetName: { type: "string", description: "Imported worksheet name." },
+    coerceTypes: { type: "boolean", description: "Convert unquoted boolean/numeric-looking cells; defaults to false." },
+    maxBytes: { type: "number", description: "Maximum encoded input bytes; defaults to 10 MiB." },
+    maxRows: { type: "number", description: "Maximum parsed rows; defaults to 100000." },
+    maxColumns: { type: "number", description: "Maximum parsed columns per row; defaults to 16384." },
+  }, "workbook", "Workbook", "Imported editable workbook facade."),
+  "SpreadsheetFile.exportCsv": helpSchema({
+    workbook: { type: "Workbook", required: true, description: "Workbook facade to serialize." },
+    sheetName: { type: "string", description: "Worksheet name; defaults to the first sheet." },
+    range: { type: "string", description: "Optional A1 range." },
+    formulas: { type: "boolean", description: "Emit formulas instead of calculated values where present." },
+    lineEnding: { type: "string", description: "LF or CRLF output; defaults to CRLF." },
+    includeBom: { type: "boolean", description: "Prefix a UTF-8 BOM; defaults to false." },
+    maxBytes: { type: "number", description: "Maximum encoded output bytes; defaults to 10 MiB." },
+    maxRows: { type: "number", description: "Maximum exported rows; defaults to 100000." },
+    maxColumns: { type: "number", description: "Maximum exported columns; defaults to 16384." },
+  }, "blob", "FileBlob", "UTF-8 CSV FileBlob."),
+  "SpreadsheetFile.importTsv": helpSchema({
+    input: { type: "FileBlob|Uint8Array|string", required: true, description: "UTF-8 TSV text or bytes." },
+    sheetName: { type: "string", description: "Imported worksheet name." },
+    coerceTypes: { type: "boolean", description: "Convert unquoted boolean/numeric-looking cells; defaults to false." },
+    maxBytes: { type: "number", description: "Maximum encoded input bytes; defaults to 10 MiB." },
+    maxRows: { type: "number", description: "Maximum parsed rows; defaults to 100000." },
+    maxColumns: { type: "number", description: "Maximum parsed columns per row; defaults to 16384." },
+  }, "workbook", "Workbook", "Imported editable workbook facade."),
+  "SpreadsheetFile.exportTsv": helpSchema({
+    workbook: { type: "Workbook", required: true, description: "Workbook facade to serialize." },
+    sheetName: { type: "string", description: "Worksheet name; defaults to the first sheet." },
+    range: { type: "string", description: "Optional A1 range." },
+    formulas: { type: "boolean", description: "Emit formulas instead of calculated values where present." },
+    lineEnding: { type: "string", description: "LF or CRLF output; defaults to CRLF." },
+    includeBom: { type: "boolean", description: "Prefix a UTF-8 BOM; defaults to false." },
+    maxBytes: { type: "number", description: "Maximum encoded output bytes; defaults to 10 MiB." },
+    maxRows: { type: "number", description: "Maximum exported rows; defaults to 100000." },
+    maxColumns: { type: "number", description: "Maximum exported columns; defaults to 16384." },
+  }, "blob", "FileBlob", "UTF-8 TSV FileBlob."),
+  "SpreadsheetFile.inspectDelimited": helpSchema({
+    input: { type: "FileBlob|Uint8Array|string", required: true, description: "UTF-8 CSV/TSV text or bytes." },
+    delimiter: { type: "string", description: "Single field delimiter; defaults to comma." },
+    maxBytes: { type: "number", description: "Maximum encoded input bytes." },
+    maxRows: { type: "number", description: "Maximum parsed rows." },
+    maxColumns: { type: "number", description: "Maximum parsed columns per row." },
+    maxPreviewRows: { type: "number", description: "Maximum row records in bounded output; defaults to 20." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+  }, "inspection", "object", "Delimited-file summary, bounded row records, and NDJSON evidence."),
   "worksheet.getRange": helpSchema({
     address: { type: "string", required: true, description: "A1 cell or range address such as A1:D10." },
   }, "range", "Range", "Editable range facade for values, formulas, formatting, and rules."),
@@ -3040,6 +3117,126 @@ function worksheetFrameForBounds(bounds) {
   return { left: 40 + bounds.left * 96, top: 40 + bounds.top * 28, width: Math.max(96, bounds.colCount * 96), height: Math.max(28, bounds.rowCount * 28) };
 }
 
+function delimitedDelimiter(value = ",") {
+  const delimiter = String(value);
+  if (delimiter.length !== 1 || delimiter === '"' || delimiter === "\r" || delimiter === "\n") throw new Error("Delimited files require a single non-quote, non-newline delimiter.");
+  return delimiter;
+}
+
+function delimitedLimit(value, fallback, name) {
+  const limit = value == null ? fallback : Number(value);
+  if (!Number.isInteger(limit) || limit < 1) throw new Error(`${name} must be a positive integer.`);
+  return limit;
+}
+
+function coerceDelimitedCell(value, quoted, options = {}) {
+  if (!options.coerceTypes || quoted || value === "") return value;
+  if (/^(true|false)$/i.test(value)) return value.toLowerCase() === "true";
+  if (/^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return value;
+}
+
+function parseDelimitedText(text, options = {}) {
+  const delimiter = delimitedDelimiter(options.delimiter ?? ",");
+  const maxRows = delimitedLimit(options.maxRows, 100_000, "maxRows");
+  const maxColumns = delimitedLimit(options.maxColumns, 16_384, "maxColumns");
+  const source = String(text ?? "").replace(/^\uFEFF/, "");
+  if (source === "") return { delimiter, rows: [], quotedCells: 0, formulaLikeCells: 0 };
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  let fieldQuoted = false;
+  let closedQuote = false;
+  let quotedCells = 0;
+  let formulaLikeCells = 0;
+  const finishField = () => {
+    const value = coerceDelimitedCell(field, fieldQuoted, options);
+    row.push(value);
+    if (fieldQuoted) quotedCells += 1;
+    if (typeof value === "string" && /^[=+\-@]/.test(value)) formulaLikeCells += 1;
+    if (row.length > maxColumns) throw new Error(`Delimited input exceeds maxColumns (${maxColumns}).`);
+    field = "";
+    fieldQuoted = false;
+    closedQuote = false;
+  };
+  const finishRow = () => {
+    finishField();
+    rows.push(row);
+    if (rows.length > maxRows) throw new Error(`Delimited input exceeds maxRows (${maxRows}).`);
+    row = [];
+  };
+  let endedWithRecordSeparator = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (quoted) {
+      if (character === '"') {
+        if (source[index + 1] === '"') { field += '"'; index += 1; }
+        else { quoted = false; closedQuote = true; }
+      } else field += character;
+      endedWithRecordSeparator = false;
+      continue;
+    }
+    if (character === '"' && field === "" && !closedQuote) { quoted = true; fieldQuoted = true; endedWithRecordSeparator = false; continue; }
+    if (character === delimiter) { finishField(); endedWithRecordSeparator = false; continue; }
+    if (character === "\r" || character === "\n") {
+      finishRow();
+      if (character === "\r" && source[index + 1] === "\n") index += 1;
+      endedWithRecordSeparator = true;
+      continue;
+    }
+    if (closedQuote) throw new Error(`Delimited input has unexpected content after a closing quote at character ${index}.`);
+    if (character === '"') throw new Error(`Delimited input has an unexpected quote in an unquoted field at character ${index}.`);
+    field += character;
+    endedWithRecordSeparator = false;
+  }
+  if (quoted) throw new Error("Delimited input contains an unterminated quoted field.");
+  if (!endedWithRecordSeparator || field !== "" || row.length) finishRow();
+  const columns = rows.reduce((maximum, values) => Math.max(maximum, values.length), 0);
+  for (const values of rows) while (values.length < columns) values.push("");
+  return { delimiter, rows, quotedCells, formulaLikeCells };
+}
+
+function delimitedCellText(value) {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function serializeDelimitedRows(rows, options = {}) {
+  const delimiter = delimitedDelimiter(options.delimiter ?? ",");
+  const lineEnding = options.lineEnding == null ? "\r\n" : String(options.lineEnding);
+  if (lineEnding !== "\n" && lineEnding !== "\r\n") throw new Error("lineEnding must be LF or CRLF.");
+  const quoteAll = options.quoteAll === true;
+  const text = rows.map((row) => row.map((value) => {
+    const raw = delimitedCellText(value);
+    return quoteAll || raw.includes(delimiter) || /["\r\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw;
+  }).join(delimiter)).join(lineEnding);
+  return `${options.includeBom === true ? "\uFEFF" : ""}${text}${options.finalLineEnding === false || rows.length === 0 ? "" : lineEnding}`;
+}
+
+function delimitedInputBytes(input) {
+  if (input instanceof FileBlob) return input.bytes;
+  if (typeof input === "string") return encoder.encode(input);
+  return toUint8Array(input);
+}
+
+function workbookDelimitedRows(workbook, options = {}) {
+  if (!(workbook instanceof Workbook)) throw new Error("Delimited export requires a Workbook.");
+  if (options.recalculate !== false) workbook.recalculate();
+  const sheet = options.sheetName ? workbook.worksheets.getItem(options.sheetName) : workbook.worksheets.getItemAt(0);
+  if (!sheet) throw new Error(`Delimited export could not find worksheet ${options.sheetName || "at index 0"}.`);
+  const range = sheet.getRange(options.range || rangeToAddress(sheet.usedBounds()));
+  const values = range.values;
+  if (options.formulas !== true) return { sheet, range, rows: values };
+  const formulas = range.formulas;
+  return { sheet, range, rows: values.map((row, rowIndex) => row.map((value, columnIndex) => formulas[rowIndex]?.[columnIndex] || value)) };
+}
+
 function workbookFrameIntersects(a, b) {
   const left = Math.max(a.left, b.left);
   const top = Math.max(a.top, b.top);
@@ -3068,8 +3265,8 @@ export class Workbook {
 
   async fromCSV(text, options = {}) {
     const sheet = this.worksheets.add(options.sheetName || `Sheet${this.worksheets.items.length + 1}`);
-    const rows = String(text).trim().split(/\r?\n/).map((line) => line.split(",").map((cell) => cell.trim()));
-    sheet.getRangeByIndexes(0, 0, rows.length, rows[0]?.length || 1).values = rows;
+    const parsed = parseDelimitedText(text, { ...options, delimiter: options.delimiter ?? "," });
+    if (parsed.rows.length) sheet.getRangeByIndexes(0, 0, parsed.rows.length, parsed.rows[0]?.length || 1).values = parsed.rows;
     return this;
   }
 
@@ -4874,6 +5071,49 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
 }
 
 export class SpreadsheetFile {
+  static async inspectDelimited(input, options = {}) {
+    const bytes = delimitedInputBytes(input);
+    const maxBytes = delimitedLimit(options.maxBytes, 10 * 1024 * 1024, "maxBytes");
+    if (bytes.byteLength > maxBytes) throw new Error(`Delimited input has ${bytes.byteLength} bytes and exceeds maxBytes (${maxBytes}).`);
+    const inferredDelimiter = options.delimiter ?? (input instanceof FileBlob && String(input.type).split(";")[0].trim().toLowerCase() === TSV_MIME ? "\t" : ",");
+    const parsed = parseDelimitedText(decoder.decode(bytes), { ...options, delimiter: inferredDelimiter });
+    const columns = parsed.rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    const summary = { kind: "delimitedFile", bytes: bytes.byteLength, delimiter: parsed.delimiter, rows: parsed.rows.length, columns, quotedCells: parsed.quotedCells, formulaLikeCells: parsed.formulaLikeCells, hasBom: bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf };
+    const previewRows = Math.max(0, Math.min(parsed.rows.length, Number(options.maxPreviewRows ?? 20) || 0));
+    const records = [summary, ...parsed.rows.slice(0, previewRows).map((values, index) => ({ kind: "delimitedRow", row: index + 1, columns: values.length, values }))];
+    const bounded = ndjson(records, options.maxChars ?? 16_000);
+    return { ok: true, issues: [], records, summary, rows: parsed.rows, ...bounded };
+  }
+
+  static async importDelimited(input, options = {}) {
+    const inspection = await this.inspectDelimited(input, { ...options, maxPreviewRows: 0 });
+    const workbook = Workbook.create();
+    const sheet = workbook.worksheets.add(options.sheetName || "Sheet1");
+    if (inspection.rows.length) sheet.getRangeByIndexes(0, 0, inspection.rows.length, inspection.summary.columns || 1).values = inspection.rows;
+    return workbook;
+  }
+
+  static async exportDelimited(workbook, options = {}) {
+    const selected = workbookDelimitedRows(workbook, options);
+    const maxRows = delimitedLimit(options.maxRows, 100_000, "maxRows");
+    const maxColumns = delimitedLimit(options.maxColumns, 16_384, "maxColumns");
+    if (selected.rows.length > maxRows) throw new Error(`Delimited output has ${selected.rows.length} rows and exceeds maxRows (${maxRows}).`);
+    const columns = selected.rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    if (columns > maxColumns) throw new Error(`Delimited output has ${columns} columns and exceeds maxColumns (${maxColumns}).`);
+    const text = serializeDelimitedRows(selected.rows, options);
+    const bytes = encoder.encode(text);
+    const maxBytes = delimitedLimit(options.maxBytes, 10 * 1024 * 1024, "maxBytes");
+    if (bytes.byteLength > maxBytes) throw new Error(`Delimited output has ${bytes.byteLength} bytes and exceeds maxBytes (${maxBytes}).`);
+    const delimiter = delimitedDelimiter(options.delimiter ?? ",");
+    const type = options.type || (delimiter === "\t" ? TSV_MIME : CSV_MIME);
+    return new FileBlob(bytes, { type, metadata: { artifactKind: "workbook", format: delimiter === "\t" ? "tsv" : "csv", delimiter, sheetName: selected.sheet.name, range: rangeToAddress(selected.range.bounds), rows: selected.rows.length, columns, formulas: options.formulas === true } });
+  }
+
+  static async importCsv(input, options = {}) { return this.importDelimited(input, { ...options, delimiter: "," }); }
+  static async exportCsv(workbook, options = {}) { return this.exportDelimited(workbook, { ...options, delimiter: ",", type: CSV_MIME }); }
+  static async importTsv(input, options = {}) { return this.importDelimited(input, { ...options, delimiter: "\t" }); }
+  static async exportTsv(workbook, options = {}) { return this.exportDelimited(workbook, { ...options, delimiter: "\t", type: TSV_MIME }); }
+
   static async inspectXlsx(blobOrBuffer, options = {}) {
     return inspectOoxmlPackage(blobOrBuffer, options, { family: "XLSX", packageKind: "xlsxPackage", partKind: "xlsxPart", counts: { sheets: /^xl\/worksheets\/sheet\d+\.xml$/ } });
   }

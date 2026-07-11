@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 177);
+assert.equal(HELP_CATALOG.length, 184);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
@@ -131,13 +131,16 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 96);
+assert.equal(workbookCatalog.length, 103);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.validateResult?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.recipe?.type, "string|object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importDelimited")?.schema?.parameters?.maxRows?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportCsv")?.schema?.parameters?.formulas?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectDelimited")?.schema?.returns?.inspection?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");

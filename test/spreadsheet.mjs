@@ -474,6 +474,47 @@ assert.equal(sheetTargetLayout.sheets.length, 1);
 assert.ok(sheetTargetLayout.sheets[0].cells.length > 0);
 assert.match(workbook.help("workbook.layoutJson").ndjson, /target\/search context slicing/);
 
+const delimitedBook = Workbook.create();
+const delimitedSheet = delimitedBook.worksheets.add("Data");
+delimitedSheet.getRange("A1:D3").values = [
+  ["Region", "Amount", "Note", "Detail"],
+  ["North, East", 42, 'He said "ok"', "line one\nline two"],
+  ["=literal", null, "plain", "tab\there"],
+];
+delimitedSheet.getRange("B3").formulas = [["=B2*2"]];
+delimitedBook.recalculate();
+const csv = await SpreadsheetFile.exportCsv(delimitedBook, { sheetName: "Data" });
+assert.equal(csv.type, "text/csv");
+assert.equal(csv.metadata.rows, 3);
+assert.equal(csv.metadata.columns, 4);
+assert.match(await csv.text(), /"North, East",42,"He said ""ok""","line one\nline two"/);
+assert.doesNotMatch(await csv.text(), /=B2\*2/);
+const csvInspect = await SpreadsheetFile.inspectDelimited(csv);
+assert.equal(csvInspect.summary.rows, 3);
+assert.equal(csvInspect.summary.columns, 4);
+assert.equal(csvInspect.summary.quotedCells, 3);
+assert.equal(csvInspect.summary.formulaLikeCells, 1);
+const csvImported = await SpreadsheetFile.importCsv(csv, { sheetName: "Imported", coerceTypes: true });
+assert.deepEqual(csvImported.worksheets.getItem("Imported").getRange("A2:D3").values, [
+  ["North, East", 42, 'He said "ok"', "line one\nline two"],
+  ["=literal", 84, "plain", "tab\there"],
+]);
+const formulaCsv = await SpreadsheetFile.exportCsv(delimitedBook, { sheetName: "Data", range: "A2:B3", formulas: true, includeBom: true, lineEnding: "\n" });
+assert.equal(formulaCsv.bytes[0], 0xef);
+assert.match(await formulaCsv.text(), /=B2\*2/);
+const tsv = await SpreadsheetFile.exportTsv(delimitedBook, { sheetName: "Data", includeBom: true });
+assert.equal(tsv.type, "text/tab-separated-values");
+assert.equal((await SpreadsheetFile.inspectDelimited(tsv)).summary.hasBom, true);
+assert.equal((await SpreadsheetFile.inspectDelimited(tsv)).summary.columns, 4);
+const tsvImported = await SpreadsheetFile.importTsv(tsv, { coerceTypes: true });
+assert.equal(tsvImported.worksheets.getItemAt(0).getRange("D3").values[0][0], "tab\there");
+await assert.rejects(() => SpreadsheetFile.importCsv('a,"unterminated'), /unterminated quoted field/);
+await assert.rejects(() => SpreadsheetFile.importCsv('a,"quoted"junk'), /unexpected content after a closing quote/);
+await assert.rejects(() => SpreadsheetFile.inspectDelimited(csv, { maxBytes: 4 }), /exceeds maxBytes/);
+await assert.rejects(() => SpreadsheetFile.exportCsv(delimitedBook, { maxBytes: 4 }), /exceeds maxBytes/);
+await assert.rejects(() => SpreadsheetFile.exportCsv(delimitedBook, { maxRows: 2 }), /exceeds maxRows/);
+await assert.rejects(() => SpreadsheetFile.exportCsv(delimitedBook, { maxColumns: 3 }), /exceeds maxColumns/);
+
 const xlsx = await SpreadsheetFile.exportXlsx(workbook);
 assert.equal(xlsx.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 const xlsxInspect = await SpreadsheetFile.inspectXlsx(xlsx, { includeText: true, maxChars: 16000 });
