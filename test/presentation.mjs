@@ -280,6 +280,7 @@ assert.ok(recipeChartInspect.parts.some((part) => part.path === "ppt/charts/revi
 const recipeChartZip = await JSZip.loadAsync(new Uint8Array(await recipeChartPptx.arrayBuffer()));
 assert.match(await recipeChartZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /Id="rIdReviewChart"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/chart"[^>]*Target="\.\.\/charts\/review\.xml"/);
 const recipeSlideXml = '<?xml version="1.0" encoding="UTF-8"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld></p:sld>';
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/slides/duplicate-id.xml", xml: recipeSlideXml, recipe: { kind: "slide", source: "ppt/presentation.xml", sourceReference: { slideId: 256 } } }]), /slideId 256 already exists/);
 const recipeSlidePptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/slides/slideReview.xml", xml: recipeSlideXml, recipe: { kind: "slide", source: "ppt/presentation.xml", sourceReference: { slideId: 512 } } }]);
 assert.equal(recipeSlidePptx.metadata.sourceReferencesUpdated, 1);
 const recipeSlideZip = await JSZip.loadAsync(new Uint8Array(await recipeSlidePptx.arrayBuffer()));

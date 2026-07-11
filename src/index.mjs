@@ -8735,9 +8735,12 @@ function ooxmlMutateXlsxWorksheetReference(xml, ids, addId, config = {}) {
   if (!name) throw new Error("XLSX worksheet sourceReference requires name or sheetName.");
   const state = config.state == null ? undefined : String(config.state);
   if (state && !new Set(["visible", "hidden", "veryHidden"]).has(state)) throw new Error("XLSX worksheet sourceReference state must be visible, hidden, or veryHidden.");
-  const existingIds = [...next.matchAll(/<sheet\b[^>]*\/?>/g)].map((match) => Number(ooxmlXmlAttributes(match[0]).sheetId)).filter(Number.isFinite);
+  const existingSheets = [...next.matchAll(/<sheet\b[^>]*\/?>/g)].map((match) => ooxmlXmlAttributes(match[0]));
+  const existingIds = existingSheets.map((attributes) => Number(attributes.sheetId)).filter(Number.isFinite);
   const sheetId = Number(config.sheetId ?? Math.max(0, ...existingIds) + 1);
   if (!Number.isInteger(sheetId) || sheetId < 1) throw new Error("XLSX worksheet sourceReference sheetId must be a positive integer.");
+  if (existingIds.includes(sheetId)) throw new Error(`XLSX worksheet sourceReference sheetId ${sheetId} already exists.`);
+  if (existingSheets.some((attributes) => String(attributes.name || "").toLowerCase() === name.toLowerCase())) throw new Error(`XLSX worksheet sourceReference name ${name} already exists.`);
   const ensured = ooxmlEnsureRelationshipPrefix(next, "workbook");
   next = ensured.xml;
   const sheetTag = `<sheet name="${attrEscape(name)}" sheetId="${sheetId}"${state ? ` state="${state}"` : ""} ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
@@ -8754,6 +8757,7 @@ function ooxmlMutatePptxSlideReference(xml, ids, addId, config = {}) {
   const existingIds = [...next.matchAll(/<p:sldId\b[^>]*\/?>/g)].map((match) => Number(ooxmlXmlAttributes(match[0]).id)).filter(Number.isFinite);
   const slideId = Number(config.slideId ?? Math.max(255, ...existingIds) + 1);
   if (!Number.isInteger(slideId) || slideId < 256 || slideId > 2_147_483_647) throw new Error("PPTX slide sourceReference slideId must be an integer from 256 through 2147483647.");
+  if (existingIds.includes(slideId)) throw new Error(`PPTX slide sourceReference slideId ${slideId} already exists.`);
   const ensured = ooxmlEnsureRelationshipPrefix(next, "p:presentation");
   next = ensured.xml;
   const slideTag = `<p:sldId id="${slideId}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
