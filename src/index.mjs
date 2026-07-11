@@ -412,14 +412,6 @@ function decodePngRgba(bytes) {
   return { width, height, pixels: rgba };
 }
 
-function comparePngPixels(bytes, baselineBytes, options = {}) {
-  const threshold = Math.max(0, Number(options.pixelThreshold ?? options.threshold ?? 0));
-  const actual = decodePngRgba(bytes);
-  const expected = decodePngRgba(baselineBytes);
-  const result = compareRgbaPixels(actual, expected, { ...options, threshold, format: "png" });
-  return result;
-}
-
 function isPpmBytes(bytes) {
   return bytes?.[0] === 0x50 && (bytes?.[1] === 0x36 || bytes?.[1] === 0x33);
 }
@@ -479,9 +471,52 @@ function decodePpmRgba(bytes) {
   return { width, height, pixels: rgba };
 }
 
-function comparePpmPixels(bytes, baselineBytes, options = {}) {
+function isJpegBytes(bytes) {
+  return bytes?.[0] === 0xff && bytes?.[1] === 0xd8 && bytes?.[2] === 0xff;
+}
+
+function isWebpBytes(bytes) {
+  return bytes?.[0] === 0x52 && bytes?.[1] === 0x49 && bytes?.[2] === 0x46 && bytes?.[3] === 0x46
+    && bytes?.[8] === 0x57 && bytes?.[9] === 0x45 && bytes?.[10] === 0x42 && bytes?.[11] === 0x50;
+}
+
+function rasterByteFormat(bytes) {
+  if (isPngBytes(bytes)) return "png";
+  if (isPpmBytes(bytes)) return "ppm";
+  if (isJpegBytes(bytes)) return "jpeg";
+  if (isWebpBytes(bytes)) return "webp";
+  return undefined;
+}
+
+async function decodeRasterRgba(bytes, options = {}) {
+  const format = rasterByteFormat(bytes);
+  if (format === "png") return decodePngRgba(bytes);
+  if (format === "ppm") return decodePpmRgba(bytes);
+  if (format !== "jpeg" && format !== "webp") throw new Error("unsupported raster format");
+  let sharp;
+  try {
+    const module = await import("sharp");
+    sharp = module.default || module;
+  } catch (error) {
+    throw new Error(`JPEG/WebP pixel diff requires the optional peer dependency \"sharp\": ${error.message}`);
+  }
+  const maxPixels = Math.max(1, Number(options.maxDecodedPixels ?? options.maxPixels ?? 40_000_000));
+  const decoded = await sharp(Buffer.from(bytes), { failOn: "error", limitInputPixels: maxPixels })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (!decoded.info?.width || !decoded.info?.height || decoded.info.channels !== 4) throw new Error(`Sharp did not return RGBA pixels for ${format}`);
+  return { width: decoded.info.width, height: decoded.info.height, pixels: new Uint8Array(decoded.data) };
+}
+
+async function compareRasterPixels(bytes, baselineBytes, options = {}) {
+  const actualFormat = rasterByteFormat(bytes);
+  const baselineFormat = rasterByteFormat(baselineBytes);
+  if (!actualFormat || !baselineFormat) throw new Error("pixelDiff supports PNG, JPEG, WebP, and PPM raster baselines");
+  const [actual, expected] = await Promise.all([decodeRasterRgba(bytes, options), decodeRasterRgba(baselineBytes, options)]);
   const threshold = Math.max(0, Number(options.pixelThreshold ?? options.threshold ?? 0));
-  return compareRgbaPixels(decodePpmRgba(bytes), decodePpmRgba(baselineBytes), { ...options, threshold, format: "ppm" });
+  const format = actualFormat === baselineFormat ? actualFormat : `${actualFormat}/${baselineFormat}`;
+  return compareRgbaPixels(actual, expected, { ...options, threshold, format, actualFormat, baselineFormat });
 }
 
 function compareRgbaPixels(actual, expected, options = {}) {
@@ -571,14 +606,16 @@ export async function visualQaArtifact(artifact, options = {}) {
   if (baselineBytes) {
     const baselineHash = stableByteHash(baselineBytes);
     summary.baselineHash = baselineHash;
-    summary.changed = baselineHash !== hash;
+    summary.byteChanged = baselineHash !== hash;
+    summary.changed = summary.byteChanged;
     const pixelDiffEnabled = options.pixelDiff === true || typeof options.pixelDiff === "object";
     if (pixelDiffEnabled) {
-      if ((isPngBytes(bytes) && isPngBytes(baselineBytes)) || (isPpmBytes(bytes) && isPpmBytes(baselineBytes))) {
+      if (rasterByteFormat(bytes) && rasterByteFormat(baselineBytes)) {
         try {
           const pixelDiffOptions = typeof options.pixelDiff === "object" ? options.pixelDiff : options;
-          const pixelDiff = isPngBytes(bytes) ? comparePngPixels(bytes, baselineBytes, pixelDiffOptions) : comparePpmPixels(bytes, baselineBytes, pixelDiffOptions);
+          const pixelDiff = await compareRasterPixels(bytes, baselineBytes, pixelDiffOptions);
           summary.pixelDiff = pixelDiff;
+          summary.changed = pixelDiff.changed;
           if (pixelDiff.changed && options.allowChange !== true && options.allowPixelChange !== true) {
             issues.push(verificationIssue(artifactKind, "visualPixelDiff", `Rendered ${pixelDiff.format.toUpperCase()} differs from the baseline in ${pixelDiff.differentPixels} pixels.`, { severity: options.diffSeverity || "warning", ...pixelDiff }));
           }
@@ -586,10 +623,11 @@ export async function visualQaArtifact(artifact, options = {}) {
           summary.pixelDiff = { skipped: true, reason: error.message };
         }
       } else {
-        summary.pixelDiff = { skipped: true, reason: "pixelDiff currently supports PNG and PPM baselines only" };
+        summary.pixelDiff = { skipped: true, reason: "pixelDiff supports PNG, JPEG, WebP, and PPM raster baselines" };
       }
     }
-    if (baselineHash !== hash && options.allowChange !== true) issues.push(verificationIssue(artifactKind, "visualDiff", "Rendered output differs from the supplied baseline.", { severity: options.diffSeverity || "warning", hash, baselineHash }));
+    const pixelsEquivalent = summary.pixelDiff && !summary.pixelDiff.skipped && summary.pixelDiff.changed === false;
+    if (baselineHash !== hash && !pixelsEquivalent && options.allowChange !== true) issues.push(verificationIssue(artifactKind, "visualDiff", "Rendered output differs from the supplied baseline.", { severity: options.diffSeverity || "warning", hash, baselineHash }));
   }
   const records = [summary, ...issues];
   return { artifactKind, ok: issues.length === 0, blob, summary, issues, ...ndjson(records, options.maxChars ?? Infinity) };
@@ -760,7 +798,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG/PPM pixel-diff metrics when requested." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG/JPEG/WebP/PPM pixel-diff metrics when requested." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },
@@ -824,7 +862,7 @@ const HELP_DETAIL_OVERRIDES = {
   },
   visualQaArtifact: {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
-    options: ["baseline/expected/baselineBlob", "pixelDiff", "PNG/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
+    options: ["baseline/expected/baselineBlob", "pixelDiff", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
     returns: "{ ok, blob, summary, issues, ndjson }",
     schema: {
       parameters: {
@@ -832,7 +870,7 @@ const HELP_DETAIL_OVERRIDES = {
         format: { type: "string", description: "Requested render format such as svg, png, ppm, jpeg, webp, or pdf." },
         renderer: { type: "function", description: "Optional renderer adapter used for format conversion." },
         baseline: { type: "FileBlob|Uint8Array", description: "Expected render bytes; expected and baselineBlob are aliases." },
-        pixelDiff: { type: "boolean|object", description: "Enable PNG/PPM pixel comparison and optional thresholds." },
+        pixelDiff: { type: "boolean|object", description: "Enable PNG/JPEG/WebP/PPM pixel comparison, optional channel thresholds, and decoded-pixel limits." },
         allowChange: { type: "boolean", description: "Allow baseline byte/pixel changes without emitting issues." },
         minBytes: { type: "number", description: "Warn when the render is smaller than this byte count." },
         maxBytes: { type: "number", description: "Warn when the render exceeds this byte count." },
