@@ -57,6 +57,15 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.s
 assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
+const formulaCatalog = HELP_CATALOG.filter((item) => item.name.startsWith("fx."));
+assert.equal(formulaCatalog.length, 45);
+assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.formula?.required));
+assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.arguments?.type === "unknown[]"));
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.AND")?.schema?.returns?.value?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.FILTER")?.schema?.returns?.value?.type, "unknown[][]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.TEXTJOIN")?.schema?.returns?.value?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.LEN")?.schema?.returns?.value?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -108,5 +117,7 @@ assert.match(apiDocs, /\*\*Schema parameters:\*\*/);
 assert.match(apiDocs, /`kind` \(string\)/);
 assert.match(apiDocs, /`blob` \(FileBlob\)/);
 assert.match(apiDocs, /DocumentFile\.patchDocx/);
+assert.match(apiDocs, /#### `fx\.FILTER`/);
+assert.match(apiDocs, /Spilled two-dimensional formula result/);
 
 console.log("help smoke ok");

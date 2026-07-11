@@ -70,7 +70,7 @@ for (const artifactKind of [...byKind.keys()].sort()) {
       lines.push(...schemaSummary("Schema parameters", item.schema?.parameters));
       lines.push(...schemaSummary("Schema returns", item.schema?.returns));
       if (item.returns) lines.push("**Returns:**", "", item.returns, "");
-      if (item.schema) lines.push("**Schema:**", "", "```json", JSON.stringify(item.schema, null, 2), "```", "");
+      if (item.schema && item.kind !== "formula") lines.push("**Schema:**", "", "```json", JSON.stringify(item.schema, null, 2), "```", "");
       lines.push(...detailList("Notes", item.notes));
     }
   }

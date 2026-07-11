@@ -567,6 +567,15 @@ Return the absolute value of a number.
 
 - =ABS(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ABS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.AND`
 
 Return TRUE when all conditions are true.
@@ -574,6 +583,15 @@ Return TRUE when all conditions are true.
 **Examples:**
 
 - =AND(A1>0,B1>0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =AND(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.AVERAGE`
 
@@ -583,6 +601,15 @@ Average numeric values across arguments and ranges in the clean-room formula eng
 
 - =AVERAGE(A1:A10)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =AVERAGE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.AVERAGEIF`
 
 Average values whose corresponding criteria range entries match a criterion.
@@ -590,6 +617,15 @@ Average values whose corresponding criteria range entries match a criterion.
 **Examples:**
 
 - =AVERAGEIF(A1:A10,"East",B1:B10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =AVERAGEIF(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.AVERAGEIFS`
 
@@ -599,6 +635,15 @@ Average values where all supplied criteria ranges match their criteria.
 
 - =AVERAGEIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =AVERAGEIFS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.CEILING`
 
 Round a number up to the nearest significance.
@@ -606,6 +651,15 @@ Round a number up to the nearest significance.
 **Examples:**
 
 - =CEILING(A1,5)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =CEILING(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.CONCAT`
 
@@ -615,6 +669,15 @@ Concatenate text values and ranges.
 
 - =CONCAT(A1,"-",B1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =CONCAT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.COUNT`
 
 Count numeric values across arguments and ranges.
@@ -622,6 +685,15 @@ Count numeric values across arguments and ranges.
 **Examples:**
 
 - =COUNT(A1:A10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =COUNT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.COUNTIF`
 
@@ -631,6 +703,15 @@ Count values in a range that match a criterion.
 
 - =COUNTIF(A1:A10,">0")
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =COUNTIF(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.COUNTIFS`
 
 Count rows where multiple criteria ranges all match their criteria.
@@ -638,6 +719,15 @@ Count rows where multiple criteria ranges all match their criteria.
 **Examples:**
 
 - =COUNTIFS(A1:A10,"East",B1:B10,">=10")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =COUNTIFS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.FILTER`
 
@@ -647,6 +737,15 @@ Filter rows from a source range with a boolean or comparison include array and s
 
 - =FILTER(A2:C10,B2:B10="East")
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =FILTER(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
 #### `fx.FLOOR`
 
 Round a number down to the nearest significance.
@@ -654,6 +753,15 @@ Round a number down to the nearest significance.
 **Examples:**
 
 - =FLOOR(A1,5)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =FLOOR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.HLOOKUP`
 
@@ -663,6 +771,15 @@ Look up a value in the first row of a table range and return a value from anothe
 
 - =HLOOKUP("Revenue",A1:D4,3,FALSE)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =HLOOKUP(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.IF`
 
 Return one value when a condition is true and another when false.
@@ -670,6 +787,15 @@ Return one value when a condition is true and another when false.
 **Examples:**
 
 - =IF(A1>0,"ok","bad")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =IF(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.IFERROR`
 
@@ -679,6 +805,15 @@ Return a fallback value when an expression evaluates to a formula error.
 
 - =IFERROR(XLOOKUP("missing",A1:A10,B1:B10),"not found")
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =IFERROR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.INDEX`
 
 Return a value from a range by 1-based row and optional column index.
@@ -686,6 +821,15 @@ Return a value from a range by 1-based row and optional column index.
 **Examples:**
 
 - =INDEX(A2:C4,2,3)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =INDEX(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.INT`
 
@@ -695,6 +839,15 @@ Round a number down to the nearest integer.
 
 - =INT(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =INT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.ISBLANK`
 
 Return TRUE when a referenced value is empty.
@@ -702,6 +855,15 @@ Return TRUE when a referenced value is empty.
 **Examples:**
 
 - =ISBLANK(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ISBLANK(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.ISERROR`
 
@@ -711,6 +873,15 @@ Return TRUE when a value is any recognized formula error.
 
 - =ISERROR(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ISERROR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.ISNUMBER`
 
 Return TRUE when a value is numeric.
@@ -718,6 +889,15 @@ Return TRUE when a value is numeric.
 **Examples:**
 
 - =ISNUMBER(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ISNUMBER(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.ISTEXT`
 
@@ -727,6 +907,15 @@ Return TRUE when a value is text and not a formula error.
 
 - =ISTEXT(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ISTEXT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.LEFT`
 
 Return characters from the start of a text value.
@@ -734,6 +923,15 @@ Return characters from the start of a text value.
 **Examples:**
 
 - =LEFT(A1,3)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =LEFT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.LEN`
 
@@ -743,6 +941,15 @@ Return the length of a text value.
 
 - =LEN(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =LEN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.LOWER`
 
 Convert text to lowercase.
@@ -750,6 +957,15 @@ Convert text to lowercase.
 **Examples:**
 
 - =LOWER(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =LOWER(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.MATCH`
 
@@ -759,6 +975,15 @@ Return the 1-based position of a lookup value in a range, with exact match and b
 
 - =MATCH("Beta",A2:A4,0)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MATCH(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.MAX`
 
 Return the maximum numeric value across arguments and ranges.
@@ -766,6 +991,15 @@ Return the maximum numeric value across arguments and ranges.
 **Examples:**
 
 - =MAX(A1:A10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MAX(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.MID`
 
@@ -775,6 +1009,15 @@ Return characters from the middle of a text value.
 
 - =MID(A1,2,3)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MID(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.MIN`
 
 Return the minimum numeric value across arguments and ranges.
@@ -782,6 +1025,15 @@ Return the minimum numeric value across arguments and ranges.
 **Examples:**
 
 - =MIN(A1:A10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MIN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.OR`
 
@@ -791,6 +1043,15 @@ Return TRUE when any condition is true.
 
 - =OR(A1>0,B1>0)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =OR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.PMT`
 
 Calculate a loan payment for constant payments and constant interest rate.
@@ -798,6 +1059,15 @@ Calculate a loan payment for constant payments and constant interest rate.
 **Examples:**
 
 - =PMT(rate,nper,pv)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =PMT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 **Notes:**
 
@@ -811,6 +1081,15 @@ Return characters from the end of a text value.
 
 - =RIGHT(A1,3)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =RIGHT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.ROUND`
 
 Round a numeric value to a fixed number of decimal places.
@@ -818,6 +1097,15 @@ Round a numeric value to a fixed number of decimal places.
 **Examples:**
 
 - =ROUND(A1,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =ROUND(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.SEQUENCE`
 
@@ -827,6 +1115,15 @@ Return a dynamic array sequence that spills into neighboring cells in the clean-
 
 - =SEQUENCE(2,3,10,2)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SEQUENCE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
 #### `fx.SORT`
 
 Sort a range by a 1-based column index and spill the sorted rows.
@@ -834,6 +1131,15 @@ Sort a range by a 1-based column index and spill the sorted rows.
 **Examples:**
 
 - =SORT(A2:C10,3,-1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SORT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.SUM`
 
@@ -843,6 +1149,15 @@ Sum numeric values across arguments and ranges.
 
 - =SUM(A1:A10)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SUM(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.SUMIF`
 
 Sum values whose corresponding criteria range entries match a criterion.
@@ -850,6 +1165,15 @@ Sum values whose corresponding criteria range entries match a criterion.
 **Examples:**
 
 - =SUMIF(A1:A10,"East",B1:B10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SUMIF(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.SUMIFS`
 
@@ -859,6 +1183,15 @@ Sum values where all supplied criteria ranges match their criteria.
 
 - =SUMIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SUMIFS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.SUMPRODUCT`
 
 Multiply corresponding numeric values in equally sized arrays and return the sum of those products.
@@ -866,6 +1199,15 @@ Multiply corresponding numeric values in equally sized arrays and return the sum
 **Examples:**
 
 - =SUMPRODUCT(A1:A10,B1:B10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SUMPRODUCT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.TEXTJOIN`
 
@@ -875,6 +1217,15 @@ Join text values with a delimiter and optional empty-value skipping.
 
 - =TEXTJOIN("/",TRUE,A1:A3)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TEXTJOIN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.TRANSPOSE`
 
 Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata.
@@ -882,6 +1233,15 @@ Transpose a source range into a spilled dynamic array with spillRange/spillValue
 **Examples:**
 
 - =TRANSPOSE(A1:C2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TRANSPOSE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.TRIM`
 
@@ -891,6 +1251,15 @@ Trim leading/trailing whitespace and collapse internal whitespace.
 
 - =TRIM(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TRIM(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.UNIQUE`
 
 Return unique rows from a range as a spilled dynamic array.
@@ -898,6 +1267,15 @@ Return unique rows from a range as a spilled dynamic array.
 **Examples:**
 
 - =UNIQUE(A2:A10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =UNIQUE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.UPPER`
 
@@ -907,6 +1285,15 @@ Convert text to uppercase.
 
 - =UPPER(A1)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =UPPER(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (string) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.VLOOKUP`
 
 Look up a value in the first column of a table range and return a value from another column.
@@ -915,6 +1302,15 @@ Look up a value in the first column of a table range and return a value from ano
 
 - =VLOOKUP("Beta",A2:B4,2,FALSE)
 
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =VLOOKUP(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.XLOOKUP`
 
 Look up a value in one range and return the corresponding value from another range.
@@ -922,6 +1318,15 @@ Look up a value in one range and return the corresponding value from another ran
 **Examples:**
 
 - =XLOOKUP("Gamma",A2:A4,B2:B4,"missing")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =XLOOKUP(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown) — Calculated cell value or an Excel-style formula error string.
 
 #### `range.conditionalFormats.add`
 

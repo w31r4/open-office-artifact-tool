@@ -893,6 +893,27 @@ const HELP_DETAIL_OVERRIDES = {
 for (const item of HELP_CATALOG) {
   const details = HELP_DETAIL_OVERRIDES[item.name];
   if (details) Object.assign(item, details);
+  if (item.name.startsWith("fx.") && !item.schema) {
+    const functionName = item.name.slice(3);
+    const returnType = item.category === "dynamic-array"
+      ? "unknown[][]"
+      : item.category === "logical" || item.category === "information"
+        ? (functionName === "IF" || functionName === "IFERROR" ? "unknown" : "boolean")
+        : item.category === "text"
+          ? (functionName === "LEN" ? "number" : "string")
+          : functionName === "XLOOKUP" || functionName === "INDEX" || functionName === "VLOOKUP" || functionName === "HLOOKUP"
+            ? "unknown"
+            : "number";
+    item.schema = {
+      parameters: {
+        formula: { type: "string", required: true, description: `Excel-style cell formula beginning with =${functionName}(...).` },
+        arguments: { type: "unknown[]", required: true, description: "Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator." },
+      },
+      returns: {
+        value: { type: returnType, description: item.category === "dynamic-array" ? "Spilled two-dimensional formula result." : "Calculated cell value or an Excel-style formula error string." },
+      },
+    };
+  }
 }
 
 export function helpArtifact(artifactOrKind = "*", query = "*", options = {}) {
