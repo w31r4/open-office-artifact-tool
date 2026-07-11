@@ -99,6 +99,18 @@ npm run test:playwright-renderer
 
 It accepts SVG or HTML `FileBlob` input, fixes viewport/device scale/timezone/locale, waits for font readiness, disables animations, and blocks network requests by default. Set `allowNetwork: true` only for explicitly trusted local HTML previews.
 
+Additional optional render adapters are available for narrower environments:
+
+```js
+import { createSharpRenderer } from "open-office-artifact-tool/renderers/sharp";
+import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+
+const sharpRenderer = createSharpRenderer(); // SVG/PNG/JPEG/WebP -> PNG/WebP/JPEG
+const popplerRenderer = createPopplerRenderer(); // PDF FileBlob -> page PNG/PPM/TIFF via pdftoppm
+```
+
+Install `sharp` for the sharp adapter. Install Poppler (`pdftoppm`) on the host for the Poppler adapter, or pass a custom `command` for a compatible CLI.
+
 ## Native Office bridge adapter
 
 The core package does not depend on Windows or Microsoft Office. The Node-side wrapper at `open-office-artifact-tool/native/office-bridge` calls the optional C# sidecar in `native/OfficeBridge` (or any compatible JSON stdin/stdout command) with timeout handling, isolated temp files, cleanup, and structured errors.
