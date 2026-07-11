@@ -54,6 +54,16 @@ chartFromRange.title = "Revenue Trend";
 chartFromRange.hasLegend = false;
 chartFromRange.setPosition("I1", "M10");
 const chartFromConfig = sheet.charts.add("bar", { name: "ScoresChart", title: "Scores", categories: ["A", "B"], series: [{ name: "Score", values: [9, 7] }], position: { left: 40, top: 220, width: 240, height: 160 } });
+const revenuePivot = sheet.pivotTables.add({
+  name: "RevenuePivot",
+  sourceRange: "F1:G4",
+  targetRange: "N1:O4",
+  rows: ["Month"],
+  values: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue sum" }],
+});
+assert.deepEqual(revenuePivot.computedValues(), [["Month", "Revenue sum"], ["Jan", 100], ["Feb", 120], ["Mar", 130]]);
+assert.equal(workbook.resolve(revenuePivot.id).name, "RevenuePivot");
+assert.match(workbook.help("sheet.pivotTables.add").ndjson, /pivot table facade/);
 const image = sheet.images.add({
   name: "LogoImage",
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -77,7 +87,7 @@ assert.equal(chartFromRange.series.items[0].name, "Revenue");
 assert.match(chartFromRange.series.items[0].formula, /G2:G4/);
 assert.equal(chartFromConfig.series.getItemAt(0).values[1], 7);
 
-const metadataInspect = workbook.inspect({ kind: "dataValidation,conditionalFormat,thread,table,drawing", maxChars: 12000 }).ndjson;
+const metadataInspect = workbook.inspect({ kind: "dataValidation,conditionalFormat,thread,table,pivotTable,drawing", maxChars: 16000 }).ndjson;
 assert.match(metadataInspect, /"kind":"dataValidation"/);
 assert.match(metadataInspect, /"type":"list"/);
 assert.match(metadataInspect, /"kind":"conditionalFormat"/);
@@ -86,6 +96,8 @@ assert.match(metadataInspect, /"ruleType":"expression"/);
 assert.match(metadataInspect, /"kind":"thread"/);
 assert.match(metadataInspect, /Formula checks revenue sum/);
 assert.match(metadataInspect, /TasksTable/);
+assert.match(metadataInspect, /RevenuePivot/);
+assert.match(metadataInspect, /Revenue sum/);
 assert.match(metadataInspect, /Revenue Trend/);
 assert.match(metadataInspect, /ScoresChart/);
 assert.match(metadataInspect, /LogoImage/);
@@ -203,6 +215,8 @@ assert.match(previewSvg, /<svg/);
 assert.match(previewSvg, /TasksTable/);
 assert.match(previewSvg, /Revenue Trend/);
 assert.match(previewSvg, /Logo placeholder/);
+assert.match(previewSvg, /RevenuePivot/);
+assert.match(previewSvg, /Revenue sum/);
 assert.match(previewSvg, /polyline/);
 const layoutBlob = await workbook.render({ format: "layout", sheetName: "Sheet1", range: "A1:C3" });
 assert.equal(layoutBlob.type, "application/vnd.open-office-artifact.layout+json");
@@ -219,6 +233,7 @@ assert.equal(a2LayoutCell.computedStyle.fill, "sky-100");
 assert.deepEqual(a2LayoutCell.conditionalFormats.map((item) => item.id), [customCf.id]);
 assert.match(previewSvg, /fill="#22c55e"/);
 assert.ok(layout.sheets[0].tables.some((table) => table.name === "TasksTable"));
+assert.ok(layout.sheets[0].pivots.some((pivot) => pivot.name === "RevenuePivot" && pivot.values.some((row) => row.includes("Revenue sum"))));
 assert.ok(layout.sheets[0].charts.some((chart) => chart.title === "Revenue Trend"));
 assert.ok(layout.sheets[0].images.some((item) => item.alt === "Logo placeholder"));
 assert.ok(layout.sheets[0].sparklines.some((item) => item.targetRange === "H2:H2"));
@@ -338,6 +353,9 @@ assert.match(nativeThreadInspect, /"resolved":true/);
 const nativeStyleInspect = nativeOnlyWorkbook.inspect({ kind: "style", range: "A1:C3", maxChars: 12000 }).ndjson;
 assert.match(nativeStyleInspect, /"kind":"style"/);
 assert.match(nativeStyleInspect, /"numberFormat":"#,##0"/);
+const pivotRoundtripWorkbook = await SpreadsheetFile.importXlsx(xlsx);
+assert.deepEqual(pivotRoundtripWorkbook.resolve("RevenuePivot").computedValues()[1], ["Jan", 100]);
+assert.match(pivotRoundtripWorkbook.inspect({ kind: "pivotTable", target: "RevenuePivot", maxChars: 8000 }).ndjson, /Revenue sum/);
 const sharedFormulaZip = await JSZip.loadAsync(xlsxBytes);
 sharedFormulaZip.remove("customXml/open-office-artifact.json");
 const sharedFormulaXml = worksheetXml
@@ -387,11 +405,13 @@ const loaded = await SpreadsheetFile.importXlsx(await FileBlob.load(out));
 const roundtrip = loaded.inspect({ kind: "table,formula", range: "A1:C3" }).ndjson;
 assert.match(roundtrip, /"values":\[\["A","B","Sum"\],\[2,3,5\],\[5,7,12\]\]/);
 assert.match(roundtrip, /"formula":"=A2\+B2"/);
-const roundtripMetadata = loaded.inspect({ kind: "dataValidation,conditionalFormat,thread,table,drawing", maxChars: 12000 }).ndjson;
+const roundtripMetadata = loaded.inspect({ kind: "dataValidation,conditionalFormat,thread,table,pivotTable,drawing", maxChars: 16000 }).ndjson;
 assert.match(roundtripMetadata, /"kind":"dataValidation"/);
 assert.match(roundtripMetadata, /"kind":"conditionalFormat"/);
 assert.match(roundtripMetadata, /"kind":"thread"/);
 assert.match(roundtripMetadata, /TasksTable/);
+assert.match(roundtripMetadata, /RevenuePivot/);
+assert.match(roundtripMetadata, /Revenue sum/);
 assert.match(roundtripMetadata, /Revenue Trend/);
 assert.match(roundtripMetadata, /ScoresChart/);
 assert.match(roundtripMetadata, /LogoImage/);

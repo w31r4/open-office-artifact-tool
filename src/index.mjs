@@ -614,6 +614,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; cellIs/expression rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
@@ -1323,6 +1324,104 @@ class WorksheetTableCollection {
   toJSON() { return this.items.map((table) => table.toJSON()); }
 }
 
+function pivotValueLabel(valueField = {}) {
+  const summarizeBy = valueField.summarizeBy || valueField.aggregation || "sum";
+  return valueField.name || `${summarizeBy} of ${valueField.field || valueField.name || "Value"}`;
+}
+
+function summarizePivotValues(values = [], summarizeBy = "sum") {
+  const nums = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  const mode = String(summarizeBy || "sum").toLowerCase();
+  if (mode === "count") return values.filter((value) => value != null && value !== "").length;
+  if (!nums.length) return 0;
+  if (mode === "average" || mode === "avg") return nums.reduce((sum, value) => sum + value, 0) / nums.length;
+  if (mode === "min") return Math.min(...nums);
+  if (mode === "max") return Math.max(...nums);
+  return nums.reduce((sum, value) => sum + value, 0);
+}
+
+class WorksheetPivotTable {
+  constructor(worksheet, config = {}) {
+    this.worksheet = worksheet;
+    this.id = config.id || aid("pvt");
+    this.name = config.name || `PivotTable${worksheet.pivotTables.items.length + 1}`;
+    this.sourceRange = workbookRangeRef(config.sourceRange || config.source || config.range || "A1");
+    this.targetRange = workbookRangeRef(config.targetRange || config.destination || config.target || "A6");
+    this.rowFields = [...(config.rowFields || config.rows || [])];
+    this.columnFields = [...(config.columnFields || config.columns || [])];
+    this.valueFields = (config.valueFields || config.values || []).map((field) => typeof field === "string" ? { field, summarizeBy: "sum" } : { ...field });
+    this.filters = config.filters || {};
+  }
+
+  sourceValues() {
+    const target = workbookRangeTarget(this.worksheet.workbook, this.worksheet, this.sourceRange);
+    if (!target.sheet || !target.bounds) return [];
+    return target.sheet.getRange(target.address).values;
+  }
+
+  computedValues() {
+    const matrix = this.sourceValues();
+    if (!matrix.length) return [];
+    const headers = matrix[0].map((value) => String(value ?? ""));
+    let rowIndexes = this.rowFields.map((field) => headers.indexOf(String(field))).filter((index) => index >= 0);
+    if (this.rowFields.length && rowIndexes.length === 0 && headers.length) rowIndexes = [0];
+    const valueConfigs = this.valueFields.length ? this.valueFields : headers.slice(1, 2).map((field) => ({ field, summarizeBy: "sum" }));
+    const valueIndexes = valueConfigs.map((field) => headers.indexOf(String(field.field || field.name))).map((index, i) => ({ index, config: valueConfigs[i] })).filter((item) => item.index >= 0);
+    const groups = new Map();
+    for (const row of matrix.slice(1)) {
+      const keyValues = rowIndexes.length ? rowIndexes.map((index) => row[index]) : ["(all)"];
+      const key = JSON.stringify(keyValues);
+      if (!groups.has(key)) groups.set(key, { keyValues, rows: [] });
+      groups.get(key).rows.push(row);
+    }
+    const header = [...(this.rowFields.length ? this.rowFields : ["Group"]), ...valueIndexes.map((item) => pivotValueLabel(item.config))];
+    const rows = [...groups.values()].map((group) => [
+      ...group.keyValues,
+      ...valueIndexes.map((item) => summarizePivotValues(group.rows.map((row) => row[item.index]), item.config.summarizeBy)),
+    ]);
+    return [header, ...rows];
+  }
+
+  inspectRecord() {
+    const values = this.computedValues();
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
+  }
+
+  layoutJson(bounds) {
+    const values = this.computedValues();
+    const target = safeRangeBounds(this.targetRange.address) || { top: 0, left: 0, rowCount: Math.max(1, values.length), colCount: Math.max(1, values[0]?.length || 1) };
+    const frame = { left: 40 + (target.left - bounds.left) * 96, top: 40 + (target.top - bounds.top) * 28, width: Math.max(96, (values[0]?.length || target.colCount || 1) * 96), height: Math.max(28, Math.max(values.length, target.rowCount || 1) * 28) };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, valueFields: this.valueFields, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
+  }
+
+  toSvg(bounds) {
+    const layout = this.layoutJson(bounds);
+    const [left, top] = layout.bbox;
+    const values = layout.values || [];
+    const cellW = values[0]?.length ? Math.max(72, layout.bbox[2] / values[0].length) : 96;
+    const cellH = 24;
+    const cells = [];
+    values.forEach((row, r) => row.forEach((value, c) => {
+      const x = left + c * cellW;
+      const y = top + r * cellH;
+      cells.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${r === 0 ? "#ecfeff" : "#ffffff"}" stroke="#67e8f9"/>`);
+      cells.push(`<text x="${x + 5}" y="${y + 16}" font-family="Arial" font-size="11" fill="#155e75">${xmlEscape(value ?? "")}</text>`);
+    }));
+    return `<rect x="${left}" y="${Math.max(0, top - 18)}" width="${Math.max(120, layout.bbox[2])}" height="18" fill="#cffafe" stroke="#06b6d4"/><text x="${left + 5}" y="${Math.max(12, top - 5)}" font-family="Arial" font-size="11" font-weight="700" fill="#155e75">${xmlEscape(this.name)}</text>${cells.join("")}`;
+  }
+
+  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters }; }
+}
+
+class WorksheetPivotTableCollection {
+  constructor(worksheet) { this.worksheet = worksheet; this.items = []; }
+  add(config = {}) { const pivot = new WorksheetPivotTable(this.worksheet, config); this.items.push(pivot); return pivot; }
+  getItemOrNullObject(name) { return this.items.find((pivot) => pivot.name === name || pivot.id === name) || { isNullObject: true }; }
+  deleteAll() { this.items = []; }
+  inspectRecords() { return this.items.map((pivot) => pivot.inspectRecord()); }
+  toJSON() { return this.items.map((pivot) => pivot.toJSON()); }
+}
+
 class WorksheetChartSeriesCollection {
   constructor(chart) { this.chart = chart; this.items = []; }
   add(name, values = []) { const series = { name, values, categoryFormula: undefined, formula: undefined, fill: undefined }; this.items.push(series); return series; }
@@ -1775,6 +1874,7 @@ export class Workbook {
       if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
+      if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
       if (kinds.has("drawing") || kinds.has("chart")) records.push(...sheet.charts.inspectRecords());
       if (kinds.has("drawing") || kinds.has("image")) records.push(...sheet.images.inspectRecords());
       if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
@@ -1814,6 +1914,14 @@ export class Workbook {
         if (!tableBounds) issues.push(verificationIssue("workbook", "invalidTableRange", `Table ${table.name || table.id} on ${sheet.name} has invalid range ${table.range}.`, { sheet: sheet.name, id: table.id, range: table.range }));
         if (tableBounds && (tableBounds.rowCount !== Math.max(1, table.rowCount) || tableBounds.colCount !== Math.max(1, table.columnCount))) issues.push(verificationIssue("workbook", "tableRangeMismatch", `Table ${table.name || table.id} range does not match table values.`, { severity: "warning", sheet: sheet.name, id: table.id, range: table.range, rangeRows: tableBounds.rowCount, rangeCols: tableBounds.colCount, rows: table.rowCount, cols: table.columnCount }));
         if (table.values.some((row) => row.length !== table.columnCount)) issues.push(verificationIssue("workbook", "raggedWorksheetTable", `Table ${table.name || table.id} has ragged rows.`, { sheet: sheet.name, id: table.id }));
+      }
+      for (const pivot of sheet.pivotTables.items) {
+        const source = workbookRangeTarget(this, sheet, pivot.sourceRange);
+        if (!source.sheet || !source.bounds) issues.push(verificationIssue("workbook", "pivotSourceInvalid", `Pivot table ${pivot.name || pivot.id} on ${sheet.name} has invalid source range.`, { sheet: sheet.name, id: pivot.id, sourceRange: pivot.sourceRange.address }));
+        const headers = pivot.sourceValues()[0]?.map((value) => String(value ?? "")) || [];
+        for (const field of [...pivot.rowFields, ...pivot.valueFields.map((item) => item.field || item.name)]) {
+          if (field && !headers.includes(String(field))) issues.push(verificationIssue("workbook", "pivotFieldMissing", `Pivot table ${pivot.name || pivot.id} references missing field ${field}.`, { sheet: sheet.name, id: pivot.id, field }));
+        }
       }
       for (const chart of sheet.charts.items) {
         if (!chart.title) issues.push(verificationIssue("workbook", "untitledChart", `Chart ${chart.name} on ${sheet.name} has no title.`, { severity: "warning", sheet: sheet.name, id: chart.id }));
@@ -1914,6 +2022,8 @@ export class Workbook {
       if (sheet.id === id) return sheet;
       const table = sheet.tables.items.find((item) => item.id === id);
       if (table) return table;
+      const pivot = sheet.pivotTables.items.find((item) => item.id === id || item.name === id);
+      if (pivot) return pivot;
       const chart = sheet.charts.items.find((item) => item.id === id);
       if (chart) return chart;
       const image = sheet.images.items.find((item) => item.id === id);
@@ -1964,7 +2074,7 @@ export class Workbook {
 
 function worksheetLayoutEntries(layout) {
   const entries = [];
-  for (const collection of ["cells", "tables", "charts", "images", "sparklines", "rules"]) {
+  for (const collection of ["cells", "tables", "pivots", "charts", "images", "sparklines", "rules"]) {
     layout[collection].forEach((record, itemIndex) => entries.push({ collection, itemIndex, record }));
   }
   return entries;
@@ -1999,7 +2109,7 @@ function worksheetLayoutSlice(layout, options = {}) {
     keepByCollection.get(entry.collection).add(entry.itemIndex);
   }
   const sliced = { ...layout };
-  for (const collection of ["cells", "tables", "charts", "images", "sparklines", "rules"]) {
+  for (const collection of ["cells", "tables", "pivots", "charts", "images", "sparklines", "rules"]) {
     const kept = keepByCollection.get(collection) || new Set();
     sliced[collection] = layout[collection].filter((_, index) => kept.has(index));
   }
@@ -2017,6 +2127,8 @@ export class Worksheet {
     this.shapes = [];
     this.images = new WorksheetImageCollection(this);
     this.tables = new WorksheetTableCollection(this);
+    this.pivotTables = new WorksheetPivotTableCollection(this);
+    this.pivots = this.pivotTables;
     this.sparklineGroups = new SparklineGroupCollection(this);
     this.sparklines = this.sparklineGroups;
     this.dataValidations = new WorksheetRuleCollection(this, "dataValidation");
@@ -2165,11 +2277,12 @@ export class Worksheet {
       }
     }
     const tables = this.tables.items.map((table) => ({ kind: "table", id: table.id, sheet: this.name, name: table.name, address: table.range, bbox: Object.values(frameForRange(table.range) || {}), rows: table.rowCount, cols: table.columnCount, hasHeaders: table.hasHeaders }));
+    const pivots = this.pivotTables.items.map((pivot) => pivot.layoutJson(bounds));
     const charts = this.charts.items.map((chart) => ({ kind: "chart", id: chart.id, sheet: this.name, name: chart.name, chartType: chart.type, title: chart.title, bbox: [chart.position.left, chart.position.top, chart.position.width, chart.position.height], series: chart.series.items.length, categories: chart.categories }));
     const images = this.images.items.map((image) => { const p = image.position; return { kind: "image", id: image.id, sheet: this.name, name: image.name, alt: image.alt, bbox: [p.left, p.top, p.width, p.height], fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt }; });
     const sparklines = this.sparklineGroups.items.map((group) => { const p = group.targetFrame(bounds); return { kind: "sparkline", id: group.id, sheet: this.name, type: group.type, targetRange: group.targetRange.address, sourceData: group.sourceData.address, bbox: [p.left, p.top, p.width, p.height], values: group.values() }; });
     const rules = [...this.dataValidations.items, ...this.conditionalFormattings.items].map((rule) => ({ kind: rule.kind, id: rule.id, sheet: this.name, range: rule.range, bbox: Object.values(frameForRange(rule.range) || {}), ruleType: rule.ruleType, rule: rule.rule }));
-    const drawingFrames = [...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
+    const drawingFrames = [...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox), ...pivots.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
     const width = Math.max(320, bounds.colCount * cellW + 80, ...drawingFrames.map((bbox) => bbox[0] + bbox[2] + 40));
     const height = Math.max(180, bounds.rowCount * cellH + 80, ...drawingFrames.map((bbox) => bbox[1] + bbox[3] + 40));
     const layout = {
@@ -2185,6 +2298,7 @@ export class Worksheet {
       height,
       cells,
       tables,
+      pivots,
       charts,
       images,
       sparklines,
@@ -2200,8 +2314,9 @@ export class Worksheet {
     const cellH = 28;
     const imageFrames = this.images.items.map((image) => image.position);
     const sparklineFrames = this.sparklineGroups.items.map((group) => group.targetFrame(bounds));
-    const width = Math.max(320, bounds.colCount * cellW + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40), ...imageFrames.map((frame) => frame.left + frame.width + 40), ...sparklineFrames.map((frame) => frame.left + frame.width + 40));
-    const height = Math.max(180, bounds.rowCount * cellH + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40), ...imageFrames.map((frame) => frame.top + frame.height + 40), ...sparklineFrames.map((frame) => frame.top + frame.height + 40));
+    const pivotFrames = this.pivotTables.items.map((pivot) => { const bbox = pivot.layoutJson(bounds).bbox; return { left: bbox[0], top: bbox[1], width: bbox[2], height: bbox[3] }; });
+    const width = Math.max(320, bounds.colCount * cellW + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40), ...imageFrames.map((frame) => frame.left + frame.width + 40), ...sparklineFrames.map((frame) => frame.left + frame.width + 40), ...pivotFrames.map((frame) => frame.left + frame.width + 40));
+    const height = Math.max(180, bounds.rowCount * cellH + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40), ...imageFrames.map((frame) => frame.top + frame.height + 40), ...sparklineFrames.map((frame) => frame.top + frame.height + 40), ...pivotFrames.map((frame) => frame.top + frame.height + 40));
     const rows = [];
     for (let r = bounds.top; r <= bounds.bottom; r++) {
       for (let c = bounds.left; c <= bounds.right; c++) {
@@ -2220,10 +2335,11 @@ export class Worksheet {
       }
     }
     const tableOverlays = this.tables.items.map((table) => table.toSvg(bounds)).join("");
+    const pivotOverlays = this.pivotTables.items.map((pivot) => pivot.toSvg(bounds)).join("");
     const chartOverlays = this.charts.items.map((chart) => chart.toSvg()).join("");
     const imageOverlays = this.images.items.map((image) => image.toSvg()).join("");
     const sparklineOverlays = this.sparklineGroups.items.map((group) => group.toSvg(bounds)).join("");
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${chartOverlays}${imageOverlays}${sparklineOverlays}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${pivotOverlays}${chartOverlays}${imageOverlays}${sparklineOverlays}</svg>`;
   }
 }
 
@@ -2849,6 +2965,7 @@ function workbookMetadata(workbook) {
       dataValidations: sheet.dataValidations.toJSON(),
       conditionalFormattings: sheet.conditionalFormattings.toJSON(),
       tables: sheet.tables.toJSON(),
+      pivots: sheet.pivotTables.toJSON(),
       charts: sheet.charts.toJSON(),
       images: sheet.images.toJSON(),
       sparklineGroups: sheet.sparklineGroups.toJSON(),
@@ -2882,6 +2999,11 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
       table.showFilterButton = tableData.showFilterButton ?? table.showFilterButton;
     }
     sheet.charts.items = [];
+    sheet.pivotTables.items = [];
+    for (const pivotData of sheetData.pivots || sheetData.pivotTables || []) {
+      const pivot = sheet.pivotTables.add({ ...pivotData });
+      pivot.id = pivotData.id || pivot.id;
+    }
     for (const chartData of sheetData.charts || []) {
       const chart = sheet.charts.add(chartData.type || chartData.chartType || "bar", { ...chartData });
       chart.id = chartData.id || chart.id;
