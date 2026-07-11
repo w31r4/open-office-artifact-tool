@@ -689,6 +689,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
+  { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
@@ -5367,6 +5368,15 @@ class DocumentStyleCollection {
 
   add(id, config = {}) { const style = { id, name: config.name || id, type: config.type || "paragraph", ...config }; this.items.set(id, style); return style; }
   get(id) { return this.items.get(id); }
+  effective(id, seen = new Set()) {
+    const style = this.get(id) || this.get("Normal");
+    if (!style) return undefined;
+    const parentId = style.basedOn || style.parent || style.extends;
+    if (!parentId || seen.has(style.id)) return { ...style };
+    seen.add(style.id);
+    const parent = this.effective(parentId, seen) || {};
+    return { ...parent, ...style, basedOn: parentId };
+  }
   values() { return [...this.items.values()]; }
 }
 
@@ -5567,7 +5577,7 @@ function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {
   if (block.kind === "image") return Math.max(32, Math.min(360, Number(block.heightPx) || 160)) + 20;
   if (block.kind === "section") return 34;
   if (block.kind === "change") return 22;
-  const style = document.styles.get(block.styleId) || document.styles.get("Normal") || {};
+  const style = document.styles.effective(block.styleId) || document.styles.get("Normal") || {};
   const fontSize = Math.max(10, (style.fontSize || 22) / 2);
   const text = block.text || block.display || "";
   const charsPerLine = Math.max(8, Math.floor((pageWidth - margin * 2) / (fontSize * 0.55)));
@@ -5622,7 +5632,8 @@ function documentLayoutJson(document, options = {}) {
     if (y + height > pageHeight - margin && y > margin) { page += 1; y = margin; ensurePage(); }
     const textPreview = documentBlockLayoutText(block).slice(0, 120);
     const comments = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => comment.id);
-    elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, textPreview });
+    const effectiveStyle = block.styleId ? document.styles.effective(block.styleId) : undefined;
+    elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, effectiveStyle, textPreview });
     y += height;
     if (block.kind === "section" && block.breakType === "nextPage") { page += 1; y = margin; ensurePage(); }
   }
@@ -5651,6 +5662,12 @@ function documentTextRange(document, id) {
     getText: () => parent.text ?? parent.display ?? "",
     setText: (value) => { if (parent.kind === "field" || ("display" in parent && !("text" in parent))) parent.display = String(value ?? ""); else parent.text = String(value ?? ""); },
   });
+}
+
+function documentInspectRecord(document, block, index) {
+  const record = block.inspectRecord(index);
+  if (record.styleId) record.effectiveStyle = document.styles.effective(record.styleId);
+  return record;
 }
 
 function documentTextRangeRecords(document) {
@@ -5766,9 +5783,9 @@ export class DocumentModel {
     const records = [];
     if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
-    this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(block.inspectRecord(index)); });
-    if (kinds.has("header")) records.push(...this.headers.map((block, index) => block.inspectRecord(index)));
-    if (kinds.has("footer")) records.push(...this.footers.map((block, index) => block.inspectRecord(index)));
+    this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(documentInspectRecord(this, block, index)); });
+    if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
+    if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
     if (kinds.has("textRange")) records.push(...documentTextRangeRecords(this));
     if (kinds.has("style")) records.push(...this.styles.values().map((style) => ({ kind: "style", ...style })));
@@ -5854,9 +5871,9 @@ export class DocumentModel {
     let listCounters = new Map();
     for (const block of this.blocks) {
       if (block.kind === "paragraph") {
-        const style = this.styles.get(block.styleId) || this.styles.get("Normal");
+        const style = this.styles.effective(block.styleId) || this.styles.get("Normal");
         const fontSize = Math.max(10, (style.fontSize || 22) / 2);
-        parts.push(`<text x="${margin}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-weight="${style.bold ? "700" : "400"}" fill="#111827">${xmlEscape(block.text)}</text>`);
+        parts.push(`<text x="${margin}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(block.text)}</text>`);
         y += fontSize * 1.6;
       } else if (block.kind === "hyperlink") {
         parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#2563eb" text-decoration="underline">${xmlEscape(block.text)}</text>`);
@@ -5886,14 +5903,16 @@ export class DocumentModel {
         parts.push(`<text x="${margin + 92}" y="${y}" font-family="Arial" font-size="11" fill="${fill}"${decoration}>${xmlEscape(marker)} ${xmlEscape(block.text)}</text>`);
         y += 22;
       } else if (block.kind === "listItem") {
+        const style = this.styles.effective(block.styleId) || this.styles.get("Normal") || {};
+        const fontSize = Math.max(10, (style.fontSize || 22) / 2);
         const key = `${block.listType}:${block.level}`;
         const next = (listCounters.get(key) || 0) + 1;
         listCounters.set(key, next);
         const marker = block.listType === "number" ? `${next}.` : "•";
         const x = margin + block.level * 24;
-        parts.push(`<text x="${x}" y="${y}" font-family="Arial" font-size="11" fill="#111827">${xmlEscape(marker)}</text>`);
-        parts.push(`<text x="${x + 22}" y="${y}" font-family="Arial" font-size="11" fill="#111827">${xmlEscape(block.text)}</text>`);
-        y += 20;
+        parts.push(`<text x="${x}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(marker)}</text>`);
+        parts.push(`<text x="${x + 22}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(block.text)}</text>`);
+        y += Math.max(20, fontSize * 1.5);
       } else if (block.kind === "table") {
         const cellW = (width - margin * 2) / Math.max(1, block.columns);
         const cellH = 24;
@@ -5923,7 +5942,12 @@ function docxContentTypes({ hasComments, hasHeader, hasFooter, hasNumbering, ima
 }
 
 function docxStylesXml(document) {
-  const styles = document.styles.values().map((style) => `<w:style w:type="paragraph" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/><w:rPr>${style.bold ? "<w:b/>" : ""}<w:sz w:val="${Math.round(style.fontSize || 22)}"/><w:rFonts w:ascii="${attrEscape(style.fontFamily || "Aptos")}" w:hAnsi="${attrEscape(style.fontFamily || "Aptos")}"/></w:rPr></w:style>`).join("");
+  const styles = document.styles.values().map((style) => {
+    const type = style.type || "paragraph";
+    const basedOn = style.basedOn || style.parent || style.extends;
+    const color = style.color ? `<w:color w:val="${attrEscape(String(style.color).replace(/^#/, ""))}"/>` : "";
+    return `<w:style w:type="${attrEscape(type)}" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/>${basedOn ? `<w:basedOn w:val="${attrEscape(basedOn)}"/>` : ""}<w:rPr>${style.bold ? "<w:b/>" : ""}${style.italic ? "<w:i/>" : ""}${color}<w:sz w:val="${Math.round(style.fontSize || 22)}"/><w:rFonts w:ascii="${attrEscape(style.fontFamily || "Aptos")}" w:hAnsi="${attrEscape(style.fontFamily || "Aptos")}"/></w:rPr></w:style>`;
+  }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${styles}</w:styles>`;
 }
 
@@ -6042,6 +6066,26 @@ function docxCommentsXml(document) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${comments}</w:comments>`;
 }
 
+function parseDocxStylesXml(xml = "") {
+  const styles = {};
+  for (const match of String(xml || "").matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
+    const attrs = match[1] || "";
+    const body = match[2] || "";
+    const id = decodeXml(/\bw:styleId="([^"]+)"/.exec(attrs)?.[1] || "");
+    if (!id) continue;
+    const type = /\bw:type="([^"]+)"/.exec(attrs)?.[1] || "paragraph";
+    const name = decodeXml(/<w:name[^>]*w:val="([^"]*)"/.exec(body)?.[1] || id);
+    const basedOn = decodeXml(/<w:basedOn[^>]*w:val="([^"]*)"/.exec(body)?.[1] || "") || undefined;
+    const fontSize = Number(/<w:sz[^>]*w:val="([^"]+)"/.exec(body)?.[1]);
+    const fontFamily = decodeXml(/<w:rFonts[^>]*w:ascii="([^"]*)"/.exec(body)?.[1] || /<w:rFonts[^>]*w:hAnsi="([^"]*)"/.exec(body)?.[1] || "");
+    const color = /<w:color[^>]*w:val="([A-Fa-f0-9]{3,6})"/.exec(body)?.[1];
+    const bold = /<w:b\b/.test(body);
+    const italic = /<w:i\b/.test(body);
+    styles[id] = { id, name, type, ...(basedOn ? { basedOn } : {}), ...(Number.isFinite(fontSize) ? { fontSize } : {}), ...(fontFamily ? { fontFamily } : {}), ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}), ...(color ? { color: `#${color}` } : {}) };
+  }
+  return styles;
+}
+
 function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
@@ -6134,6 +6178,8 @@ export class DocumentFile {
     const metadataText = await zip.file("word/open-office-artifact.json")?.async("text");
     if (metadataText) return DocumentModel.create(JSON.parse(metadataText));
     const xml = await zip.file("word/document.xml")?.async("text");
+    const stylesText = await zip.file("word/styles.xml")?.async("text");
+    const importedStyles = parseDocxStylesXml(stylesText);
     const commentsXml = await zip.file("word/comments.xml")?.async("text");
     const commentTextById = new Map([...String(commentsXml || "").matchAll(/<w:comment[^>]*w:id="(\d+)"[^>]*>([\s\S]*?)<\/w:comment>/g)].map((match) => [match[1], decodeXml([...match[2].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))]));
     const relsText = await zip.file("word/_rels/document.xml.rels")?.async("text");
@@ -6156,7 +6202,7 @@ export class DocumentFile {
         for (const commentId of parsed.commentIds) pendingComments.push({ blockIndex: blocks.length - 1, text: commentTextById.get(commentId) || "" });
       }
     }
-    const document = DocumentModel.create({ blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    const document = DocumentModel.create({ styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const header of parseHeaderFooterXml(await zip.file("word/header1.xml")?.async("text"))) document.addHeader(header.text, header);
     for (const footer of parseHeaderFooterXml(await zip.file("word/footer1.xml")?.async("text"))) document.addFooter(footer.text, footer);
     pendingComments.forEach((comment) => document.addComment(document.blocks[comment.blockIndex]?.id, comment.text));
