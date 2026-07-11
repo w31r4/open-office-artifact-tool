@@ -734,7 +734,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG images, and clean-room metadata." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG/JPEG images, and clean-room metadata." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
@@ -971,7 +971,7 @@ const HELP_DETAIL_OVERRIDES = {
     schema: {
       parameters: {
         pageIndex: { type: "number", description: "Zero-based target page index." },
-        dataUrl: { type: "string", description: "Embedded image data URL; generated PDF export currently supports PNG." },
+        dataUrl: { type: "string", description: "Embedded PNG or JPEG image data URL." },
         uri: { type: "string", description: "External image URI metadata." },
         prompt: { type: "string", description: "Image generation/extraction prompt metadata." },
         alt: { type: "string", description: "Alternative text." },
@@ -8191,9 +8191,51 @@ function pdfChartCommands(page, chart) {
   return commands;
 }
 
-function pdfPngAsset(image, objectId, resourceName) {
+function jpegImageInfo(bytes) {
+  if (bytes?.[0] !== 0xff || bytes?.[1] !== 0xd8) throw new Error("not a JPEG file");
+  const sofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+  let offset = 2;
+  while (offset + 3 < bytes.byteLength) {
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset++];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 1 >= bytes.byteLength) break;
+    const length = (bytes[offset] << 8) | bytes[offset + 1];
+    if (length < 2 || offset + length > bytes.byteLength) throw new Error("truncated JPEG segment");
+    if (sofMarkers.has(marker)) {
+      if (length < 8) throw new Error("invalid JPEG frame header");
+      const height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+      const width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+      const components = bytes[offset + 7];
+      if (!width || !height || !components) throw new Error("invalid JPEG dimensions");
+      return { width, height, components };
+    }
+    offset += length;
+  }
+  throw new Error("JPEG frame header not found");
+}
+
+function pdfImageAsset(image, objectId, resourceName) {
   const data = imageDataFromDataUrl(image.dataUrl);
-  if (!data || data.contentType !== "image/png") return undefined;
+  if (!data || !["image/png", "image/jpeg"].includes(data.contentType)) return undefined;
+  if (data.contentType === "image/jpeg") {
+    try {
+      const decoded = jpegImageInfo(data.bytes);
+      return {
+        image,
+        objectId,
+        resourceName,
+        width: decoded.width,
+        height: decoded.height,
+        colorSpace: decoded.components === 1 ? "/DeviceGray" : decoded.components === 4 ? "/DeviceCMYK" : "/DeviceRGB",
+        filter: "/DCTDecode",
+        streamBytes: data.bytes,
+      };
+    } catch (error) {
+      throw new Error(`Unable to embed JPEG image ${image.name || image.id || "image"}: ${error.message}`);
+    }
+  }
   try {
     const decoded = decodePngRgba(data.bytes);
     const rgb = new Uint8Array(decoded.width * decoded.height * 3);
@@ -8205,8 +8247,7 @@ function pdfPngAsset(image, objectId, resourceName) {
       rgb[target + 1] = Math.round(decoded.pixels[source + 1] * alpha + 255 * (1 - alpha));
       rgb[target + 2] = Math.round(decoded.pixels[source + 2] * alpha + 255 * (1 - alpha));
     }
-    const compressed = deflateSync(rgb);
-    return { image, objectId, resourceName, width: decoded.width, height: decoded.height, compressed };
+    return { image, objectId, resourceName, width: decoded.width, height: decoded.height, colorSpace: "/DeviceRGB", filter: "/FlateDecode", streamBytes: deflateSync(rgb) };
   } catch (error) {
     throw new Error(`Unable to embed PNG image ${image.name || image.id || "image"}: ${error.message}`);
   }
@@ -8231,7 +8272,7 @@ function buildMinimalPdf(artifact) {
   const plans = pages.map((page) => {
     const imageAssets = [];
     for (const image of page.images) {
-      const asset = pdfPngAsset(image, nextObjectId, `Im${imageAssets.length + 1}`);
+      const asset = pdfImageAsset(image, nextObjectId, `Im${imageAssets.length + 1}`);
       if (asset) { imageAssets.push(asset); nextObjectId += 1; }
     }
     const pageObjectId = nextObjectId++;
@@ -8257,7 +8298,7 @@ function buildMinimalPdf(artifact) {
     const xobjects = imageAssets.length ? `/XObject << ${imageAssets.map((asset) => `/${asset.resourceName} ${asset.objectId} 0 R`).join(" ")} >>` : "";
     objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R >>`, "ascii"));
     objects.set(plan.contentObjectId, Buffer.concat([Buffer.from(`<< /Length ${content.byteLength} >>\nstream\n`, "ascii"), content, Buffer.from("endstream", "ascii")]));
-    for (const asset of imageAssets) objects.set(asset.objectId, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${asset.compressed.byteLength} >>\nstream\n`, "ascii"), asset.compressed, Buffer.from("\nendstream", "ascii")]));
+    for (const asset of imageAssets) objects.set(asset.objectId, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace ${asset.colorSpace} /BitsPerComponent 8 /Filter ${asset.filter} /Length ${asset.streamBytes.byteLength} >>\nstream\n`, "ascii"), asset.streamBytes, Buffer.from("\nendstream", "ascii")]));
   }
   const header = Buffer.from(`%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");
   const chunks = [header];

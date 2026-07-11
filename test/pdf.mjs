@@ -120,6 +120,21 @@ assert.equal(fileInspect.summary.pages, 2);
 assert.equal(fileInspect.summary.hasEmbeddedModel, true);
 assert.equal(fileInspect.summary.hasEof, true);
 assert.match(fileInspect.ndjson, /"type":"Page"/);
+const jpegPdf = PdfArtifact.create({ text: "JPEG export" });
+jpegPdf.addImage({
+  name: "jpeg-mark",
+  alt: "Green JPEG mark",
+  dataUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABQf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCQAHTd/9k=",
+  bbox: [72, 100, 80, 80],
+});
+const jpegBlob = await PdfFile.exportPdf(jpegPdf);
+const jpegBytesText = await jpegBlob.text();
+assert.match(jpegBytesText, /\/Filter \/DCTDecode/);
+assert.match(jpegBytesText, /\/Width 2 \/Height 2/);
+assert.match(jpegBytesText, /\/ColorSpace \/DeviceRGB/);
+const corruptJpeg = PdfArtifact.create({ text: "Corrupt JPEG" });
+corruptJpeg.addImage({ dataUrl: "data:image/jpeg;base64,/9j/2Q==", bbox: [72, 100, 80, 80] });
+await assert.rejects(() => PdfFile.exportPdf(corruptJpeg), /Unable to embed JPEG image/);
 let pdfRendererSawInput = false;
 const renderedPdfPng = await renderArtifact(pdf, {
   format: "png",

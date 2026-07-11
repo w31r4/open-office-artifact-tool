@@ -11,7 +11,7 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 
 - Never import or copy the reference package, runtime artifact, runtime module, or runtime bindings.
 - Preserve imported content and page geometry unless the user requests a redesign.
-- Use real positioned text, tables, PNG images, charts, page regions, and multi-page PDF objects rather than flattening semantic objects into labels.
+- Use real positioned text, tables, PNG/JPEG images, charts, page regions, and multi-page PDF objects rather than flattening semantic objects into labels.
 - Use ASCII hyphens. Avoid U+2010 through U+2015 compatibility dashes.
 - Keep text, tables, charts, images, page numbers, and section transitions inside the page frame with consistent margins and legible sizing.
 - Treat extraction and visual rendering as complementary evidence: neither replaces the other.
