@@ -278,6 +278,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
+| `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, and rule bounding boxes in pixels. |
@@ -508,6 +509,26 @@ Look up a value in one range and return the corresponding value from another ran
 **Examples:**
 
 - =XLOOKUP("Gamma",A2:A4,B2:B4,"missing")
+
+#### `workbook.definedNames.add`
+
+Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData).
+
+**Examples:**
+
+- workbook.definedNames.add('RevenueData', 'Sheet1!G2:G4')
+- sheet.getRange('E3').formulas = [['=SUM(RevenueData)']]
+
+**Options:**
+
+- name
+- refersTo
+- scope/sheetName
+- comment
+
+**Returns:**
+
+DefinedName facade with id/name/refersTo/scope
 
 #### `workbook.inspect`
 

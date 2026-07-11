@@ -536,6 +536,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate a clean-room subset of Excel structured references such as TableName[Column] in formulas, expanding them to table data-body cell precedents." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules." },
@@ -674,6 +675,11 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["verifyArtifact(workbook, { maxChars: 12000 })"],
     options: ["maxChars"],
     returns: "{ artifactKind, ok, issues, ndjson, truncated }",
+  },
+  "workbook.definedNames.add": {
+    examples: ["workbook.definedNames.add('RevenueData', 'Sheet1!G2:G4')", "sheet.getRange('E3').formulas = [['=SUM(RevenueData)']]"] ,
+    options: ["name", "refersTo", "scope/sheetName", "comment"],
+    returns: "DefinedName facade with id/name/refersTo/scope",
   },
   "workbook.structuredReferences": {
     examples: ["=SUM(TasksTable[Revenue])"],
@@ -1130,6 +1136,35 @@ class CommentsCollection {
   toJSON() { return { self: this.self, threads: this.threads.map((thread) => thread.toJSON()) }; }
 }
 
+class DefinedName {
+  constructor(workbook, config = {}) {
+    this.workbook = workbook;
+    this.id = config.id || aid("dn");
+    this.name = config.name || "DefinedName";
+    this.refersTo = config.refersTo || config.reference || config.range || "Sheet1!A1";
+    this.scope = config.scope || config.sheetName || undefined;
+    this.comment = config.comment;
+  }
+  inspectRecord() { return { kind: "definedName", id: this.id, name: this.name, refersTo: this.refersTo, scope: this.scope, comment: this.comment }; }
+  toJSON() { return { id: this.id, name: this.name, refersTo: this.refersTo, scope: this.scope, comment: this.comment }; }
+}
+
+class DefinedNameCollection {
+  constructor(workbook) { this.workbook = workbook; this.items = []; }
+  add(nameOrConfig, refersTo, options = {}) {
+    const config = typeof nameOrConfig === "object" ? nameOrConfig : { name: nameOrConfig, refersTo, ...options };
+    const existing = this.getItem(config.name, config.scope || config.sheetName);
+    if (existing) Object.assign(existing, new DefinedName(this.workbook, { ...existing.toJSON(), ...config }));
+    else this.items.push(new DefinedName(this.workbook, config));
+    return existing || this.items.at(-1);
+  }
+  getItem(name, scope) { return this.items.find((item) => item.name === name && (scope == null || item.scope === scope)); }
+  getItemOrNullObject(name, scope) { return this.getItem(name, scope) || { isNullObject: true }; }
+  delete(nameOrId) { this.items = this.items.filter((item) => item.id !== nameOrId && item.name !== nameOrId); }
+  inspectRecords() { return this.items.map((item) => item.inspectRecord()); }
+  toJSON() { return this.items.map((item) => item.toJSON()); }
+}
+
 class WorksheetRuleCollection {
   constructor(worksheet, kind) { this.worksheet = worksheet; this.kind = kind; this.items = []; }
   add(config = {}) { const record = { id: aid(this.kind === "dataValidation" ? "dv" : "cf"), kind: this.kind, sheet: this.worksheet.name, ...config }; this.items.push(record); return record; }
@@ -1480,6 +1515,7 @@ export class Workbook {
     this.id = aid("wb");
     this.worksheets = new WorksheetCollection(this);
     this.comments = new CommentsCollection(this);
+    this.definedNames = new DefinedNameCollection(this);
   }
 
   static create() {
@@ -1572,6 +1608,7 @@ export class Workbook {
       if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
     }
     if (kinds.has("thread")) records.push(...this.comments.threads.map((thread) => thread.inspectRecord()));
+    if (kinds.has("definedName") || kinds.has("name")) records.push(...this.definedNames.inspectRecords());
     if (kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) records.push(...formulaGraphRecords(graph, { ...options, kinds }));
     return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
@@ -1581,6 +1618,10 @@ export class Workbook {
     const graph = this.formulaGraph({ recalculate: false, maxChars: Infinity });
     const issues = [];
     if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
+    for (const definedName of this.definedNames.items) {
+      const refersTo = String(definedName.refersTo || "").replace(/^=/, "");
+      if (!formulaRefParts(refersTo)) issues.push(verificationIssue("workbook", "invalidDefinedName", `Defined name ${definedName.name} does not reference a valid A1 range.`, { id: definedName.id, name: definedName.name, refersTo: definedName.refersTo }));
+    }
     for (const sheet of this.worksheets) {
       const entries = sheet.store.entries();
       if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
@@ -1690,6 +1731,8 @@ export class Workbook {
     if (id === this.id) return this;
     const thread = this.comments.getItem(id);
     if (thread) return thread;
+    const definedName = this.definedNames.items.find((item) => item.id === id || item.name === id);
+    if (definedName) return definedName;
     for (const sheet of this.worksheets) {
       if (sheet.id === id) return sheet;
       const table = sheet.tables.items.find((item) => item.id === id);
@@ -2054,6 +2097,19 @@ function findWorkbookTable(sheet, tableName) {
   return undefined;
 }
 
+function formulaDefinedNameRange(sheet, refText = "", seen = new Set()) {
+  const raw = String(refText || "").trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(raw)) return undefined;
+  const workbook = sheet?.workbook;
+  const item = workbook?.definedNames.getItem(raw, sheet?.name) || workbook?.definedNames.getItem(raw);
+  if (!item) return undefined;
+  if (seen.has(item.name)) return { missing: true, name: item.name, refersTo: item.refersTo };
+  const target = String(item.refersTo || "").replace(/^=/, "").trim();
+  const ref = formulaRefParts(target);
+  if (ref) return { ...ref, name: item.name, id: item.id, refersTo: item.refersTo };
+  return { missing: true, name: item.name, refersTo: item.refersTo };
+}
+
 function formulaStructuredRefRange(sheet, refText = "") {
   const match = /^([A-Za-z_][A-Za-z0-9_.]*)\[([^\]]+)\]$/.exec(String(refText || "").trim());
   if (!match) return undefined;
@@ -2106,6 +2162,20 @@ function formulaReferences(formula, sheet) {
   for (const match of raw.matchAll(cellRegex)) {
     if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
     refs.push({ sheetName: match[1] || match[2] || undefined, address: match[3].replaceAll("$", "").toUpperCase() });
+  }
+  for (const definedName of sheet?.workbook?.definedNames.items || []) {
+    const escaped = definedName.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\b${escaped}\\b`, "g");
+    for (const match of raw.matchAll(re)) {
+      if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
+      const resolved = formulaDefinedNameRange(sheet, definedName.name);
+      if (!resolved || resolved.missing) continue;
+      const start = parseCellAddress(resolved.start);
+      const end = parseCellAddress(resolved.end);
+      for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
+        for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) refs.push({ sheetName: resolved.sheetName, address: makeCellAddress(row, col), definedName: definedName.name });
+      }
+    }
   }
   const seen = new Set();
   return refs.filter((ref) => {
@@ -2305,6 +2375,11 @@ function formulaRangeMatrix(sheet, refText, context = {}) {
       rows.push(values);
     }
     return rows;
+  }
+  const defined = formulaDefinedNameRange(sheet, refText);
+  if (defined) {
+    if (defined.missing) return [["#REF!"]];
+    return formulaRangeMatrix(sheet, `${defined.sheetName ? `${defined.sheetName}!` : ""}${defined.start}${defined.end && defined.end !== defined.start ? `:${defined.end}` : ""}`, context);
   }
   const ref = formulaRefParts(refText);
   if (!ref) return undefined;
@@ -2518,6 +2593,7 @@ function workbookMetadata(workbook) {
   return {
     version: 1,
     comments: workbook.comments.toJSON(),
+    definedNames: workbook.definedNames.toJSON(),
     sheets: workbook.worksheets.items.map((sheet) => ({
       name: sheet.name,
       dataValidations: sheet.dataValidations.toJSON(),
@@ -2531,6 +2607,8 @@ function workbookMetadata(workbook) {
 }
 
 function applyWorkbookMetadata(workbook, metadata = {}) {
+  workbook.definedNames.items = [];
+  for (const item of metadata.definedNames || []) workbook.definedNames.add(item);
   if (metadata.comments?.self) workbook.comments.setSelf(metadata.comments.self);
   for (const threadData of metadata.comments?.threads || []) {
     const thread = new CommentThread(workbook, threadData.target, threadData.comments?.[0]?.text || "", threadData.author);
@@ -2624,6 +2702,7 @@ export class SpreadsheetFile {
       const xml = await zip.file(`xl/worksheets/sheet${index}.xml`)?.async("text");
       if (xml) parseWorksheetXml(sheet, xml, { sharedStrings, styles });
     }
+    parseWorkbookDefinedNames(workbook, workbookText);
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
     if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
     else await importNativeThreadedComments(workbook, zip, sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]);
@@ -2878,7 +2957,24 @@ function parseRelsXml(xml) {
 
 function workbookXml(workbook) {
   const sheets = workbook.worksheets.items.map((sheet, i) => `<sheet name="${attrEscape(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets}</sheets></workbook>`;
+  const definedNames = workbook.definedNames.items.length
+    ? `<definedNames>${workbook.definedNames.items.map((item) => {
+      const localSheetId = item.scope ? workbook.worksheets.items.findIndex((sheet) => sheet.name === item.scope) : -1;
+      return `<definedName name="${attrEscape(item.name)}"${localSheetId >= 0 ? ` localSheetId="${localSheetId}"` : ""}>${xmlEscape(item.refersTo)}</definedName>`;
+    }).join("")}</definedNames>`
+    : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets}</sheets>${definedNames}</workbook>`;
+}
+
+function parseWorkbookDefinedNames(workbook, xml = "") {
+  for (const match of String(xml || "").matchAll(/<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g)) {
+    const attrs = match[1] || "";
+    const name = decodeXml(/\bname="([^"]+)"/.exec(attrs)?.[1] || "");
+    if (!name) continue;
+    const localSheetIdRaw = /\blocalSheetId="(\d+)"/.exec(attrs)?.[1];
+    const scope = localSheetIdRaw != null ? workbook.worksheets.items[Number(localSheetIdRaw)]?.name : undefined;
+    workbook.definedNames.add({ name, refersTo: decodeXml(match[2] || ""), scope });
+  }
 }
 
 function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrings = false) {
