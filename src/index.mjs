@@ -611,7 +611,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes." },
-  { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; cellIs/expression rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
+  { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip." },
@@ -1661,6 +1661,7 @@ class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }
   add(ruleType, config = {}) { return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...config }); }
   addCustom(expression, format = {}) { return this.add("expression", { formula: expression, format }); }
+  addColorScale(config = {}) { return this.add("colorScale", config); }
   deleteAll() { this.range.worksheet.conditionalFormattings.items = this.range.worksheet.conditionalFormattings.items.filter((item) => item.range !== rangeToAddress(this.range.bounds)); }
   clear() { this.deleteAll(); }
 }
@@ -1729,12 +1730,52 @@ function compareConditionalValues(actualValue, expectedValue, operator = "equalT
   }
 }
 
+function xlsxColorToRgb(value, fallback = "FFFFFF") {
+  const hex = normalizeXlsxColor(value, fallback);
+  return [Number.parseInt(hex.slice(0, 2), 16), Number.parseInt(hex.slice(2, 4), 16), Number.parseInt(hex.slice(4, 6), 16)];
+}
+
+function rgbToHex(rgb) {
+  return `#${rgb.map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function interpolateColor(left, right, amount) {
+  const a = xlsxColorToRgb(left);
+  const b = xlsxColorToRgb(right);
+  return rgbToHex(a.map((value, index) => value + (b[index] - value) * Math.max(0, Math.min(1, amount))));
+}
+
+function colorScaleColors(rule = {}) {
+  const raw = rule.colors || rule.colorScale?.colors || rule.rule?.colors || rule.rule?.colorScale?.colors;
+  const colors = Array.isArray(raw) && raw.length >= 2 ? raw : [rule.minColor || "#ef4444", rule.midColor || "#facc15", rule.maxColor || "#22c55e"];
+  return colors.slice(0, 3);
+}
+
+function colorScaleFormatForCell(sheet, rule, address) {
+  const bounds = safeRangeBounds(rule.range || "");
+  if (!cellAddressWithinBounds(address, bounds)) return undefined;
+  const cell = sheet.store.get(String(address).toUpperCase());
+  const value = Number(cell.value);
+  if (!Number.isFinite(value)) return undefined;
+  const values = sheet.getRange(rule.range || address).values.flat().map(Number).filter(Number.isFinite);
+  if (!values.length) return undefined;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const colors = colorScaleColors(rule);
+  const ratio = max === min ? 1 : (value - min) / (max - min);
+  const fill = colors.length >= 3
+    ? ratio <= 0.5 ? interpolateColor(colors[0], colors[1], ratio * 2) : interpolateColor(colors[1], colors[2], (ratio - 0.5) * 2)
+    : interpolateColor(colors[0], colors[1], ratio);
+  return { fill };
+}
+
 function evaluateConditionalFormatRule(sheet, rule, address) {
   const bounds = safeRangeBounds(rule.range || "");
   if (!cellAddressWithinBounds(address, bounds)) return false;
   const cell = sheet.store.get(String(address).toUpperCase());
   const ruleType = String(rule.ruleType || rule.type || "expression");
   const normalizedType = ruleType.toLowerCase();
+  if (normalizedType === "colorscale") return Boolean(colorScaleFormatForCell(sheet, rule, address));
   if (normalizedType === "cellis" || normalizedType === "cellvalue") {
     const first = conditionalScalar(sheet, rule.formula ?? rule.formula1 ?? rule.rule?.formula ?? rule.rule?.formula1, address, bounds);
     const second = conditionalScalar(sheet, rule.formula2 ?? rule.rule?.formula2, address, bounds);
@@ -1754,9 +1795,17 @@ function evaluateConditionalFormatRule(sheet, rule, address) {
 }
 
 function worksheetConditionalFormatMatches(sheet, address) {
-  return sheet.conditionalFormattings.items
-    .filter((rule) => evaluateConditionalFormatRule(sheet, rule, address))
-    .map((rule) => ({ id: rule.id, range: rule.range, ruleType: rule.ruleType || rule.type || "expression", operator: rule.operator || rule.rule?.operator, formula: rule.formula || rule.expression || rule.rule?.formula, format: rule.format || rule.rule?.format || {} }));
+  const matches = [];
+  for (const rule of sheet.conditionalFormattings.items) {
+    const ruleType = rule.ruleType || rule.type || "expression";
+    if (String(ruleType).toLowerCase() === "colorscale") {
+      const format = colorScaleFormatForCell(sheet, rule, address);
+      if (format) matches.push({ id: rule.id, range: rule.range, ruleType, operator: rule.operator || rule.rule?.operator, formula: rule.formula || rule.expression || rule.rule?.formula, format, colors: colorScaleColors(rule) });
+    } else if (evaluateConditionalFormatRule(sheet, rule, address)) {
+      matches.push({ id: rule.id, range: rule.range, ruleType, operator: rule.operator || rule.rule?.operator, formula: rule.formula || rule.expression || rule.rule?.formula, format: rule.format || rule.rule?.format || {} });
+    }
+  }
+  return matches;
 }
 
 function worksheetComputedCellStyle(sheet, address, baseStyle = {}) {
@@ -1973,7 +2022,8 @@ export class Workbook {
       }
       for (const format of sheet.conditionalFormattings.items) {
         if (!safeRangeBounds(format.range || "")) issues.push(verificationIssue("workbook", "conditionalFormatRangeInvalid", `Conditional format ${format.id} on ${sheet.name} has invalid range ${format.range}.`, { sheet: sheet.name, id: format.id, range: format.range }));
-        if ((format.ruleType === "expression" || format.kind === "conditionalFormat") && !format.formula && !format.expression && format.ruleType !== "cellIs") issues.push(verificationIssue("workbook", "conditionalFormatFormulaMissing", `Conditional format ${format.id} on ${sheet.name} has no formula/expression.`, { sheet: sheet.name, id: format.id }));
+        const cfType = String(format.ruleType || format.type || "").toLowerCase();
+        if ((cfType === "expression" || (!format.ruleType && format.kind === "conditionalFormat")) && !format.formula && !format.expression) issues.push(verificationIssue("workbook", "conditionalFormatFormulaMissing", `Conditional format ${format.id} on ${sheet.name} has no formula/expression.`, { sheet: sheet.name, id: format.id }));
       }
     }
     for (const thread of this.comments.threads) {
@@ -4017,6 +4067,12 @@ function dataValidationsXml(sheet) {
 function conditionalFormattingXml(sheet, styleTable = {}) {
   return sheet.conditionalFormattings.items.map((item, index) => {
     const ruleType = item.ruleType || "expression";
+    if (String(ruleType).toLowerCase() === "colorscale") {
+      const colors = colorScaleColors(item);
+      const cfvos = colors.length >= 3 ? `<cfvo type="min"/><cfvo type="percentile" val="50"/><cfvo type="max"/>` : `<cfvo type="min"/><cfvo type="max"/>`;
+      const colorXml = colors.map((color) => `<color rgb="FF${normalizeXlsxColor(color, "FFFFFF")}"/>`).join("");
+      return `<conditionalFormatting sqref="${attrEscape(item.range || "A1")}"><cfRule type="colorScale" priority="${index + 1}"><colorScale>${cfvos}${colorXml}</colorScale></cfRule></conditionalFormatting>`;
+    }
     const type = ruleType === "cellIs" || ruleType === "CellValue" ? "cellIs" : ruleType === "containsText" ? "containsText" : "expression";
     const operator = item.operator ? ` operator="${attrEscape(item.operator)}"` : "";
     const formula = Array.isArray(item.formula) ? item.formula[0] : item.formula || item.expression || "TRUE";
@@ -4117,6 +4173,12 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
     for (const ruleMatch of String(block[2] || "").matchAll(/<cfRule\b([^>]*)>([\s\S]*?)<\/cfRule>/g)) {
       const ruleAttrs = parseAttrs(ruleMatch[1]);
       const type = ruleAttrs.type || "expression";
+      if (type === "colorScale") {
+        const colorScaleBody = /<colorScale>([\s\S]*?)<\/colorScale>/.exec(ruleMatch[2])?.[1] || "";
+        const colors = [...colorScaleBody.matchAll(/<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"\/>/g)].map((m) => `#${m[1]}`);
+        for (const range of ranges) sheet.conditionalFormattings.add({ range, ruleType: "colorScale", colors });
+        continue;
+      }
       const formula = decodeXml(/<formula[^>]*>([\s\S]*?)<\/formula>/.exec(ruleMatch[2])?.[1] || "");
       const ruleType = type === "cellIs" ? "cellIs" : type === "containsText" ? "containsText" : "expression";
       const format = styles?.dxfs?.[Number(ruleAttrs.dxfId)] || undefined;
