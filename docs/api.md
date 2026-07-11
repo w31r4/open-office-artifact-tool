@@ -393,6 +393,8 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
+| `fx.AVERAGEIF` | formula | Average values whose corresponding criteria range entries match a criterion. |
+| `fx.AVERAGEIFS` | formula | Average values where all supplied criteria ranges match their criteria. |
 | `fx.CEILING` | formula | Round a number up to the nearest significance. |
 | `fx.CONCAT` | formula | Concatenate text values and ranges. |
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
@@ -400,9 +402,15 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
+| `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
+| `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
 | `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
+| `fx.ISBLANK` | formula | Return TRUE when a referenced value is empty. |
+| `fx.ISERROR` | formula | Return TRUE when a value is any recognized formula error. |
+| `fx.ISNUMBER` | formula | Return TRUE when a value is numeric. |
+| `fx.ISTEXT` | formula | Return TRUE when a value is text and not a formula error. |
 | `fx.LEFT` | formula | Return characters from the start of a text value. |
 | `fx.LEN` | formula | Return the length of a text value. |
 | `fx.LOWER` | formula | Convert text to lowercase. |
@@ -419,6 +427,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
 | `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges match their criteria. |
+| `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
 | `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
@@ -474,6 +483,22 @@ Average numeric values across arguments and ranges in the clean-room formula eng
 **Examples:**
 
 - =AVERAGE(A1:A10)
+
+#### `fx.AVERAGEIF`
+
+Average values whose corresponding criteria range entries match a criterion.
+
+**Examples:**
+
+- =AVERAGEIF(A1:A10,"East",B1:B10)
+
+#### `fx.AVERAGEIFS`
+
+Average values where all supplied criteria ranges match their criteria.
+
+**Examples:**
+
+- =AVERAGEIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
 
 #### `fx.CEILING`
 
@@ -531,6 +556,14 @@ Round a number down to the nearest significance.
 
 - =FLOOR(A1,5)
 
+#### `fx.HLOOKUP`
+
+Look up a value in the first row of a table range and return a value from another row.
+
+**Examples:**
+
+- =HLOOKUP("Revenue",A1:D4,3,FALSE)
+
 #### `fx.IF`
 
 Return one value when a condition is true and another when false.
@@ -538,6 +571,14 @@ Return one value when a condition is true and another when false.
 **Examples:**
 
 - =IF(A1>0,"ok","bad")
+
+#### `fx.IFERROR`
+
+Return a fallback value when an expression evaluates to a formula error.
+
+**Examples:**
+
+- =IFERROR(XLOOKUP("missing",A1:A10,B1:B10),"not found")
 
 #### `fx.INDEX`
 
@@ -554,6 +595,38 @@ Round a number down to the nearest integer.
 **Examples:**
 
 - =INT(A1)
+
+#### `fx.ISBLANK`
+
+Return TRUE when a referenced value is empty.
+
+**Examples:**
+
+- =ISBLANK(A1)
+
+#### `fx.ISERROR`
+
+Return TRUE when a value is any recognized formula error.
+
+**Examples:**
+
+- =ISERROR(A1)
+
+#### `fx.ISNUMBER`
+
+Return TRUE when a value is numeric.
+
+**Examples:**
+
+- =ISNUMBER(A1)
+
+#### `fx.ISTEXT`
+
+Return TRUE when a value is text and not a formula error.
+
+**Examples:**
+
+- =ISTEXT(A1)
 
 #### `fx.LEFT`
 
@@ -686,6 +759,14 @@ Sum values where all supplied criteria ranges match their criteria.
 **Examples:**
 
 - =SUMIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
+
+#### `fx.SUMPRODUCT`
+
+Multiply corresponding numeric values in equally sized arrays and return the sum of those products.
+
+**Examples:**
+
+- =SUMPRODUCT(A1:A10,B1:B10)
 
 #### `fx.TEXTJOIN`
 

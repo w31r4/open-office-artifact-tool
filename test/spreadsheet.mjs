@@ -207,7 +207,7 @@ assert.match(graphBook.inspect({ kind: "formula", maxChars: 12000 }).ndjson, /"p
 const catalogBook = Workbook.create();
 const catalogSheet = catalogBook.worksheets.add("Catalog");
 catalogSheet.getRange("A1:D4").values = [["Name", "Score", "Region", "Code"], ["Alpha", 10, "East", "AX-100"], ["Beta", 15, "West", "BX-200"], ["Gamma", 20, "East", "CX-300"]];
-catalogSheet.getRange("F1:F22").formulas = [
+catalogSheet.getRange("F1:F31").formulas = [
   ["=IF(B2>9,\"ok\",\"bad\")"],
   ["=ROUND(1.234,2)"],
   ["=COUNTIF(C2:C4,\"East\")"],
@@ -230,16 +230,45 @@ catalogSheet.getRange("F1:F22").formulas = [
   ["=MATCH(16,B2:B4,1)"],
   ["=COUNTIFS(C2:C4,\"East\",B2:B4,\">=10\")"],
   ["=SUMIFS(B2:B4,C2:C4,\"East\",B2:B4,\">10\")"],
+  ["=SUMPRODUCT(B2:B4,B2:B4)"],
+  ["=HLOOKUP(\"Region\",A1:D4,3,FALSE)"],
+  ["=IFERROR(XLOOKUP(\"Missing\",A2:A4,B2:B4),\"not found\")"],
+  ["=ISNUMBER(B2)"],
+  ["=ISTEXT(A2)"],
+  ["=ISBLANK(E2)"],
+  ["=ISERROR(INDEX(A1:A1,5))"],
+  ["=AVERAGEIF(C2:C4,\"East\",B2:B4)"],
+  ["=AVERAGEIFS(B2:B4,C2:C4,\"East\",B2:B4,\">10\")"],
 ];
 catalogBook.recalculate();
-assert.deepEqual(catalogSheet.getRange("F1:F22").values.flat(), ["ok", 1.23, 2, 30, 15, 20, "Al-100", "Alpha/Beta", 6, "MIXED", true, true, true, 4, 9, 6, "BX-200", 3, 15, 2, 2, 20]);
+assert.deepEqual(catalogSheet.getRange("F1:F31").values.flat(), ["ok", 1.23, 2, 30, 15, 20, "Al-100", "Alpha/Beta", 6, "MIXED", true, true, true, 4, 9, 6, "BX-200", 3, 15, 2, 2, 20, 725, "West", "not found", true, true, true, true, 15, 20]);
 assert.match(catalogBook.help("fx.XLOOKUP").ndjson, /lookup/);
 assert.match(catalogBook.help("fx.INDEX").ndjson, /1-based row/);
 assert.match(catalogBook.help("fx.MATCH").ndjson, /1-based position/);
 assert.match(catalogBook.help("fx.COUNTIFS").ndjson, /multiple criteria/);
 assert.match(catalogBook.help("fx.SUMIFS").ndjson, /all supplied criteria/);
+assert.match(catalogBook.help("fx.SUMPRODUCT").ndjson, /corresponding numeric values/);
+assert.match(catalogBook.help("fx.HLOOKUP").ndjson, /first row/);
+assert.match(catalogBook.help("fx.IFERROR").ndjson, /fallback value/);
+assert.match(catalogBook.help("fx.ISERROR").ndjson, /recognized formula error/);
+assert.match(catalogBook.help("fx.AVERAGEIFS").ndjson, /all supplied criteria/);
 assert.match(catalogBook.help("fx.TEXTJOIN").ndjson, /delimiter/);
 assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /XLOOKUP/);
+
+const formulaEdgeBook = Workbook.create();
+const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");
+formulaEdgeSheet.getRange("A1:B3").values = [[1, 10], [2, 20], [3, 30]];
+formulaEdgeSheet.getRange("D1:D7").formulas = [
+  ["=SUMPRODUCT(A1:B2,A1:A4)"],
+  ["=AVERAGEIF(A1:A3,\">10\",B1:B3)"],
+  ["=IFERROR(AVERAGEIF(A1:A3,\">10\",B1:B3),\"empty\")"],
+  ["=HLOOKUP(1,A1:B3,5,FALSE)"],
+  ["=ISERROR(#N/A)"],
+  ["=ISTEXT(\"\")"],
+  ["=ISBLANK(\"\")"],
+];
+formulaEdgeBook.recalculate();
+assert.deepEqual(formulaEdgeSheet.getRange("D1:D7").values.flat(), ["#VALUE!", "#DIV/0!", "empty", "#REF!", true, true, false]);
 
 const spillBook = Workbook.create();
 const spillSheet = spillBook.worksheets.add("Spill");
