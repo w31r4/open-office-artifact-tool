@@ -94,7 +94,7 @@ node skills/documents/scripts/verify-document.mjs \
 
 ## QA gates
 
-- `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist.
+- `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
 - `document.inspect(...)` proves agent-facing blocks, styles, anchors, and comments survived roundtrip.
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.

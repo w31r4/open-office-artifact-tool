@@ -849,8 +849,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect an XLSX package as bounded, content-type-aware part records with decompression budgets and relationship/content-type consistency issues." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated, atomically verified XLSX part patches with standard OOXML content-type/relationship recipes." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importDelimited", summary: "Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportDelimited", summary: "Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importCsv", summary: "Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser." },
@@ -969,8 +969,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect a PPTX package as bounded part records with content types, optional previews, decompression budgets, and relationship/content-type consistency issues." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated, atomically verified PPTX part patches with standard OOXML content-type/relationship recipes." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to a native OOXML PPTX FileBlob." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
@@ -1001,8 +1001,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect a DOCX package as bounded part records with safe paths, content types, optional previews, decompression budgets, and relationship/content-type consistency issues." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply atomically verified DOCX part patches with path traversal validation and standard OOXML content-type/relationship recipes." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
@@ -8363,6 +8363,31 @@ function ooxmlResolveRelationshipTarget(source, rawTarget) {
   return path.posix.normalize(path.posix.join(sourceDir === "." ? "" : sourceDir, target));
 }
 
+const OOXML_RELATIONSHIP_NAMESPACES = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships",
+]);
+
+function ooxmlRelationshipReferences(xml = "") {
+  const source = String(xml || "");
+  const tags = [...source.matchAll(/<[^!?][^>]*>/g)].map((match) => match[0]);
+  const references = [];
+  const namespaceStack = [new Map()];
+  for (const tag of tags) {
+    if (/^<\//.test(tag)) { if (namespaceStack.length > 1) namespaceStack.pop(); continue; }
+    const namespaces = new Map(namespaceStack.at(-1));
+    for (const match of tag.matchAll(/\bxmlns:([A-Za-z_][\w.-]*)\s*=\s*(["'])(.*?)\2/g)) namespaces.set(match[1], decodeXml(match[3]));
+    for (const [prefix, namespace] of namespaces) {
+      if (!OOXML_RELATIONSHIP_NAMESPACES.has(namespace)) continue;
+      const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`\\b${escapedPrefix}:(id|embed|link)\\s*=\\s*(["'])(.*?)\\2`, "g");
+      for (const match of tag.matchAll(pattern)) references.push({ attribute: `${prefix}:${match[1]}`, id: decodeXml(match[3]) });
+    }
+    if (!/\/\s*>$/.test(tag)) namespaceStack.push(namespaces);
+  }
+  return references.filter((reference) => reference.id);
+}
+
 function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
   const paths = new Set(files.map((file) => file.name));
   const issues = [];
@@ -8378,15 +8403,17 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
       issues.push({ kind: "ooxmlIssue", family, type: "missingContentType", severity: "error", path: partPath, message: `${family} part ${partPath} has no [Content_Types].xml declaration.` });
     }
   }
+  const relationshipsBySource = new Map();
   for (const [partPath, bytes] of bytesByPath) {
     if (!partPath.endsWith(".rels")) continue;
     const source = ooxmlRelationshipSource(partPath);
     if (source == null) continue;
     const xml = decoder.decode(bytes);
+    const relationshipEntries = ooxmlRelationshipEntries(xml);
+    relationshipsBySource.set(source, { path: partPath, ids: new Set(relationshipEntries.map((entry) => entry.attrs.Id).filter(Boolean)) });
     if (source && !paths.has(source)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipSourceNotFound", severity: "error", path: partPath, source, message: `${family} relationship part ${partPath} belongs to missing source part ${source}.` });
     const relationshipIds = new Set();
-    for (const match of xml.matchAll(/<Relationship\b[^>]*\/?\s*>/g)) {
-      const attrs = Object.fromEntries([...match[0].matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((attribute) => [attribute[1], decodeXml(attribute[2])]));
+    for (const { attrs } of relationshipEntries) {
       if (attrs.Id && relationshipIds.has(attrs.Id)) issues.push({ kind: "ooxmlIssue", family, type: "duplicateRelationshipId", severity: "error", path: partPath, relationshipId: attrs.Id, message: `${family} relationship part ${partPath} contains duplicate Id ${attrs.Id}.` });
       if (attrs.Id) relationshipIds.add(attrs.Id);
       if (String(attrs.TargetMode || "").toLowerCase() === "external") continue;
@@ -8396,6 +8423,23 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
       }
       const target = ooxmlResolveRelationshipTarget(source, attrs.Target);
       if (!paths.has(target)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetNotFound", severity: "error", path: partPath, relationshipId: attrs.Id, target, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} targets missing part ${target}.` });
+    }
+  }
+  for (const [partPath, bytes] of bytesByPath) {
+    if (!partPath.endsWith(".xml") || partPath === "[Content_Types].xml") continue;
+    const references = ooxmlRelationshipReferences(decoder.decode(bytes));
+    if (!references.length) continue;
+    const relationshipPart = relationshipsBySource.get(partPath);
+    if (!relationshipPart) {
+      issues.push({ kind: "ooxmlIssue", family, type: "relationshipReferencePartNotFound", severity: "error", path: partPath, relationshipIds: [...new Set(references.map((reference) => reference.id))], message: `${family} source part ${partPath} contains relationship references but has no corresponding .rels part.` });
+      continue;
+    }
+    const seen = new Set();
+    for (const reference of references) {
+      const key = `${reference.attribute}\u0000${reference.id}`;
+      if (seen.has(key) || relationshipPart.ids.has(reference.id)) continue;
+      seen.add(key);
+      issues.push({ kind: "ooxmlIssue", family, type: "relationshipReferenceIdNotFound", severity: "error", path: partPath, relationshipsPath: relationshipPart.path, relationshipId: reference.id, referenceAttribute: reference.attribute, message: `${family} source part ${partPath} references missing relationship Id ${reference.id} through ${reference.attribute}.` });
     }
   }
   return issues;
@@ -8443,6 +8487,8 @@ async function ooxmlPackageRecords(zip, options = {}, config = {}) {
   }
   const issues = ooxmlPackageIssues(files, bytesByPath, contentTypes, family);
   records[0].uncompressedBytes = totalBytes;
+  records[0].relationshipReferences = [...bytesByPath].reduce((count, [partPath, bytes]) => count + (partPath.endsWith(".xml") && partPath !== "[Content_Types].xml" ? ooxmlRelationshipReferences(decoder.decode(bytes)).length : 0), 0);
+  records[0].relationshipReferenceIssues = issues.filter((issue) => issue.type === "relationshipReferencePartNotFound" || issue.type === "relationshipReferenceIdNotFound").length;
   records[0].ok = issues.length === 0;
   records[0].issues = issues.length;
   records.push(...issues);

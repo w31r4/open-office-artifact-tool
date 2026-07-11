@@ -260,7 +260,16 @@ assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml")
 assert.match(packageInspect.ndjson, /docxPart/);
 assert.match(packageInspect.ndjson, /word\/styles\.xml/);
 assert.ok(packageInspect.records[0].uncompressedBytes > 0);
+assert.ok(packageInspect.records[0].relationshipReferences > 0);
+assert.equal(packageInspect.records[0].relationshipReferenceIssues, 0);
 assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml" && part.contentType.includes("wordprocessingml.document.main+xml")));
+const brokenDocxReferenceXml = documentXml.replace(/<\/w:body>\s*<\/w:document>\s*$/, '<w:p><w:hyperlink xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdMissingSourceReference"><w:r><w:t>Broken link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>');
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: brokenDocxReferenceXml }]), /invalid OOXML package.*relationshipReferenceIdNotFound/);
+const missingReferencePartXml = '<source xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:link="rIdMissingRelationshipPart"/>';
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "customXml/source-reference.xml", xml: missingReferencePartXml }]), /invalid OOXML package.*relationshipReferencePartNotFound/);
+const invalidReferencePartDocx = await DocumentFile.patchDocx(docx, [{ path: "customXml/source-reference.xml", xml: missingReferencePartXml }], { validateResult: false });
+const invalidReferencePartInspect = await DocumentFile.inspectDocx(invalidReferencePartDocx);
+assert.ok(invalidReferencePartInspect.issues.some((issue) => issue.type === "relationshipReferencePartNotFound" && issue.path === "customXml/source-reference.xml"));
 const patchedDocx = await DocumentFile.patchDocx(docx, [{ path: "customXml/review-note.xml", text: "<review>ok</review>" }]);
 assert.equal(patchedDocx.type, docx.type);
 assert.equal(patchedDocx.metadata.patchedParts, 1);

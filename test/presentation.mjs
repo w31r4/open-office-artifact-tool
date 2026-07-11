@@ -243,7 +243,16 @@ assert.ok(packageInspect.parts.some((part) => part.path === "ppt/slides/slide1.x
 assert.ok(packageInspect.parts.some((part) => part.path === "ppt/charts/chart1.xml"));
 assert.match(packageInspect.ndjson, /pptxPart/);
 assert.ok(packageInspect.records[0].uncompressedBytes > 0);
+assert.ok(packageInspect.records[0].relationshipReferences > 0);
+assert.equal(packageInspect.records[0].relationshipReferenceIssues, 0);
 assert.ok(packageInspect.parts.some((part) => part.path === "ppt/presentation.xml" && part.contentType.includes("presentationml.presentation.main+xml")));
+const pptxReferenceZip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+const pptxSlideReferenceXml = await pptxReferenceZip.file("ppt/slides/slide1.xml").async("text");
+const brokenPptxReferenceXml = pptxSlideReferenceXml.replace(/<\/p:sld>\s*$/, '<p:extLst><p:ext uri="urn:open-office:missing-reference"><a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:rel="http://purl.oclc.org/ooxml/officeDocument/relationships" rel:embed="rIdMissingSourceReference"/></p:ext></p:extLst></p:sld>');
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/slides/slide1.xml", xml: brokenPptxReferenceXml }]), /invalid OOXML package.*relationshipReferenceIdNotFound/);
+const invalidReferencePptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/slides/slide1.xml", xml: brokenPptxReferenceXml }], { validateResult: false });
+const invalidReferencePptxInspect = await PresentationFile.inspectPptx(invalidReferencePptx);
+assert.ok(invalidReferencePptxInspect.issues.some((issue) => issue.type === "relationshipReferenceIdNotFound" && issue.referenceAttribute === "rel:embed"));
 const patchedPptx = await PresentationFile.patchPptx(pptx, [{
   path: "customXml/review.json",
   json: { status: "ok" },

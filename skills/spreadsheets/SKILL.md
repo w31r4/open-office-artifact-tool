@@ -115,7 +115,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Run `verifyArtifact(workbook)` and resolve every error-level issue.
 - Trace important result cells when the calculation chain is non-trivial.
 - Export and re-import the XLSX before final verification.
-- Save `SpreadsheetFile.inspectXlsx()` evidence so the native package shape, content types, and decompression budgets are part of QA.
+- Save `SpreadsheetFile.inspectXlsx()` evidence so native package shape, content types, `.rels` targets, source XML `r:id`/`r:embed`/`r:link` references, and decompression budgets are part of QA; require zero relationship-reference issues.
 - For CSV/TSV, save `SpreadsheetFile.inspectDelimited()` evidence and review delimiter, dimensions, quoting, BOM, and formula-like cell counts; remember that delimited delivery cannot preserve workbook-only features.
 - Produce a layout record and visual preview for every user-facing sheet with `--all-sheets true`; the selected `--range` narrows only the primary sheet.
 - Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
