@@ -244,20 +244,33 @@ assert.ok(packageInspect.parts.some((part) => part.path === "ppt/charts/chart1.x
 assert.match(packageInspect.ndjson, /pptxPart/);
 assert.ok(packageInspect.records[0].uncompressedBytes > 0);
 assert.ok(packageInspect.parts.some((part) => part.path === "ppt/presentation.xml" && part.contentType.includes("presentationml.presentation.main+xml")));
-const patchedPptx = await PresentationFile.patchPptx(pptx, [{ path: "customXml/review.json", json: { status: "ok" } }]);
+const patchedPptx = await PresentationFile.patchPptx(pptx, [{
+  path: "customXml/review.json",
+  json: { status: "ok" },
+  relationship: { source: "ppt/presentation.xml", id: "rIdReview", type: "urn:open-office:relationships/review" },
+}]);
 assert.equal(patchedPptx.type, pptx.type);
 assert.equal(patchedPptx.metadata.patchedParts, 1);
 assert.equal(patchedPptx.metadata.contentTypesUpdated, 1);
+assert.equal(patchedPptx.metadata.relationshipsUpdated, 1);
 const patchedPptxInspect = await PresentationFile.inspectPptx(patchedPptx, { includeText: true, maxChars: 16000 });
 assert.match(patchedPptxInspect.ndjson, /review\.json/);
 assert.equal(patchedPptxInspect.ok, true);
 assert.ok(patchedPptxInspect.parts.some((part) => part.path === "customXml/review.json" && part.contentType === "application/json"));
+const patchedPptxZip = await JSZip.loadAsync(new Uint8Array(await patchedPptx.arrayBuffer()));
+assert.match(await patchedPptxZip.file("ppt/_rels/presentation.xml.rels").async("text"), /Id="rIdReview"[^>]*Target="\.\.\/customXml\/review\.json"/);
+const removedReviewPptx = await PresentationFile.patchPptx(patchedPptx, [{ path: "customXml/review.json", remove: true }]);
+assert.equal(removedReviewPptx.metadata.contentTypesUpdated, 1);
+assert.equal(removedReviewPptx.metadata.relationshipsUpdated, 1);
+assert.equal((await PresentationFile.inspectPptx(removedReviewPptx)).ok, true);
 const unsyncedPptx = await PresentationFile.patchPptx(pptx, [{ path: "customXml/unmanaged.json", json: {} }], { syncContentTypes: false });
 const unsyncedPptxInspect = await PresentationFile.inspectPptx(unsyncedPptx);
 assert.equal(unsyncedPptxInspect.ok, false);
 assert.ok(unsyncedPptxInspect.issues.some((issue) => issue.type === "missingContentType" && issue.path === "customXml/unmanaged.json"));
 const replacementPptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/presentation.xml", xml: "<p:presentation xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"/>" }]);
 assert.ok((await PresentationFile.inspectPptx(replacementPptx)).parts.some((part) => part.path === "ppt/presentation.xml" && part.contentType.includes("presentationml.presentation.main+xml")));
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "customXml/no-type.json", json: {}, relationship: { source: "ppt/presentation.xml" } }]), /requires type/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "customXml/review.json", json: {}, relationship: { source: "ppt/missing.xml", type: "urn:review" } }]), /source part not found/);
 await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "../evil.xml", text: "bad" }]), /Unsafe PPTX part path/);
 await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "customXml/large.txt", text: "12345" }], { maxPatchBytes: 4 }), /exceeds maxPatchBytes/);
 await assert.rejects(() => PresentationFile.inspectPptx(pptx, { maxParts: 1 }), /maxParts/);

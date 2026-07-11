@@ -888,6 +888,8 @@ const HELP_DETAIL_OVERRIDES = {
         maxPatchBytes: { type: "number", description: "Per-part patch size limit." },
         maxParts: { type: "number", description: "Maximum resulting package part count." },
         syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
+        syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+        relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with metadata.patchedParts." } },
     },
@@ -1507,6 +1509,8 @@ const PRESENTATION_HELP_SCHEMAS = {
     maxPatchBytes: { type: "number", description: "Maximum bytes per replacement part." },
     maxParts: { type: "number", description: "Maximum resulting package part count." },
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
+    syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+    relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
   }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
@@ -1542,6 +1546,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     maxPatchBytes: { type: "number", description: "Maximum bytes per replacement part." },
     maxParts: { type: "number", description: "Maximum resulting package part count." },
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
+    syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+    relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
   }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts metadata."),
   "worksheet.getRange": helpSchema({
     address: { type: "string", required: true, description: "A1 cell or range address such as A1:D10." },
@@ -4356,7 +4362,7 @@ export class SpreadsheetFile {
 
   static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
-    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated } });
+    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated } });
   }
 
   static async exportXlsx(workbook) {
@@ -6121,7 +6127,7 @@ export class PresentationFile {
 
   static async patchPptx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
-    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated } });
+    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated } });
   }
 
   static async exportPptx(presentation) {
@@ -7525,6 +7531,13 @@ function ooxmlRelationshipSource(partPath) {
   return match[1] ? `${match[1]}/${match[2]}` : match[2];
 }
 
+function ooxmlResolveRelationshipTarget(source, rawTarget) {
+  const target = String(rawTarget || "").split("#")[0];
+  if (target.startsWith("/")) return target.slice(1);
+  const sourceDir = source ? path.posix.dirname(source) : "";
+  return path.posix.normalize(path.posix.join(sourceDir === "." ? "" : sourceDir, target));
+}
+
 function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
   const paths = new Set(files.map((file) => file.name));
   const issues = [];
@@ -7541,7 +7554,6 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
     if (!partPath.endsWith(".rels")) continue;
     const source = ooxmlRelationshipSource(partPath);
     if (source == null) continue;
-    const sourceDir = source ? path.posix.dirname(source) : "";
     const xml = decoder.decode(bytes);
     for (const match of xml.matchAll(/<Relationship\b[^>]*\/?\s*>/g)) {
       const attrs = Object.fromEntries([...match[0].matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((attribute) => [attribute[1], decodeXml(attribute[2])]));
@@ -7550,8 +7562,7 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
         issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetMissing", severity: "error", path: partPath, relationshipId: attrs.Id, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} has no target.` });
         continue;
       }
-      const rawTarget = String(attrs.Target).split("#")[0];
-      const target = rawTarget.startsWith("/") ? rawTarget.slice(1) : path.posix.normalize(path.posix.join(sourceDir === "." ? "" : sourceDir, rawTarget));
+      const target = ooxmlResolveRelationshipTarget(source, attrs.Target);
       if (!paths.has(target)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetNotFound", severity: "error", path: partPath, relationshipId: attrs.Id, target, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} targets missing part ${target}.` });
     }
   }
@@ -7663,6 +7674,74 @@ async function syncOoxmlPatchContentTypes(zip, normalizedPatches, options, famil
   return updates;
 }
 
+function ooxmlRelationshipPartPath(source, family) {
+  if (!source) return "_rels/.rels";
+  const safeSource = ooxmlSafePartPath(source, family);
+  const dir = path.posix.dirname(safeSource);
+  return `${dir === "." ? "" : `${dir}/`}_rels/${path.posix.basename(safeSource)}.rels`;
+}
+
+function ooxmlRelationshipEntries(xml = "") {
+  return [...String(xml).matchAll(/<Relationship\b[^>]*\/?\s*>/g)].map((match) => ({
+    tag: match[0],
+    attrs: Object.fromEntries([...match[0].matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((attribute) => [attribute[1], decodeXml(attribute[2])])),
+  }));
+}
+
+function ooxmlEmptyRelationshipsXml() {
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+}
+
+async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, family) {
+  if (options.syncRelationships === false) return 0;
+  let updates = 0;
+  const removedParts = new Set(normalizedPatches.filter(({ patch }) => patch.remove || patch.delete).map(({ partPath }) => partPath));
+  for (const file of Object.values(zip.files).filter((item) => !item.dir && item.name.endsWith(".rels"))) {
+    const relsPath = ooxmlSafePartPath(file.name, family);
+    const source = ooxmlRelationshipSource(relsPath);
+    if (source == null) continue;
+    const xml = await file.async("text");
+    const next = xml.replace(/<Relationship\b[^>]*\/?\s*>/g, (tag) => {
+      const entry = ooxmlRelationshipEntries(tag)[0];
+      if (!entry || String(entry.attrs.TargetMode || "").toLowerCase() === "external") return tag;
+      return removedParts.has(ooxmlResolveRelationshipTarget(source, entry.attrs.Target)) ? "" : tag;
+    });
+    if (next !== xml) { zip.file(relsPath, next); updates += 1; }
+  }
+  for (const { patch, partPath } of normalizedPatches) {
+    const relationshipConfigs = patch.relationships || (patch.relationship ? [patch.relationship] : []);
+    for (const relationship of relationshipConfigs) {
+      const source = relationship.source || relationship.sourcePart || "";
+      if (source && !zip.file(ooxmlSafePartPath(source, family))) throw new Error(`${family} relationship source part not found: ${source}`);
+      const relsPath = ooxmlRelationshipPartPath(source, family);
+      const relsEntry = zip.file(relsPath);
+      let xml = relsEntry ? await relsEntry.async("text") : ooxmlEmptyRelationshipsXml();
+      const entries = ooxmlRelationshipEntries(xml);
+      const target = relationship.target || (source ? path.posix.relative(path.posix.dirname(source), partPath) : partPath);
+      const remove = relationship.remove === true || relationship.delete === true || patch.remove || patch.delete;
+      const matches = (entry) => (relationship.id && entry.attrs.Id === relationship.id) || (!relationship.id && ooxmlResolveRelationshipTarget(source, entry.attrs.Target) === partPath);
+      const withoutMatch = xml.replace(/<Relationship\b[^>]*\/?\s*>/g, (tag) => {
+        const entry = ooxmlRelationshipEntries(tag)[0];
+        return entry && matches(entry) ? "" : tag;
+      });
+      if (remove) {
+        if (withoutMatch !== xml) { zip.file(relsPath, withoutMatch); updates += 1; }
+        continue;
+      }
+      if (!relationship.type) throw new Error(`${family} relationship for ${partPath} requires type.`);
+      const usedIds = new Set(entries.map((entry) => entry.attrs.Id));
+      let id = relationship.id;
+      if (!id) { let index = 1; while (usedIds.has(`rId${index}`)) index += 1; id = `rId${index}`; }
+      const targetMode = relationship.targetMode ? ` TargetMode="${attrEscape(relationship.targetMode)}"` : "";
+      const tag = `<Relationship Id="${attrEscape(id)}" Type="${attrEscape(relationship.type)}" Target="${attrEscape(target)}"${targetMode}/>`;
+      const next = withoutMatch.replace(/<\/Relationships>\s*$/, `${tag}</Relationships>`);
+      zip.file(relsPath, next);
+      updates += 1;
+    }
+  }
+  return updates;
+}
+
 async function inspectOoxmlPackage(blobOrBuffer, options = {}, config = {}) {
   const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
   const zip = await JSZip.loadAsync(bytes);
@@ -7697,7 +7776,8 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
     zip.file(partPath, data);
   }
   const contentTypesUpdated = await syncOoxmlPatchContentTypes(zip, normalizedPatches, options, family);
-  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length, contentTypesUpdated };
+  const relationshipsUpdated = await syncOoxmlPatchRelationships(zip, normalizedPatches, options, family);
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length, contentTypesUpdated, relationshipsUpdated };
 }
 
 export class DocumentFile {
@@ -7707,7 +7787,7 @@ export class DocumentFile {
 
   static async patchDocx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "DOCX" });
-    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated } });
+    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated } });
   }
 
   static async exportDocx(document) {

@@ -175,7 +175,7 @@ It extracts page size, positioned text items, text-line regions, heuristic table
 
 ## Safe OOXML package inspection and patching
 
-XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, verify internal relationship targets and content-type declarations, and enforce part-count, per-part, and total uncompressed-byte budgets. Results include `ok`, structured `issues`, and `ooxmlIssue` NDJSON records. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits; inferred or explicit content types are synchronized by default and reported as `metadata.contentTypesUpdated`.
+XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, verify internal relationship targets and content-type declarations, and enforce part-count, per-part, and total uncompressed-byte budgets. Results include `ok`, structured `issues`, and `ooxmlIssue` NDJSON records. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits. Content types are synchronized automatically; relationships to deleted parts are removed, and additions can declare a source/type/id recipe. Updates are reported in FileBlob metadata.
 
 ```js
 const report = await SpreadsheetFile.inspectXlsx(xlsx, {
@@ -186,7 +186,16 @@ const report = await SpreadsheetFile.inspectXlsx(xlsx, {
 });
 
 const patched = await PresentationFile.patchPptx(pptx, [
-  { path: "customXml/review.json", json: { status: "approved" }, contentType: "application/json" },
+  {
+    path: "customXml/review.json",
+    json: { status: "approved" },
+    contentType: "application/json",
+    relationship: {
+      source: "ppt/presentation.xml",
+      id: "rIdReview",
+      type: "urn:open-office:relationships/review",
+    },
+  },
 ]);
 ```
 

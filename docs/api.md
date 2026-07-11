@@ -439,6 +439,8 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 - `maxPatchBytes` (number) — Per-part patch size limit.
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
+- `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
 
@@ -1093,6 +1095,8 @@ Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte 
 - `maxPatchBytes` (number) — Maximum bytes per replacement part.
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
+- `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
 
@@ -2576,6 +2580,8 @@ Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte 
 - `maxPatchBytes` (number) — Maximum bytes per replacement part.
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
+- `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
 

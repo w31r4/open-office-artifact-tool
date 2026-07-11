@@ -397,12 +397,15 @@ await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "../evil.xml
 await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/large.txt", text: "12345" }], { maxPatchBytes: 4 }), /exceeds maxPatchBytes/);
 await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxParts: 1 }), /maxParts/);
 await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxPartBytes: 1 }), /maxPartBytes/);
-const brokenRelationshipXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }]);
-assert.equal(brokenRelationshipXlsx.metadata.contentTypesUpdated, 1);
+const safelyRemovedStylesXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }]);
+assert.equal(safelyRemovedStylesXlsx.metadata.contentTypesUpdated, 1);
+assert.equal(safelyRemovedStylesXlsx.metadata.relationshipsUpdated, 1);
+assert.equal((await SpreadsheetFile.inspectXlsx(safelyRemovedStylesXlsx)).ok, true);
+const brokenRelationshipXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }], { syncRelationships: false });
 const brokenRelationshipInspect = await SpreadsheetFile.inspectXlsx(brokenRelationshipXlsx);
 assert.equal(brokenRelationshipInspect.ok, false);
 assert.ok(brokenRelationshipInspect.issues.some((issue) => issue.type === "relationshipTargetNotFound" && issue.target === "xl/styles.xml"));
-const brokenRelationshipZip = await JSZip.loadAsync(new Uint8Array(await brokenRelationshipXlsx.arrayBuffer()));
+const brokenRelationshipZip = await JSZip.loadAsync(new Uint8Array(await safelyRemovedStylesXlsx.arrayBuffer()));
 assert.doesNotMatch(await brokenRelationshipZip.file("[Content_Types].xml").async("text"), /PartName="\/xl\/styles\.xml"/);
 const xlsxBytes = new Uint8Array(await xlsx.arrayBuffer());
 const zip = await JSZip.loadAsync(xlsxBytes);
