@@ -440,11 +440,12 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
 
-- `docx` (FileBlob) — Patched DOCX FileBlob with metadata.patchedParts.
+- `docx` (FileBlob) — Patched DOCX FileBlob with patchedParts, relationship/content-type updates, and result-validation metadata.
 
 #### `DocumentModel.create`
 
@@ -1121,11 +1122,12 @@ Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte 
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Patched PPTX FileBlob with patchedParts metadata.
+- `blob` (FileBlob) — Patched PPTX FileBlob with patchedParts and result-validation metadata.
 
 #### `slide.addNotes`
 
@@ -3046,11 +3048,12 @@ Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte 
 - `maxParts` (number) — Maximum resulting package part count.
 - `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
+- `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array.
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Patched XLSX FileBlob with patchedParts metadata.
+- `blob` (FileBlob) — Patched XLSX FileBlob with patchedParts and result-validation metadata.
 
 #### `workbook.comments.addThread`
 

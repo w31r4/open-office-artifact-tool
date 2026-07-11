@@ -1165,9 +1165,10 @@ const HELP_DETAIL_OVERRIDES = {
         maxParts: { type: "number", description: "Maximum resulting package part count." },
         syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
         syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+        validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
         relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
       },
-      returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with metadata.patchedParts." } },
+      returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with patchedParts, relationship/content-type updates, and result-validation metadata." } },
     },
   },
   "PresentationFile.inspectPptx": {
@@ -1803,8 +1804,9 @@ const PRESENTATION_HELP_SCHEMAS = {
     maxParts: { type: "number", description: "Maximum resulting package part count." },
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+    validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
-  }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts metadata."),
+  }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts and result-validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
   }, "blob", "FileBlob", "Native OOXML PPTX package bytes."),
@@ -1840,8 +1842,9 @@ const WORKBOOK_HELP_SCHEMAS = {
     maxParts: { type: "number", description: "Maximum resulting package part count." },
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
+    validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; relationships accepts an array." },
-  }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts metadata."),
+  }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts and result-validation metadata."),
   "worksheet.getRange": helpSchema({
     address: { type: "string", required: true, description: "A1 cell or range address such as A1:D10." },
   }, "range", "Range", "Editable range facade for values, formulas, formatting, and rules."),
@@ -4869,7 +4872,7 @@ export class SpreadsheetFile {
 
   static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
-    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated } });
+    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportXlsx(workbook) {
@@ -6634,7 +6637,7 @@ export class PresentationFile {
 
   static async patchPptx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
-    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated } });
+    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportPptx(presentation) {
@@ -8050,6 +8053,9 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
   const issues = [];
   if (!paths.has("[Content_Types].xml")) issues.push({ kind: "ooxmlIssue", family, type: "missingContentTypes", severity: "error", message: `${family} package is missing [Content_Types].xml.` });
   if (!paths.has("_rels/.rels")) issues.push({ kind: "ooxmlIssue", family, type: "missingRootRelationships", severity: "error", message: `${family} package is missing _rels/.rels.` });
+  for (const partPath of contentTypes.overrides.keys()) {
+    if (!paths.has(partPath)) issues.push({ kind: "ooxmlIssue", family, type: "contentTypeTargetNotFound", severity: "error", path: partPath, message: `${family} [Content_Types].xml declares missing part ${partPath}.` });
+  }
   for (const partPath of paths) {
     if (partPath === "[Content_Types].xml") continue;
     const extension = ooxmlPartExtension(partPath);
@@ -8062,8 +8068,12 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
     const source = ooxmlRelationshipSource(partPath);
     if (source == null) continue;
     const xml = decoder.decode(bytes);
+    if (source && !paths.has(source)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipSourceNotFound", severity: "error", path: partPath, source, message: `${family} relationship part ${partPath} belongs to missing source part ${source}.` });
+    const relationshipIds = new Set();
     for (const match of xml.matchAll(/<Relationship\b[^>]*\/?\s*>/g)) {
       const attrs = Object.fromEntries([...match[0].matchAll(/([A-Za-z][\w:.-]*)="([^"]*)"/g)].map((attribute) => [attribute[1], decodeXml(attribute[2])]));
+      if (attrs.Id && relationshipIds.has(attrs.Id)) issues.push({ kind: "ooxmlIssue", family, type: "duplicateRelationshipId", severity: "error", path: partPath, relationshipId: attrs.Id, message: `${family} relationship part ${partPath} contains duplicate Id ${attrs.Id}.` });
+      if (attrs.Id) relationshipIds.add(attrs.Id);
       if (String(attrs.TargetMode || "").toLowerCase() === "external") continue;
       if (!attrs.Target) {
         issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetMissing", severity: "error", path: partPath, relationshipId: attrs.Id, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} has no target.` });
@@ -8203,6 +8213,10 @@ async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, fami
   if (options.syncRelationships === false) return 0;
   let updates = 0;
   const removedParts = new Set(normalizedPatches.filter(({ patch }) => patch.remove || patch.delete).map(({ partPath }) => partPath));
+  for (const removedPart of removedParts) {
+    const outgoingRelationships = ooxmlRelationshipPartPath(removedPart, family);
+    if (zip.file(outgoingRelationships)) { zip.remove(outgoingRelationships); updates += 1; }
+  }
   for (const file of Object.values(zip.files).filter((item) => !item.dir && item.name.endsWith(".rels"))) {
     const relsPath = ooxmlSafePartPath(file.name, family);
     const source = ooxmlRelationshipSource(relsPath);
@@ -8284,7 +8298,17 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
   }
   const contentTypesUpdated = await syncOoxmlPatchContentTypes(zip, normalizedPatches, options, family);
   const relationshipsUpdated = await syncOoxmlPatchRelationships(zip, normalizedPatches, options, family);
-  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length, contentTypesUpdated, relationshipsUpdated };
+  const validated = options.validateResult !== false;
+  let validationIssues = [];
+  if (validated) {
+    const records = await ooxmlPackageRecords(zip, { maxParts, maxPartBytes: options.maxPartBytes, maxTotalBytes: options.maxTotalBytes }, { family });
+    validationIssues = records.filter((record) => record.kind === "ooxmlIssue");
+    if (validationIssues.length) {
+      const summary = validationIssues.slice(0, 5).map((issue) => `${issue.type}${issue.path ? `:${issue.path}` : ""}`).join(", ");
+      throw new Error(`${family} patch produced an invalid OOXML package (${validationIssues.length} issue${validationIssues.length === 1 ? "" : "s"}): ${summary}. Pass { validateResult: false } only when intentionally constructing an invalid fixture.`);
+    }
+  }
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length, contentTypesUpdated, relationshipsUpdated, validated, validationIssues: validationIssues.length };
 }
 
 export class DocumentFile {
@@ -8294,7 +8318,7 @@ export class DocumentFile {
 
   static async patchDocx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "DOCX" });
-    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated } });
+    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportDocx(document) {

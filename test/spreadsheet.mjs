@@ -486,6 +486,8 @@ assert.ok(xlsxInspect.parts.some((part) => part.path === "xl/workbook.xml" && pa
 const patchedXlsx = await SpreadsheetFile.patchXlsx(xlsx, { "customXml/review.json": { json: { status: "ok" } } });
 assert.equal(patchedXlsx.type, xlsx.type);
 assert.equal(patchedXlsx.metadata.patchedParts, 1);
+assert.equal(patchedXlsx.metadata.validated, true);
+assert.equal(patchedXlsx.metadata.validationIssues, 0);
 assert.match((await SpreadsheetFile.inspectXlsx(patchedXlsx, { includeText: true, maxChars: 16000 })).ndjson, /review\.json/);
 const replacementXlsx = await SpreadsheetFile.patchXlsx(xlsx, { "customXml/open-office-artifact.json": { json: { replaced: true } } }, { maxParts: xlsxInspect.parts.length });
 assert.equal(replacementXlsx.metadata.patchedParts, 1);
@@ -498,7 +500,9 @@ const safelyRemovedStylesXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "
 assert.equal(safelyRemovedStylesXlsx.metadata.contentTypesUpdated, 1);
 assert.equal(safelyRemovedStylesXlsx.metadata.relationshipsUpdated, 1);
 assert.equal((await SpreadsheetFile.inspectXlsx(safelyRemovedStylesXlsx)).ok, true);
-const brokenRelationshipXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }], { syncRelationships: false });
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }], { syncRelationships: false }), /invalid OOXML package.*relationshipTargetNotFound/);
+const brokenRelationshipXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }], { syncRelationships: false, validateResult: false });
+assert.equal(brokenRelationshipXlsx.metadata.validated, false);
 const brokenRelationshipInspect = await SpreadsheetFile.inspectXlsx(brokenRelationshipXlsx);
 assert.equal(brokenRelationshipInspect.ok, false);
 assert.ok(brokenRelationshipInspect.issues.some((issue) => issue.type === "relationshipTargetNotFound" && issue.target === "xl/styles.xml"));

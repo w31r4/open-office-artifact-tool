@@ -253,6 +253,8 @@ assert.equal(patchedPptx.type, pptx.type);
 assert.equal(patchedPptx.metadata.patchedParts, 1);
 assert.equal(patchedPptx.metadata.contentTypesUpdated, 1);
 assert.equal(patchedPptx.metadata.relationshipsUpdated, 1);
+assert.equal(patchedPptx.metadata.validated, true);
+assert.equal(patchedPptx.metadata.validationIssues, 0);
 const patchedPptxInspect = await PresentationFile.inspectPptx(patchedPptx, { includeText: true, maxChars: 16000 });
 assert.match(patchedPptxInspect.ndjson, /review\.json/);
 assert.equal(patchedPptxInspect.ok, true);
@@ -263,7 +265,8 @@ const removedReviewPptx = await PresentationFile.patchPptx(patchedPptx, [{ path:
 assert.equal(removedReviewPptx.metadata.contentTypesUpdated, 1);
 assert.equal(removedReviewPptx.metadata.relationshipsUpdated, 1);
 assert.equal((await PresentationFile.inspectPptx(removedReviewPptx)).ok, true);
-const unsyncedPptx = await PresentationFile.patchPptx(pptx, [{ path: "customXml/unmanaged.json", json: {} }], { syncContentTypes: false });
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "customXml/unmanaged.json", json: {} }], { syncContentTypes: false }), /invalid OOXML package.*missingContentType/);
+const unsyncedPptx = await PresentationFile.patchPptx(pptx, [{ path: "customXml/unmanaged.json", json: {} }], { syncContentTypes: false, validateResult: false });
 const unsyncedPptxInspect = await PresentationFile.inspectPptx(unsyncedPptx);
 assert.equal(unsyncedPptxInspect.ok, false);
 assert.ok(unsyncedPptxInspect.issues.some((issue) => issue.type === "missingContentType" && issue.path === "customXml/unmanaged.json"));

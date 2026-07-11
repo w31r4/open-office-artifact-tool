@@ -264,9 +264,34 @@ assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml" 
 const patchedDocx = await DocumentFile.patchDocx(docx, [{ path: "customXml/review-note.xml", text: "<review>ok</review>" }]);
 assert.equal(patchedDocx.type, docx.type);
 assert.equal(patchedDocx.metadata.patchedParts, 1);
+assert.equal(patchedDocx.metadata.validated, true);
+assert.equal(patchedDocx.metadata.validationIssues, 0);
 const patchedInspect = await DocumentFile.inspectDocx(patchedDocx, { includeText: true, maxChars: 12000 });
 assert.match(patchedInspect.ndjson, /customXml\/review-note\.xml/);
 assert.match(patchedInspect.ndjson, /&lt;review&gt;ok&lt;\/review&gt;|<review>ok<\/review>/);
+const relatedCustomDocx = await DocumentFile.patchDocx(docx, [
+  { path: "customXml/source.xml", xml: "<source/>" },
+  { path: "customXml/target.xml", xml: "<target/>", relationship: { source: "customXml/source.xml", id: "rIdTarget", type: "urn:open-office:test-target" } },
+]);
+const relatedCustomZip = await JSZip.loadAsync(new Uint8Array(await relatedCustomDocx.arrayBuffer()));
+assert.ok(relatedCustomZip.file("customXml/_rels/source.xml.rels"));
+const removedCustomSource = await DocumentFile.patchDocx(relatedCustomDocx, [{ path: "customXml/source.xml", remove: true }]);
+const removedCustomSourceZip = await JSZip.loadAsync(new Uint8Array(await removedCustomSource.arrayBuffer()));
+assert.equal(removedCustomSourceZip.file("customXml/_rels/source.xml.rels"), null);
+assert.equal((await DocumentFile.inspectDocx(removedCustomSource)).ok, true);
+const rootRelationshipsXml = await zip.file("_rels/.rels").async("text");
+const firstRootRelationship = rootRelationshipsXml.match(/<Relationship\b[^>]*\/?\s*>/)?.[0];
+assert.ok(firstRootRelationship);
+const duplicateRootRelationshipXml = rootRelationshipsXml.replace(/<\/Relationships>/, `${firstRootRelationship}</Relationships>`);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "_rels/.rels", text: duplicateRootRelationshipXml }]), /invalid OOXML package.*duplicateRelationshipId/);
+const invalidDuplicateDocx = await DocumentFile.patchDocx(docx, [{ path: "_rels/.rels", text: duplicateRootRelationshipXml }], { validateResult: false });
+const duplicateInspect = await DocumentFile.inspectDocx(invalidDuplicateDocx);
+assert.equal(duplicateInspect.ok, false);
+assert.ok(duplicateInspect.issues.some((issue) => issue.type === "duplicateRelationshipId"));
+const danglingContentTypeXml = contentTypesXml.replace(/<\/Types>/, '<Override PartName="/customXml/missing.xml" ContentType="application/xml"/></Types>');
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "[Content_Types].xml", text: danglingContentTypeXml }]), /invalid OOXML package.*contentTypeTargetNotFound/);
+const orphanRelationshipsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="urn:test" Target="../../word/document.xml"/></Relationships>';
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "customXml/_rels/missing.xml.rels", text: orphanRelationshipsXml }]), /invalid OOXML package.*relationshipSourceNotFound/);
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "../evil.xml", text: "bad" }]), /Unsafe DOCX part path/);
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "customXml/large.txt", text: "12345" }], { maxPatchBytes: 4 }), /exceeds maxPatchBytes/);
 await assert.rejects(() => DocumentFile.inspectDocx(docx, { maxTotalBytes: 1 }), /maxTotalBytes/);

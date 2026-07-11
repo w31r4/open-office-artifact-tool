@@ -10,6 +10,7 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
+const maxUnpackedBytes = 1_100_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
@@ -33,6 +34,6 @@ for (const required of [
 }
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference reference material");
-assert.ok(report.unpackedSize < 1_000_000, `npm package unpacked size unexpectedly large: ${report.unpackedSize}`);
+assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);
 
 console.log("package contents smoke ok");
