@@ -1553,9 +1553,11 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
 | `fx.DROP` | formula | Drop rows and optional columns from the start or end of an array and spill the remainder. |
+| `fx.EXPAND` | formula | Expand an array to requested row and column dimensions with optional padding. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
+| `fx.HSTACK` | formula | Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
 | `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
 | `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
@@ -1591,6 +1593,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.UNIQUE` | formula | Return unique rows from a range as a spilled dynamic array. |
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
+| `fx.VSTACK` | formula | Append arrays vertically, padding narrower arrays with #N/A to the maximum column count. |
 | `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
 | `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
@@ -1845,6 +1848,23 @@ Drop rows and optional columns from the start or end of an array and spill the r
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
 
+#### `fx.EXPAND`
+
+Expand an array to requested row and column dimensions with optional padding.
+
+**Examples:**
+
+- =EXPAND(A2:B3,4,3,"n/a")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =EXPAND(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
 #### `fx.FILTER`
 
 Filter rows from a source range with a boolean or comparison include array and spill the matching rows.
@@ -1895,6 +1915,23 @@ Look up a value in the first row of a table range and return a value from anothe
 **Schema returns:**
 
 - `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.HSTACK`
+
+Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count.
+
+**Examples:**
+
+- =HSTACK(A2:B4,D2:E3)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =HSTACK(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.IF`
 
@@ -2494,6 +2531,23 @@ Look up a value in the first column of a table range and return a value from ano
 **Schema returns:**
 
 - `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.VSTACK`
+
+Append arrays vertically, padding narrower arrays with #N/A to the maximum column count.
+
+**Examples:**
+
+- =VSTACK(A2:B4,A7:A9)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =VSTACK(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.WRAPCOLS`
 

@@ -658,6 +658,9 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.TOROW", category: "dynamic-array", summary: "Flatten an array into one spilled row, optionally ignoring blanks or errors and scanning by column.", examples: ["=TOROW(A2:C10,1,TRUE)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.WRAPROWS", category: "dynamic-array", summary: "Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed.", examples: ["=WRAPROWS(A2:A10,3,\"n/a\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.WRAPCOLS", category: "dynamic-array", summary: "Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed.", examples: ["=WRAPCOLS(A2:A10,3,\"n/a\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.HSTACK", category: "dynamic-array", summary: "Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count.", examples: ["=HSTACK(A2:B4,D2:E3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.VSTACK", category: "dynamic-array", summary: "Append arrays vertically, padding narrower arrays with #N/A to the maximum column count.", examples: ["=VSTACK(A2:B4,A7:A9)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.EXPAND", category: "dynamic-array", summary: "Expand an array to requested row and column dimensions with optional padding.", examples: ["=EXPAND(A2:B3,4,3,\"n/a\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TEXTJOIN", category: "text", summary: "Join text values with a delimiter and optional empty-value skipping.", examples: ["=TEXTJOIN(\"/\",TRUE,A1:A3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CONCAT", category: "text", summary: "Concatenate text values and ranges.", examples: ["=CONCAT(A1,\"-\",B1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LEFT", category: "text", summary: "Return characters from the start of a text value.", examples: ["=LEFT(A1,3)"] },
@@ -4248,6 +4251,37 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return Array.from({ length: count }, (_, row) => Array.from({ length: columns }, (_, col) => {
         const index = col * count + row;
         return index < vector.length ? vector[index] : pad;
+      }));
+    }
+    case "HSTACK":
+    case "VSTACK": {
+      if (!args.length) return "#VALUE!";
+      const matrices = args.map((arg, index) => normalizeFormulaMatrix(formulaRangeMatrix(sheet, arg, context) || [[scalar(index)]]));
+      const normalizedValue = (value) => value == null || value === "" ? 0 : value;
+      if (fnName === "HSTACK") {
+        const height = Math.max(0, ...matrices.map((matrix) => matrix.length));
+        return Array.from({ length: height }, (_, row) => matrices.flatMap((matrix) => {
+          const width = Math.max(0, ...matrix.map((values) => values.length));
+          return Array.from({ length: width }, (_, col) => row < matrix.length ? normalizedValue(matrix[row]?.[col]) : "#N/A");
+        }));
+      }
+      const width = Math.max(0, ...matrices.flatMap((matrix) => matrix.map((row) => row.length)));
+      return matrices.flatMap((matrix) => matrix.map((row) => Array.from({ length: width }, (_, col) => col < row.length ? normalizedValue(row[col]) : "#N/A")));
+    }
+    case "EXPAND": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      if (!matrix.length) return "#VALUE!";
+      const height = matrix.length;
+      const width = Math.max(0, ...matrix.map((row) => row.length));
+      const rows = String(args[1] ?? "").trim() === "" ? height : Number(scalar(1, height));
+      const columns = String(args[2] ?? "").trim() === "" ? width : Number(scalar(2, width));
+      if (!Number.isInteger(rows) || !Number.isInteger(columns)) return "#VALUE!";
+      if (rows < height || columns < width) return "#VALUE!";
+      const pad = String(args[3] ?? "").trim() === "" ? "#N/A" : scalar(3, "#N/A");
+      return Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, col) => {
+        if (row >= height || col >= width) return pad;
+        const value = matrix[row]?.[col];
+        return value == null || value === "" ? 0 : value;
       }));
     }
     case "SUMIF": {
