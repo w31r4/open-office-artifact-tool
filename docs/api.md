@@ -24,15 +24,243 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.inspect` | api | Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
+| `document.resolve` | api | Resolve stable document, block, header/footer, comment, style, and editable text-range IDs. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available. |
 | `DocumentFile.inspectDocx` | api | Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews. |
 | `DocumentFile.patchDocx` | api | Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
 ### document details
+
+#### `document.addChange`
+
+Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup.
+
+**Schema parameters:**
+
+- `changeType` (string) required — insert or delete.
+- `text` (string) required — Revision text.
+- `author` (string) — Revision author.
+- `date` (string) — Revision timestamp.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `change` (DocumentChangeBlock) — Appended tracked-change block.
+
+#### `document.addCitation`
+
+Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata.
+
+**Schema parameters:**
+
+- `text` (string) required — Visible citation text.
+- `metadata` (object) — Structured citation metadata.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `citation` (DocumentCitationBlock) — Appended citation block.
+
+#### `document.addComment`
+
+Attach a comment to a paragraph or table block using a stable target ID.
+
+**Schema parameters:**
+
+- `target` (string|object) required — Stable block ID or block facade.
+- `text` (string) required — Comment text.
+- `author` (string) — Comment author.
+- `resolved` (boolean) — Initial resolution state.
+
+**Schema returns:**
+
+- `comment` (DocumentComment) — Attached comment with stable ID.
+
+#### `document.addDeletion`
+
+Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export.
+
+**Schema parameters:**
+
+- `text` (string) required — Deleted text.
+- `author` (string) — Revision author.
+- `date` (string) — Revision timestamp.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `change` (DocumentChangeBlock) — Appended tracked deletion.
+
+#### `document.addField`
+
+Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC.
+
+**Schema parameters:**
+
+- `instruction` (string) required — Word field instruction such as PAGE, REF, PAGEREF, or TOC.
+- `display` (string) — Visible fallback/result text.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `field` (DocumentFieldBlock) — Appended field block.
+
+#### `document.addFooter`
+
+Add footer text exported as a DOCX footer part and referenced from section properties.
+
+**Schema parameters:**
+
+- `text` (string) required — Footer text.
+- `name` (string) — Inspectable block name.
+- `styleId` (string) — Named style ID.
+
+**Schema returns:**
+
+- `footer` (DocumentHeaderFooterBlock) — Appended footer block.
+
+#### `document.addHeader`
+
+Add header text exported as a DOCX header part and referenced from section properties.
+
+**Schema parameters:**
+
+- `text` (string) required — Header text.
+- `name` (string) — Inspectable block name.
+- `styleId` (string) — Named style ID.
+
+**Schema returns:**
+
+- `header` (DocumentHeaderFooterBlock) — Appended header block.
+
+#### `document.addHyperlink`
+
+Append an external hyperlink backed by a DOCX relationship and w:hyperlink element.
+
+**Schema parameters:**
+
+- `text` (string) required — Visible link text.
+- `url` (string) required — External hyperlink URL.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `hyperlink` (DocumentHyperlinkBlock) — Appended external hyperlink block.
+
+#### `document.addImage`
+
+Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures.
+
+**Schema parameters:**
+
+- `dataUrl` (string) — Embedded image data URL.
+- `uri` (string) — External image URI metadata.
+- `prompt` (string) — Generation/source prompt metadata.
+- `alt` (string) — Alternative text.
+- `widthPx` (number) — Rendered width in pixels.
+- `heightPx` (number) — Rendered height in pixels.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `image` (DocumentImageBlock) — Appended image block.
+
+#### `document.addInsertion`
+
+Append a tracked insertion with author/date metadata and native DOCX w:ins export.
+
+**Schema parameters:**
+
+- `text` (string) required — Inserted text.
+- `author` (string) — Revision author.
+- `date` (string) — Revision timestamp.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `change` (DocumentChangeBlock) — Appended tracked insertion.
+
+#### `document.addListItem`
+
+Append a real numbered or bulleted list item backed by DOCX numbering definitions.
+
+**Schema parameters:**
+
+- `text` (string) required — List item text.
+- `listType` (string) — bullet or numbered.
+- `level` (number) — Zero-based list nesting level.
+- `styleId` (string) — Named paragraph style ID.
+
+**Schema returns:**
+
+- `listItem` (DocumentListItemBlock) — Appended native-numbering list item.
+
+#### `document.addParagraph`
+
+Append a styled paragraph block with optional run-level styles and return an inspectable/resolveable paragraph object.
+
+**Schema parameters:**
+
+- `text` (string) required — Paragraph text.
+- `styleId` (string) — Named paragraph style ID.
+- `name` (string) — Inspectable block name.
+- `runs` (object[]) — Optional run-level text/style spans.
+
+**Schema returns:**
+
+- `paragraph` (DocumentParagraphBlock) — Appended paragraph block with stable ID.
+
+#### `document.addSection`
+
+Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr.
+
+**Schema parameters:**
+
+- `breakType` (string) — Section break type such as nextPage or continuous.
+- `orientation` (string) — portrait or landscape.
+- `pageSize` (object) — Page width/height in twentieths of a point.
+- `margins` (object) — Top/right/bottom/left margins in twentieths of a point.
+
+**Schema returns:**
+
+- `section` (DocumentSectionBlock) — Appended section break block.
+
+#### `document.addTable`
+
+Append a Word-style table block with rows, columns, cell values, and style metadata.
+
+**Schema parameters:**
+
+- `values` (unknown[][]) required — Table cell value matrix.
+- `name` (string) — Inspectable table name.
+- `styleId` (string) — Table style ID.
+- `widthDxa` (number) — Table width in twentieths of a point.
+- `columnWidthsDxa` (number[]) — Column widths in twentieths of a point.
+- `cellMarginsDxa` (object) — Cell margins in twentieths of a point.
+- `borderColor` (string) — Table border color.
+- `headerFill` (string) — Header-row fill color.
+
+**Schema returns:**
+
+- `table` (DocumentTableBlock) — Appended table block.
+
+#### `document.applyDesignPreset`
+
+Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews.
+
+**Schema parameters:**
+
+- `name` (string) required — report, memo, or a custom preset name.
+- `styles` (object) — Style overrides merged into the preset.
+
+**Schema returns:**
+
+- `document` (DocumentModel) — The mutated document facade.
 
 #### `document.inspect`
 
@@ -52,9 +280,146 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 - exclude/omit
 - maxChars
 
+**Schema parameters:**
+
+- `kind` (string) — Comma-separated block/comment/style/textRange/layout kinds.
+- `search` (string) — Case-insensitive record filter.
+- `target` (string) — Stable target ID/anchor.
+- `before` (number) — Context records before matches.
+- `after` (number) — Context records after matches.
+- `include` (string) — Comma-separated fields to keep.
+- `exclude` (string) — Comma-separated fields to omit.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `inspection` (object) — Bounded { ndjson, truncated } inspection result.
+
 **Returns:**
 
 { ndjson, truncated } bounded NDJSON records
+
+#### `document.layoutJson`
+
+Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing.
+
+**Schema parameters:**
+
+- `pageWidth` (number) — Modeled page width in pixels.
+- `pageHeight` (number) — Modeled page height in pixels.
+- `margin` (number) — Modeled page margin in pixels.
+- `target` (string) — Stable target ID/anchor.
+- `search` (string) — Case-insensitive element filter.
+- `before` (number) — Context elements before matches.
+- `after` (number) — Context elements after matches.
+
+**Schema returns:**
+
+- `layout` (object) — Page-aware document layout tree.
+
+#### `document.render`
+
+Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs.
+
+**Schema parameters:**
+
+- `format` (string) — svg by default, layout, docx, pdf, png, or another renderer output.
+- `source` (string) — Set to docx to render exported DOCX bytes.
+- `renderer` (function) — Optional LibreOffice/native/raster renderer adapter.
+- `pageWidth` (number) — Modeled SVG/layout page width.
+- `pageHeight` (number) — Modeled SVG/layout page height.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — SVG, layout JSON, DOCX, or converted renderer output.
+
+#### `document.resolve`
+
+Resolve stable document, block, header/footer, comment, style, and editable text-range IDs.
+
+**Schema parameters:**
+
+- `id` (string) required — Stable document, block, header/footer, comment, style, or text-range ID.
+
+**Schema returns:**
+
+- `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+#### `document.styles.effective`
+
+Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata.
+
+**Schema parameters:**
+
+- `styleId` (string) required — Named style ID to resolve through basedOn inheritance.
+
+**Schema returns:**
+
+- `style` (object|undefined) — Resolved effective style or undefined.
+
+#### `document.textRange`
+
+Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text.
+
+**Schema parameters:**
+
+- `id` (string) required — Stable text range ID ending in /text.
+
+**Schema returns:**
+
+- `textRange` (TextRange|undefined) — Editable text-range facade or undefined.
+
+#### `document.verify`
+
+Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells.
+
+**Schema parameters:**
+
+- `visualQa` (boolean) — Include modeled layout overflow checks.
+- `maxChars` (number) — Maximum bounded NDJSON issue output size.
+
+**Schema returns:**
+
+- `report` (object) — Document semantic/layout QA result.
+
+#### `DocumentFile.exportDocx`
+
+Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata.
+
+**Schema parameters:**
+
+- `document` (DocumentModel) required — Document facade to serialize.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — DOCX package bytes.
+
+#### `DocumentFile.importDocx`
+
+Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available.
+
+**Schema parameters:**
+
+- `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
+
+**Schema returns:**
+
+- `document` (DocumentModel) — Imported editable document facade.
+
+#### `DocumentFile.inspectDocx`
+
+Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews.
+
+**Schema parameters:**
+
+- `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
+- `includeText` (boolean) — Include bounded XML/JSON/relationship previews.
+- `maxPreviewChars` (number) — Maximum preview characters per textual part.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `package` (object) — DOCX package part records and bounded NDJSON.
 
 #### `DocumentFile.patchDocx`
 
@@ -74,34 +439,24 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 
 - `docx` (FileBlob) — Patched DOCX FileBlob with metadata.patchedParts.
 
-**Schema:**
+#### `DocumentModel.create`
 
-```json
-{
-  "parameters": {
-    "docx": {
-      "type": "FileBlob|Uint8Array",
-      "required": true,
-      "description": "DOCX package bytes."
-    },
-    "patches": {
-      "type": "array|object",
-      "required": true,
-      "description": "Path-validated package part edits with text/xml/json/bytes/remove."
-    },
-    "maxPatchBytes": {
-      "type": "number",
-      "description": "Per-part patch size limit."
-    }
-  },
-  "returns": {
-    "docx": {
-      "type": "FileBlob",
-      "description": "Patched DOCX FileBlob with metadata.patchedParts."
-    }
-  }
-}
-```
+Create a document with paragraph, list, table, header/footer, style, and comment blocks.
+
+**Schema parameters:**
+
+- `name` (string) — Document name.
+- `designPreset` (string) — Initial design preset name.
+- `styles` (object) — Named style definitions.
+- `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
+- `blocks` (object[]) — Ordered paragraph/list/table/link/field/citation/image/section/change block models.
+- `headers` (object[]) — Header block models.
+- `footers` (object[]) — Footer block models.
+- `comments` (object[]) — Comment models targeting stable block IDs.
+
+**Schema returns:**
+
+- `document` (DocumentModel) — Editable document facade.
 
 ## pdf
 
@@ -145,33 +500,6 @@ Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfj
 
 - `parser` (function) — Parser adapter for PdfFile.importPdf().
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pdfjs": {
-      "type": "object",
-      "description": "Injected PDF.js module; otherwise pdfjs-dist is loaded."
-    },
-    "getDocumentOptions": {
-      "type": "object",
-      "description": "Options merged into PDF.js getDocument()."
-    },
-    "textContentOptions": {
-      "type": "object",
-      "description": "Options merged into getTextContent()."
-    }
-  },
-  "returns": {
-    "parser": {
-      "type": "function",
-      "description": "Parser adapter for PdfFile.importPdf()."
-    }
-  }
-}
-```
-
 #### `pdf.addChart`
 
 Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip.
@@ -192,47 +520,6 @@ Add a modeled bar/line chart region with categories, series, title, bbox, inspec
 **Schema returns:**
 
 - `chart` (PdfChart) — Inspectable chart facade with stable ID.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pageIndex": {
-      "type": "number",
-      "description": "Zero-based target page index."
-    },
-    "chartType": {
-      "type": "string",
-      "description": "bar or line."
-    },
-    "title": {
-      "type": "string",
-      "description": "Visible chart title."
-    },
-    "categories": {
-      "type": "string[]",
-      "required": true,
-      "description": "Category labels."
-    },
-    "series": {
-      "type": "object[]",
-      "required": true,
-      "description": "Series with name, numeric values, and optional color."
-    },
-    "bbox": {
-      "type": "number[]",
-      "description": "Page-space [left, top, width, height] in points."
-    }
-  },
-  "returns": {
-    "chart": {
-      "type": "PdfChart",
-      "description": "Inspectable chart facade with stable ID."
-    }
-  }
-}
-```
 
 #### `pdf.addImage`
 
@@ -255,49 +542,6 @@ Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and p
 **Schema returns:**
 
 - `image` (PdfImage) — Inspectable image facade with stable ID.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pageIndex": {
-      "type": "number",
-      "description": "Zero-based target page index."
-    },
-    "dataUrl": {
-      "type": "string",
-      "description": "Embedded image data URL; generated PDF export currently supports PNG."
-    },
-    "uri": {
-      "type": "string",
-      "description": "External image URI metadata."
-    },
-    "prompt": {
-      "type": "string",
-      "description": "Image generation/extraction prompt metadata."
-    },
-    "alt": {
-      "type": "string",
-      "description": "Alternative text."
-    },
-    "bbox": {
-      "type": "number[]",
-      "description": "Page-space [left, top, width, height] in points."
-    },
-    "fit": {
-      "type": "string",
-      "description": "contain or cover intent metadata."
-    }
-  },
-  "returns": {
-    "image": {
-      "type": "PdfImage",
-      "description": "Inspectable image facade with stable ID."
-    }
-  }
-}
-```
 
 #### `pdf.addPage`
 
@@ -322,53 +566,6 @@ Append a modeled PDF page with explicit point dimensions and optional text, posi
 
 - `page` (PdfPage) — Appended editable page facade.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "width": {
-      "type": "number",
-      "description": "Page width in points; defaults to 612."
-    },
-    "height": {
-      "type": "number",
-      "description": "Page height in points; defaults to 792."
-    },
-    "text": {
-      "type": "string",
-      "description": "Extractable page text."
-    },
-    "textItems": {
-      "type": "object[]",
-      "description": "Positioned text item models."
-    },
-    "regions": {
-      "type": "object[]",
-      "description": "Inspectable page-space regions."
-    },
-    "tables": {
-      "type": "object[]",
-      "description": "Modeled page tables."
-    },
-    "images": {
-      "type": "object[]",
-      "description": "Modeled page images."
-    },
-    "charts": {
-      "type": "object[]",
-      "description": "Modeled page charts."
-    }
-  },
-  "returns": {
-    "page": {
-      "type": "PdfPage",
-      "description": "Appended editable page facade."
-    }
-  }
-}
-```
-
 #### `pdf.addTable`
 
 Add a modeled table with cell values and a page-space bounding box to the first PDF page.
@@ -387,38 +584,6 @@ Add a modeled table with cell values and a page-space bounding box to the first 
 **Schema returns:**
 
 - `table` (PdfTable) — Inspectable table facade with stable ID.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "name": {
-      "type": "string",
-      "description": "Inspectable table name."
-    },
-    "values": {
-      "type": "unknown[][]",
-      "required": true,
-      "description": "Rectangular or ragged cell value matrix."
-    },
-    "bbox": {
-      "type": "number[]",
-      "description": "Page-space [left, top, width, height] in points."
-    },
-    "source": {
-      "type": "string",
-      "description": "Optional extraction/source provenance."
-    }
-  },
-  "returns": {
-    "table": {
-      "type": "PdfTable",
-      "description": "Inspectable table facade with stable ID."
-    }
-  }
-}
-```
 
 #### `pdf.addText`
 
@@ -443,54 +608,6 @@ Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/lay
 
 - `textItem` (object) — Positioned text item with stable ID.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "text": {
-      "type": "string",
-      "required": true,
-      "description": "Text content."
-    },
-    "pageIndex": {
-      "type": "number",
-      "description": "Zero-based target page index."
-    },
-    "bbox": {
-      "type": "number[]",
-      "description": "Page-space [left, top, width, height] in points."
-    },
-    "fontName": {
-      "type": "string",
-      "description": "Font family metadata."
-    },
-    "fontSize": {
-      "type": "number",
-      "description": "Font size in points."
-    },
-    "color": {
-      "type": "string",
-      "description": "Text color."
-    },
-    "bold": {
-      "type": "boolean",
-      "description": "Bold text flag."
-    },
-    "italic": {
-      "type": "boolean",
-      "description": "Italic text flag."
-    }
-  },
-  "returns": {
-    "textItem": {
-      "type": "object",
-      "description": "Positioned text item with stable ID."
-    }
-  }
-}
-```
-
 #### `pdf.extractTables`
 
 Extract modeled table values and bounding boxes across all pages or a selected page.
@@ -507,25 +624,6 @@ Extract modeled table values and bounding boxes across all pages or a selected p
 
 - `tables` (object[]) — Table records with page, ID, name, values, and bbox.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "page": {
-      "type": "number",
-      "description": "Optional one-based page number."
-    }
-  },
-  "returns": {
-    "tables": {
-      "type": "object[]",
-      "description": "Table records with page, ID, name, values, and bbox."
-    }
-  }
-}
-```
-
 #### `pdf.extractText`
 
 Extract modeled text across all pages or a selected page.
@@ -541,25 +639,6 @@ Extract modeled text across all pages or a selected page.
 **Schema returns:**
 
 - `text` (string) — Selected page text or all page text joined with blank lines.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "page": {
-      "type": "number",
-      "description": "Optional one-based page number."
-    }
-  },
-  "returns": {
-    "text": {
-      "type": "string",
-      "description": "Selected page text or all page text joined with blank lines."
-    }
-  }
-}
-```
 
 #### `pdf.inspect`
 
@@ -579,53 +658,6 @@ Emit bounded NDJSON for pages, text, positioned text items, layout regions, tabl
 **Schema returns:**
 
 - `inspection` (object) — Bounded { ndjson, truncated } inspection result.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "kind": {
-      "type": "string",
-      "description": "Comma-separated page, text, textItem, region, table, image, and chart record kinds."
-    },
-    "search": {
-      "type": "string",
-      "description": "Case-insensitive record filter."
-    },
-    "target": {
-      "type": "string",
-      "description": "Stable ID/anchor target; targetId, id, and anchor are aliases."
-    },
-    "before": {
-      "type": "number",
-      "description": "Records of context before target matches."
-    },
-    "after": {
-      "type": "number",
-      "description": "Records of context after target matches."
-    },
-    "include": {
-      "type": "string",
-      "description": "Comma-separated fields to keep."
-    },
-    "exclude": {
-      "type": "string",
-      "description": "Comma-separated fields to omit."
-    },
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum bounded NDJSON output size."
-    }
-  },
-  "returns": {
-    "inspection": {
-      "type": "object",
-      "description": "Bounded { ndjson, truncated } inspection result."
-    }
-  }
-}
-```
 
 #### `pdf.layoutJson`
 
@@ -648,45 +680,6 @@ Return modeled PDF page layout JSON with page text, positioned text items, layou
 
 - `layout` (object) — Point-based PDF page layout tree and optional slice metadata.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "page": {
-      "type": "number",
-      "description": "Optional one-based page selector."
-    },
-    "pageIndex": {
-      "type": "number",
-      "description": "Optional zero-based page selector."
-    },
-    "target": {
-      "type": "string",
-      "description": "Stable target ID/anchor."
-    },
-    "search": {
-      "type": "string",
-      "description": "Case-insensitive layout-record filter."
-    },
-    "before": {
-      "type": "number",
-      "description": "Context records before matches."
-    },
-    "after": {
-      "type": "number",
-      "description": "Context records after matches."
-    }
-  },
-  "returns": {
-    "layout": {
-      "type": "object",
-      "description": "Point-based PDF page layout tree and optional slice metadata."
-    }
-  }
-}
-```
-
 #### `pdf.render`
 
 Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters.
@@ -708,41 +701,6 @@ Render a modeled PDF page to SVG by default, return page layout JSON with { form
 
 - `blob` (FileBlob) — SVG, layout JSON, PDF, or renderer output.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pageIndex": {
-      "type": "number",
-      "description": "Zero-based page index for modeled SVG rendering."
-    },
-    "page": {
-      "type": "number",
-      "description": "One-based page selector used by layout/native renderer workflows."
-    },
-    "format": {
-      "type": "string",
-      "description": "svg by default, layout, pdf, png, ppm, or tiff with a renderer."
-    },
-    "source": {
-      "type": "string",
-      "description": "Set to pdf to render exported PDF bytes."
-    },
-    "renderer": {
-      "type": "function",
-      "description": "Optional PDF-capable renderer adapter."
-    }
-  },
-  "returns": {
-    "blob": {
-      "type": "FileBlob",
-      "description": "SVG, layout JSON, PDF, or renderer output."
-    }
-  }
-}
-```
-
 #### `pdf.resolve`
 
 Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts.
@@ -759,26 +717,6 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 - `object` (object|undefined) — Resolved editable facade/record or undefined.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "id": {
-      "type": "string",
-      "required": true,
-      "description": "Stable artifact, page, text, text-item, region, table, image, or chart ID."
-    }
-  },
-  "returns": {
-    "object": {
-      "type": "object|undefined",
-      "description": "Resolved editable facade/record or undefined."
-    }
-  }
-}
-```
-
 #### `pdf.verify`
 
 Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data.
@@ -794,25 +732,6 @@ Return QA issues for empty pages, Unicode dashes, text extraction sanity, page g
 **Schema returns:**
 
 - `report` (object) — PDF semantic QA result with ok, issues, ndjson, and truncated.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum bounded NDJSON issue output size."
-    }
-  },
-  "returns": {
-    "report": {
-      "type": "object",
-      "description": "PDF semantic QA result with ok, issues, ndjson, and truncated."
-    }
-  }
-}
-```
 
 #### `PdfArtifact.create`
 
@@ -833,37 +752,6 @@ Create a modeled PDF artifact with pages, text, table regions, and image regions
 
 - `pdf` (PdfArtifact) — Editable modeled PDF artifact.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "id": {
-      "type": "string",
-      "description": "Optional stable artifact ID."
-    },
-    "metadata": {
-      "type": "object",
-      "description": "Clean-room metadata preserved through generated-PDF roundtrip."
-    },
-    "text": {
-      "type": "string",
-      "description": "Convenience text for a single default page."
-    },
-    "pages": {
-      "type": "object[]",
-      "description": "Page models with width, height, text, textItems, regions, tables, images, and charts."
-    }
-  },
-  "returns": {
-    "pdf": {
-      "type": "PdfArtifact",
-      "description": "Editable modeled PDF artifact."
-    }
-  }
-}
-```
-
 #### `PdfFile.exportPdf`
 
 Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG images, and clean-room metadata.
@@ -879,26 +767,6 @@ Export a modeled artifact as a real multi-page PDF with positioned text, vector 
 **Schema returns:**
 
 - `blob` (FileBlob) — application/pdf bytes with modeled content and clean-room metadata.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pdf": {
-      "type": "PdfArtifact",
-      "required": true,
-      "description": "Modeled PDF artifact to serialize."
-    }
-  },
-  "returns": {
-    "blob": {
-      "type": "FileBlob",
-      "description": "application/pdf bytes with modeled content and clean-room metadata."
-    }
-  }
-}
-```
 
 #### `PdfFile.importPdf`
 
@@ -919,38 +787,6 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 - `pdf` (PdfArtifact) — Modeled PDF artifact with inspect/resolve/render/verify APIs.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "blob": {
-      "type": "FileBlob|Uint8Array",
-      "required": true,
-      "description": "PDF input bytes."
-    },
-    "parser": {
-      "type": "function",
-      "description": "Optional parser adapter returning pages/textItems/tables/images."
-    },
-    "preferParser": {
-      "type": "boolean",
-      "description": "Use parser even if clean-room metadata is embedded."
-    },
-    "parserName": {
-      "type": "string",
-      "description": "Name recorded in artifact metadata."
-    }
-  },
-  "returns": {
-    "pdf": {
-      "type": "PdfArtifact",
-      "description": "Modeled PDF artifact with inspect/resolve/render/verify APIs."
-    }
-  }
-}
-```
-
 #### `PdfFile.inspectPdf`
 
 Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity.
@@ -968,34 +804,6 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 **Schema returns:**
 
 - `inspection` (object) — PDF file summary plus bounded indirect object records.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pdf": {
-      "type": "FileBlob|Uint8Array",
-      "required": true,
-      "description": "PDF file bytes."
-    },
-    "maxObjects": {
-      "type": "number",
-      "description": "Maximum indirect object records to inspect."
-    },
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum bounded NDJSON output size."
-    }
-  },
-  "returns": {
-    "inspection": {
-      "type": "object",
-      "description": "PDF file summary plus bounded indirect object records."
-    }
-  }
-}
-```
 
 ## presentation
 
@@ -1067,38 +875,6 @@ Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, con
 
 - `package` (object) — PPTX package and part records with paths, sizes, content types, and optional previews.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "pptx": {
-      "type": "FileBlob|Uint8Array",
-      "required": true,
-      "description": "PPTX package bytes."
-    },
-    "includeText": {
-      "type": "boolean",
-      "description": "Include bounded XML, relationship, and JSON text previews."
-    },
-    "maxPreviewChars": {
-      "type": "number",
-      "description": "Maximum preview characters per textual package part."
-    },
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum bounded NDJSON output size."
-    }
-  },
-  "returns": {
-    "package": {
-      "type": "object",
-      "description": "PPTX package and part records with paths, sizes, content types, and optional previews."
-    }
-  }
-}
-```
-
 ## shared
 
 | Name | Kind | Summary |
@@ -1136,41 +912,6 @@ Create an optional node-canvas renderer adapter from open-office-artifact-tool/r
 
 - `renderer` (function) — SVG/PNG/JPEG/WebP to PNG/JPEG renderer adapter.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "canvas": {
-      "type": "object",
-      "description": "Injected node-canvas compatible module."
-    },
-    "width": {
-      "type": "number",
-      "description": "Output width override."
-    },
-    "height": {
-      "type": "number",
-      "description": "Output height override."
-    },
-    "background": {
-      "type": "string",
-      "description": "Canvas background color."
-    },
-    "outputOptions": {
-      "type": "object",
-      "description": "node-canvas encoder options."
-    }
-  },
-  "returns": {
-    "renderer": {
-      "type": "function",
-      "description": "SVG/PNG/JPEG/WebP to PNG/JPEG renderer adapter."
-    }
-  }
-}
-```
-
 #### `createLibreOfficeRenderer`
 
 Create a LibreOffice CLI renderer adapter from open-office-artifact-tool/renderers/libreoffice for DOCX/XLSX/PPTX/HTML/PDF FileBlob conversion, typically to PDF.
@@ -1193,49 +934,6 @@ Create a LibreOffice CLI renderer adapter from open-office-artifact-tool/rendere
 
 - `renderer` (function) — Office/HTML conversion renderer adapter.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "command": {
-      "type": "string",
-      "description": "soffice/LibreOffice executable path or command name."
-    },
-    "format": {
-      "type": "string",
-      "description": "Default target format, normally pdf."
-    },
-    "convertTo": {
-      "type": "string",
-      "description": "Explicit LibreOffice --convert-to filter value."
-    },
-    "timeoutMs": {
-      "type": "number",
-      "description": "CLI timeout."
-    },
-    "tempRoot": {
-      "type": "string",
-      "description": "Temporary directory root."
-    },
-    "argsBuilder": {
-      "type": "function",
-      "description": "Custom LibreOffice argument builder."
-    },
-    "keepTemp": {
-      "type": "boolean",
-      "description": "Keep temporary files for diagnostics."
-    }
-  },
-  "returns": {
-    "renderer": {
-      "type": "function",
-      "description": "Office/HTML conversion renderer adapter."
-    }
-  }
-}
-```
-
 #### `createNativeOfficeRenderer`
 
 Create a native Office renderer adapter from open-office-artifact-tool/native/office-bridge that calls a JSON stdin/stdout sidecar command with timeout, temp-file isolation, cleanup, and structured errors.
@@ -1257,49 +955,6 @@ Create a native Office renderer adapter from open-office-artifact-tool/native/of
 **Schema returns:**
 
 - `renderer` (function) — DOCX/XLSX/PPTX/PDF native Office renderer adapter.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "command": {
-      "type": "string",
-      "description": "Native Office bridge executable."
-    },
-    "args": {
-      "type": "string[]",
-      "description": "Arguments passed before the bridge reads its JSON request from stdin."
-    },
-    "timeoutMs": {
-      "type": "number",
-      "description": "Bridge request timeout."
-    },
-    "format": {
-      "type": "string",
-      "description": "Default requested output format."
-    },
-    "inputType": {
-      "type": "string",
-      "description": "Default input MIME type."
-    },
-    "outputType": {
-      "type": "string",
-      "description": "Default output MIME type."
-    },
-    "nativeOptions": {
-      "type": "object",
-      "description": "Operation-specific native Office options."
-    }
-  },
-  "returns": {
-    "renderer": {
-      "type": "function",
-      "description": "DOCX/XLSX/PPTX/PDF native Office renderer adapter."
-    }
-  }
-}
-```
 
 #### `createPlaywrightRenderer`
 
@@ -1334,45 +989,6 @@ Create an optional Playwright renderer adapter from open-office-artifact-tool/re
 
 renderer adapter function for renderArtifact(...)
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "viewport": {
-      "type": "object",
-      "description": "Chromium viewport width and height; SVG geometry is inferred when omitted."
-    },
-    "deviceScaleFactor": {
-      "type": "number",
-      "description": "Chromium device scale factor."
-    },
-    "allowNetwork": {
-      "type": "boolean",
-      "description": "Permit network requests; disabled by default for deterministic rendering."
-    },
-    "timeoutMs": {
-      "type": "number",
-      "description": "Navigation and rendering timeout."
-    },
-    "background": {
-      "type": "string",
-      "description": "Page background CSS color."
-    },
-    "chromium": {
-      "type": "object",
-      "description": "Injected Playwright Chromium launcher for tests or custom runtimes."
-    }
-  },
-  "returns": {
-    "renderer": {
-      "type": "function",
-      "description": "SVG/HTML to PNG/WebP/JPEG/PDF renderer adapter."
-    }
-  }
-}
-```
-
 #### `createPopplerRenderer`
 
 Create a Poppler CLI renderer adapter from open-office-artifact-tool/renderers/poppler for application/pdf FileBlob page rasterization to PNG, PPM, or TIFF.
@@ -1395,49 +1011,6 @@ Create a Poppler CLI renderer adapter from open-office-artifact-tool/renderers/p
 
 - `renderer` (function) — PDF to PNG/PPM/TIFF page renderer adapter.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "command": {
-      "type": "string",
-      "description": "pdftoppm executable path or command name."
-    },
-    "dpi": {
-      "type": "number",
-      "description": "Raster resolution."
-    },
-    "page": {
-      "type": "number",
-      "description": "One-based PDF page number; pageIndex is the zero-based alias."
-    },
-    "timeoutMs": {
-      "type": "number",
-      "description": "CLI timeout."
-    },
-    "tempRoot": {
-      "type": "string",
-      "description": "Temporary directory root."
-    },
-    "argsBuilder": {
-      "type": "function",
-      "description": "Custom pdftoppm argument builder."
-    },
-    "keepTemp": {
-      "type": "boolean",
-      "description": "Keep temporary input/output files for diagnostics."
-    }
-  },
-  "returns": {
-    "renderer": {
-      "type": "function",
-      "description": "PDF to PNG/PPM/TIFF page renderer adapter."
-    }
-  }
-}
-```
-
 #### `createSharpRenderer`
 
 Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG.
@@ -1459,49 +1032,6 @@ Create an optional sharp renderer adapter from open-office-artifact-tool/rendere
 **Schema returns:**
 
 - `renderer` (function) — SVG/PNG/JPEG/WebP raster renderer adapter.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "sharp": {
-      "type": "function",
-      "description": "Injected sharp factory; otherwise the optional peer dependency is loaded."
-    },
-    "resize": {
-      "type": "object",
-      "description": "sharp resize options."
-    },
-    "flatten": {
-      "type": "boolean|object",
-      "description": "Flatten transparency using background options."
-    },
-    "background": {
-      "type": "string|object",
-      "description": "Flatten background color."
-    },
-    "pngOptions": {
-      "type": "object",
-      "description": "sharp PNG encoder options."
-    },
-    "webpOptions": {
-      "type": "object",
-      "description": "sharp WebP encoder options."
-    },
-    "jpegOptions": {
-      "type": "object",
-      "description": "sharp JPEG encoder options."
-    }
-  },
-  "returns": {
-    "renderer": {
-      "type": "function",
-      "description": "SVG/PNG/JPEG/WebP raster renderer adapter."
-    }
-  }
-}
-```
 
 #### `renderArtifact`
 
@@ -1535,38 +1065,6 @@ Render an artifact through its render/export method, attach normalized FileBlob 
 
 FileBlob with normalized render metadata
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "artifact": {
-      "type": "Workbook|Presentation|DocumentModel|PdfArtifact",
-      "required": true,
-      "description": "Artifact facade to render through its native preview/export path."
-    },
-    "format": {
-      "type": "string",
-      "description": "svg, png, webp, jpeg, pdf, layout, or an output MIME type."
-    },
-    "renderer": {
-      "type": "function",
-      "description": "Optional pluggable renderer adapter for raster/PDF conversion."
-    },
-    "source": {
-      "type": "string",
-      "description": "Optional native source such as docx or pdf for renderer gates."
-    }
-  },
-  "returns": {
-    "blob": {
-      "type": "FileBlob",
-      "description": "Rendered output with normalized metadata."
-    }
-  }
-}
-```
-
 #### `renderFileWithNativeOffice`
 
 Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output.
@@ -1590,59 +1088,6 @@ Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Offi
 **Schema returns:**
 
 - `blob` (FileBlob) — Native Office bridge output bytes and renderer metadata.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "input": {
-      "type": "FileBlob|Uint8Array",
-      "required": true,
-      "description": "Office/PDF input bytes."
-    },
-    "command": {
-      "type": "string",
-      "required": true,
-      "description": "Native Office bridge executable."
-    },
-    "args": {
-      "type": "string[]",
-      "description": "Arguments passed to the bridge executable."
-    },
-    "operation": {
-      "type": "string",
-      "description": "Bridge operation, defaulting to render."
-    },
-    "format": {
-      "type": "string",
-      "description": "Requested output format."
-    },
-    "artifactKind": {
-      "type": "string",
-      "description": "document, workbook, presentation, or pdf."
-    },
-    "timeoutMs": {
-      "type": "number",
-      "description": "Bridge request timeout."
-    },
-    "nativeOptions": {
-      "type": "object",
-      "description": "Operation-specific native Office options."
-    },
-    "keepTemp": {
-      "type": "boolean",
-      "description": "Keep temporary files for diagnostics."
-    }
-  },
-  "returns": {
-    "blob": {
-      "type": "FileBlob",
-      "description": "Native Office bridge output bytes and renderer metadata."
-    }
-  }
-}
-```
 
 #### `verifyArtifact`
 
@@ -1668,30 +1113,6 @@ Run an artifact's verify() method and return a bounded NDJSON QA report.
 **Returns:**
 
 { artifactKind, ok, issues, ndjson, truncated }
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "artifact": {
-      "type": "Workbook|Presentation|DocumentModel|PdfArtifact",
-      "required": true,
-      "description": "Artifact exposing a verify() method."
-    },
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum bounded NDJSON output size."
-    }
-  },
-  "returns": {
-    "report": {
-      "type": "object",
-      "description": "Semantic QA result with artifactKind, ok, issues, ndjson, and truncated."
-    }
-  }
-}
-```
 
 #### `visualQaArtifact`
 
@@ -1730,58 +1151,6 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 **Returns:**
 
 { ok, blob, summary, issues, ndjson }
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "artifact": {
-      "type": "Workbook|Presentation|DocumentModel|PdfArtifact",
-      "required": true,
-      "description": "Artifact to render and compare."
-    },
-    "format": {
-      "type": "string",
-      "description": "Requested render format such as svg, png, ppm, jpeg, webp, or pdf."
-    },
-    "renderer": {
-      "type": "function",
-      "description": "Optional renderer adapter used for format conversion."
-    },
-    "baseline": {
-      "type": "FileBlob|Uint8Array",
-      "description": "Expected render bytes; expected and baselineBlob are aliases."
-    },
-    "pixelDiff": {
-      "type": "boolean|object",
-      "description": "Enable PNG/PPM pixel comparison and optional thresholds."
-    },
-    "allowChange": {
-      "type": "boolean",
-      "description": "Allow baseline byte/pixel changes without emitting issues."
-    },
-    "minBytes": {
-      "type": "number",
-      "description": "Warn when the render is smaller than this byte count."
-    },
-    "maxBytes": {
-      "type": "number",
-      "description": "Warn when the render exceeds this byte count."
-    },
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum bounded NDJSON output size."
-    }
-  },
-  "returns": {
-    "report": {
-      "type": "object",
-      "description": "Visual QA result with ok, blob, summary, issues, ndjson, and truncation metadata."
-    }
-  }
-}
-```
 
 ## workbook
 
@@ -2647,42 +2016,6 @@ Add a conditional formatting rule; cellIs/expression/containsText/colorScale rul
 
 - `conditionalFormat` (object) — Inspectable conditional-format rule with stable id.
 
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "ruleType": {
-      "type": "string",
-      "required": true,
-      "description": "cellIs, expression, containsText, or colorScale."
-    },
-    "formula": {
-      "type": "string|number",
-      "description": "Rule formula or scalar threshold."
-    },
-    "operator": {
-      "type": "string",
-      "description": "Comparison operator for cellIs rules."
-    },
-    "format": {
-      "type": "object",
-      "description": "Style patch applied when the rule matches."
-    },
-    "colors": {
-      "type": "string[]",
-      "description": "Two or three colors for colorScale rules."
-    }
-  },
-  "returns": {
-    "conditionalFormat": {
-      "type": "object",
-      "description": "Inspectable conditional-format rule with stable id."
-    }
-  }
-}
-```
-
 #### `range.format`
 
 Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes.
@@ -2702,41 +2035,6 @@ Assign basic cell style metadata such as fill, font, numberFormat, alignment, an
 **Schema returns:**
 
 - `range` (Range) — The formatted range facade.
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "fill": {
-      "type": "string",
-      "description": "Cell background color token or hex color."
-    },
-    "font": {
-      "type": "object",
-      "description": "Font properties: bold, italic, color, size, name."
-    },
-    "numberFormat": {
-      "type": "string",
-      "description": "Excel number format code."
-    },
-    "alignment": {
-      "type": "object",
-      "description": "horizontal, vertical, and wrapText alignment options."
-    },
-    "border": {
-      "type": "object",
-      "description": "Basic border style and color."
-    }
-  },
-  "returns": {
-    "range": {
-      "type": "Range",
-      "description": "The formatted range facade."
-    }
-  }
-}
-```
 
 #### `workbook.definedNames.add`
 
@@ -2793,49 +2091,6 @@ Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, com
 **Returns:**
 
 { ndjson, truncated } bounded NDJSON records
-
-**Schema:**
-
-```json
-{
-  "parameters": {
-    "kind": {
-      "type": "string",
-      "description": "Comma-separated record kinds such as formula, table, style, computedStyle, chart, image."
-    },
-    "target": {
-      "type": "string",
-      "description": "Stable ID, anchor, or A1 cell/range to slice results around."
-    },
-    "search": {
-      "type": "string",
-      "description": "Case-insensitive text filter over inspect records."
-    },
-    "include": {
-      "type": "string",
-      "description": "Comma-separated top-level fields to keep."
-    },
-    "exclude": {
-      "type": "string",
-      "description": "Comma-separated top-level fields to omit."
-    },
-    "maxChars": {
-      "type": "number",
-      "description": "Maximum NDJSON output size before truncation notice."
-    }
-  },
-  "returns": {
-    "ndjson": {
-      "type": "string",
-      "description": "Bounded newline-delimited JSON records."
-    },
-    "truncated": {
-      "type": "boolean",
-      "description": "True when maxChars truncated the output."
-    }
-  }
-}
-```
 
 #### `workbook.structuredReferences`
 

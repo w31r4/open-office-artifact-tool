@@ -705,11 +705,13 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, header/footer, comment, style, and editable text-range IDs." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect a DOCX zip package as bounded NDJSON part records with safe part paths, sizes, content types, and optional XML/JSON previews." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob." },
 
@@ -1187,9 +1189,169 @@ const HELP_DETAIL_OVERRIDES = {
   },
 };
 
+function helpSchema(parameters, returnName, returnType, description) {
+  return { parameters, returns: { [returnName]: { type: returnType, description } } };
+}
+
+const DOCUMENT_HELP_SCHEMAS = {
+  "DocumentModel.create": helpSchema({
+    name: { type: "string", description: "Document name." },
+    designPreset: { type: "string", description: "Initial design preset name." },
+    styles: { type: "object", description: "Named style definitions." },
+    paragraphs: { type: "string[]", description: "Convenience paragraph list; the first paragraph uses Title style." },
+    blocks: { type: "object[]", description: "Ordered paragraph/list/table/link/field/citation/image/section/change block models." },
+    headers: { type: "object[]", description: "Header block models." },
+    footers: { type: "object[]", description: "Footer block models." },
+    comments: { type: "object[]", description: "Comment models targeting stable block IDs." },
+  }, "document", "DocumentModel", "Editable document facade."),
+  "document.addParagraph": helpSchema({
+    text: { type: "string", required: true, description: "Paragraph text." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+    name: { type: "string", description: "Inspectable block name." },
+    runs: { type: "object[]", description: "Optional run-level text/style spans." },
+  }, "paragraph", "DocumentParagraphBlock", "Appended paragraph block with stable ID."),
+  "document.addListItem": helpSchema({
+    text: { type: "string", required: true, description: "List item text." },
+    listType: { type: "string", description: "bullet or numbered." },
+    level: { type: "number", description: "Zero-based list nesting level." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "listItem", "DocumentListItemBlock", "Appended native-numbering list item."),
+  "document.addHeader": helpSchema({
+    text: { type: "string", required: true, description: "Header text." },
+    name: { type: "string", description: "Inspectable block name." },
+    styleId: { type: "string", description: "Named style ID." },
+  }, "header", "DocumentHeaderFooterBlock", "Appended header block."),
+  "document.addFooter": helpSchema({
+    text: { type: "string", required: true, description: "Footer text." },
+    name: { type: "string", description: "Inspectable block name." },
+    styleId: { type: "string", description: "Named style ID." },
+  }, "footer", "DocumentHeaderFooterBlock", "Appended footer block."),
+  "document.addHyperlink": helpSchema({
+    text: { type: "string", required: true, description: "Visible link text." },
+    url: { type: "string", required: true, description: "External hyperlink URL." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "hyperlink", "DocumentHyperlinkBlock", "Appended external hyperlink block."),
+  "document.addField": helpSchema({
+    instruction: { type: "string", required: true, description: "Word field instruction such as PAGE, REF, PAGEREF, or TOC." },
+    display: { type: "string", description: "Visible fallback/result text." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "field", "DocumentFieldBlock", "Appended field block."),
+  "document.addCitation": helpSchema({
+    text: { type: "string", required: true, description: "Visible citation text." },
+    metadata: { type: "object", description: "Structured citation metadata." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "citation", "DocumentCitationBlock", "Appended citation block."),
+  "document.addImage": helpSchema({
+    dataUrl: { type: "string", description: "Embedded image data URL." },
+    uri: { type: "string", description: "External image URI metadata." },
+    prompt: { type: "string", description: "Generation/source prompt metadata." },
+    alt: { type: "string", description: "Alternative text." },
+    widthPx: { type: "number", description: "Rendered width in pixels." },
+    heightPx: { type: "number", description: "Rendered height in pixels." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "image", "DocumentImageBlock", "Appended image block."),
+  "document.addSection": helpSchema({
+    breakType: { type: "string", description: "Section break type such as nextPage or continuous." },
+    orientation: { type: "string", description: "portrait or landscape." },
+    pageSize: { type: "object", description: "Page width/height in twentieths of a point." },
+    margins: { type: "object", description: "Top/right/bottom/left margins in twentieths of a point." },
+  }, "section", "DocumentSectionBlock", "Appended section break block."),
+  "document.addChange": helpSchema({
+    changeType: { type: "string", required: true, description: "insert or delete." },
+    text: { type: "string", required: true, description: "Revision text." },
+    author: { type: "string", description: "Revision author." },
+    date: { type: "string", description: "Revision timestamp." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "change", "DocumentChangeBlock", "Appended tracked-change block."),
+  "document.addInsertion": helpSchema({
+    text: { type: "string", required: true, description: "Inserted text." },
+    author: { type: "string", description: "Revision author." },
+    date: { type: "string", description: "Revision timestamp." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "change", "DocumentChangeBlock", "Appended tracked insertion."),
+  "document.addDeletion": helpSchema({
+    text: { type: "string", required: true, description: "Deleted text." },
+    author: { type: "string", description: "Revision author." },
+    date: { type: "string", description: "Revision timestamp." },
+    styleId: { type: "string", description: "Named paragraph style ID." },
+  }, "change", "DocumentChangeBlock", "Appended tracked deletion."),
+  "document.addTable": helpSchema({
+    values: { type: "unknown[][]", required: true, description: "Table cell value matrix." },
+    name: { type: "string", description: "Inspectable table name." },
+    styleId: { type: "string", description: "Table style ID." },
+    widthDxa: { type: "number", description: "Table width in twentieths of a point." },
+    columnWidthsDxa: { type: "number[]", description: "Column widths in twentieths of a point." },
+    cellMarginsDxa: { type: "object", description: "Cell margins in twentieths of a point." },
+    borderColor: { type: "string", description: "Table border color." },
+    headerFill: { type: "string", description: "Header-row fill color." },
+  }, "table", "DocumentTableBlock", "Appended table block."),
+  "document.addComment": helpSchema({
+    target: { type: "string|object", required: true, description: "Stable block ID or block facade." },
+    text: { type: "string", required: true, description: "Comment text." },
+    author: { type: "string", description: "Comment author." },
+    resolved: { type: "boolean", description: "Initial resolution state." },
+  }, "comment", "DocumentComment", "Attached comment with stable ID."),
+  "document.applyDesignPreset": helpSchema({
+    name: { type: "string", required: true, description: "report, memo, or a custom preset name." },
+    styles: { type: "object", description: "Style overrides merged into the preset." },
+  }, "document", "DocumentModel", "The mutated document facade."),
+  "document.styles.effective": helpSchema({
+    styleId: { type: "string", required: true, description: "Named style ID to resolve through basedOn inheritance." },
+  }, "style", "object|undefined", "Resolved effective style or undefined."),
+  "document.inspect": helpSchema({
+    kind: { type: "string", description: "Comma-separated block/comment/style/textRange/layout kinds." },
+    search: { type: "string", description: "Case-insensitive record filter." },
+    target: { type: "string", description: "Stable target ID/anchor." },
+    before: { type: "number", description: "Context records before matches." },
+    after: { type: "number", description: "Context records after matches." },
+    include: { type: "string", description: "Comma-separated fields to keep." },
+    exclude: { type: "string", description: "Comma-separated fields to omit." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+  }, "inspection", "object", "Bounded { ndjson, truncated } inspection result."),
+  "document.resolve": helpSchema({
+    id: { type: "string", required: true, description: "Stable document, block, header/footer, comment, style, or text-range ID." },
+  }, "object", "object|undefined", "Resolved editable facade/record or undefined."),
+  "document.textRange": helpSchema({
+    id: { type: "string", required: true, description: "Stable text range ID ending in /text." },
+  }, "textRange", "TextRange|undefined", "Editable text-range facade or undefined."),
+  "document.layoutJson": helpSchema({
+    pageWidth: { type: "number", description: "Modeled page width in pixels." },
+    pageHeight: { type: "number", description: "Modeled page height in pixels." },
+    margin: { type: "number", description: "Modeled page margin in pixels." },
+    target: { type: "string", description: "Stable target ID/anchor." },
+    search: { type: "string", description: "Case-insensitive element filter." },
+    before: { type: "number", description: "Context elements before matches." },
+    after: { type: "number", description: "Context elements after matches." },
+  }, "layout", "object", "Page-aware document layout tree."),
+  "document.render": helpSchema({
+    format: { type: "string", description: "svg by default, layout, docx, pdf, png, or another renderer output." },
+    source: { type: "string", description: "Set to docx to render exported DOCX bytes." },
+    renderer: { type: "function", description: "Optional LibreOffice/native/raster renderer adapter." },
+    pageWidth: { type: "number", description: "Modeled SVG/layout page width." },
+    pageHeight: { type: "number", description: "Modeled SVG/layout page height." },
+  }, "blob", "FileBlob", "SVG, layout JSON, DOCX, or converted renderer output."),
+  "document.verify": helpSchema({
+    visualQa: { type: "boolean", description: "Include modeled layout overflow checks." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON issue output size." },
+  }, "report", "object", "Document semantic/layout QA result."),
+  "DocumentFile.exportDocx": helpSchema({
+    document: { type: "DocumentModel", required: true, description: "Document facade to serialize." },
+  }, "blob", "FileBlob", "DOCX package bytes."),
+  "DocumentFile.importDocx": helpSchema({
+    docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
+  }, "document", "DocumentModel", "Imported editable document facade."),
+  "DocumentFile.inspectDocx": helpSchema({
+    docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
+    includeText: { type: "boolean", description: "Include bounded XML/JSON/relationship previews." },
+    maxPreviewChars: { type: "number", description: "Maximum preview characters per textual part." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+  }, "package", "object", "DOCX package part records and bounded NDJSON."),
+};
+
 for (const item of HELP_CATALOG) {
   const details = HELP_DETAIL_OVERRIDES[item.name];
   if (details) Object.assign(item, details);
+  if (item.artifactKind === "document" && !item.schema && DOCUMENT_HELP_SCHEMAS[item.name]) item.schema = DOCUMENT_HELP_SCHEMAS[item.name];
   if (item.name.startsWith("fx.") && !item.schema) {
     const functionName = item.name.slice(3);
     const returnType = item.category === "dynamic-array"

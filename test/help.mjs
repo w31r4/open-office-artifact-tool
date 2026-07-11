@@ -22,6 +22,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "slide.applyLayout"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.layoutJson"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "document.resolve"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "DocumentFile.importDocx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addTable"));
@@ -79,6 +81,11 @@ assert.equal(pdfCatalog.length, 17);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.returns?.blob?.type, "FileBlob");
+const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
+assert.equal(documentCatalog.length, 27);
+assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -102,6 +109,8 @@ assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
+assert.match(document.help("document.resolve").ndjson, /stable document/);
+assert.match(document.help("DocumentFile.importDocx").ndjson, /Import DOCX bytes/);
 assert.match(pdf.help("extractTables").ndjson, /table values/);
 assert.match(pdf.help("createPdfjsParser").ndjson, /positioned text/);
 assert.match(helpArtifact("*", "renderArtifact").ndjson, /FileBlob metadata/);
@@ -137,5 +146,7 @@ assert.match(apiDocs, /`dpi` \(number\)/);
 assert.match(apiDocs, /#### `visualQaArtifact`/);
 assert.match(apiDocs, /#### `pdf\.addPage`/);
 assert.match(apiDocs, /#### `pdf\.addTable`/);
+assert.match(apiDocs, /#### `document\.resolve`/);
+assert.match(apiDocs, /#### `DocumentFile\.importDocx`/);
 
 console.log("help smoke ok");
