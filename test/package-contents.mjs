@@ -18,6 +18,9 @@ for (const required of [
   "skills/spreadsheets/SKILL.md",
   "skills/spreadsheets/scripts/verify-workbook.mjs",
   "skills/spreadsheets/fixtures/formula-summary.json",
+  "skills/documents/SKILL.md",
+  "skills/documents/scripts/verify-document.mjs",
+  "skills/documents/fixtures/business-brief.json",
 ]) {
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }
@@ -26,4 +29,3 @@ assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith
 assert.ok(report.unpackedSize < 1_000_000, `npm package unpacked size unexpectedly large: ${report.unpackedSize}`);
 
 console.log("package contents smoke ok");
-

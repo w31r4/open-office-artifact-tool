@@ -194,7 +194,7 @@ Outputs are written to `OUTPUT_DIR` or a temp example directory.
 
 ## Runnable agent skills
 
-Project-local clean-room agent workflows live under [`skills/`](skills/). The first runnable adapter is [`skills/spreadsheets/SKILL.md`](skills/spreadsheets/SKILL.md), which uses this package's public APIs for authoring, durable XLSX roundtrip, bounded inspect evidence, semantic verification, layout export, and SVG or Playwright-backed visual QA.
+Project-local clean-room agent workflows live under [`skills/`](skills/). [`skills/spreadsheets/SKILL.md`](skills/spreadsheets/SKILL.md) uses this package's public APIs for authoring, durable XLSX roundtrip, bounded inspect evidence, semantic verification, layout export, and SVG or Playwright-backed visual QA. [`skills/documents/SKILL.md`](skills/documents/SKILL.md) adds durable DOCX roundtrip, package-part inspection, modeled QA, and optional real LibreOffice PDF + Poppler page-PNG verification.
 
 ```sh
 node skills/spreadsheets/scripts/run-fixture.mjs \
@@ -207,9 +207,14 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
   --sheet Summary \
   --range A1:D4 \
   --render-format png
+
+node skills/documents/scripts/run-fixture.mjs \
+  --fixture skills/documents/fixtures/business-brief.json \
+  --output-dir tmp/document-skill-fixture \
+  --native-render required
 ```
 
-The skill directory is included in the npm package. Documents, Presentations, and PDF workflow adapters remain roadmap work.
+The skill directory is included in the npm package. Presentations and PDF workflow adapters remain roadmap work.
 
 ## Release readiness
 

@@ -1,0 +1,50 @@
+{
+  "name": "business-brief",
+  "outputName": "business-brief.docx",
+  "designPreset": "report",
+  "headers": [
+    { "name": "running-header", "text": "Clean-room document workflow" }
+  ],
+  "footers": [
+    { "name": "running-footer", "text": "Internal QA fixture" }
+  ],
+  "blocks": [
+    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Office artifact readiness brief" },
+    { "kind": "paragraph", "name": "lead", "styleId": "Normal", "text": "This brief verifies that an agent can create, inspect, roundtrip, render, and validate a real DOCX artifact using only public clean-room APIs." },
+    { "kind": "paragraph", "name": "recommendation-heading", "styleId": "Heading1", "text": "Recommendation" },
+    { "kind": "paragraph", "name": "recommendation", "styleId": "Normal", "text": "Use semantic verification together with native page rendering before delivery." },
+    { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "text": "Inspect stable document blocks and comments." },
+    { "kind": "listItem", "name": "render-step", "styleId": "Normal", "listType": "bullet", "text": "Render the exported DOCX through LibreOffice and Poppler." },
+    {
+      "kind": "table",
+      "name": "readiness-table",
+      "styleId": "TableGrid",
+      "values": [
+        ["Gate", "Evidence", "Status"],
+        ["Semantic", "inspect + verify", "Pass"],
+        ["Package", "DOCX parts", "Pass"],
+        ["Visual", "page PNG", "Required"]
+      ]
+    },
+    { "kind": "hyperlink", "name": "standards-link", "styleId": "Normal", "text": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk" },
+    { "kind": "citation", "name": "source-note", "styleId": "Normal", "text": "Source: ECMA-376 Office Open XML", "metadata": { "source": "ECMA-376", "url": "https://ecma-international.org/publications-and-standards/standards/ecma-376/" } },
+    { "kind": "image", "name": "status-mark", "styleId": "Normal", "alt": "Green status mark", "widthPx": 40, "heightPx": 40, "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=" },
+    { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
+  ],
+  "comments": [
+    { "targetName": "recommendation-heading", "author": "QA Agent", "text": "Confirm this recommendation after native render review." }
+  ],
+  "expectInspect": [
+    { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
+    { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
+    { "kind": "table", "pattern": "readiness-table" },
+    { "kind": "comment", "pattern": "native render review" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,style,layout",
+    "maxChars": 20000
+  }
+}
+
