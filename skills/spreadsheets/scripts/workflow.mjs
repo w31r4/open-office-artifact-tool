@@ -91,7 +91,7 @@ async function renderNativePages(xlsxBlob, outputDir, options = {}) {
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const baselinePath = baselineDir ? path.join(baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
     const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
-    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), pixelThreshold: options.pixelThreshold, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
+    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
     await png.save(pagePath);
     if (options.writeBaseline && baselinePath) await png.save(baselinePath);
     const diffPath = qa.diffBlob ? path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`) : undefined;
@@ -176,6 +176,8 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     baseline,
     pixelDiff: Boolean(baseline && ["png", "webp", "jpeg", "jpg"].includes(renderFormat)),
     pixelThreshold: options.pixelThreshold,
+    diffAlignment: options.diffAlignment,
+    diffPalette: options.diffPalette,
     minBytes: options.minBytes ?? 20,
     maxChars: options.maxChars ?? 16_000,
   });
@@ -236,6 +238,8 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
         baseline: targetBaseline,
         pixelDiff: Boolean(targetBaseline && ["png", "webp", "jpeg", "jpg"].includes(renderFormat)),
         pixelThreshold: options.pixelThreshold,
+        diffAlignment: options.diffAlignment,
+        diffPalette: options.diffPalette,
         minBytes: options.minBytes ?? 20,
         maxChars: options.maxChars ?? 16_000,
       });
@@ -313,6 +317,8 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     baselineDir: options.baselineDir,
     writeBaseline: options.writeBaseline,
     pixelThreshold: options.pixelThreshold,
+    diffAlignment: options.diffAlignment,
+    diffPalette: options.diffPalette,
     allSheets: options.allSheets,
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
   });

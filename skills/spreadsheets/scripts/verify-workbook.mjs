@@ -24,6 +24,8 @@ export async function main(argv = process.argv.slice(2)) {
     baselineDir: args["baseline-dir"],
     writeBaseline: args["write-baseline"] === "true",
     pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined,
+    diffAlignment: args["diff-alignment"],
+    diffPalette: args["diff-color"] || args["diff-unchanged-color"] ? { changed: args["diff-color"], unchanged: args["diff-unchanged-color"] } : undefined,
     allSheets: args["all-sheets"] === "true",
     nativeRender: args["native-render"],
     maxChars: args["max-chars"] ? Number(args["max-chars"]) : undefined,

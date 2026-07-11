@@ -127,7 +127,7 @@ async function renderNativePages(docxBlob, outputDir, options = {}) {
     await png.save(pagePath);
     const baselinePath = baselineDir ? path.join(baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
     const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
-    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000, pixelThreshold: options.pixelThreshold });
+    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette });
     if (options.writeBaseline && baselinePath) await png.save(baselinePath);
     const diffPath = qa.diffBlob ? path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`) : undefined;
     if (diffPath) { await fs.mkdir(path.dirname(diffPath), { recursive: true }); await qa.diffBlob.save(diffPath); }
@@ -166,6 +166,8 @@ export async function verifyDocumentFile(inputPath, options = {}) {
     baseline: modelBaseline,
     pixelDiff: Boolean(modelBaseline && ["png", "webp", "jpeg", "jpg"].includes(previewFormat)),
     pixelThreshold: options.pixelThreshold,
+    diffAlignment: options.diffAlignment,
+    diffPalette: options.diffPalette,
     minBytes: options.minBytes ?? 20,
     maxChars,
   });
@@ -240,6 +242,8 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     baselineDir: options.baselineDir,
     writeBaseline: options.writeBaseline,
     pixelThreshold: options.pixelThreshold,
+    diffAlignment: options.diffAlignment,
+    diffPalette: options.diffPalette,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
   });

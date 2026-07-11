@@ -518,7 +518,7 @@ async function compareRasterPixels(bytes, baselineBytes, options = {}) {
   const format = actualFormat === baselineFormat ? actualFormat : `${actualFormat}/${baselineFormat}`;
   const metrics = compareRgbaPixels(actual, expected, { ...options, threshold, format, actualFormat, baselineFormat });
   let diffBytes;
-  if (metrics.changed && metrics.diffPixels) diffBytes = encodePngRgba(metrics.width, metrics.height, metrics.diffPixels);
+  if (metrics.changed && metrics.diffPixels) diffBytes = encodePngRgba(metrics.diffWidth || metrics.width, metrics.diffHeight || metrics.height, metrics.diffPixels);
   delete metrics.diffPixels;
   return { metrics, diffBytes };
 }
@@ -556,10 +556,36 @@ function encodePngRgba(width, height, pixels) {
   return new Uint8Array(Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND")]));
 }
 
+function qaRgbColor(value, fallback) {
+  if (typeof value === "string") {
+    const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(value);
+    if (short) return short.slice(1).map((part) => Number.parseInt(part + part, 16));
+    const hex = /^#([0-9a-f]{6})$/i.exec(value)?.[1];
+    if (hex) return [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+  }
+  if (Array.isArray(value) && value.length >= 3) return value.slice(0, 3).map((part) => Math.max(0, Math.min(255, Math.round(Number(part) || 0))));
+  return fallback;
+}
+
+function rgbaAt(image, canvasX, canvasY, offsetX, offsetY) {
+  const x = canvasX - offsetX;
+  const y = canvasY - offsetY;
+  if (x < 0 || y < 0 || x >= image.width || y >= image.height) return [0, 0, 0, 0];
+  const index = (y * image.width + x) * 4;
+  return image.pixels.subarray(index, index + 4);
+}
+
 function compareRgbaPixels(actual, expected, options = {}) {
   const threshold = Math.max(0, Number(options.threshold ?? options.pixelThreshold ?? 0));
+  const requestedAlignment = String(options.diffAlignment ?? options.alignment ?? "strict").trim().toLowerCase();
+  const alignment = ["strict", "top-left", "center"].includes(requestedAlignment) ? requestedAlignment : "strict";
+  const dimensionMismatch = actual.width !== expected.width || actual.height !== expected.height;
+  const canvasWidth = dimensionMismatch && alignment !== "strict" ? Math.max(actual.width, expected.width) : actual.width;
+  const canvasHeight = dimensionMismatch && alignment !== "strict" ? Math.max(actual.height, expected.height) : actual.height;
   const result = {
     format: options.format || "rgba",
+    actualFormat: options.actualFormat,
+    baselineFormat: options.baselineFormat,
     width: actual.width,
     height: actual.height,
     baselineWidth: expected.width,
@@ -570,37 +596,59 @@ function compareRgbaPixels(actual, expected, options = {}) {
     mismatchRatio: 0,
     maxChannelDelta: 0,
     meanChannelDelta: 0,
+    alignment,
   };
-  if (actual.width !== expected.width || actual.height !== expected.height) {
+  if (dimensionMismatch && alignment === "strict") {
     result.dimensionMismatch = true;
     result.differentPixels = Math.max(result.pixels, expected.width * expected.height);
     result.mismatchRatio = 1;
     result.changed = true;
     return result;
   }
-  const diffPixels = options.diffImage === false ? undefined : new Uint8Array(actual.pixels.length);
+  if (dimensionMismatch) {
+    result.dimensionMismatch = true;
+    result.diffWidth = canvasWidth;
+    result.diffHeight = canvasHeight;
+    result.comparisonPixels = canvasWidth * canvasHeight;
+    result.pixels = result.comparisonPixels;
+  }
+  const actualOffsetX = alignment === "center" ? Math.floor((canvasWidth - actual.width) / 2) : 0;
+  const actualOffsetY = alignment === "center" ? Math.floor((canvasHeight - actual.height) / 2) : 0;
+  const expectedOffsetX = alignment === "center" ? Math.floor((canvasWidth - expected.width) / 2) : 0;
+  const expectedOffsetY = alignment === "center" ? Math.floor((canvasHeight - expected.height) / 2) : 0;
+  const diffPixels = options.diffImage === false ? undefined : new Uint8Array(canvasWidth * canvasHeight * 4);
+  const palette = options.diffPalette || options.palette || {};
+  const changedColor = qaRgbColor(palette.changed, [255, 24, 72]);
+  const unchangedColor = palette.unchanged == null ? undefined : qaRgbColor(palette.unchanged, [64, 64, 64]);
+  const changedAlpha = Math.max(0, Math.min(255, Math.round(Number(palette.changedAlpha ?? 255))));
+  const unchangedAlpha = Math.max(0, Math.min(255, Math.round(Number(palette.unchangedAlpha ?? 255))));
   let changedPixels = 0;
   let channelDeltaSum = 0;
-  for (let i = 0; i < actual.pixels.length; i += 4) {
+  for (let y = 0; y < canvasHeight; y += 1) for (let x = 0; x < canvasWidth; x += 1) {
+    const actualPixel = rgbaAt(actual, x, y, actualOffsetX, actualOffsetY);
+    const expectedPixel = rgbaAt(expected, x, y, expectedOffsetX, expectedOffsetY);
+    const i = (y * canvasWidth + x) * 4;
     let pixelChanged = false;
     for (let c = 0; c < 4; c += 1) {
-      const delta = Math.abs(actual.pixels[i + c] - expected.pixels[i + c]);
+      const delta = Math.abs(actualPixel[c] - expectedPixel[c]);
       channelDeltaSum += delta;
       if (delta > result.maxChannelDelta) result.maxChannelDelta = delta;
       if (delta > threshold) pixelChanged = true;
     }
     if (diffPixels) {
-      const brightness = Math.round((actual.pixels[i] + actual.pixels[i + 1] + actual.pixels[i + 2]) / 3 * 0.35 + 32);
-      diffPixels[i] = pixelChanged ? 255 : brightness;
-      diffPixels[i + 1] = pixelChanged ? 24 : brightness;
-      diffPixels[i + 2] = pixelChanged ? 72 : brightness;
-      diffPixels[i + 3] = 255;
+      const brightness = Math.round((actualPixel[0] + actualPixel[1] + actualPixel[2]) / 3 * 0.35 + 32);
+      const color = pixelChanged ? changedColor : unchangedColor || [brightness, brightness, brightness];
+      diffPixels[i] = color[0];
+      diffPixels[i + 1] = color[1];
+      diffPixels[i + 2] = color[2];
+      diffPixels[i + 3] = pixelChanged ? changedAlpha : unchangedAlpha;
     }
     if (pixelChanged) changedPixels += 1;
   }
   result.differentPixels = changedPixels;
   result.mismatchRatio = result.pixels ? changedPixels / result.pixels : 0;
-  result.meanChannelDelta = actual.pixels.length ? channelDeltaSum / actual.pixels.length : 0;
+  result.meanChannelDelta = result.pixels ? channelDeltaSum / (result.pixels * 4) : 0;
+  result.diffPalette = { changed: changedColor, changedAlpha, unchanged: unchangedColor || "actual-grayscale", unchangedAlpha };
   result.changed = changedPixels > 0;
   if (result.changed && diffPixels) result.diffPixels = diffPixels;
   return result;
@@ -665,7 +713,7 @@ export async function visualQaArtifact(artifact, options = {}) {
           summary.pixelDiff = pixelDiff;
           summary.changed = pixelDiff.changed;
           if (compared.diffBytes) {
-            diffBlob = new FileBlob(compared.diffBytes, { type: "image/png", metadata: { artifactKind, format: "pixel-diff", actualFormat: pixelDiff.actualFormat, baselineFormat: pixelDiff.baselineFormat } });
+            diffBlob = new FileBlob(compared.diffBytes, { type: "image/png", metadata: { artifactKind, format: "pixel-diff", actualFormat: pixelDiff.actualFormat, baselineFormat: pixelDiff.baselineFormat, alignment: pixelDiff.alignment, width: pixelDiff.diffWidth || pixelDiff.width, height: pixelDiff.diffHeight || pixelDiff.height, palette: pixelDiff.diffPalette } });
             summary.diff = { type: diffBlob.type, bytes: diffBlob.bytes.length, hash: stableByteHash(diffBlob.bytes) };
           }
           if (pixelDiff.changed && options.allowChange !== true && options.allowPixelChange !== true) {
@@ -851,7 +899,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a PNG diff heatmap when same-size pixels change." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a configurable aligned PNG diff heatmap." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },
@@ -915,7 +963,7 @@ const HELP_DETAIL_OVERRIDES = {
   },
   visualQaArtifact: {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
-    options: ["baseline/expected/baselineBlob", "pixelDiff", "diffImage", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
+    options: ["baseline/expected/baselineBlob", "pixelDiff", "diffImage", "diffPalette", "diffAlignment", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
     returns: "{ ok, blob, diffBlob, summary, issues, ndjson }",
     schema: {
       parameters: {
@@ -924,7 +972,9 @@ const HELP_DETAIL_OVERRIDES = {
         renderer: { type: "function", description: "Optional renderer adapter used for format conversion." },
         baseline: { type: "FileBlob|Uint8Array", description: "Expected render bytes; expected and baselineBlob are aliases." },
         pixelDiff: { type: "boolean|object", description: "Enable PNG/JPEG/WebP/PPM pixel comparison, optional channel thresholds, and decoded-pixel limits." },
-        diffImage: { type: "boolean", description: "Set false to disable PNG heatmap generation for changed same-size raster baselines." },
+        diffImage: { type: "boolean", description: "Set false to disable PNG heatmap generation for changed raster baselines." },
+        diffPalette: { type: "object", description: "Optional changed/unchanged RGB colors and alpha values for the PNG heatmap." },
+        diffAlignment: { type: "string", description: "Dimension-mismatch behavior: strict (no heatmap), top-left, or center alignment on a union canvas." },
         allowChange: { type: "boolean", description: "Allow baseline byte/pixel changes without emitting issues." },
         minBytes: { type: "number", description: "Warn when the render is smaller than this byte count." },
         maxBytes: { type: "number", description: "Warn when the render exceeds this byte count." },

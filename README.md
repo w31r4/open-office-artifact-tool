@@ -75,7 +75,7 @@ slide.compose(tree, { frame: { left: 80, top: 120, width: 720, height: 180 } });
 
 ## Renderer adapters
 
-`renderArtifact(artifact, { format })` returns the artifact's native SVG preview by default. Raster/PDF formats must be supplied by an explicit adapter so the package never pretends to support PNG/WebP/PDF output without a renderer. `visualQaArtifact(...)` records deterministic render metadata and hashes, checks empty/malformed renders, can compare against a baseline render, and can compute PNG pixel-diff metrics with `pixelDiff: true`.
+`renderArtifact(artifact, { format })` returns the artifact's native SVG preview by default. Raster/PDF formats must be supplied by an explicit adapter so the package never pretends to support PNG/WebP/PDF output without a renderer. `visualQaArtifact(...)` records deterministic render metadata and hashes, checks empty/malformed renders, and compares PNG/JPEG/WebP/PPM decoded pixels with `pixelDiff: true`. A `pixelDiff` object can customize `diffPalette` colors/alpha and set `diffAlignment` to `strict`, `top-left`, or `center` for dimension-mismatch heatmaps.
 
 ```js
 import { DocumentModel, PdfArtifact, renderArtifact } from "open-office-artifact-tool";
