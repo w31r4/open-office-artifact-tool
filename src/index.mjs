@@ -144,6 +144,7 @@ const RENDER_MIME_BY_FORMAT = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   pdf: "application/pdf",
+  layout: LAYOUT_MIME,
 };
 
 function renderTypeForOptions(options = {}, fallbackType = "application/octet-stream") {
@@ -429,7 +430,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet or range in the current clean-room MVP." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, and rule bounding boxes in pixels." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
@@ -1554,7 +1556,26 @@ export class Workbook {
     return helpArtifact("workbook", query, options);
   }
 
+  layoutJson(options = {}) {
+    const selected = options.sheetName ? (this.worksheets.getItem(options.sheetName) || this.worksheets.getActiveWorksheet()) : undefined;
+    const sheets = selected ? [selected] : this.worksheets.items;
+    return {
+      kind: "workbookLayout",
+      id: this.id,
+      activeSheet: this.worksheets.items[0]?.name,
+      sheetCount: this.worksheets.items.length,
+      sheets: sheets.map((sheet) => sheet.layoutJson(options)),
+    };
+  }
+
   async render(options = {}) {
+    const format = String(options.format || "").trim().toLowerCase();
+    if (format === "layout" || format === LAYOUT_MIME) {
+      return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), {
+        type: LAYOUT_MIME,
+        metadata: { artifactKind: "workbook", format: "layout", sheetName: options.sheetName, range: options.range },
+      });
+    }
     const sheet = this.worksheets.getItem(options.sheetName) || this.worksheets.getActiveWorksheet();
     return new FileBlob(sheet.toSvg(options), { type: "image/svg+xml" });
   }
@@ -1670,6 +1691,65 @@ export class Worksheet {
       if (matched) records.push({ kind: "match", sheet: this.name, address, value: cell.value, formula: cell.formula });
     }
     return records;
+  }
+
+  layoutJson(options = {}) {
+    this.recalculate();
+    const bounds = options.range ? parseRangeAddress(options.range) : this.usedBounds();
+    const cellW = Number(options.cellWidthPx || options.cellW || 96);
+    const cellH = Number(options.cellHeightPx || options.cellH || 28);
+    const frameForBounds = (rangeBounds) => ({
+      left: 40 + (rangeBounds.left - bounds.left) * cellW,
+      top: 40 + (rangeBounds.top - bounds.top) * cellH,
+      width: Math.max(cellW, rangeBounds.colCount * cellW),
+      height: Math.max(cellH, rangeBounds.rowCount * cellH),
+    });
+    const frameForRange = (range) => {
+      try { return frameForBounds(parseRangeAddress(range)); } catch { return undefined; }
+    };
+    const cells = [];
+    for (let r = bounds.top; r <= bounds.bottom; r += 1) {
+      for (let c = bounds.left; c <= bounds.right; c += 1) {
+        const address = makeCellAddress(r, c);
+        const cell = this.store.get(address);
+        cells.push({
+          kind: "cell",
+          sheet: this.name,
+          address,
+          row: r,
+          col: c,
+          bbox: [40 + (c - bounds.left) * cellW, 40 + (r - bounds.top) * cellH, cellW, cellH],
+          value: cell.value,
+          formula: cell.formula || undefined,
+          style: cell.style && Object.keys(cell.style).length ? { ...cell.style } : undefined,
+        });
+      }
+    }
+    const tables = this.tables.items.map((table) => ({ kind: "table", id: table.id, sheet: this.name, name: table.name, address: table.range, bbox: Object.values(frameForRange(table.range) || {}), rows: table.rowCount, cols: table.columnCount, hasHeaders: table.hasHeaders }));
+    const charts = this.charts.items.map((chart) => ({ kind: "chart", id: chart.id, sheet: this.name, name: chart.name, chartType: chart.type, title: chart.title, bbox: [chart.position.left, chart.position.top, chart.position.width, chart.position.height], series: chart.series.items.length, categories: chart.categories }));
+    const images = this.images.items.map((image) => { const p = image.position; return { kind: "image", id: image.id, sheet: this.name, name: image.name, alt: image.alt, bbox: [p.left, p.top, p.width, p.height], fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt }; });
+    const sparklines = this.sparklineGroups.items.map((group) => { const p = group.targetFrame(bounds); return { kind: "sparkline", id: group.id, sheet: this.name, type: group.type, targetRange: group.targetRange.address, sourceData: group.sourceData.address, bbox: [p.left, p.top, p.width, p.height], values: group.values() }; });
+    const rules = [...this.dataValidations.items, ...this.conditionalFormattings.items].map((rule) => ({ kind: rule.kind, id: rule.id, sheet: this.name, range: rule.range, bbox: Object.values(frameForRange(rule.range) || {}), ruleType: rule.ruleType, rule: rule.rule }));
+    const drawingFrames = [...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
+    const width = Math.max(320, bounds.colCount * cellW + 80, ...drawingFrames.map((bbox) => bbox[0] + bbox[2] + 40));
+    const height = Math.max(180, bounds.rowCount * cellH + 80, ...drawingFrames.map((bbox) => bbox[1] + bbox[3] + 40));
+    return {
+      kind: "worksheetLayout",
+      id: this.id,
+      name: this.name,
+      bounds: { ...bounds, address: rangeToAddress(bounds) },
+      unit: "px",
+      origin: { left: 40, top: 40 },
+      cell: { width: cellW, height: cellH },
+      width,
+      height,
+      cells,
+      tables,
+      charts,
+      images,
+      sparklines,
+      rules,
+    };
   }
 
   toSvg() {

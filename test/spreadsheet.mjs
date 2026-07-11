@@ -162,6 +162,18 @@ assert.match(previewSvg, /TasksTable/);
 assert.match(previewSvg, /Revenue Trend/);
 assert.match(previewSvg, /Logo placeholder/);
 assert.match(previewSvg, /polyline/);
+const layoutBlob = await workbook.render({ format: "layout", sheetName: "Sheet1", range: "A1:C3" });
+assert.equal(layoutBlob.type, "application/vnd.open-office-artifact.layout+json");
+const layout = JSON.parse(await layoutBlob.text());
+assert.equal(layout.kind, "workbookLayout");
+assert.equal(layout.sheets[0].name, "Sheet1");
+assert.equal(layout.sheets[0].bounds.address, "A1:C3");
+assert.ok(layout.sheets[0].cells.some((cell) => cell.address === "C2" && cell.formula === "=A2+B2"));
+assert.ok(layout.sheets[0].tables.some((table) => table.name === "TasksTable"));
+assert.ok(layout.sheets[0].charts.some((chart) => chart.title === "Revenue Trend"));
+assert.ok(layout.sheets[0].images.some((item) => item.alt === "Logo placeholder"));
+assert.ok(layout.sheets[0].sparklines.some((item) => item.targetRange === "H2:H2"));
+assert.match(workbook.help("workbook.layoutJson").ndjson, /layout JSON/);
 
 const xlsx = await SpreadsheetFile.exportXlsx(workbook);
 assert.equal(xlsx.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
