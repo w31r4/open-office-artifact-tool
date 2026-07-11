@@ -628,7 +628,9 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.OR", category: "logical", summary: "Return TRUE when any condition is true.", examples: ["=OR(A1>0,B1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to a fixed number of decimal places.", examples: ["=ROUND(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges all match their criteria.", examples: ["=COUNTIFS(A1:A10,\"East\",B1:B10,\">=10\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUMIF", category: "math-trig", summary: "Sum values whose corresponding criteria range entries match a criterion.", examples: ["=SUMIF(A1:A10,\"East\",B1:B10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SUMIFS", category: "math-trig", summary: "Sum values where all supplied criteria ranges match their criteria.", examples: ["=SUMIFS(C1:C10,A1:A10,\"East\",B1:B10,\">=10\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.VLOOKUP", category: "lookup-reference", summary: "Look up a value in the first column of a table range and return a value from another column.", examples: ["=VLOOKUP(\"Beta\",A2:B4,2,FALSE)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.XLOOKUP", category: "lookup-reference", summary: "Look up a value in one range and return the corresponding value from another range.", examples: ["=XLOOKUP(\"Gamma\",A2:A4,B2:B4,\"missing\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.INDEX", category: "lookup-reference", summary: "Return a value from a range by 1-based row and optional column index.", examples: ["=INDEX(A2:C4,2,3)"] },
@@ -3296,6 +3298,14 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "LOWER": return formulaText(scalar(0, "")).toLowerCase();
     case "TRIM": return formulaText(scalar(0, "")).trim().replace(/\s+/g, " ");
     case "COUNTIF": { const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesCriteria(value, criteria)).length; }
+    case "COUNTIFS": {
+      const pairs = [];
+      for (let i = 0; i < args.length; i += 2) pairs.push({ range: values([args[i]]), criteria: scalar(i + 1, "") });
+      const length = Math.max(0, ...pairs.map((pair) => pair.range.length));
+      let count = 0;
+      for (let index = 0; index < length; index++) if (pairs.every((pair) => matchesCriteria(pair.range[index], pair.criteria))) count += 1;
+      return count;
+    }
     case "SEQUENCE": {
       const rows = Math.max(1, Math.floor(formulaNumber(scalar(0, 1))) || 1);
       const cols = Math.max(1, Math.floor(formulaNumber(scalar(1, 1))) || 1);
@@ -3330,6 +3340,12 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const criteria = scalar(1, "");
       const sumRange = args[2] ? values([args[2]]) : range;
       return range.reduce((sum, value, index) => sum + (matchesCriteria(value, criteria) ? formulaNumber(sumRange[index]) || 0 : 0), 0);
+    }
+    case "SUMIFS": {
+      const sumRange = values([args[0]]);
+      const pairs = [];
+      for (let i = 1; i < args.length; i += 2) pairs.push({ range: values([args[i]]), criteria: scalar(i + 1, "") });
+      return sumRange.reduce((sum, value, index) => sum + (pairs.every((pair) => matchesCriteria(pair.range[index], pair.criteria)) ? formulaNumber(value) || 0 : 0), 0);
     }
     case "INDEX": {
       const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);

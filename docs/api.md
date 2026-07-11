@@ -397,6 +397,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.CONCAT` | formula | Concatenate text values and ranges. |
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
 | `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
+| `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
@@ -417,6 +418,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.SORT` | formula | Sort a range by a 1-based column index and spill the sorted rows. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
+| `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges match their criteria. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
 | `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
@@ -504,6 +506,14 @@ Count values in a range that match a criterion.
 **Examples:**
 
 - =COUNTIF(A1:A10,">0")
+
+#### `fx.COUNTIFS`
+
+Count rows where multiple criteria ranges all match their criteria.
+
+**Examples:**
+
+- =COUNTIFS(A1:A10,"East",B1:B10,">=10")
 
 #### `fx.FILTER`
 
@@ -668,6 +678,14 @@ Sum values whose corresponding criteria range entries match a criterion.
 **Examples:**
 
 - =SUMIF(A1:A10,"East",B1:B10)
+
+#### `fx.SUMIFS`
+
+Sum values where all supplied criteria ranges match their criteria.
+
+**Examples:**
+
+- =SUMIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
 
 #### `fx.TEXTJOIN`
 
