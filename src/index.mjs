@@ -654,6 +654,10 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.DROP", category: "dynamic-array", summary: "Drop rows and optional columns from the start or end of an array and spill the remainder.", examples: ["=DROP(A2:C10,1,1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CHOOSECOLS", category: "dynamic-array", summary: "Select and reorder one or more 1-based or negative column indexes from an array.", examples: ["=CHOOSECOLS(A2:C10,3,1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CHOOSEROWS", category: "dynamic-array", summary: "Select and reorder one or more 1-based or negative row indexes from an array.", examples: ["=CHOOSEROWS(A2:C10,3,1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TOCOL", category: "dynamic-array", summary: "Flatten an array into one spilled column, optionally ignoring blanks or errors and scanning by column.", examples: ["=TOCOL(A2:C10,1,TRUE)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TOROW", category: "dynamic-array", summary: "Flatten an array into one spilled row, optionally ignoring blanks or errors and scanning by column.", examples: ["=TOROW(A2:C10,1,TRUE)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.WRAPROWS", category: "dynamic-array", summary: "Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed.", examples: ["=WRAPROWS(A2:A10,3,\"n/a\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.WRAPCOLS", category: "dynamic-array", summary: "Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed.", examples: ["=WRAPCOLS(A2:A10,3,\"n/a\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TEXTJOIN", category: "text", summary: "Join text values with a delimiter and optional empty-value skipping.", examples: ["=TEXTJOIN(\"/\",TRUE,A1:A3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CONCAT", category: "text", summary: "Concatenate text values and ranges.", examples: ["=CONCAT(A1,\"-\",B1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LEFT", category: "text", summary: "Return characters from the start of a text value.", examples: ["=LEFT(A1,3)"] },
@@ -4200,6 +4204,51 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const indexes = args.slice(1).map((_, index) => Math.trunc(formulaNumber(scalar(index + 1, 0)))).map((value) => value > 0 ? value - 1 : matrix.length + value);
       if (!matrix.length || !indexes.length || indexes.some((index) => index < 0 || index >= matrix.length)) return "#VALUE!";
       return indexes.map((index) => [...matrix[index]]);
+    }
+    case "TOCOL":
+    case "TOROW": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const ignore = Number(scalar(1, 0));
+      if (!matrix.length || !Number.isInteger(ignore) || ignore < 0 || ignore > 3) return "#VALUE!";
+      const height = matrix.length;
+      const width = Math.max(0, ...matrix.map((row) => row.length));
+      const scanByColumn = formulaTruthy(scalar(2, false));
+      const flattened = [];
+      for (let outer = 0; outer < (scanByColumn ? width : height); outer++) {
+        for (let inner = 0; inner < (scanByColumn ? height : width); inner++) {
+          const value = scanByColumn ? matrix[inner]?.[outer] : matrix[outer]?.[inner];
+          const blank = value == null || value === "";
+          const error = Boolean(formulaErrorCode(value));
+          if ((ignore & 1) && blank) continue;
+          if ((ignore & 2) && error) continue;
+          flattened.push(blank ? 0 : value);
+        }
+      }
+      if (!flattened.length) return "#CALC!";
+      return fnName === "TOCOL" ? flattened.map((value) => [value]) : [flattened];
+    }
+    case "WRAPROWS":
+    case "WRAPCOLS": {
+      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
+      const width = Math.max(0, ...matrix.map((row) => row.length));
+      if (!matrix.length || (matrix.length > 1 && width > 1)) return "#VALUE!";
+      const count = Number(scalar(1, 0));
+      if (!Number.isInteger(count)) return "#VALUE!";
+      if (count < 1) return "#NUM!";
+      const vector = matrix.length === 1 ? [...matrix[0]] : matrix.map((row) => row[0]);
+      const pad = String(args[2] ?? "").trim() === "" ? "#N/A" : scalar(2, "#N/A");
+      if (fnName === "WRAPROWS") {
+        const rows = Math.ceil(vector.length / count);
+        return Array.from({ length: rows }, (_, row) => Array.from({ length: count }, (_, col) => {
+          const index = row * count + col;
+          return index < vector.length ? vector[index] : pad;
+        }));
+      }
+      const columns = Math.ceil(vector.length / count);
+      return Array.from({ length: count }, (_, row) => Array.from({ length: columns }, (_, col) => {
+        const index = col * count + row;
+        return index < vector.length ? vector[index] : pad;
+      }));
     }
     case "SUMIF": {
       const range = values([args[0]]);

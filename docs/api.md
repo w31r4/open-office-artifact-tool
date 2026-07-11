@@ -1584,11 +1584,15 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
 | `fx.TAKE` | formula | Take rows and optional columns from the start or end of an array and spill the result. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
+| `fx.TOCOL` | formula | Flatten an array into one spilled column, optionally ignoring blanks or errors and scanning by column. |
+| `fx.TOROW` | formula | Flatten an array into one spilled row, optionally ignoring blanks or errors and scanning by column. |
 | `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
 | `fx.UNIQUE` | formula | Return unique rows from a range as a spilled dynamic array. |
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
+| `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
+| `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
@@ -2372,6 +2376,40 @@ Join text values with a delimiter and optional empty-value skipping.
 
 - `value` (string) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.TOCOL`
+
+Flatten an array into one spilled column, optionally ignoring blanks or errors and scanning by column.
+
+**Examples:**
+
+- =TOCOL(A2:C10,1,TRUE)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TOCOL(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.TOROW`
+
+Flatten an array into one spilled row, optionally ignoring blanks or errors and scanning by column.
+
+**Examples:**
+
+- =TOROW(A2:C10,1,TRUE)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TOROW(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
 #### `fx.TRANSPOSE`
 
 Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata.
@@ -2456,6 +2494,40 @@ Look up a value in the first column of a table range and return a value from ano
 **Schema returns:**
 
 - `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.WRAPCOLS`
+
+Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed.
+
+**Examples:**
+
+- =WRAPCOLS(A2:A10,3,"n/a")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =WRAPCOLS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.WRAPROWS`
+
+Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed.
+
+**Examples:**
+
+- =WRAPROWS(A2:A10,3,"n/a")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =WRAPROWS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (unknown[][]) — Spilled two-dimensional formula result.
 
 #### `fx.XLOOKUP`
 
