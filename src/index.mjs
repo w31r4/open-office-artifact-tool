@@ -887,6 +887,7 @@ const HELP_DETAIL_OVERRIDES = {
         patches: { type: "array|object", required: true, description: "Path-validated package part edits with text/xml/json/bytes/remove." },
         maxPatchBytes: { type: "number", description: "Per-part patch size limit." },
         maxParts: { type: "number", description: "Maximum resulting package part count." },
+        syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with metadata.patchedParts." } },
     },
@@ -1505,6 +1506,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     patches: { type: "array|object", required: true, description: "Safe part edits with text, xml, json, bytes, content, remove, or delete." },
     maxPatchBytes: { type: "number", description: "Maximum bytes per replacement part." },
     maxParts: { type: "number", description: "Maximum resulting package part count." },
+    syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
   }, "blob", "FileBlob", "Patched PPTX FileBlob with patchedParts metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
@@ -1539,6 +1541,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     patches: { type: "array|object", required: true, description: "Safe part edits with text, xml, json, bytes, content, remove, or delete." },
     maxPatchBytes: { type: "number", description: "Maximum bytes per replacement part." },
     maxParts: { type: "number", description: "Maximum resulting package part count." },
+    syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
   }, "blob", "FileBlob", "Patched XLSX FileBlob with patchedParts metadata."),
   "worksheet.getRange": helpSchema({
     address: { type: "string", required: true, description: "A1 cell or range address such as A1:D10." },
@@ -4353,7 +4356,7 @@ export class SpreadsheetFile {
 
   static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
-    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts } });
+    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated } });
   }
 
   static async exportXlsx(workbook) {
@@ -6118,7 +6121,7 @@ export class PresentationFile {
 
   static async patchPptx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
-    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts } });
+    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated } });
   }
 
   static async exportPptx(presentation) {
@@ -7612,6 +7615,54 @@ function ooxmlPatchData(patch, family = "OOXML") {
   throw new Error(`${family} patch for ${patch.path || patch.part || "unknown part"} has no content or remove flag.`);
 }
 
+function ooxmlRemoveContentTypeOverride(xml, partPath) {
+  return String(xml).replace(/<Override\b[^>]*\/?\s*>/g, (tag) => {
+    const partName = /\bPartName="([^"]*)"/.exec(tag)?.[1];
+    return String(partName || "").replace(/^\//, "") === partPath ? "" : tag;
+  });
+}
+
+function ooxmlInferredPatchContentType(patch, partPath) {
+  const explicit = patch.contentType || patch.mimeType || patch.type;
+  if (explicit) return String(explicit);
+  const extension = ooxmlPartExtension(partPath);
+  if (patch.json !== undefined || extension === "json") return "application/json";
+  if (patch.xml !== undefined || extension === "xml" || extension === "rels") return extension === "rels" ? "application/vnd.openxmlformats-package.relationships+xml" : "application/xml";
+  if (patch.text !== undefined || extension === "txt") return "text/plain";
+  const imageType = imageContentTypeFromExtension(extension);
+  return imageType === "application/octet-stream" ? undefined : imageType;
+}
+
+async function syncOoxmlPatchContentTypes(zip, normalizedPatches, options, family) {
+  if (options.syncContentTypes === false) return 0;
+  const entry = zip.file("[Content_Types].xml");
+  if (!entry) throw new Error(`${family} package is missing [Content_Types].xml; cannot synchronize patch content types.`);
+  let xml = await entry.async("text");
+  let updates = 0;
+  for (const { patch, partPath } of normalizedPatches) {
+    if (partPath === "[Content_Types].xml") continue;
+    const withoutOverride = ooxmlRemoveContentTypeOverride(xml, partPath);
+    const removedOverride = withoutOverride !== xml;
+    if (patch.remove || patch.delete) {
+      if (removedOverride) { xml = withoutOverride; updates += 1; }
+      continue;
+    }
+    const requestedType = ooxmlInferredPatchContentType(patch, partPath);
+    const declarations = ooxmlContentTypeMaps(xml);
+    const extension = ooxmlPartExtension(partPath);
+    const existingType = declarations.overrides.get(partPath) || declarations.defaults.get(extension);
+    if (!requestedType || (existingType && !patch.contentType && !patch.mimeType && !patch.type)) continue;
+    if (declarations.defaults.get(extension) === requestedType && !patch.contentType && !patch.mimeType && !patch.type) {
+      if (removedOverride) { xml = withoutOverride; updates += 1; }
+      continue;
+    }
+    xml = withoutOverride.replace(/<\/Types>\s*$/, `<Override PartName="/${attrEscape(partPath)}" ContentType="${attrEscape(requestedType)}"/></Types>`);
+    updates += 1;
+  }
+  if (updates) zip.file("[Content_Types].xml", xml);
+  return updates;
+}
+
 async function inspectOoxmlPackage(blobOrBuffer, options = {}, config = {}) {
   const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
   const zip = await JSZip.loadAsync(bytes);
@@ -7645,7 +7696,8 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
     if (data?.byteLength > maxPatchBytes) throw new Error(`${family} patch for ${partPath} exceeds maxPatchBytes (${maxPatchBytes}).`);
     zip.file(partPath, data);
   }
-  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length };
+  const contentTypesUpdated = await syncOoxmlPatchContentTypes(zip, normalizedPatches, options, family);
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: list.length, contentTypesUpdated };
 }
 
 export class DocumentFile {
@@ -7655,7 +7707,7 @@ export class DocumentFile {
 
   static async patchDocx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "DOCX" });
-    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts } });
+    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, contentTypesUpdated: patched.contentTypesUpdated } });
   }
 
   static async exportDocx(document) {

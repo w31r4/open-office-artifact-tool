@@ -438,6 +438,7 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 - `patches` (array|object) required — Path-validated package part edits with text/xml/json/bytes/remove.
 - `maxPatchBytes` (number) — Per-part patch size limit.
 - `maxParts` (number) — Maximum resulting package part count.
+- `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 
 **Schema returns:**
 
@@ -1091,6 +1092,7 @@ Apply path-validated XML/JSON/binary PPTX part patches with part-count and byte 
 - `patches` (array|object) required — Safe part edits with text, xml, json, bytes, content, remove, or delete.
 - `maxPatchBytes` (number) — Maximum bytes per replacement part.
 - `maxParts` (number) — Maximum resulting package part count.
+- `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 
 **Schema returns:**
 
@@ -2573,6 +2575,7 @@ Apply path-validated XML/JSON/binary XLSX part patches with part-count and byte 
 - `patches` (array|object) required — Safe part edits with text, xml, json, bytes, content, remove, or delete.
 - `maxPatchBytes` (number) — Maximum bytes per replacement part.
 - `maxParts` (number) — Maximum resulting package part count.
+- `syncContentTypes` (boolean) — Synchronize inferred or explicit content-type declarations; defaults to true.
 
 **Schema returns:**
 

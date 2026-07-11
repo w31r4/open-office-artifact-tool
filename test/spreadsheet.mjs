@@ -398,9 +398,12 @@ await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "customXml/l
 await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxParts: 1 }), /maxParts/);
 await assert.rejects(() => SpreadsheetFile.inspectXlsx(xlsx, { maxPartBytes: 1 }), /maxPartBytes/);
 const brokenRelationshipXlsx = await SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/styles.xml", remove: true }]);
+assert.equal(brokenRelationshipXlsx.metadata.contentTypesUpdated, 1);
 const brokenRelationshipInspect = await SpreadsheetFile.inspectXlsx(brokenRelationshipXlsx);
 assert.equal(brokenRelationshipInspect.ok, false);
 assert.ok(brokenRelationshipInspect.issues.some((issue) => issue.type === "relationshipTargetNotFound" && issue.target === "xl/styles.xml"));
+const brokenRelationshipZip = await JSZip.loadAsync(new Uint8Array(await brokenRelationshipXlsx.arrayBuffer()));
+assert.doesNotMatch(await brokenRelationshipZip.file("[Content_Types].xml").async("text"), /PartName="\/xl\/styles\.xml"/);
 const xlsxBytes = new Uint8Array(await xlsx.arrayBuffer());
 const zip = await JSZip.loadAsync(xlsxBytes);
 const tablePartNames = Object.keys(zip.files).filter((name) => /^xl\/tables\/table\d+\.xml$/.test(name));
