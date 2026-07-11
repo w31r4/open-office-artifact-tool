@@ -56,6 +56,53 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 
 { ndjson, truncated } bounded NDJSON records
 
+#### `DocumentFile.patchDocx`
+
+Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob.
+
+**Examples:**
+
+- await DocumentFile.patchDocx(docx, [{ path: 'customXml/review-note.xml', text: '<review>ok</review>' }])
+
+**Schema parameters:**
+
+- `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
+- `patches` (array|object) required — Path-validated package part edits with text/xml/json/bytes/remove.
+- `maxPatchBytes` (number) — Per-part patch size limit.
+
+**Schema returns:**
+
+- `docx` (FileBlob) — Patched DOCX FileBlob with metadata.patchedParts.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "docx": {
+      "type": "FileBlob|Uint8Array",
+      "required": true,
+      "description": "DOCX package bytes."
+    },
+    "patches": {
+      "type": "array|object",
+      "required": true,
+      "description": "Path-validated package part edits with text/xml/json/bytes/remove."
+    },
+    "maxPatchBytes": {
+      "type": "number",
+      "description": "Per-part patch size limit."
+    }
+  },
+  "returns": {
+    "docx": {
+      "type": "FileBlob",
+      "description": "Patched DOCX FileBlob with metadata.patchedParts."
+    }
+  }
+}
+```
+
 ## pdf
 
 | Name | Kind | Summary |
@@ -98,6 +145,57 @@ Emit bounded NDJSON for pages, text, positioned text items, layout regions, tabl
 **Returns:**
 
 { ndjson, truncated } bounded NDJSON records
+
+#### `PdfFile.importPdf`
+
+Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction.
+
+**Examples:**
+
+- await PdfFile.importPdf(blob, { parser: createPdfjsParser() })
+
+**Schema parameters:**
+
+- `blob` (FileBlob|Uint8Array) required — PDF input bytes.
+- `parser` (function) — Optional parser adapter returning pages/textItems/tables/images.
+- `preferParser` (boolean) — Use parser even if clean-room metadata is embedded.
+- `parserName` (string) — Name recorded in artifact metadata.
+
+**Schema returns:**
+
+- `pdf` (PdfArtifact) — Modeled PDF artifact with inspect/resolve/render/verify APIs.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "blob": {
+      "type": "FileBlob|Uint8Array",
+      "required": true,
+      "description": "PDF input bytes."
+    },
+    "parser": {
+      "type": "function",
+      "description": "Optional parser adapter returning pages/textItems/tables/images."
+    },
+    "preferParser": {
+      "type": "boolean",
+      "description": "Use parser even if clean-room metadata is embedded."
+    },
+    "parserName": {
+      "type": "string",
+      "description": "Name recorded in artifact metadata."
+    }
+  },
+  "returns": {
+    "pdf": {
+      "type": "PdfArtifact",
+      "description": "Modeled PDF artifact with inspect/resolve/render/verify APIs."
+    }
+  }
+}
+```
 
 ## presentation
 
@@ -203,9 +301,52 @@ Render an artifact through its render/export method, attach normalized FileBlob 
 - sheetName
 - range
 
+**Schema parameters:**
+
+- `artifact` (Workbook|Presentation|DocumentModel|PdfArtifact) required — Artifact facade to render through its native preview/export path.
+- `format` (string) — svg, png, webp, jpeg, pdf, layout, or an output MIME type.
+- `renderer` (function) — Optional pluggable renderer adapter for raster/PDF conversion.
+- `source` (string) — Optional native source such as docx or pdf for renderer gates.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Rendered output with normalized metadata.
+
 **Returns:**
 
 FileBlob with normalized render metadata
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "artifact": {
+      "type": "Workbook|Presentation|DocumentModel|PdfArtifact",
+      "required": true,
+      "description": "Artifact facade to render through its native preview/export path."
+    },
+    "format": {
+      "type": "string",
+      "description": "svg, png, webp, jpeg, pdf, layout, or an output MIME type."
+    },
+    "renderer": {
+      "type": "function",
+      "description": "Optional pluggable renderer adapter for raster/PDF conversion."
+    },
+    "source": {
+      "type": "string",
+      "description": "Optional native source such as docx or pdf for renderer gates."
+    }
+  },
+  "returns": {
+    "blob": {
+      "type": "FileBlob",
+      "description": "Rendered output with normalized metadata."
+    }
+  }
+}
+```
 
 #### `verifyArtifact`
 
@@ -584,6 +725,118 @@ Look up a value in one range and return the corresponding value from another ran
 
 - =XLOOKUP("Gamma",A2:A4,B2:B4,"missing")
 
+#### `range.conditionalFormats.add`
+
+Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills.
+
+**Examples:**
+
+- range.conditionalFormats.add('cellIs', { operator: 'greaterThan', formula: 10, format: { fill: 'green' } })
+- range.conditionalFormats.addColorScale({ colors: ['#fee2e2', '#fef3c7', '#22c55e'] })
+
+**Schema parameters:**
+
+- `ruleType` (string) required — cellIs, expression, containsText, or colorScale.
+- `formula` (string|number) — Rule formula or scalar threshold.
+- `operator` (string) — Comparison operator for cellIs rules.
+- `format` (object) — Style patch applied when the rule matches.
+- `colors` (string[]) — Two or three colors for colorScale rules.
+
+**Schema returns:**
+
+- `conditionalFormat` (object) — Inspectable conditional-format rule with stable id.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "ruleType": {
+      "type": "string",
+      "required": true,
+      "description": "cellIs, expression, containsText, or colorScale."
+    },
+    "formula": {
+      "type": "string|number",
+      "description": "Rule formula or scalar threshold."
+    },
+    "operator": {
+      "type": "string",
+      "description": "Comparison operator for cellIs rules."
+    },
+    "format": {
+      "type": "object",
+      "description": "Style patch applied when the rule matches."
+    },
+    "colors": {
+      "type": "string[]",
+      "description": "Two or three colors for colorScale rules."
+    }
+  },
+  "returns": {
+    "conditionalFormat": {
+      "type": "object",
+      "description": "Inspectable conditional-format rule with stable id."
+    }
+  }
+}
+```
+
+#### `range.format`
+
+Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes.
+
+**Examples:**
+
+- sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, alignment: { horizontal: 'center' }, border: { style: 'thin' } }
+
+**Schema parameters:**
+
+- `fill` (string) — Cell background color token or hex color.
+- `font` (object) — Font properties: bold, italic, color, size, name.
+- `numberFormat` (string) — Excel number format code.
+- `alignment` (object) — horizontal, vertical, and wrapText alignment options.
+- `border` (object) — Basic border style and color.
+
+**Schema returns:**
+
+- `range` (Range) — The formatted range facade.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "fill": {
+      "type": "string",
+      "description": "Cell background color token or hex color."
+    },
+    "font": {
+      "type": "object",
+      "description": "Font properties: bold, italic, color, size, name."
+    },
+    "numberFormat": {
+      "type": "string",
+      "description": "Excel number format code."
+    },
+    "alignment": {
+      "type": "object",
+      "description": "horizontal, vertical, and wrapText alignment options."
+    },
+    "border": {
+      "type": "object",
+      "description": "Basic border style and color."
+    }
+  },
+  "returns": {
+    "range": {
+      "type": "Range",
+      "description": "The formatted range facade."
+    }
+  }
+}
+```
+
 #### `workbook.definedNames.add`
 
 Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData).
@@ -622,9 +875,66 @@ Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, com
 - exclude/omit
 - maxChars
 
+**Schema parameters:**
+
+- `kind` (string) — Comma-separated record kinds such as formula, table, style, computedStyle, chart, image.
+- `target` (string) — Stable ID, anchor, or A1 cell/range to slice results around.
+- `search` (string) — Case-insensitive text filter over inspect records.
+- `include` (string) — Comma-separated top-level fields to keep.
+- `exclude` (string) — Comma-separated top-level fields to omit.
+- `maxChars` (number) — Maximum NDJSON output size before truncation notice.
+
+**Schema returns:**
+
+- `ndjson` (string) — Bounded newline-delimited JSON records.
+- `truncated` (boolean) — True when maxChars truncated the output.
+
 **Returns:**
 
 { ndjson, truncated } bounded NDJSON records
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "kind": {
+      "type": "string",
+      "description": "Comma-separated record kinds such as formula, table, style, computedStyle, chart, image."
+    },
+    "target": {
+      "type": "string",
+      "description": "Stable ID, anchor, or A1 cell/range to slice results around."
+    },
+    "search": {
+      "type": "string",
+      "description": "Case-insensitive text filter over inspect records."
+    },
+    "include": {
+      "type": "string",
+      "description": "Comma-separated top-level fields to keep."
+    },
+    "exclude": {
+      "type": "string",
+      "description": "Comma-separated top-level fields to omit."
+    },
+    "maxChars": {
+      "type": "number",
+      "description": "Maximum NDJSON output size before truncation notice."
+    }
+  },
+  "returns": {
+    "ndjson": {
+      "type": "string",
+      "description": "Bounded newline-delimited JSON records."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when maxChars truncated the output."
+    }
+  }
+}
+```
 
 #### `workbook.structuredReferences`
 

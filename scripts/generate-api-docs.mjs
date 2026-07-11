@@ -34,6 +34,18 @@ function detailList(label, values) {
   return [`**${label}:**`, "", ...values.map((value) => `- ${value}`), ""];
 }
 
+function schemaEntries(schemaSection) {
+  if (!schemaSection) return [];
+  if (Array.isArray(schemaSection)) return schemaSection;
+  return Object.entries(schemaSection).map(([name, value]) => ({ name, ...(typeof value === "string" ? { type: value } : value) }));
+}
+
+function schemaSummary(label, schemaSection) {
+  const entries = schemaEntries(schemaSection);
+  if (!entries.length) return [];
+  return [`**${label}:**`, "", ...entries.map((entry) => `- \`${entry.name}\`${entry.type ? ` (${entry.type})` : ""}${entry.required ? " required" : ""}${entry.description ? ` — ${entry.description}` : ""}`), ""];
+}
+
 for (const artifactKind of [...byKind.keys()].sort()) {
   const items = byKind.get(artifactKind).sort((a, b) => a.name.localeCompare(b.name));
   lines.push(`## ${artifactKind}`);
@@ -55,6 +67,8 @@ for (const artifactKind of [...byKind.keys()].sort()) {
       lines.push("");
       lines.push(...detailList("Examples", item.examples));
       lines.push(...detailList("Options", item.options || item.params));
+      lines.push(...schemaSummary("Schema parameters", item.schema?.parameters));
+      lines.push(...schemaSummary("Schema returns", item.schema?.returns));
       if (item.returns) lines.push("**Returns:**", "", item.returns, "");
       if (item.schema) lines.push("**Schema:**", "", "```json", JSON.stringify(item.schema, null, 2), "```", "");
       lines.push(...detailList("Notes", item.notes));

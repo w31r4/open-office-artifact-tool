@@ -39,6 +39,11 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "createLibreOfficeRenderer")
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.options?.includes("include/fields"));
+assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.schema?.parameters?.kind);
+assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.schema?.returns?.blob);
+assert.ok(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.colors);
+assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.patches);
+assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
 
@@ -72,6 +77,8 @@ assert.match(helpArtifact("shared", "createNativeOfficeRenderer").ndjson, /nativ
 assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /native Office bridge command/);
 assert.match(helpArtifact("shared", "pixelDiff").ndjson, /visualQaArtifact/);
 assert.match(helpArtifact("workbook", "include\/fields").ndjson, /workbook.inspect/);
+assert.match(helpArtifact("workbook", "colorScale").ndjson, /range\.conditionalFormats\.add/);
+assert.match(helpArtifact("document", "maxPatchBytes").ndjson, /DocumentFile\.patchDocx/);
 assert.match(helpArtifact(workbook, "fx.PMT").ndjson, /financial/);
 assert.equal(helpArtifact("presentation", "sheet.charts.add").ndjson, "");
 const apiDocs = await fs.readFile(new URL("../docs/api.md", import.meta.url), "utf8");
@@ -80,5 +87,9 @@ assert.match(apiDocs, /#### `renderArtifact`/);
 assert.match(apiDocs, /await renderArtifact\(document/);
 assert.match(apiDocs, /#### `workbook.inspect`/);
 assert.match(apiDocs, /include\/fields/);
+assert.match(apiDocs, /\*\*Schema parameters:\*\*/);
+assert.match(apiDocs, /`kind` \(string\)/);
+assert.match(apiDocs, /`blob` \(FileBlob\)/);
+assert.match(apiDocs, /DocumentFile\.patchDocx/);
 
 console.log("help smoke ok");

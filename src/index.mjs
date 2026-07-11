@@ -733,6 +733,20 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["workbook.inspect({ kind: 'formula', target: 'Sheet1!E2', include: 'formula,value,precedents' })"],
     options: ["kind", "search/searchTerm", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
+    schema: {
+      parameters: {
+        kind: { type: "string", description: "Comma-separated record kinds such as formula, table, style, computedStyle, chart, image." },
+        target: { type: "string", description: "Stable ID, anchor, or A1 cell/range to slice results around." },
+        search: { type: "string", description: "Case-insensitive text filter over inspect records." },
+        include: { type: "string", description: "Comma-separated top-level fields to keep." },
+        exclude: { type: "string", description: "Comma-separated top-level fields to omit." },
+        maxChars: { type: "number", description: "Maximum NDJSON output size before truncation notice." },
+      },
+      returns: {
+        ndjson: { type: "string", description: "Bounded newline-delimited JSON records." },
+        truncated: { type: "boolean", description: "True when maxChars truncated the output." },
+      },
+    },
   },
   "presentation.inspect": {
     examples: ["presentation.inspect({ kind: 'image,comment', target: image.id, include: 'alt,bbox' })"],
@@ -753,6 +767,17 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["await renderArtifact(document, { format: 'png', renderer: createPlaywrightRenderer() })"],
     options: ["format", "renderer/rasterRenderer/renderAdapter", "page/pageIndex", "slide", "sheetName", "range"],
     returns: "FileBlob with normalized render metadata",
+    schema: {
+      parameters: {
+        artifact: { type: "Workbook|Presentation|DocumentModel|PdfArtifact", required: true, description: "Artifact facade to render through its native preview/export path." },
+        format: { type: "string", description: "svg, png, webp, jpeg, pdf, layout, or an output MIME type." },
+        renderer: { type: "function", description: "Optional pluggable renderer adapter for raster/PDF conversion." },
+        source: { type: "string", description: "Optional native source such as docx or pdf for renderer gates." },
+      },
+      returns: {
+        blob: { type: "FileBlob", description: "Rendered output with normalized metadata." },
+      },
+    },
   },
   visualQaArtifact: {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
@@ -768,6 +793,55 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["workbook.definedNames.add('RevenueData', 'Sheet1!G2:G4')", "sheet.getRange('E3').formulas = [['=SUM(RevenueData)']]"] ,
     options: ["name", "refersTo", "scope/sheetName", "comment"],
     returns: "DefinedName facade with id/name/refersTo/scope",
+  },
+  "range.format": {
+    examples: ["sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, alignment: { horizontal: 'center' }, border: { style: 'thin' } }"],
+    schema: {
+      parameters: {
+        fill: { type: "string", description: "Cell background color token or hex color." },
+        font: { type: "object", description: "Font properties: bold, italic, color, size, name." },
+        numberFormat: { type: "string", description: "Excel number format code." },
+        alignment: { type: "object", description: "horizontal, vertical, and wrapText alignment options." },
+        border: { type: "object", description: "Basic border style and color." },
+      },
+      returns: { range: { type: "Range", description: "The formatted range facade." } },
+    },
+  },
+  "range.conditionalFormats.add": {
+    examples: ["range.conditionalFormats.add('cellIs', { operator: 'greaterThan', formula: 10, format: { fill: 'green' } })", "range.conditionalFormats.addColorScale({ colors: ['#fee2e2', '#fef3c7', '#22c55e'] })"],
+    schema: {
+      parameters: {
+        ruleType: { type: "string", required: true, description: "cellIs, expression, containsText, or colorScale." },
+        formula: { type: "string|number", description: "Rule formula or scalar threshold." },
+        operator: { type: "string", description: "Comparison operator for cellIs rules." },
+        format: { type: "object", description: "Style patch applied when the rule matches." },
+        colors: { type: "string[]", description: "Two or three colors for colorScale rules." },
+      },
+      returns: { conditionalFormat: { type: "object", description: "Inspectable conditional-format rule with stable id." } },
+    },
+  },
+  "PdfFile.importPdf": {
+    examples: ["await PdfFile.importPdf(blob, { parser: createPdfjsParser() })"],
+    schema: {
+      parameters: {
+        blob: { type: "FileBlob|Uint8Array", required: true, description: "PDF input bytes." },
+        parser: { type: "function", description: "Optional parser adapter returning pages/textItems/tables/images." },
+        preferParser: { type: "boolean", description: "Use parser even if clean-room metadata is embedded." },
+        parserName: { type: "string", description: "Name recorded in artifact metadata." },
+      },
+      returns: { pdf: { type: "PdfArtifact", description: "Modeled PDF artifact with inspect/resolve/render/verify APIs." } },
+    },
+  },
+  "DocumentFile.patchDocx": {
+    examples: ["await DocumentFile.patchDocx(docx, [{ path: 'customXml/review-note.xml', text: '<review>ok</review>' }])"],
+    schema: {
+      parameters: {
+        docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
+        patches: { type: "array|object", required: true, description: "Path-validated package part edits with text/xml/json/bytes/remove." },
+        maxPatchBytes: { type: "number", description: "Per-part patch size limit." },
+      },
+      returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with metadata.patchedParts." } },
+    },
   },
   "workbook.structuredReferences": {
     examples: ["=SUM(TasksTable[Revenue])", "=TEXTJOIN(\"|\",TRUE,TasksTable[#Headers])", "=SUM(TasksTable[[#Data],[Revenue]])", "=SUM(TasksTable[[#Data],[Revenue]:[Cost]])", "=TEXTJOIN(\"|\",TRUE,TasksTable[[#Data],[Region],[Code]])"],
