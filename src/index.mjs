@@ -1351,10 +1351,155 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "package", "object", "DOCX package part records and bounded NDJSON."),
 };
 
+const PRESENTATION_HELP_SCHEMAS = {
+  "Presentation.create": helpSchema({
+    slideSize: { type: "object", description: "Slide width and height in pixels; defaults to 1280x720." },
+    theme: { type: "object", description: "Theme name, colors, and major/minor fonts." },
+    layouts: { type: "object[]", description: "Reusable slide layout definitions." },
+  }, "presentation", "Presentation", "Editable presentation facade."),
+  "presentation.slides.add": helpSchema({
+    name: { type: "string", description: "Inspectable slide name." },
+    layout: { type: "string|object", description: "Layout ID/name or layout facade." },
+    notes: { type: "string", description: "Initial speaker notes." },
+  }, "slide", "Slide", "Appended editable slide."),
+  "presentation.inspect": helpSchema({
+    kind: { type: "string", description: "Comma-separated deck/theme/layout/slide/textbox/textRange/shape/table/chart/image/connector/comment/notes kinds." },
+    search: { type: "string", description: "Case-insensitive record filter." },
+    target: { type: "string", description: "Stable target ID/anchor." },
+    before: { type: "number", description: "Context records before matches." },
+    after: { type: "number", description: "Context records after matches." },
+    include: { type: "string", description: "Comma-separated fields to keep." },
+    exclude: { type: "string", description: "Comma-separated fields to omit." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+  }, "inspection", "object", "Bounded { ndjson, truncated } inspection result."),
+  "presentation.textRange": helpSchema({
+    id: { type: "string", required: true, description: "Stable shape text-range ID ending in /text." },
+  }, "textRange", "TextRange|undefined", "Editable slide text-range facade or undefined."),
+  "presentation.resolve": helpSchema({
+    id: { type: "string", required: true, description: "Stable deck, theme, layout, slide, element, comment, or text-range ID." },
+  }, "object", "object|undefined", "Resolved editable facade/record or undefined."),
+  "presentation.export": helpSchema({
+    format: { type: "string", description: "svg by default, montage, or layout." },
+    slide: { type: "Slide", description: "Slide facade to export; defaults to the first slide." },
+    columns: { type: "number", description: "Montage column count." },
+    scale: { type: "number", description: "Montage thumbnail scale." },
+    gap: { type: "number", description: "Montage gap in pixels." },
+  }, "blob", "FileBlob", "SVG montage/slide preview or layout JSON."),
+  "presentation.validateLayout": helpSchema({
+    minOverlapArea: { type: "number", description: "Minimum overlap area in square pixels before reporting." },
+    boundsPadding: { type: "number", description: "Allowed padding outside the slide bounds." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON issue output size." },
+  }, "report", "object", "Layout QA result with ok, issues, ndjson, and truncated."),
+  "presentation.verify": helpSchema({
+    minOverlapArea: { type: "number", description: "Minimum overlap area for layout QA." },
+    boundsPadding: { type: "number", description: "Allowed padding outside slide bounds." },
+    maxChars: { type: "number", description: "Maximum bounded NDJSON issue output size." },
+  }, "report", "object", "Presentation semantic/layout QA result."),
+  "slide.shapes.add": helpSchema({
+    name: { type: "string", description: "Inspectable shape name." },
+    geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
+    position: { type: "object", description: "Pixel left/top/width/height frame." },
+    text: { type: "string", description: "Shape text." },
+    fill: { type: "string|object", description: "Shape fill." },
+    line: { type: "object", description: "Line color, width, dash, and arrow metadata." },
+    placeholder: { type: "object", description: "Optional layout placeholder metadata." },
+  }, "shape", "Shape", "Appended editable shape/textbox."),
+  "slide.compose": helpSchema({
+    node: { type: "object", required: true, description: "Compose tree rooted in row, column, grid, layers, box, paragraph, shape, table, chart, image, or rule." },
+    frame: { type: "object", description: "Pixel materialization frame; defaults to an inset slide frame." },
+  }, "elements", "object[]", "Materialized editable slide elements."),
+  "slide.autoLayout": helpSchema({
+    shapes: { type: "object[]", required: true, description: "Existing editable slide elements." },
+    frame: { type: "string|object", description: "slide, a frame object, or an element facade." },
+    direction: { type: "string", description: "horizontal or vertical." },
+    horizontalGap: { type: "number|string", description: "Horizontal gap or auto." },
+    verticalGap: { type: "number|string", description: "Vertical gap or auto." },
+    horizontalPadding: { type: "number", description: "Left/right inset." },
+    verticalPadding: { type: "number", description: "Top/bottom inset." },
+    align: { type: "string", description: "Cross-axis alignment." },
+  }, "shapes", "object[]", "The positioned input elements."),
+  "slide.tables.add": helpSchema({
+    values: { type: "unknown[][]", required: true, description: "Table cell value matrix." },
+    name: { type: "string", description: "Inspectable table name." },
+    position: { type: "object", description: "Pixel left/top/width/height frame." },
+    style: { type: "object", description: "Table/cell fill, margins, borders, and text style." },
+  }, "table", "TableElement", "Appended editable table facade."),
+  "slide.charts.add": helpSchema({
+    chartType: { type: "string", description: "bar, line, or pie." },
+    title: { type: "string", description: "Chart title." },
+    categories: { type: "string[]", required: true, description: "Category labels." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, and optional colors." },
+    position: { type: "object", description: "Pixel left/top/width/height frame." },
+    axes: { type: "object", description: "Axis titles/options." },
+    legend: { type: "object", description: "Legend options." },
+    dataLabels: { type: "object", description: "Data-label options." },
+  }, "chart", "ChartElement", "Appended editable native-chart facade."),
+  "slide.images.add": helpSchema({
+    dataUrl: { type: "string", description: "Embedded image data URL." },
+    uri: { type: "string", description: "External image URI metadata." },
+    prompt: { type: "string", description: "Generation/source prompt metadata." },
+    alt: { type: "string", description: "Alternative text." },
+    fit: { type: "string", description: "contain or cover intent." },
+    position: { type: "object", description: "Pixel left/top/width/height frame." },
+  }, "image", "ImageElement", "Appended editable image facade."),
+  "presentation.theme": helpSchema({
+    name: { type: "string", description: "Theme name." },
+    colors: { type: "object", description: "Theme accent/background/text color map." },
+    fonts: { type: "object", description: "Major and minor font families." },
+  }, "theme", "PresentationTheme", "Mutable presentation theme facade."),
+  "presentation.layouts.add": helpSchema({
+    name: { type: "string", required: true, description: "Layout name." },
+    type: { type: "string", description: "Layout type." },
+    masterId: { type: "string", description: "Master identity." },
+    placeholders: { type: "object[]", description: "Placeholder type/name/frame/text/required/style definitions." },
+  }, "layout", "SlideLayoutTemplate", "Appended reusable layout facade."),
+  "slide.applyLayout": helpSchema({
+    layout: { type: "string|SlideLayoutTemplate", required: true, description: "Layout name/ID or layout facade." },
+  }, "shapes", "Shape[]", "Materialized editable placeholder shapes."),
+  "slide.addNotes": helpSchema({
+    text: { type: "string", required: true, description: "Speaker notes text." },
+  }, "notes", "object", "Mutable speaker-notes record."),
+  "slide.comments.addThread": helpSchema({
+    target: { type: "string|object", required: true, description: "Stable element ID or element facade." },
+    text: { type: "string", required: true, description: "Initial comment text." },
+    author: { type: "string", description: "Comment author." },
+    resolved: { type: "boolean", description: "Initial resolution state." },
+  }, "thread", "SlideCommentThread", "Attached comment thread."),
+  "slide.connectors.add": helpSchema({
+    from: { type: "string|object", description: "Start element/ID or point." },
+    to: { type: "string|object", description: "End element/ID or point." },
+    start: { type: "object", description: "Explicit start point {x,y}." },
+    end: { type: "object", description: "Explicit end point {x,y}." },
+    connectorType: { type: "string", description: "Connector geometry, currently straight by default." },
+    line: { type: "object", description: "Line color, width, and arrow metadata." },
+  }, "connector", "ConnectorElement", "Appended editable connector."),
+  "compose.column": helpSchema({
+    children: { type: "object[]", description: "Ordered child compose nodes." },
+    width: { type: "string|number", description: "fill, hug, or fixed pixel width." },
+    height: { type: "string|number", description: "fill, hug, or fixed pixel height." },
+    gap: { type: "number", description: "Child gap in pixels." },
+    padding: { type: "number|object", description: "Container padding." },
+  }, "node", "object", "Vertical compose node."),
+  "compose.paragraph": helpSchema({
+    text: { type: "string", required: true, description: "Editable paragraph text." },
+    name: { type: "string", description: "Stable element name." },
+    className: { type: "string", description: "Text style token string." },
+    style: { type: "object", description: "Explicit text style metadata." },
+  }, "node", "object", "Paragraph compose node."),
+  "PresentationFile.inspectPptx": HELP_DETAIL_OVERRIDES["PresentationFile.inspectPptx"].schema,
+  "PresentationFile.exportPptx": helpSchema({
+    presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
+  }, "blob", "FileBlob", "Native OOXML PPTX package bytes."),
+  "PresentationFile.importPptx": helpSchema({
+    pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
+  }, "presentation", "Presentation", "Imported editable presentation facade."),
+};
+
 for (const item of HELP_CATALOG) {
   const details = HELP_DETAIL_OVERRIDES[item.name];
   if (details) Object.assign(item, details);
   if (item.artifactKind === "document" && !item.schema && DOCUMENT_HELP_SCHEMAS[item.name]) item.schema = DOCUMENT_HELP_SCHEMAS[item.name];
+  if (item.artifactKind === "presentation" && !item.schema && PRESENTATION_HELP_SCHEMAS[item.name]) item.schema = PRESENTATION_HELP_SCHEMAS[item.name];
   if (item.name.startsWith("fx.") && !item.schema) {
     const functionName = item.name.slice(3);
     const returnType = item.category === "dynamic-array"

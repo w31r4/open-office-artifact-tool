@@ -816,10 +816,13 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
+| `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
+| `PresentationFile.exportPptx` | api | Serialize a presentation facade to a native OOXML PPTX FileBlob. |
+| `PresentationFile.importPptx` | api | Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available. |
 | `PresentationFile.inspectPptx` | api | Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
@@ -833,6 +836,67 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
 
 ### presentation details
+
+#### `compose.column`
+
+Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels.
+
+**Schema parameters:**
+
+- `children` (object[]) — Ordered child compose nodes.
+- `width` (string|number) — fill, hug, or fixed pixel width.
+- `height` (string|number) — fill, hug, or fixed pixel height.
+- `gap` (number) — Child gap in pixels.
+- `padding` (number|object) — Container padding.
+
+**Schema returns:**
+
+- `node` (object) — Vertical compose node.
+
+#### `compose.paragraph`
+
+Create an editable text block with name, className/style text tokens, and stable inspect output.
+
+**Schema parameters:**
+
+- `text` (string) required — Editable paragraph text.
+- `name` (string) — Stable element name.
+- `className` (string) — Text style token string.
+- `style` (object) — Explicit text style metadata.
+
+**Schema returns:**
+
+- `node` (object) — Paragraph compose node.
+
+#### `Presentation.create`
+
+Create a deck with a default or explicit slide size.
+
+**Schema parameters:**
+
+- `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
+- `theme` (object) — Theme name, colors, and major/minor fonts.
+- `layouts` (object[]) — Reusable slide layout definitions.
+
+**Schema returns:**
+
+- `presentation` (Presentation) — Editable presentation facade.
+
+#### `presentation.export`
+
+Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON.
+
+**Schema parameters:**
+
+- `format` (string) — svg by default, montage, or layout.
+- `slide` (Slide) — Slide facade to export; defaults to the first slide.
+- `columns` (number) — Montage column count.
+- `scale` (number) — Montage thumbnail scale.
+- `gap` (number) — Montage gap in pixels.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — SVG montage/slide preview or layout JSON.
 
 #### `presentation.inspect`
 
@@ -852,9 +916,143 @@ Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, 
 - exclude/omit
 - maxChars
 
+**Schema parameters:**
+
+- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/table/chart/image/connector/comment/notes kinds.
+- `search` (string) — Case-insensitive record filter.
+- `target` (string) — Stable target ID/anchor.
+- `before` (number) — Context records before matches.
+- `after` (number) — Context records after matches.
+- `include` (string) — Comma-separated fields to keep.
+- `exclude` (string) — Comma-separated fields to omit.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `inspection` (object) — Bounded { ndjson, truncated } inspection result.
+
 **Returns:**
 
 { ndjson, truncated } bounded NDJSON records
+
+#### `presentation.layouts.add`
+
+Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip.
+
+**Schema parameters:**
+
+- `name` (string) required — Layout name.
+- `type` (string) — Layout type.
+- `masterId` (string) — Master identity.
+- `placeholders` (object[]) — Placeholder type/name/frame/text/required/style definitions.
+
+**Schema returns:**
+
+- `layout` (SlideLayoutTemplate) — Appended reusable layout facade.
+
+#### `presentation.resolve`
+
+Map stable inspect anchor IDs back to editable facade objects.
+
+**Schema parameters:**
+
+- `id` (string) required — Stable deck, theme, layout, slide, element, comment, or text-range ID.
+
+**Schema returns:**
+
+- `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+#### `presentation.slides.add`
+
+Append an editable slide with optional name, layout identity, and speaker notes.
+
+**Schema parameters:**
+
+- `name` (string) — Inspectable slide name.
+- `layout` (string|object) — Layout ID/name or layout facade.
+- `notes` (string) — Initial speaker notes.
+
+**Schema returns:**
+
+- `slide` (Slide) — Appended editable slide.
+
+#### `presentation.textRange`
+
+Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames.
+
+**Schema parameters:**
+
+- `id` (string) required — Stable shape text-range ID ending in /text.
+
+**Schema returns:**
+
+- `textRange` (TextRange|undefined) — Editable slide text-range facade or undefined.
+
+#### `presentation.theme`
+
+Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part.
+
+**Schema parameters:**
+
+- `name` (string) — Theme name.
+- `colors` (object) — Theme accent/background/text color map.
+- `fonts` (object) — Major and minor font families.
+
+**Schema returns:**
+
+- `theme` (PresentationTheme) — Mutable presentation theme facade.
+
+#### `presentation.validateLayout`
+
+Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow.
+
+**Schema parameters:**
+
+- `minOverlapArea` (number) — Minimum overlap area in square pixels before reporting.
+- `boundsPadding` (number) — Allowed padding outside the slide bounds.
+- `maxChars` (number) — Maximum bounded NDJSON issue output size.
+
+**Schema returns:**
+
+- `report` (object) — Layout QA result with ok, issues, ndjson, and truncated.
+
+#### `presentation.verify`
+
+Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments.
+
+**Schema parameters:**
+
+- `minOverlapArea` (number) — Minimum overlap area for layout QA.
+- `boundsPadding` (number) — Allowed padding outside slide bounds.
+- `maxChars` (number) — Maximum bounded NDJSON issue output size.
+
+**Schema returns:**
+
+- `report` (object) — Presentation semantic/layout QA result.
+
+#### `PresentationFile.exportPptx`
+
+Serialize a presentation facade to a native OOXML PPTX FileBlob.
+
+**Schema parameters:**
+
+- `presentation` (Presentation) required — Presentation facade to serialize.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Native OOXML PPTX package bytes.
+
+#### `PresentationFile.importPptx`
+
+Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available.
+
+**Schema parameters:**
+
+- `pptx` (FileBlob|Uint8Array) required — PPTX package bytes.
+
+**Schema returns:**
+
+- `presentation` (Presentation) — Imported editable presentation facade.
 
 #### `PresentationFile.inspectPptx`
 
@@ -874,6 +1072,163 @@ Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, con
 **Schema returns:**
 
 - `package` (object) — PPTX package and part records with paths, sizes, content types, and optional previews.
+
+#### `slide.addNotes`
+
+Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }).
+
+**Schema parameters:**
+
+- `text` (string) required — Speaker notes text.
+
+**Schema returns:**
+
+- `notes` (object) — Mutable speaker-notes record.
+
+#### `slide.applyLayout`
+
+Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export.
+
+**Schema parameters:**
+
+- `layout` (string|SlideLayoutTemplate) required — Layout name/ID or layout facade.
+
+**Schema returns:**
+
+- `shapes` (Shape[]) — Materialized editable placeholder shapes.
+
+#### `slide.autoLayout`
+
+Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options.
+
+**Schema parameters:**
+
+- `shapes` (object[]) required — Existing editable slide elements.
+- `frame` (string|object) — slide, a frame object, or an element facade.
+- `direction` (string) — horizontal or vertical.
+- `horizontalGap` (number|string) — Horizontal gap or auto.
+- `verticalGap` (number|string) — Vertical gap or auto.
+- `horizontalPadding` (number) — Left/right inset.
+- `verticalPadding` (number) — Top/bottom inset.
+- `align` (string) — Cross-axis alignment.
+
+**Schema returns:**
+
+- `shapes` (object[]) — The positioned input elements.
+
+#### `slide.charts.add`
+
+Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output.
+
+**Schema parameters:**
+
+- `chartType` (string) — bar, line, or pie.
+- `title` (string) — Chart title.
+- `categories` (string[]) required — Category labels.
+- `series` (object[]) required — Series with names, numeric values, and optional colors.
+- `position` (object) — Pixel left/top/width/height frame.
+- `axes` (object) — Axis titles/options.
+- `legend` (object) — Legend options.
+- `dataLabels` (object) — Data-label options.
+
+**Schema returns:**
+
+- `chart` (ChartElement) — Appended editable native-chart facade.
+
+#### `slide.comments.addThread`
+
+Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets.
+
+**Schema parameters:**
+
+- `target` (string|object) required — Stable element ID or element facade.
+- `text` (string) required — Initial comment text.
+- `author` (string) — Comment author.
+- `resolved` (boolean) — Initial resolution state.
+
+**Schema returns:**
+
+- `thread` (SlideCommentThread) — Attached comment thread.
+
+#### `slide.compose`
+
+Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects.
+
+**Schema parameters:**
+
+- `node` (object) required — Compose tree rooted in row, column, grid, layers, box, paragraph, shape, table, chart, image, or rule.
+- `frame` (object) — Pixel materialization frame; defaults to an inset slide frame.
+
+**Schema returns:**
+
+- `elements` (object[]) — Materialized editable slide elements.
+
+#### `slide.connectors.add`
+
+Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA.
+
+**Schema parameters:**
+
+- `from` (string|object) — Start element/ID or point.
+- `to` (string|object) — End element/ID or point.
+- `start` (object) — Explicit start point {x,y}.
+- `end` (object) — Explicit end point {x,y}.
+- `connectorType` (string) — Connector geometry, currently straight by default.
+- `line` (object) — Line color, width, and arrow metadata.
+
+**Schema returns:**
+
+- `connector` (ConnectorElement) — Appended editable connector.
+
+#### `slide.images.add`
+
+Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output.
+
+**Schema parameters:**
+
+- `dataUrl` (string) — Embedded image data URL.
+- `uri` (string) — External image URI metadata.
+- `prompt` (string) — Generation/source prompt metadata.
+- `alt` (string) — Alternative text.
+- `fit` (string) — contain or cover intent.
+- `position` (object) — Pixel left/top/width/height frame.
+
+**Schema returns:**
+
+- `image` (ImageElement) — Appended editable image facade.
+
+#### `slide.shapes.add`
+
+Add a shape/textbox with geometry, position, fill, line, and text.
+
+**Schema parameters:**
+
+- `name` (string) — Inspectable shape name.
+- `geometry` (string) — Shape geometry such as rect or ellipse.
+- `position` (object) — Pixel left/top/width/height frame.
+- `text` (string) — Shape text.
+- `fill` (string|object) — Shape fill.
+- `line` (object) — Line color, width, dash, and arrow metadata.
+- `placeholder` (object) — Optional layout placeholder metadata.
+
+**Schema returns:**
+
+- `shape` (Shape) — Appended editable shape/textbox.
+
+#### `slide.tables.add`
+
+Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output.
+
+**Schema parameters:**
+
+- `values` (unknown[][]) required — Table cell value matrix.
+- `name` (string) — Inspectable table name.
+- `position` (object) — Pixel left/top/width/height frame.
+- `style` (object) — Table/cell fill, margins, borders, and text style.
+
+**Schema returns:**
+
+- `table` (TableElement) — Appended editable table facade.
 
 ## shared
 
