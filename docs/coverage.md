@@ -77,9 +77,9 @@ Status legend:
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| README clean-room/family/renderer/native bridge docs | partial | README covers clean-room goal, four artifact families, renderer adapters, optional Playwright renderer, PDF parser adapters, Node-side native Office wrapper, C# sidecar usage/tests, examples, and development commands. Needs release/npm-auth docs once publishing is attempted. |
+| README clean-room/family/renderer/native bridge docs | partial | README covers clean-room goal, four artifact families, renderer adapters, optional Playwright renderer, PDF parser adapters, Node-side native Office wrapper, C# sidecar usage/tests, examples, release-check flow, and development commands. `docs/release.md` records current npm auth/publish blockers. Needs update once publishing/tagging succeeds. |
 | Examples for DOCX/XLSX/PPTX/PDF/rendering | partial | `examples/` includes create DOCX report, create XLSX dashboard with charts/sparklines/comments, create PPTX compose deck with notes/comments/connectors, parse/render PDF, render via Playwright, and render via native Office bridge. Native bridge and Playwright examples skip gracefully when optional runtimes are unavailable. |
-| Basic CI without Microsoft Office | partial | `.github/workflows/ci.yml` runs npm install/test/docs/pack and conditionally skips dotnet bridge tests when `native/OfficeBridge` or `dotnet` is unavailable. Needs real C# bridge tests and release/tag automation. |
+| Basic CI without Microsoft Office | partial | `.github/workflows/ci.yml` runs npm install/test/docs/release-check/pack and conditionally skips dotnet bridge tests when `native/OfficeBridge` or `dotnet` is unavailable. Needs release/tag automation after npm auth is configured. |
 
 ## Implementation priorities
 

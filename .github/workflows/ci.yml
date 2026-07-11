@@ -17,6 +17,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run docs:api
+      - run: node scripts/release-check.mjs --json --skip-network --skip-commands
       - run: git diff --exit-code docs/api.md
       - run: npm run test:pack
       - name: Optional native Office bridge tests

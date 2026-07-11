@@ -179,6 +179,10 @@ npm run test:examples
 
 Outputs are written to `OUTPUT_DIR` or a temp example directory.
 
+## Release readiness
+
+Use [`docs/release.md`](docs/release.md) and `npm run release:check` before publishing. The checker runs the required local gates, reports npm authentication/package-version status, and prints blockers. Publishing is intentionally blocked in this environment until `npm whoami` succeeds.
+
 ## Design notes
 
 The package deliberately prioritizes agent workflows:
