@@ -102,6 +102,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Produce a layout record and visual preview for every user-facing sheet with `--all-sheets true`; the selected `--range` narrows only the primary sheet.
 - Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
 - Raster baselines use `visualQaArtifact(..., { pixelDiff: true })`; baseline filenames are stable per worksheet.
+- When pixels change, the QA output records a `.diff.png` heatmap path for focused agent review.
 - `--native-render required` converts the exported XLSX with LibreOffice and rasterizes every PDF page with Poppler; page-count or pixel changes fail QA.
 - Deliver only the requested workbook unless the user asks for QA intermediates.
 

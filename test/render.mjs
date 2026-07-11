@@ -96,10 +96,16 @@ const pixelQa = await visualQaArtifact(pngArtifact, { baseline: new FileBlob(bla
 assert.equal(pixelQa.ok, false);
 assert.equal(pixelQa.summary.pixelDiff.differentPixels, 1);
 assert.equal(pixelQa.summary.pixelDiff.mismatchRatio, 1);
+assert.equal(pixelQa.diffBlob.type, "image/png");
+assert.ok(pixelQa.summary.diff.bytes > 0);
+assert.deepEqual(await sharp(pixelQa.diffBlob.bytes).metadata().then(({ width, height, format }) => ({ width, height, format })), { width: 1, height: 1, format: "png" });
 assert.match(pixelQa.ndjson, /visualPixelDiff/);
+const noDiffImageQa = await visualQaArtifact(pngArtifact, { baseline: new FileBlob(blackPixelPng, { type: "image/png" }), pixelDiff: true, diffImage: false });
+assert.equal(noDiffImageQa.diffBlob, undefined);
 const unchangedPixelQa = await visualQaArtifact(pngArtifact, { baseline: new FileBlob(whitePixelPng, { type: "image/png" }), pixelDiff: true });
 assert.equal(unchangedPixelQa.ok, true);
 assert.equal(unchangedPixelQa.summary.pixelDiff.changed, false);
+assert.equal(unchangedPixelQa.diffBlob, undefined);
 const ppmArtifact = { render: () => new FileBlob(whitePixelPpm, { type: "image/x-portable-pixmap" }) };
 const ppmQa = await visualQaArtifact(ppmArtifact, { baseline: new FileBlob(blackPixelPpm, { type: "image/x-portable-pixmap" }), pixelDiff: true, maxChars: 4000 });
 assert.equal(ppmQa.ok, false);
@@ -128,6 +134,7 @@ const changedWebpQa = await visualQaArtifact(webpArtifact, { baseline: new FileB
 assert.equal(changedWebpQa.ok, false);
 assert.equal(changedWebpQa.summary.pixelDiff.format, "webp");
 assert.equal(changedWebpQa.summary.pixelDiff.differentPixels, 1);
+assert.equal(changedWebpQa.diffBlob.type, "image/png");
 assert.match(changedWebpQa.ndjson, /visualPixelDiff/);
 await assert.rejects(() => renderArtifact(document, { format: "webp" }), /no renderer adapter/);
 

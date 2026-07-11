@@ -111,6 +111,7 @@ node skills/pdf/scripts/run-fixture.mjs \
 - Poppler PNGs are the real PDF render gate; inspect every page at full size.
 - Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve changes only after full-page review.
 - Baseline approval replaces stale model/native page files; later page-count changes fail QA even if all remaining pages match.
+- Changed same-size pages write PNG diff heatmaps into the QA output directory.
 - Deliver only the requested PDF; previews, baselines, extraction dumps, and QA reports are internal unless requested.
 
 ## References

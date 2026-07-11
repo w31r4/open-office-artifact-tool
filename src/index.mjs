@@ -516,7 +516,44 @@ async function compareRasterPixels(bytes, baselineBytes, options = {}) {
   const [actual, expected] = await Promise.all([decodeRasterRgba(bytes, options), decodeRasterRgba(baselineBytes, options)]);
   const threshold = Math.max(0, Number(options.pixelThreshold ?? options.threshold ?? 0));
   const format = actualFormat === baselineFormat ? actualFormat : `${actualFormat}/${baselineFormat}`;
-  return compareRgbaPixels(actual, expected, { ...options, threshold, format, actualFormat, baselineFormat });
+  const metrics = compareRgbaPixels(actual, expected, { ...options, threshold, format, actualFormat, baselineFormat });
+  let diffBytes;
+  if (metrics.changed && metrics.diffPixels) diffBytes = encodePngRgba(metrics.width, metrics.height, metrics.diffPixels);
+  delete metrics.diffPixels;
+  return { metrics, diffBytes };
+}
+
+function pngCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data = new Uint8Array()) {
+  const typeBytes = encoder.encode(type);
+  const payload = Buffer.from(data);
+  const chunk = Buffer.alloc(12 + payload.length);
+  chunk.writeUInt32BE(payload.length, 0);
+  Buffer.from(typeBytes).copy(chunk, 4);
+  payload.copy(chunk, 8);
+  chunk.writeUInt32BE(pngCrc32(new Uint8Array(chunk.subarray(4, 8 + payload.length))), 8 + payload.length);
+  return chunk;
+}
+
+function encodePngRgba(width, height, pixels) {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const rowBytes = width * 4;
+  const raw = Buffer.alloc((rowBytes + 1) * height);
+  for (let row = 0; row < height; row += 1) Buffer.from(pixels.subarray(row * rowBytes, (row + 1) * rowBytes)).copy(raw, row * (rowBytes + 1) + 1);
+  return new Uint8Array(Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND")]));
 }
 
 function compareRgbaPixels(actual, expected, options = {}) {
@@ -541,6 +578,7 @@ function compareRgbaPixels(actual, expected, options = {}) {
     result.changed = true;
     return result;
   }
+  const diffPixels = options.diffImage === false ? undefined : new Uint8Array(actual.pixels.length);
   let changedPixels = 0;
   let channelDeltaSum = 0;
   for (let i = 0; i < actual.pixels.length; i += 4) {
@@ -551,12 +589,20 @@ function compareRgbaPixels(actual, expected, options = {}) {
       if (delta > result.maxChannelDelta) result.maxChannelDelta = delta;
       if (delta > threshold) pixelChanged = true;
     }
+    if (diffPixels) {
+      const brightness = Math.round((actual.pixels[i] + actual.pixels[i + 1] + actual.pixels[i + 2]) / 3 * 0.35 + 32);
+      diffPixels[i] = pixelChanged ? 255 : brightness;
+      diffPixels[i + 1] = pixelChanged ? 24 : brightness;
+      diffPixels[i + 2] = pixelChanged ? 72 : brightness;
+      diffPixels[i + 3] = 255;
+    }
     if (pixelChanged) changedPixels += 1;
   }
   result.differentPixels = changedPixels;
   result.mismatchRatio = result.pixels ? changedPixels / result.pixels : 0;
   result.meanChannelDelta = actual.pixels.length ? channelDeltaSum / actual.pixels.length : 0;
   result.changed = changedPixels > 0;
+  if (result.changed && diffPixels) result.diffPixels = diffPixels;
   return result;
 }
 
@@ -590,6 +636,7 @@ export async function visualQaArtifact(artifact, options = {}) {
   const bytes = blob.bytes || new Uint8Array(await blob.arrayBuffer());
   const hash = stableByteHash(bytes);
   const issues = [];
+  let diffBlob;
   const summary = { kind: "visualQa", artifactKind, type: blob.type, format: blob.metadata?.format || options.format || blob.type, bytes: bytes.byteLength, hash };
   if (bytes.byteLength === 0) issues.push(verificationIssue(artifactKind, "emptyRender", "Rendered artifact is empty.", { severity: "error", type: blob.type }));
   if (options.minBytes != null && bytes.byteLength < Number(options.minBytes)) issues.push(verificationIssue(artifactKind, "renderTooSmall", `Rendered artifact has ${bytes.byteLength} bytes; expected at least ${options.minBytes}.`, { severity: "warning", bytes: bytes.byteLength, minBytes: Number(options.minBytes) }));
@@ -612,10 +659,15 @@ export async function visualQaArtifact(artifact, options = {}) {
     if (pixelDiffEnabled) {
       if (rasterByteFormat(bytes) && rasterByteFormat(baselineBytes)) {
         try {
-          const pixelDiffOptions = typeof options.pixelDiff === "object" ? options.pixelDiff : options;
-          const pixelDiff = await compareRasterPixels(bytes, baselineBytes, pixelDiffOptions);
+          const pixelDiffOptions = typeof options.pixelDiff === "object" ? { ...options, ...options.pixelDiff } : options;
+          const compared = await compareRasterPixels(bytes, baselineBytes, pixelDiffOptions);
+          const pixelDiff = compared.metrics;
           summary.pixelDiff = pixelDiff;
           summary.changed = pixelDiff.changed;
+          if (compared.diffBytes) {
+            diffBlob = new FileBlob(compared.diffBytes, { type: "image/png", metadata: { artifactKind, format: "pixel-diff", actualFormat: pixelDiff.actualFormat, baselineFormat: pixelDiff.baselineFormat } });
+            summary.diff = { type: diffBlob.type, bytes: diffBlob.bytes.length, hash: stableByteHash(diffBlob.bytes) };
+          }
           if (pixelDiff.changed && options.allowChange !== true && options.allowPixelChange !== true) {
             issues.push(verificationIssue(artifactKind, "visualPixelDiff", `Rendered ${pixelDiff.format.toUpperCase()} differs from the baseline in ${pixelDiff.differentPixels} pixels.`, { severity: options.diffSeverity || "warning", ...pixelDiff }));
           }
@@ -630,7 +682,7 @@ export async function visualQaArtifact(artifact, options = {}) {
     if (baselineHash !== hash && !pixelsEquivalent && options.allowChange !== true) issues.push(verificationIssue(artifactKind, "visualDiff", "Rendered output differs from the supplied baseline.", { severity: options.diffSeverity || "warning", hash, baselineHash }));
   }
   const records = [summary, ...issues];
-  return { artifactKind, ok: issues.length === 0, blob, summary, issues, ...ndjson(records, options.maxChars ?? Infinity) };
+  return { artifactKind, ok: issues.length === 0, blob, diffBlob, summary, issues, ...ndjson(records, options.maxChars ?? Infinity) };
 }
 
 export const HELP_CATALOG = [
@@ -798,7 +850,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG/JPEG/WebP/PPM pixel-diff metrics when requested." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, and return a PNG diff heatmap when same-size pixels change." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },
@@ -862,8 +914,8 @@ const HELP_DETAIL_OVERRIDES = {
   },
   visualQaArtifact: {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
-    options: ["baseline/expected/baselineBlob", "pixelDiff", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
-    returns: "{ ok, blob, summary, issues, ndjson }",
+    options: ["baseline/expected/baselineBlob", "pixelDiff", "diffImage", "PNG/JPEG/WebP/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
+    returns: "{ ok, blob, diffBlob, summary, issues, ndjson }",
     schema: {
       parameters: {
         artifact: { type: "Workbook|Presentation|DocumentModel|PdfArtifact", required: true, description: "Artifact to render and compare." },
@@ -871,12 +923,13 @@ const HELP_DETAIL_OVERRIDES = {
         renderer: { type: "function", description: "Optional renderer adapter used for format conversion." },
         baseline: { type: "FileBlob|Uint8Array", description: "Expected render bytes; expected and baselineBlob are aliases." },
         pixelDiff: { type: "boolean|object", description: "Enable PNG/JPEG/WebP/PPM pixel comparison, optional channel thresholds, and decoded-pixel limits." },
+        diffImage: { type: "boolean", description: "Set false to disable PNG heatmap generation for changed same-size raster baselines." },
         allowChange: { type: "boolean", description: "Allow baseline byte/pixel changes without emitting issues." },
         minBytes: { type: "number", description: "Warn when the render is smaller than this byte count." },
         maxBytes: { type: "number", description: "Warn when the render exceeds this byte count." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
-      returns: { report: { type: "object", description: "Visual QA result with ok, blob, summary, issues, ndjson, and truncation metadata." } },
+      returns: { report: { type: "object", description: "Visual QA result with ok, blob, optional diffBlob PNG heatmap, summary, issues, ndjson, and truncation metadata." } },
     },
   },
   verifyArtifact: {

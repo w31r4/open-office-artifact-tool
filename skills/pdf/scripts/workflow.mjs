@@ -84,6 +84,11 @@ async function runPngQa(artifact, options = {}) {
     await fs.mkdir(path.dirname(options.baselinePath), { recursive: true });
     await qa.blob.save(options.baselinePath);
   }
+  if (qa.diffBlob && options.diffPath) {
+    await fs.mkdir(path.dirname(options.diffPath), { recursive: true });
+    await qa.diffBlob.save(options.diffPath);
+    qa.diffPath = options.diffPath;
+  }
   return qa;
 }
 
@@ -97,12 +102,13 @@ async function renderModelPages(pdf, outputDir, options = {}) {
   const existingBaselines = await prepareBaselineSet(options.baselineDir, "model-page", options.writeBaseline);
   for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-page-${pageIndex + 1}.png`) : undefined;
-    const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
+    const diffPath = path.join(outputDir, "diffs", `model-page-${pageIndex + 1}.png`);
+    const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const layoutPath = path.join(layoutsDir, `page-${pageIndex + 1}.json`);
     await Promise.all([qa.blob.save(pagePath), fs.writeFile(layoutPath, await (await pdf.render({ format: "layout", pageIndex })).text(), "utf8")]);
     qaLines.push(qa.ndjson);
-    pages.push({ page: pageIndex + 1, path: pagePath, layoutPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    pages.push({ page: pageIndex + 1, path: pagePath, layoutPath, diffPath: qa.diffPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
   const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pdf.pages.length;
@@ -125,10 +131,11 @@ async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, opt
     const png = await renderer({ input: pdfBlob, inputType: PDF_MIME, outputType: "image/png", format: "png", artifactKind: "pdf", pageIndex });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
-    const qa = await runPngQa({ render: () => png }, { baselinePath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
+    const diffPath = path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`);
+    const qa = await runPngQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
     await png.save(pagePath);
     qaLines.push(qa.ndjson);
-    pages.push({ page: pageIndex + 1, path: pagePath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    pages.push({ page: pageIndex + 1, path: pagePath, diffPath: qa.diffPath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
   const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === info.pages;

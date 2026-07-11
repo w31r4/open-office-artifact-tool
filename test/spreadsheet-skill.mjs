@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
 import { nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
@@ -84,6 +85,20 @@ try {
     assert.ok(baselineCompare.summary.nativeRender.pageCount >= 1);
     assert.ok(baselineCompare.summary.nativeRender.pages.every((page) => page.baselineCompared && page.pixelDiff.changed === false && page.ok));
   }
+  const baselineMetadata = await sharp(await fs.readFile(baselineCompare.summary.baselinePath)).metadata();
+  await sharp({ create: { width: baselineMetadata.width, height: baselineMetadata.height, channels: 3, background: { r: 0, g: 0, b: 0 } } }).png().toFile(baselineCompare.summary.baselinePath);
+  const changedBaseline = await verifyWorkbookFile(result.workbookPath, {
+    outputDir: path.join(outputDir, "baseline-changed"),
+    sheetName: "Summary",
+    range: "A1:D4",
+    renderFormat: "png",
+    baselineDir,
+    nativeRender: "off",
+    failOnIssues: false,
+  });
+  assert.equal(changedBaseline.summary.visualQaOk, false);
+  assert.ok((await fs.stat(changedBaseline.summary.files.diff)).size > 100);
+  assert.equal(changedBaseline.summary.sheetRenders[0].diffPath, changedBaseline.summary.files.diff);
 
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
   assert.ok(packageJson.files.includes("skills/**"));

@@ -100,6 +100,7 @@ node skills/documents/scripts/verify-document.mjs \
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.
 - PNG baselines compare the modeled preview and every native page through `visualQaArtifact(..., { pixelDiff: true })`; baseline page-count changes fail QA.
+- Changed same-size pages write PNG diff heatmaps into the QA output directory.
 - Microsoft Office native automation remains the higher-fidelity Windows gate for Word-specific behavior.
 - Deliver only the requested DOCX; previews and QA reports are internal unless requested.
 

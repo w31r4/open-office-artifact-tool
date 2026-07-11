@@ -94,8 +94,10 @@ async function renderNativePages(xlsxBlob, outputDir, options = {}) {
     const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), pixelThreshold: options.pixelThreshold, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
     await png.save(pagePath);
     if (options.writeBaseline && baselinePath) await png.save(baselinePath);
+    const diffPath = qa.diffBlob ? path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`) : undefined;
+    if (diffPath) { await fs.mkdir(path.dirname(diffPath), { recursive: true }); await qa.diffBlob.save(diffPath); }
     qaLines.push(qa.ndjson);
-    pages.push({ page: pageIndex + 1, path: pagePath, baselinePath, baselineCompared: Boolean(baseline), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    pages.push({ page: pageIndex + 1, path: pagePath, diffPath, baselinePath, baselineCompared: Boolean(baseline), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const baselinePageCount = baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
   const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
@@ -190,6 +192,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     preview: path.join(outputDir, `preview.${previewExtension}`),
     summary: path.join(outputDir, "summary.json"),
   };
+  if (visualQa.diffBlob) paths.diff = path.join(outputDir, `diff-${safeFileSegment(sheetName)}.png`);
   const verifyNdjson = verify.ndjson || JSON.stringify({
     kind: "verificationSummary",
     artifactKind: "workbook",
@@ -203,12 +206,14 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     fs.writeFile(paths.layout, await layoutBlob.text(), "utf8"),
     fs.writeFile(paths.visualQa, visualQa.ndjson, "utf8"),
     visualQa.blob.save(paths.preview),
+    ...(paths.diff ? [visualQa.diffBlob.save(paths.diff)] : []),
   ]);
   const sheetRenders = [{
     sheetName,
     range: range || null,
     preview: paths.preview,
     layout: paths.layout,
+    diffPath: paths.diff,
     baselinePath,
     baselineCompared: Boolean(baseline),
     pixelDiff: visualQa.summary.pixelDiff,
@@ -237,7 +242,8 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
       const targetPreviewPath = path.join(sheetsDir, `${segment}.${previewExtension}`);
       const targetLayoutPath = path.join(sheetsDir, `${segment}.layout.json`);
       const targetQaPath = path.join(sheetsDir, `${segment}.visual-qa.ndjson`);
-      await Promise.all([targetQa.blob.save(targetPreviewPath), fs.writeFile(targetLayoutPath, await targetLayout.text(), "utf8"), fs.writeFile(targetQaPath, targetQa.ndjson, "utf8")]);
+      const targetDiffPath = targetQa.diffBlob ? path.join(sheetsDir, `${segment}.diff.png`) : undefined;
+      await Promise.all([targetQa.blob.save(targetPreviewPath), fs.writeFile(targetLayoutPath, await targetLayout.text(), "utf8"), fs.writeFile(targetQaPath, targetQa.ndjson, "utf8"), ...(targetDiffPath ? [targetQa.diffBlob.save(targetDiffPath)] : [])]);
       if (options.writeBaseline && targetBaselinePath) await targetQa.blob.save(targetBaselinePath);
       sheetRenders.push({
         sheetName: targetSheet.name,
@@ -245,6 +251,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
         preview: targetPreviewPath,
         layout: targetLayoutPath,
         visualQa: targetQaPath,
+        diffPath: targetDiffPath,
         baselinePath: targetBaselinePath,
         baselineCompared: Boolean(targetBaseline),
         pixelDiff: targetQa.summary.pixelDiff,

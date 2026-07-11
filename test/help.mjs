@@ -104,6 +104,7 @@ assert.ok(sharedCatalog.every((item) => item.schema?.parameters && item.schema?.
 assert.equal(HELP_CATALOG.find((item) => item.name === "createPopplerRenderer")?.schema?.parameters?.dpi?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRenderer")?.schema?.parameters?.args?.type, "string[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelDiff?.type, "boolean|object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffImage?.type, "boolean");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
 assert.equal(pdfCatalog.length, 17);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));

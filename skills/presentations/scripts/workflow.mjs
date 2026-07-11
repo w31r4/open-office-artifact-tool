@@ -120,6 +120,11 @@ async function runPngQa(artifact, options = {}) {
     await fs.mkdir(path.dirname(options.baselinePath), { recursive: true });
     await qa.blob.save(options.baselinePath);
   }
+  if (qa.diffBlob && options.diffPath) {
+    await fs.mkdir(path.dirname(options.diffPath), { recursive: true });
+    await qa.diffBlob.save(options.diffPath);
+    qa.diffPath = options.diffPath;
+  }
   return qa;
 }
 
@@ -145,10 +150,11 @@ async function renderNativeSlides(pptxBlob, outputDir, slideCount, options = {})
     const png = await poppler({ input: pdf, inputType: "application/pdf", outputType: "image/png", format: "png", artifactKind: "presentation", pageIndex: slideIndex });
     const slidePath = path.join(pagesDir, `slide-${slideIndex + 1}.png`);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `native-slide-${slideIndex + 1}.png`) : undefined;
-    const qa = await runPngQa({ export: () => png }, { baselinePath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
+    const diffPath = path.join(outputDir, "diffs", `native-slide-${slideIndex + 1}.png`);
+    const qa = await runPngQa({ export: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
     await png.save(slidePath);
     qaLines.push(qa.ndjson);
-    pages.push({ slide: slideIndex + 1, path: slidePath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    pages.push({ slide: slideIndex + 1, path: slidePath, diffPath: qa.diffPath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
   const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
@@ -169,10 +175,12 @@ async function renderModelSlides(presentation, outputDir, options = {}) {
   for (let slideIndex = 0; slideIndex < presentation.slides.count; slideIndex += 1) {
     const slide = presentation.slides.getItem(slideIndex);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-slide-${slideIndex + 1}.png`) : undefined;
+    const diffPath = path.join(outputDir, "diffs", `model-slide-${slideIndex + 1}.png`);
     const qa = await runPngQa(presentation, {
       renderer,
       renderOptions: { slide },
       baselinePath,
+      diffPath,
       writeBaseline: options.writeBaseline,
       pixelThreshold: options.pixelThreshold,
       minBytes: options.minBytes,
@@ -182,7 +190,7 @@ async function renderModelSlides(presentation, outputDir, options = {}) {
     const layoutPath = path.join(layoutsDir, `slide-${slideIndex + 1}.json`);
     await Promise.all([qa.blob.save(slidePath), fs.writeFile(layoutPath, await (await slide.export({ format: "layout" })).text(), "utf8")]);
     qaLines.push(qa.ndjson);
-    slides.push({ slide: slideIndex + 1, path: slidePath, layoutPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    slides.push({ slide: slideIndex + 1, path: slidePath, layoutPath, diffPath: qa.diffPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
   const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === presentation.slides.count;
