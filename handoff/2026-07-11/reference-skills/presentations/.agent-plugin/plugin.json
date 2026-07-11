@@ -1,0 +1,49 @@
+{
+  "name": "presentations",
+  "version": "26.709.11516",
+  "description": "Create, edit, render, verify, and export presentation slide decks. Use when agent needs to build or modify a deck, slidedeck, presentation deck, slide deck, slides, PowerPoint, Google Slides, PPT, PPTX, .ppt, or .pptx file.",
+  "author": {
+    "name": "w31r4",
+    "email": "noreply@w31r4.invalid",
+    "url": "https://github.com/w31r4/open-office-artifact-tool"
+  },
+  "homepage": "https://github.com/w31r4/open-office-artifact-tool",
+  "repository": "https://github.com/w31r4/open-office-artifact-tool",
+  "license": "MIT",
+  "keywords": [
+    "slides",
+    "slide",
+    "deck",
+    "slidedeck",
+    "presentation",
+    "presentations",
+    "google slides",
+    "powerpoint",
+    "ppt",
+    "pptx"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Presentations",
+    "shortDescription": "Create and edit presentations",
+    "longDescription": "Create, edit, inspect, render, verify, and export presentation slide decks locally, including PPTX authoring and native Google Slides handoff guidance. Use Presentations when the durable output or target is a deck, slidedeck, presentation deck, slide deck, slides, PowerPoint, Google Slides, presentation, speaker notes, or visual deck repair.",
+    "developerName": "w31r4",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "privacyPolicyURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "termsOfServiceURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "defaultPrompt": [
+      "Create a slide deck about the solar system",
+      "Research this company's latest earnings and create a slide deck on the company's financial performance",
+      "Create a visually stunning slide deck about the latest AI trends"
+    ],
+    "brandColor": "#C43E1C",
+    "screenshots": []
+  }
+}

@@ -1,0 +1,3 @@
+[submodule "reference/office-artifact-tool"]
+	path = reference/office-artifact-tool
+	url = https://github.com/w31r4/office-artifact-tool.git

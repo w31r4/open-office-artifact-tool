@@ -1,0 +1,51 @@
+{
+  "name": "documents",
+  "version": "26.709.11516",
+  "description": "Create and edit document artifacts in agent, including Word files and Google Docs.",
+  "author": {
+    "name": "w31r4",
+    "email": "noreply@w31r4.invalid",
+    "url": "https://github.com/w31r4/open-office-artifact-tool"
+  },
+  "homepage": "https://github.com/w31r4/open-office-artifact-tool",
+  "repository": "https://github.com/w31r4/open-office-artifact-tool",
+  "license": "MIT",
+  "keywords": [
+    "doc",
+    "docs",
+    "document",
+    "documents",
+    "word",
+    "google docs",
+    "google doc",
+    "memo",
+    "write",
+    "writing",
+    "docx",
+    "artifacts"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Documents",
+    "shortDescription": "Create and edit document artifacts",
+    "longDescription": "Create, edit, inspect, render, verify, and export DOCX document artifacts locally. Use Documents when the durable output or target is a document, doc, docs, Word file, Google Doc, Google Docs document, memo, report, or writing artifact.",
+    "developerName": "w31r4",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "privacyPolicyURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "termsOfServiceURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "defaultPrompt": [
+      "Draft a project memo as a document",
+      "Create a document from this outline",
+      "Write a polished doc for this plan"
+    ],
+    "brandColor": "#2563EB",
+    "screenshots": []
+  }
+}
