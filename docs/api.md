@@ -110,6 +110,8 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 | `createPdfjsParser` | api | Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders. |
 | `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
+| `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
+| `pdf.addTable` | api | Add a modeled table with cell values and a page-space bounding box to the first PDF page. |
 | `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering. |
 | `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
@@ -125,27 +127,778 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 
 ### pdf details
 
+#### `createPdfjsParser`
+
+Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders.
+
+**Examples:**
+
+- const parser = createPdfjsParser({ getDocumentOptions: { useSystemFonts: true } })
+
+**Schema parameters:**
+
+- `pdfjs` (object) — Injected PDF.js module; otherwise pdfjs-dist is loaded.
+- `getDocumentOptions` (object) — Options merged into PDF.js getDocument().
+- `textContentOptions` (object) — Options merged into getTextContent().
+
+**Schema returns:**
+
+- `parser` (function) — Parser adapter for PdfFile.importPdf().
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pdfjs": {
+      "type": "object",
+      "description": "Injected PDF.js module; otherwise pdfjs-dist is loaded."
+    },
+    "getDocumentOptions": {
+      "type": "object",
+      "description": "Options merged into PDF.js getDocument()."
+    },
+    "textContentOptions": {
+      "type": "object",
+      "description": "Options merged into getTextContent()."
+    }
+  },
+  "returns": {
+    "parser": {
+      "type": "function",
+      "description": "Parser adapter for PdfFile.importPdf()."
+    }
+  }
+}
+```
+
+#### `pdf.addChart`
+
+Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip.
+
+**Examples:**
+
+- pdf.addChart({ pageIndex: 0, chartType: 'bar', categories: ['A', 'B'], series: [{ name: 'Score', values: [2, 4] }], bbox: [72, 430, 468, 180] })
+
+**Schema parameters:**
+
+- `pageIndex` (number) — Zero-based target page index.
+- `chartType` (string) — bar or line.
+- `title` (string) — Visible chart title.
+- `categories` (string[]) required — Category labels.
+- `series` (object[]) required — Series with name, numeric values, and optional color.
+- `bbox` (number[]) — Page-space [left, top, width, height] in points.
+
+**Schema returns:**
+
+- `chart` (PdfChart) — Inspectable chart facade with stable ID.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pageIndex": {
+      "type": "number",
+      "description": "Zero-based target page index."
+    },
+    "chartType": {
+      "type": "string",
+      "description": "bar or line."
+    },
+    "title": {
+      "type": "string",
+      "description": "Visible chart title."
+    },
+    "categories": {
+      "type": "string[]",
+      "required": true,
+      "description": "Category labels."
+    },
+    "series": {
+      "type": "object[]",
+      "required": true,
+      "description": "Series with name, numeric values, and optional color."
+    },
+    "bbox": {
+      "type": "number[]",
+      "description": "Page-space [left, top, width, height] in points."
+    }
+  },
+  "returns": {
+    "chart": {
+      "type": "PdfChart",
+      "description": "Inspectable chart facade with stable ID."
+    }
+  }
+}
+```
+
+#### `pdf.addImage`
+
+Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box.
+
+**Examples:**
+
+- pdf.addImage({ pageIndex: 0, dataUrl, alt: 'Approval mark', bbox: [430, 60, 64, 64] })
+
+**Schema parameters:**
+
+- `pageIndex` (number) — Zero-based target page index.
+- `dataUrl` (string) — Embedded image data URL; generated PDF export currently supports PNG.
+- `uri` (string) — External image URI metadata.
+- `prompt` (string) — Image generation/extraction prompt metadata.
+- `alt` (string) — Alternative text.
+- `bbox` (number[]) — Page-space [left, top, width, height] in points.
+- `fit` (string) — contain or cover intent metadata.
+
+**Schema returns:**
+
+- `image` (PdfImage) — Inspectable image facade with stable ID.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pageIndex": {
+      "type": "number",
+      "description": "Zero-based target page index."
+    },
+    "dataUrl": {
+      "type": "string",
+      "description": "Embedded image data URL; generated PDF export currently supports PNG."
+    },
+    "uri": {
+      "type": "string",
+      "description": "External image URI metadata."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Image generation/extraction prompt metadata."
+    },
+    "alt": {
+      "type": "string",
+      "description": "Alternative text."
+    },
+    "bbox": {
+      "type": "number[]",
+      "description": "Page-space [left, top, width, height] in points."
+    },
+    "fit": {
+      "type": "string",
+      "description": "contain or cover intent metadata."
+    }
+  },
+  "returns": {
+    "image": {
+      "type": "PdfImage",
+      "description": "Inspectable image facade with stable ID."
+    }
+  }
+}
+```
+
+#### `pdf.addPage`
+
+Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts.
+
+**Examples:**
+
+- pdf.addPage({ width: 612, height: 792, text: 'Appendix' })
+
+**Schema parameters:**
+
+- `width` (number) — Page width in points; defaults to 612.
+- `height` (number) — Page height in points; defaults to 792.
+- `text` (string) — Extractable page text.
+- `textItems` (object[]) — Positioned text item models.
+- `regions` (object[]) — Inspectable page-space regions.
+- `tables` (object[]) — Modeled page tables.
+- `images` (object[]) — Modeled page images.
+- `charts` (object[]) — Modeled page charts.
+
+**Schema returns:**
+
+- `page` (PdfPage) — Appended editable page facade.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "width": {
+      "type": "number",
+      "description": "Page width in points; defaults to 612."
+    },
+    "height": {
+      "type": "number",
+      "description": "Page height in points; defaults to 792."
+    },
+    "text": {
+      "type": "string",
+      "description": "Extractable page text."
+    },
+    "textItems": {
+      "type": "object[]",
+      "description": "Positioned text item models."
+    },
+    "regions": {
+      "type": "object[]",
+      "description": "Inspectable page-space regions."
+    },
+    "tables": {
+      "type": "object[]",
+      "description": "Modeled page tables."
+    },
+    "images": {
+      "type": "object[]",
+      "description": "Modeled page images."
+    },
+    "charts": {
+      "type": "object[]",
+      "description": "Modeled page charts."
+    }
+  },
+  "returns": {
+    "page": {
+      "type": "PdfPage",
+      "description": "Appended editable page facade."
+    }
+  }
+}
+```
+
+#### `pdf.addTable`
+
+Add a modeled table with cell values and a page-space bounding box to the first PDF page.
+
+**Examples:**
+
+- pdf.addTable({ name: 'gates', values: [['Gate', 'Status'], ['PDF.js', 'pass']], bbox: [72, 140, 468, 80] })
+
+**Schema parameters:**
+
+- `name` (string) — Inspectable table name.
+- `values` (unknown[][]) required — Rectangular or ragged cell value matrix.
+- `bbox` (number[]) — Page-space [left, top, width, height] in points.
+- `source` (string) — Optional extraction/source provenance.
+
+**Schema returns:**
+
+- `table` (PdfTable) — Inspectable table facade with stable ID.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "name": {
+      "type": "string",
+      "description": "Inspectable table name."
+    },
+    "values": {
+      "type": "unknown[][]",
+      "required": true,
+      "description": "Rectangular or ragged cell value matrix."
+    },
+    "bbox": {
+      "type": "number[]",
+      "description": "Page-space [left, top, width, height] in points."
+    },
+    "source": {
+      "type": "string",
+      "description": "Optional extraction/source provenance."
+    }
+  },
+  "returns": {
+    "table": {
+      "type": "PdfTable",
+      "description": "Inspectable table facade with stable ID."
+    }
+  }
+}
+```
+
+#### `pdf.addText`
+
+Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering.
+
+**Examples:**
+
+- pdf.addText({ pageIndex: 0, text: 'Status', bbox: [72, 72, 200, 24], fontSize: 18, bold: true })
+
+**Schema parameters:**
+
+- `text` (string) required — Text content.
+- `pageIndex` (number) — Zero-based target page index.
+- `bbox` (number[]) — Page-space [left, top, width, height] in points.
+- `fontName` (string) — Font family metadata.
+- `fontSize` (number) — Font size in points.
+- `color` (string) — Text color.
+- `bold` (boolean) — Bold text flag.
+- `italic` (boolean) — Italic text flag.
+
+**Schema returns:**
+
+- `textItem` (object) — Positioned text item with stable ID.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "text": {
+      "type": "string",
+      "required": true,
+      "description": "Text content."
+    },
+    "pageIndex": {
+      "type": "number",
+      "description": "Zero-based target page index."
+    },
+    "bbox": {
+      "type": "number[]",
+      "description": "Page-space [left, top, width, height] in points."
+    },
+    "fontName": {
+      "type": "string",
+      "description": "Font family metadata."
+    },
+    "fontSize": {
+      "type": "number",
+      "description": "Font size in points."
+    },
+    "color": {
+      "type": "string",
+      "description": "Text color."
+    },
+    "bold": {
+      "type": "boolean",
+      "description": "Bold text flag."
+    },
+    "italic": {
+      "type": "boolean",
+      "description": "Italic text flag."
+    }
+  },
+  "returns": {
+    "textItem": {
+      "type": "object",
+      "description": "Positioned text item with stable ID."
+    }
+  }
+}
+```
+
+#### `pdf.extractTables`
+
+Extract modeled table values and bounding boxes across all pages or a selected page.
+
+**Examples:**
+
+- pdf.extractTables({ page: 1 })
+
+**Schema parameters:**
+
+- `page` (number) — Optional one-based page number.
+
+**Schema returns:**
+
+- `tables` (object[]) — Table records with page, ID, name, values, and bbox.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "page": {
+      "type": "number",
+      "description": "Optional one-based page number."
+    }
+  },
+  "returns": {
+    "tables": {
+      "type": "object[]",
+      "description": "Table records with page, ID, name, values, and bbox."
+    }
+  }
+}
+```
+
+#### `pdf.extractText`
+
+Extract modeled text across all pages or a selected page.
+
+**Examples:**
+
+- pdf.extractText({ page: 2 })
+
+**Schema parameters:**
+
+- `page` (number) — Optional one-based page number.
+
+**Schema returns:**
+
+- `text` (string) — Selected page text or all page text joined with blank lines.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "page": {
+      "type": "number",
+      "description": "Optional one-based page number."
+    }
+  },
+  "returns": {
+    "text": {
+      "type": "string",
+      "description": "Selected page text or all page text joined with blank lines."
+    }
+  }
+}
+```
+
 #### `pdf.inspect`
 
 Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude.
 
+**Schema parameters:**
+
+- `kind` (string) — Comma-separated page, text, textItem, region, table, image, and chart record kinds.
+- `search` (string) — Case-insensitive record filter.
+- `target` (string) — Stable ID/anchor target; targetId, id, and anchor are aliases.
+- `before` (number) — Records of context before target matches.
+- `after` (number) — Records of context after target matches.
+- `include` (string) — Comma-separated fields to keep.
+- `exclude` (string) — Comma-separated fields to omit.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `inspection` (object) — Bounded { ndjson, truncated } inspection result.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "kind": {
+      "type": "string",
+      "description": "Comma-separated page, text, textItem, region, table, image, and chart record kinds."
+    },
+    "search": {
+      "type": "string",
+      "description": "Case-insensitive record filter."
+    },
+    "target": {
+      "type": "string",
+      "description": "Stable ID/anchor target; targetId, id, and anchor are aliases."
+    },
+    "before": {
+      "type": "number",
+      "description": "Records of context before target matches."
+    },
+    "after": {
+      "type": "number",
+      "description": "Records of context after target matches."
+    },
+    "include": {
+      "type": "string",
+      "description": "Comma-separated fields to keep."
+    },
+    "exclude": {
+      "type": "string",
+      "description": "Comma-separated fields to omit."
+    },
+    "maxChars": {
+      "type": "number",
+      "description": "Maximum bounded NDJSON output size."
+    }
+  },
+  "returns": {
+    "inspection": {
+      "type": "object",
+      "description": "Bounded { ndjson, truncated } inspection result."
+    }
+  }
+}
+```
+
+#### `pdf.layoutJson`
+
+Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing.
+
 **Examples:**
 
-- pdf.inspect({ kind: 'image,table', target: image.id, include: 'alt,bbox' })
+- pdf.layoutJson({ page: 1, target: table.id, context: 1 })
 
-**Options:**
+**Schema parameters:**
 
-- kind
-- search
-- target/targetId/id/anchor
-- before/after/context
-- include/fields
-- exclude/omit
-- maxChars
+- `page` (number) — Optional one-based page selector.
+- `pageIndex` (number) — Optional zero-based page selector.
+- `target` (string) — Stable target ID/anchor.
+- `search` (string) — Case-insensitive layout-record filter.
+- `before` (number) — Context records before matches.
+- `after` (number) — Context records after matches.
 
-**Returns:**
+**Schema returns:**
 
-{ ndjson, truncated } bounded NDJSON records
+- `layout` (object) — Point-based PDF page layout tree and optional slice metadata.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "page": {
+      "type": "number",
+      "description": "Optional one-based page selector."
+    },
+    "pageIndex": {
+      "type": "number",
+      "description": "Optional zero-based page selector."
+    },
+    "target": {
+      "type": "string",
+      "description": "Stable target ID/anchor."
+    },
+    "search": {
+      "type": "string",
+      "description": "Case-insensitive layout-record filter."
+    },
+    "before": {
+      "type": "number",
+      "description": "Context records before matches."
+    },
+    "after": {
+      "type": "number",
+      "description": "Context records after matches."
+    }
+  },
+  "returns": {
+    "layout": {
+      "type": "object",
+      "description": "Point-based PDF page layout tree and optional slice metadata."
+    }
+  }
+}
+```
+
+#### `pdf.render`
+
+Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters.
+
+**Examples:**
+
+- await pdf.render({ pageIndex: 0 })
+- await pdf.render({ source: 'pdf', format: 'png', renderer: createPopplerRenderer() })
+
+**Schema parameters:**
+
+- `pageIndex` (number) — Zero-based page index for modeled SVG rendering.
+- `page` (number) — One-based page selector used by layout/native renderer workflows.
+- `format` (string) — svg by default, layout, pdf, png, ppm, or tiff with a renderer.
+- `source` (string) — Set to pdf to render exported PDF bytes.
+- `renderer` (function) — Optional PDF-capable renderer adapter.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — SVG, layout JSON, PDF, or renderer output.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pageIndex": {
+      "type": "number",
+      "description": "Zero-based page index for modeled SVG rendering."
+    },
+    "page": {
+      "type": "number",
+      "description": "One-based page selector used by layout/native renderer workflows."
+    },
+    "format": {
+      "type": "string",
+      "description": "svg by default, layout, pdf, png, ppm, or tiff with a renderer."
+    },
+    "source": {
+      "type": "string",
+      "description": "Set to pdf to render exported PDF bytes."
+    },
+    "renderer": {
+      "type": "function",
+      "description": "Optional PDF-capable renderer adapter."
+    }
+  },
+  "returns": {
+    "blob": {
+      "type": "FileBlob",
+      "description": "SVG, layout JSON, PDF, or renderer output."
+    }
+  }
+}
+```
+
+#### `pdf.resolve`
+
+Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts.
+
+**Examples:**
+
+- pdf.resolve('pg-1/txt/1')
+
+**Schema parameters:**
+
+- `id` (string) required — Stable artifact, page, text, text-item, region, table, image, or chart ID.
+
+**Schema returns:**
+
+- `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable artifact, page, text, text-item, region, table, image, or chart ID."
+    }
+  },
+  "returns": {
+    "object": {
+      "type": "object|undefined",
+      "description": "Resolved editable facade/record or undefined."
+    }
+  }
+}
+```
+
+#### `pdf.verify`
+
+Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data.
+
+**Examples:**
+
+- pdf.verify({ maxChars: 12000 })
+
+**Schema parameters:**
+
+- `maxChars` (number) — Maximum bounded NDJSON issue output size.
+
+**Schema returns:**
+
+- `report` (object) — PDF semantic QA result with ok, issues, ndjson, and truncated.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "maxChars": {
+      "type": "number",
+      "description": "Maximum bounded NDJSON issue output size."
+    }
+  },
+  "returns": {
+    "report": {
+      "type": "object",
+      "description": "PDF semantic QA result with ok, issues, ndjson, and truncated."
+    }
+  }
+}
+```
+
+#### `PdfArtifact.create`
+
+Create a modeled PDF artifact with pages, text, table regions, and image regions.
+
+**Examples:**
+
+- const pdf = PdfArtifact.create({ pages: [{ width: 612, height: 792, text: 'Report' }] })
+
+**Schema parameters:**
+
+- `id` (string) — Optional stable artifact ID.
+- `metadata` (object) — Clean-room metadata preserved through generated-PDF roundtrip.
+- `text` (string) — Convenience text for a single default page.
+- `pages` (object[]) — Page models with width, height, text, textItems, regions, tables, images, and charts.
+
+**Schema returns:**
+
+- `pdf` (PdfArtifact) — Editable modeled PDF artifact.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "id": {
+      "type": "string",
+      "description": "Optional stable artifact ID."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Clean-room metadata preserved through generated-PDF roundtrip."
+    },
+    "text": {
+      "type": "string",
+      "description": "Convenience text for a single default page."
+    },
+    "pages": {
+      "type": "object[]",
+      "description": "Page models with width, height, text, textItems, regions, tables, images, and charts."
+    }
+  },
+  "returns": {
+    "pdf": {
+      "type": "PdfArtifact",
+      "description": "Editable modeled PDF artifact."
+    }
+  }
+}
+```
+
+#### `PdfFile.exportPdf`
+
+Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG images, and clean-room metadata.
+
+**Examples:**
+
+- const blob = await PdfFile.exportPdf(pdf)
+
+**Schema parameters:**
+
+- `pdf` (PdfArtifact) required — Modeled PDF artifact to serialize.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — application/pdf bytes with modeled content and clean-room metadata.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pdf": {
+      "type": "PdfArtifact",
+      "required": true,
+      "description": "Modeled PDF artifact to serialize."
+    }
+  },
+  "returns": {
+    "blob": {
+      "type": "FileBlob",
+      "description": "application/pdf bytes with modeled content and clean-room metadata."
+    }
+  }
+}
+```
 
 #### `PdfFile.importPdf`
 

@@ -23,6 +23,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.layoutJson"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addTable"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "visualQaArtifact"));
@@ -72,6 +74,11 @@ assert.ok(sharedCatalog.every((item) => item.schema?.parameters && item.schema?.
 assert.equal(HELP_CATALOG.find((item) => item.name === "createPopplerRenderer")?.schema?.parameters?.dpi?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRenderer")?.schema?.parameters?.args?.type, "string[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelDiff?.type, "boolean|object");
+const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
+assert.equal(pdfCatalog.length, 17);
+assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.returns?.blob?.type, "FileBlob");
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -128,5 +135,7 @@ assert.match(apiDocs, /Spilled two-dimensional formula result/);
 assert.match(apiDocs, /#### `createPopplerRenderer`/);
 assert.match(apiDocs, /`dpi` \(number\)/);
 assert.match(apiDocs, /#### `visualQaArtifact`/);
+assert.match(apiDocs, /#### `pdf\.addPage`/);
+assert.match(apiDocs, /#### `pdf\.addTable`/);
 
 console.log("help smoke ok");

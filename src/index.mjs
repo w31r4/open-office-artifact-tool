@@ -714,7 +714,9 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply safe in-package DOCX XML/JSON/binary patches with path traversal validation and return a patched DOCX FileBlob." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values and a page-space bounding box to the first PDF page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
@@ -898,6 +900,179 @@ const HELP_DETAIL_OVERRIDES = {
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
       returns: { inspection: { type: "object", description: "PDF file summary plus bounded indirect object records." } },
+    },
+  },
+  "PdfArtifact.create": {
+    examples: ["const pdf = PdfArtifact.create({ pages: [{ width: 612, height: 792, text: 'Report' }] })"],
+    schema: {
+      parameters: {
+        id: { type: "string", description: "Optional stable artifact ID." },
+        metadata: { type: "object", description: "Clean-room metadata preserved through generated-PDF roundtrip." },
+        text: { type: "string", description: "Convenience text for a single default page." },
+        pages: { type: "object[]", description: "Page models with width, height, text, textItems, regions, tables, images, and charts." },
+      },
+      returns: { pdf: { type: "PdfArtifact", description: "Editable modeled PDF artifact." } },
+    },
+  },
+  "pdf.addPage": {
+    examples: ["pdf.addPage({ width: 612, height: 792, text: 'Appendix' })"],
+    schema: {
+      parameters: {
+        width: { type: "number", description: "Page width in points; defaults to 612." },
+        height: { type: "number", description: "Page height in points; defaults to 792." },
+        text: { type: "string", description: "Extractable page text." },
+        textItems: { type: "object[]", description: "Positioned text item models." },
+        regions: { type: "object[]", description: "Inspectable page-space regions." },
+        tables: { type: "object[]", description: "Modeled page tables." },
+        images: { type: "object[]", description: "Modeled page images." },
+        charts: { type: "object[]", description: "Modeled page charts." },
+      },
+      returns: { page: { type: "PdfPage", description: "Appended editable page facade." } },
+    },
+  },
+  "pdf.addText": {
+    examples: ["pdf.addText({ pageIndex: 0, text: 'Status', bbox: [72, 72, 200, 24], fontSize: 18, bold: true })"],
+    schema: {
+      parameters: {
+        text: { type: "string", required: true, description: "Text content." },
+        pageIndex: { type: "number", description: "Zero-based target page index." },
+        bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
+        fontName: { type: "string", description: "Font family metadata." },
+        fontSize: { type: "number", description: "Font size in points." },
+        color: { type: "string", description: "Text color." },
+        bold: { type: "boolean", description: "Bold text flag." },
+        italic: { type: "boolean", description: "Italic text flag." },
+      },
+      returns: { textItem: { type: "object", description: "Positioned text item with stable ID." } },
+    },
+  },
+  "pdf.addTable": {
+    examples: ["pdf.addTable({ name: 'gates', values: [['Gate', 'Status'], ['PDF.js', 'pass']], bbox: [72, 140, 468, 80] })"],
+    schema: {
+      parameters: {
+        name: { type: "string", description: "Inspectable table name." },
+        values: { type: "unknown[][]", required: true, description: "Rectangular or ragged cell value matrix." },
+        bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
+        source: { type: "string", description: "Optional extraction/source provenance." },
+      },
+      returns: { table: { type: "PdfTable", description: "Inspectable table facade with stable ID." } },
+    },
+  },
+  "pdf.addImage": {
+    examples: ["pdf.addImage({ pageIndex: 0, dataUrl, alt: 'Approval mark', bbox: [430, 60, 64, 64] })"],
+    schema: {
+      parameters: {
+        pageIndex: { type: "number", description: "Zero-based target page index." },
+        dataUrl: { type: "string", description: "Embedded image data URL; generated PDF export currently supports PNG." },
+        uri: { type: "string", description: "External image URI metadata." },
+        prompt: { type: "string", description: "Image generation/extraction prompt metadata." },
+        alt: { type: "string", description: "Alternative text." },
+        bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
+        fit: { type: "string", description: "contain or cover intent metadata." },
+      },
+      returns: { image: { type: "PdfImage", description: "Inspectable image facade with stable ID." } },
+    },
+  },
+  "pdf.addChart": {
+    examples: ["pdf.addChart({ pageIndex: 0, chartType: 'bar', categories: ['A', 'B'], series: [{ name: 'Score', values: [2, 4] }], bbox: [72, 430, 468, 180] })"],
+    schema: {
+      parameters: {
+        pageIndex: { type: "number", description: "Zero-based target page index." },
+        chartType: { type: "string", description: "bar or line." },
+        title: { type: "string", description: "Visible chart title." },
+        categories: { type: "string[]", required: true, description: "Category labels." },
+        series: { type: "object[]", required: true, description: "Series with name, numeric values, and optional color." },
+        bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
+      },
+      returns: { chart: { type: "PdfChart", description: "Inspectable chart facade with stable ID." } },
+    },
+  },
+  "pdf.extractText": {
+    examples: ["pdf.extractText({ page: 2 })"],
+    schema: {
+      parameters: { page: { type: "number", description: "Optional one-based page number." } },
+      returns: { text: { type: "string", description: "Selected page text or all page text joined with blank lines." } },
+    },
+  },
+  "pdf.extractTables": {
+    examples: ["pdf.extractTables({ page: 1 })"],
+    schema: {
+      parameters: { page: { type: "number", description: "Optional one-based page number." } },
+      returns: { tables: { type: "object[]", description: "Table records with page, ID, name, values, and bbox." } },
+    },
+  },
+  "pdf.inspect": {
+    schema: {
+      parameters: {
+        kind: { type: "string", description: "Comma-separated page, text, textItem, region, table, image, and chart record kinds." },
+        search: { type: "string", description: "Case-insensitive record filter." },
+        target: { type: "string", description: "Stable ID/anchor target; targetId, id, and anchor are aliases." },
+        before: { type: "number", description: "Records of context before target matches." },
+        after: { type: "number", description: "Records of context after target matches." },
+        include: { type: "string", description: "Comma-separated fields to keep." },
+        exclude: { type: "string", description: "Comma-separated fields to omit." },
+        maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+      },
+      returns: { inspection: { type: "object", description: "Bounded { ndjson, truncated } inspection result." } },
+    },
+  },
+  "pdf.resolve": {
+    examples: ["pdf.resolve('pg-1/txt/1')"],
+    schema: {
+      parameters: { id: { type: "string", required: true, description: "Stable artifact, page, text, text-item, region, table, image, or chart ID." } },
+      returns: { object: { type: "object|undefined", description: "Resolved editable facade/record or undefined." } },
+    },
+  },
+  "pdf.render": {
+    examples: ["await pdf.render({ pageIndex: 0 })", "await pdf.render({ source: 'pdf', format: 'png', renderer: createPopplerRenderer() })"],
+    schema: {
+      parameters: {
+        pageIndex: { type: "number", description: "Zero-based page index for modeled SVG rendering." },
+        page: { type: "number", description: "One-based page selector used by layout/native renderer workflows." },
+        format: { type: "string", description: "svg by default, layout, pdf, png, ppm, or tiff with a renderer." },
+        source: { type: "string", description: "Set to pdf to render exported PDF bytes." },
+        renderer: { type: "function", description: "Optional PDF-capable renderer adapter." },
+      },
+      returns: { blob: { type: "FileBlob", description: "SVG, layout JSON, PDF, or renderer output." } },
+    },
+  },
+  "pdf.layoutJson": {
+    examples: ["pdf.layoutJson({ page: 1, target: table.id, context: 1 })"],
+    schema: {
+      parameters: {
+        page: { type: "number", description: "Optional one-based page selector." },
+        pageIndex: { type: "number", description: "Optional zero-based page selector." },
+        target: { type: "string", description: "Stable target ID/anchor." },
+        search: { type: "string", description: "Case-insensitive layout-record filter." },
+        before: { type: "number", description: "Context records before matches." },
+        after: { type: "number", description: "Context records after matches." },
+      },
+      returns: { layout: { type: "object", description: "Point-based PDF page layout tree and optional slice metadata." } },
+    },
+  },
+  "pdf.verify": {
+    examples: ["pdf.verify({ maxChars: 12000 })"],
+    schema: {
+      parameters: { maxChars: { type: "number", description: "Maximum bounded NDJSON issue output size." } },
+      returns: { report: { type: "object", description: "PDF semantic QA result with ok, issues, ndjson, and truncated." } },
+    },
+  },
+  "PdfFile.exportPdf": {
+    examples: ["const blob = await PdfFile.exportPdf(pdf)"],
+    schema: {
+      parameters: { pdf: { type: "PdfArtifact", required: true, description: "Modeled PDF artifact to serialize." } },
+      returns: { blob: { type: "FileBlob", description: "application/pdf bytes with modeled content and clean-room metadata." } },
+    },
+  },
+  createPdfjsParser: {
+    examples: ["const parser = createPdfjsParser({ getDocumentOptions: { useSystemFonts: true } })"],
+    schema: {
+      parameters: {
+        pdfjs: { type: "object", description: "Injected PDF.js module; otherwise pdfjs-dist is loaded." },
+        getDocumentOptions: { type: "object", description: "Options merged into PDF.js getDocument()." },
+        textContentOptions: { type: "object", description: "Options merged into getTextContent()." },
+      },
+      returns: { parser: { type: "function", description: "Parser adapter for PdfFile.importPdf()." } },
     },
   },
   "workbook.structuredReferences": {
