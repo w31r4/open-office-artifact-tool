@@ -5120,7 +5120,7 @@ export class SpreadsheetFile {
 
   static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
-    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
+    return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportXlsx(workbook) {
@@ -6885,7 +6885,7 @@ export class PresentationFile {
 
   static async patchPptx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
-    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
+    return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportPptx(presentation) {
@@ -8349,7 +8349,7 @@ function applyOoxmlPartRecipe(patch, family) {
   if (relationship) relationship = { ...derivedRelationship, ...relationship, type: relationship.type || spec.relationshipType };
   else if (relationships) relationships = relationships.map((item) => ({ ...derivedRelationship, ...item, type: item.type || spec.relationshipType }));
   else if (derivedRelationship?.source !== undefined) relationship = derivedRelationship;
-  return { ...patch, contentType: patch.contentType || patch.mimeType || patch.type || spec.contentType, relationship, relationships, recipeKind: kind };
+  return { ...patch, contentType: patch.contentType || patch.mimeType || patch.type || spec.contentType, relationship, relationships, sourceReference: patch.sourceReference ?? recipe.sourceReference, recipeKind: kind };
 }
 
 function ooxmlRelationshipSource(partPath) {
@@ -8605,6 +8605,7 @@ async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, fami
       const target = relationship.target || (source ? path.posix.relative(path.posix.dirname(source), partPath) : partPath);
       const remove = relationship.remove === true || relationship.delete === true || patch.remove || patch.delete;
       const matches = (entry) => (relationship.id && entry.attrs.Id === relationship.id) || (!relationship.id && ooxmlResolveRelationshipTarget(source, entry.attrs.Target) === partPath);
+      relationship.resolvedIds = entries.filter(matches).map((entry) => entry.attrs.Id).filter(Boolean);
       const withoutMatch = xml.replace(/<Relationship\b[^>]*\/?\s*>/g, (tag) => {
         const entry = ooxmlRelationshipEntries(tag)[0];
         return entry && matches(entry) ? "" : tag;
@@ -8617,12 +8618,160 @@ async function syncOoxmlPatchRelationships(zip, normalizedPatches, options, fami
       const usedIds = new Set(entries.map((entry) => entry.attrs.Id));
       let id = relationship.id;
       if (!id) { let index = 1; while (usedIds.has(`rId${index}`)) index += 1; id = `rId${index}`; }
+      relationship.resolvedId = id;
       const targetMode = relationship.targetMode ? ` TargetMode="${attrEscape(relationship.targetMode)}"` : "";
       const tag = `<Relationship Id="${attrEscape(id)}" Type="${attrEscape(relationship.type)}" Target="${attrEscape(target)}"${targetMode}/>`;
       const next = withoutMatch.replace(/<\/Relationships>\s*$/, `${tag}</Relationships>`);
       zip.file(relsPath, next);
       updates += 1;
     }
+  }
+  return updates;
+}
+
+function ooxmlTagRelationshipId(tag = "") {
+  return Object.entries(ooxmlXmlAttributes(tag)).find(([name]) => /:(?:id|embed|link)$/.test(name))?.[1];
+}
+
+function ooxmlRemoveReferenceTags(xml, tagName, ids) {
+  if (!ids.size) return String(xml);
+  const escapedName = String(tagName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return String(xml).replace(new RegExp(`<${escapedName}\\b[^>]*\\/?>`, "g"), (tag) => ids.has(ooxmlTagRelationshipId(tag)) ? "" : tag);
+}
+
+function ooxmlSetAttribute(tag, name, value) {
+  const escapedName = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(\\b${escapedName}\\s*=\\s*)(["'])(.*?)\\2`);
+  if (pattern.test(tag)) return tag.replace(pattern, `$1"${attrEscape(value)}"`);
+  return tag.replace(/\s*\/?>$/, (ending) => ` ${name}="${attrEscape(value)}"${ending}`);
+}
+
+function ooxmlEnsureRelationshipPrefix(xml, rootName) {
+  const escapedRoot = String(rootName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rootPattern = new RegExp(`<${escapedRoot}\\b[^>]*>`);
+  const root = rootPattern.exec(String(xml))?.[0];
+  if (!root) throw new Error(`OOXML source reference could not find root element ${rootName}.`);
+  const attributes = ooxmlXmlAttributes(root);
+  for (const [name, namespace] of Object.entries(attributes)) if (name.startsWith("xmlns:") && OOXML_RELATIONSHIP_NAMESPACES.has(namespace)) return { xml: String(xml), prefix: name.slice(6) };
+  let prefix = "r";
+  let index = 1;
+  while (attributes[`xmlns:${prefix}`]) prefix = `oatrel${index++}`;
+  const nextRoot = root.replace(/>$/, ` xmlns:${prefix}="${OOXML_RELATIONSHIP_BASE}">`);
+  return { xml: String(xml).replace(root, nextRoot), prefix };
+}
+
+function ooxmlReferenceConfig(value) {
+  if (value === true) return {};
+  if (value && typeof value === "object") return value;
+  return undefined;
+}
+
+function ooxmlMutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
+  const tagName = `w:${kind}Reference`;
+  let next = ooxmlRemoveReferenceTags(xml, tagName, ids);
+  if (!addId) return next;
+  const referenceType = String(config.type || config.referenceType || "default");
+  if (!new Set(["default", "first", "even"]).has(referenceType)) throw new Error(`DOCX ${kind} sourceReference type must be default, first, or even.`);
+  next = next.replace(new RegExp(`<${tagName}\\b[^>]*\\/?>`, "g"), (tag) => ooxmlXmlAttributes(tag)["w:type"] === referenceType ? "" : tag);
+  const ensured = ooxmlEnsureRelationshipPrefix(next, "w:document");
+  next = ensured.xml;
+  const referenceTag = `<${tagName} w:type="${referenceType}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+  const sections = [...next.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)];
+  if (sections.length) {
+    const section = sections.at(-1)[0];
+    return next.replace(section, section.replace(/<\/w:sectPr>$/, `${referenceTag}</w:sectPr>`));
+  }
+  const selfClosingSections = [...next.matchAll(/<w:sectPr\b[^>]*\/>/g)];
+  if (selfClosingSections.length) {
+    const section = selfClosingSections.at(-1)[0];
+    return next.replace(section, `${section.replace(/\/>$/, ">")}${referenceTag}</w:sectPr>`);
+  }
+  if (!/<\/w:body>/.test(next)) throw new Error("DOCX header/footer sourceReference requires w:body or w:sectPr.");
+  return next.replace(/<\/w:body>/, `<w:sectPr>${referenceTag}</w:sectPr></w:body>`);
+}
+
+function ooxmlMutateXlsxTableReference(xml, ids, addId) {
+  let next = ooxmlRemoveReferenceTags(xml, "tablePart", ids);
+  if (addId) {
+    const ensured = ooxmlEnsureRelationshipPrefix(next, "worksheet");
+    next = ensured.xml;
+    const tableTag = `<tablePart ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+    const block = /<tableParts\b[^>]*>[\s\S]*?<\/tableParts>/.exec(next)?.[0];
+    if (block) next = next.replace(block, block.replace(/<\/tableParts>$/, `${tableTag}</tableParts>`));
+    else if (/<tableParts\b[^>]*\/>/.test(next)) next = next.replace(/<tableParts\b[^>]*\/>/, (tag) => `${tag.replace(/\/>$/, ">")}${tableTag}</tableParts>`);
+    else if (/<\/worksheet>/.test(next)) next = next.replace(/<\/worksheet>/, `<tableParts count="1">${tableTag}</tableParts></worksheet>`);
+    else throw new Error("XLSX table sourceReference requires a worksheet root.");
+  }
+  const block = /<tableParts\b[^>]*>[\s\S]*?<\/tableParts>/.exec(next)?.[0];
+  if (!block) return next;
+  const count = [...block.matchAll(/<tablePart\b[^>]*\/?>/g)].length;
+  if (!count) return next.replace(block, "");
+  const opening = /^<tableParts\b[^>]*>/.exec(block)?.[0];
+  return opening ? next.replace(block, block.replace(opening, ooxmlSetAttribute(opening, "count", count))) : next;
+}
+
+function ooxmlMutateXlsxWorksheetReference(xml, ids, addId, config = {}) {
+  let next = ooxmlRemoveReferenceTags(xml, "sheet", ids);
+  if (!addId) return next;
+  const name = String(config.name || config.sheetName || "").trim();
+  if (!name) throw new Error("XLSX worksheet sourceReference requires name or sheetName.");
+  const state = config.state == null ? undefined : String(config.state);
+  if (state && !new Set(["visible", "hidden", "veryHidden"]).has(state)) throw new Error("XLSX worksheet sourceReference state must be visible, hidden, or veryHidden.");
+  const existingIds = [...next.matchAll(/<sheet\b[^>]*\/?>/g)].map((match) => Number(ooxmlXmlAttributes(match[0]).sheetId)).filter(Number.isFinite);
+  const sheetId = Number(config.sheetId ?? Math.max(0, ...existingIds) + 1);
+  if (!Number.isInteger(sheetId) || sheetId < 1) throw new Error("XLSX worksheet sourceReference sheetId must be a positive integer.");
+  const ensured = ooxmlEnsureRelationshipPrefix(next, "workbook");
+  next = ensured.xml;
+  const sheetTag = `<sheet name="${attrEscape(name)}" sheetId="${sheetId}"${state ? ` state="${state}"` : ""} ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+  const block = /<sheets\b[^>]*>[\s\S]*?<\/sheets>/.exec(next)?.[0];
+  if (block) return next.replace(block, block.replace(/<\/sheets>$/, `${sheetTag}</sheets>`));
+  if (/<sheets\b[^>]*\/>/.test(next)) return next.replace(/<sheets\b[^>]*\/>/, (tag) => `${tag.replace(/\/>$/, ">")}${sheetTag}</sheets>`);
+  if (/<\/workbook>/.test(next)) return next.replace(/<\/workbook>/, `<sheets>${sheetTag}</sheets></workbook>`);
+  throw new Error("XLSX worksheet sourceReference requires a workbook root.");
+}
+
+function ooxmlMutatePptxSlideReference(xml, ids, addId, config = {}) {
+  let next = ooxmlRemoveReferenceTags(xml, "p:sldId", ids);
+  if (!addId) return next;
+  const existingIds = [...next.matchAll(/<p:sldId\b[^>]*\/?>/g)].map((match) => Number(ooxmlXmlAttributes(match[0]).id)).filter(Number.isFinite);
+  const slideId = Number(config.slideId ?? Math.max(255, ...existingIds) + 1);
+  if (!Number.isInteger(slideId) || slideId < 256 || slideId > 2_147_483_647) throw new Error("PPTX slide sourceReference slideId must be an integer from 256 through 2147483647.");
+  const ensured = ooxmlEnsureRelationshipPrefix(next, "p:presentation");
+  next = ensured.xml;
+  const slideTag = `<p:sldId id="${slideId}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+  const block = /<p:sldIdLst\b[^>]*>[\s\S]*?<\/p:sldIdLst>/.exec(next)?.[0];
+  if (block) return next.replace(block, block.replace(/<\/p:sldIdLst>$/, `${slideTag}</p:sldIdLst>`));
+  if (/<p:sldIdLst\b[^>]*\/>/.test(next)) return next.replace(/<p:sldIdLst\b[^>]*\/>/, (tag) => `${tag.replace(/\/>$/, ">")}${slideTag}</p:sldIdLst>`);
+  if (/<\/p:presentation>/.test(next)) return next.replace(/<\/p:presentation>/, `<p:sldIdLst>${slideTag}</p:sldIdLst></p:presentation>`);
+  throw new Error("PPTX slide sourceReference requires a p:presentation root.");
+}
+
+async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family) {
+  if (options.syncSourceReferences === false) return 0;
+  const supported = new Set(["DOCX:header", "DOCX:footer", "XLSX:worksheet", "XLSX:table", "PPTX:slide"]);
+  let updates = 0;
+  for (const { patch } of normalizedPatches) {
+    const config = ooxmlReferenceConfig(patch.sourceReference);
+    if (!config) continue;
+    const key = `${family}:${patch.recipeKind}`;
+    if (!supported.has(key)) throw new Error(`${family} sourceReference is not supported for recipe ${patch.recipeKind || "(missing)"}. Supported recipes: DOCX header/footer, XLSX worksheet/table, PPTX slide.`);
+    const relationship = patch.relationship || patch.relationships?.[0];
+    const source = relationship?.source || relationship?.sourcePart;
+    if (!source) throw new Error(`${family} ${patch.recipeKind} sourceReference requires recipe.source.`);
+    const safeSource = ooxmlSafePartPath(source, family);
+    const sourceEntry = zip.file(safeSource);
+    if (!sourceEntry) throw new Error(`${family} sourceReference source part not found: ${safeSource}`);
+    const remove = patch.remove === true || patch.delete === true;
+    const resolvedIds = new Set([...(relationship.resolvedIds || []), relationship.id].filter(Boolean));
+    const addId = remove ? undefined : relationship.resolvedId || relationship.id;
+    if (!remove && !addId) throw new Error(`${family} ${patch.recipeKind} sourceReference could not resolve a relationship Id.`);
+    const xml = await sourceEntry.async("text");
+    let next;
+    if (family === "DOCX") next = ooxmlMutateDocxSectionReference(xml, patch.recipeKind, resolvedIds, addId, config);
+    else if (family === "XLSX" && patch.recipeKind === "table") next = ooxmlMutateXlsxTableReference(xml, resolvedIds, addId);
+    else if (family === "XLSX") next = ooxmlMutateXlsxWorksheetReference(xml, resolvedIds, addId, config);
+    else next = ooxmlMutatePptxSlideReference(xml, resolvedIds, addId, config);
+    if (next !== xml) { zip.file(safeSource, next); updates += 1; }
   }
   return updates;
 }
@@ -8663,6 +8812,7 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
   }
   const contentTypesUpdated = await syncOoxmlPatchContentTypes(zip, normalizedPatches, options, family);
   const relationshipsUpdated = await syncOoxmlPatchRelationships(zip, normalizedPatches, options, family);
+  const sourceReferencesUpdated = await syncOoxmlSourceReferences(zip, normalizedPatches, options, family);
   const validated = options.validateResult !== false;
   let validationIssues = [];
   if (validated) {
@@ -8673,7 +8823,7 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
       throw new Error(`${family} patch produced an invalid OOXML package (${validationIssues.length} issue${validationIssues.length === 1 ? "" : "s"}): ${summary}. Pass { validateResult: false } only when intentionally constructing an invalid fixture.`);
     }
   }
-  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: preparedList.length, recipesApplied: preparedList.filter((patch) => patch.recipeKind).length, contentTypesUpdated, relationshipsUpdated, validated, validationIssues: validationIssues.length };
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), patchedParts: preparedList.length, recipesApplied: preparedList.filter((patch) => patch.recipeKind).length, contentTypesUpdated, relationshipsUpdated, sourceReferencesUpdated, validated, validationIssues: validationIssues.length };
 }
 
 export class DocumentFile {
@@ -8683,7 +8833,7 @@ export class DocumentFile {
 
   static async patchDocx(blobOrBuffer, patches = [], options = {}) {
     const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "DOCX" });
-    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
+    return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
   static async exportDocx(document) {
