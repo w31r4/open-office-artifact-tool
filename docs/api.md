@@ -258,10 +258,12 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
+| `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
 | `fx.LEFT` | formula | Return characters from the start of a text value. |
 | `fx.LEN` | formula | Return the length of a text value. |
 | `fx.LOWER` | formula | Convert text to lowercase. |
+| `fx.MATCH` | formula | Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes. |
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
@@ -385,6 +387,14 @@ Return one value when a condition is true and another when false.
 
 - =IF(A1>0,"ok","bad")
 
+#### `fx.INDEX`
+
+Return a value from a range by 1-based row and optional column index.
+
+**Examples:**
+
+- =INDEX(A2:C4,2,3)
+
 #### `fx.INT`
 
 Round a number down to the nearest integer.
@@ -416,6 +426,14 @@ Convert text to lowercase.
 **Examples:**
 
 - =LOWER(A1)
+
+#### `fx.MATCH`
+
+Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes.
+
+**Examples:**
+
+- =MATCH("Beta",A2:A4,0)
 
 #### `fx.MAX`
 

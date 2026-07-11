@@ -199,7 +199,7 @@ assert.match(graphBook.inspect({ kind: "formula", maxChars: 12000 }).ndjson, /"p
 const catalogBook = Workbook.create();
 const catalogSheet = catalogBook.worksheets.add("Catalog");
 catalogSheet.getRange("A1:D4").values = [["Name", "Score", "Region", "Code"], ["Alpha", 10, "East", "AX-100"], ["Beta", 15, "West", "BX-200"], ["Gamma", 20, "East", "CX-300"]];
-catalogSheet.getRange("F1:F16").formulas = [
+catalogSheet.getRange("F1:F20").formulas = [
   ["=IF(B2>9,\"ok\",\"bad\")"],
   ["=ROUND(1.234,2)"],
   ["=COUNTIF(C2:C4,\"East\")"],
@@ -216,10 +216,16 @@ catalogSheet.getRange("F1:F16").formulas = [
   ["=ABS(-4)"],
   ["=CEILING(7,3)"],
   ["=FLOOR(7,3)"],
+  ["=INDEX(A2:D4,2,4)"],
+  ["=MATCH(\"Gamma\",A2:A4,0)"],
+  ["=INDEX(B2:B4,MATCH(\"Beta\",A2:A4,0),1)"],
+  ["=MATCH(16,B2:B4,1)"],
 ];
 catalogBook.recalculate();
-assert.deepEqual(catalogSheet.getRange("F1:F16").values.flat(), ["ok", 1.23, 2, 30, 15, 20, "Al-100", "Alpha/Beta", 6, "MIXED", true, true, true, 4, 9, 6]);
+assert.deepEqual(catalogSheet.getRange("F1:F20").values.flat(), ["ok", 1.23, 2, 30, 15, 20, "Al-100", "Alpha/Beta", 6, "MIXED", true, true, true, 4, 9, 6, "BX-200", 3, 15, 2]);
 assert.match(catalogBook.help("fx.XLOOKUP").ndjson, /lookup/);
+assert.match(catalogBook.help("fx.INDEX").ndjson, /1-based row/);
+assert.match(catalogBook.help("fx.MATCH").ndjson, /1-based position/);
 assert.match(catalogBook.help("fx.TEXTJOIN").ndjson, /delimiter/);
 assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /XLOOKUP/);
 
