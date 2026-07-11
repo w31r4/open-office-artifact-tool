@@ -103,15 +103,17 @@ Additional optional render adapters are available for narrower environments:
 
 ```js
 import { createSharpRenderer } from "open-office-artifact-tool/renderers/sharp";
+import { createCanvasRenderer } from "open-office-artifact-tool/renderers/canvas";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 
 const sharpRenderer = createSharpRenderer(); // SVG/PNG/JPEG/WebP -> PNG/WebP/JPEG
+const canvasRenderer = createCanvasRenderer(); // SVG/PNG/JPEG/WebP -> PNG/JPEG via node-canvas
 const popplerRenderer = createPopplerRenderer(); // PDF FileBlob -> page PNG/PPM/TIFF via pdftoppm
 const libreOfficeRenderer = createLibreOfficeRenderer(); // DOCX/XLSX/PPTX/HTML -> PDF via soffice
 ```
 
-Install `sharp` for the sharp adapter. Install Poppler (`pdftoppm`) on the host for the Poppler adapter, or pass a custom `command` for a compatible CLI. Install LibreOffice (`soffice`) on the host for the LibreOffice adapter, or pass `command`/`args` for a compatible headless conversion CLI.
+Install `sharp` for the sharp adapter. Install the optional `canvas` npm package for the node-canvas adapter (SVG rasterization requires a canvas build with SVG/rsvg support). Install Poppler (`pdftoppm`) on the host for the Poppler adapter, or pass a custom `command` for a compatible CLI. Install LibreOffice (`soffice`) on the host for the LibreOffice adapter, or pass `command`/`args` for a compatible headless conversion CLI.
 
 ## Native Office bridge adapter
 

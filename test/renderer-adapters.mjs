@@ -7,6 +7,7 @@ import { DocumentModel, FileBlob, renderArtifact } from "open-office-artifact-to
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
 import { createSharpRenderer } from "open-office-artifact-tool/renderers/sharp";
+import { createCanvasRenderer } from "open-office-artifact-tool/renderers/canvas";
 
 function fakeSharp(input) {
   assert.ok(Buffer.isBuffer(input));
@@ -74,6 +75,72 @@ assert.equal(officePdf.type, "application/pdf");
 assert.equal(officePdf.metadata.renderer, "libreoffice");
 assert.equal(officePdf.metadata.inputType, docxInput.type);
 assert.match(await officePdf.text(), /%PDF-libreoffice-mock/);
+
+function fakeCanvasLib({ width = 120, height = 80 } = {}) {
+  return {
+    async loadImage(buf) {
+      assert.ok(Buffer.isBuffer(buf));
+      return { width, height, naturalWidth: width, naturalHeight: height };
+    },
+    createCanvas(w, h) {
+      assert.ok(w > 0 && h > 0, "canvas renderer must create a positive-size canvas");
+      return {
+        width: w,
+        height: h,
+        getContext() {
+          return {
+            fillStyle: null,
+            fillRect() {},
+            drawImage(image, dx, dy, dw, dh) {
+              assert.equal(dx, 0);
+              assert.equal(dy, 0);
+              assert.equal(dw, w);
+              assert.equal(dh, h);
+            },
+          };
+        },
+        toBuffer(mime, opts) {
+          if (mime === "image/jpeg") return Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+          return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+        },
+      };
+    },
+  };
+}
+
+const canvasDoc = DocumentModel.create({ paragraphs: ["Canvas renderer smoke"] });
+const canvasRenderer = createCanvasRenderer({ canvas: fakeCanvasLib(), background: "white" });
+const canvasPng = await renderArtifact(canvasDoc, { format: "png", renderer: canvasRenderer });
+assert.equal(canvasPng.type, "image/png");
+assert.equal(canvasPng.metadata.renderer, "canvas");
+assert.equal(canvasPng.metadata.inputType, "image/svg+xml");
+assert.equal(canvasPng.metadata.format, "png");
+assert.ok(canvasPng.metadata.width > 0 && canvasPng.metadata.height > 0);
+assert.deepEqual([...canvasPng.bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+const canvasJpeg = await renderArtifact(canvasDoc, { format: "jpeg", renderer: canvasRenderer });
+assert.equal(canvasJpeg.type, "image/jpeg");
+assert.equal(canvasJpeg.metadata.format, "jpeg");
+assert.deepEqual([...canvasJpeg.bytes.slice(0, 2)], [0xff, 0xd8]);
+const svgBlob = new FileBlob('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30"/></svg>', { type: "image/svg+xml" });
+const canvasFromBlob = await canvasRenderer({ input: svgBlob, inputType: "image/svg+xml", outputType: "image/png", format: "png", artifactKind: "document" });
+assert.equal(canvasFromBlob.metadata.renderer, "canvas");
+assert.equal(canvasFromBlob.metadata.width, 120);
+assert.equal(canvasFromBlob.metadata.height, 80);
+await assert.rejects(
+  () => canvasRenderer({ input: svgBlob, inputType: "image/svg+xml", outputType: "image/webp", format: "webp" }),
+  /supported formats are png and jpeg/,
+);
+await assert.rejects(
+  () => canvasRenderer({ input: new FileBlob(new Uint8Array([1]), { type: "application/pdf" }), inputType: "application/pdf", outputType: "image/png", format: "png" }),
+  /supports SVG, PNG, JPEG, and WebP input/,
+);
+const smallCanvasLib = fakeCanvasLib({ width: 0, height: 0 });
+delete smallCanvasLib.loadImage;
+smallCanvasLib.loadImage = async () => ({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
+const sizedRenderer = createCanvasRenderer({ canvas: smallCanvasLib, background: "white" });
+const sizedPng = await sizedRenderer({ input: svgBlob, inputType: "image/svg+xml", outputType: "image/png", format: "png", artifactKind: "document" });
+assert.equal(sizedPng.metadata.width, 40);
+assert.equal(sizedPng.metadata.height, 30);
 
 await fs.rm(tempDir, { recursive: true, force: true });
 

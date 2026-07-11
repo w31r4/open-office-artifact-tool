@@ -20,6 +20,7 @@
     "./presentation-jsx/jsx-dev-runtime": "./src/presentation-jsx/jsx-dev-runtime.mjs",
     "./renderers/playwright": "./src/renderers/playwright.mjs",
     "./renderers/sharp": "./src/renderers/sharp.mjs",
+    "./renderers/canvas": "./src/renderers/canvas.mjs",
     "./renderers/poppler": "./src/renderers/poppler.mjs",
     "./renderers/libreoffice": "./src/renderers/libreoffice.mjs",
     "./pdf/pdfjs": "./src/pdf/pdfjs.mjs",
@@ -60,7 +61,8 @@
   "peerDependencies": {
     "pdfjs-dist": ">=4.0.0",
     "playwright": ">=1.40.0",
-    "sharp": ">=0.33.0"
+    "sharp": ">=0.33.0",
+    "canvas": ">=2.11.0"
   },
   "peerDependenciesMeta": {
     "pdfjs-dist": {
@@ -70,6 +72,9 @@
       "optional": true
     },
     "sharp": {
+      "optional": true
+    },
+    "canvas": {
       "optional": true
     }
   }
