@@ -201,7 +201,8 @@ export async function verifyPdfFile(inputPath, options = {}) {
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
   const visualFailed = modelRender.ok === false || (nativeRender.status === "passed" && nativeRender.ok === false);
   const parserFailed = (String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "required" || String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "true") && pdfjs.status !== "passed";
-  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}. See ${outputDir}`);
+  const accessibilityFailed = options.requireTagged === true && !fileInspect.summary.tagged;
+  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed || accessibilityFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}, tagged=${fileInspect.summary.tagged}. See ${outputDir}`);
   return { pdf, inspect, fileInspect, verify, extractedText, extractedTables, modelRender, nativeRender, pdfjs, summary };
 }
 
@@ -213,7 +214,7 @@ export async function runPdfFixture(fixturePath, options = {}) {
   const pdf = createPdfFromFixture(fixture);
   const pdfPath = path.join(outputDir, fixture.outputName || `${fixture.name || "artifact"}.pdf`);
   await (await PdfFile.exportPdf(pdf)).save(pdfPath);
-  const qa = await verifyPdfFile(pdfPath, { outputDir: path.join(outputDir, "qa"), nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto", pdfjs: options.pdfjs ?? fixture.qa?.pdfjs ?? "auto", baselineDir: options.baselineDir, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, inspectKind: fixture.qa?.inspectKind, maxChars: fixture.qa?.maxChars });
+  const qa = await verifyPdfFile(pdfPath, { outputDir: path.join(outputDir, "qa"), nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto", pdfjs: options.pdfjs ?? fixture.qa?.pdfjs ?? "auto", requireTagged: options.requireTagged ?? fixture.qa?.requireTagged ?? true, baselineDir: options.baselineDir, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, inspectKind: fixture.qa?.inspectKind, maxChars: fixture.qa?.maxChars });
   for (const expected of fixture.expectText || []) assert.match(qa.extractedText, new RegExp(expected));
   for (const expected of fixture.expectPdfjsText || []) if (qa.pdfjs.status === "passed") assert.match(qa.pdfjs.text, new RegExp(expected));
   return { fixture, pdfPath, qa };

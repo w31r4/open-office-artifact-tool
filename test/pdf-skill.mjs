@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { PdfFile } from "../src/index.mjs";
 import { nativePdfRenderStatus, runPdfFixture, verifyPdfFile } from "../skills/pdf/scripts/workflow.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-skill-test-"));
@@ -14,9 +15,16 @@ try {
   assert.equal(first.qa.verify.ok, true);
   assert.equal(first.qa.pdf.pages.length, 3);
   assert.equal(first.qa.fileInspect.summary.pages, 3);
-  assert.equal(first.qa.fileInspect.summary.objects, 11);
+  assert.ok(first.qa.fileInspect.summary.objects >= 30);
   assert.equal(first.qa.fileInspect.summary.hasEmbeddedModel, true);
   assert.equal(first.qa.fileInspect.summary.hasEof, true);
+  assert.equal(first.qa.fileInspect.summary.tagged, true);
+  assert.equal(first.qa.fileInspect.summary.language, "en-US");
+  assert.ok(first.qa.fileInspect.summary.structureElements >= 10);
+  assert.equal(first.qa.fileInspect.summary.markedContentItems, first.qa.fileInspect.summary.structureElements);
+  const untaggedPath = path.join(root, "untagged.pdf");
+  await (await PdfFile.exportPdf(first.qa.pdf, { tagged: false })).save(untaggedPath);
+  await assert.rejects(() => verifyPdfFile(untaggedPath, { outputDir: path.join(root, "untagged-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /tagged=false/);
   assert.equal(first.qa.modelRender.pages.length, 3);
   assert.equal(first.qa.pdfjs.status, "passed");
   assert.equal(first.qa.pdfjs.pdf.pages.length, 3);

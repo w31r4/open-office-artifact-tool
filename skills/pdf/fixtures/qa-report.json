@@ -1,7 +1,7 @@
 {
   "name": "qa-report",
   "outputName": "qa-report.pdf",
-  "metadata": { "title": "Office artifact QA report", "author": "open-office-artifact-tool" },
+  "metadata": { "title": "Office artifact QA report", "author": "open-office-artifact-tool", "language": "en-US" },
   "pages": [
     {
       "width": 612,
@@ -63,5 +63,5 @@
   ],
   "expectText": ["Office artifact QA report", "Parser evidence complements visual review", "Automatically paginated appendix"],
   "expectPdfjsText": ["Office artifact QA report", "PDF.js and Poppler agree", "Independent checks accumulate", "Automatically paginated appendix"],
-  "qa": { "nativeRender": "auto", "pdfjs": "auto", "inspectKind": "page,text,textItem,region,table,image,chart", "maxChars": 30000 }
+  "qa": { "nativeRender": "auto", "pdfjs": "auto", "requireTagged": true, "inspectKind": "page,text,textItem,region,table,image,chart", "maxChars": 30000 }
 }

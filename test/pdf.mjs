@@ -136,12 +136,27 @@ assert.equal(pdf.verify().ok, true);
 
 const blob = await PdfFile.exportPdf(pdf);
 assert.equal(blob.type, "application/pdf");
+assert.equal(blob.metadata.tagged, true);
+assert.equal(blob.metadata.language, "en-US");
+assert.equal(blob.metadata.title, "PDF research artifact");
 const fileInspect = await PdfFile.inspectPdf(blob, { maxChars: 12000 });
 assert.equal(fileInspect.summary.version, "1.4");
 assert.equal(fileInspect.summary.pages, 2);
 assert.equal(fileInspect.summary.hasEmbeddedModel, true);
 assert.equal(fileInspect.summary.hasEof, true);
+assert.equal(fileInspect.summary.tagged, true);
+assert.equal(fileInspect.summary.language, "en-US");
+assert.ok(fileInspect.summary.structureElements >= 5);
+assert.equal(fileInspect.summary.markedContentItems, fileInspect.summary.structureElements);
 assert.match(fileInspect.ndjson, /"type":"Page"/);
+assert.match(await blob.text(), /\/Type \/StructTreeRoot/);
+assert.match(await blob.text(), /\/Alt \(Report logo\)/);
+const untaggedBlob = await PdfFile.exportPdf(PdfArtifact.create({ text: "Deliberately untagged fixture" }), { tagged: false, title: "Untagged fixture" });
+const untaggedInspect = await PdfFile.inspectPdf(untaggedBlob);
+assert.equal(untaggedBlob.metadata.tagged, false);
+assert.equal(untaggedInspect.summary.tagged, false);
+assert.equal(untaggedInspect.summary.structureElements, 0);
+assert.doesNotMatch(await untaggedBlob.text(), /\/StructTreeRoot/);
 const jpegPdf = PdfArtifact.create({ text: "JPEG export" });
 jpegPdf.addImage({
   name: "jpeg-mark",

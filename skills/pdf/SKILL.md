@@ -23,8 +23,8 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 2. Inspect pages, positioned text, regions, tables, images, and charts before editing.
 3. Use `pdf.addFlowText(...)` for long prose so wrapping, margins, long tokens, and page creation remain deterministic; use explicit bounding boxes for intentionally positioned labels, tables, images, and charts.
 4. Run `pdf.verify()`; fix page bounds, malformed data, empty objects, Unicode dashes, and non-numeric chart issues.
-5. Export with `PdfFile.exportPdf()` and import the exported file again.
-6. Inspect the binary structure with `PdfFile.inspectPdf()`.
+5. Export with `PdfFile.exportPdf()` (tagged by default) and import the exported file again.
+6. Inspect the binary structure with `PdfFile.inspectPdf()`; require tagged status, language, structure elements, and matching marked-content counts for agent-authored delivery PDFs.
 7. Parse the real PDF through PDF.js and check extracted text, geometry, tables, embedded-image data URLs/placement boxes, and page count.
 8. Render every modeled page with Playwright and every real PDF page with Poppler.
 9. Inspect every page PNG at full size. When a baseline is approved, compare both modeled and native PNG pixels on later runs.
@@ -64,6 +64,7 @@ node skills/pdf/scripts/verify-pdf.mjs \
   --input qa-report.pdf \
   --output-dir tmp/pdf-qa \
   --pdfjs required \
+  --require-tagged true \
   --native-render required
 ```
 
@@ -104,7 +105,8 @@ node skills/pdf/scripts/run-fixture.mjs \
 
 ## QA gates
 
-- `PdfFile.inspectPdf(...)` checks the PDF header/version, page and object counts, embedded clean-room model, and EOF marker.
+- `PdfFile.inspectPdf(...)` checks the PDF header/version, page/object counts, embedded clean-room model, EOF marker, tagged status, language, structure-element count, and MCID count.
+- Agent-authored fixture PDFs require `--require-tagged true`. Tagging provides a structure-tree baseline but does not by itself prove full PDF/UA conformance; review reading order, table hierarchy, alt text, Unicode fonts, and contrast separately.
 - `pdf.inspect(...)`, `pdf.extractText()`, `pdf.extractTables()`, and `pdf.verify()` prove modeled agent-facing semantics.
 - PDF.js independently parses the real exported bytes into page text geometry, regions, inferred tables, and bounded PNG image data when XObject pixels are available; placeholders must be reported when masks or unsupported color spaces prevent extraction.
 - Per-page Playwright PNGs catch modeled preview regressions.

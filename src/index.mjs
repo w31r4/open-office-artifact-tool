@@ -1009,8 +1009,8 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG/JPEG images, and clean-room metadata." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Table/Figure structure, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-element count, and marked-content count." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
@@ -1195,7 +1195,7 @@ const HELP_DETAIL_OVERRIDES = {
         maxObjects: { type: "number", description: "Maximum indirect object records to inspect." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
-      returns: { inspection: { type: "object", description: "PDF file summary plus bounded indirect object records." } },
+      returns: { inspection: { type: "object", description: "PDF file summary with tagged/language/structure evidence plus bounded indirect object records." } },
     },
   },
   "PdfArtifact.create": {
@@ -1371,10 +1371,15 @@ const HELP_DETAIL_OVERRIDES = {
     },
   },
   "PdfFile.exportPdf": {
-    examples: ["const blob = await PdfFile.exportPdf(pdf)"],
+    examples: ["const blob = await PdfFile.exportPdf(pdf, { language: 'en-US', title: 'Accessible report' })"],
     schema: {
-      parameters: { pdf: { type: "PdfArtifact", required: true, description: "Modeled PDF artifact to serialize." } },
-      returns: { blob: { type: "FileBlob", description: "application/pdf bytes with modeled content and clean-room metadata." } },
+      parameters: {
+        pdf: { type: "PdfArtifact", required: true, description: "Modeled PDF artifact to serialize." },
+        tagged: { type: "boolean", description: "Emit StructTreeRoot/ParentTree/MCID tagging; defaults to true." },
+        language: { type: "string", description: "Catalog language; defaults to artifact metadata language or en-US." },
+        title: { type: "string", description: "Document Info title; defaults to artifact metadata title or first text line." },
+      },
+      returns: { blob: { type: "FileBlob", description: "application/pdf bytes with modeled content, clean-room metadata, and tagged-export metadata." } },
     },
   },
   createPdfjsParser: {
@@ -8876,14 +8881,17 @@ export class PdfFile {
     const pages = [...text.matchAll(/\/Type\s*\/Page\b/g)].length;
     const objects = [...text.matchAll(/\b\d+\s+\d+\s+obj\b/g)].length;
     const records = [
-      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text) },
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
   }
 
-  static async exportPdf(artifact) {
-    return new FileBlob(buildMinimalPdf(artifact), { type: PDF_MIME });
+  static async exportPdf(artifact, options = {}) {
+    const language = options.language || options.lang || artifact.metadata?.language || artifact.metadata?.lang || "en-US";
+    const title = options.title || artifact.metadata?.title || String(artifact.pages?.[0]?.text || "").split(/\r?\n/).find(Boolean) || "Office artifact";
+    const exportOptions = { ...options, language, title };
+    return new FileBlob(buildMinimalPdf(artifact, exportOptions), { type: PDF_MIME, metadata: { tagged: options.tagged !== false, language, title } });
   }
 
   static async importPdf(blobOrBuffer, options = {}) {
@@ -9254,9 +9262,26 @@ function pdfImageCommands(page, image, asset) {
   return [`q ${draw} Q`];
 }
 
-function buildMinimalPdf(artifact) {
+function pdfSemanticGroups(page, assetByImage) {
+  const groups = [];
+  pdfPageTextCommands(page).forEach((command, index) => groups.push({ role: index === 0 ? "H1" : "P", commands: [command] }));
+  pdfPositionedTextCommands(page).forEach((command) => groups.push({ role: "P", commands: [command] }));
+  page.tables.forEach((table) => groups.push({ role: "Table", title: table.name || "Data table", commands: pdfTableCommands(page, table) }));
+  page.images.forEach((image) => groups.push({ role: "Figure", alt: image.alt || image.name || "Image", commands: pdfImageCommands(page, image, assetByImage.get(image)) }));
+  page.charts.forEach((chart) => groups.push({ role: "Figure", alt: chart.title || chart.name || "Chart", commands: pdfChartCommands(page, chart) }));
+  return groups.map((group, mcid) => ({ ...group, mcid }));
+}
+
+function pdfMarkedContent(group) {
+  return `/${group.role} << /MCID ${group.mcid} >> BDC\n${group.commands.join("\n")}\nEMC`;
+}
+
+function buildMinimalPdf(artifact, options = {}) {
   const pages = artifact.pages.length ? artifact.pages : [new PdfPage(artifact)];
   const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
+  const tagged = options.tagged !== false;
+  const language = String(options.language || options.lang || artifact.metadata?.language || artifact.metadata?.lang || "en-US");
+  const title = String(options.title || artifact.metadata?.title || String(pages[0]?.text || "").split(/\r?\n/).find(Boolean) || "Office artifact");
   let nextObjectId = 5;
   const plans = pages.map((page) => {
     const imageAssets = [];
@@ -9266,29 +9291,41 @@ function buildMinimalPdf(artifact) {
     }
     const pageObjectId = nextObjectId++;
     const contentObjectId = nextObjectId++;
-    return { page, imageAssets, pageObjectId, contentObjectId };
+    const assetByImage = new Map(imageAssets.map((asset) => [asset.image, asset]));
+    return { page, imageAssets, assetByImage, pageObjectId, contentObjectId, semanticGroups: pdfSemanticGroups(page, assetByImage) };
   });
+  const structTreeRootObjectId = tagged ? nextObjectId++ : undefined;
+  const parentTreeObjectId = tagged ? nextObjectId++ : undefined;
+  if (tagged) for (const plan of plans) plan.semanticGroups.forEach((group) => { group.structureObjectId = nextObjectId++; });
+  const infoObjectId = nextObjectId++;
   const objects = new Map();
-  objects.set(1, Buffer.from("<< /Type /Catalog /Pages 2 0 R >>", "ascii"));
+  const taggedCatalog = tagged ? ` /StructTreeRoot ${structTreeRootObjectId} 0 R /MarkInfo << /Marked true >> /Lang (${escapePdfString(language)})` : "";
+  objects.set(1, Buffer.from(`<< /Type /Catalog /Pages 2 0 R${taggedCatalog} /ViewerPreferences << /DisplayDocTitle true >> >>`, "ascii"));
   objects.set(2, Buffer.from(`<< /Type /Pages /Kids [${plans.map((plan) => `${plan.pageObjectId} 0 R`).join(" ")}] /Count ${plans.length} >>`, "ascii"));
   objects.set(3, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "ascii"));
   objects.set(4, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", "ascii"));
-  for (const plan of plans) {
-    const { page, imageAssets } = plan;
-    const assetByImage = new Map(imageAssets.map((asset) => [asset.image, asset]));
-    const commands = [
-      ...pdfPageTextCommands(page),
-      ...pdfPositionedTextCommands(page),
-      ...page.tables.flatMap((table) => pdfTableCommands(page, table)),
-      ...page.images.flatMap((image) => pdfImageCommands(page, image, assetByImage.get(image))),
-      ...page.charts.flatMap((chart) => pdfChartCommands(page, chart)),
-    ];
+  for (const [pageIndex, plan] of plans.entries()) {
+    const { page, imageAssets, semanticGroups } = plan;
+    const commands = tagged ? semanticGroups.map(pdfMarkedContent) : semanticGroups.flatMap((group) => group.commands);
     const content = Buffer.from(`${commands.join("\n")}\n`, "ascii");
     const xobjects = imageAssets.length ? `/XObject << ${imageAssets.map((asset) => `/${asset.resourceName} ${asset.objectId} 0 R`).join(" ")} >>` : "";
-    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R >>`, "ascii"));
+    const structParents = tagged ? ` /StructParents ${pageIndex}` : "";
+    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R${structParents} >>`, "ascii"));
     objects.set(plan.contentObjectId, Buffer.concat([Buffer.from(`<< /Length ${content.byteLength} >>\nstream\n`, "ascii"), content, Buffer.from("endstream", "ascii")]));
     for (const asset of imageAssets) objects.set(asset.objectId, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace ${asset.colorSpace} /BitsPerComponent 8 /Filter ${asset.filter} /Length ${asset.streamBytes.byteLength} >>\nstream\n`, "ascii"), asset.streamBytes, Buffer.from("\nendstream", "ascii")]));
   }
+  if (tagged) {
+    const structureRefs = plans.flatMap((plan) => plan.semanticGroups.map((group) => `${group.structureObjectId} 0 R`));
+    objects.set(structTreeRootObjectId, Buffer.from(`<< /Type /StructTreeRoot /K [${structureRefs.join(" ")}] /ParentTree ${parentTreeObjectId} 0 R /ParentTreeNextKey ${plans.length} >>`, "ascii"));
+    const parentTreeNums = plans.map((plan, pageIndex) => `${pageIndex} [${plan.semanticGroups.map((group) => `${group.structureObjectId} 0 R`).join(" ")}]`).join(" ");
+    objects.set(parentTreeObjectId, Buffer.from(`<< /Nums [${parentTreeNums}] >>`, "ascii"));
+    for (const plan of plans) for (const group of plan.semanticGroups) {
+      const alt = group.alt ? ` /Alt (${escapePdfString(group.alt)})` : "";
+      const titleEntry = group.title ? ` /T (${escapePdfString(group.title)})` : "";
+      objects.set(group.structureObjectId, Buffer.from(`<< /Type /StructElem /S /${group.role} /P ${structTreeRootObjectId} 0 R /Pg ${plan.pageObjectId} 0 R /K ${group.mcid}${alt}${titleEntry} >>`, "ascii"));
+    }
+  }
+  objects.set(infoObjectId, Buffer.from(`<< /Title (${escapePdfString(title)}) /Creator (open-office-artifact-tool) /Producer (open-office-artifact-tool clean-room PDF writer) >>`, "ascii"));
   const header = Buffer.from(`%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");
   const chunks = [header];
   const offsets = Array(nextObjectId).fill(0);
@@ -9304,7 +9341,7 @@ function buildMinimalPdf(artifact) {
   const xrefOffset = byteLength;
   let xref = `xref\n0 ${nextObjectId}\n0000000000 65535 f \n`;
   for (let objectId = 1; objectId < nextObjectId; objectId += 1) xref += `${String(offsets[objectId]).padStart(10, "0")} 00000 n \n`;
-  xref += `trailer\n<< /Size ${nextObjectId} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  xref += `trailer\n<< /Size ${nextObjectId} /Root 1 0 R /Info ${infoObjectId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   chunks.push(Buffer.from(xref, "ascii"));
   return new Uint8Array(Buffer.concat(chunks));
 }

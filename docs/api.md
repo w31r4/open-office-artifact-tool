@@ -486,9 +486,9 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts. |
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
-| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG/JPEG images, and clean-room metadata. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Table/Figure structure, positioned text, vector tables/charts, and embedded PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-element count, and marked-content count. |
 
 ### pdf details
 
@@ -788,19 +788,22 @@ Create a modeled PDF artifact with pages, text, table regions, and image regions
 
 #### `PdfFile.exportPdf`
 
-Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG/JPEG images, and clean-room metadata.
+Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Table/Figure structure, positioned text, vector tables/charts, and embedded PNG/JPEG images.
 
 **Examples:**
 
-- const blob = await PdfFile.exportPdf(pdf)
+- const blob = await PdfFile.exportPdf(pdf, { language: 'en-US', title: 'Accessible report' })
 
 **Schema parameters:**
 
 - `pdf` (PdfArtifact) required — Modeled PDF artifact to serialize.
+- `tagged` (boolean) — Emit StructTreeRoot/ParentTree/MCID tagging; defaults to true.
+- `language` (string) — Catalog language; defaults to artifact metadata language or en-US.
+- `title` (string) — Document Info title; defaults to artifact metadata title or first text line.
 
 **Schema returns:**
 
-- `blob` (FileBlob) — application/pdf bytes with modeled content and clean-room metadata.
+- `blob` (FileBlob) — application/pdf bytes with modeled content, clean-room metadata, and tagged-export metadata.
 
 #### `PdfFile.importPdf`
 
@@ -823,7 +826,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity.
+Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, structure-element count, and marked-content count.
 
 **Examples:**
 
@@ -837,7 +840,7 @@ Inspect PDF bytes as bounded file/object records including version, byte size, p
 
 **Schema returns:**
 
-- `inspection` (object) — PDF file summary plus bounded indirect object records.
+- `inspection` (object) — PDF file summary with tagged/language/structure evidence plus bounded indirect object records.
 
 ## presentation
 
