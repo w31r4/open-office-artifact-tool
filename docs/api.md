@@ -264,9 +264,11 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
 | `fx.ROUND` | formula | Round a numeric value to a fixed number of decimal places. |
+| `fx.SEQUENCE` | formula | Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
+| `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
@@ -460,6 +462,14 @@ Round a numeric value to a fixed number of decimal places.
 
 - =ROUND(A1,2)
 
+#### `fx.SEQUENCE`
+
+Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine.
+
+**Examples:**
+
+- =SEQUENCE(2,3,10,2)
+
 #### `fx.SUM`
 
 Sum numeric values across arguments and ranges.
@@ -483,6 +493,14 @@ Join text values with a delimiter and optional empty-value skipping.
 **Examples:**
 
 - =TEXTJOIN("/",TRUE,A1:A3)
+
+#### `fx.TRANSPOSE`
+
+Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata.
+
+**Examples:**
+
+- =TRANSPOSE(A1:C2)
 
 #### `fx.TRIM`
 

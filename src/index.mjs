@@ -631,6 +631,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.SUMIF", category: "math-trig", summary: "Sum values whose corresponding criteria range entries match a criterion.", examples: ["=SUMIF(A1:A10,\"East\",B1:B10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.VLOOKUP", category: "lookup-reference", summary: "Look up a value in the first column of a table range and return a value from another column.", examples: ["=VLOOKUP(\"Beta\",A2:B4,2,FALSE)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.XLOOKUP", category: "lookup-reference", summary: "Look up a value in one range and return the corresponding value from another range.", examples: ["=XLOOKUP(\"Gamma\",A2:A4,B2:B4,\"missing\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SEQUENCE", category: "dynamic-array", summary: "Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine.", examples: ["=SEQUENCE(2,3,10,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TRANSPOSE", category: "dynamic-array", summary: "Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata.", examples: ["=TRANSPOSE(A1:C2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TEXTJOIN", category: "text", summary: "Join text values with a delimiter and optional empty-value skipping.", examples: ["=TEXTJOIN(\"/\",TRUE,A1:A3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.CONCAT", category: "text", summary: "Concatenate text values and ranges.", examples: ["=CONCAT(A1,\"-\",B1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LEFT", category: "text", summary: "Return characters from the start of a text value.", examples: ["=LEFT(A1,3)"] },
@@ -1815,6 +1817,7 @@ export class Workbook {
     if (this._recalculating) return this._lastFormulaGraph;
     this._recalculating = true;
     try {
+      clearFormulaSpills(this);
       const graph = buildWorkbookFormulaGraph(this);
       const formulaNodes = new Map(graph.nodes.map((node) => [node.key, node]));
       const cycleKeys = new Set(graph.cycles.flatMap((cycle) => cycle.keys));
@@ -1838,7 +1841,15 @@ export class Workbook {
             return targetSheet.store.get(targetAddress).value;
           },
         });
-        node.cell.value = value;
+        if (isFormulaMatrix(value)) {
+          const spill = writeFormulaSpill(node.sheetObject, node.address, value, node.key);
+          node.cell.value = spill.value;
+          node.cell.spillRange = spill.range;
+          node.cell.spillValues = spill.values;
+          if (spill.blocked) node.cell.spillError = { type: "blocked", addresses: spill.blocked };
+        } else {
+          node.cell.value = value;
+        }
         evaluated.add(node.key);
         return value;
       };
@@ -1904,7 +1915,7 @@ export class Workbook {
       if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
       for (const [address, cell] of entries) {
         const value = String(cell.value ?? "");
-        if (/^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|CYCLE!)/.test(value)) {
+        if (/^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|CYCLE!|SPILL!)/.test(value)) {
           issues.push(verificationIssue("workbook", "formulaError", `Formula error ${value} at ${sheet.name}!${address}.`, { sheet: sheet.name, address, value }));
         }
       }
@@ -2201,6 +2212,9 @@ export class Worksheet {
         sharedIndex: cell.sharedIndex,
         sharedRef: cell.sharedRef,
         arrayRef: cell.arrayRef,
+        spillRange: cell.spillRange,
+        spillValues: cell.spillValues,
+        spillError: cell.spillError,
         precedents: graphNode?.precedents?.map((ref) => ref.key) || formulaReferences(cell.formula, this).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address)),
         dependents: graphNode?.dependents || [],
         error: formulaErrorCode(cell.value) || undefined,
@@ -2270,6 +2284,8 @@ export class Worksheet {
           bbox: [40 + (c - bounds.left) * cellW, 40 + (r - bounds.top) * cellH, cellW, cellH],
           value: cell.value,
           formula: cell.formula || undefined,
+          spillParent: cell.spillParent,
+          spillRange: cell.spillRange,
           style: cell.style && Object.keys(cell.style).length ? { ...cell.style } : undefined,
           computedStyle: computed.matches.length || Object.keys(computed.style || {}).length ? computed.style : undefined,
           conditionalFormats: computed.matches.length ? computed.matches.map((match) => ({ id: match.id, ruleType: match.ruleType, operator: match.operator, formula: match.formula, format: match.format })) : undefined,
@@ -2405,6 +2421,11 @@ export class Range {
       for (let c = 0; c < (rows[r]?.length ?? 0); c++) {
         const address = makeCellAddress(this.bounds.top + r, this.bounds.left + c);
         const cell = this.worksheet.store.get(address);
+        delete cell.spillParent;
+        delete cell.spillAnchor;
+        delete cell.spillRange;
+        delete cell.spillValues;
+        delete cell.spillError;
         cell[field] = rows[r][c];
       }
     }
@@ -2567,7 +2588,7 @@ function displayFormulaRef(sheetName, address) {
 
 function formulaErrorCode(value) {
   const text = String(value ?? "");
-  return /^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|CYCLE!)/.test(text) ? text.match(/^#[A-Z0-9\/?!]+/)?.[0] : undefined;
+  return /^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|CYCLE!|SPILL!)/.test(text) ? text.match(/^#[A-Z0-9\/?!]+/)?.[0] : undefined;
 }
 
 function publicFormulaNode(node) {
@@ -2809,6 +2830,69 @@ function formulaTruthy(value) {
   return Boolean(Number(text));
 }
 
+function isFormulaMatrix(value) {
+  return Array.isArray(value) && (Array.isArray(value[0]) || value.length === 0);
+}
+
+function normalizeFormulaMatrix(value) {
+  if (!Array.isArray(value)) return [[value]];
+  if (value.length === 0) return [];
+  return Array.isArray(value[0]) ? value.map((row) => Array.isArray(row) ? row : [row]) : value.map((item) => [item]);
+}
+
+function clearFormulaSpills(workbook) {
+  for (const sheet of workbook.worksheets) {
+    for (const [address, cell] of sheet.store.entries()) {
+      if (cell.spillParent) sheet.store.cells.delete(address);
+      else {
+        delete cell.spillRange;
+        delete cell.spillValues;
+        delete cell.spillError;
+      }
+    }
+  }
+}
+
+function writeFormulaSpill(sheet, anchorAddress, matrixValue, parentKey) {
+  const matrix = normalizeFormulaMatrix(matrixValue);
+  const rows = matrix.length;
+  const cols = Math.max(0, ...matrix.map((row) => row.length));
+  if (!rows || !cols) return { value: null, range: anchorAddress, values: matrix };
+  const anchor = parseCellAddress(anchorAddress);
+  const spillRange = rangeToAddress({ top: anchor.row, left: anchor.col, bottom: anchor.row + rows - 1, right: anchor.col + cols - 1 });
+  const collisions = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (r === 0 && c === 0) continue;
+      const address = makeCellAddress(anchor.row + r, anchor.col + c);
+      const cell = sheet.store.get(address);
+      if (!cell.spillParent && (cell.formula || cell.value != null)) collisions.push(address);
+    }
+  }
+  const anchorCell = sheet.store.get(anchorAddress);
+  if (collisions.length) {
+    anchorCell.value = "#SPILL!";
+    anchorCell.spillRange = spillRange;
+    anchorCell.spillValues = matrix;
+    anchorCell.spillError = { type: "blocked", addresses: collisions };
+    return { value: "#SPILL!", range: spillRange, values: matrix, blocked: collisions };
+  }
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const address = makeCellAddress(anchor.row + r, anchor.col + c);
+      const cell = sheet.store.get(address);
+      cell.value = matrix[r]?.[c] ?? null;
+      cell.formula = r === 0 && c === 0 ? anchorCell.formula : null;
+      cell.spillParent = r === 0 && c === 0 ? undefined : parentKey;
+      cell.spillAnchor = anchorAddress;
+      cell.spillRange = spillRange;
+      cell.spillValues = matrix;
+      delete cell.spillError;
+    }
+  }
+  return { value: matrix[0]?.[0] ?? null, range: spillRange, values: matrix };
+}
+
 function evaluateFormulaCondition(sheet, expr, context = {}) {
   const text = String(expr || "").trim();
   const comparison = /^(.*?)\s*(>=|<=|<>|=|>|<)\s*(.*?)$/.exec(text);
@@ -2901,6 +2985,19 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "LOWER": return formulaText(scalar(0, "")).toLowerCase();
     case "TRIM": return formulaText(scalar(0, "")).trim().replace(/\s+/g, " ");
     case "COUNTIF": { const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesCriteria(value, criteria)).length; }
+    case "SEQUENCE": {
+      const rows = Math.max(1, Math.floor(formulaNumber(scalar(0, 1))) || 1);
+      const cols = Math.max(1, Math.floor(formulaNumber(scalar(1, 1))) || 1);
+      const start = formulaNumber(scalar(2, 1));
+      const step = formulaNumber(scalar(3, 1));
+      return Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => start + (row * cols + col) * step));
+    }
+    case "TRANSPOSE": {
+      const matrix = formulaRangeMatrix(sheet, args[0], context) || [];
+      const rows = matrix.length;
+      const cols = Math.max(0, ...matrix.map((row) => row.length));
+      return Array.from({ length: cols }, (_, col) => Array.from({ length: rows }, (_, row) => matrix[row]?.[col] ?? null));
+    }
     case "SUMIF": {
       const range = values([args[0]]);
       const criteria = scalar(1, "");
