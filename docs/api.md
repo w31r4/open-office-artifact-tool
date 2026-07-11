@@ -61,7 +61,7 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 | `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
 | `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude. |
-| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images. |
+| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, and target/search context slicing. |
 | `pdf.render` | api | Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }. |
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images. |
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables. |

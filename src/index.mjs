@@ -695,7 +695,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction." },
@@ -5305,6 +5305,65 @@ class PdfPage {
   toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()) }; }
 }
 
+function pdfLayoutRecordsForPage(pageLayout, pageArrayIndex) {
+  const pageRecord = { kind: pageLayout.kind, id: pageLayout.id, page: pageLayout.page, width: pageLayout.width, height: pageLayout.height, unit: pageLayout.unit, textChars: pageLayout.text?.textChars || 0, textPreview: String(pageLayout.text?.text || "").slice(0, 300), tables: pageLayout.tables.length, images: pageLayout.images.length, regions: pageLayout.regions.length, textItems: pageLayout.textItems.length };
+  const entries = [{ pageArrayIndex, collection: "page", record: pageRecord }];
+  if (pageLayout.text) entries.push({ pageArrayIndex, collection: "text", record: pageLayout.text });
+  pageLayout.textItems.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "textItems", itemIndex, record }));
+  pageLayout.regions.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "regions", itemIndex, record }));
+  pageLayout.tables.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "tables", itemIndex, record: { ...record, textPreview: record.values.map((row) => row.map((cell) => String(cell ?? "")).join(" ")).join(" ") } }));
+  pageLayout.images.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "images", itemIndex, record }));
+  return entries;
+}
+
+function pdfLayoutSlice(layout, options = {}) {
+  const targets = inspectTargetTokens(options);
+  const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
+  if (!targets.length && !search) return layout;
+  const before = Math.max(0, Number(options.before ?? options.contextBefore ?? options.context ?? 0) || 0);
+  const after = Math.max(0, Number(options.after ?? options.contextAfter ?? options.context ?? 0) || 0);
+  const targetsArtifact = targets.some((target) => target === layout.id || target === "pdfLayout");
+  if (targetsArtifact && !search) return { ...layout, slice: { targets, before, after, matchedPages: layout.pages.length, returnedPages: layout.pages.length } };
+  const entries = layout.pages.flatMap((pageLayout, pageArrayIndex) => pdfLayoutRecordsForPage(pageLayout, pageArrayIndex));
+  const matchingEntryIndexes = [];
+  entries.forEach((entry, index) => {
+    const matchesSearch = !search || JSON.stringify(entry.record).toLowerCase().includes(search);
+    const matchesTarget = !targets.length || targetsArtifact || inspectRecordMatchesTarget(entry.record, targets);
+    if (matchesSearch && matchesTarget) matchingEntryIndexes.push(index);
+  });
+  const keepEntries = new Set();
+  for (const index of matchingEntryIndexes) {
+    for (let i = Math.max(0, index - before); i <= Math.min(entries.length - 1, index + after); i += 1) keepEntries.add(i);
+  }
+  const keepByPage = new Map();
+  const ensurePageKeep = (pageArrayIndex) => {
+    if (!keepByPage.has(pageArrayIndex)) keepByPage.set(pageArrayIndex, { full: false, text: false, textItems: new Set(), regions: new Set(), tables: new Set(), images: new Set() });
+    return keepByPage.get(pageArrayIndex);
+  };
+  for (const entryIndex of keepEntries) {
+    const entry = entries[entryIndex];
+    const keep = ensurePageKeep(entry.pageArrayIndex);
+    if (entry.collection === "page") keep.full = true;
+    else if (entry.collection === "text") keep.text = true;
+    else keep[entry.collection].add(entry.itemIndex);
+  }
+  const pages = layout.pages.map((pageLayout, pageArrayIndex) => {
+    const keep = keepByPage.get(pageArrayIndex);
+    if (!keep) return undefined;
+    if (keep.full) return pageLayout;
+    return {
+      ...pageLayout,
+      text: keep.text ? pageLayout.text : undefined,
+      textItems: pageLayout.textItems.filter((_, index) => keep.textItems.has(index)),
+      regions: pageLayout.regions.filter((_, index) => keep.regions.has(index)),
+      tables: pageLayout.tables.filter((_, index) => keep.tables.has(index)),
+      images: pageLayout.images.filter((_, index) => keep.images.has(index)),
+    };
+  }).filter(Boolean);
+  const matchedPages = new Set(matchingEntryIndexes.map((index) => entries[index]?.pageArrayIndex).filter((index) => index != null));
+  return { ...layout, pages, slice: { targets, search: search || undefined, before, after, matchedPages: matchedPages.size, returnedPages: pages.length, matchedRecords: matchingEntryIndexes.length } };
+}
+
 export class PdfArtifact {
   constructor(options = {}) {
     this.id = options.id || aid("pdf");
@@ -5396,33 +5455,35 @@ export class PdfArtifact {
   layoutJson(options = {}) {
     const pageNumber = options.page != null ? Number(options.page) : options.pageIndex != null ? Number(options.pageIndex) + 1 : undefined;
     const selectedPages = pageNumber ? [this.pages[pageNumber - 1]].filter(Boolean) : this.pages;
-    return {
+    const layout = {
       kind: "pdfLayout",
       id: this.id,
       pageCount: this.pages.length,
       metadata: this.metadata,
       pages: selectedPages.map((page) => {
         const pageIndex = this.pages.indexOf(page);
+        const pageNumber = pageIndex + 1;
         return {
           kind: "pdfPageLayout",
           id: page.id,
-          page: pageIndex + 1,
+          page: pageNumber,
           width: page.width,
           height: page.height,
           unit: "pt",
-          text: { id: `${page.id}/text`, text: page.text, textChars: page.text.length, bbox: [0, 0, page.width, page.height] },
-          textItems: page.textItems.map((item) => ({ kind: "textItem", ...item })),
-          regions: page.regions.map((region) => ({ kind: "region", ...region })),
-          tables: page.tables.map((table) => ({ kind: "table", id: table.id, name: table.name || undefined, values: table.values, bbox: table.bbox })),
-          images: page.images.map((image) => ({ kind: "image", id: image.id, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt })),
+          text: { kind: "text", id: `${page.id}/text`, page: pageNumber, text: page.text, textChars: page.text.length, bbox: [0, 0, page.width, page.height] },
+          textItems: page.textItems.map((item) => ({ kind: "textItem", page: pageNumber, ...item })),
+          regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
+          tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, bbox: table.bbox })),
+          images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt })),
         };
       }),
     };
+    return pdfLayoutSlice(layout, options);
   }
 
   async render(options = {}) {
     const format = String(options.format || "").trim().toLowerCase();
-    if (format === "layout" || format === LAYOUT_MIME) return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "pdf", format: "layout", page: options.page, pageIndex: options.pageIndex } });
+    if (format === "layout" || format === LAYOUT_MIME) return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "pdf", format: "layout", page: options.page, pageIndex: options.pageIndex, target: options.target ?? options.targetId ?? options.id ?? options.anchor, search: options.search ?? options.searchTerm } });
     return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" });
   }
   toJSON() { return { id: this.id, metadata: this.metadata, pages: this.pages.map((page) => page.toJSON()) }; }
