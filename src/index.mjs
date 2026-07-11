@@ -610,7 +610,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
-  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes." },
+  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule to a range; cellIs/expression rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
@@ -3531,8 +3531,31 @@ function normalizeXlsxColor(value, fallback = "000000") {
   return String(token || fallback).replace(/^#/, "").replace(/^FF/i, "").slice(0, 6).padEnd(6, "0").toUpperCase();
 }
 
+function normalizeXlsxBorder(style = {}) {
+  const raw = style.border || style.borders;
+  if (!raw) return undefined;
+  const base = raw.outside || raw.all || raw;
+  const borderStyle = base.style || base.lineStyle || base.weight || "thin";
+  const color = base.color || base.fill || base.borderColor || "#CBD5E1";
+  return { style: borderStyle, color };
+}
+
+function normalizeXlsxAlignment(style = {}) {
+  const raw = style.alignment || style.align || {};
+  const horizontal = raw.horizontal || style.horizontalAlignment || style.textAlign;
+  const vertical = raw.vertical || style.verticalAlignment;
+  const wrapText = raw.wrapText ?? style.wrapText;
+  const result = {};
+  if (horizontal) result.horizontal = horizontal;
+  if (vertical) result.vertical = vertical;
+  if (wrapText != null) result.wrapText = Boolean(wrapText);
+  return Object.keys(result).length ? result : undefined;
+}
+
 function normalizeXlsxStyle(style = {}) {
   const font = style.font || {};
+  const alignment = normalizeXlsxAlignment(style);
+  const border = normalizeXlsxBorder(style);
   return {
     font: {
       bold: Boolean(style.bold ?? font.bold),
@@ -3543,12 +3566,14 @@ function normalizeXlsxStyle(style = {}) {
     },
     fill: style.fill || style.backgroundColor || style.fillColor || undefined,
     numberFormat: style.numberFormat || style.numFmt || undefined,
+    alignment,
+    border,
   };
 }
 
 function xlsxStyleKey(style = {}) {
   const normalized = normalizeXlsxStyle(style);
-  if (!normalized.font.bold && !normalized.font.italic && !normalized.font.color && normalized.font.size === 11 && normalized.font.name === "Aptos" && !normalized.fill && !normalized.numberFormat) return "";
+  if (!normalized.font.bold && !normalized.font.italic && !normalized.font.color && normalized.font.size === 11 && normalized.font.name === "Aptos" && !normalized.fill && !normalized.numberFormat && !normalized.alignment && !normalized.border) return "";
   return JSON.stringify(normalized);
 }
 
@@ -3593,6 +3618,15 @@ function xlsxFillXml(style = {}) {
   return `<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
 }
 
+function xlsxBorderXml(style = {}) {
+  const border = normalizeXlsxStyle(style).border;
+  if (!border) return `<border/>`;
+  const color = normalizeXlsxColor(border.color, "CBD5E1");
+  const lineStyle = attrEscape(border.style || "thin");
+  const edge = (name) => `<${name} style="${lineStyle}"><color rgb="FF${color}"/></${name}>`;
+  return `<border>${edge("left")}${edge("right")}${edge("top")}${edge("bottom")}<diagonal/></border>`;
+}
+
 function xlsxDxfXml(style = {}) {
   const normalized = normalizeXlsxStyle(style || {});
   const font = normalized.font || {};
@@ -3612,15 +3646,19 @@ function xlsxStylesXml(styleTable) {
   const numFmts = customFormats.size ? `<numFmts count="${customFormats.size}">${[...customFormats.entries()].map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${attrEscape(code)}"/>`).join("")}</numFmts>` : "";
   const fonts = styles.map((style, index) => index === 0 ? `<font><sz val="11"/><name val="Aptos"/></font>` : xlsxFontXml(style)).join("");
   const fills = [`<fill><patternFill patternType="none"/></fill>`, `<fill><patternFill patternType="gray125"/></fill>`, ...styles.slice(1).map(xlsxFillXml)].join("");
+  const borders = [`<border/>`, ...styles.slice(1).map(xlsxBorderXml)].join("");
   const xfs = styles.map((style, index) => {
     if (index === 0) return `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`;
     const normalized = normalizeXlsxStyle(style);
     const numFmtId = normalized.numberFormat ? customFormats.get(normalized.numberFormat) : 0;
     const fillId = normalized.fill ? index + 1 : 0;
-    return `<xf numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="0" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}/>`;
+    const borderId = normalized.border ? index : 0;
+    const alignmentXml = normalized.alignment ? `<alignment${normalized.alignment.horizontal ? ` horizontal="${attrEscape(normalized.alignment.horizontal)}"` : ""}${normalized.alignment.vertical ? ` vertical="${attrEscape(normalized.alignment.vertical)}"` : ""}${normalized.alignment.wrapText ? ` wrapText="1"` : ""}/>` : "";
+    const attrs = `numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="${borderId}" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}${borderId ? ` applyBorder="1"` : ""}${normalized.alignment ? ` applyAlignment="1"` : ""}`;
+    return alignmentXml ? `<xf ${attrs}>${alignmentXml}</xf>` : `<xf ${attrs}/>`;
   }).join("");
   const dxfXml = `<dxfs count="${dxfs.length}">${dxfs.map(xlsxDxfXml).join("")}</dxfs>`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs>${dxfXml}</styleSheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="${styles.length}">${borders}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs>${dxfXml}</styleSheet>`;
 }
 
 function parseAttrs(attrs = "") {
@@ -3642,6 +3680,14 @@ function parseXlsxFillStyle(body = "") {
   return color ? `#${color}` : undefined;
 }
 
+function parseXlsxBorderStyle(body = "") {
+  const edge = /<(left|right|top|bottom)\b([^>]*)>([\s\S]*?)<\/\1>/.exec(body);
+  if (!edge) return undefined;
+  const attrs = parseAttrs(edge[2]);
+  const color = /<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(edge[3])?.[1];
+  return { style: attrs.style || "thin", ...(color ? { color: `#${color}` } : {}) };
+}
+
 function parseXlsxDxfXml(body = "") {
   const style = {};
   const fontBody = /<font>([\s\S]*?)<\/font>/.exec(body)?.[1];
@@ -3661,14 +3707,21 @@ function parseXlsxStylesXml(xml = "") {
   const fonts = [...fontsBody.matchAll(/<font>([\s\S]*?)<\/font>/g)].map((match) => parseXlsxFontStyle(match[1]));
   const fillsBody = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(text)?.[1] || "";
   const fills = [...fillsBody.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((match) => parseXlsxFillStyle(match[1]));
+  const bordersBody = /<borders\b[^>]*>([\s\S]*?)<\/borders>/.exec(text)?.[1] || "";
+  const borders = [...bordersBody.matchAll(/<border>([\s\S]*?)<\/border>/g)].map((match) => parseXlsxBorderStyle(match[1]));
   const xfsBody = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(text)?.[1] || "";
-  const styles = [...xfsBody.matchAll(/<xf\b([^>]*)\/?>(?:<\/xf>)?/g)].map((match) => {
+  const styles = [...xfsBody.matchAll(/<xf\b([^>]*)(?:\/>|>([\s\S]*?)<\/xf>)/g)].map((match) => {
     const attrs = parseAttrs(match[1]);
+    const body = match[2] || "";
     const font = fonts[Number(attrs.fontId || 0)] || {};
     const fill = fills[Number(attrs.fillId || 0)];
+    const border = borders[Number(attrs.borderId || 0)];
     const numberFormat = numFmtById.get(Number(attrs.numFmtId || 0));
+    const alignmentAttrs = parseAttrs(/<alignment\b([^>]*)\/>/.exec(body)?.[1] || "");
     const style = { font: { ...font } };
     if (fill) style.fill = fill;
+    if (border) style.border = border;
+    if (Object.keys(alignmentAttrs).length) style.alignment = { horizontal: alignmentAttrs.horizontal, vertical: alignmentAttrs.vertical, wrapText: alignmentAttrs.wrapText === "1" || alignmentAttrs.wrapText === "true" };
     if (numberFormat) style.numberFormat = numberFormat;
     return style;
   });
