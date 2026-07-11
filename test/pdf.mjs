@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
 import { FileBlob, PdfArtifact, PdfFile } from "../src/index.mjs";
 
 const pdf = PdfArtifact.create({
@@ -55,4 +56,46 @@ assert.match(loadedInspect, /metrics-table/);
 assert.match(loadedInspect, /inline-table/);
 assert.match(loadedInspect, /Report logo/);
 assert.deepEqual(loaded.extractTables()[0].values[2], ["Retention", "94%"]);
+
+const parsed = await PdfFile.importPdf(new FileBlob(new Uint8Array([0x25, 0x50, 0x44, 0x46]), { type: "application/pdf" }), {
+  parserName: "unit-parser",
+  parser: async ({ inputType, bytes }) => {
+    assert.equal(inputType, "application/pdf");
+    assert.ok(bytes.byteLength > 0);
+    return {
+      parser: "unit-parser",
+      pages: [
+        {
+          width: 300,
+          height: 200,
+          text: "Parsed arbitrary PDF\nMetric | Value\nRevenue | 12",
+          textItems: [
+            { text: "Parsed", bbox: [10, 20, 42, 12] },
+            { text: "arbitrary PDF", bbox: [58, 20, 96, 12] },
+          ],
+          regions: [{ kind: "textLine", label: "Parsed arbitrary PDF", bbox: [10, 20, 144, 12] }],
+          tables: [{ name: "parsed-table", values: [["Metric", "Value"], ["Revenue", "12"]], bbox: [10, 48, 180, 44] }],
+          images: [{ name: "parsed-image", alt: "Extracted raster", prompt: "image placeholder", bbox: [200, 40, 60, 60] }],
+        },
+      ],
+    };
+  },
+});
+assert.equal(parsed.metadata.parser, "unit-parser");
+const parsedInspect = parsed.inspect({ kind: "page,text,textItem,region,table,image", maxChars: 8000 }).ndjson;
+assert.match(parsedInspect, /Parsed arbitrary PDF/);
+assert.match(parsedInspect, /"kind":"textItem"/);
+assert.match(parsedInspect, /"kind":"region"/);
+assert.match(parsedInspect, /parsed-table/);
+assert.match(parsedInspect, /parsed-image/);
+assert.equal(parsed.verify().ok, true);
+assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
+
+const pdfjsParser = createPdfjsParser();
+assert.equal(typeof pdfjsParser, "function");
+try {
+  await PdfFile.importPdf(blob, { parser: pdfjsParser, preferParser: true });
+} catch (error) {
+  if (!/pdfjs-dist|PDF\.js parser requires/.test(String(error?.message || error))) throw error;
+}
 console.log("pdf smoke ok");

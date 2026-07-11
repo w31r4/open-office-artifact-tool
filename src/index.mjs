@@ -264,7 +264,8 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG in the current clean-room MVP." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, malformed tables, and out-of-bounds table boxes." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata or heuristically extract visible text and pipe-delimited table rows." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction." },
+  { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
@@ -3534,18 +3535,23 @@ class PdfPage {
     this.height = config.height || 792;
     this.tables = (config.tables || []).map((table) => new PdfTable(this, table));
     this.images = (config.images || []).map((image) => new PdfImage(this, image));
+    this.textItems = (config.textItems || []).map((item, index) => ({ id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox: item.bbox || [Number(item.x || 0), Number(item.y || item.top || 0), Number(item.width || 0), Number(item.height || 0)], fontName: item.fontName, dir: item.dir }));
+    this.regions = (config.regions || []).map((region, index) => ({ id: region.id || `${this.id}/rg/${index + 1}`, kind: region.kind || "region", bbox: region.bbox || [0, 0, this.width, this.height], label: region.label }));
   }
 
   addTable(config = {}) { const table = new PdfTable(this, config); this.tables.push(table); return table; }
   addImage(config = {}) { const image = new PdfImage(this, config); this.images.push(image); return image; }
-  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, tables: this.tables.length, images: this.images.length }; }
-  textRecord(index) { return { kind: "text", id: `${this.id}/text`, page: index + 1, text: this.text, textChars: this.text.length }; }
-  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()) }; }
+  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, textItems: this.textItems.length, tables: this.tables.length, images: this.images.length, regions: this.regions.length }; }
+  textRecord(index) { return { kind: "text", id: `${this.id}/text`, page: index + 1, text: this.text, textChars: this.text.length, textItems: this.textItems.length }; }
+  textItemRecords(index) { return this.textItems.map((item) => ({ kind: "textItem", page: index + 1, ...item })); }
+  regionRecords(index) { return this.regions.map((region) => ({ ...region, kind: "region", regionKind: region.kind || "region", page: index + 1 })); }
+  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()) }; }
 }
 
 export class PdfArtifact {
   constructor(options = {}) {
     this.id = options.id || aid("pdf");
+    this.metadata = options.metadata || {};
     const pages = options.pages || [{ text: options.text || "", tables: options.tables || [], images: options.images || [] }];
     this.pages = pages.map((page) => new PdfPage(this, page));
   }
@@ -3563,6 +3569,8 @@ export class PdfArtifact {
     this.pages.forEach((page, index) => {
       if (kinds.has("page")) records.push(page.inspectRecord(index));
       if (kinds.has("text")) records.push(page.textRecord(index));
+      if (kinds.has("textItem")) records.push(...page.textItemRecords(index));
+      if (kinds.has("region")) records.push(...page.regionRecords(index));
       if (kinds.has("table")) records.push(...page.tables.map((table) => table.inspectRecord(index)));
       if (kinds.has("image")) records.push(...page.images.map((image) => image.inspectRecord(index)));
     });
@@ -3575,6 +3583,10 @@ export class PdfArtifact {
     if (this.pages.length === 0) issues.push(verificationIssue("pdf", "noPages", "PDF artifact has no pages."));
     this.pages.forEach((page, pageIndex) => {
       if (!page.text.trim() && page.tables.length === 0 && page.images.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, or images.`, { page: pageIndex + 1 }));
+      if (page.textItems.length && !page.text.trim()) issues.push(verificationIssue("pdf", "textExtractionMismatch", `PDF page ${pageIndex + 1} has positioned text items but no extracted page text.`, { severity: "warning", page: pageIndex + 1 }));
+      if (page.textItems.some((item) => !item.text)) issues.push(verificationIssue("pdf", "emptyTextItem", `PDF page ${pageIndex + 1} contains an empty positioned text item.`, { severity: "warning", page: pageIndex + 1 }));
+      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(page.text)) issues.push(verificationIssue("pdf", "textExtractionControlChars", `PDF page ${pageIndex + 1} extracted text contains control characters.`, { page: pageIndex + 1 }));
+      if (page.width <= 0 || page.height <= 0) issues.push(verificationIssue("pdf", "invalidPageGeometry", `PDF page ${pageIndex + 1} has invalid page geometry.`, { page: pageIndex + 1, width: page.width, height: page.height }));
       if (/[\u2010-\u2015]/.test(page.text)) issues.push(verificationIssue("pdf", "unicodeDash", `PDF page ${pageIndex + 1} contains a Unicode dash; use ASCII hyphen for compatibility.`, { page: pageIndex + 1 }));
       for (const table of page.tables) {
         if (!table.values.length || !table.values[0]?.length) issues.push(verificationIssue("pdf", "emptyTable", `PDF table ${table.id} on page ${pageIndex + 1} has no cells.`, { page: pageIndex + 1, id: table.id }));
@@ -3597,7 +3609,7 @@ export class PdfArtifact {
   help(query = "*", options = {}) { return helpArtifact("pdf", query, options); }
 
   async render(options = {}) { return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" }); }
-  toJSON() { return { id: this.id, pages: this.pages.map((page) => page.toJSON()) }; }
+  toJSON() { return { id: this.id, metadata: this.metadata, pages: this.pages.map((page) => page.toJSON()) }; }
 }
 
 export class PdfFile {
@@ -3605,17 +3617,41 @@ export class PdfFile {
     return new FileBlob(buildMinimalPdf(artifact), { type: PDF_MIME });
   }
 
-  static async importPdf(blobOrBuffer) {
+  static async importPdf(blobOrBuffer, options = {}) {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const text = decoder.decode(bytes);
     const metadata = /%OPEN_OFFICE_ARTIFACT ([A-Za-z0-9+/=]+)/.exec(text)?.[1];
-    if (metadata) return PdfArtifact.create(JSON.parse(Buffer.from(metadata, "base64").toString("utf8")));
+    if (metadata && options.preferParser !== true) return PdfArtifact.create(JSON.parse(Buffer.from(metadata, "base64").toString("utf8")));
+    const parser = options.parser || options.parseAdapter || options.adapter;
+    if (typeof parser === "function") {
+      const parsed = await parser({ input: new FileBlob(bytes, { type: options.inputType || blobOrBuffer?.type || PDF_MIME }), bytes, inputType: options.inputType || blobOrBuffer?.type || PDF_MIME, artifactKind: "pdf", options });
+      return pdfArtifactFromParserOutput(parsed, { parser: options.parserName || parsed?.parser || parsed?.metadata?.parser || "custom" });
+    }
     const strings = [...text.matchAll(/\(([^()]*)\)\s*Tj/g)].map((m) => m[1].replaceAll("\\)", ")").replaceAll("\\(", "("));
     const plain = strings.join("\n");
     const tableRows = strings.filter((line) => line.includes("|")).map((line) => line.split("|").map((cell) => cell.trim()));
     const images = strings.filter((line) => /^\[Image: .+\]$/.test(line)).map((line, index) => ({ name: `extracted-image-${index + 1}`, alt: line.replace(/^\[Image: |\]$/g, ""), bbox: [72, 280 + index * 140, 180, 120] }));
-    return PdfArtifact.create({ pages: [{ text: plain, tables: tableRows.length ? [{ name: "extracted-table", values: tableRows }] : [], images }] });
+    return PdfArtifact.create({ metadata: { parser: "heuristic" }, pages: [{ text: plain, tables: tableRows.length ? [{ name: "extracted-table", values: tableRows }] : [], images }] });
   }
+}
+
+function pdfArtifactFromParserOutput(parsed, metadata = {}) {
+  if (parsed instanceof PdfArtifact) {
+    parsed.metadata = { ...(parsed.metadata || {}), ...metadata };
+    return parsed;
+  }
+  const source = parsed?.data || parsed?.document || parsed || {};
+  const pages = (source.pages || []).map((page, index) => ({
+    id: page.id,
+    text: page.text ?? (page.lines || []).map((line) => typeof line === "string" ? line : line.text).join("\n"),
+    width: Number(page.width || page.pageWidth || page.geometry?.width || 612),
+    height: Number(page.height || page.pageHeight || page.geometry?.height || 792),
+    textItems: page.textItems || page.items || [],
+    regions: page.regions || [],
+    tables: (page.tables || []).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96] })),
+    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: image.dataUrl, uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120] })),
+  }));
+  return PdfArtifact.create({ metadata: { ...metadata, ...(source.metadata || parsed?.metadata || {}) }, pages: pages.length ? pages : [{ text: "" }] });
 }
 
 function pdfPageSvg(page) {

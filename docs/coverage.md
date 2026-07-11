@@ -59,9 +59,9 @@ Status legend:
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| `PdfArtifact.create`, `PdfFile.exportPdf`, `PdfFile.importPdf` | partial | Multi-page modeled PDF artifacts now support page text, table regions, image regions, PDF export, import from embedded clean-room metadata, and heuristic import from visible text/table/image-placeholder rows. Needs robust arbitrary-PDF parsing via PDF.js/PDFium/Poppler or similar. |
+| `PdfArtifact.create`, `PdfFile.exportPdf`, `PdfFile.importPdf` | partial | Multi-page modeled PDF artifacts now support page text, positioned text items, layout regions, table regions, image regions, PDF export, import from embedded clean-room metadata, injected parser adapters for arbitrary PDFs, optional PDF.js parsing (`open-office-artifact-tool/pdf/pdfjs`) for page geometry/text/table/image-placeholder extraction, and heuristic import from visible text/table/image-placeholder rows. Needs stronger arbitrary-PDF fidelity, real image extraction bytes, and Poppler/PDFium alternatives. |
 | PDF visual render verification | partial | SVG page render now draws modeled page text, tables, and image regions for clean-room PDF artifacts, and SVG previews can be rasterized through the optional Playwright renderer adapter. Needs Poppler/PDF.js rasterization to PNG for arbitrary PDFs and visual diff workflow. |
-| Text/table extraction | partial | `extractText()` and `extractTables()` work for modeled/generated PDFs, and import heuristically detects visible pipe-delimited table rows when clean-room metadata is absent. Needs robust text positioning/table extraction for arbitrary PDFs. |
+| Text/table extraction | partial | `extractText()` and `extractTables()` work for modeled/generated PDFs; import heuristically detects visible pipe-delimited table rows when clean-room metadata is absent; injected parser adapters can populate positioned text items, layout regions, tables, and image placeholders; optional PDF.js adapter extracts page text geometry and heuristic tables. Needs robust table reconstruction for arbitrary PDFs and byte-level image extraction. |
 | Create polished reports with typography/layout/charts | partial | Modeled PDF creation supports text pages, image regions, and table rendering/export. Needs richer report layout, charts, pagination, typography controls, and raster QA. |
 
 ## Implementation priorities

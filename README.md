@@ -13,7 +13,7 @@ The goal is not to vendor or copy agent's reference bundle. This package rebuild
 
 ## Current status
 
-This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The spreadsheet facade includes formula traces, a dependency graph with cycle/missing-sheet reporting, expanded basic formula functions, comments/data-validation/conditional-formatting/table/chart/image/sparkline metadata roundtrips, native XLSX table/chart/image/sparkline/threaded-comment XML parts, and SVG visual previews. The presentation facade includes compose/JSX layout, inspectable shape/table/chart/image objects, native PPTX table/chart/image XML export plus clean-room native import restoration, and a geometry-based layout QA detector for overlap/off-canvas/overflow checks. The document facade includes styled paragraphs, real list items, headers/footers, hyperlinks, fields, citations, images, sections, tracked insertions/deletions, tables, comments, DOCX styles/numbering/header/footer/hyperlink/comment/image/section/tracked-change export, and SVG page previews. The PDF facade includes modeled multi-page text/table/image artifacts, `extractText`, `extractTables`, SVG page render, and metadata roundtrips. Cross-format `verifyArtifact(...)` and `renderArtifact(...)` helpers provide agent-style QA and preview entry points, including pluggable raster renderer adapters for PNG/WebP/JPEG/PDF conversion and an optional Playwright adapter for deterministic SVG/HTML raster/PDF output. Fidelity, advanced OOXML, native Office bridge support, robust arbitrary-PDF parsing, and template QA are roadmap work.
+This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The spreadsheet facade includes formula traces, a dependency graph with cycle/missing-sheet reporting, expanded basic formula functions, comments/data-validation/conditional-formatting/table/chart/image/sparkline metadata roundtrips, native XLSX table/chart/image/sparkline/threaded-comment XML parts, and SVG visual previews. The presentation facade includes compose/JSX layout, inspectable shape/table/chart/image objects, native PPTX table/chart/image XML export plus clean-room native import restoration, and a geometry-based layout QA detector for overlap/off-canvas/overflow checks. The document facade includes styled paragraphs, real list items, headers/footers, hyperlinks, fields, citations, images, sections, tracked insertions/deletions, tables, comments, DOCX styles/numbering/header/footer/hyperlink/comment/image/section/tracked-change export, and SVG page previews. The PDF facade includes modeled multi-page text/table/image artifacts, `extractText`, `extractTables`, SVG page render, metadata roundtrips, injected parser adapters, and an optional PDF.js parser for page geometry/positioned text/table/image-placeholder extraction. Cross-format `verifyArtifact(...)` and `renderArtifact(...)` helpers provide agent-style QA and preview entry points, including pluggable raster renderer adapters for PNG/WebP/JPEG/PDF conversion and an optional Playwright adapter for deterministic SVG/HTML raster/PDF output. Fidelity, advanced OOXML, native Office bridge support, robust arbitrary-PDF parsing, and template QA are roadmap work.
 
 ## Usage
 
@@ -98,6 +98,27 @@ npm run test:playwright-renderer
 ```
 
 It accepts SVG or HTML `FileBlob` input, fixes viewport/device scale/timezone/locale, waits for font readiness, disables animations, and blocks network requests by default. Set `allowNetwork: true` only for explicitly trusted local HTML previews.
+
+## PDF parsing adapters
+
+`PdfFile.importPdf(blob)` preserves clean-room metadata roundtrips first, then falls back to lightweight visible-text heuristics. For arbitrary PDFs, pass a parser adapter explicitly:
+
+```js
+import { PdfFile } from "open-office-artifact-tool";
+import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
+
+const parser = createPdfjsParser();
+const pdf = await PdfFile.importPdf(fileBlob, { parser, preferParser: true });
+console.log(pdf.inspect({ kind: "page,textItem,table,image" }).ndjson);
+```
+
+The PDF.js adapter is optional and keeps `pdfjs-dist` out of the core dependency tree:
+
+```sh
+npm install -D pdfjs-dist
+```
+
+It extracts page size, positioned text items, text-line regions, heuristic tables from pipe-delimited or column-like text, and image operator placeholders. The built-in heuristic parser remains available when no adapter is supplied.
 
 ## Design notes
 

@@ -18,7 +18,8 @@
     "./presentation-jsx": "./src/presentation-jsx/index.mjs",
     "./presentation-jsx/jsx-runtime": "./src/presentation-jsx/jsx-runtime.mjs",
     "./presentation-jsx/jsx-dev-runtime": "./src/presentation-jsx/jsx-dev-runtime.mjs",
-    "./renderers/playwright": "./src/renderers/playwright.mjs"
+    "./renderers/playwright": "./src/renderers/playwright.mjs",
+    "./pdf/pdfjs": "./src/pdf/pdfjs.mjs"
   },
   "files": [
     "src/**",
@@ -45,9 +46,13 @@
     "jszip": "^3.10.1"
   },
   "peerDependencies": {
+    "pdfjs-dist": ">=4.0.0",
     "playwright": ">=1.40.0"
   },
   "peerDependenciesMeta": {
+    "pdfjs-dist": {
+      "optional": true
+    },
     "playwright": {
       "optional": true
     }

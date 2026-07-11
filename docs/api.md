@@ -28,6 +28,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `createPdfjsParser` | api | Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
 | `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
@@ -36,7 +37,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, malformed tables, and out-of-bounds table boxes. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
 | `PdfFile.exportPdf` | api | Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata. |
-| `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata or heuristically extract visible text and pipe-delimited table rows. |
+| `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction. |
 
 ## presentation
 
