@@ -683,6 +683,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -5072,7 +5073,7 @@ export class Shape {
   }
 
   toPptxShape(index) {
-    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder);
+    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style });
   }
 }
 
@@ -5286,7 +5287,7 @@ export class ImageElement {
   toSvg() {
     const p = this.position;
     const label = this.alt || this.prompt || this.uri || "image";
-    if (this.dataUrl) return `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/><text x="${p.left + 12}" y="${p.top + 28}" font-family="Arial" font-size="14" fill="#075985">${xmlEscape(label)}</text>`;
+    if (this.dataUrl) return `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>`;
     const rect = this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="#e0f2fe" stroke="#0284c7"/>`
       : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="#e0f2fe" stroke="#0284c7"/>`;
@@ -5300,6 +5301,24 @@ export class ImageElement {
 }
 
 export class PresentationFile {
+  static async inspectPptx(blobOrBuffer, options = {}) {
+    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+    const zip = await JSZip.loadAsync(bytes);
+    const files = Object.values(zip.files).filter((file) => !file.dir).sort((a, b) => a.name.localeCompare(b.name));
+    const slideParts = files.filter((file) => /^ppt\/slides\/slide\d+\.xml$/.test(file.name)).length;
+    const records = [{ kind: "pptxPackage", parts: files.length, slides: slideParts }];
+    const includeText = Boolean(options.includeText || options.preview || options.includeXml);
+    const maxPreviewChars = Math.max(0, Number(options.maxPreviewChars ?? 400) || 0);
+    for (const file of files) {
+      const partBytes = await file.async("uint8array");
+      const contentType = file.name.endsWith(".rels") ? "application/vnd.openxmlformats-package.relationships+xml" : file.name.endsWith(".xml") ? "application/xml" : file.name.endsWith(".json") ? "application/json" : file.name.endsWith(".png") ? "image/png" : file.name.endsWith(".jpg") || file.name.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream";
+      const record = { kind: "pptxPart", path: file.name, size: partBytes.byteLength, contentType };
+      if (includeText && /\.(xml|json|rels)$/i.test(file.name)) record.textPreview = decoder.decode(partBytes).slice(0, maxPreviewChars);
+      records.push(record);
+    }
+    return { parts: records.filter((record) => record.kind === "pptxPart"), records, ...ndjson(records, options.maxChars ?? Infinity) };
+  }
+
   static async exportPptx(presentation) {
     const zip = new JSZip();
     const imageParts = collectPresentationImageParts(presentation);
@@ -5464,7 +5483,7 @@ function pptxSlideMasterRelsXml(layoutParts = []) {
 }
 
 function pptxSlideLayoutXml(layout) {
-  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text || "", { type: placeholder.type, idx: index + 1, required: placeholder.required })).join("");
+  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text || "", { type: placeholder.type, idx: index + 1, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" type="${attrEscape(layout.type)}" preserve="1"><p:cSld name="${attrEscape(layout.name)}"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${placeholders}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
 }
 
@@ -5473,12 +5492,34 @@ function presentationXml(presentation) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldSz cx="12192000" cy="6858000"/><p:sldIdLst>${ids}</p:sldIdLst></p:presentation>`;
 }
 
-function pptxTextShapeXml(index, name, geometry, position, text = "", placeholder) {
+function pptxDrawingFillXml(value, fallback = "transparent") {
+  const raw = typeof value === "object" ? value?.color || value?.fill : value;
+  const resolved = resolveColorToken(raw || fallback, raw || fallback);
+  if (!resolved || resolved === "transparent" || resolved === "none") return "<a:noFill/>";
+  return `<a:solidFill><a:srgbClr val="${attrEscape(pptxColorValue(resolved, fallback))}"/></a:solidFill>`;
+}
+
+function pptxDrawingLineXml(line = {}) {
+  const width = Math.max(0, Number(line.width ?? 1));
+  const raw = line.fill || line.color || (width > 0 ? "#334155" : "transparent");
+  return `<a:ln w="${Math.round(width * 12700)}">${pptxDrawingFillXml(raw)}</a:ln>`;
+}
+
+function pptxTextRunPropertiesXml(style = {}, options = {}) {
+  const fontSize = Math.max(1, Number(style.fontSize || options.fontSize || 24));
+  const color = resolveColorToken(style.color || options.color || "#0f172a", style.color || options.color || "#0f172a");
+  const attrs = ` lang="en-US" sz="${Math.round(fontSize * 75)}"${style.bold ? ' b="1"' : ""}${style.italic ? ' i="1"' : ""}`;
+  const typeface = style.fontFamily || style.typeface || options.fontFamily;
+  return `<a:rPr${attrs}>${pptxDrawingFillXml(color, "#0f172a")}${typeface ? `<a:latin typeface="${attrEscape(typeface)}"/>` : ""}</a:rPr>`;
+}
+
+function pptxTextShapeXml(index, name, geometry, position, text = "", placeholder, options = {}) {
   const p = position;
   const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
-  const paragraphs = String(text || "").split(/\r?\n/).map((line) => `<a:p><a:r><a:t>${xmlEscape(line)}</a:t></a:r></a:p>`).join("");
+  const textStyle = options.textStyle || {};
+  const paragraphs = String(text || "").split(/\r?\n/).map((line) => `<a:p><a:pPr algn="${attrEscape(textStyle.alignment === "center" ? "ctr" : textStyle.alignment === "right" ? "r" : "l")}"/><a:r>${pptxTextRunPropertiesXml(textStyle)}<a:t>${xmlEscape(line)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${Math.round(Math.max(1, Number(textStyle.fontSize || 24)) * 75)}"/></a:p>`).join("");
   const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx || 1)}"/>` : "";
-  return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="${attrEscape(name)}"/><p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${index + 2}" name="${attrEscape(name)}"/><p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
 }
 
 function pptxPictureXml(index, name, alt, position, relId) {
@@ -5509,7 +5550,8 @@ function pptxNotesSlideXml(slide) {
 function pptxCommentsXml(slide) {
   const comments = slide.comments.items.flatMap((thread, threadIndex) => thread.comments.map((comment, commentIndex) => {
     const idx = threadIndex * 100 + commentIndex;
-    return `<p:cm authorId="0" dt="${attrEscape(comment.created || thread.created)}" idx="${idx}" ooa:threadId="${attrEscape(thread.id)}" ooa:targetId="${attrEscape(thread.targetId || "")}" ooa:resolved="${thread.resolved ? 1 : 0}" xmlns:ooa="urn:open-office-artifact"><p:pos x="${100 + commentIndex * 24}" y="${100 + threadIndex * 32}"/><p:text>${xmlEscape(comment.text)}</p:text></p:cm>`;
+    const targetName = slide.resolve(thread.targetId)?.name || "";
+    return `<p:cm authorId="0" dt="${attrEscape(comment.created || thread.created)}" idx="${idx}" ooa:threadId="${attrEscape(thread.id)}" ooa:targetId="${attrEscape(thread.targetId || "")}" ooa:targetName="${attrEscape(targetName)}" ooa:resolved="${thread.resolved ? 1 : 0}" xmlns:ooa="urn:open-office-artifact"><p:pos x="${100 + commentIndex * 24}" y="${100 + threadIndex * 32}"/><p:text>${xmlEscape(comment.text)}</p:text></p:cm>`;
   })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">${comments}</p:cmLst>`;
 }
@@ -5525,7 +5567,10 @@ function parsePptxComments(slide, xml = "") {
     const attrs = match[1];
     const body = match[2];
     const threadId = /\bthreadId="([^"]+)"/.exec(attrs)?.[1] || /\booa:threadId="([^"]+)"/.exec(attrs)?.[1] || aid("pc");
-    const targetId = /\btargetId="([^"]*)"/.exec(attrs)?.[1] || /\booa:targetId="([^"]*)"/.exec(attrs)?.[1] || undefined;
+    const originalTargetId = /\btargetId="([^"]*)"/.exec(attrs)?.[1] || /\booa:targetId="([^"]*)"/.exec(attrs)?.[1] || undefined;
+    const targetName = decodeXml(/\btargetName="([^"]*)"/.exec(attrs)?.[1] || /\booa:targetName="([^"]*)"/.exec(attrs)?.[1] || "");
+    const namedTarget = targetName ? [...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.connectors.items].find((item) => item.name === targetName) : undefined;
+    const targetId = slide.resolve(originalTargetId)?.id || namedTarget?.id || originalTargetId;
     const resolved = /\bresolved="1"/.test(attrs) || /\booa:resolved="1"/.test(attrs);
     const created = /\bdt="([^"]+)"/.exec(attrs)?.[1] || new Date(0).toISOString();
     const text = decodeXml(/<p:text[^>]*>([\s\S]*?)<\/p:text>/.exec(body)?.[1] || "");
@@ -5542,13 +5587,20 @@ function pptxTableXml(index, table) {
   const colWidth = Math.max(1, Math.floor(cx / Math.max(1, table.columns)));
   const rowHeight = Math.max(1, Math.floor(cy / Math.max(1, table.rows)));
   const grid = Array.from({ length: Math.max(1, table.columns) }, () => `<a:gridCol w="${colWidth}"/>`).join("");
+  const borderXml = `<a:lnL w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnL><a:lnR w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnR><a:lnT w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnT><a:lnB w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnB>`;
   const rows = Array.from({ length: Math.max(1, table.rows) }, (_, rowIndex) => {
-    const cells = Array.from({ length: Math.max(1, table.columns) }, (_, colIndex) => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(table.values[rowIndex]?.[colIndex] ?? "")}</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>`).join("");
+    const header = table.styleOptions.headerRow && rowIndex === 0;
+    const cells = Array.from({ length: Math.max(1, table.columns) }, (_, colIndex) => {
+      const cellText = table.values[rowIndex]?.[colIndex] ?? "";
+      const textStyle = { fontSize: table.styleOptions.fontSize || 18, bold: header, color: header ? "#000000" : "#0f172a", fontFamily: table.styleOptions.fontFamily };
+      const fill = header ? "EDEDED" : rowIndex % 2 && table.styleOptions.bandedRows ? "F8FAFC" : "FFFFFF";
+      return `<a:tc><a:txBody><a:bodyPr wrap="square" lIns="76200" tIns="45720" rIns="76200" bIns="45720" anchor="ctr"/><a:lstStyle/><a:p><a:r>${pptxTextRunPropertiesXml(textStyle)}<a:t>${xmlEscape(cellText)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${Math.round(textStyle.fontSize * 75)}"/></a:p></a:txBody><a:tcPr marL="76200" marR="76200" marT="45720" marB="45720"><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>${borderXml}</a:tcPr></a:tc>`;
+    }).join("");
     return `<a:tr h="${rowHeight}">${cells}</a:tr>`;
   }).join("");
   const firstRow = table.styleOptions.headerRow ? 1 : 0;
   const bandRow = table.styleOptions.bandedRows ? 1 : 0;
-  return `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${index + 2}" name="${attrEscape(table.name || table.id)}"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="${firstRow}" bandRow="${bandRow}"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid>${grid}</a:tblGrid>${rows}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+  return `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${index + 2}" name="${attrEscape(table.name || table.id)}"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="${firstRow}" bandRow="${bandRow}"/><a:tblGrid>${grid}</a:tblGrid>${rows}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
 }
 
 function pptxChartFrameXml(index, name, position, relId) {
@@ -5645,7 +5697,7 @@ function parsePptxTableGraphic(slide, part) {
   const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
   const values = [...part.matchAll(/<a:tr\b[\s\S]*?<\/a:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<a:tc\b[\s\S]*?<\/a:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((t) => t[1]).join(""))));
   if (!values.length) return;
-  slide.tables.add({ name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 160 }), values, rows: values.length, columns: Math.max(1, ...values.map((row) => row.length)) });
+  slide.tables.add({ name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 160 }), values, rows: values.length, columns: Math.max(1, ...values.map((row) => row.length)), styleOptions: { headerRow: /<a:tblPr\b[^>]*firstRow="1"/.test(part), bandedRows: /<a:tblPr\b[^>]*bandRow="1"/.test(part) } });
 }
 
 async function parsePptxChartGraphic(slide, part, context) {
@@ -5705,8 +5757,19 @@ async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined })
     const text = [...part.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => decodeXml(m[1])).join("");
     const phAttrs = /<p:ph\b([^>]*)\/?>(?:<\/p:ph>)?/.exec(part)?.[1];
     const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "body", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 1), name } : undefined;
-    const shape = slide.shapes.add({ name, position: pptxFrameFromXml(part), placeholder });
+    const spPr = /<p:spPr>([\s\S]*?)<\/p:spPr>/.exec(part)?.[1] || "";
+    const fill = /<a:solidFill>[\s\S]*?<a:srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(spPr)?.[1];
+    const lineBlock = /<a:ln\b([^>]*)>([\s\S]*?)<\/a:ln>/.exec(spPr);
+    const lineColor = /<a:solidFill>[\s\S]*?<a:srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(lineBlock?.[2] || "")?.[1];
+    const lineWidth = Number(/\bw="(\d+)"/.exec(lineBlock?.[1] || "")?.[1] || 0) / 12700;
+    const geometry = /<a:prstGeom[^>]*prst="([^"]+)"/.exec(spPr)?.[1] || "rect";
+    const rPr = /<a:rPr\b([^>]*)>([\s\S]*?)<\/a:rPr>/.exec(part);
+    const fontSize = Number(/\bsz="(\d+)"/.exec(rPr?.[1] || "")?.[1] || 0) / 75;
+    const textColor = /<a:solidFill>[\s\S]*?<a:srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(rPr?.[2] || "")?.[1];
+    const fontFamily = decodeXml(/<a:latin[^>]*typeface="([^"]*)"/.exec(rPr?.[2] || "")?.[1] || "");
+    const shape = slide.shapes.add({ name, geometry, position: pptxFrameFromXml(part), placeholder, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
     shape.text = text;
+    shape.text.style = { ...(fontSize ? { fontSize } : {}), ...(/\bb="1"/.test(rPr?.[1] || "") ? { bold: true } : {}), ...(/\bi="1"/.test(rPr?.[1] || "") ? { italic: true } : {}), ...(textColor ? { color: `#${textColor}` } : {}), ...(fontFamily ? { fontFamily } : {}) };
   }
   for (const match of xml.matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g)) {
     const part = match[0];
