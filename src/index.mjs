@@ -136,23 +136,36 @@ export function verifyArtifact(artifact, options = {}) {
   return artifact.verify(options);
 }
 
-export async function renderArtifact(artifact, options = {}) {
-  const artifactKind = inferArtifactKind(artifact);
-  if (!artifact || (typeof artifact.render !== "function" && typeof artifact.export !== "function")) {
-    throw new Error("Artifact does not expose a render() or export() method.");
+const RENDER_MIME_BY_FORMAT = {
+  svg: "image/svg+xml",
+  png: "image/png",
+  webp: "image/webp",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  pdf: "application/pdf",
+};
+
+function renderTypeForOptions(options = {}, fallbackType = "application/octet-stream") {
+  const format = String(options.format || "").trim().toLowerCase();
+  if (!format) return fallbackType;
+  return RENDER_MIME_BY_FORMAT[format] || (format.includes("/") ? format : fallbackType);
+}
+
+async function fileBlobFromRenderOutput(output, type, metadata = {}) {
+  if (output instanceof FileBlob) {
+    output.metadata = { ...(output.metadata || {}), ...metadata };
+    return output;
   }
-  const renderer = typeof artifact.render === "function" ? artifact.render.bind(artifact) : artifact.export.bind(artifact);
-  const blob = await renderer(options);
-  if (!(blob instanceof FileBlob)) {
-    return new FileBlob(await blob.arrayBuffer?.() ?? String(blob), {
-      type: blob.type || "application/octet-stream",
-      metadata: { artifactKind, format: options.format || blob.type || "unknown" },
-    });
-  }
+  if (output?.data !== undefined) return fileBlobFromRenderOutput(output.data, output.type || type, { ...metadata, ...(output.metadata || {}) });
+  if (output?.arrayBuffer) return new FileBlob(new Uint8Array(await output.arrayBuffer()), { type: output.type || type, metadata });
+  return new FileBlob(output instanceof Uint8Array || output instanceof ArrayBuffer || ArrayBuffer.isView(output) ? toUint8Array(output) : String(output ?? ""), { type, metadata });
+}
+
+function attachRenderMetadata(blob, artifactKind, options = {}, format = options.format || blob.type) {
   blob.metadata = {
     ...(blob.metadata || {}),
     artifactKind,
-    format: options.format || blob.metadata?.format || blob.type,
+    format,
     page: options.page,
     pageIndex: options.pageIndex,
     slide: options.slide,
@@ -160,6 +173,30 @@ export async function renderArtifact(artifact, options = {}) {
     range: options.range,
   };
   return blob;
+}
+
+export async function renderArtifact(artifact, options = {}) {
+  const artifactKind = inferArtifactKind(artifact);
+  if (!artifact || (typeof artifact.render !== "function" && typeof artifact.export !== "function")) {
+    throw new Error("Artifact does not expose a render() or export() method.");
+  }
+  const renderer = typeof artifact.render === "function" ? artifact.render.bind(artifact) : artifact.export.bind(artifact);
+  let blob = await renderer(options);
+  if (!(blob instanceof FileBlob)) {
+    blob = await fileBlobFromRenderOutput(blob, blob?.type || "application/octet-stream", { artifactKind, format: options.format || blob?.type || "unknown" });
+  }
+  const desiredType = renderTypeForOptions(options, blob.type);
+  const wantsConversion = options.format && desiredType !== blob.type;
+  if (wantsConversion) {
+    const adapter = options.renderer || options.rasterRenderer || options.renderAdapter;
+    if (typeof adapter !== "function") {
+      throw new Error(`renderArtifact requested ${options.format} output, but no renderer adapter was provided.`);
+    }
+    const converted = await adapter({ input: blob, source: blob, inputType: blob.type, outputType: desiredType, format: options.format, artifactKind, options });
+    blob = await fileBlobFromRenderOutput(converted, desiredType, { artifactKind, format: options.format, renderedFrom: blob.type });
+    if (!blob.type || blob.type === "application/octet-stream") blob.type = desiredType;
+  }
+  return attachRenderMetadata(blob, artifactKind, options, options.format || blob.metadata?.format || blob.type);
 }
 
 export const HELP_CATALOG = [
@@ -225,7 +262,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata or heuristically extract visible text and pipe-delimited table rows." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method and attach normalized FileBlob metadata." },
+  { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
 ];
 
 export function helpArtifact(artifactOrKind = "*", query = "*", options = {}) {

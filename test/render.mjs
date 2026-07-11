@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   DocumentModel,
+  FileBlob,
   PdfArtifact,
   Presentation,
   renderArtifact,
@@ -30,6 +31,25 @@ const documentPreview = await renderArtifact(document);
 assert.equal(documentPreview.type, "image/svg+xml");
 assert.equal(documentPreview.metadata.artifactKind, "document");
 assert.match(await documentPreview.text(), /Render document/);
+let adapterCalls = 0;
+const rasterPreview = await renderArtifact(document, {
+  format: "png",
+  renderer: async ({ input, inputType, outputType, artifactKind }) => {
+    adapterCalls += 1;
+    assert.equal(inputType, "image/svg+xml");
+    assert.equal(outputType, "image/png");
+    assert.equal(artifactKind, "document");
+    assert.match(await input.text(), /Render document/);
+    return new FileBlob(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { type: "image/png", metadata: { adapter: "fake-png" } });
+  },
+});
+assert.equal(adapterCalls, 1);
+assert.equal(rasterPreview.type, "image/png");
+assert.equal(rasterPreview.metadata.artifactKind, "document");
+assert.equal(rasterPreview.metadata.format, "png");
+assert.equal(rasterPreview.metadata.renderedFrom, "image/svg+xml");
+assert.equal(rasterPreview.metadata.adapter, "fake-png");
+await assert.rejects(() => renderArtifact(document, { format: "webp" }), /no renderer adapter/);
 
 const pdf = PdfArtifact.create({ pages: [{ text: "Render PDF", tables: [{ values: [["Metric", "Value"]] }] }] });
 const pdfPreview = await renderArtifact(pdf, { pageIndex: 0 });

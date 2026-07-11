@@ -61,7 +61,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `renderArtifact` | api | Render an artifact through its render/export method and attach normalized FileBlob metadata. |
+| `renderArtifact` | api | Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
 
 ## workbook
