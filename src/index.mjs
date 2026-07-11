@@ -607,7 +607,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate a clean-room subset of Excel structured references such as TableName[Column] in formulas, expanding them to table data-body cell precedents." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes." },
@@ -3475,8 +3475,36 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
+function cellFormulaXml(address, cell) {
+  if (!cell.formula) return "";
+  const text = String(cell.formula).replace(/^=/, "");
+  const formulaType = cell.formulaType || "";
+  if (formulaType === "shared") {
+    const attrs = [`t="shared"`];
+    if (cell.sharedIndex != null) attrs.push(`si="${Number(cell.sharedIndex) || 0}"`);
+    let includeBody = true;
+    if (cell.sharedRef) {
+      try {
+        const bounds = parseRangeAddress(cell.sharedRef);
+        includeBody = String(address).toUpperCase() === makeCellAddress(bounds.top, bounds.left);
+        if (includeBody) attrs.push(`ref="${attrEscape(cell.sharedRef)}"`);
+      } catch {
+        includeBody = true;
+        attrs.push(`ref="${attrEscape(cell.sharedRef)}"`);
+      }
+    }
+    return `<f ${attrs.join(" ")}>${includeBody ? xmlEscape(text) : ""}</f>`;
+  }
+  if (formulaType === "array") {
+    const ref = cell.arrayRef ? ` ref="${attrEscape(cell.arrayRef)}"` : "";
+    return `<f t="array"${ref}>${xmlEscape(text)}</f>`;
+  }
+  const type = formulaType ? ` t="${attrEscape(formulaType)}"` : "";
+  return `<f${type}>${xmlEscape(text)}</f>`;
+}
+
 function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
-  const f = cell.formula ? `<f>${xmlEscape(String(cell.formula).replace(/^=/, ""))}</f>` : "";
+  const f = cellFormulaXml(address, cell);
   const styleIndex = xlsxStyleIndex(cell, styleTable);
   const s = styleIndex ? ` s="${styleIndex}"` : "";
   if (typeof cell.value === "number") return `<c r="${address}"${s}>${f}<v>${cell.value}</v></c>`;
