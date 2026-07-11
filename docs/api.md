@@ -156,7 +156,7 @@ Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, 
 | `renderArtifact` | api | Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output. |
 | `renderFileWithNativeOffice` | api | Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
-| `visualQaArtifact` | api | Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG pixel-diff metrics when requested. |
+| `visualQaArtifact` | api | Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG/PPM pixel-diff metrics when requested. |
 
 ### shared details
 
@@ -219,7 +219,7 @@ Run an artifact's verify() method and return a bounded NDJSON QA report.
 
 #### `visualQaArtifact`
 
-Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG pixel-diff metrics when requested.
+Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG/PPM pixel-diff metrics when requested.
 
 **Examples:**
 
@@ -229,6 +229,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 
 - baseline/expected/baselineBlob
 - pixelDiff
+- PNG/PPM raster pixel comparison
 - allowChange
 - minBytes
 - maxBytes

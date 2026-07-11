@@ -416,8 +416,78 @@ function comparePngPixels(bytes, baselineBytes, options = {}) {
   const threshold = Math.max(0, Number(options.pixelThreshold ?? options.threshold ?? 0));
   const actual = decodePngRgba(bytes);
   const expected = decodePngRgba(baselineBytes);
+  const result = compareRgbaPixels(actual, expected, { ...options, threshold, format: "png" });
+  return result;
+}
+
+function isPpmBytes(bytes) {
+  return bytes?.[0] === 0x50 && (bytes?.[1] === 0x36 || bytes?.[1] === 0x33);
+}
+
+function ppmTokens(bytes) {
+  const tokens = [];
+  let i = 0;
+  while (i < bytes.length) {
+    while (i < bytes.length && /\s/.test(String.fromCharCode(bytes[i]))) i += 1;
+    if (bytes[i] === 0x23) { while (i < bytes.length && bytes[i] !== 0x0a) i += 1; continue; }
+    if (i >= bytes.length) break;
+    const start = i;
+    while (i < bytes.length && !/\s/.test(String.fromCharCode(bytes[i])) && bytes[i] !== 0x23) i += 1;
+    tokens.push({ text: decoder.decode(bytes.slice(start, i)), end: i });
+    if (tokens.length >= 4) break;
+  }
+  return tokens;
+}
+
+function decodePpmRgba(bytes) {
+  if (!isPpmBytes(bytes)) throw new Error("not a PPM file");
+  const tokens = ppmTokens(bytes);
+  const magic = tokens[0]?.text;
+  const width = Number(tokens[1]?.text);
+  const height = Number(tokens[2]?.text);
+  const max = Number(tokens[3]?.text);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || max <= 0) throw new Error("PPM is missing valid geometry or max value");
+  const rgba = new Uint8Array(width * height * 4);
+  if (magic === "P6") {
+    let offset = tokens[3].end;
+    while (offset < bytes.length && /\s/.test(String.fromCharCode(bytes[offset]))) offset += 1;
+    const needed = width * height * 3;
+    if (bytes.length - offset < needed) throw new Error("PPM image data is truncated");
+    for (let p = 0; p < width * height; p += 1) {
+      const input = offset + p * 3;
+      const output = p * 4;
+      rgba[output] = Math.round(bytes[input] * 255 / max);
+      rgba[output + 1] = Math.round(bytes[input + 1] * 255 / max);
+      rgba[output + 2] = Math.round(bytes[input + 2] * 255 / max);
+      rgba[output + 3] = 255;
+    }
+  } else if (magic === "P3") {
+    const text = decoder.decode(bytes.slice(tokens[3].end));
+    const values = text.replace(/#[^\n\r]*/g, " ").trim().split(/\s+/).filter(Boolean).map(Number);
+    if (values.length < width * height * 3) throw new Error("PPM image data is truncated");
+    for (let p = 0; p < width * height; p += 1) {
+      const input = p * 3;
+      const output = p * 4;
+      rgba[output] = Math.round(values[input] * 255 / max);
+      rgba[output + 1] = Math.round(values[input + 1] * 255 / max);
+      rgba[output + 2] = Math.round(values[input + 2] * 255 / max);
+      rgba[output + 3] = 255;
+    }
+  } else {
+    throw new Error(`unsupported PPM magic ${magic}`);
+  }
+  return { width, height, pixels: rgba };
+}
+
+function comparePpmPixels(bytes, baselineBytes, options = {}) {
+  const threshold = Math.max(0, Number(options.pixelThreshold ?? options.threshold ?? 0));
+  return compareRgbaPixels(decodePpmRgba(bytes), decodePpmRgba(baselineBytes), { ...options, threshold, format: "ppm" });
+}
+
+function compareRgbaPixels(actual, expected, options = {}) {
+  const threshold = Math.max(0, Number(options.threshold ?? options.pixelThreshold ?? 0));
   const result = {
-    format: "png",
+    format: options.format || "rgba",
     width: actual.width,
     height: actual.height,
     baselineWidth: expected.width,
@@ -504,18 +574,19 @@ export async function visualQaArtifact(artifact, options = {}) {
     summary.changed = baselineHash !== hash;
     const pixelDiffEnabled = options.pixelDiff === true || typeof options.pixelDiff === "object";
     if (pixelDiffEnabled) {
-      if (isPngBytes(bytes) && isPngBytes(baselineBytes)) {
+      if ((isPngBytes(bytes) && isPngBytes(baselineBytes)) || (isPpmBytes(bytes) && isPpmBytes(baselineBytes))) {
         try {
-          const pixelDiff = comparePngPixels(bytes, baselineBytes, typeof options.pixelDiff === "object" ? options.pixelDiff : options);
+          const pixelDiffOptions = typeof options.pixelDiff === "object" ? options.pixelDiff : options;
+          const pixelDiff = isPngBytes(bytes) ? comparePngPixels(bytes, baselineBytes, pixelDiffOptions) : comparePpmPixels(bytes, baselineBytes, pixelDiffOptions);
           summary.pixelDiff = pixelDiff;
           if (pixelDiff.changed && options.allowChange !== true && options.allowPixelChange !== true) {
-            issues.push(verificationIssue(artifactKind, "visualPixelDiff", `Rendered PNG differs from the baseline in ${pixelDiff.differentPixels} pixels.`, { severity: options.diffSeverity || "warning", ...pixelDiff }));
+            issues.push(verificationIssue(artifactKind, "visualPixelDiff", `Rendered ${pixelDiff.format.toUpperCase()} differs from the baseline in ${pixelDiff.differentPixels} pixels.`, { severity: options.diffSeverity || "warning", ...pixelDiff }));
           }
         } catch (error) {
           summary.pixelDiff = { skipped: true, reason: error.message };
         }
       } else {
-        summary.pixelDiff = { skipped: true, reason: "pixelDiff currently supports PNG baselines only" };
+        summary.pixelDiff = { skipped: true, reason: "pixelDiff currently supports PNG and PPM baselines only" };
       }
     }
     if (baselineHash !== hash && options.allowChange !== true) issues.push(verificationIssue(artifactKind, "visualDiff", "Rendered output differs from the supplied baseline.", { severity: options.diffSeverity || "warning", hash, baselineHash }));
@@ -631,7 +702,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
-  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG pixel-diff metrics when requested." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, optionally compare against a baseline render, and compute PNG/PPM pixel-diff metrics when requested." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },
@@ -670,7 +741,7 @@ const HELP_DETAIL_OVERRIDES = {
   },
   visualQaArtifact: {
     examples: ["await visualQaArtifact(document, { baseline, pixelDiff: true, minBytes: 100 })"],
-    options: ["baseline/expected/baselineBlob", "pixelDiff", "allowChange", "minBytes", "maxBytes", "maxChars"],
+    options: ["baseline/expected/baselineBlob", "pixelDiff", "PNG/PPM raster pixel comparison", "allowChange", "minBytes", "maxBytes", "maxChars"],
     returns: "{ ok, blob, summary, issues, ndjson }",
   },
   verifyArtifact: {

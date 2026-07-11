@@ -33,8 +33,14 @@ function makePng(width, height, rgba) {
   return new Uint8Array(Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND")]));
 }
 
+function makePpm(width, height, rgb) {
+  return new Uint8Array(Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`, "ascii"), Buffer.from(rgb)]));
+}
+
 const blackPixelPng = makePng(1, 1, [0, 0, 0, 255]);
 const whitePixelPng = makePng(1, 1, [255, 255, 255, 255]);
+const blackPixelPpm = makePpm(1, 1, [0, 0, 0]);
+const whitePixelPpm = makePpm(1, 1, [255, 255, 255]);
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
@@ -93,6 +99,12 @@ assert.match(pixelQa.ndjson, /visualPixelDiff/);
 const unchangedPixelQa = await visualQaArtifact(pngArtifact, { baseline: new FileBlob(whitePixelPng, { type: "image/png" }), pixelDiff: true });
 assert.equal(unchangedPixelQa.ok, true);
 assert.equal(unchangedPixelQa.summary.pixelDiff.changed, false);
+const ppmArtifact = { render: () => new FileBlob(whitePixelPpm, { type: "image/x-portable-pixmap" }) };
+const ppmQa = await visualQaArtifact(ppmArtifact, { baseline: new FileBlob(blackPixelPpm, { type: "image/x-portable-pixmap" }), pixelDiff: true, maxChars: 4000 });
+assert.equal(ppmQa.ok, false);
+assert.equal(ppmQa.summary.pixelDiff.format, "ppm");
+assert.equal(ppmQa.summary.pixelDiff.differentPixels, 1);
+assert.match(ppmQa.ndjson, /visualPixelDiff/);
 await assert.rejects(() => renderArtifact(document, { format: "webp" }), /no renderer adapter/);
 
 const pdf = PdfArtifact.create({ pages: [{ text: "Render PDF", tables: [{ values: [["Metric", "Value"]] }] }] });
