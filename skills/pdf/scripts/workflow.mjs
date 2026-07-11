@@ -170,6 +170,19 @@ async function parseWithPdfjs(pdfBlob, expectedPages, outputDir, options = {}) {
   }
 }
 
+function expectedTaggedTableStructure(tables = []) {
+  return tables.reduce((summary, table) => {
+    const values = table.values || [];
+    const rows = Math.max(1, values.length);
+    const columns = Math.max(1, ...values.map((row) => row.length));
+    summary.tables += 1;
+    summary.rows += rows;
+    summary.headers += columns;
+    summary.dataCells += Math.max(0, rows - 1) * columns;
+    return summary;
+  }, { tables: 0, rows: 0, headers: 0, dataCells: 0 });
+}
+
 export async function verifyPdfFile(inputPath, options = {}) {
   const absoluteInput = path.resolve(inputPath);
   const outputDir = path.resolve(options.outputDir || path.join(path.dirname(absoluteInput), `${path.basename(absoluteInput, path.extname(absoluteInput))}-qa`));
@@ -197,12 +210,18 @@ export async function verifyPdfFile(inputPath, options = {}) {
     else nativeRender = { status: "skipped", reason: "Poppler commands unavailable", commands: nativeStatus.commands };
   }
   const pdfjs = await parseWithPdfjs(pdfBlob, pdf.pages.length, outputDir, { ...options, maxChars });
-  const summary = { input: absoluteInput, outputDir, pages: pdf.pages.length, verifyOk: verify.ok, file: fileInspect.summary, extractedTextChars: extractedText.length, extractedTables: extractedTables.length, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, pdfjs: { status: pdfjs.status, reason: pdfjs.reason, pages: pdfjs.pdf?.pages.length, textChars: pdfjs.text?.length, tables: pdfjs.tables?.length, paths: pdfjs.paths }, files: paths };
+  const expectedTableStructure = expectedTaggedTableStructure(extractedTables);
+  const tableStructurePassed = fileInspect.summary.tableStructures >= expectedTableStructure.tables
+    && fileInspect.summary.tableRows >= expectedTableStructure.rows
+    && fileInspect.summary.tableHeaders >= expectedTableStructure.headers
+    && fileInspect.summary.tableDataCells >= expectedTableStructure.dataCells;
+  const accessibility = { requireTagged: options.requireTagged === true, tagged: fileInspect.summary.tagged, expectedTableStructure, tableStructurePassed };
+  const summary = { input: absoluteInput, outputDir, pages: pdf.pages.length, verifyOk: verify.ok, file: fileInspect.summary, accessibility, extractedTextChars: extractedText.length, extractedTables: extractedTables.length, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, pdfjs: { status: pdfjs.status, reason: pdfjs.reason, pages: pdfjs.pdf?.pages.length, textChars: pdfjs.text?.length, tables: pdfjs.tables?.length, paths: pdfjs.paths }, files: paths };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
   const visualFailed = modelRender.ok === false || (nativeRender.status === "passed" && nativeRender.ok === false);
   const parserFailed = (String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "required" || String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "true") && pdfjs.status !== "passed";
-  const accessibilityFailed = options.requireTagged === true && !fileInspect.summary.tagged;
-  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed || accessibilityFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}, tagged=${fileInspect.summary.tagged}. See ${outputDir}`);
+  const accessibilityFailed = options.requireTagged === true && (!fileInspect.summary.tagged || !tableStructurePassed);
+  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed || accessibilityFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}, tagged=${fileInspect.summary.tagged}, tableStructure=${tableStructurePassed}. See ${outputDir}`);
   return { pdf, inspect, fileInspect, verify, extractedText, extractedTables, modelRender, nativeRender, pdfjs, summary };
 }
 
