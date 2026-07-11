@@ -4,3 +4,5 @@ node_modules/
 *.log
 coverage/
 tmp/
+native/OfficeBridge/**/bin/
+native/OfficeBridge/**/obj/

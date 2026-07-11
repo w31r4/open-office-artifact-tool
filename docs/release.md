@@ -32,7 +32,7 @@ The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotn
 
 - `npm whoami` fails with `ENEEDAUTH`; this machine is not logged in to npm.
 - `npm view open-office-artifact-tool version --json` returns `E404`; the package name/version was not visible on npm from this environment.
-- `dotnet test native/OfficeBridge` cannot run locally because `dotnet` is not installed.
+- `dotnet test native/OfficeBridge` passes locally with .NET 8 (`5` tests passed on macOS arm64); Windows + Microsoft Office automation remains an external integration gate.
 - Playwright smoke tests skip locally because Playwright/Chromium are not installed.
 
 ## Publish command once auth is available

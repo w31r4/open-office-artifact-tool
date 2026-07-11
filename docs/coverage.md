@@ -69,9 +69,9 @@ Status legend:
 | Requirement | Status | Notes |
 | --- | --- | --- |
 | Optional Node wrapper without core Windows/Office dependency | done | `open-office-artifact-tool/native/office-bridge` exposes `callOfficeBridge`, `renderFileWithNativeOffice`, `createNativeOfficeRenderer`, `nativeOfficeStatus`, temp-file isolation, cleanup, timeout handling, and structured `OfficeBridgeError` responses. Covered by mock-backed npm smoke tests. |
-| C# JSON stdin/stdout sidecar | partial | `native/OfficeBridge` contains a .NET 8 sidecar that reads one JSON request from stdin and writes one structured JSON response to stdout. It supports `status`, `render`/`convert`/`export`, and Office-specific operation names. Local verification is pending in this environment because `dotnet` is unavailable. |
+| C# JSON stdin/stdout sidecar | partial | `native/OfficeBridge` contains a .NET 8 sidecar that reads one JSON request from stdin and writes one structured JSON response to stdout. It supports `status`, `render`/`convert`/`export`, and Office-specific operation names. Local .NET 8 protocol tests pass on macOS arm64; Windows + Microsoft Office integration remains pending. |
 | Windows Microsoft Office automation | partial | C# sidecar uses late-bound COM automation for Word DOCX PDF export/update fields/accept/reject revisions, Excel XLSX recalculation/autofit/PDF export, and PowerPoint PPTX PDF/PNG export. Office-specific integration tests remain gated by `OFFICE_NATIVE_TESTS=1` and require Windows + Office. |
-| Dotnet tests for bridge protocol | partial | `native/OfficeBridge/tests` covers status, structured errors, JSON serialization, CLI stdin/stdout status, and graceful no-Office behavior. Tests cannot be run locally here because `dotnet` is not installed; CI runs them when `dotnet` is available. |
+| Dotnet tests for bridge protocol | done | `native/OfficeBridge/tests` covers status, structured errors, JSON serialization, CLI stdin/stdout status, and graceful no-Office behavior. `dotnet test native/OfficeBridge` passes locally with .NET 8 on macOS arm64 (`5` passed, `0` failed, `0` skipped). |
 
 ## Docs, examples, and CI
 
