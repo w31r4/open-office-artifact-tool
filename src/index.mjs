@@ -4011,6 +4011,9 @@ function cellFormulaXml(address, cell) {
     const ref = cell.arrayRef ? ` ref="${attrEscape(cell.arrayRef)}"` : "";
     return `<f t="array"${ref}>${xmlEscape(text)}</f>`;
   }
+  if (cell.spillRange && !cell.spillError) {
+    return `<f t="array" ref="${attrEscape(cell.spillRange)}">${xmlEscape(text)}</f>`;
+  }
   const type = formulaType ? ` t="${attrEscape(formulaType)}"` : "";
   return `<f${type}>${xmlEscape(text)}</f>`;
 }
