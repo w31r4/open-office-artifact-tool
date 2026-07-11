@@ -875,6 +875,8 @@ function resolveColorToken(value, fallback = "transparent") {
     "sky-100": "#e0f2fe",
     "sky-500": "#0ea5e9",
     "sky-600": "#0284c7",
+    green: "#22c55e",
+    red: "#ef4444",
     accent1: "#156082",
     tx1: "#1f1f1f",
     bg1: "#ffffff",
@@ -3089,16 +3091,26 @@ function xlsxStyleKey(style = {}) {
 function collectWorkbookStyles(workbook) {
   const styles = [{}];
   const indexByKey = new Map([["", 0]]);
-  for (const sheet of workbook.worksheets) {
-    for (const [, cell] of sheet.store.entries()) {
-      const key = xlsxStyleKey(cell.style || {});
-      if (!indexByKey.has(key)) {
-        indexByKey.set(key, styles.length);
-        styles.push(normalizeXlsxStyle(cell.style || {}));
-      }
+  const dxfs = [];
+  const dxfIndexByKey = new Map();
+  const addStyle = (style = {}) => {
+    const key = xlsxStyleKey(style || {});
+    if (!indexByKey.has(key)) {
+      indexByKey.set(key, styles.length);
+      styles.push(normalizeXlsxStyle(style || {}));
     }
+  };
+  const addDxf = (style = {}) => {
+    const key = xlsxStyleKey(style || {});
+    if (!key || dxfIndexByKey.has(key)) return;
+    dxfIndexByKey.set(key, dxfs.length);
+    dxfs.push(normalizeXlsxStyle(style || {}));
+  };
+  for (const sheet of workbook.worksheets) {
+    for (const [, cell] of sheet.store.entries()) addStyle(cell.style || {});
+    for (const rule of sheet.conditionalFormattings.items) addDxf(rule.format || rule.rule?.format || {});
   }
-  return { styles, indexByKey };
+  return { styles, indexByKey, dxfs, dxfIndexByKey };
 }
 
 function xlsxStyleIndex(cell, styleTable) {
@@ -3117,8 +3129,20 @@ function xlsxFillXml(style = {}) {
   return `<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
 }
 
+function xlsxDxfXml(style = {}) {
+  const normalized = normalizeXlsxStyle(style || {});
+  const font = normalized.font || {};
+  const fontXml = (font.bold || font.italic || font.color || font.size || font.name)
+    ? `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${font.size ? `<sz val="${Number(font.size) || 11}"/>` : ""}${font.color ? `<color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/>` : ""}${font.name ? `<name val="${attrEscape(font.name)}"/>` : ""}</font>`
+    : "";
+  const fillXml = normalized.fill ? xlsxFillXml(normalized) : "";
+  const numFmtXml = normalized.numberFormat ? `<numFmt numFmtId="0" formatCode="${attrEscape(normalized.numberFormat)}"/>` : "";
+  return `<dxf>${fontXml}${fillXml}${numFmtXml}</dxf>`;
+}
+
 function xlsxStylesXml(styleTable) {
   const styles = styleTable.styles || [{}];
+  const dxfs = styleTable.dxfs || [];
   const customFormats = new Map();
   styles.forEach((style) => { if (style.numberFormat && !customFormats.has(style.numberFormat)) customFormats.set(style.numberFormat, 164 + customFormats.size); });
   const numFmts = customFormats.size ? `<numFmts count="${customFormats.size}">${[...customFormats.entries()].map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${attrEscape(code)}"/>`).join("")}</numFmts>` : "";
@@ -3131,28 +3155,50 @@ function xlsxStylesXml(styleTable) {
     const fillId = normalized.fill ? index + 1 : 0;
     return `<xf numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="0" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}/>`;
   }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs></styleSheet>`;
+  const dxfXml = `<dxfs count="${dxfs.length}">${dxfs.map(xlsxDxfXml).join("")}</dxfs>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs>${dxfXml}</styleSheet>`;
 }
 
 function parseAttrs(attrs = "") {
   return Object.fromEntries([...String(attrs || "").matchAll(/\b([A-Za-z_:][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
 }
 
+function parseXlsxFontStyle(body = "") {
+  return {
+    bold: /<b\b/.test(body),
+    italic: /<i\b/.test(body),
+    color: /<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1] ? `#${/<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1]}` : undefined,
+    size: Number(/<sz[^>]*val="([^"]+)"/.exec(body)?.[1] || 11),
+    name: /<name[^>]*val="([^"]+)"/.exec(body)?.[1] || "Aptos",
+  };
+}
+
+function parseXlsxFillStyle(body = "") {
+  const color = /<fgColor[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1];
+  return color ? `#${color}` : undefined;
+}
+
+function parseXlsxDxfXml(body = "") {
+  const style = {};
+  const fontBody = /<font>([\s\S]*?)<\/font>/.exec(body)?.[1];
+  const fillBody = /<fill>([\s\S]*?)<\/fill>/.exec(body)?.[1];
+  const numFmt = /<numFmt\b([^>]*)\/?>(?:<\/numFmt>)?/.exec(body)?.[1];
+  if (fontBody != null) style.font = parseXlsxFontStyle(fontBody);
+  const fill = fillBody != null ? parseXlsxFillStyle(fillBody) : undefined;
+  if (fill) style.fill = fill;
+  if (numFmt) style.numberFormat = parseAttrs(numFmt).formatCode;
+  return style;
+}
+
 function parseXlsxStylesXml(xml = "") {
   const text = String(xml || "");
   const numFmtById = new Map([...text.matchAll(/<numFmt\b([^>]*)\/>/g)].map((match) => { const attrs = parseAttrs(match[1]); return [Number(attrs.numFmtId), attrs.formatCode]; }));
   const fontsBody = /<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(text)?.[1] || "";
-  const fonts = [...fontsBody.matchAll(/<font>([\s\S]*?)<\/font>/g)].map((match) => ({
-    bold: /<b\b/.test(match[1]),
-    italic: /<i\b/.test(match[1]),
-    color: /<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(match[1])?.[1] ? `#${/<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(match[1])?.[1]}` : undefined,
-    size: Number(/<sz[^>]*val="([^"]+)"/.exec(match[1])?.[1] || 11),
-    name: /<name[^>]*val="([^"]+)"/.exec(match[1])?.[1] || "Aptos",
-  }));
+  const fonts = [...fontsBody.matchAll(/<font>([\s\S]*?)<\/font>/g)].map((match) => parseXlsxFontStyle(match[1]));
   const fillsBody = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(text)?.[1] || "";
-  const fills = [...fillsBody.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((match) => /<fgColor[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(match[1])?.[1]).map((color) => color ? `#${color}` : undefined);
+  const fills = [...fillsBody.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((match) => parseXlsxFillStyle(match[1]));
   const xfsBody = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(text)?.[1] || "";
-  return [...xfsBody.matchAll(/<xf\b([^>]*)\/?>(?:<\/xf>)?/g)].map((match) => {
+  const styles = [...xfsBody.matchAll(/<xf\b([^>]*)\/?>(?:<\/xf>)?/g)].map((match) => {
     const attrs = parseAttrs(match[1]);
     const font = fonts[Number(attrs.fontId || 0)] || {};
     const fill = fills[Number(attrs.fillId || 0)];
@@ -3162,6 +3208,9 @@ function parseXlsxStylesXml(xml = "") {
     if (numberFormat) style.numberFormat = numberFormat;
     return style;
   });
+  const dxfsBody = /<dxfs\b[^>]*>([\s\S]*?)<\/dxfs>/.exec(text)?.[1] || "";
+  styles.dxfs = [...dxfsBody.matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)].map((match) => parseXlsxDxfXml(match[1]));
+  return styles;
 }
 
 function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = [], sharedStrings = { strings: [] }) {
@@ -3393,13 +3442,16 @@ function dataValidationsXml(sheet) {
   return `<dataValidations count="${sheet.dataValidations.items.length}">${rules}</dataValidations>`;
 }
 
-function conditionalFormattingXml(sheet) {
+function conditionalFormattingXml(sheet, styleTable = {}) {
   return sheet.conditionalFormattings.items.map((item, index) => {
     const ruleType = item.ruleType || "expression";
     const type = ruleType === "cellIs" || ruleType === "CellValue" ? "cellIs" : ruleType === "containsText" ? "containsText" : "expression";
     const operator = item.operator ? ` operator="${attrEscape(item.operator)}"` : "";
     const formula = Array.isArray(item.formula) ? item.formula[0] : item.formula || item.expression || "TRUE";
-    return `<conditionalFormatting sqref="${attrEscape(item.range || "A1")}"><cfRule type="${attrEscape(type)}" priority="${index + 1}"${operator}><formula>${xmlEscape(formula)}</formula></cfRule></conditionalFormatting>`;
+    const text = item.text ? ` text="${attrEscape(item.text)}"` : "";
+    const dxfId = styleTable.dxfIndexByKey?.get(xlsxStyleKey(item.format || item.rule?.format || {}));
+    const dxfAttr = dxfId != null ? ` dxfId="${dxfId}"` : "";
+    return `<conditionalFormatting sqref="${attrEscape(item.range || "A1")}"><cfRule type="${attrEscape(type)}" priority="${index + 1}"${operator}${text}${dxfAttr}><formula>${xmlEscape(formula)}</formula></cfRule></conditionalFormatting>`;
   }).join("");
 }
 
@@ -3414,7 +3466,7 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
   const sparklineXml = sparklineGroupExtXml(sheet);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
 function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
@@ -3429,6 +3481,55 @@ function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styl
   const sharedIndex = sharedStrings.indexByText?.get(String(cell.value));
   if (sharedIndex !== undefined) return `<c r="${address}" t="s"${s}><v>${sharedIndex}</v></c>`;
   return `<c r="${address}" t="inlineStr"${s}><is><t>${xmlEscape(cell.value)}</t></is></c>`;
+}
+
+function parseXlsxSqref(value = "") {
+  return String(value || "").trim().split(/\s+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function parseDataValidationsXml(sheet, xml = "") {
+  const text = String(xml || "");
+  for (const match of text.matchAll(/<dataValidation\b([^>]*)>([\s\S]*?)<\/dataValidation>/g)) {
+    const attrs = parseAttrs(match[1]);
+    const body = match[2] || "";
+    const formula1 = decodeXml(/<formula1[^>]*>([\s\S]*?)<\/formula1>/.exec(body)?.[1] || "");
+    const formula2 = decodeXml(/<formula2[^>]*>([\s\S]*?)<\/formula2>/.exec(body)?.[1] || "");
+    const listMatch = /^"([\s\S]*)"$/.exec(formula1);
+    const rule = {
+      type: attrs.type || "custom",
+      operator: attrs.operator || undefined,
+      formula1: formula1 || undefined,
+      formula2: formula2 || undefined,
+    };
+    if (listMatch) rule.values = listMatch[1].split(",").map((item) => item.replaceAll('""', '"'));
+    for (const range of parseXlsxSqref(attrs.sqref || attrs.ref || "A1")) sheet.dataValidations.add({ range, rule });
+  }
+}
+
+function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
+  const text = String(xml || "");
+  for (const block of text.matchAll(/<conditionalFormatting\b([^>]*)>([\s\S]*?)<\/conditionalFormatting>/g)) {
+    const attrs = parseAttrs(block[1]);
+    const ranges = parseXlsxSqref(attrs.sqref || "A1");
+    for (const ruleMatch of String(block[2] || "").matchAll(/<cfRule\b([^>]*)>([\s\S]*?)<\/cfRule>/g)) {
+      const ruleAttrs = parseAttrs(ruleMatch[1]);
+      const type = ruleAttrs.type || "expression";
+      const formula = decodeXml(/<formula[^>]*>([\s\S]*?)<\/formula>/.exec(ruleMatch[2])?.[1] || "");
+      const ruleType = type === "cellIs" ? "cellIs" : type === "containsText" ? "containsText" : "expression";
+      const format = styles?.dxfs?.[Number(ruleAttrs.dxfId)] || undefined;
+      for (const range of ranges) {
+        sheet.conditionalFormattings.add({
+          range,
+          ruleType,
+          operator: ruleAttrs.operator || undefined,
+          text: ruleAttrs.text || undefined,
+          formula: formula || (type === "containsText" ? ruleAttrs.text : undefined),
+          format,
+          priority: ruleAttrs.priority ? Number(ruleAttrs.priority) : undefined,
+        });
+      }
+    }
+  }
 }
 
 function parseWorksheetXml(sheet, xml, options = {}) {
@@ -3449,6 +3550,8 @@ function parseWorksheetXml(sheet, xml, options = {}) {
     else if (text !== undefined) cell.value = decodeXml(text);
     else if (value !== undefined) cell.value = Number.isFinite(Number(value)) && type !== "str" ? Number(value) : decodeXml(value);
   }
+  parseDataValidationsXml(sheet, xml);
+  parseConditionalFormattingXml(sheet, xml, options.styles || []);
   parseSparklineGroupsXml(sheet, xml);
 }
 
