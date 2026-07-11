@@ -3340,6 +3340,8 @@ export class SpreadsheetFile {
     pivotParts.forEach((part) => {
       zip.file(`xl/pivotTables/pivotTable${part.pivotPartId}.xml`, pivotTableXml(part));
       zip.file(`xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml`, pivotCacheDefinitionXml(part));
+      zip.file(`xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml`, pivotCacheRecordsXml(part));
+      zip.file(`xl/pivotCache/_rels/pivotCacheDefinition${part.cachePartId}.xml.rels`, pivotCacheDefinitionRelsXml(part));
     });
     imageParts.forEach((part) => zip.file(`xl/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`xl/charts/chart${part.chartPartId}.xml`, xlsxChartXml(part.chart)));
@@ -3387,7 +3389,7 @@ function collectWorkbookPivotParts(workbook) {
   let pivotPartId = 1;
   workbook.worksheets.items.forEach((sheet, sheetIndex) => {
     sheet.pivotTables.items.forEach((pivot, pivotIndex) => {
-      parts.push({ sheet, sheetIndex, pivot, pivotIndex, pivotPartId: pivotPartId, cacheId: pivotPartId, cachePartId: pivotPartId, relId: undefined, cacheRelId: undefined });
+      parts.push({ sheet, sheetIndex, pivot, pivotIndex, pivotPartId: pivotPartId, cacheId: pivotPartId, cachePartId: pivotPartId, recordsPartId: pivotPartId, recordsRelId: "rId1", relId: undefined, cacheRelId: undefined });
       pivotPartId += 1;
     });
   });
@@ -3652,7 +3654,7 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
     ["svg", "image/svg+xml"],
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/xl/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
-  const pivots = pivotParts.map((part) => `<Override PartName="/xl/pivotTables/pivotTable${part.pivotPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>`).join("");
+  const pivots = pivotParts.map((part) => `<Override PartName="/xl/pivotTables/pivotTable${part.pivotPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/><Override PartName="/xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>`).join("");
   const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>`).join("");
   const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>` : "";
   const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
@@ -3878,6 +3880,22 @@ function pivotCacheDefinitionXml(part) {
     return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0">${shared}</cacheField>`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" refreshOnLoad="1" recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${headers.length}">${cacheFields}</cacheFields></pivotCacheDefinition>`;
+}
+
+function pivotCacheDefinitionRelsXml(part) {
+  return relsXml([{ id: part.recordsRelId || "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords", target: `pivotCacheRecords${part.recordsPartId}.xml` }]);
+}
+
+function pivotCacheRecordValueXml(value) {
+  if (value == null || value === "") return "<m/>";
+  const numeric = Number.isFinite(Number(value)) && String(value).trim() !== "";
+  return numeric ? `<n v="${Number(value)}"/>` : `<s v="${attrEscape(value)}"/>`;
+}
+
+function pivotCacheRecordsXml(part) {
+  const rows = part.pivot.sourceValues().slice(1);
+  const records = rows.map((row) => `<r>${row.map(pivotCacheRecordValueXml).join("")}</r>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${rows.length}">${records}</pivotCacheRecords>`;
 }
 
 function pivotTableXml(part) {
