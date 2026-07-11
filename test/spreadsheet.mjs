@@ -137,6 +137,7 @@ assert.match(workbook.inspect({ kind: "formula", target: "Sheet1!E3", maxChars: 
 assert.match(workbook.inspect({ kind: "formulaNode", target: "Sheet1!E3", maxChars: 12000 }).ndjson, /Sheet1!G4/);
 assert.match(workbook.inspect({ kind: "formulaNode", target: "Sheet1!E2", maxChars: 12000 }).ndjson, /Sheet1!C4/);
 assert.match(workbook.help("workbook.structuredReferences").ndjson, /TableName\[Column\]/);
+assert.match(workbook.help("workbook.sharedArrayFormulas").ndjson, /shared formulas/);
 assert.match(workbook.help("workbook.trace").ndjson, /precedent tree/);
 assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
 
@@ -337,6 +338,27 @@ assert.match(nativeThreadInspect, /"resolved":true/);
 const nativeStyleInspect = nativeOnlyWorkbook.inspect({ kind: "style", range: "A1:C3", maxChars: 12000 }).ndjson;
 assert.match(nativeStyleInspect, /"kind":"style"/);
 assert.match(nativeStyleInspect, /"numberFormat":"#,##0"/);
+const sharedFormulaZip = await JSZip.loadAsync(xlsxBytes);
+sharedFormulaZip.remove("customXml/open-office-artifact.json");
+const sharedFormulaXml = worksheetXml
+  .replace(/<c r="C2"([^>]*)>([\s\S]*?)<f>A2\+B2<\/f>([\s\S]*?)<\/c>/, `<c r="C2"$1>$2<f t="shared" si="0" ref="C2:C3">A2+B2</f>$3</c>`)
+  .replace(/<c r="C3"([^>]*)>([\s\S]*?)<f>A3\+B3<\/f>([\s\S]*?)<\/c>/, `<c r="C3"$1>$2<f t="shared" si="0"></f>$3</c>`)
+  .replace(/<c r="E3"([^>]*)>([\s\S]*?)<f>SUM\(RevenueData\)<\/f>([\s\S]*?)<\/c>/, `<c r="E3"$1>$2<f t="array" ref="E3:E4">SUM(G2:G4)</f>$3</c>`);
+assert.match(sharedFormulaXml, /<f t="shared" si="0" ref="C2:C3">A2\+B2<\/f>/);
+assert.match(sharedFormulaXml, /<f t="array" ref="E3:E4">SUM\(G2:G4\)<\/f>/);
+sharedFormulaZip.file("xl/worksheets/sheet1.xml", sharedFormulaXml);
+const sharedFormulaWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await sharedFormulaZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
+const sharedFormulaInspect = sharedFormulaWorkbook.inspect({ kind: "formula", target: "Sheet1!C3", maxChars: 8000 }).ndjson;
+assert.match(sharedFormulaInspect, /"formula":"=A3\+B3"/);
+assert.match(sharedFormulaInspect, /"formulaType":"shared"/);
+assert.match(sharedFormulaInspect, /"sharedIndex":0/);
+assert.match(sharedFormulaInspect, /"sharedRef":"C2:C3"/);
+const arrayFormulaInspect = sharedFormulaWorkbook.inspect({ kind: "formula", target: "Sheet1!E3", maxChars: 8000 }).ndjson;
+assert.match(arrayFormulaInspect, /"formula":"=SUM\(G2:G4\)"/);
+assert.match(arrayFormulaInspect, /"formulaType":"array"/);
+assert.match(arrayFormulaInspect, /"arrayRef":"E3:E4"/);
+assert.equal(sharedFormulaWorkbook.worksheets.getItem("Sheet1").getRange("C3").values[0][0], 12);
+assert.equal(sharedFormulaWorkbook.worksheets.getItem("Sheet1").getRange("E3").values[0][0], 350);
 const nativeRuleInspect = nativeOnlyWorkbook.inspect({ kind: "dataValidation,conditionalFormat", maxChars: 12000 }).ndjson;
 assert.match(nativeRuleInspect, /"kind":"dataValidation"/);
 assert.match(nativeRuleInspect, /"range":"D2:D3"/);

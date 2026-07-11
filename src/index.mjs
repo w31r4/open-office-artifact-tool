@@ -607,6 +607,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate a clean-room subset of Excel structured references such as TableName[Column] in formulas, expanding them to table data-body cell precedents." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes." },
@@ -2084,6 +2085,10 @@ export class Worksheet {
         address,
         formula: cell.formula,
         value: cell.value,
+        formulaType: cell.formulaType || undefined,
+        sharedIndex: cell.sharedIndex,
+        sharedRef: cell.sharedRef,
+        arrayRef: cell.arrayRef,
         precedents: graphNode?.precedents?.map((ref) => ref.key) || formulaReferences(cell.formula, this).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address)),
         dependents: graphNode?.dependents || [],
         error: formulaErrorCode(cell.value) || undefined,
@@ -3534,16 +3539,41 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
 }
 
 function parseWorksheetXml(sheet, xml, options = {}) {
-  for (const match of xml.matchAll(/<c\s+([^>]*)>([\s\S]*?)<\/c>/g)) {
+  const cellMatches = [...String(xml || "").matchAll(/<c\s+([^>]*)>([\s\S]*?)<\/c>/g)].map((match) => {
     const attrs = match[1];
     const body = match[2];
     const address = /r="([^"]+)"/.exec(attrs)?.[1];
-    if (!address) continue;
+    const formulaMatch = /<f\b([^>]*)>([\s\S]*?)<\/f>/.exec(body);
+    return { attrs, body, address, formulaAttrs: parseAttrs(formulaMatch?.[1] || ""), formulaBody: formulaMatch ? decodeXml(formulaMatch[2] || "") : undefined };
+  }).filter((item) => item.address);
+  const sharedFormulas = new Map();
+  for (const item of cellMatches) {
+    if (item.formulaAttrs.t === "shared" && item.formulaAttrs.si != null && item.formulaBody) {
+      sharedFormulas.set(String(item.formulaAttrs.si), { address: item.address, formula: item.formulaBody, ref: item.formulaAttrs.ref });
+    }
+  }
+  for (const item of cellMatches) {
+    const { attrs, body, address, formulaAttrs, formulaBody } = item;
     const cell = sheet.store.get(address);
     const styleIndex = Number(/\bs="([^"]+)"/.exec(attrs)?.[1] || 0);
     if (options.styles?.[styleIndex]) cell.style = { ...options.styles[styleIndex] };
-    const formula = /<f[^>]*>([\s\S]*?)<\/f>/.exec(body)?.[1];
-    if (formula) cell.formula = `=${decodeXml(formula)}`;
+    if (formulaBody !== undefined || formulaAttrs.t === "shared") {
+      if (formulaAttrs.t === "shared") {
+        const shared = sharedFormulas.get(String(formulaAttrs.si));
+        const formulaText = formulaBody || (shared ? conditionalFormulaForCell(shared.formula, parseRangeAddress(shared.address), address) : "");
+        if (formulaText) cell.formula = `=${formulaText}`;
+        cell.formulaType = "shared";
+        cell.sharedIndex = formulaAttrs.si != null ? Number(formulaAttrs.si) : undefined;
+        cell.sharedRef = formulaAttrs.ref || shared?.ref;
+      } else if (formulaAttrs.t === "array") {
+        if (formulaBody) cell.formula = `=${formulaBody}`;
+        cell.formulaType = "array";
+        cell.arrayRef = formulaAttrs.ref;
+      } else if (formulaBody) {
+        cell.formula = `=${formulaBody}`;
+        cell.formulaType = formulaAttrs.t || undefined;
+      }
+    }
     const text = /<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/.exec(body)?.[1];
     const value = /<v[^>]*>([\s\S]*?)<\/v>/.exec(body)?.[1];
     const type = /\bt="([^"]+)"/.exec(attrs)?.[1];
