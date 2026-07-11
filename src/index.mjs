@@ -698,13 +698,14 @@ export const HELP_CATALOG = [
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, and target/search context slicing." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
@@ -6124,6 +6125,27 @@ class PdfImage {
   toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, bbox: this.bbox, fit: this.fit }; }
 }
 
+class PdfChart {
+  constructor(page, config = {}) {
+    this.page = page;
+    this.id = config.id || aid("pch");
+    this.name = config.name || "";
+    this.title = config.title || config.name || "Chart";
+    this.chartType = config.chartType || config.type || "bar";
+    this.categories = (config.categories || config.labels || []).map((item) => String(item ?? ""));
+    const sourceSeries = config.series || [{ name: config.seriesName || "Series 1", values: config.values || config.data || [] }];
+    this.series = sourceSeries.map((series, index) => ({
+      name: series.name || `Series ${index + 1}`,
+      values: (series.values || series.data || []).map((value) => Number(value)),
+      color: series.color || ["#2563eb", "#16a34a", "#f97316", "#9333ea"][index % 4],
+    }));
+    this.bbox = config.bbox || [72, 430, 468, 180];
+  }
+
+  inspectRecord(pageIndex) { return { kind: "chart", id: this.id, page: pageIndex + 1, name: this.name || undefined, title: this.title, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
+  toJSON() { return { id: this.id, name: this.name, title: this.title, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
+}
+
 class PdfPage {
   constructor(artifact, config = {}) {
     this.artifact = artifact;
@@ -6133,27 +6155,30 @@ class PdfPage {
     this.height = config.height || 792;
     this.tables = (config.tables || []).map((table) => new PdfTable(this, table));
     this.images = (config.images || []).map((image) => new PdfImage(this, image));
+    this.charts = (config.charts || []).map((chart) => new PdfChart(this, chart));
     this.textItems = (config.textItems || []).map((item, index) => ({ id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox: item.bbox || [Number(item.x || 0), Number(item.y || item.top || 0), Number(item.width || 0), Number(item.height || 0)], fontName: item.fontName, dir: item.dir }));
     this.regions = (config.regions || []).map((region, index) => ({ id: region.id || `${this.id}/rg/${index + 1}`, kind: region.kind || "region", bbox: region.bbox || [0, 0, this.width, this.height], label: region.label }));
   }
 
   addTable(config = {}) { const table = new PdfTable(this, config); this.tables.push(table); return table; }
   addImage(config = {}) { const image = new PdfImage(this, config); this.images.push(image); return image; }
-  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, textItems: this.textItems.length, tables: this.tables.length, images: this.images.length, regions: this.regions.length }; }
+  addChart(config = {}) { const chart = new PdfChart(this, config); this.charts.push(chart); return chart; }
+  inspectRecord(index) { return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, textItems: this.textItems.length, tables: this.tables.length, images: this.images.length, charts: this.charts.length, regions: this.regions.length }; }
   textRecord(index) { return { kind: "text", id: `${this.id}/text`, page: index + 1, text: this.text, textChars: this.text.length, textItems: this.textItems.length }; }
   textItemRecords(index) { return this.textItems.map((item) => ({ kind: "textItem", page: index + 1, ...item })); }
   regionRecords(index) { return this.regions.map((region) => ({ ...region, kind: "region", regionKind: region.kind || "region", page: index + 1 })); }
-  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()) }; }
+  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()), charts: this.charts.map((chart) => chart.toJSON()) }; }
 }
 
 function pdfLayoutRecordsForPage(pageLayout, pageArrayIndex) {
-  const pageRecord = { kind: pageLayout.kind, id: pageLayout.id, page: pageLayout.page, width: pageLayout.width, height: pageLayout.height, unit: pageLayout.unit, textChars: pageLayout.text?.textChars || 0, textPreview: String(pageLayout.text?.text || "").slice(0, 300), tables: pageLayout.tables.length, images: pageLayout.images.length, regions: pageLayout.regions.length, textItems: pageLayout.textItems.length };
+  const pageRecord = { kind: pageLayout.kind, id: pageLayout.id, page: pageLayout.page, width: pageLayout.width, height: pageLayout.height, unit: pageLayout.unit, textChars: pageLayout.text?.textChars || 0, textPreview: String(pageLayout.text?.text || "").slice(0, 300), tables: pageLayout.tables.length, images: pageLayout.images.length, charts: pageLayout.charts.length, regions: pageLayout.regions.length, textItems: pageLayout.textItems.length };
   const entries = [{ pageArrayIndex, collection: "page", record: pageRecord }];
   if (pageLayout.text) entries.push({ pageArrayIndex, collection: "text", record: pageLayout.text });
   pageLayout.textItems.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "textItems", itemIndex, record }));
   pageLayout.regions.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "regions", itemIndex, record }));
   pageLayout.tables.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "tables", itemIndex, record: { ...record, textPreview: record.values.map((row) => row.map((cell) => String(cell ?? "")).join(" ")).join(" ") } }));
   pageLayout.images.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "images", itemIndex, record }));
+  pageLayout.charts.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "charts", itemIndex, record }));
   return entries;
 }
 
@@ -6178,7 +6203,7 @@ function pdfLayoutSlice(layout, options = {}) {
   }
   const keepByPage = new Map();
   const ensurePageKeep = (pageArrayIndex) => {
-    if (!keepByPage.has(pageArrayIndex)) keepByPage.set(pageArrayIndex, { full: false, text: false, textItems: new Set(), regions: new Set(), tables: new Set(), images: new Set() });
+    if (!keepByPage.has(pageArrayIndex)) keepByPage.set(pageArrayIndex, { full: false, text: false, textItems: new Set(), regions: new Set(), tables: new Set(), images: new Set(), charts: new Set() });
     return keepByPage.get(pageArrayIndex);
   };
   for (const entryIndex of keepEntries) {
@@ -6198,7 +6223,8 @@ function pdfLayoutSlice(layout, options = {}) {
       textItems: pageLayout.textItems.filter((_, index) => keep.textItems.has(index)),
       regions: pageLayout.regions.filter((_, index) => keep.regions.has(index)),
       tables: pageLayout.tables.filter((_, index) => keep.tables.has(index)),
-      images: pageLayout.images.filter((_, index) => keep.images.has(index)),
+      images: keep.images ? pageLayout.images.filter((_, index) => keep.images.has(index)) : [],
+      charts: keep.charts ? pageLayout.charts.filter((_, index) => keep.charts.has(index)) : [],
     };
   }).filter(Boolean);
   const matchedPages = new Set(matchingEntryIndexes.map((index) => entries[index]?.pageArrayIndex).filter((index) => index != null));
@@ -6228,7 +6254,7 @@ export class PdfArtifact {
   constructor(options = {}) {
     this.id = options.id || aid("pdf");
     this.metadata = options.metadata || {};
-    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [], images: options.images || [] }];
+    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [], images: options.images || [], charts: options.charts || [] }];
     this.pages = pages.map((page) => new PdfPage(this, page));
   }
 
@@ -6236,6 +6262,7 @@ export class PdfArtifact {
   addPage(config = {}) { const page = new PdfPage(this, config); this.pages.push(page); return page; }
   addTable(config = {}) { return (this.pages[0] || this.addPage()).addTable(config); }
   addImage(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addImage(config); }
+  addChart(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addChart(config); }
   extractText(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.map((page) => page.text).join("\n\n"); }
   extractTables(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.flatMap((page, index) => page.tables.map((table) => ({ page: options.page || index + 1, id: table.id, name: table.name, values: table.values, bbox: table.bbox }))); }
   resolve(id) {
@@ -6251,12 +6278,14 @@ export class PdfArtifact {
       if (table) return table;
       const image = page.images.find((item) => item.id === id);
       if (image) return image;
+      const chart = page.charts.find((item) => item.id === id);
+      if (chart) return chart;
     }
     return undefined;
   }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["page", "text", "table", "image"]);
+    const kinds = normalizeKinds(options.kind, ["page", "text", "table", "image", "chart"]);
     const records = [];
     this.pages.forEach((page, index) => {
       if (kinds.has("page")) records.push(page.inspectRecord(index));
@@ -6265,6 +6294,7 @@ export class PdfArtifact {
       if (kinds.has("region")) records.push(...page.regionRecords(index));
       if (kinds.has("table")) records.push(...page.tables.map((table) => table.inspectRecord(index)));
       if (kinds.has("image")) records.push(...page.images.map((image) => image.inspectRecord(index)));
+      if (kinds.has("chart")) records.push(...page.charts.map((chart) => chart.inspectRecord(index)));
     });
     return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
@@ -6273,7 +6303,7 @@ export class PdfArtifact {
     const issues = [];
     if (this.pages.length === 0) issues.push(verificationIssue("pdf", "noPages", "PDF artifact has no pages."));
     this.pages.forEach((page, pageIndex) => {
-      if (!page.text.trim() && page.tables.length === 0 && page.images.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, or images.`, { page: pageIndex + 1 }));
+      if (!page.text.trim() && page.tables.length === 0 && page.images.length === 0 && page.charts.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, images, or charts.`, { page: pageIndex + 1 }));
       if (page.textItems.length && !page.text.trim()) issues.push(verificationIssue("pdf", "textExtractionMismatch", `PDF page ${pageIndex + 1} has positioned text items but no extracted page text.`, { severity: "warning", page: pageIndex + 1 }));
       if (page.textItems.some((item) => !item.text)) issues.push(verificationIssue("pdf", "emptyTextItem", `PDF page ${pageIndex + 1} contains an empty positioned text item.`, { severity: "warning", page: pageIndex + 1 }));
       if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(page.text)) issues.push(verificationIssue("pdf", "textExtractionControlChars", `PDF page ${pageIndex + 1} extracted text contains control characters.`, { page: pageIndex + 1 }));
@@ -6306,6 +6336,16 @@ export class PdfArtifact {
           issues.push(verificationIssue("pdf", "imageOutOfBounds", `PDF image ${image.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: image.id, bbox: image.bbox }));
         }
       }
+      for (const chart of page.charts) {
+        if (!chart.categories.length || !chart.series.length || chart.series.every((series) => !series.values.length)) issues.push(verificationIssue("pdf", "emptyChart", `PDF chart ${chart.id} on page ${pageIndex + 1} has no categories or series data.`, { page: pageIndex + 1, id: chart.id }));
+        for (const series of chart.series) {
+          if (series.values.some((value) => !Number.isFinite(value))) issues.push(verificationIssue("pdf", "chartNonNumericData", `PDF chart ${chart.id} contains non-numeric series values.`, { page: pageIndex + 1, id: chart.id, series: series.name }));
+        }
+        const [left, top, width, height] = chart.bbox || [];
+        if (left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > page.width || top + height > page.height) {
+          issues.push(verificationIssue("pdf", "chartOutOfBounds", `PDF chart ${chart.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: chart.id, bbox: chart.bbox }));
+        }
+      }
     });
     return verificationResult("pdf", issues, options);
   }
@@ -6335,6 +6375,7 @@ export class PdfArtifact {
           regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
           tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, bbox: table.bbox })),
           images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt })),
+          charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
         };
       }),
     };
@@ -6403,8 +6444,46 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     regions: page.regions || [],
     tables: (page.tables || []).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96] })),
     images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120] })),
+    charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
   }));
   return PdfArtifact.create({ metadata: { ...metadata, ...(source.metadata || parsed?.metadata || {}) }, pages: pages.length ? pages : [{ text: "" }] });
+}
+
+function pdfChartSvg(chart) {
+  const [left, top, width, height] = chart.bbox || [72, 430, 468, 180];
+  const padding = { left: 36, right: 12, top: 28, bottom: 28 };
+  const plotLeft = left + padding.left;
+  const plotTop = top + padding.top;
+  const plotWidth = Math.max(1, width - padding.left - padding.right);
+  const plotHeight = Math.max(1, height - padding.top - padding.bottom);
+  const values = chart.series.flatMap((series) => series.values).filter(Number.isFinite);
+  const max = Math.max(1, ...values);
+  const categories = chart.categories.length ? chart.categories : Array.from({ length: Math.max(0, ...chart.series.map((series) => series.values.length)) }, (_, index) => String(index + 1));
+  const axis = `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="#ffffff" stroke="#cbd5e1"/><text x="${left + 10}" y="${top + 18}" font-family="Helvetica" font-size="12" font-weight="700" fill="#111827">${xmlEscape(chart.title)}</text><line x1="${plotLeft}" y1="${plotTop + plotHeight}" x2="${plotLeft + plotWidth}" y2="${plotTop + plotHeight}" stroke="#94a3b8"/><line x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotTop + plotHeight}" stroke="#94a3b8"/>`;
+  if (/^line$/i.test(chart.chartType)) {
+    const lines = chart.series.map((series) => {
+      const points = series.values.map((value, index) => {
+        const x = plotLeft + (categories.length <= 1 ? plotWidth / 2 : (index / Math.max(1, categories.length - 1)) * plotWidth);
+        const y = plotTop + plotHeight - (Math.max(0, Number(value) || 0) / max) * plotHeight;
+        return `${x},${y}`;
+      }).join(" ");
+      return `<polyline points="${points}" fill="none" stroke="${attrEscape(series.color)}" stroke-width="2"/>`;
+    }).join("");
+    return `${axis}${lines}`;
+  }
+  const groupWidth = plotWidth / Math.max(1, categories.length);
+  const barWidth = Math.max(2, groupWidth / Math.max(1, chart.series.length) - 4);
+  const bars = [];
+  chart.series.forEach((series, seriesIndex) => {
+    series.values.forEach((value, index) => {
+      const barHeight = (Math.max(0, Number(value) || 0) / max) * plotHeight;
+      const x = plotLeft + index * groupWidth + seriesIndex * (barWidth + 3) + 3;
+      const y = plotTop + plotHeight - barHeight;
+      bars.push(`<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${attrEscape(series.color)}"/>`);
+    });
+  });
+  const labels = categories.slice(0, 8).map((category, index) => `<text x="${plotLeft + index * groupWidth + 3}" y="${top + height - 8}" font-family="Helvetica" font-size="9" fill="#475569">${xmlEscape(category)}</text>`).join("");
+  return `${axis}${bars.join("")}${labels}`;
 }
 
 function pdfPageSvg(page) {
@@ -6434,7 +6513,8 @@ function pdfPageSvg(page) {
     const visual = image.dataUrl ? `<image href="${attrEscape(image.dataUrl)}" x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`;
     return `${visual}<text x="${left + 8}" y="${top + 18}" font-family="Helvetica" font-size="11" fill="#92400e">${xmlEscape(image.alt || image.prompt || image.uri || image.name || "image")}</text>`;
   }).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}${images}</svg>`;
+  const charts = (page.charts || []).map(pdfChartSvg).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}${images}${charts}</svg>`;
 }
 
 function escapePdfString(text) {
@@ -6445,7 +6525,8 @@ function buildMinimalPdf(artifact) {
   const page = artifact.pages[0] || new PdfPage(artifact);
   const tableLines = page.tables.flatMap((table) => table.values.map((row) => row.join(" | ")));
   const imageLines = page.images.map((image) => `[Image: ${image.alt || image.prompt || image.uri || image.name || "image"}]`);
-  const lines = [...String(page.text || "").split(/\r?\n/), ...tableLines, ...imageLines].filter(Boolean);
+  const chartLines = page.charts.flatMap((chart) => [`[Chart: ${chart.title || chart.name || chart.chartType || "chart"}]`, ...chart.series.map((series) => `${series.name}: ${series.values.join(", ")}`)]);
+  const lines = [...String(page.text || "").split(/\r?\n/), ...tableLines, ...imageLines, ...chartLines].filter(Boolean);
   const content = `BT\n/F1 18 Tf\n72 720 Td\n${lines.map((line, index) => `${index === 0 ? "" : "0 -24 Td\n"}(${escapePdfString(line)}) Tj`).join("\n")}\nET`;
   const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
   const objects = [

@@ -58,14 +58,15 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 | Name | Kind | Summary |
 | --- | --- | --- |
 | `createPdfjsParser` | api | Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders. |
+| `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
 | `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
-| `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude. |
-| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, and target/search context slicing. |
+| `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude. |
+| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing. |
 | `pdf.render` | api | Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters. |
-| `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images. |
-| `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables. |
+| `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts. |
+| `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
 | `PdfFile.exportPdf` | api | Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, or fall back to heuristic visible-text/table extraction. |
@@ -74,7 +75,7 @@ Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and 
 
 #### `pdf.inspect`
 
-Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 

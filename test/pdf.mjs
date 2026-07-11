@@ -27,7 +27,16 @@ const image = pdf.addImage({
   alt: "Report logo",
   bbox: [360, 72, 120, 80],
 });
-assert.match(pdf.inspect({ kind: "page,text,table,image", maxChars: 8000 }).ndjson, /metrics-table/);
+const chart = pdf.addChart({
+  name: "pipeline-chart",
+  title: "Pipeline by quarter",
+  chartType: "bar",
+  categories: ["Q1", "Q2", "Q3"],
+  series: [{ name: "Pipeline", values: [8, 12, 18], color: "#2563eb" }],
+  bbox: [72, 420, 360, 150],
+});
+assert.match(pdf.inspect({ kind: "page,text,table,image,chart", maxChars: 10000 }).ndjson, /pipeline-chart/);
+assert.match(pdf.inspect({ kind: "page,text,table,image,chart", maxChars: 10000 }).ndjson, /metrics-table/);
 assert.match(pdf.inspect({ kind: "image", search: "logo" }).ndjson, /Report logo/);
 assert.equal(image.alt, "Report logo");
 assert.equal(pdf.resolve(pdf.id), pdf);
@@ -35,6 +44,7 @@ assert.equal(pdf.resolve(pdf.pages[0].id), pdf.pages[0]);
 assert.equal(pdf.resolve(`${pdf.pages[0].id}/text`).text, pdf.pages[0].text);
 assert.equal(pdf.resolve(inlineTable.id), inlineTable);
 assert.equal(pdf.resolve(image.id), image);
+assert.equal(pdf.resolve(chart.id), chart);
 assert.equal(pdf.resolve("missing/pdf-id"), undefined);
 assert.match(pdf.inspect({ kind: "table", search: "Retention" }).ndjson, /94%/);
 const targetedPdfInspect = pdf.inspect({ kind: "table,image", target: image.id, maxChars: 4000 }).ndjson;
@@ -51,6 +61,7 @@ assert.match(pdfContextInspect, /Second page notes/);
 assert.equal(pdf.extractTables().length, 2);
 assert.deepEqual(pdf.extractTables()[0].values[1], ["Revenue", "$12M"]);
 assert.match(pdf.help("pdf.addImage").ndjson, /image region/);
+assert.match(pdf.help("pdf.addChart").ndjson, /chart region/);
 
 const preview = await pdf.render({ pageIndex: 0 });
 assert.equal(preview.type, "image/svg+xml");
@@ -58,6 +69,8 @@ const svg = await preview.text();
 assert.match(svg, /PDF research artifact/);
 assert.match(svg, /Revenue/);
 assert.match(svg, /Report logo/);
+assert.match(svg, /Pipeline by quarter/);
+assert.match(svg, /Q1/);
 assert.match(svg, /<image href="data:image\/png;base64/);
 const layoutBlob = await pdf.render({ format: "layout", pageIndex: 0 });
 assert.equal(layoutBlob.type, "application/vnd.open-office-artifact.layout+json");
@@ -67,12 +80,14 @@ assert.equal(layout.pages.length, 1);
 assert.equal(layout.pages[0].kind, "pdfPageLayout");
 assert.equal(layout.pages[0].tables.length, 2);
 assert.ok(layout.pages[0].images.some((item) => item.alt === "Report logo"));
+assert.ok(layout.pages[0].charts.some((item) => item.title === "Pipeline by quarter"));
 const imageLayoutBlob = await pdf.render({ format: "layout", target: image.id });
 assert.equal(imageLayoutBlob.metadata.target, image.id);
 const imageLayout = JSON.parse(await imageLayoutBlob.text());
 assert.deepEqual(imageLayout.pages.map((page) => page.page), [1]);
 assert.deepEqual(imageLayout.pages[0].images.map((item) => item.id), [image.id]);
 assert.equal(imageLayout.pages[0].tables.length, 0);
+assert.equal(imageLayout.pages[0].charts.length, 0);
 assert.equal("text" in imageLayout.pages[0], false);
 const tableSearchLayout = pdf.layoutJson({ search: "Retention" });
 assert.deepEqual(tableSearchLayout.pages[0].tables.map((item) => item.name), ["metrics-table"]);
@@ -80,6 +95,9 @@ assert.equal(tableSearchLayout.slice.matchedRecords, 1);
 const pdfContextLayout = pdf.layoutJson({ target: image.id, before: 1 });
 assert.deepEqual(pdfContextLayout.pages[0].tables.map((item) => item.id), [inlineTable.id]);
 assert.deepEqual(pdfContextLayout.pages[0].images.map((item) => item.id), [image.id]);
+const chartLayout = pdf.layoutJson({ target: chart.id });
+assert.deepEqual(chartLayout.pages[0].charts.map((item) => item.id), [chart.id]);
+assert.equal(chartLayout.pages[0].tables.length, 0);
 const pdfPageLayout = pdf.layoutJson({ target: pdf.pages[1].id });
 assert.deepEqual(pdfPageLayout.pages.map((page) => page.id), [pdf.pages[1].id]);
 assert.equal(pdfPageLayout.pages[0].text.text, "Second page notes");
@@ -111,11 +129,12 @@ assert.match(pdf.help("pdf.render").ndjson, /source: 'pdf'/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pdf`);
 await blob.save(out);
 const loaded = await PdfFile.importPdf(await FileBlob.load(out));
-const loadedInspect = loaded.inspect({ kind: "page,text,table,image", maxChars: 8000 }).ndjson;
+const loadedInspect = loaded.inspect({ kind: "page,text,table,image,chart", maxChars: 10000 }).ndjson;
 assert.match(loadedInspect, /PDF research artifact/);
 assert.match(loadedInspect, /metrics-table/);
 assert.match(loadedInspect, /inline-table/);
 assert.match(loadedInspect, /Report logo/);
+assert.match(loadedInspect, /Pipeline by quarter/);
 assert.deepEqual(loaded.extractTables()[0].values[2], ["Retention", "94%"]);
 
 const parsed = await PdfFile.importPdf(new FileBlob(new Uint8Array([0x25, 0x50, 0x44, 0x46]), { type: "application/pdf" }), {
@@ -169,12 +188,15 @@ const badGeometryPdf = PdfArtifact.create({
     textItems: [{ id: "txt/bad", text: "outside", bbox: [95, 95, 20, 20] }],
     regions: [{ id: "rg/bad", kind: "textLine", label: "outside", bbox: [-1, 0, 20, 20] }],
     images: [{ id: "im/bad-data", dataUrl: "data:not-base64", bbox: [10, 10, 20, 20] }],
+    charts: [{ id: "ch/bad", title: "Bad chart", categories: ["A"], series: [{ name: "Bad", values: [Number.NaN] }], bbox: [80, 80, 50, 50] }],
   }],
 });
 const badGeometryIssues = badGeometryPdf.verify({ maxChars: 4000 }).ndjson;
 assert.match(badGeometryIssues, /textItemOutOfBounds/);
 assert.match(badGeometryIssues, /regionOutOfBounds/);
 assert.match(badGeometryIssues, /invalidImageDataUrl/);
+assert.match(badGeometryIssues, /chartNonNumericData/);
+assert.match(badGeometryIssues, /chartOutOfBounds/);
 assert.match(parsed.help("createPdfjsParser").ndjson, /PDF\.js parser adapter/);
 
 const pdfjsParser = createPdfjsParser();
