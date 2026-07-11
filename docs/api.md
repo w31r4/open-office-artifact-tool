@@ -35,7 +35,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
 | `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images. |
-| `pdf.render` | api | Render a modeled PDF page to SVG in the current clean-room MVP. |
+| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images. |
+| `pdf.render` | api | Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }. |
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images. |
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, malformed tables, and out-of-bounds table boxes. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |

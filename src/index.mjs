@@ -518,7 +518,8 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images." },
   { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG in the current clean-room MVP." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, and images." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, malformed tables, and out-of-bounds table boxes." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, or fall back to heuristic visible-text/table extraction." },
@@ -4863,7 +4864,38 @@ export class PdfArtifact {
 
   help(query = "*", options = {}) { return helpArtifact("pdf", query, options); }
 
-  async render(options = {}) { return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" }); }
+  layoutJson(options = {}) {
+    const pageNumber = options.page != null ? Number(options.page) : options.pageIndex != null ? Number(options.pageIndex) + 1 : undefined;
+    const selectedPages = pageNumber ? [this.pages[pageNumber - 1]].filter(Boolean) : this.pages;
+    return {
+      kind: "pdfLayout",
+      id: this.id,
+      pageCount: this.pages.length,
+      metadata: this.metadata,
+      pages: selectedPages.map((page) => {
+        const pageIndex = this.pages.indexOf(page);
+        return {
+          kind: "pdfPageLayout",
+          id: page.id,
+          page: pageIndex + 1,
+          width: page.width,
+          height: page.height,
+          unit: "pt",
+          text: { id: `${page.id}/text`, text: page.text, textChars: page.text.length, bbox: [0, 0, page.width, page.height] },
+          textItems: page.textItems.map((item) => ({ kind: "textItem", ...item })),
+          regions: page.regions.map((region) => ({ kind: "region", ...region })),
+          tables: page.tables.map((table) => ({ kind: "table", id: table.id, name: table.name || undefined, values: table.values, bbox: table.bbox })),
+          images: page.images.map((image) => ({ kind: "image", id: image.id, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt })),
+        };
+      }),
+    };
+  }
+
+  async render(options = {}) {
+    const format = String(options.format || "").trim().toLowerCase();
+    if (format === "layout" || format === LAYOUT_MIME) return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "pdf", format: "layout", page: options.page, pageIndex: options.pageIndex } });
+    return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" });
+  }
   toJSON() { return { id: this.id, metadata: this.metadata, pages: this.pages.map((page) => page.toJSON()) }; }
 }
 

@@ -49,6 +49,15 @@ assert.match(svg, /PDF research artifact/);
 assert.match(svg, /Revenue/);
 assert.match(svg, /Report logo/);
 assert.match(svg, /<image href="data:image\/png;base64/);
+const layoutBlob = await pdf.render({ format: "layout", pageIndex: 0 });
+assert.equal(layoutBlob.type, "application/vnd.open-office-artifact.layout+json");
+const layout = JSON.parse(await layoutBlob.text());
+assert.equal(layout.kind, "pdfLayout");
+assert.equal(layout.pages.length, 1);
+assert.equal(layout.pages[0].kind, "pdfPageLayout");
+assert.equal(layout.pages[0].tables.length, 2);
+assert.ok(layout.pages[0].images.some((item) => item.alt === "Report logo"));
+assert.match(pdf.help("pdf.layoutJson").ndjson, /page layout JSON/);
 assert.equal(pdf.verify().ok, true);
 
 const blob = await PdfFile.exportPdf(pdf);
