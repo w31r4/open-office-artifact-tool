@@ -45,8 +45,14 @@ try {
     baselineDir,
   });
   assert.equal(compared.verify.ok, true);
+  assert.equal(compared.modelRender.baselinePageCount, 3);
+  assert.equal(compared.modelRender.pageCountMatches, true);
   assert.ok(compared.modelRender.slides.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
-  if (nativeStatus.available) assert.ok(compared.nativeRender.pages.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
+  if (nativeStatus.available) {
+    assert.equal(compared.nativeRender.baselinePageCount, 3);
+    assert.equal(compared.nativeRender.pageCountMatches, true);
+    assert.ok(compared.nativeRender.pages.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
+  }
   for (const slide of compared.modelRender.slides) assert.ok((await fs.stat(slide.path)).size > 100);
   if (nativeStatus.available) for (const slide of compared.nativeRender.pages) assert.ok((await fs.stat(slide.path)).size > 100);
   console.log("presentation skill smoke ok");

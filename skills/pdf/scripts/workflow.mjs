@@ -46,6 +46,28 @@ async function optionalBaseline(baselinePath) {
   try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
 }
 
+async function numberedBaselineFiles(baselineDir, prefix) {
+  if (!baselineDir) return [];
+  try {
+    const pattern = new RegExp(`^${prefix}-\\d+\\.png$`);
+    return (await fs.readdir(baselineDir)).filter((name) => pattern.test(name)).map((name) => path.join(baselineDir, name));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function prepareBaselineSet(baselineDir, prefix, writeBaseline) {
+  if (!baselineDir) return [];
+  const existing = await numberedBaselineFiles(baselineDir, prefix);
+  if (writeBaseline) {
+    await fs.mkdir(baselineDir, { recursive: true });
+    await Promise.all(existing.map((filePath) => fs.unlink(filePath)));
+    return [];
+  }
+  return existing;
+}
+
 async function runPngQa(artifact, options = {}) {
   const baseline = options.writeBaseline ? undefined : await optionalBaseline(options.baselinePath);
   const qa = await visualQaArtifact(artifact, {
@@ -72,6 +94,7 @@ async function renderModelPages(pdf, outputDir, options = {}) {
   const renderer = createPlaywrightRenderer({ viewport: options.viewport || { width: 900, height: 1100 }, deviceScaleFactor: options.deviceScaleFactor ?? 1, timeout: options.timeout ?? 30_000 });
   const pages = [];
   const qaLines = [];
+  const existingBaselines = await prepareBaselineSet(options.baselineDir, "model-page", options.writeBaseline);
   for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-page-${pageIndex + 1}.png`) : undefined;
     const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
@@ -81,9 +104,12 @@ async function renderModelPages(pdf, outputDir, options = {}) {
     qaLines.push(qa.ndjson);
     pages.push({ page: pageIndex + 1, path: pagePath, layoutPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
+  const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
+  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pdf.pages.length;
+  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "pdf", severity: "warning", pageCount: pdf.pages.length, baselinePageCount, baselineKind: "model" }));
   const qaPath = path.join(outputDir, "model-visual-qa.ndjson");
   await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
-  return { status: "passed", pages, qaPath };
+  return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pageCount: pdf.pages.length, baselinePageCount, pageCountMatches, pages, qaPath };
 }
 
 async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, options = {}) {
@@ -94,6 +120,7 @@ async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, opt
   const renderer = createPopplerRenderer({ dpi: options.dpi ?? 144, timeoutMs: options.nativeTimeout ?? 60_000 });
   const pages = [];
   const qaLines = [];
+  const existingBaselines = await prepareBaselineSet(options.baselineDir, "native-page", options.writeBaseline);
   for (let pageIndex = 0; pageIndex < info.pages; pageIndex += 1) {
     const png = await renderer({ input: pdfBlob, inputType: PDF_MIME, outputType: "image/png", format: "png", artifactKind: "pdf", pageIndex });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
@@ -103,10 +130,13 @@ async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, opt
     qaLines.push(qa.ndjson);
     pages.push({ page: pageIndex + 1, path: pagePath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
+  const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
+  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === info.pages;
+  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "pdf", severity: "warning", pageCount: info.pages, baselinePageCount, baselineKind: "native" }));
   const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
   const infoPath = path.join(outputDir, "pdfinfo.txt");
   await Promise.all([fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8"), fs.writeFile(infoPath, info.text, "utf8")]);
-  return { status: "passed", pageCount: info.pages, pages, qaPath, infoPath };
+  return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pageCount: info.pages, baselinePageCount, pageCountMatches, pages, qaPath, infoPath };
 }
 
 async function parseWithPdfjs(pdfBlob, expectedPages, outputDir, options = {}) {
@@ -158,7 +188,7 @@ export async function verifyPdfFile(inputPath, options = {}) {
   const pdfjs = await parseWithPdfjs(pdfBlob, pdf.pages.length, outputDir, { ...options, maxChars });
   const summary = { input: absoluteInput, outputDir, pages: pdf.pages.length, verifyOk: verify.ok, file: fileInspect.summary, extractedTextChars: extractedText.length, extractedTables: extractedTables.length, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, pdfjs: { status: pdfjs.status, reason: pdfjs.reason, pages: pdfjs.pdf?.pages.length, textChars: pdfjs.text?.length, tables: pdfjs.tables?.length, paths: pdfjs.paths }, files: paths };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  const visualFailed = modelRender.pages.some((page) => !page.ok) || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok));
+  const visualFailed = modelRender.ok === false || (nativeRender.status === "passed" && nativeRender.ok === false);
   const parserFailed = (String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "required" || String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "true") && pdfjs.status !== "passed";
   if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}. See ${outputDir}`);
   return { pdf, inspect, fileInspect, verify, extractedText, extractedTables, modelRender, nativeRender, pdfjs, summary };

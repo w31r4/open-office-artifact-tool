@@ -106,6 +106,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - Per-slide Playwright PNGs catch facade/render regressions; the montage checks deck flow only.
 - LibreOffice PDF plus Poppler slide PNGs are the native non-Windows render gate.
 - Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve baseline changes only after full-size review.
+- Baseline approval replaces stale model/native slide files; later slide-count changes fail QA even if all remaining slides match.
 - Microsoft Office native automation remains the higher-fidelity Windows gate for PowerPoint-specific behavior.
 - Deliver only the requested PPTX; previews, baselines, and QA reports are internal unless requested.
 

@@ -32,8 +32,14 @@ try {
   const compared = await verifyPdfFile(first.pdfPath, { outputDir: path.join(root, "compare"), nativeRender: nativeStatus.available ? "required" : "auto", pdfjs: "required", baselineDir });
   assert.equal(compared.verify.ok, true);
   assert.equal(compared.pdfjs.status, "passed");
+  assert.equal(compared.modelRender.baselinePageCount, 2);
+  assert.equal(compared.modelRender.pageCountMatches, true);
   assert.ok(compared.modelRender.pages.every((page) => page.baselineCompared && page.pixelDiff?.changed === false && page.ok));
-  if (nativeStatus.available) assert.ok(compared.nativeRender.pages.every((page) => page.baselineCompared && page.pixelDiff?.changed === false && page.ok));
+  if (nativeStatus.available) {
+    assert.equal(compared.nativeRender.baselinePageCount, 2);
+    assert.equal(compared.nativeRender.pageCountMatches, true);
+    assert.ok(compared.nativeRender.pages.every((page) => page.baselineCompared && page.pixelDiff?.changed === false && page.ok));
+  }
   for (const page of compared.modelRender.pages) assert.ok((await fs.stat(page.path)).size > 100);
   if (nativeStatus.available) for (const page of compared.nativeRender.pages) assert.ok((await fs.stat(page.path)).size > 100);
   console.log("pdf skill smoke ok");

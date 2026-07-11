@@ -82,6 +82,28 @@ async function optionalBaseline(baselinePath) {
   try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
 }
 
+async function numberedBaselineFiles(baselineDir, prefix) {
+  if (!baselineDir) return [];
+  try {
+    const pattern = new RegExp(`^${prefix}-\\d+\\.png$`);
+    return (await fs.readdir(baselineDir)).filter((name) => pattern.test(name)).map((name) => path.join(baselineDir, name));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function prepareBaselineSet(baselineDir, prefix, writeBaseline) {
+  if (!baselineDir) return [];
+  const existing = await numberedBaselineFiles(baselineDir, prefix);
+  if (writeBaseline) {
+    await fs.mkdir(baselineDir, { recursive: true });
+    await Promise.all(existing.map((filePath) => fs.unlink(filePath)));
+    return [];
+  }
+  return existing;
+}
+
 async function runPngQa(artifact, options = {}) {
   const baseline = options.writeBaseline ? undefined : await optionalBaseline(options.baselinePath);
   const qa = await visualQaArtifact(artifact, {
@@ -118,6 +140,7 @@ async function renderNativeSlides(pptxBlob, outputDir, slideCount, options = {})
   const poppler = createPopplerRenderer({ dpi: options.dpi ?? 144, timeoutMs: options.nativeTimeout ?? 60_000 });
   const pages = [];
   const qaLines = [];
+  const existingBaselines = await prepareBaselineSet(options.baselineDir, "native-slide", options.writeBaseline);
   for (let slideIndex = 0; slideIndex < pageCount; slideIndex += 1) {
     const png = await poppler({ input: pdf, inputType: "application/pdf", outputType: "image/png", format: "png", artifactKind: "presentation", pageIndex: slideIndex });
     const slidePath = path.join(pagesDir, `slide-${slideIndex + 1}.png`);
@@ -127,9 +150,12 @@ async function renderNativeSlides(pptxBlob, outputDir, slideCount, options = {})
     qaLines.push(qa.ndjson);
     pages.push({ slide: slideIndex + 1, path: slidePath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
+  const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
+  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
+  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "presentation", severity: "warning", pageCount, baselinePageCount, baselineKind: "native" }));
   const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
   await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
-  return { status: "passed", pdfPath, qaPath, pageCount, pages };
+  return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pdfPath, qaPath, pageCount, baselinePageCount, pageCountMatches, pages };
 }
 
 async function renderModelSlides(presentation, outputDir, options = {}) {
@@ -139,6 +165,7 @@ async function renderModelSlides(presentation, outputDir, options = {}) {
   const renderer = createPlaywrightRenderer({ viewport: options.viewport || { width: 1280, height: 720 }, deviceScaleFactor: options.deviceScaleFactor ?? 1, timeout: options.timeout ?? 30_000 });
   const slides = [];
   const qaLines = [];
+  const existingBaselines = await prepareBaselineSet(options.baselineDir, "model-slide", options.writeBaseline);
   for (let slideIndex = 0; slideIndex < presentation.slides.count; slideIndex += 1) {
     const slide = presentation.slides.getItem(slideIndex);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-slide-${slideIndex + 1}.png`) : undefined;
@@ -157,12 +184,15 @@ async function renderModelSlides(presentation, outputDir, options = {}) {
     qaLines.push(qa.ndjson);
     slides.push({ slide: slideIndex + 1, path: slidePath, layoutPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
+  const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
+  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === presentation.slides.count;
+  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "presentation", severity: "warning", pageCount: presentation.slides.count, baselinePageCount, baselineKind: "model" }));
   const montageArtifact = { export: () => presentation.export({ format: "montage", columns: options.montageColumns || 2, scale: options.montageScale || 0.32 }) };
   const montageQa = await visualQaArtifact(montageArtifact, { format: "png", renderer, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 20_000 });
   const montagePath = path.join(outputDir, "model-montage.png");
   const qaPath = path.join(outputDir, "model-visual-qa.ndjson");
   await Promise.all([montageQa.blob.save(montagePath), fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n${montageQa.ndjson}\n`, "utf8")]);
-  return { status: "passed", slides, montagePath, montage: { bytes: montageQa.blob.bytes.length, hash: montageQa.summary.hash, ok: montageQa.ok }, qaPath };
+  return { status: "passed", ok: pageCountMatches && slides.every((slide) => slide.ok) && montageQa.ok, pageCount: presentation.slides.count, baselinePageCount, pageCountMatches, slides, montagePath, montage: { bytes: montageQa.blob.bytes.length, hash: montageQa.summary.hash, ok: montageQa.ok }, qaPath };
 }
 
 export async function verifyPresentationFile(inputPath, options = {}) {
@@ -201,7 +231,7 @@ export async function verifyPresentationFile(inputPath, options = {}) {
   }
   const summary = { input: absoluteInput, outputDir, slides: presentation.slides.count, packageOk: packageInspect.ok, verifyOk: verify.ok, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, files: paths };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  const visualFailed = modelRender.slides.some((slide) => !slide.ok) || !modelRender.montage.ok || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok));
+  const visualFailed = modelRender.ok === false || (nativeRender.status === "passed" && nativeRender.ok === false);
   if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || visualFailed)) throw new Error(`Presentation QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}. See ${outputDir}`);
   return { presentation, inspect, packageInspect, verify, modelRender, nativeRender, summary };
 }
