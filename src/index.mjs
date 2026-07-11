@@ -684,7 +684,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
-  { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, and design preset metadata." },
+  { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
 
@@ -4684,6 +4684,36 @@ function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {
   return Math.max(20, lines * fontSize * 1.6);
 }
 
+function documentBlockLayoutText(block) {
+  if (block.kind === "table") return block.values.map((row) => row.map((cell) => String(cell ?? "")).join(" ")).join(" ");
+  if (block.kind === "section") return `section break: ${block.breakType || ""} ${block.orientation || ""}`.trim();
+  return String(block.text ?? block.display ?? block.alt ?? block.prompt ?? block.uri ?? block.name ?? "");
+}
+
+function documentLayoutSlice(document, layout, options = {}) {
+  const targets = inspectTargetTokens(options);
+  const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
+  if (!targets.length && !search) return layout;
+  const before = Math.max(0, Number(options.before ?? options.contextBefore ?? options.context ?? 0) || 0);
+  const after = Math.max(0, Number(options.after ?? options.contextAfter ?? options.context ?? 0) || 0);
+  const targetsDocument = targets.some((target) => target === document.id || target === document.name);
+  const matchedPages = new Set(layout.pages.filter((pageRecord) => inspectRecordMatchesTarget(pageRecord, targets)).map((pageRecord) => pageRecord.page));
+  const matches = [];
+  layout.elements.forEach((element, index) => {
+    const matchesSearch = !search || JSON.stringify(element).toLowerCase().includes(search);
+    const matchesTarget = !targets.length || targetsDocument || matchedPages.has(element.page) || inspectRecordMatchesTarget(element, targets);
+    if (matchesSearch && matchesTarget) matches.push(index);
+  });
+  const keep = new Set();
+  for (const index of matches) {
+    for (let i = Math.max(0, index - before); i <= Math.min(layout.elements.length - 1, index + after); i += 1) keep.add(i);
+  }
+  const elements = layout.elements.filter((_, index) => keep.has(index));
+  const referencedPages = new Set(elements.map((element) => element.page));
+  const pages = layout.pages.filter((pageRecord) => referencedPages.has(pageRecord.page));
+  return { ...layout, pages, elements, slice: { targets, search: search || undefined, before, after, matchedElements: matches.length, returnedElements: elements.length } };
+}
+
 function documentLayoutJson(document, options = {}) {
   const pageWidth = Number(options.pageWidth || 612);
   const pageHeight = Number(options.pageHeight || 792);
@@ -4693,17 +4723,19 @@ function documentLayoutJson(document, options = {}) {
   let page = 1;
   let y = margin;
   const ensurePage = () => {
-    if (!pages.find((item) => item.page === page)) pages.push({ page, width: pageWidth, height: pageHeight, margin, headers: document.headers.map((header) => header.id), footers: document.footers.map((footer) => footer.id) });
+    if (!pages.find((item) => item.page === page)) pages.push({ id: `${document.id}/page/${page}`, page, width: pageWidth, height: pageHeight, margin, headers: document.headers.map((header) => header.id), footers: document.footers.map((footer) => footer.id) });
   };
   ensurePage();
   for (const block of document.blocks) {
     const height = documentBlockHeight(document, block, pageWidth, margin);
     if (y + height > pageHeight - margin && y > margin) { page += 1; y = margin; ensurePage(); }
-    elements.push({ kind: "layoutElement", id: block.id, blockKind: block.kind, name: block.name || undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, textPreview: String(block.text || block.display || block.alt || "").slice(0, 120) });
+    const textPreview = documentBlockLayoutText(block).slice(0, 120);
+    const comments = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => comment.id);
+    elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, textPreview });
     y += height;
     if (block.kind === "section" && block.breakType === "nextPage") { page += 1; y = margin; ensurePage(); }
   }
-  return { schema: "open-office-artifact.document-layout/v1", unit: "px", document: { id: document.id, name: document.name, designPreset: document.designPreset }, pages, elements };
+  return documentLayoutSlice(document, { schema: "open-office-artifact.document-layout/v1", unit: "px", document: { id: document.id, name: document.name, designPreset: document.designPreset }, pages, elements }, options);
 }
 
 function documentLayoutRecords(document, options = {}) {
@@ -4900,7 +4932,7 @@ export class DocumentModel {
   }
 
   async render(options = {}) {
-    if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME });
+    if (options.format === "layout") return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "document", format: "layout", target: options.target ?? options.targetId ?? options.id ?? options.anchor, search: options.search ?? options.searchTerm } });
     const width = 612;
     const margin = 72;
     let y = 72;
