@@ -101,7 +101,7 @@ It accepts SVG or HTML `FileBlob` input, fixes viewport/device scale/timezone/lo
 
 ## Native Office bridge adapter
 
-The core package does not depend on Windows or Microsoft Office. The Node-side wrapper at `open-office-artifact-tool/native/office-bridge` calls an optional JSON stdin/stdout sidecar command with timeout handling, isolated temp files, cleanup, and structured errors.
+The core package does not depend on Windows or Microsoft Office. The Node-side wrapper at `open-office-artifact-tool/native/office-bridge` calls the optional C# sidecar in `native/OfficeBridge` (or any compatible JSON stdin/stdout command) with timeout handling, isolated temp files, cleanup, and structured errors.
 
 ```js
 import { renderFileWithNativeOffice } from "open-office-artifact-tool/native/office-bridge";
@@ -117,7 +117,15 @@ const pdf = await renderFileWithNativeOffice(docxBlob, {
 });
 ```
 
-Set `OFFICE_BRIDGE_COMMAND` and optional JSON `OFFICE_BRIDGE_ARGS` to configure the bridge without passing command options. The C# Office sidecar remains optional and should gracefully report unavailable Office installations; integration tests are expected to be gated with `OFFICE_NATIVE_TESTS=1`.
+Set `OFFICE_BRIDGE_COMMAND` and optional JSON `OFFICE_BRIDGE_ARGS` to configure the bridge without passing command options. The C# Office sidecar supports status checks on every platform and uses Microsoft Office COM automation on Windows when Office is installed; Office-specific integration tests are gated with `OFFICE_NATIVE_TESTS=1`.
+
+```sh
+# Non-Office protocol tests, when dotnet is installed
+dotnet test native/OfficeBridge
+
+# Optional Windows + Office integration tests
+OFFICE_NATIVE_TESTS=1 dotnet test native/OfficeBridge
+```
 
 ## PDF parsing adapters
 
@@ -178,4 +186,6 @@ npm run test:examples
 npm run test:office-bridge
 npm run test:playwright-renderer # skips unless Playwright/Chromium are installed
 npm run test:pack
+# optional when dotnet is installed:
+dotnet test native/OfficeBridge
 ```

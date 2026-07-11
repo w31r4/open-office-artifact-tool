@@ -27,6 +27,7 @@
     "docs/**",
     "scripts/**",
     "examples/**",
+    "native/**",
     "README.md",
     "LICENSE"
   ],
@@ -42,6 +43,7 @@
     "test:render": "node test/render.mjs",
     "test:playwright-renderer": "node test/playwright-renderer.mjs",
     "test:office-bridge": "node test/office-bridge.mjs",
+    "test:office-bridge-dotnet": "dotnet test native/OfficeBridge",
     "test:examples": "node test/examples.mjs",
     "test:help": "node test/help.mjs",
     "test:pack": "npm pack --dry-run"
