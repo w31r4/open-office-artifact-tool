@@ -977,12 +977,12 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
-  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets." },
+  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to a native OOXML PPTX FileBlob." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes through presentation/slide relationships, including arbitrary slide, notes, comments, comment-author, theme, layout, chart, and image targets." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -7081,10 +7081,11 @@ export class PresentationFile {
     const imageParts = collectPresentationImageParts(presentation);
     const chartParts = collectPresentationChartParts(presentation, imageParts);
     const layoutParts = collectPresentationLayoutParts(presentation);
-    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, imageParts, chartParts, presentation, layoutParts));
+    const commentAuthors = collectPptxCommentAuthors(presentation);
+    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, imageParts, chartParts, presentation, layoutParts, commentAuthors.entries));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "ppt/presentation.xml" }]));
     zip.file("ppt/presentation.xml", presentationXml(presentation));
-    zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, layoutParts));
+    zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, layoutParts, commentAuthors.entries.length > 0));
     zip.file("ppt/theme/theme1.xml", pptxThemeXml(presentation.theme));
     if (layoutParts.length) {
       zip.file("ppt/slideMasters/slideMaster1.xml", pptxSlideMasterXml(layoutParts));
@@ -7102,8 +7103,9 @@ export class PresentationFile {
       zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, slideImageParts, slideChartParts));
       if (slideImageParts.length || slideChartParts.length || layoutRelId || notesRelId || commentsRelId) zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, pptxSlideRelsXml(slideImageParts, slideChartParts, { slideIndex: i, layoutRelId, layoutPartId: slideLayoutPart?.layoutPartId, notesRelId, commentsRelId }));
       if (notesRelId) zip.file(`ppt/notesSlides/notesSlide${i + 1}.xml`, pptxNotesSlideXml(slide));
-      if (commentsRelId) zip.file(`ppt/comments/comment${i + 1}.xml`, pptxCommentsXml(slide));
+      if (commentsRelId) zip.file(`ppt/comments/comment${i + 1}.xml`, pptxCommentsXml(slide, commentAuthors));
     });
+    if (commentAuthors.entries.length) zip.file("ppt/commentAuthors.xml", pptxCommentAuthorsXml(commentAuthors));
     imageParts.forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`ppt/charts/chart${part.chartPartId}.xml`, pptxChartXml(part.chart)));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
@@ -7120,6 +7122,9 @@ export class PresentationFile {
     const themeTarget = themeRel?.target ? (themeRel.target.replace(/^\//, "").startsWith("ppt/") ? themeRel.target.replace(/^\//, "") : path.posix.normalize(`ppt/${themeRel.target}`).replace(/^\.\//, "")) : undefined;
     const themeXml = themeTarget ? await zip.file(themeTarget)?.async("text") : await zip.file("ppt/theme/theme1.xml")?.async("text");
     if (themeXml) presentation.theme = parsePptxTheme(presentation, themeXml);
+    const commentAuthorsRel = presentationRels.find((rel) => rel.type.endsWith("/commentAuthors") && rel.targetMode?.toLowerCase() !== "external");
+    const commentAuthorsTarget = commentAuthorsRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", commentAuthorsRel.target), "PPTX") : undefined;
+    const commentAuthorsById = commentAuthorsTarget ? parsePptxCommentAuthors(await zip.file(commentAuthorsTarget)?.async("text")) : new Map();
     const layoutByTarget = new Map();
     const relationshipsById = new Map(presentationRels.map((relationship) => [relationship.id, relationship]));
     const referencedSlideFiles = [...String(presentationXml || "").matchAll(/<p:sldId\b[^>]*\/?\s*>/g)].map((match) => {
@@ -7147,7 +7152,7 @@ export class PresentationFile {
       const notesTarget = notesRel ? pptxRelationshipTarget(rels, notesRel.id) : undefined;
       const commentsTarget = commentsRel ? pptxRelationshipTarget(rels, commentsRel.id) : undefined;
       if (notesTarget) parsePptxNotes(slide, await zip.file(notesTarget)?.async("text"));
-      if (commentsTarget) parsePptxComments(slide, await zip.file(commentsTarget)?.async("text"));
+      if (commentsTarget) parsePptxComments(slide, await zip.file(commentsTarget)?.async("text"), commentAuthorsById);
     }
     return presentation;
   }
@@ -7191,11 +7196,12 @@ function collectPresentationLayoutParts(presentation) {
   return presentation.layouts.items.map((layout, index) => ({ layout, layoutPartId: index + 1, masterRelId: `rId${index + 1}` }));
 }
 
-function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, layoutParts = []) {
+function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, layoutParts = [], commentAuthors = []) {
   const slides = Array.from({ length: slideCount }, (_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/ppt/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
   const notes = presentation?.slides.items.map((slide, i) => slide.speakerNotes.text ? `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>` : "").join("") || "";
   const comments = presentation?.slides.items.map((slide, i) => slide.comments.items.length ? `<Override PartName="/ppt/comments/comment${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.comments+xml"/>` : "").join("") || "";
+  const authors = commentAuthors.length ? `<Override PartName="/ppt/commentAuthors.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml"/>` : "";
   const theme = `<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`;
   const master = layoutParts.length ? `<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>` : "";
   const layouts = layoutParts.map((part) => `<Override PartName="/ppt/slideLayouts/slideLayout${part.layoutPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>`).join("");
@@ -7206,7 +7212,7 @@ function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presenta
     ["gif", "image/gif"],
     ["svg", "image/svg+xml"],
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${theme}${master}${layouts}${notes}${comments}</Types>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${theme}${master}${layouts}${notes}${comments}${authors}</Types>`;
 }
 
 function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
@@ -7219,11 +7225,12 @@ function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
   ]);
 }
 
-function pptxPresentationRelsXml(presentation, layoutParts = []) {
-  const slideRels = presentation.slides.items.map((_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", target: `slides/slide${i + 1}.xml` }));
-  const themeRel = { id: `rId${slideRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" };
-  const masterRel = layoutParts.length ? [{ id: `rId${slideRels.length + 2}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: "slideMasters/slideMaster1.xml" }] : [];
-  return relsXml([...slideRels, themeRel, ...masterRel]);
+function pptxPresentationRelsXml(presentation, layoutParts = [], hasCommentAuthors = false) {
+  const relationships = presentation.slides.items.map((_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", target: `slides/slide${i + 1}.xml` }));
+  relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" });
+  if (layoutParts.length) relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: "slideMasters/slideMaster1.xml" });
+  if (hasCommentAuthors) relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/commentAuthors", target: "commentAuthors.xml" });
+  return relsXml(relationships);
 }
 
 function pptxColorValue(value, fallback) {
@@ -7310,11 +7317,43 @@ function pptxNotesSlideXml(slide) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs || "<a:p/>"}</p:txBody></p:sp></p:spTree></p:cSld></p:notes>`;
 }
 
-function pptxCommentsXml(slide) {
+function pptxCommentInitials(name) {
+  const words = String(name || "User").trim().split(/\s+/).filter(Boolean);
+  return (words.length > 1 ? words.slice(0, 2).map((word) => [...word][0]) : [...(words[0] || "U")].slice(0, 2)).join("").toUpperCase();
+}
+
+function collectPptxCommentAuthors(presentation) {
+  const entries = [];
+  const byName = new Map();
+  for (const slide of presentation.slides.items) for (const thread of slide.comments.items) for (const comment of thread.comments) {
+    const name = String(comment.author || thread.author || "User");
+    if (byName.has(name)) continue;
+    const entry = { id: String(entries.length), name, initials: pptxCommentInitials(name), colorIndex: entries.length % 8, nextIndex: 1, lastIndex: 0 };
+    entries.push(entry);
+    byName.set(name, entry);
+  }
+  return { entries, byName };
+}
+
+function pptxCommentAuthorsXml(registry) {
+  const authors = registry.entries.map((author) => `<p:cmAuthor id="${author.id}" name="${attrEscape(author.name)}" initials="${attrEscape(author.initials)}" lastIdx="${author.lastIndex}" clrIdx="${author.colorIndex}"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmAuthorLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">${authors}</p:cmAuthorLst>`;
+}
+
+function parsePptxCommentAuthors(xml = "") {
+  return new Map([...String(xml || "").matchAll(/<p:cmAuthor\b[^>]*\/?>/g)].map((match) => {
+    const attrs = ooxmlXmlAttributes(match[0]);
+    return [String(attrs.id || ""), attrs.name || attrs.initials || "User"];
+  }));
+}
+
+function pptxCommentsXml(slide, authorRegistry) {
   const comments = slide.comments.items.flatMap((thread, threadIndex) => thread.comments.map((comment, commentIndex) => {
-    const idx = threadIndex * 100 + commentIndex;
+    const author = authorRegistry.byName.get(String(comment.author || thread.author || "User"));
+    const idx = author.nextIndex++;
+    author.lastIndex = Math.max(author.lastIndex, idx);
     const targetName = slide.resolve(thread.targetId)?.name || "";
-    return `<p:cm authorId="0" dt="${attrEscape(comment.created || thread.created)}" idx="${idx}" ooa:threadId="${attrEscape(thread.id)}" ooa:targetId="${attrEscape(thread.targetId || "")}" ooa:targetName="${attrEscape(targetName)}" ooa:resolved="${thread.resolved ? 1 : 0}" xmlns:ooa="urn:open-office-artifact"><p:pos x="${100 + commentIndex * 24}" y="${100 + threadIndex * 32}"/><p:text>${xmlEscape(comment.text)}</p:text></p:cm>`;
+    return `<p:cm authorId="${author.id}" dt="${attrEscape(comment.created || thread.created)}" idx="${idx}" ooa:threadId="${attrEscape(thread.id)}" ooa:targetId="${attrEscape(thread.targetId || "")}" ooa:targetName="${attrEscape(targetName)}" ooa:resolved="${thread.resolved ? 1 : 0}" xmlns:ooa="urn:open-office-artifact"><p:pos x="${100 + commentIndex * 24}" y="${100 + threadIndex * 32}"/><p:text>${xmlEscape(comment.text)}</p:text></p:cm>`;
   })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">${comments}</p:cmLst>`;
 }
@@ -7324,21 +7363,24 @@ function parsePptxNotes(slide, xml = "") {
   if (text) slide.addNotes(text);
 }
 
-function parsePptxComments(slide, xml = "") {
+function parsePptxComments(slide, xml = "", authorsById = new Map()) {
   const byThread = new Map();
   for (const match of String(xml || "").matchAll(/<p:cm\b([^>]*)>([\s\S]*?)<\/p:cm>/g)) {
     const attrs = match[1];
     const body = match[2];
-    const threadId = /\bthreadId="([^"]+)"/.exec(attrs)?.[1] || /\booa:threadId="([^"]+)"/.exec(attrs)?.[1] || aid("pc");
-    const originalTargetId = /\btargetId="([^"]*)"/.exec(attrs)?.[1] || /\booa:targetId="([^"]*)"/.exec(attrs)?.[1] || undefined;
-    const targetName = decodeXml(/\btargetName="([^"]*)"/.exec(attrs)?.[1] || /\booa:targetName="([^"]*)"/.exec(attrs)?.[1] || "");
+    const parsedAttrs = ooxmlXmlAttributes(`<p:cm ${attrs}>`);
+    const authorId = parsedAttrs.authorId || "0";
+    const author = authorsById.get(authorId) || "User";
+    const threadId = parsedAttrs.threadId || parsedAttrs["ooa:threadId"] || aid("pc");
+    const originalTargetId = parsedAttrs.targetId || parsedAttrs["ooa:targetId"] || undefined;
+    const targetName = parsedAttrs.targetName || parsedAttrs["ooa:targetName"] || "";
     const namedTarget = targetName ? [...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.connectors.items].find((item) => item.name === targetName) : undefined;
     const targetId = slide.resolve(originalTargetId)?.id || namedTarget?.id || originalTargetId;
-    const resolved = /\bresolved="1"/.test(attrs) || /\booa:resolved="1"/.test(attrs);
-    const created = /\bdt="([^"]+)"/.exec(attrs)?.[1] || new Date(0).toISOString();
+    const resolved = parsedAttrs.resolved === "1" || parsedAttrs["ooa:resolved"] === "1";
+    const created = parsedAttrs.dt || new Date(0).toISOString();
     const text = decodeXml(/<p:text[^>]*>([\s\S]*?)<\/p:text>/.exec(body)?.[1] || "");
-    const thread = byThread.get(threadId) || { id: threadId, targetId, resolved, created, comments: [] };
-    thread.comments.push({ author: "User", text, created });
+    const thread = byThread.get(threadId) || { id: threadId, targetId, author, resolved, created, comments: [] };
+    thread.comments.push({ author, text, created });
     byThread.set(threadId, thread);
   }
   for (const thread of byThread.values()) slide.comments.addThread(thread.targetId, thread.comments[0]?.text || "", thread);
@@ -8555,6 +8597,7 @@ const OOXML_FAMILY_PART_RECIPES = {
     slidemaster: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/slideMaster` },
     notesslide: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/notesSlide` },
     comments: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.comments+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/comments` },
+    commentauthors: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/commentAuthors` },
   },
 };
 

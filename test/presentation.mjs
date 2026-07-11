@@ -131,7 +131,7 @@ assert.match(presentation.inspect({ kind: "chart", target: pieChart.id, maxChars
 slide.addNotes("Speaker note: call out pipeline risk.");
 const connector = slide.connectors.add({ name: "shape-to-table", from: shape, to: nativeTable, line: { fill: "#0284c7", width: 2, endArrow: "triangle" } });
 const thread = slide.comments.addThread(shape, "Tighten this headline before shipping.", { author: "Reviewer" });
-thread.addReply("Updated wording to plan.").resolve();
+thread.addReply("Updated wording to plan.", { author: "Editor" }).resolve();
 assert.match(presentation.inspect({ kind: "notes,comment,connector", maxChars: 8000 }).ndjson, /Speaker note/);
 assert.match(presentation.inspect({ kind: "notes,comment,connector", maxChars: 8000 }).ndjson, /shape-to-table/);
 assert.match(presentation.inspect({ kind: "notes,comment,connector", maxChars: 8000 }).ndjson, /Tighten this headline/);
@@ -336,12 +336,38 @@ const commentsXml = await zip.file("ppt/comments/comment1.xml").async("text");
 assert.match(commentsXml, /Tighten this headline/);
 assert.match(commentsXml, /Updated wording/);
 assert.match(commentsXml, /ooa:resolved="1"/);
+assert.match(commentsXml, /authorId="0"/);
+assert.match(commentsXml, /authorId="1"/);
+assert.equal((commentsXml.match(/idx="1"/g) || []).length, 2);
+const commentAuthorsXml = await zip.file("ppt/commentAuthors.xml").async("text");
+assert.match(commentAuthorsXml, /<p:cmAuthor id="0" name="Reviewer" initials="RE" lastIdx="1" clrIdx="0"\/>/);
+assert.match(commentAuthorsXml, /<p:cmAuthor id="1" name="Editor" initials="ED" lastIdx="1" clrIdx="1"\/>/);
+const presentationRelsXml = await zip.file("ppt/_rels/presentation.xml.rels").async("text");
+assert.match(presentationRelsXml, /relationships\/commentAuthors" Target="commentAuthors\.xml"/);
 const slideRelsXml = await zip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
 assert.match(slideRelsXml, /Target="\.\.\/media\/image1\.png"/);
 assert.match(slideRelsXml, /Target="\.\.\/charts\/chart1\.xml"/);
 assert.match(slideRelsXml, /relationships\/slideLayout/);
 assert.match(slideRelsXml, /relationships\/notesSlide/);
 assert.match(slideRelsXml, /relationships\/comments/);
+assert.match(await zip.file("[Content_Types].xml").async("text"), /PartName="\/ppt\/commentAuthors\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.presentationml\.commentAuthors\+xml"/);
+const relocatedNotesComments = await PresentationFile.patchPptx(pptx, [
+  { path: "ppt/notesSlides/notesSlide1.xml", remove: true },
+  { path: "ppt/comments/comment1.xml", remove: true },
+  { path: "ppt/commentAuthors.xml", remove: true },
+  { path: "ppt/custom/notes/review.xml", xml: notesXml, recipe: { kind: "notesSlide", source: "ppt/slides/slide1.xml" } },
+  { path: "ppt/custom/comments/review.xml", xml: commentsXml, recipe: { kind: "comments", source: "ppt/slides/slide1.xml" } },
+  { path: "ppt/custom/comments/authors.xml", xml: commentAuthorsXml, recipe: { kind: "commentAuthors", source: "ppt/presentation.xml" } },
+]);
+assert.equal((await PresentationFile.inspectPptx(relocatedNotesComments)).ok, true);
+const relocatedZip = await JSZip.loadAsync(new Uint8Array(await relocatedNotesComments.arrayBuffer()));
+const relocatedSlideRels = await relocatedZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+assert.match(relocatedSlideRels, /Target="\.\.\/custom\/notes\/review\.xml"/);
+assert.match(relocatedSlideRels, /Target="\.\.\/custom\/comments\/review\.xml"/);
+assert.match(await relocatedZip.file("ppt/_rels/presentation.xml.rels").async("text"), /Target="custom\/comments\/authors\.xml"/);
+const relocatedLoaded = await PresentationFile.importPptx(relocatedNotesComments);
+assert.match(relocatedLoaded.slides.items[0].speakerNotes.text, /Speaker note/);
+assert.deepEqual(relocatedLoaded.slides.items[0].comments.items[0].comments.map((comment) => comment.author), ["Reviewer", "Editor"]);
 const chartXml = await zip.file("ppt/charts/chart1.xml").async("text");
 assert.match(chartXml, /Native Import Chart/);
 assert.match(chartXml, /<c:v>14<\/c:v>/);
@@ -378,6 +404,8 @@ assert.match(loadedAll, /Tighten this headline/);
 assert.match(loadedAll, /shape-to-table/);
 const loadedComment = loaded.slides.items[0].comments.items[0];
 assert.ok(loaded.slides.items[0].resolve(loadedComment.targetId));
+assert.equal(loadedComment.author, "Reviewer");
+assert.deepEqual(loadedComment.comments.map((comment) => comment.author), ["Reviewer", "Editor"]);
 const loadedSummarySurface = loaded.slides.items[0].shapes.items.find((item) => item.name === "summary-surface");
 assert.equal(loadedSummarySurface.text.style.fontSize, 32);
 assert.equal(loadedSummarySurface.text.style.bold, true);

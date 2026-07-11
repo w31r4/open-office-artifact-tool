@@ -865,15 +865,15 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.theme` | api | Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
-| `PresentationFile.exportPptx` | api | Serialize a presentation facade to a native OOXML PPTX FileBlob. |
-| `PresentationFile.importPptx` | api | Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available. |
+| `PresentationFile.exportPptx` | api | Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist. |
+| `PresentationFile.importPptx` | api | Import PPTX bytes through presentation/slide relationships, including arbitrary slide, notes, comments, comment-author, theme, layout, chart, and image targets. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output. |
-| `slide.comments.addThread` | api | Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets. |
+| `slide.comments.addThread` | api | Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
@@ -1077,7 +1077,7 @@ Return presentation QA issues for layout validation, placeholder/template fideli
 
 #### `PresentationFile.exportPptx`
 
-Serialize a presentation facade to a native OOXML PPTX FileBlob.
+Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist.
 
 **Schema parameters:**
 
@@ -1089,7 +1089,7 @@ Serialize a presentation facade to a native OOXML PPTX FileBlob.
 
 #### `PresentationFile.importPptx`
 
-Import PPTX bytes into the clean-room presentation facade, restoring native parts and embedded metadata when available.
+Import PPTX bytes through presentation/slide relationships, including arbitrary slide, notes, comments, comment-author, theme, layout, chart, and image targets.
 
 **Schema parameters:**
 
@@ -1206,7 +1206,7 @@ Add an inspectable bar/line/pie chart facade with chartType, title, categories, 
 
 #### `slide.comments.addThread`
 
-Attach threaded comments to slide elements; exported as PPTX comments parts and verified for dangling targets.
+Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets.
 
 **Schema parameters:**
 
