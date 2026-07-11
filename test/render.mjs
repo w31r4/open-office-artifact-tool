@@ -6,6 +6,7 @@ import {
   PdfArtifact,
   Presentation,
   renderArtifact,
+  visualQaArtifact,
   Workbook,
 } from "open-office-artifact-tool";
 
@@ -49,6 +50,14 @@ assert.equal(rasterPreview.metadata.artifactKind, "document");
 assert.equal(rasterPreview.metadata.format, "png");
 assert.equal(rasterPreview.metadata.renderedFrom, "image/svg+xml");
 assert.equal(rasterPreview.metadata.adapter, "fake-png");
+const visualQa = await visualQaArtifact(document, { minBytes: 20 });
+assert.equal(visualQa.ok, true);
+assert.equal(visualQa.summary.type, "image/svg+xml");
+assert.equal(visualQa.summary.width, 612);
+assert.match(visualQa.ndjson, /"kind":"visualQa"/);
+const changedVisualQa = await visualQaArtifact(document, { baseline: new FileBlob("different", { type: "image/svg+xml" }) });
+assert.equal(changedVisualQa.ok, false);
+assert.match(changedVisualQa.ndjson, /visualDiff/);
 await assert.rejects(() => renderArtifact(document, { format: "webp" }), /no renderer adapter/);
 
 const pdf = PdfArtifact.create({ pages: [{ text: "Render PDF", tables: [{ values: [["Metric", "Value"]] }] }] });

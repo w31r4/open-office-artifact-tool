@@ -175,6 +175,37 @@ function attachRenderMetadata(blob, artifactKind, options = {}, format = options
   return blob;
 }
 
+function stableByteHash(bytes) {
+  let hash = 2166136261;
+  for (const byte of bytes || []) {
+    hash ^= byte;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+async function bytesForVisualBaseline(input) {
+  if (input == null) return undefined;
+  if (input instanceof FileBlob) return input.bytes;
+  if (typeof input === "string") return new TextEncoder().encode(input);
+  if (input instanceof Uint8Array) return input;
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+  if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  if (typeof input.arrayBuffer === "function") return new Uint8Array(await input.arrayBuffer());
+  return undefined;
+}
+
+function svgDimensions(svgText = "") {
+  const open = String(svgText || "").match(/<svg\b[^>]*>/i)?.[0] || "";
+  const width = Number.parseFloat(/\bwidth=["']([^"']+)/i.exec(open)?.[1] || "");
+  const height = Number.parseFloat(/\bheight=["']([^"']+)/i.exec(open)?.[1] || "");
+  const viewBox = /\bviewBox=["']([^"']+)["']/i.exec(open)?.[1]?.trim().split(/[\s,]+/).map(Number);
+  return {
+    width: Number.isFinite(width) ? width : Number.isFinite(viewBox?.[2]) ? viewBox[2] : undefined,
+    height: Number.isFinite(height) ? height : Number.isFinite(viewBox?.[3]) ? viewBox[3] : undefined,
+  };
+}
+
 export async function renderArtifact(artifact, options = {}) {
   const artifactKind = inferArtifactKind(artifact);
   if (!artifact || (typeof artifact.render !== "function" && typeof artifact.export !== "function")) {
@@ -197,6 +228,35 @@ export async function renderArtifact(artifact, options = {}) {
     if (!blob.type || blob.type === "application/octet-stream") blob.type = desiredType;
   }
   return attachRenderMetadata(blob, artifactKind, options, options.format || blob.metadata?.format || blob.type);
+}
+
+export async function visualQaArtifact(artifact, options = {}) {
+  const blob = await renderArtifact(artifact, options);
+  const artifactKind = blob.metadata?.artifactKind || inferArtifactKind(artifact);
+  const bytes = blob.bytes || new Uint8Array(await blob.arrayBuffer());
+  const hash = stableByteHash(bytes);
+  const issues = [];
+  const summary = { kind: "visualQa", artifactKind, type: blob.type, format: blob.metadata?.format || options.format || blob.type, bytes: bytes.byteLength, hash };
+  if (bytes.byteLength === 0) issues.push(verificationIssue(artifactKind, "emptyRender", "Rendered artifact is empty.", { severity: "error", type: blob.type }));
+  if (options.minBytes != null && bytes.byteLength < Number(options.minBytes)) issues.push(verificationIssue(artifactKind, "renderTooSmall", `Rendered artifact has ${bytes.byteLength} bytes; expected at least ${options.minBytes}.`, { severity: "warning", bytes: bytes.byteLength, minBytes: Number(options.minBytes) }));
+  if (options.maxBytes != null && bytes.byteLength > Number(options.maxBytes)) issues.push(verificationIssue(artifactKind, "renderTooLarge", `Rendered artifact has ${bytes.byteLength} bytes; expected at most ${options.maxBytes}.`, { severity: "warning", bytes: bytes.byteLength, maxBytes: Number(options.maxBytes) }));
+  if (blob.type === "image/svg+xml") {
+    const text = await blob.text();
+    const dimensions = svgDimensions(text);
+    summary.width = dimensions.width;
+    summary.height = dimensions.height;
+    if (!dimensions.width || !dimensions.height || dimensions.width <= 0 || dimensions.height <= 0) issues.push(verificationIssue(artifactKind, "invalidRenderGeometry", "SVG render is missing positive width/height geometry.", { severity: "error", dimensions }));
+    if (!/<(text|image|rect|path|line|polyline|polygon|circle|ellipse)\b/i.test(text)) issues.push(verificationIssue(artifactKind, "blankSvgRender", "SVG render has no recognizable visible elements.", { severity: "warning" }));
+  }
+  const baselineBytes = await bytesForVisualBaseline(options.baseline || options.expected || options.baselineBlob);
+  if (baselineBytes) {
+    const baselineHash = stableByteHash(baselineBytes);
+    summary.baselineHash = baselineHash;
+    summary.changed = baselineHash !== hash;
+    if (baselineHash !== hash && options.allowChange !== true) issues.push(verificationIssue(artifactKind, "visualDiff", "Rendered output differs from the supplied baseline.", { severity: options.diffSeverity || "warning", hash, baselineHash }));
+  }
+  const records = [summary, ...issues];
+  return { artifactKind, ok: issues.length === 0, blob, summary, issues, ...ndjson(records, options.maxChars ?? Infinity) };
 }
 
 export const HELP_CATALOG = [
@@ -298,6 +358,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
+  { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, record deterministic render metadata/hash, validate empty or malformed render output, and optionally compare against a baseline render." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
   { artifactKind: "shared", kind: "api", name: "createPlaywrightRenderer", summary: "Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default." },
   { artifactKind: "shared", kind: "api", name: "createSharpRenderer", summary: "Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG." },
