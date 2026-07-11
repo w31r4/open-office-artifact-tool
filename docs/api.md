@@ -1658,7 +1658,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
-| `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with safe calculated-value defaults and RFC-style quoting. |
+| `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
 | `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to an XLSX FileBlob. |
 | `SpreadsheetFile.importCsv` | api | Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser. |
@@ -3016,6 +3016,11 @@ Export one worksheet or range as UTF-8 CSV, using calculated values unless formu
 - `sheetName` (string) — Worksheet name; defaults to the first sheet.
 - `range` (string) — Optional A1 range.
 - `formulas` (boolean) — Emit formulas instead of calculated values where present.
+- `lineEnding` (string) — LF or CRLF output; defaults to CRLF.
+- `includeBom` (boolean) — Prefix a UTF-8 BOM; defaults to false.
+- `maxBytes` (number) — Maximum encoded output bytes; defaults to 10 MiB.
+- `maxRows` (number) — Maximum exported rows; defaults to 100000.
+- `maxColumns` (number) — Maximum exported columns; defaults to 16384.
 
 **Schema returns:**
 
@@ -3023,7 +3028,7 @@ Export one worksheet or range as UTF-8 CSV, using calculated values unless formu
 
 #### `SpreadsheetFile.exportDelimited`
 
-Serialize one workbook sheet/range as bounded CSV/TSV text with safe calculated-value defaults and RFC-style quoting.
+Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting.
 
 **Schema parameters:**
 
@@ -3052,6 +3057,11 @@ Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting
 - `sheetName` (string) — Worksheet name; defaults to the first sheet.
 - `range` (string) — Optional A1 range.
 - `formulas` (boolean) — Emit formulas instead of calculated values where present.
+- `lineEnding` (string) — LF or CRLF output; defaults to CRLF.
+- `includeBom` (boolean) — Prefix a UTF-8 BOM; defaults to false.
+- `maxBytes` (number) — Maximum encoded output bytes; defaults to 10 MiB.
+- `maxRows` (number) — Maximum exported rows; defaults to 100000.
+- `maxColumns` (number) — Maximum exported columns; defaults to 16384.
 
 **Schema returns:**
 
@@ -3078,6 +3088,9 @@ Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited p
 - `input` (FileBlob|Uint8Array|string) required — UTF-8 CSV text or bytes.
 - `sheetName` (string) — Imported worksheet name.
 - `coerceTypes` (boolean) — Convert unquoted boolean/numeric-looking cells; defaults to false.
+- `maxBytes` (number) — Maximum encoded input bytes; defaults to 10 MiB.
+- `maxRows` (number) — Maximum parsed rows; defaults to 100000.
+- `maxColumns` (number) — Maximum parsed columns per row; defaults to 16384.
 
 **Schema returns:**
 
@@ -3110,6 +3123,9 @@ Import UTF-8 tab-separated bytes into an editable Workbook through the bounded d
 - `input` (FileBlob|Uint8Array|string) required — UTF-8 TSV text or bytes.
 - `sheetName` (string) — Imported worksheet name.
 - `coerceTypes` (boolean) — Convert unquoted boolean/numeric-looking cells; defaults to false.
+- `maxBytes` (number) — Maximum encoded input bytes; defaults to 10 MiB.
+- `maxRows` (number) — Maximum parsed rows; defaults to 100000.
+- `maxColumns` (number) — Maximum parsed columns per row; defaults to 16384.
 
 **Schema returns:**
 

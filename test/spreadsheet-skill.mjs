@@ -46,6 +46,7 @@ try {
   assert.equal(secondQa.summary.packageOk, true);
   assert.equal(secondQa.summary.sheetName, "Inputs");
 
+  const nativeStatus = nativeSpreadsheetRenderStatus();
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G9" })).save(csvPath);
   const csvQa = await verifyWorkbookFile(csvPath, {
@@ -53,7 +54,7 @@ try {
     sheetName: "Summary",
     range: "A1:G9",
     renderFormat: "svg",
-    nativeRender: "off",
+    nativeRender: nativeStatus.available ? "required" : "off",
     coerceTypes: true,
   });
   assert.equal(csvQa.summary.inputFormat, "csv");
@@ -63,8 +64,24 @@ try {
   assert.equal(csvQa.summary.verifyOk, true);
   assert.equal(csvQa.summary.visualQaOk, true);
   assert.match(await fs.readFile(csvQa.summary.files.packageInspect, "utf8"), /delimitedRow/);
+  if (nativeStatus.available) assert.equal(csvQa.summary.nativeRender.status, "passed");
 
-  const nativeStatus = nativeSpreadsheetRenderStatus();
+  const tsvPath = path.join(outputDir, "summary.tsv");
+  await (await SpreadsheetFile.exportTsv(workbook, { sheetName: "Summary", range: "A1:G9" })).save(tsvPath);
+  const tsvQa = await verifyWorkbookFile(tsvPath, {
+    outputDir: path.join(outputDir, "tsv-qa"),
+    sheetName: "Summary",
+    range: "A1:G9",
+    renderFormat: "svg",
+    nativeRender: nativeStatus.available ? "required" : "off",
+    coerceTypes: true,
+  });
+  assert.equal(tsvQa.summary.inputFormat, "tsv");
+  assert.equal(tsvQa.summary.inputType, "text/tab-separated-values");
+  assert.equal(tsvQa.packageInspect.summary.columns, 7);
+  assert.equal(tsvQa.summary.verifyOk, true);
+  if (nativeStatus.available) assert.equal(tsvQa.summary.nativeRender.status, "passed");
+
   const baselineWrite = await verifyWorkbookFile(result.workbookPath, {
     outputDir: path.join(outputDir, "baseline-write"),
     sheetName: "Summary",
