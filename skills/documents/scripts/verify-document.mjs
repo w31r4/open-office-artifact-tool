@@ -15,11 +15,14 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (!args.input) throw new Error("Usage: verify-document.mjs --input document.docx [--output-dir dir] [--preview-format svg|png|webp|jpeg|pdf] [--native-render auto|required|off]");
+  if (!args.input) throw new Error("Usage: verify-document.mjs --input document.docx [--output-dir dir] [--preview-format svg|png|webp|jpeg|pdf] [--native-render auto|required|off] [--baseline-dir dir] [--write-baseline true]");
   const result = await verifyDocumentFile(args.input, {
     outputDir: args["output-dir"],
     previewFormat: args["preview-format"],
     nativeRender: args["native-render"],
+    baselineDir: args["baseline-dir"],
+    writeBaseline: args["write-baseline"] === "true",
+    pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined,
     maxChars: args["max-chars"] ? Number(args["max-chars"]) : undefined,
   });
   console.log(JSON.stringify(result.summary));
@@ -32,4 +35,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exitCode = 1;
   });
 }
-

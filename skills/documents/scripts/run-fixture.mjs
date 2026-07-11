@@ -15,11 +15,14 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--output-dir dir] [--preview-format svg|png] [--native-render auto|required|off]");
+  if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--output-dir dir] [--preview-format svg|png] [--native-render auto|required|off] [--baseline-dir dir] [--write-baseline true]");
   const result = await runDocumentFixture(args.fixture, {
     outputDir: args["output-dir"],
     previewFormat: args["preview-format"],
     nativeRender: args["native-render"],
+    baselineDir: args["baseline-dir"],
+    writeBaseline: args["write-baseline"] === "true",
+    pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined,
   });
   console.log(JSON.stringify({ fixture: result.fixture.name, document: result.docxPath, qa: result.qa.summary }));
   return result;
@@ -31,4 +34,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exitCode = 1;
   });
 }
-

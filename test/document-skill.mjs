@@ -13,6 +13,7 @@ import {
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const fixturePath = path.join(repoRoot, "skills", "documents", "fixtures", "business-brief.json");
 const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-document-skill-"));
+const baselineDir = path.join(outputDir, "baselines");
 
 try {
   const result = await runDocumentFixture(fixturePath, { outputDir, nativeRender: "off" });
@@ -34,18 +35,34 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
 
   const nativeStatus = nativeDocumentRenderStatus();
+  const baselineWrite = await verifyDocumentFile(result.docxPath, {
+    outputDir: path.join(outputDir, "baseline-write"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "off",
+    baselineDir,
+    writeBaseline: true,
+  });
+  assert.equal(baselineWrite.summary.writeBaseline, true);
+  assert.ok((await fs.stat(baselineWrite.summary.modelBaselinePath)).size > 100);
+  const baselineCompare = await verifyDocumentFile(result.docxPath, {
+    outputDir: path.join(outputDir, "baseline-compare"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "off",
+    baselineDir,
+  });
+  assert.equal(baselineCompare.summary.modelBaselineCompared, true);
+  assert.equal(baselineCompare.summary.modelPixelDiff.changed, false);
+  assert.equal(baselineCompare.summary.visualQaOk, true);
   if (nativeStatus.available) {
-    const nativeQa = await verifyDocumentFile(result.docxPath, {
-      outputDir: path.join(outputDir, "native-qa"),
-      previewFormat: "png",
-      nativeRender: "required",
-    });
-    assert.equal(nativeQa.summary.nativeRender.status, "passed");
-    assert.ok(nativeQa.summary.nativeRender.pageCount >= 1);
-    for (const page of nativeQa.summary.nativeRender.pages) {
-      const stat = await fs.stat(page.path);
-      assert.ok(stat.size > 100);
+    assert.equal(baselineCompare.summary.nativeRender.status, "passed");
+    assert.equal(baselineCompare.summary.nativeRender.ok, true);
+    assert.equal(baselineCompare.summary.nativeRender.pageCountMatches, true);
+    assert.ok(baselineCompare.summary.nativeRender.pageCount >= 1);
+    for (const page of baselineCompare.summary.nativeRender.pages) {
+      assert.equal(page.baselineCompared, true);
+      assert.equal(page.pixelDiff.changed, false);
       assert.equal(page.ok, true);
+      assert.ok((await fs.stat(page.path)).size > 100);
     }
   }
 
@@ -53,6 +70,7 @@ try {
   assert.ok(packageJson.files.includes("skills/**"));
   const skillText = await fs.readFile(path.join(repoRoot, "skills", "documents", "SKILL.md"), "utf8");
   assert.match(skillText, /LibreOffice PDF plus Poppler page PNGs/);
+  assert.match(skillText, /baseline-dir/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

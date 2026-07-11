@@ -82,6 +82,23 @@ function pdfPageCount(pdfPath) {
   return pages;
 }
 
+async function optionalBaseline(baselinePath) {
+  if (!baselinePath) return undefined;
+  try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
+}
+
+async function nativeBaselineFiles(baselineDir) {
+  if (!baselineDir) return [];
+  try {
+    return (await fs.readdir(baselineDir))
+      .filter((name) => /^native-page-\d+\.png$/.test(name))
+      .map((name) => path.join(baselineDir, name));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 async function renderNativePages(docxBlob, outputDir, options = {}) {
   const pdf = await createLibreOfficeRenderer({ timeoutMs: options.nativeTimeout ?? 60_000 })({
     input: docxBlob,
@@ -98,17 +115,29 @@ async function renderNativePages(docxBlob, outputDir, options = {}) {
   const poppler = createPopplerRenderer({ dpi: options.dpi ?? 150, timeoutMs: options.nativeTimeout ?? 60_000 });
   const pages = [];
   const qaLines = [];
+  const baselineDir = options.baselineDir;
+  if (options.writeBaseline && baselineDir) {
+    await fs.mkdir(baselineDir, { recursive: true });
+    await Promise.all((await nativeBaselineFiles(baselineDir)).map((filePath) => fs.unlink(filePath)));
+  }
+  const existingBaselines = options.writeBaseline ? [] : await nativeBaselineFiles(baselineDir);
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const png = await poppler({ input: pdf, inputType: "application/pdf", outputType: "image/png", format: "png", artifactKind: "document", pageIndex });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     await png.save(pagePath);
-    const qa = await visualQaArtifact({ render: () => png }, { minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
+    const baselinePath = baselineDir ? path.join(baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
+    const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
+    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000, pixelThreshold: options.pixelThreshold });
+    if (options.writeBaseline && baselinePath) await png.save(baselinePath);
     qaLines.push(qa.ndjson);
-    pages.push({ page: pageIndex + 1, path: pagePath, bytes: png.bytes.length, hash: qa.summary.hash, ok: qa.ok });
+    pages.push({ page: pageIndex + 1, path: pagePath, baselinePath, baselineCompared: Boolean(baseline), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
+  const baselinePageCount = baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
+  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
+  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "document", severity: "warning", pageCount, baselinePageCount }));
   await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
-  return { status: "passed", pdfPath, qaPath, pageCount, pages };
+  return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pdfPath, qaPath, pageCount, baselinePageCount, pageCountMatches, pages };
 }
 
 export async function verifyDocumentFile(inputPath, options = {}) {
@@ -126,12 +155,22 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   const previewFormat = String(options.previewFormat || "svg").toLowerCase();
   const previewExtension = PREVIEW_EXTENSION[previewFormat];
   if (!previewExtension) throw new Error(`Unsupported document model preview format: ${previewFormat}`);
+  const baselineDir = options.baselineDir ? path.resolve(options.baselineDir) : undefined;
+  const modelBaselinePath = baselineDir ? path.join(baselineDir, `model-preview.${previewExtension}`) : undefined;
+  const modelBaseline = options.writeBaseline ? undefined : await optionalBaseline(modelBaselinePath);
   const visualQa = await visualQaArtifact(document, {
     format: previewFormat,
     renderer: modelRenderer(previewFormat, options),
+    baseline: modelBaseline,
+    pixelDiff: Boolean(modelBaseline && ["png", "webp", "jpeg", "jpg"].includes(previewFormat)),
+    pixelThreshold: options.pixelThreshold,
     minBytes: options.minBytes ?? 20,
     maxChars,
   });
+  if (options.writeBaseline && modelBaselinePath) {
+    await fs.mkdir(baselineDir, { recursive: true });
+    await visualQa.blob.save(modelBaselinePath);
+  }
   const paths = {
     inspect: path.join(outputDir, "inspect.ndjson"),
     packageInspect: path.join(outputDir, "package-inspect.ndjson"),
@@ -155,7 +194,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   const nativeStatus = nativeDocumentRenderStatus();
   let nativeRender = { status: "skipped", reason: "native render disabled" };
   if (requestedNative !== "off" && requestedNative !== "false") {
-    if (nativeStatus.available) nativeRender = await renderNativePages(docxBlob, outputDir, options);
+    if (nativeStatus.available) nativeRender = await renderNativePages(docxBlob, outputDir, { ...options, baselineDir });
     else if (requestedNative === "required" || requestedNative === "true") throw new Error(`Native document render requires soffice, pdftoppm, and pdfinfo: ${JSON.stringify(nativeStatus.commands)}`);
     else nativeRender = { status: "skipped", reason: "native render commands unavailable", commands: nativeStatus.commands };
   }
@@ -164,6 +203,11 @@ export async function verifyDocumentFile(inputPath, options = {}) {
     outputDir,
     packageOk: packageInspect.ok,
     previewFormat,
+    baselineDir,
+    writeBaseline: Boolean(options.writeBaseline),
+    modelBaselinePath,
+    modelBaselineCompared: Boolean(modelBaseline),
+    modelPixelDiff: visualQa.summary.pixelDiff,
     verifyOk: verify.ok,
     visualQaOk: visualQa.ok,
     renderHash: visualQa.summary.hash,
@@ -171,7 +215,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
     files: paths,
   };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || !visualQa.ok || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok)))) {
+  if (options.failOnIssues !== false && (!packageInspect.ok || !verify.ok || !visualQa.ok || (nativeRender.status === "passed" && nativeRender.ok === false))) {
     throw new Error(`Document QA failed: package=${packageInspect.ok}, semantic=${verify.ok}, modelVisual=${visualQa.ok}, native=${nativeRender.status}. See ${outputDir}`);
   }
   return { document, inspect, packageInspect, verify, visualQa, layoutBlob, summary };
@@ -189,6 +233,9 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     outputDir: path.join(outputDir, "qa"),
     previewFormat: options.previewFormat || fixture.qa?.previewFormat || "svg",
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
+    baselineDir: options.baselineDir,
+    writeBaseline: options.writeBaseline,
+    pixelThreshold: options.pixelThreshold,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
   });

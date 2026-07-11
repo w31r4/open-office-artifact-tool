@@ -25,6 +25,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 5. Export DOCX and import the exported file again.
 6. Render the real DOCX through LibreOffice to PDF, then Poppler to page PNGs.
 7. Inspect every page image at full size. Comments also require structural inspection because headless renderers may omit them.
+8. Once a model/native baseline is approved, compare the model preview and every native page on later runs; a page-count change is a visual regression until reviewed.
 
 ```js
 import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
@@ -68,6 +69,29 @@ node skills/documents/scripts/run-fixture.mjs \
   --native-render required
 ```
 
+Create an approved model and native-page baseline:
+
+```sh
+node skills/documents/scripts/verify-document.mjs \
+  --input decision-brief.docx \
+  --output-dir tmp/document-baseline-run \
+  --preview-format png \
+  --native-render required \
+  --baseline-dir tmp/document-baselines \
+  --write-baseline true
+```
+
+Compare a later export against that baseline:
+
+```sh
+node skills/documents/scripts/verify-document.mjs \
+  --input decision-brief.docx \
+  --output-dir tmp/document-compare \
+  --preview-format png \
+  --native-render required \
+  --baseline-dir tmp/document-baselines
+```
+
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist.
@@ -75,6 +99,7 @@ node skills/documents/scripts/run-fixture.mjs \
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.
+- PNG baselines compare the modeled preview and every native page through `visualQaArtifact(..., { pixelDiff: true })`; baseline page-count changes fail QA.
 - Microsoft Office native automation remains the higher-fidelity Windows gate for Word-specific behavior.
 - Deliver only the requested DOCX; previews and QA reports are internal unless requested.
 
@@ -84,4 +109,3 @@ node skills/documents/scripts/run-fixture.mjs \
 - Current implementation coverage: `../../docs/coverage.md`
 - Fixture runner: `scripts/run-fixture.mjs`
 - Generic DOCX verifier: `scripts/verify-document.mjs`
-
