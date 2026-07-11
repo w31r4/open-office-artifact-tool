@@ -645,6 +645,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.XLOOKUP", category: "lookup-reference", summary: "Look up a value in one range and return the corresponding value from another range.", examples: ["=XLOOKUP(\"Gamma\",A2:A4,B2:B4,\"missing\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.INDEX", category: "lookup-reference", summary: "Return a value from a range by 1-based row and optional column index.", examples: ["=INDEX(A2:C4,2,3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.MATCH", category: "lookup-reference", summary: "Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes.", examples: ["=MATCH(\"Beta\",A2:A4,0)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.XMATCH", category: "lookup-reference", summary: "Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes.", examples: ["=XMATCH(\"Beta*\",A2:A10,2,-1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.SEQUENCE", category: "dynamic-array", summary: "Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine.", examples: ["=SEQUENCE(2,3,10,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TRANSPOSE", category: "dynamic-array", summary: "Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata.", examples: ["=TRANSPOSE(A1:C2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.FILTER", category: "dynamic-array", summary: "Filter rows from a source range with a boolean or comparison include array and spill the matching rows.", examples: ["=FILTER(A2:C10,B2:B10=\"East\")"] },
@@ -4089,6 +4090,48 @@ function formulaMatchIndex(lookup, lookupValues = [], matchType = 0) {
   return "#N/A";
 }
 
+function formulaWildcardRegex(pattern) {
+  let source = "";
+  const text = formulaText(pattern);
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === "~" && index + 1 < text.length) source += text[++index].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    else if (char === "*") source += ".*";
+    else if (char === "?") source += ".";
+    else source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`, "i");
+}
+
+function formulaXmatchIndex(lookup, lookupValues = [], matchMode = 0, searchMode = 1) {
+  const values = lookupValues.flat ? lookupValues.flat() : lookupValues;
+  if (![0, -1, 1, 2].includes(matchMode) || ![1, -1, 2, -2].includes(searchMode)) return "#VALUE!";
+  const indexes = Array.from({ length: values.length }, (_, index) => index);
+  if (searchMode === -1 || searchMode === -2) indexes.reverse();
+  const lookupNumber = Number(lookup);
+  const numericLookup = Number.isFinite(lookupNumber) && formulaText(lookup).trim() !== "";
+  const exact = (value) => {
+    const valueNumber = Number(value);
+    if (numericLookup && Number.isFinite(valueNumber) && formulaText(value).trim() !== "") return valueNumber === lookupNumber;
+    return formulaText(value).toLocaleLowerCase() === formulaText(lookup).toLocaleLowerCase();
+  };
+  const wildcard = matchMode === 2 ? formulaWildcardRegex(lookup) : undefined;
+  const found = indexes.find((index) => wildcard ? wildcard.test(formulaText(values[index])) : exact(values[index]));
+  if (found != null) return found + 1;
+  if (matchMode === 0 || matchMode === 2) return "#N/A";
+  const comparable = indexes.map((index) => ({ index, value: values[index], number: Number(values[index]) }))
+    .filter((item) => numericLookup ? Number.isFinite(item.number) : true)
+    .filter((item) => matchMode < 0
+      ? (numericLookup ? item.number < lookupNumber : formulaText(item.value).localeCompare(formulaText(lookup), undefined, { sensitivity: "base" }) < 0)
+      : (numericLookup ? item.number > lookupNumber : formulaText(item.value).localeCompare(formulaText(lookup), undefined, { sensitivity: "base" }) > 0));
+  if (!comparable.length) return "#N/A";
+  comparable.sort((left, right) => {
+    const delta = numericLookup ? left.number - right.number : formulaText(left.value).localeCompare(formulaText(right.value), undefined, { sensitivity: "base" });
+    return matchMode < 0 ? -delta : delta;
+  });
+  return comparable[0].index + 1;
+}
+
 function uniqueFormulaRows(matrix) {
   const seen = new Set();
   const rows = [];
@@ -4353,6 +4396,11 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const matchValues = formulaRangeMatrix(sheet, args[1], context) || [];
       const matchType = Math.sign(formulaNumber(scalar(2, 0)) || 0);
       return formulaMatchIndex(lookup, matchValues.flat(), matchType);
+    }
+    case "XMATCH": {
+      const lookup = scalar(0, "");
+      const matchValues = formulaRangeMatrix(sheet, args[1], context) || [];
+      return formulaXmatchIndex(lookup, matchValues.flat(), formulaNumber(scalar(2, 0)), formulaNumber(scalar(3, 1)));
     }
     case "VLOOKUP": {
       const lookup = scalar(0, "");

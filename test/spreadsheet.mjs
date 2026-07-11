@@ -207,7 +207,7 @@ assert.match(graphBook.inspect({ kind: "formula", maxChars: 12000 }).ndjson, /"p
 const catalogBook = Workbook.create();
 const catalogSheet = catalogBook.worksheets.add("Catalog");
 catalogSheet.getRange("A1:D4").values = [["Name", "Score", "Region", "Code"], ["Alpha", 10, "East", "AX-100"], ["Beta", 15, "West", "BX-200"], ["Gamma", 20, "East", "CX-300"]];
-catalogSheet.getRange("F1:F31").formulas = [
+catalogSheet.getRange("F1:F39").formulas = [
   ["=IF(B2>9,\"ok\",\"bad\")"],
   ["=ROUND(1.234,2)"],
   ["=COUNTIF(C2:C4,\"East\")"],
@@ -239,12 +239,21 @@ catalogSheet.getRange("F1:F31").formulas = [
   ["=ISERROR(INDEX(A1:A1,5))"],
   ["=AVERAGEIF(C2:C4,\"East\",B2:B4)"],
   ["=AVERAGEIFS(B2:B4,C2:C4,\"East\",B2:B4,\">10\")"],
+  ["=XMATCH(\"Beta\",A2:A4)"],
+  ["=XMATCH(\"A*\",A2:A4,2)"],
+  ["=XMATCH(\"East\",C2:C4,0,-1)"],
+  ["=XMATCH(16,B2:B4,-1)"],
+  ["=XMATCH(16,B2:B4,1)"],
+  ["=XMATCH(\"Missing\",A2:A4)"],
+  ["=XMATCH(15,B2:B4,0,2)"],
+  ["=XMATCH(15,B2:B4,0,7)"],
 ];
 catalogBook.recalculate();
-assert.deepEqual(catalogSheet.getRange("F1:F31").values.flat(), ["ok", 1.23, 2, 30, 15, 20, "Al-100", "Alpha/Beta", 6, "MIXED", true, true, true, 4, 9, 6, "BX-200", 3, 15, 2, 2, 20, 725, "West", "not found", true, true, true, true, 15, 20]);
+assert.deepEqual(catalogSheet.getRange("F1:F39").values.flat(), ["ok", 1.23, 2, 30, 15, 20, "Al-100", "Alpha/Beta", 6, "MIXED", true, true, true, 4, 9, 6, "BX-200", 3, 15, 2, 2, 20, 725, "West", "not found", true, true, true, true, 15, 20, 2, 1, 3, 2, 3, "#N/A", 2, "#VALUE!"]);
 assert.match(catalogBook.help("fx.XLOOKUP").ndjson, /lookup/);
 assert.match(catalogBook.help("fx.INDEX").ndjson, /1-based row/);
 assert.match(catalogBook.help("fx.MATCH").ndjson, /1-based position/);
+assert.match(catalogBook.help("fx.XMATCH").ndjson, /reverse search/);
 assert.match(catalogBook.help("fx.COUNTIFS").ndjson, /multiple criteria/);
 assert.match(catalogBook.help("fx.SUMIFS").ndjson, /all supplied criteria/);
 assert.match(catalogBook.help("fx.SUMPRODUCT").ndjson, /corresponding numeric values/);

@@ -1601,6 +1601,7 @@ Render an artifact, record deterministic render metadata/hash, validate empty or
 | `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
 | `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
+| `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.format` | api | Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes. |
@@ -2671,6 +2672,23 @@ Look up a value in one range and return the corresponding value from another ran
 **Schema returns:**
 
 - `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.XMATCH`
+
+Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes.
+
+**Examples:**
+
+- =XMATCH("Beta*",A2:A10,2,-1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =XMATCH(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `range.conditionalFormats.add`
 
