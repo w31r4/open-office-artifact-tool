@@ -1010,7 +1010,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring native parts and embedded metadata when available." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets and reference types." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references." },
 
@@ -1678,6 +1678,7 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "blob", "FileBlob", "DOCX package bytes."),
   "DocumentFile.importDocx": helpSchema({
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
+    preferNative: { type: "boolean", description: "Parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks." },
   }, "document", "DocumentModel", "Imported editable document facade."),
   "DocumentFile.inspectDocx": helpSchema({
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
@@ -7765,10 +7766,14 @@ class DocumentHeaderFooterBlock {
     this.text = String(text ?? "");
     this.name = config.name || kind;
     this.styleId = config.styleId || "Normal";
+    this.referenceType = ["default", "first", "even"].includes(config.referenceType || config.type) ? (config.referenceType || config.type) : "default";
+    this.relationshipId = config.relationshipId || config.relId;
+    this.partPath = config.partPath;
+    this.sectionIndex = Number.isInteger(config.sectionIndex) ? config.sectionIndex : undefined;
   }
 
-  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, text: this.text }; }
+  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text }; }
 }
 
 class DocumentComment {
@@ -8177,9 +8182,22 @@ export class DocumentModel {
   }
 }
 
-function docxContentTypes({ hasComments, hasHeader, hasFooter, hasNumbering, imageParts = [] }) {
+function collectDocxHeaderFooterParts(document, kind) {
+  const blocks = kind === "header" ? document.headers : document.footers;
+  const groups = new Map();
+  for (const block of blocks) {
+    const referenceType = ["default", "first", "even"].includes(block.referenceType) ? block.referenceType : "default";
+    if (!groups.has(referenceType)) groups.set(referenceType, []);
+    groups.get(referenceType).push(block);
+  }
+  return ["default", "first", "even"].filter((referenceType) => groups.has(referenceType)).map((referenceType, index) => ({ kind, referenceType, blocks: groups.get(referenceType), partPath: `word/${kind}${index + 1}.xml`, target: `${kind}${index + 1}.xml` }));
+}
+
+function docxContentTypes({ hasComments, headerParts = [], footerParts = [], hasNumbering, hasSettings, imageParts = [] }) {
   const imageDefaults = imageContentTypeDefaults(imageParts);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasHeader ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : ""}${hasFooter ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : ""}</Types>`;
+  const headers = headerParts.map((part) => `<Override PartName="/${part.partPath}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`).join("");
+  const footers = footerParts.map((part) => `<Override PartName="/${part.partPath}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasSettings ? `<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` : ""}${headers}${footers}</Types>`;
 }
 
 function docxStylesXml(document) {
@@ -8263,12 +8281,12 @@ function docxImageXml(block, relId, commentIndexes = []) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>${commentEnd}${refs}</w:p>`;
 }
 
-function docxSectionPrXml(section, refs = "") {
+function docxSectionPrXml(section, refs = "", options = {}) {
   const size = section.pageSize || {};
   const margins = section.margins || {};
   const orient = section.orientation === "landscape" ? ` w:orient="landscape"` : "";
   const type = section.breakType ? `<w:type w:val="${attrEscape(section.breakType)}"/>` : "";
-  return `<w:sectPr>${refs}${type}<w:pgSz w:w="${Math.round(size.widthTwips || 12240)}" w:h="${Math.round(size.heightTwips || 15840)}"${orient}/><w:pgMar w:top="${Math.round(margins.top ?? 1440)}" w:right="${Math.round(margins.right ?? 1440)}" w:bottom="${Math.round(margins.bottom ?? 1440)}" w:left="${Math.round(margins.left ?? 1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
+  return `<w:sectPr>${refs}${type}${options.titlePage ? "<w:titlePg/>" : ""}<w:pgSz w:w="${Math.round(size.widthTwips || 12240)}" w:h="${Math.round(size.heightTwips || 15840)}"${orient}/><w:pgMar w:top="${Math.round(margins.top ?? 1440)}" w:right="${Math.round(margins.right ?? 1440)}" w:bottom="${Math.round(margins.bottom ?? 1440)}" w:left="${Math.round(margins.left ?? 1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
 }
 
 function docxSectionXml(block, commentIndexes = []) {
@@ -8322,8 +8340,8 @@ function docxDocumentXml(document, relIds = {}) {
     if (block.kind === "change") return docxChangeXml(block, indexes);
     return docxParagraphXml(block, indexes);
   }).join("");
-  const refs = `${relIds.header ? `<w:headerReference w:type="default" r:id="${relIds.header}"/>` : ""}${relIds.footer ? `<w:footerReference w:type="default" r:id="${relIds.footer}"/>` : ""}`;
-  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs);
+  const refs = [...(relIds.headers || []), ...(relIds.footers || [])].map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
+  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs, { titlePage: [...(relIds.headers || []), ...(relIds.footers || [])].some((reference) => reference.referenceType === "first") });
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}${finalSection}</w:body></w:document>`;
 }
 
@@ -8435,6 +8453,30 @@ function parseDocxTable(part) {
 
 function parseHeaderFooterXml(xml) {
   return [...String(xml || "").matchAll(/<w:p[\s\S]*?<\/w:p>/g)].map((match) => ({ text: decodeXml([...match[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join("")) })).filter((item) => item.text.length > 0);
+}
+
+function docxHeaderFooterReferences(documentXml, relationships) {
+  const relationshipById = new Map(relationships.map((relationship) => [relationship.id, relationship]));
+  const sections = [...String(documentXml || "").matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map((match) => match[0]);
+  const sources = sections.length ? sections : [String(documentXml || "")];
+  const references = [];
+  const seen = new Set();
+  sources.forEach((sectionXml, sectionIndex) => {
+    for (const match of sectionXml.matchAll(/<w:(header|footer)Reference\b[^>]*\/?>/g)) {
+      const kind = match[1];
+      const attrs = ooxmlXmlAttributes(match[0]);
+      const relationshipId = attrs["r:id"];
+      const relationship = relationshipById.get(relationshipId);
+      if (!relationship || relationship.targetMode.toLowerCase() === "external" || !relationship.type.endsWith(`/${kind}`)) continue;
+      const partPath = ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX");
+      const referenceType = ["default", "first", "even"].includes(attrs["w:type"]) ? attrs["w:type"] : "default";
+      const key = `${kind}\u0000${referenceType}\u0000${relationshipId}\u0000${partPath}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      references.push({ kind, referenceType, relationshipId, partPath, sectionIndex });
+    }
+  });
+  return references;
 }
 
 function ooxmlSafePartPath(partPath, family = "OOXML") {
@@ -9042,16 +9084,24 @@ export class DocumentFile {
     const zip = new JSZip();
     const imageParts = collectDocxImageParts(document);
     const hasNumbering = document.blocks.some((block) => block.kind === "listItem");
-    const hasHeader = document.headers.length > 0;
-    const hasFooter = document.footers.length > 0;
-    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, hasHeader, hasFooter, hasNumbering, imageParts }));
+    const headerParts = collectDocxHeaderFooterParts(document, "header");
+    const footerParts = collectDocxHeaderFooterParts(document, "footer");
+    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, headerParts, footerParts, hasNumbering, imageParts }));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
     const docRels = [{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" }];
     const relIds = {};
     if (hasNumbering) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering", target: "numbering.xml" });
     if (document.comments.length) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
-    if (hasHeader) { relIds.header = `rId${docRels.length + 1}`; docRels.push({ id: relIds.header, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: "header1.xml" }); }
-    if (hasFooter) { relIds.footer = `rId${docRels.length + 1}`; docRels.push({ id: relIds.footer, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", target: "footer1.xml" }); }
+    relIds.headers = headerParts.map((part) => {
+      const relId = `rId${docRels.length + 1}`;
+      docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: part.target });
+      return { kind: "header", referenceType: part.referenceType, relId };
+    });
+    relIds.footers = footerParts.map((part) => {
+      const relId = `rId${docRels.length + 1}`;
+      docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", target: part.target });
+      return { kind: "footer", referenceType: part.referenceType, relId };
+    });
     relIds.hyperlinks = new Map();
     for (const block of document.blocks.filter((item) => item.kind === "hyperlink")) {
       const relId = `rId${docRels.length + 1}`;
@@ -9067,27 +9117,28 @@ export class DocumentFile {
     zip.file("word/styles.xml", docxStylesXml(document));
     if (hasNumbering) zip.file("word/numbering.xml", docxNumberingXml());
     if (document.comments.length) zip.file("word/comments.xml", docxCommentsXml(document));
-    if (hasHeader) zip.file("word/header1.xml", docxHeaderFooterXml("header", document.headers));
-    if (hasFooter) zip.file("word/footer1.xml", docxHeaderFooterXml("footer", document.footers));
+    headerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("header", part.blocks)));
+    footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
     imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
     zip.file("word/document.xml", docxDocumentXml(document, relIds));
     return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
   }
 
-  static async importDocx(blobOrBuffer) {
+  static async importDocx(blobOrBuffer, options = {}) {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const metadataText = await zip.file("word/open-office-artifact.json")?.async("text");
-    if (metadataText) return DocumentModel.create(JSON.parse(metadataText));
+    if (metadataText && options.preferNative !== true) return DocumentModel.create(JSON.parse(metadataText));
     const xml = await zip.file("word/document.xml")?.async("text");
     const stylesText = await zip.file("word/styles.xml")?.async("text");
     const importedStyles = parseDocxStylesXml(stylesText);
     const commentsXml = await zip.file("word/comments.xml")?.async("text");
     const commentTextById = new Map([...String(commentsXml || "").matchAll(/<w:comment[^>]*w:id="(\d+)"[^>]*>([\s\S]*?)<\/w:comment>/g)].map((match) => [match[1], decodeXml([...match[2].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))]));
     const relsText = await zip.file("word/_rels/document.xml.rels")?.async("text");
+    const documentRelationships = parseRelsXml(relsText);
     const imageByRelId = new Map();
-    for (const rel of parseRelsXml(relsText).filter((item) => item.type.endsWith("/image"))) {
+    for (const rel of documentRelationships.filter((item) => item.type.endsWith("/image"))) {
       const target = rel.target.replace(/^\//, "");
       const packagePath = target.startsWith("word/") ? target : path.posix.normalize(`word/${target}`).replace(/^\.\//, "");
       const bytes = await zip.file(packagePath)?.async("uint8array");
@@ -9106,8 +9157,14 @@ export class DocumentFile {
       }
     }
     const document = DocumentModel.create({ styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
-    for (const header of parseHeaderFooterXml(await zip.file("word/header1.xml")?.async("text"))) document.addHeader(header.text, header);
-    for (const footer of parseHeaderFooterXml(await zip.file("word/footer1.xml")?.async("text"))) document.addFooter(footer.text, footer);
+    for (const reference of docxHeaderFooterReferences(xml, documentRelationships)) {
+      const partXml = await zip.file(reference.partPath)?.async("text");
+      for (const block of parseHeaderFooterXml(partXml)) {
+        const config = { ...block, referenceType: reference.referenceType, relationshipId: reference.relationshipId, partPath: reference.partPath, sectionIndex: reference.sectionIndex };
+        if (reference.kind === "header") document.addHeader(block.text, config);
+        else document.addFooter(block.text, config);
+      }
+    }
     pendingComments.forEach((comment) => document.addComment(document.blocks[comment.blockIndex]?.id, comment.text));
     return document;
   }
