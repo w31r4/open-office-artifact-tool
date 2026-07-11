@@ -82,12 +82,33 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `fx.ABS` | formula | Return the absolute value of a number. |
+| `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
+| `fx.CEILING` | formula | Round a number up to the nearest significance. |
+| `fx.CONCAT` | formula | Concatenate text values and ranges. |
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
+| `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
+| `fx.FLOOR` | formula | Round a number down to the nearest significance. |
+| `fx.IF` | formula | Return one value when a condition is true and another when false. |
+| `fx.INT` | formula | Round a number down to the nearest integer. |
+| `fx.LEFT` | formula | Return characters from the start of a text value. |
+| `fx.LEN` | formula | Return the length of a text value. |
+| `fx.LOWER` | formula | Convert text to lowercase. |
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
+| `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
+| `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
+| `fx.RIGHT` | formula | Return characters from the end of a text value. |
+| `fx.ROUND` | formula | Round a numeric value to a fixed number of decimal places. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
+| `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
+| `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
+| `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
+| `fx.UPPER` | formula | Convert text to uppercase. |
+| `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
+| `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule to a range; addCustom(expression, format) creates expression rules. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.format` | api | Assign basic cell style metadata such as fill, font, and numberFormat; XLSX export writes native styles.xml and cell style indexes. |

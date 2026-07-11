@@ -222,6 +222,27 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.MIN", category: "statistical", summary: "Return the minimum numeric value across arguments and ranges.", examples: ["=MIN(A1:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.MAX", category: "statistical", summary: "Return the maximum numeric value across arguments and ranges.", examples: ["=MAX(A1:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNT", category: "statistical", summary: "Count numeric values across arguments and ranges.", examples: ["=COUNT(A1:A10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.IF", category: "logical", summary: "Return one value when a condition is true and another when false.", examples: ["=IF(A1>0,\"ok\",\"bad\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.AND", category: "logical", summary: "Return TRUE when all conditions are true.", examples: ["=AND(A1>0,B1>0)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.OR", category: "logical", summary: "Return TRUE when any condition is true.", examples: ["=OR(A1>0,B1>0)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to a fixed number of decimal places.", examples: ["=ROUND(A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SUMIF", category: "math-trig", summary: "Sum values whose corresponding criteria range entries match a criterion.", examples: ["=SUMIF(A1:A10,\"East\",B1:B10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.VLOOKUP", category: "lookup-reference", summary: "Look up a value in the first column of a table range and return a value from another column.", examples: ["=VLOOKUP(\"Beta\",A2:B4,2,FALSE)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.XLOOKUP", category: "lookup-reference", summary: "Look up a value in one range and return the corresponding value from another range.", examples: ["=XLOOKUP(\"Gamma\",A2:A4,B2:B4,\"missing\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TEXTJOIN", category: "text", summary: "Join text values with a delimiter and optional empty-value skipping.", examples: ["=TEXTJOIN(\"/\",TRUE,A1:A3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.CONCAT", category: "text", summary: "Concatenate text values and ranges.", examples: ["=CONCAT(A1,\"-\",B1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.LEFT", category: "text", summary: "Return characters from the start of a text value.", examples: ["=LEFT(A1,3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.RIGHT", category: "text", summary: "Return characters from the end of a text value.", examples: ["=RIGHT(A1,3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.LEN", category: "text", summary: "Return the length of a text value.", examples: ["=LEN(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MID", category: "text", summary: "Return characters from the middle of a text value.", examples: ["=MID(A1,2,3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.UPPER", category: "text", summary: "Convert text to uppercase.", examples: ["=UPPER(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.LOWER", category: "text", summary: "Convert text to lowercase.", examples: ["=LOWER(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TRIM", category: "text", summary: "Trim leading/trailing whitespace and collapse internal whitespace.", examples: ["=TRIM(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.ABS", category: "math-trig", summary: "Return the absolute value of a number.", examples: ["=ABS(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.INT", category: "math-trig", summary: "Round a number down to the nearest integer.", examples: ["=INT(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.CEILING", category: "math-trig", summary: "Round a number up to the nearest significance.", examples: ["=CEILING(A1,5)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.FLOOR", category: "math-trig", summary: "Round a number down to the nearest significance.", examples: ["=FLOOR(A1,5)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a default or explicit slide size." },
@@ -1657,20 +1678,150 @@ function formulaGraphRecords(graph, options = {}) {
   return records;
 }
 
+function splitFormulaArgs(text = "") {
+  const args = [];
+  let current = "";
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < String(text).length; i++) {
+    const ch = String(text)[i];
+    if (ch === '"') {
+      current += ch;
+      if (String(text)[i + 1] === '"') { current += '"'; i += 1; continue; }
+      inString = !inString;
+      continue;
+    }
+    if (!inString && ch === "(") depth += 1;
+    if (!inString && ch === ")") depth -= 1;
+    if (!inString && ch === "," && depth === 0) { args.push(current.trim()); current = ""; continue; }
+    current += ch;
+  }
+  if (current.trim() || text === "") args.push(current.trim());
+  return args;
+}
+
+function formulaUnquote(value) {
+  const text = String(value ?? "").trim();
+  if (/^"(?:[^"]|"")*"$/.test(text)) return text.slice(1, -1).replaceAll('""', '"');
+  return undefined;
+}
+
+function formulaRefParts(refText = "") {
+  const raw = String(refText || "").trim();
+  const match = /^(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)(?::(\$?[A-Za-z]+\$?\d+))?$/.exec(raw);
+  if (!match) return undefined;
+  return { sheetName: match[1] || match[2] || undefined, start: match[3].replaceAll("$", "").toUpperCase(), end: (match[4] || match[3]).replaceAll("$", "").toUpperCase() };
+}
+
+function formulaRangeMatrix(sheet, refText, context = {}) {
+  const ref = formulaRefParts(refText);
+  if (!ref) return undefined;
+  const targetSheet = ref.sheetName ? sheet.workbook?.worksheets.getItem(ref.sheetName) : sheet;
+  if (!targetSheet) return [["#REF!"]];
+  const start = parseCellAddress(ref.start);
+  const end = parseCellAddress(ref.end);
+  const rows = [];
+  for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
+    const values = [];
+    for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) {
+      const address = makeCellAddress(row, col);
+      values.push(context.getValue ? context.getValue({ sheetName: ref.sheetName, address }) : targetSheet.store.get(address).value);
+    }
+    rows.push(values);
+  }
+  return rows;
+}
+
 function formulaReferenceValues(sheet, refText, context = {}) {
-  const refs = formulaReferences(`=${refText}`);
-  if (refs.length === 0 && /^-?\d+(?:\.\d+)?$/.test(String(refText).trim())) return [Number(refText)];
-  return refs.map((ref) => {
-    if (context.getValue) return context.getValue({ sheetName: ref.sheetName, address: ref.address });
-    const targetSheet = ref.sheetName ? sheet.workbook?.worksheets.getItem(ref.sheetName) : sheet;
-    return targetSheet ? targetSheet.store.get(ref.address).value : "#REF!";
-  });
+  const matrix = formulaRangeMatrix(sheet, refText, context);
+  if (matrix) return matrix.flat();
+  const scalar = formulaScalar(sheet, refText, context);
+  return scalar === undefined ? [] : [scalar];
+}
+
+function formulaScalar(sheet, expr, context = {}) {
+  const text = String(expr ?? "").trim();
+  const quoted = formulaUnquote(text);
+  if (quoted !== undefined) return quoted;
+  if (/^-?\d+(?:\.\d+)?$/.test(text)) return Number(text);
+  if (/^TRUE$/i.test(text)) return true;
+  if (/^FALSE$/i.test(text)) return false;
+  const matrix = formulaRangeMatrix(sheet, text, context);
+  if (matrix) return matrix[0]?.[0] ?? null;
+  if (/^[A-Z][A-Z0-9.]*\(/i.test(text)) return evaluateFormula(sheet, `=${text}`, undefined, context);
+  return undefined;
+}
+
+function formulaNumber(value) {
+  if (formulaErrorCode(value)) return value;
+  if (value === true) return 1;
+  if (value === false || value == null || value === "") return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formulaText(value) {
+  if (value == null) return "";
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  return String(value);
+}
+
+function formulaTruthy(value) {
+  if (formulaErrorCode(value)) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const text = String(value ?? "").trim();
+  if (/^TRUE$/i.test(text)) return true;
+  if (/^FALSE$/i.test(text) || text === "") return false;
+  return Boolean(Number(text));
+}
+
+function evaluateFormulaCondition(sheet, expr, context = {}) {
+  const text = String(expr || "").trim();
+  const comparison = /^(.*?)\s*(>=|<=|<>|=|>|<)\s*(.*?)$/.exec(text);
+  if (comparison) {
+    const left = formulaScalar(sheet, comparison[1], context);
+    const right = formulaScalar(sheet, comparison[3], context);
+    const leftNum = Number(left), rightNum = Number(right);
+    const numeric = Number.isFinite(leftNum) && Number.isFinite(rightNum);
+    const a = numeric ? leftNum : formulaText(left);
+    const b = numeric ? rightNum : formulaText(right);
+    switch (comparison[2]) {
+      case ">=": return a >= b;
+      case "<=": return a <= b;
+      case "<>": return a !== b;
+      case "=": return a === b;
+      case ">": return a > b;
+      case "<": return a < b;
+    }
+  }
+  return formulaTruthy(formulaScalar(sheet, text, context));
+}
+
+function matchesCriteria(value, criteria) {
+  const raw = formulaText(criteria).trim();
+  const match = /^(>=|<=|<>|=|>|<)?\s*(.*)$/.exec(raw);
+  const op = match?.[1] || "=";
+  const expectedRaw = match?.[2] ?? raw;
+  const actualNum = Number(value);
+  const expectedNum = Number(expectedRaw);
+  const numeric = Number.isFinite(actualNum) && Number.isFinite(expectedNum) && expectedRaw !== "";
+  const actual = numeric ? actualNum : formulaText(value);
+  const expected = numeric ? expectedNum : expectedRaw.replace(/^"|"$/g, "");
+  switch (op) {
+    case ">=": return actual >= expected;
+    case "<=": return actual <= expected;
+    case "<>": return actual !== expected;
+    case ">": return actual > expected;
+    case "<": return actual < expected;
+    default: return actual === expected;
+  }
 }
 
 function aggregateFormulaValues(values, fnName) {
   const errors = values.map(formulaErrorCode).filter(Boolean);
   if (errors.length) return errors[0];
-  const nums = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  const nums = values.map(formulaNumber).filter((value) => Number.isFinite(value));
   if (fnName === "COUNT") return nums.length;
   if (nums.length === 0) return 0;
   if (fnName === "AVERAGE") return nums.reduce((acc, value) => acc + value, 0) / nums.length;
@@ -1679,17 +1830,76 @@ function aggregateFormulaValues(values, fnName) {
   return nums.reduce((acc, value) => acc + value, 0);
 }
 
+function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
+  const values = (parts = args) => parts.flatMap((part) => formulaReferenceValues(sheet, part, context));
+  const scalar = (index, fallback = undefined) => {
+    const value = formulaScalar(sheet, args[index], context);
+    return value === undefined ? fallback : value;
+  };
+  switch (fnName) {
+    case "SUM":
+    case "AVERAGE":
+    case "MIN":
+    case "MAX":
+    case "COUNT":
+      return aggregateFormulaValues(values(), fnName);
+    case "ABS": return Math.abs(formulaNumber(scalar(0, 0)));
+    case "ROUND": return Number(formulaNumber(scalar(0, 0)).toFixed(Math.max(0, Number(scalar(1, 0)) || 0)));
+    case "INT": return Math.floor(formulaNumber(scalar(0, 0)));
+    case "CEILING": return Math.ceil(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
+    case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
+    case "IF": return evaluateFormulaCondition(sheet, args[0], context) ? scalar(1, true) : scalar(2, false);
+    case "AND": return args.every((arg) => evaluateFormulaCondition(sheet, arg, context));
+    case "OR": return args.some((arg) => evaluateFormulaCondition(sheet, arg, context));
+    case "NOT": return !evaluateFormulaCondition(sheet, args[0], context);
+    case "CONCAT":
+    case "CONCATENATE": return values().map(formulaText).join("");
+    case "TEXTJOIN": {
+      const delimiter = formulaText(scalar(0, ""));
+      const ignoreEmpty = formulaTruthy(scalar(1, false));
+      const joined = values(args.slice(2)).map(formulaText).filter((value) => !ignoreEmpty || value !== "");
+      return joined.join(delimiter);
+    }
+    case "LEFT": return formulaText(scalar(0, "")).slice(0, Number(scalar(1, 1)) || 1);
+    case "RIGHT": { const text = formulaText(scalar(0, "")); const count = Number(scalar(1, 1)) || 1; return text.slice(Math.max(0, text.length - count)); }
+    case "MID": { const text = formulaText(scalar(0, "")); const start = Math.max(1, Number(scalar(1, 1)) || 1); const count = Math.max(0, Number(scalar(2, 1)) || 1); return text.slice(start - 1, start - 1 + count); }
+    case "LEN": return formulaText(scalar(0, "")).length;
+    case "UPPER": return formulaText(scalar(0, "")).toUpperCase();
+    case "LOWER": return formulaText(scalar(0, "")).toLowerCase();
+    case "TRIM": return formulaText(scalar(0, "")).trim().replace(/\s+/g, " ");
+    case "COUNTIF": { const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesCriteria(value, criteria)).length; }
+    case "SUMIF": {
+      const range = values([args[0]]);
+      const criteria = scalar(1, "");
+      const sumRange = args[2] ? values([args[2]]) : range;
+      return range.reduce((sum, value, index) => sum + (matchesCriteria(value, criteria) ? formulaNumber(sumRange[index]) || 0 : 0), 0);
+    }
+    case "VLOOKUP": {
+      const lookup = scalar(0, "");
+      const matrix = formulaRangeMatrix(sheet, args[1], context) || [];
+      const colIndex = Math.max(1, Number(scalar(2, 1)) || 1) - 1;
+      const row = matrix.find((item) => formulaText(item[0]) === formulaText(lookup) || Number(item[0]) === Number(lookup));
+      return row ? row[colIndex] ?? "#N/A" : "#N/A";
+    }
+    case "XLOOKUP": {
+      const lookup = scalar(0, "");
+      const lookupValues = values([args[1]]);
+      const returnValues = values([args[2]]);
+      const index = lookupValues.findIndex((value) => formulaText(value) === formulaText(lookup) || Number(value) === Number(lookup));
+      return index >= 0 ? returnValues[index] : scalar(3, "#N/A");
+    }
+    default:
+      return "#NAME?";
+  }
+}
+
 function evaluateFormula(sheet, formula, _address, context = {}) {
   const raw = String(formula || "").trim();
   if (!raw.startsWith("=")) return raw;
   const expr = raw.slice(1).trim();
   const functionMatch = /^([A-Z][A-Z0-9.]*)\((.*)\)$/i.exec(expr);
   if (functionMatch) {
-    const fnName = functionMatch[1].toUpperCase();
-    const supported = new Set(["SUM", "AVERAGE", "MIN", "MAX", "COUNT"]);
-    if (!supported.has(fnName)) return "#NAME?";
-    const values = functionMatch[2].split(/\s*,\s*/).flatMap((part) => formulaReferenceValues(sheet, part, context));
-    return aggregateFormulaValues(values, fnName);
+    return evaluateFormulaFunction(sheet, functionMatch[1].toUpperCase(), splitFormulaArgs(functionMatch[2]), context);
   }
 
   let replacementError;
