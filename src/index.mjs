@@ -8258,11 +8258,18 @@ function pdfImageCommands(page, image, asset) {
   if (!asset) return [pdfRectCommand(page, image.bbox, { fillColor: "#fef3c7", strokeColor: "#f59e0b" }), pdfTextCommand(page, pdfFitText(image.alt || image.prompt || image.uri || image.name || "image", width - 16, 10), left + 8, top + 8, { fontSize: 10, color: "#92400e" })];
   const sourceRatio = asset.width / asset.height;
   const frameRatio = width / height;
-  const drawWidth = image.fit === "cover" ? (sourceRatio > frameRatio ? width : height * sourceRatio) : (sourceRatio > frameRatio ? width : height * sourceRatio);
-  const drawHeight = image.fit === "cover" ? (sourceRatio > frameRatio ? width / sourceRatio : height) : (sourceRatio > frameRatio ? width / sourceRatio : height);
+  const cover = image.fit === "cover";
+  const drawWidth = cover
+    ? (sourceRatio > frameRatio ? height * sourceRatio : width)
+    : (sourceRatio > frameRatio ? width : height * sourceRatio);
+  const drawHeight = cover
+    ? (sourceRatio > frameRatio ? height : width / sourceRatio)
+    : (sourceRatio > frameRatio ? width / sourceRatio : height);
   const x = left + (width - drawWidth) / 2;
   const drawTop = top + (height - drawHeight) / 2;
-  return [`q ${pdfNumber(drawWidth)} 0 0 ${pdfNumber(drawHeight)} ${pdfNumber(x)} ${pdfNumber(page.height - drawTop - drawHeight)} cm /${asset.resourceName} Do Q`];
+  const draw = `${pdfNumber(drawWidth)} 0 0 ${pdfNumber(drawHeight)} ${pdfNumber(x)} ${pdfNumber(page.height - drawTop - drawHeight)} cm /${asset.resourceName} Do`;
+  if (cover) return [`q ${pdfNumber(left)} ${pdfNumber(page.height - top - height)} ${pdfNumber(width)} ${pdfNumber(height)} re W n ${draw} Q`];
+  return [`q ${draw} Q`];
 }
 
 function buildMinimalPdf(artifact) {
