@@ -15,12 +15,15 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--output-dir dir] [--render-format svg|png|webp|jpeg|pdf]");
+  if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--output-dir dir] [--render-format svg|png|webp|jpeg|pdf] [--baseline-dir dir] [--write-baseline true]");
   const result = await runSpreadsheetFixture(args.fixture, {
     outputDir: args["output-dir"],
     sheetName: args.sheet,
     range: args.range,
     renderFormat: args["render-format"],
+    baselineDir: args["baseline-dir"],
+    writeBaseline: args["write-baseline"] === "true",
+    pixelThreshold: args["pixel-threshold"] ? Number(args["pixel-threshold"]) : undefined,
   });
   console.log(JSON.stringify({ fixture: result.fixture.name, workbook: result.workbookPath, qa: result.qa.summary }));
   return result;
@@ -32,4 +35,3 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     process.exitCode = 1;
   });
 }
-

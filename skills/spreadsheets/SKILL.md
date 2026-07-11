@@ -24,6 +24,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 4. Recalculate and spot-check important results and formula traces.
 5. Export XLSX, inspect its bounded native package records, import the exported file again, and run the project verifier.
 6. Inspect the preview at full size. Fix formula errors, clipping, unreadable formatting, and broken objects before delivery.
+7. Once a sheet/range preview is approved, save a raster baseline and require a pixel comparison on later exports.
 
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
@@ -73,6 +74,19 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
   --output-dir tmp/spreadsheet-skill-fixture
 ```
 
+Create and later compare an approved sheet/range baseline:
+
+```sh
+node skills/spreadsheets/scripts/verify-workbook.mjs \
+  --input output.xlsx --sheet Summary --range A1:D20 \
+  --render-format png --baseline-dir tmp/spreadsheet-baselines \
+  --write-baseline true
+
+node skills/spreadsheets/scripts/verify-workbook.mjs \
+  --input output.xlsx --sheet Summary --range A1:D20 \
+  --render-format png --baseline-dir tmp/spreadsheet-baselines
+```
+
 ## QA gates
 
 - Inspect the key table/formula range with bounded `maxChars`.
@@ -82,6 +96,7 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
 - Save `SpreadsheetFile.inspectXlsx()` evidence so the native package shape, content types, and decompression budgets are part of QA.
 - Produce a layout record and a visual preview for every user-facing sheet.
 - Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
+- Raster baselines use `visualQaArtifact(..., { pixelDiff: true })`; baseline filenames are stable per worksheet.
 - Deliver only the requested workbook unless the user asks for QA intermediates.
 
 ## References

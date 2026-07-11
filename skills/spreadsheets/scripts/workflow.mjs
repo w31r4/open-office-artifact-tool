@@ -29,6 +29,15 @@ function rendererForFormat(format, options = {}) {
   });
 }
 
+async function optionalBaseline(baselinePath) {
+  if (!baselinePath) return undefined;
+  try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
+}
+
+function safeFileSegment(value) {
+  return String(value || "sheet").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "sheet";
+}
+
 function applyRangeOperation(sheet, operation = {}) {
   if (!operation.range) throw new Error(`Spreadsheet fixture range operation on ${sheet.name} is missing range.`);
   const range = sheet.getRange(operation.range);
@@ -85,17 +94,26 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   const layoutBlob = await workbook.render({ format: "layout", sheetName, range });
   const renderFormat = String(options.renderFormat || "svg").toLowerCase();
   const renderer = rendererForFormat(renderFormat, options);
+  const previewExtension = EXTENSION_BY_FORMAT[renderFormat];
+  if (!previewExtension) throw new Error(`Unsupported spreadsheet preview format: ${renderFormat}`);
+  const baselineDir = options.baselineDir ? path.resolve(options.baselineDir) : undefined;
+  const baselinePath = baselineDir ? path.join(baselineDir, `${safeFileSegment(sheetName)}.${previewExtension}`) : undefined;
+  const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
   const visualQa = await visualQaArtifact(workbook, {
     format: renderFormat,
     renderer,
     sheetName,
     range,
+    baseline,
+    pixelDiff: Boolean(baseline && ["png", "webp", "jpeg", "jpg"].includes(renderFormat)),
+    pixelThreshold: options.pixelThreshold,
     minBytes: options.minBytes ?? 20,
     maxChars: options.maxChars ?? 16_000,
   });
-
-  const previewExtension = EXTENSION_BY_FORMAT[renderFormat];
-  if (!previewExtension) throw new Error(`Unsupported spreadsheet preview format: ${renderFormat}`);
+  if (options.writeBaseline && baselinePath) {
+    await fs.mkdir(baselineDir, { recursive: true });
+    await visualQa.blob.save(baselinePath);
+  }
   const paths = {
     inspect: path.join(outputDir, "inspect.ndjson"),
     packageInspect: path.join(outputDir, "package-inspect.ndjson"),
@@ -125,6 +143,11 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
     sheetName,
     range: range || null,
     renderFormat,
+    baselineDir,
+    baselinePath,
+    writeBaseline: Boolean(options.writeBaseline),
+    baselineCompared: Boolean(baseline),
+    pixelDiff: visualQa.summary.pixelDiff,
     packageOk: packageInspect.ok,
     verifyOk: verify.ok,
     visualQaOk: visualQa.ok,
@@ -153,6 +176,9 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     renderFormat: options.renderFormat || fixture.qa?.renderFormat || "svg",
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
+    baselineDir: options.baselineDir,
+    writeBaseline: options.writeBaseline,
+    pixelThreshold: options.pixelThreshold,
   });
   return { fixture, workbookPath, qa };
 }

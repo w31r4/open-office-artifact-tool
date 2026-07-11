@@ -9,6 +9,7 @@ import { runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheet
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const fixturePath = path.join(repoRoot, "skills", "spreadsheets", "fixtures", "formula-summary.json");
 const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-spreadsheet-skill-"));
+const baselineDir = path.join(outputDir, "baselines");
 
 try {
   const result = await runSpreadsheetFixture(fixturePath, { outputDir });
@@ -43,11 +44,33 @@ try {
   assert.equal(secondQa.summary.packageOk, true);
   assert.equal(secondQa.summary.sheetName, "Inputs");
 
+  const baselineWrite = await verifyWorkbookFile(result.workbookPath, {
+    outputDir: path.join(outputDir, "baseline-write"),
+    sheetName: "Summary",
+    range: "A1:D4",
+    renderFormat: "png",
+    baselineDir,
+    writeBaseline: true,
+  });
+  assert.equal(baselineWrite.summary.writeBaseline, true);
+  assert.ok((await fs.stat(baselineWrite.summary.baselinePath)).size > 100);
+  const baselineCompare = await verifyWorkbookFile(result.workbookPath, {
+    outputDir: path.join(outputDir, "baseline-compare"),
+    sheetName: "Summary",
+    range: "A1:D4",
+    renderFormat: "png",
+    baselineDir,
+  });
+  assert.equal(baselineCompare.summary.baselineCompared, true);
+  assert.equal(baselineCompare.summary.pixelDiff.changed, false);
+  assert.equal(baselineCompare.summary.visualQaOk, true);
+
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
   assert.ok(packageJson.files.includes("skills/**"));
   const skillText = await fs.readFile(path.join(repoRoot, "skills", "spreadsheets", "SKILL.md"), "utf8");
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /verify-workbook\.mjs/);
+  assert.match(skillText, /baseline-dir/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }
