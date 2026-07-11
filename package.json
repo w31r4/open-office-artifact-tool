@@ -19,18 +19,20 @@
     "./presentation-jsx/jsx-runtime": "./src/presentation-jsx/jsx-runtime.mjs",
     "./presentation-jsx/jsx-dev-runtime": "./src/presentation-jsx/jsx-dev-runtime.mjs",
     "./renderers/playwright": "./src/renderers/playwright.mjs",
-    "./pdf/pdfjs": "./src/pdf/pdfjs.mjs"
+    "./pdf/pdfjs": "./src/pdf/pdfjs.mjs",
+    "./native/office-bridge": "./src/native/office-bridge.mjs"
   },
   "files": [
     "src/**",
     "docs/**",
     "scripts/**",
+    "examples/**",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "docs:api": "node scripts/generate-api-docs.mjs",
-    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/playwright-renderer.mjs && node test/help.mjs",
+    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/playwright-renderer.mjs && node test/office-bridge.mjs && node test/examples.mjs && node test/help.mjs",
     "test:spreadsheet": "node test/spreadsheet.mjs",
     "test:presentation": "node test/presentation.mjs",
     "test:presentation-jsx": "node test/presentation-jsx.mjs",
@@ -39,6 +41,8 @@
     "test:verify": "node test/verify.mjs",
     "test:render": "node test/render.mjs",
     "test:playwright-renderer": "node test/playwright-renderer.mjs",
+    "test:office-bridge": "node test/office-bridge.mjs",
+    "test:examples": "node test/examples.mjs",
     "test:help": "node test/help.mjs",
     "test:pack": "npm pack --dry-run"
   },

@@ -99,6 +99,26 @@ npm run test:playwright-renderer
 
 It accepts SVG or HTML `FileBlob` input, fixes viewport/device scale/timezone/locale, waits for font readiness, disables animations, and blocks network requests by default. Set `allowNetwork: true` only for explicitly trusted local HTML previews.
 
+## Native Office bridge adapter
+
+The core package does not depend on Windows or Microsoft Office. The Node-side wrapper at `open-office-artifact-tool/native/office-bridge` calls an optional JSON stdin/stdout sidecar command with timeout handling, isolated temp files, cleanup, and structured errors.
+
+```js
+import { renderFileWithNativeOffice } from "open-office-artifact-tool/native/office-bridge";
+
+const pdf = await renderFileWithNativeOffice(docxBlob, {
+  command: "dotnet",
+  args: ["run", "--project", "native/OfficeBridge"],
+  artifactKind: "document",
+  inputType: docxBlob.type,
+  outputType: "application/pdf",
+  format: "pdf",
+  timeoutMs: 60_000,
+});
+```
+
+Set `OFFICE_BRIDGE_COMMAND` and optional JSON `OFFICE_BRIDGE_ARGS` to configure the bridge without passing command options. The C# Office sidecar remains optional and should gracefully report unavailable Office installations; integration tests are expected to be gated with `OFFICE_NATIVE_TESTS=1`.
+
 ## PDF parsing adapters
 
 `PdfFile.importPdf(blob)` preserves clean-room metadata roundtrips first, then falls back to lightweight visible-text heuristics. For arbitrary PDFs, pass a parser adapter explicitly:
@@ -120,6 +140,25 @@ npm install -D pdfjs-dist
 
 It extracts page size, positioned text items, text-line regions, heuristic tables from pipe-delimited or column-like text, and image operator placeholders. The built-in heuristic parser remains available when no adapter is supplied.
 
+## Examples
+
+Runnable examples live in [`examples/`](examples/):
+
+- `create-docx-report.mjs`
+- `create-xlsx-dashboard.mjs`
+- `create-pptx-compose.mjs`
+- `parse-render-pdf.mjs`
+- `render-via-playwright.mjs`
+- `render-via-native-office.mjs`
+
+Run all examples with:
+
+```sh
+npm run test:examples
+```
+
+Outputs are written to `OUTPUT_DIR` or a temp example directory.
+
 ## Design notes
 
 The package deliberately prioritizes agent workflows:
@@ -135,6 +174,8 @@ The package deliberately prioritizes agent workflows:
 ```sh
 npm install
 npm test
+npm run test:examples
+npm run test:office-bridge
 npm run test:playwright-renderer # skips unless Playwright/Chromium are installed
 npm run test:pack
 ```

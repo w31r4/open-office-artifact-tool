@@ -23,6 +23,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "renderArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.formulaGraph"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGE"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPlaywrightRenderer"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
 
 const workbook = Workbook.create();
 const presentation = Presentation.create();
@@ -40,6 +42,8 @@ assert.match(pdf.help("extractTables").ndjson, /table values/);
 assert.match(pdf.help("createPdfjsParser").ndjson, /positioned text/);
 assert.match(helpArtifact("*", "renderArtifact").ndjson, /FileBlob metadata/);
 assert.match(helpArtifact("shared", "createPlaywrightRenderer").ndjson, /Playwright renderer adapter/);
+assert.match(helpArtifact("shared", "createNativeOfficeRenderer").ndjson, /native Office renderer adapter/);
+assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /native Office bridge command/);
 assert.match(helpArtifact(workbook, "fx.PMT").ndjson, /financial/);
 assert.equal(helpArtifact("presentation", "sheet.charts.add").ndjson, "");
 

@@ -16,7 +16,7 @@ Status legend:
 | `inspect(...)` emits bounded NDJSON snapshots | partial | Implemented for workbook, presentation, document, PDF. Needs full token coverage and search/target slicing. |
 | Stable anchor IDs + `resolve(...)` | partial | Implemented for workbook/sheets and presentation/shapes. Needs table/chart/image/comment/text-range IDs. |
 | `help(query, opts)` bounded NDJSON API discovery | partial | Shared `HELP_CATALOG` and `helpArtifact(...)` power Workbook/Presentation/Document/PDF help methods; `docs/api.md` is generated from the catalog. Needs broader examples, schemas, and full formula/API coverage. |
-| Render/preview loop | partial | `renderArtifact(...)` plus per-artifact render/export adapters return SVG `FileBlob` previews with metadata for workbooks, presentations, documents, and PDFs. `renderArtifact(..., { format, renderer })` supports pluggable PNG/WebP/JPEG/PDF conversion adapters over the SVG/FileBlob source, and the optional `open-office-artifact-tool/renderers/playwright` adapter provides real Playwright SVG/HTML → PNG/WebP/JPEG/PDF output with deterministic viewport/device scale and network blocked by default. Built-in sharp/canvas, Poppler/LibreOffice, and native Office adapters remain roadmap. |
+| Render/preview loop | partial | `renderArtifact(...)` plus per-artifact render/export adapters return SVG `FileBlob` previews with metadata for workbooks, presentations, documents, and PDFs. `renderArtifact(..., { format, renderer })` supports pluggable PNG/WebP/JPEG/PDF conversion adapters over the SVG/FileBlob source, the optional `open-office-artifact-tool/renderers/playwright` adapter provides real Playwright SVG/HTML → PNG/WebP/JPEG/PDF output with deterministic viewport/device scale and network blocked by default, and `open-office-artifact-tool/native/office-bridge` provides a Node-side JSON stdin/stdout native Office wrapper with timeout/temp cleanup. Built-in sharp/canvas, Poppler/LibreOffice, and the C# Office sidecar remain roadmap. |
 | Shared verification API | partial | `verifyArtifact(...)` plus per-artifact `verify()` methods emit bounded NDJSON issues for workbook formula/structure errors, presentation layout issues, document fake-list/broken-link/comment issues, and PDF text/table/page issues. Needs render-backed verification and full skill-specific gates. |
 | Layout JSON export | partial | Slide layout JSON implemented. Workbook/document layout exports are roadmap. |
 | Durable file export/import smoke tests | done | Minimal XLSX/PPTX/DOCX/PDF round trips pass. |
@@ -63,6 +63,14 @@ Status legend:
 | PDF visual render verification | partial | SVG page render now draws modeled page text, tables, and image regions for clean-room PDF artifacts, and SVG previews can be rasterized through the optional Playwright renderer adapter. Needs Poppler/PDF.js rasterization to PNG for arbitrary PDFs and visual diff workflow. |
 | Text/table extraction | partial | `extractText()` and `extractTables()` work for modeled/generated PDFs; import heuristically detects visible pipe-delimited table rows when clean-room metadata is absent; injected parser adapters can populate positioned text items, layout regions, tables, and image placeholders; optional PDF.js adapter extracts page text geometry and heuristic tables. Needs robust table reconstruction for arbitrary PDFs and byte-level image extraction. |
 | Create polished reports with typography/layout/charts | partial | Modeled PDF creation supports text pages, image regions, and table rendering/export. Needs richer report layout, charts, pagination, typography controls, and raster QA. |
+
+## Docs, examples, and CI
+
+| Requirement | Status | Notes |
+| --- | --- | --- |
+| README clean-room/family/renderer/native bridge docs | partial | README covers clean-room goal, four artifact families, renderer adapters, optional Playwright renderer, PDF parser adapters, Node-side native Office wrapper, examples, and development commands. Needs final C# sidecar installation docs once implemented. |
+| Examples for DOCX/XLSX/PPTX/PDF/rendering | partial | `examples/` includes create DOCX report, create XLSX dashboard with charts/sparklines/comments, create PPTX compose deck with notes/comments/connectors, parse/render PDF, render via Playwright, and render via native Office bridge. Native bridge and Playwright examples skip gracefully when optional runtimes are unavailable. |
+| Basic CI without Microsoft Office | partial | `.github/workflows/ci.yml` runs npm install/test/docs/pack and conditionally skips dotnet bridge tests when `native/OfficeBridge` or `dotnet` is unavailable. Needs real C# bridge tests and release/tag automation. |
 
 ## Implementation priorities
 
