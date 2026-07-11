@@ -78,10 +78,11 @@ slide.compose(tree, { frame: { left: 80, top: 120, width: 720, height: 180 } });
 `renderArtifact(artifact, { format })` returns the artifact's native SVG preview by default. Raster/PDF formats must be supplied by an explicit adapter so the package never pretends to support PNG/WebP/PDF output without a renderer. `visualQaArtifact(...)` records deterministic render metadata and hashes, checks empty/malformed renders, can compare against a baseline render, and can compute PNG pixel-diff metrics with `pixelDiff: true`.
 
 ```js
-import { DocumentModel, renderArtifact } from "open-office-artifact-tool";
+import { DocumentModel, PdfArtifact, renderArtifact } from "open-office-artifact-tool";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 
 const document = DocumentModel.create({ paragraphs: ["Raster-ready report"] });
+const pdfArtifact = PdfArtifact.create({ text: "Raster-ready PDF" });
 const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 });
 
 const png = await renderArtifact(document, { format: "png", renderer });
@@ -91,6 +92,10 @@ const pdf = await renderArtifact(document, { format: "pdf", renderer });
 // For DOCX-fidelity render gates, feed the real WordprocessingML package into
 // a DOCX-capable adapter such as LibreOffice or native Office instead of SVG:
 const docxPdf = await renderArtifact(document, { format: "pdf", source: "docx", renderer: libreOfficeOrNativeRenderer });
+
+// For PDF raster gates, feed the real exported PDF into a PDF-capable adapter
+// such as Poppler instead of rasterizing the SVG preview:
+const pdfPng = await renderArtifact(pdfArtifact, { format: "png", source: "pdf", renderer: popplerRenderer });
 ```
 
 The Playwright adapter is an optional peer dependency to keep the core npm package light:

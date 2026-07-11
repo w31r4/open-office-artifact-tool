@@ -695,7 +695,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, and images; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, and images." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG or return page layout JSON when called with { format: 'layout' }." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image bounds, invalid image data URLs, and malformed tables." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
@@ -5690,6 +5690,25 @@ function pdfLayoutSlice(layout, options = {}) {
   return { ...layout, pages, slice: { targets, search: search || undefined, before, after, matchedPages: matchedPages.size, returnedPages: pages.length, matchedRecords: matchingEntryIndexes.length } };
 }
 
+function pdfRenderUsesPdfSource(options = {}) {
+  const source = String(options.source || options.inputFormat || options.renderSource || "").trim().toLowerCase();
+  return source === "pdf" || options.pdf === true || options.usePdf === true || options.poppler === true;
+}
+
+async function renderPdfArtifactFromPdf(artifact, options = {}) {
+  const pdf = await PdfFile.exportPdf(artifact);
+  pdf.metadata = { ...(pdf.metadata || {}), artifactKind: "pdf", format: "pdf", renderSource: "pdf" };
+  const desiredType = renderTypeForOptions(options, pdf.type);
+  const format = String(options.format || "pdf").trim().toLowerCase();
+  if (!format || format === "pdf" || desiredType === pdf.type) return pdf;
+  const adapter = options.renderer || options.rasterRenderer || options.renderAdapter;
+  if (typeof adapter !== "function") return pdf;
+  const converted = await adapter({ input: pdf, source: pdf, inputType: pdf.type, outputType: desiredType, format: options.format, artifactKind: "pdf", options: { ...options, source: "pdf" } });
+  const blob = await fileBlobFromRenderOutput(converted, desiredType, { artifactKind: "pdf", format: options.format, renderedFrom: pdf.type, renderSource: "pdf" });
+  if (!blob.type || blob.type === "application/octet-stream") blob.type = desiredType;
+  return blob;
+}
+
 export class PdfArtifact {
   constructor(options = {}) {
     this.id = options.id || aid("pdf");
@@ -5810,6 +5829,7 @@ export class PdfArtifact {
   async render(options = {}) {
     const format = String(options.format || "").trim().toLowerCase();
     if (format === "layout" || format === LAYOUT_MIME) return new FileBlob(JSON.stringify(this.layoutJson(options), null, 2), { type: LAYOUT_MIME, metadata: { artifactKind: "pdf", format: "layout", page: options.page, pageIndex: options.pageIndex, target: options.target ?? options.targetId ?? options.id ?? options.anchor, search: options.search ?? options.searchTerm } });
+    if (pdfRenderUsesPdfSource(options)) return renderPdfArtifactFromPdf(this, options);
     return new FileBlob(pdfPageSvg(this.pages[options.pageIndex || 0] || new PdfPage(this)), { type: "image/svg+xml" });
   }
   toJSON() { return { id: this.id, metadata: this.metadata, pages: this.pages.map((page) => page.toJSON()) }; }

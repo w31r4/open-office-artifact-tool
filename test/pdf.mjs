@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
-import { FileBlob, PdfArtifact, PdfFile } from "../src/index.mjs";
+import { FileBlob, PdfArtifact, PdfFile, renderArtifact } from "../src/index.mjs";
 
 const pdf = PdfArtifact.create({
   pages: [
@@ -88,6 +88,26 @@ assert.equal(pdf.verify().ok, true);
 
 const blob = await PdfFile.exportPdf(pdf);
 assert.equal(blob.type, "application/pdf");
+let pdfRendererSawInput = false;
+const renderedPdfPng = await renderArtifact(pdf, {
+  format: "png",
+  source: "pdf",
+  renderer: async ({ input, inputType, outputType, artifactKind }) => {
+    pdfRendererSawInput = true;
+    assert.equal(artifactKind, "pdf");
+    assert.equal(inputType, "application/pdf");
+    assert.equal(outputType, "image/png");
+    assert.match(await input.text(), /^%PDF/);
+    return new FileBlob(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]), { type: outputType, metadata: { renderer: "mock-poppler" } });
+  },
+});
+assert.equal(pdfRendererSawInput, true);
+assert.equal(renderedPdfPng.type, "image/png");
+assert.equal(renderedPdfPng.metadata.renderSource, "pdf");
+const pdfSourceBlob = await pdf.render({ format: "pdf", source: "pdf" });
+assert.equal(pdfSourceBlob.type, "application/pdf");
+assert.match(await pdfSourceBlob.text(), /^%PDF/);
+assert.match(pdf.help("pdf.render").ndjson, /source: 'pdf'/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pdf`);
 await blob.save(out);
 const loaded = await PdfFile.importPdf(await FileBlob.load(out));
