@@ -267,7 +267,7 @@ assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /
 const dateBook = Workbook.create();
 const dateSheet = dateBook.worksheets.add("Dates");
 dateSheet.getRange("A1:A2").values = [[45292], [45299]];
-dateSheet.getRange("B1:B23").formulas = [
+dateSheet.getRange("B1:B32").formulas = [
   ["=DATE(1900,2,29)"],
   ["=YEAR(60)"],
   ["=MONTH(60)"],
@@ -291,13 +291,22 @@ dateSheet.getRange("B1:B23").formulas = [
   ["=YEAR(-1)"],
   ["=WEEKDAY(DATE(2024,1,1),9)"],
   ["=DATE(0,1,1)"],
+  ["=EDATE(60,1)"],
+  ["=EDATE(60,-1)"],
+  ["=EOMONTH(60,0)"],
+  ["=DAYS(61,59)"],
+  ["=WEEKDAY(61,1)"],
+  ["=WEEKDAY(DATE(2024,1,1),3)"],
+  ["=WEEKDAY(DATE(2024,1,1),12)"],
+  ["=NETWORKDAYS(DATE(2024,1,6),DATE(2024,1,7))"],
+  ["=NETWORKDAYS(DATE(2024,1,1),DATE(2024,1,2),\"bad\")"],
 ];
 dateBook.recalculate();
-assert.deepEqual(dateSheet.getRange("B1:B23").values.flat(), [60, 1900, 2, 29, 45351, 45658, 45291, 45351, 45351, 2, 2, 1, 5, 8, 7, -7, 45299, 45300, 45296, "#VALUE!", "#NUM!", "#NUM!", 1]);
+assert.deepEqual(dateSheet.getRange("B1:B32").values.flat(), [60, 1900, 2, 29, 45351, 45658, 45291, 45351, 45351, 2, 2, 1, 5, 8, 7, -7, 45299, 45300, 45296, "#VALUE!", "#NUM!", "#NUM!", 1, 89, 29, 60, 2, 5, 0, 7, 0, "#VALUE!"]);
 assert.match(dateBook.help("fx.DATE").ndjson, /serial-60 leap compatibility/);
 assert.match(dateBook.help("fx.NETWORKDAYS").ndjson, /optional holidays/);
 const dateRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(dateBook));
-assert.deepEqual(dateRoundtrip.worksheets.getItem("Dates").getRange("B1:B23").values, dateSheet.getRange("B1:B23").values);
+assert.deepEqual(dateRoundtrip.worksheets.getItem("Dates").getRange("B1:B32").values, dateSheet.getRange("B1:B32").values);
 
 const formulaEdgeBook = Workbook.create();
 const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");

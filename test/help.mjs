@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 184);
+assert.equal(HELP_CATALOG.length, 194);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
@@ -95,13 +95,15 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
 const formulaCatalog = HELP_CATALOG.filter((item) => item.name.startsWith("fx."));
-assert.equal(formulaCatalog.length, 69);
+assert.equal(formulaCatalog.length, 79);
 assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.formula?.required));
 assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.arguments?.type === "unknown[]"));
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.AND")?.schema?.returns?.value?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.FILTER")?.schema?.returns?.value?.type, "unknown[][]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.TEXTJOIN")?.schema?.returns?.value?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.LEN")?.schema?.returns?.value?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.DATE")?.schema?.returns?.value?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
 const sharedCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "shared");
 assert.equal(sharedCatalog.length, 10);
@@ -131,9 +133,10 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 103);
+assert.equal(workbookCatalog.length, 113);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.category, "date-time");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.validateResult?.type, "boolean");

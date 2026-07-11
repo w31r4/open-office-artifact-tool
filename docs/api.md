@@ -1594,7 +1594,12 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
 | `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
+| `fx.DATE` | formula | Return an Excel 1900-system date serial with year/month/day overflow and serial-60 leap compatibility. |
+| `fx.DAY` | formula | Return the day component of an Excel 1900-system serial date, including day 29 for compatibility serial 60. |
+| `fx.DAYS` | formula | Return the whole-day difference between two Excel date serials. |
 | `fx.DROP` | formula | Drop rows and optional columns from the start or end of an array and spill the remainder. |
+| `fx.EDATE` | formula | Shift a serial date by whole months and clamp the day to the target month end. |
+| `fx.EOMONTH` | formula | Return the final date serial of a month offset from a start date. |
 | `fx.EXPAND` | formula | Expand an array to requested row and column dimensions with optional padding. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
@@ -1621,7 +1626,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
 | `fx.MODE.SNGL` | formula | Return the most frequently occurring numeric value, or #N/A when no value repeats. |
+| `fx.MONTH` | formula | Return the month component of an Excel 1900-system serial date. |
 | `fx.NA` | formula | Return the #N/A error value to mark unavailable data explicitly. |
+| `fx.NETWORKDAYS` | formula | Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays. |
 | `fx.NOT` | formula | Reverse the truth value of a condition. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
@@ -1647,10 +1654,13 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
 | `fx.VSTACK` | formula | Append arrays vertically, padding narrower arrays with #N/A to the maximum column count. |
+| `fx.WEEKDAY` | formula | Return a weekday number for Excel return types 1, 2, 3, and 11 through 17. |
+| `fx.WORKDAY` | formula | Move forward or backward by working days while skipping weekends and optional holidays. |
 | `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
 | `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
+| `fx.YEAR` | formula | Return the year component of an Excel 1900-system serial date. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.format` | api | Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes. |
@@ -1892,6 +1902,57 @@ Count rows where multiple criteria ranges all match their criteria.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.DATE`
+
+Return an Excel 1900-system date serial with year/month/day overflow and serial-60 leap compatibility.
+
+**Examples:**
+
+- =DATE(2026,7,12)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DATE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.DAY`
+
+Return the day component of an Excel 1900-system serial date, including day 29 for compatibility serial 60.
+
+**Examples:**
+
+- =DAY(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DAY(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.DAYS`
+
+Return the whole-day difference between two Excel date serials.
+
+**Examples:**
+
+- =DAYS(B1,A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DAYS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.DROP`
 
 Drop rows and optional columns from the start or end of an array and spill the remainder.
@@ -1908,6 +1969,40 @@ Drop rows and optional columns from the start or end of an array and spill the r
 **Schema returns:**
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.EDATE`
+
+Shift a serial date by whole months and clamp the day to the target month end.
+
+**Examples:**
+
+- =EDATE(A1,3)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =EDATE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.EOMONTH`
+
+Return the final date serial of a month offset from a start date.
+
+**Examples:**
+
+- =EOMONTH(A1,0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =EOMONTH(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.EXPAND`
 
@@ -2351,6 +2446,23 @@ Return the most frequently occurring numeric value, or #N/A when no value repeat
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.MONTH`
+
+Return the month component of an Excel 1900-system serial date.
+
+**Examples:**
+
+- =MONTH(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MONTH(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.NA`
 
 Return the #N/A error value to mark unavailable data explicitly.
@@ -2367,6 +2479,23 @@ Return the #N/A error value to mark unavailable data explicitly.
 **Schema returns:**
 
 - `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.NETWORKDAYS`
+
+Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays.
+
+**Examples:**
+
+- =NETWORKDAYS(A1,B1,Holidays)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =NETWORKDAYS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.NOT`
 
@@ -2797,6 +2926,40 @@ Append arrays vertically, padding narrower arrays with #N/A to the maximum colum
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
 
+#### `fx.WEEKDAY`
+
+Return a weekday number for Excel return types 1, 2, 3, and 11 through 17.
+
+**Examples:**
+
+- =WEEKDAY(A1,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =WEEKDAY(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.WORKDAY`
+
+Move forward or backward by working days while skipping weekends and optional holidays.
+
+**Examples:**
+
+- =WORKDAY(A1,10,Holidays)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =WORKDAY(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.WRAPCOLS`
 
 Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed.
@@ -2859,6 +3022,23 @@ Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =XMATCH(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.YEAR`
+
+Return the year component of an Excel 1900-system serial date.
+
+**Examples:**
+
+- =YEAR(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =YEAR(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
