@@ -21,6 +21,9 @@ for (const required of [
   "skills/documents/SKILL.md",
   "skills/documents/scripts/verify-document.mjs",
   "skills/documents/fixtures/business-brief.json",
+  "skills/presentations/SKILL.md",
+  "skills/presentations/scripts/verify-presentation.mjs",
+  "skills/presentations/fixtures/agent-readiness.json",
 ]) {
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }

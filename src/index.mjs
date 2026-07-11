@@ -855,6 +855,18 @@ const HELP_DETAIL_OVERRIDES = {
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with metadata.patchedParts." } },
     },
   },
+  "PresentationFile.inspectPptx": {
+    examples: ["await PresentationFile.inspectPptx(pptx, { includeText: true, maxChars: 12000 })"],
+    schema: {
+      parameters: {
+        pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
+        includeText: { type: "boolean", description: "Include bounded XML, relationship, and JSON text previews." },
+        maxPreviewChars: { type: "number", description: "Maximum preview characters per textual package part." },
+        maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
+      },
+      returns: { package: { type: "object", description: "PPTX package and part records with paths, sizes, content types, and optional previews." } },
+    },
+  },
   "workbook.structuredReferences": {
     examples: ["=SUM(TasksTable[Revenue])", "=TEXTJOIN(\"|\",TRUE,TasksTable[#Headers])", "=SUM(TasksTable[[#Data],[Revenue]])", "=SUM(TasksTable[[#Data],[Revenue]:[Cost]])", "=TEXTJOIN(\"|\",TRUE,TasksTable[[#Data],[Region],[Code]])"],
     notes: ["Current clean-room subset supports #Headers/#Data/#All/#Totals sections, single-column selectors, contiguous column ranges, and comma-separated column unions; special escaping for headers containing brackets remains roadmap."],

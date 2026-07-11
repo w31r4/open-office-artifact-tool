@@ -212,6 +212,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 | `presentation.theme` | api | Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
+| `PresentationFile.inspectPptx` | api | Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -246,6 +247,57 @@ Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, 
 **Returns:**
 
 { ndjson, truncated } bounded NDJSON records
+
+#### `PresentationFile.inspectPptx`
+
+Inspect a PPTX zip package as bounded NDJSON part records with paths, sizes, content types, and optional XML/relationship previews.
+
+**Examples:**
+
+- await PresentationFile.inspectPptx(pptx, { includeText: true, maxChars: 12000 })
+
+**Schema parameters:**
+
+- `pptx` (FileBlob|Uint8Array) required — PPTX package bytes.
+- `includeText` (boolean) — Include bounded XML, relationship, and JSON text previews.
+- `maxPreviewChars` (number) — Maximum preview characters per textual package part.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `package` (object) — PPTX package and part records with paths, sizes, content types, and optional previews.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pptx": {
+      "type": "FileBlob|Uint8Array",
+      "required": true,
+      "description": "PPTX package bytes."
+    },
+    "includeText": {
+      "type": "boolean",
+      "description": "Include bounded XML, relationship, and JSON text previews."
+    },
+    "maxPreviewChars": {
+      "type": "number",
+      "description": "Maximum preview characters per textual package part."
+    },
+    "maxChars": {
+      "type": "number",
+      "description": "Maximum bounded NDJSON output size."
+    }
+  },
+  "returns": {
+    "package": {
+      "type": "object",
+      "description": "PPTX package and part records with paths, sizes, content types, and optional previews."
+    }
+  }
+}
+```
 
 ## shared
 

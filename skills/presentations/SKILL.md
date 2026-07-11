@@ -1,0 +1,117 @@
+---
+name: open-office-presentations
+description: Create, edit, inspect, render, baseline, and verify PPTX artifacts with open-office-artifact-tool and real LibreOffice/Poppler slide QA.
+---
+
+# Open Office Presentations
+
+Use this project skill for standalone `.pptx` artifact work. It is the clean-room Presentations workflow for `open-office-artifact-tool`; it calls the package's public facade and legally usable renderers only.
+
+## Contract
+
+- Never import or copy the reference package, runtime artifact, runtime module, or runtime bindings.
+- Preserve an imported deck's content, theme, layouts, notes, comments, and object intent unless the user requests a redesign.
+- Give each slide one narrative job and use audience-facing copy. Do not expose planning notes or production scaffolding on slides.
+- Keep titles at least 50px on covers and 35px on content slides, mid-level text at least 24px, and body text at least 16px unless an inherited template requires otherwise.
+- Use real tables, charts, images, connectors, notes, comments, themes, and layouts instead of flattening them into screenshots or visual imitations.
+- Add connectors before nodes in the visual stack and route them through whitespace; never let a connector cross a label or unrelated node.
+- Fix every unintended overlap, off-canvas element, clipping, and text overflow issue before delivery.
+- Do not deliver a PPTX until semantic/package checks and full-size review of every rendered slide pass. A montage is an overview, not a substitute for per-slide review.
+
+## Authoring workflow
+
+1. Create a `Presentation` or import an existing PPTX with `PresentationFile.importPptx`.
+2. Define the communication job and select a coherent theme/layout system before adding slides.
+3. Inspect the relevant slides, text ranges, tables, charts, images, notes, and comments before editing.
+4. Apply focused changes through public APIs and keep stable names on important objects.
+5. Run `presentation.verify()` and `presentation.validateLayout()`; fix every material issue.
+6. Export PPTX and import the exported file again.
+7. Inspect native package parts with `PresentationFile.inspectPptx()`.
+8. Render every modeled slide with Playwright and render the original PPTX through LibreOffice to PDF plus Poppler PNGs.
+9. Inspect every model and native slide image at full size. When a baseline is approved, compare PNG pixels on subsequent runs.
+
+```js
+import { Presentation, PresentationFile } from "open-office-artifact-tool";
+
+const deck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+deck.theme.setColors({ accent1: "#3D8DFF", bg1: "#FFFFFF", tx1: "#000000" });
+const slide = deck.slides.add({ name: "Evidence" });
+const title = slide.shapes.add({
+  name: "evidence-title",
+  position: { left: 42, top: 36, width: 1196, height: 80 },
+  fill: "transparent",
+  line: { fill: "transparent", width: 0 },
+  text: "Native PPTX parts preserve structure",
+});
+title.text.style = { fontFamily: "Arial", fontSize: 42, bold: true, color: "#000000" };
+slide.tables.add({
+  name: "evidence-table",
+  position: { left: 42, top: 180, width: 1196, height: 360 },
+  values: [["Gate", "Result"], ["Semantic", "Pass"], ["Visual", "Required"]],
+  styleOptions: { headerRow: true },
+});
+slide.addNotes("Explain why package and visual evidence are complementary.");
+
+await (await PresentationFile.exportPptx(deck)).save("evidence.pptx");
+```
+
+## Verification commands
+
+Verify any PPTX and write inspect/package/layout/model/native evidence:
+
+```sh
+node skills/presentations/scripts/verify-presentation.mjs \
+  --input evidence.pptx \
+  --output-dir tmp/presentation-qa \
+  --native-render required
+```
+
+Create an approved baseline:
+
+```sh
+node skills/presentations/scripts/verify-presentation.mjs \
+  --input evidence.pptx \
+  --output-dir tmp/presentation-baseline-run \
+  --baseline-dir tmp/presentation-baselines \
+  --write-baseline true \
+  --native-render required
+```
+
+Compare a later render against it:
+
+```sh
+node skills/presentations/scripts/verify-presentation.mjs \
+  --input evidence.pptx \
+  --output-dir tmp/presentation-compare-run \
+  --baseline-dir tmp/presentation-baselines \
+  --native-render required
+```
+
+Run the checked-in fixture end to end:
+
+```sh
+node skills/presentations/scripts/run-fixture.mjs \
+  --fixture skills/presentations/fixtures/agent-readiness.json \
+  --output-dir tmp/presentation-skill-fixture \
+  --native-render required
+```
+
+`--native-render auto` runs LibreOffice + Poppler when available and records a skip otherwise. Use `required` for final local delivery when those runtimes are installed, and `off` only for an explicitly documented structural-only check.
+
+## QA gates
+
+- `PresentationFile.inspectPptx(...)` proves required slide, chart, media, notes, comments, theme, master, and layout parts exist.
+- `presentation.inspect(...)` proves agent-facing objects and review metadata survived roundtrip.
+- `presentation.verify()` and `presentation.validateLayout()` catch structural, overlap, off-canvas, overflow, chart, table, image, placeholder, and dangling-comment issues.
+- Per-slide Playwright PNGs catch facade/render regressions; the montage checks deck flow only.
+- LibreOffice PDF plus Poppler slide PNGs are the native non-Windows render gate.
+- Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve baseline changes only after full-size review.
+- Microsoft Office native automation remains the higher-fidelity Windows gate for PowerPoint-specific behavior.
+- Deliver only the requested PPTX; previews, baselines, and QA reports are internal unless requested.
+
+## References
+
+- Generated public API catalog: `../../docs/api.md`
+- Current implementation coverage: `../../docs/coverage.md`
+- Fixture runner: `scripts/run-fixture.mjs`
+- Generic PPTX verifier: `scripts/verify-presentation.mjs`

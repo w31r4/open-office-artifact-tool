@@ -45,6 +45,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "createPlaywrightRenderer"))
 assert.ok(HELP_CATALOG.some((item) => item.name === "createSharpRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPopplerRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createLibreOfficeRenderer"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.inspectPptx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.options?.includes("include/fields"));
@@ -86,6 +87,7 @@ assert.match(helpArtifact("shared", "createPlaywrightRenderer").ndjson, /Playwri
 assert.match(helpArtifact("shared", "createSharpRenderer").ndjson, /sharp renderer adapter/);
 assert.match(helpArtifact("shared", "createPopplerRenderer").ndjson, /Poppler CLI renderer adapter/);
 assert.match(helpArtifact("shared", "createLibreOfficeRenderer").ndjson, /LibreOffice CLI renderer adapter/);
+assert.match(helpArtifact("presentation", "PresentationFile.inspectPptx").ndjson, /PPTX zip package/);
 assert.match(helpArtifact("shared", "createNativeOfficeRenderer").ndjson, /native Office renderer adapter/);
 assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /native Office bridge command/);
 assert.match(helpArtifact("shared", "pixelDiff").ndjson, /visualQaArtifact/);

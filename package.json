@@ -43,11 +43,12 @@
   "scripts": {
     "docs:api": "node scripts/generate-api-docs.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "test": "node test/spreadsheet.mjs && node test/spreadsheet-skill.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/document-skill.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/renderer-adapters.mjs && node test/playwright-renderer.mjs && node test/office-bridge.mjs && node test/examples.mjs && node test/release-check.mjs && node test/package-contents.mjs && node test/help.mjs",
+    "test": "node test/spreadsheet.mjs && node test/spreadsheet-skill.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/presentation-skill.mjs && node test/document.mjs && node test/document-skill.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/renderer-adapters.mjs && node test/playwright-renderer.mjs && node test/office-bridge.mjs && node test/examples.mjs && node test/release-check.mjs && node test/package-contents.mjs && node test/help.mjs",
     "test:spreadsheet": "node test/spreadsheet.mjs",
     "test:skill:spreadsheets": "node test/spreadsheet-skill.mjs",
     "test:presentation": "node test/presentation.mjs",
     "test:presentation-jsx": "node test/presentation-jsx.mjs",
+    "test:skill:presentations": "node test/presentation-skill.mjs",
     "test:document": "node test/document.mjs",
     "test:skill:documents": "node test/document-skill.mjs",
     "test:pdf": "node test/pdf.mjs",
