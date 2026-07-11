@@ -13,7 +13,7 @@ The goal is not to vendor or copy agent's reference bundle. This package rebuild
 
 ## Current status
 
-This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The spreadsheet facade includes formula traces plus comments/data-validation/conditional-formatting/table/chart/image/sparkline metadata roundtrips, native XLSX table/chart/image/sparkline/threaded-comment XML parts, and SVG visual previews. The presentation facade includes compose/JSX layout, inspectable shape/table/chart/image objects, native PPTX table/chart/image XML export plus clean-room native import restoration, and a geometry-based layout QA detector for overlap/off-canvas/overflow checks. The document facade includes styled paragraphs, real list items, headers/footers, hyperlinks, fields, citations, images, sections, tracked insertions/deletions, tables, comments, DOCX styles/numbering/header/footer/hyperlink/comment/image/section/tracked-change export, and SVG page previews. The PDF facade includes modeled multi-page text/table/image artifacts, `extractText`, `extractTables`, SVG page render, and metadata roundtrips. Cross-format `verifyArtifact(...)` and `renderArtifact(...)` helpers provide agent-style QA and preview entry points, including pluggable raster renderer adapters for PNG/WebP/JPEG/PDF conversion. Fidelity, advanced OOXML, built-in high-quality raster rendering, and template QA are roadmap work.
+This is an early MVP. It already creates and imports minimal XLSX/PPTX/DOCX/PDF artifacts, supports stable inspect IDs, and includes tests for all four skill families. The spreadsheet facade includes formula traces plus comments/data-validation/conditional-formatting/table/chart/image/sparkline metadata roundtrips, native XLSX table/chart/image/sparkline/threaded-comment XML parts, and SVG visual previews. The presentation facade includes compose/JSX layout, inspectable shape/table/chart/image objects, native PPTX table/chart/image XML export plus clean-room native import restoration, and a geometry-based layout QA detector for overlap/off-canvas/overflow checks. The document facade includes styled paragraphs, real list items, headers/footers, hyperlinks, fields, citations, images, sections, tracked insertions/deletions, tables, comments, DOCX styles/numbering/header/footer/hyperlink/comment/image/section/tracked-change export, and SVG page previews. The PDF facade includes modeled multi-page text/table/image artifacts, `extractText`, `extractTables`, SVG page render, and metadata roundtrips. Cross-format `verifyArtifact(...)` and `renderArtifact(...)` helpers provide agent-style QA and preview entry points, including pluggable raster renderer adapters for PNG/WebP/JPEG/PDF conversion and an optional Playwright adapter for deterministic SVG/HTML raster/PDF output. Fidelity, advanced OOXML, native Office bridge support, robust arbitrary-PDF parsing, and template QA are roadmap work.
 
 ## Usage
 
@@ -73,6 +73,32 @@ const tree = jsxs(Fragment, {
 slide.compose(tree, { frame: { left: 80, top: 120, width: 720, height: 180 } });
 ```
 
+## Renderer adapters
+
+`renderArtifact(artifact, { format })` returns the artifact's native SVG preview by default. Raster/PDF formats must be supplied by an explicit adapter so the package never pretends to support PNG/WebP/PDF output without a renderer.
+
+```js
+import { DocumentModel, renderArtifact } from "open-office-artifact-tool";
+import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
+
+const document = DocumentModel.create({ paragraphs: ["Raster-ready report"] });
+const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 });
+
+const png = await renderArtifact(document, { format: "png", renderer });
+const webp = await renderArtifact(document, { format: "webp", renderer });
+const pdf = await renderArtifact(document, { format: "pdf", renderer });
+```
+
+The Playwright adapter is an optional peer dependency to keep the core npm package light:
+
+```sh
+npm install -D playwright
+npx playwright install chromium
+npm run test:playwright-renderer
+```
+
+It accepts SVG or HTML `FileBlob` input, fixes viewport/device scale/timezone/locale, waits for font readiness, disables animations, and blocks network requests by default. Set `allowNetwork: true` only for explicitly trusted local HTML previews.
+
 ## Design notes
 
 The package deliberately prioritizes agent workflows:
@@ -88,5 +114,6 @@ The package deliberately prioritizes agent workflows:
 ```sh
 npm install
 npm test
+npm run test:playwright-renderer # skips unless Playwright/Chromium are installed
 npm run test:pack
 ```

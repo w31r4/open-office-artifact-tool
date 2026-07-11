@@ -17,7 +17,8 @@
     ".": "./src/index.mjs",
     "./presentation-jsx": "./src/presentation-jsx/index.mjs",
     "./presentation-jsx/jsx-runtime": "./src/presentation-jsx/jsx-runtime.mjs",
-    "./presentation-jsx/jsx-dev-runtime": "./src/presentation-jsx/jsx-dev-runtime.mjs"
+    "./presentation-jsx/jsx-dev-runtime": "./src/presentation-jsx/jsx-dev-runtime.mjs",
+    "./renderers/playwright": "./src/renderers/playwright.mjs"
   },
   "files": [
     "src/**",
@@ -28,7 +29,7 @@
   ],
   "scripts": {
     "docs:api": "node scripts/generate-api-docs.mjs",
-    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/help.mjs",
+    "test": "node test/spreadsheet.mjs && node test/presentation.mjs && node test/presentation-jsx.mjs && node test/document.mjs && node test/pdf.mjs && node test/verify.mjs && node test/render.mjs && node test/playwright-renderer.mjs && node test/help.mjs",
     "test:spreadsheet": "node test/spreadsheet.mjs",
     "test:presentation": "node test/presentation.mjs",
     "test:presentation-jsx": "node test/presentation-jsx.mjs",
@@ -36,10 +37,19 @@
     "test:pdf": "node test/pdf.mjs",
     "test:verify": "node test/verify.mjs",
     "test:render": "node test/render.mjs",
+    "test:playwright-renderer": "node test/playwright-renderer.mjs",
     "test:help": "node test/help.mjs",
     "test:pack": "npm pack --dry-run"
   },
   "dependencies": {
     "jszip": "^3.10.1"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
   }
 }
