@@ -710,7 +710,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, or fall back to heuristic visible-text/table extraction." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter from open-office-artifact-tool/pdf/pdfjs to extract page geometry, positioned text, heuristic tables, and image placeholders." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
@@ -6272,10 +6272,11 @@ class PdfTable {
     this.name = config.name || "";
     this.values = (config.values || [[]]).map((row) => [...row]);
     this.bbox = config.bbox || [72, 140, 468, Math.max(24, this.values.length * 24)];
+    this.source = config.source;
   }
 
-  inspectRecord(pageIndex) { return { kind: "table", id: this.id, page: pageIndex + 1, name: this.name || undefined, rows: this.values.length, cols: Math.max(0, ...this.values.map((row) => row.length)), bbox: this.bbox, values: this.values }; }
-  toJSON() { return { id: this.id, name: this.name, values: this.values, bbox: this.bbox }; }
+  inspectRecord(pageIndex) { return { kind: "table", id: this.id, page: pageIndex + 1, name: this.name || undefined, rows: this.values.length, cols: Math.max(0, ...this.values.map((row) => row.length)), bbox: this.bbox, values: this.values, source: this.source || undefined }; }
+  toJSON() { return { id: this.id, name: this.name, values: this.values, bbox: this.bbox, source: this.source }; }
 }
 
 class PdfImage {
@@ -6543,7 +6544,7 @@ export class PdfArtifact {
           text: { kind: "text", id: `${page.id}/text`, page: pageNumber, text: page.text, textChars: page.text.length, bbox: [0, 0, page.width, page.height] },
           textItems: page.textItems.map((item) => ({ kind: "textItem", page: pageNumber, ...item })),
           regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
-          tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, bbox: table.bbox })),
+          tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, bbox: table.bbox, source: table.source || undefined })),
           images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt })),
           charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
         };
@@ -6599,6 +6600,58 @@ function pdfImageDataUrl(image = {}) {
   }
 }
 
+function pdfTextItemText(item = {}) {
+  return String(item.text ?? item.str ?? item.value ?? "").trim();
+}
+
+function pdfTextItemBBox(item = {}) {
+  const bbox = item.bbox || item.bounds || item.rect;
+  if (Array.isArray(bbox) && bbox.length >= 4) return bbox.slice(0, 4).map(Number);
+  return [Number(item.x || item.left || 0), Number(item.y ?? item.top ?? 0), Number(item.width || 0), Number(item.height || 0)];
+}
+
+function pdfBboxForTextItems(items = []) {
+  const boxes = items.map((item) => item.bbox || pdfTextItemBBox(item)).filter((bbox) => bbox.every(Number.isFinite));
+  if (!boxes.length) return [0, 0, 0, 0];
+  const left = Math.min(...boxes.map((bbox) => bbox[0]));
+  const top = Math.min(...boxes.map((bbox) => bbox[1]));
+  const right = Math.max(...boxes.map((bbox) => bbox[0] + Math.max(0, bbox[2])));
+  const bottom = Math.max(...boxes.map((bbox) => bbox[1] + Math.max(0, bbox[3])));
+  return [left, top, Math.max(1, right - left), Math.max(1, bottom - top)];
+}
+
+function medianNumber(values = []) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function reconstructPdfTablesFromTextGeometry(page = {}, pageIndex = 0) {
+  const rawItems = page.textItems || page.items || [];
+  const items = rawItems.map((item, index) => ({ id: item.id || `txt/${pageIndex + 1}/${index + 1}`, text: pdfTextItemText(item), bbox: pdfTextItemBBox(item) })).filter((item) => item.text && item.bbox.every(Number.isFinite));
+  if (items.length < 4) return [];
+  const rowTolerance = Number(page.tableRowTolerance || 6);
+  const rows = [];
+  for (const item of items.sort((a, b) => (a.bbox[1] - b.bbox[1]) || (a.bbox[0] - b.bbox[0]))) {
+    const centerY = item.bbox[1] + item.bbox[3] / 2;
+    let row = rows.find((candidate) => Math.abs(candidate.centerY - centerY) <= rowTolerance);
+    if (!row) { row = { centerY, items: [] }; rows.push(row); }
+    row.items.push(item);
+    row.centerY = medianNumber(row.items.map((entry) => entry.bbox[1] + entry.bbox[3] / 2));
+  }
+  const candidateRows = rows.map((row) => ({ ...row, items: row.items.sort((a, b) => a.bbox[0] - b.bbox[0]) })).filter((row) => row.items.length >= 2);
+  if (candidateRows.length < 2) return [];
+  const counts = new Map();
+  for (const row of candidateRows) counts.set(row.items.length, (counts.get(row.items.length) || 0) + 1);
+  const [columnCount, rowCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || [0, 0];
+  if (columnCount < 2 || rowCount < 2) return [];
+  const tableRows = candidateRows.filter((row) => row.items.length === columnCount);
+  const columns = Array.from({ length: columnCount }, (_, col) => medianNumber(tableRows.map((row) => row.items[col]?.bbox[0])));
+  const aligned = tableRows.every((row) => row.items.every((item, col) => Math.abs(item.bbox[0] - columns[col]) <= Math.max(16, item.bbox[2] * 0.4)));
+  if (!aligned) return [];
+  return [{ name: `geometry-table-${pageIndex + 1}`, values: tableRows.map((row) => row.items.map((item) => item.text)), bbox: pdfBboxForTextItems(tableRows.flatMap((row) => row.items)), source: "textGeometry" }];
+}
+
 function pdfArtifactFromParserOutput(parsed, metadata = {}) {
   if (parsed instanceof PdfArtifact) {
     parsed.metadata = { ...(parsed.metadata || {}), ...metadata };
@@ -6612,7 +6665,7 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     height: Number(page.height || page.pageHeight || page.geometry?.height || 792),
     textItems: page.textItems || page.items || [],
     regions: page.regions || [],
-    tables: (page.tables || []).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96] })),
+    tables: ((page.tables || []).length ? (page.tables || []) : reconstructPdfTablesFromTextGeometry(page, index)).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96], source: table.source })),
     images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120] })),
     charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
   }));

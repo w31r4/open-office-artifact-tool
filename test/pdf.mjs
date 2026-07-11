@@ -180,6 +180,34 @@ assert.equal(parsedImageLayout.pages[0].images[0].hasDataUrl, true);
 assert.match(parsed.help("PdfFile.importPdf").ndjson, /image bytes/);
 assert.match(parsed.help("pdf.resolve").ndjson, /stable PDF artifact IDs/);
 assert.equal(parsed.verify().ok, true);
+
+const geometryParsed = await PdfFile.importPdf(new FileBlob(new Uint8Array([0x25, 0x50, 0x44, 0x46]), { type: "application/pdf" }), {
+  parserName: "geometry-parser",
+  parser: async () => ({
+    parser: "geometry-parser",
+    pages: [{
+      width: 320,
+      height: 220,
+      text: "Metric Value\nRevenue 12\nRetention 94%",
+      textItems: [
+        { text: "Metric", bbox: [24, 40, 42, 12] },
+        { text: "Value", bbox: [150, 40, 38, 12] },
+        { text: "Revenue", bbox: [24, 62, 54, 12] },
+        { text: "12", bbox: [150, 62, 16, 12] },
+        { text: "Retention", bbox: [24, 84, 62, 12] },
+        { text: "94%", bbox: [150, 84, 24, 12] },
+      ],
+    }],
+  }),
+});
+const geometryTables = geometryParsed.extractTables();
+assert.equal(geometryTables.length, 1);
+assert.deepEqual(geometryTables[0].values, [["Metric", "Value"], ["Revenue", "12"], ["Retention", "94%"]]);
+assert.equal(geometryTables[0].name, "geometry-table-1");
+const geometryInspect = geometryParsed.inspect({ kind: "table", maxChars: 8000 }).ndjson;
+assert.match(geometryInspect, /textGeometry/);
+assert.match(geometryParsed.help("PdfFile.importPdf").ndjson, /positioned text geometry/);
+
 const badGeometryPdf = PdfArtifact.create({
   pages: [{
     width: 100,
