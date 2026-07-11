@@ -119,8 +119,9 @@ Apply safe in-package DOCX XML/JSON/binary patches with path traversal validatio
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts. |
 | `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
-| `PdfFile.exportPdf` | api | Export a modeled PDF artifact to a minimal PDF with visible text/table rows and embedded clean-room metadata. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page PDF with positioned text, vector tables/charts, embedded PNG images, and clean-room metadata. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity. |
 
 ### pdf details
 
@@ -192,6 +193,52 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
     "pdf": {
       "type": "PdfArtifact",
       "description": "Modeled PDF artifact with inspect/resolve/render/verify APIs."
+    }
+  }
+}
+```
+
+#### `PdfFile.inspectPdf`
+
+Inspect PDF bytes as bounded file/object records including version, byte size, page/object counts, embedded clean-room model presence, and EOF integrity.
+
+**Examples:**
+
+- await PdfFile.inspectPdf(pdf, { maxObjects: 200, maxChars: 12000 })
+
+**Schema parameters:**
+
+- `pdf` (FileBlob|Uint8Array) required — PDF file bytes.
+- `maxObjects` (number) — Maximum indirect object records to inspect.
+- `maxChars` (number) — Maximum bounded NDJSON output size.
+
+**Schema returns:**
+
+- `inspection` (object) — PDF file summary plus bounded indirect object records.
+
+**Schema:**
+
+```json
+{
+  "parameters": {
+    "pdf": {
+      "type": "FileBlob|Uint8Array",
+      "required": true,
+      "description": "PDF file bytes."
+    },
+    "maxObjects": {
+      "type": "number",
+      "description": "Maximum indirect object records to inspect."
+    },
+    "maxChars": {
+      "type": "number",
+      "description": "Maximum bounded NDJSON output size."
+    }
+  },
+  "returns": {
+    "inspection": {
+      "type": "object",
+      "description": "PDF file summary plus bounded indirect object records."
     }
   }
 }

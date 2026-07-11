@@ -1,0 +1,179 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import {
+  FileBlob,
+  PdfArtifact,
+  PdfFile,
+  verifyArtifact,
+  visualQaArtifact,
+} from "open-office-artifact-tool";
+import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
+import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
+import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+
+const PDF_MIME = "application/pdf";
+
+function commandExists(command) {
+  const result = spawnSync(process.platform === "win32" ? "where" : "which", [command], { encoding: "utf8", shell: false });
+  return result.status === 0;
+}
+
+export function nativePdfRenderStatus() {
+  const commands = { pdftoppm: commandExists("pdftoppm"), pdfinfo: commandExists("pdfinfo") };
+  return { available: Object.values(commands).every(Boolean), commands };
+}
+
+export function createPdfFromFixture(fixture = {}) {
+  const pdf = PdfArtifact.create({ metadata: { fixture: fixture.name || "pdf-fixture", ...(fixture.metadata || {}) }, pages: fixture.pages || [] });
+  const inspectKind = fixture.qa?.inspectKind || "page,text,textItem,region,table,image,chart";
+  for (const expected of fixture.expectInspect || []) assert.match(pdf.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));
+  return pdf;
+}
+
+function pdfInfo(pdfPath) {
+  const result = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8", shell: false });
+  if (result.status !== 0) throw new Error(`pdfinfo failed for ${pdfPath}: ${result.stderr || result.stdout}`);
+  const pages = Number(/^Pages:\s+(\d+)/m.exec(result.stdout)?.[1]);
+  if (!Number.isInteger(pages) || pages < 1) throw new Error(`pdfinfo did not report a valid page count for ${pdfPath}.`);
+  return { pages, text: result.stdout };
+}
+
+async function optionalBaseline(baselinePath) {
+  if (!baselinePath) return undefined;
+  try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
+}
+
+async function runPngQa(artifact, options = {}) {
+  const baseline = options.writeBaseline ? undefined : await optionalBaseline(options.baselinePath);
+  const qa = await visualQaArtifact(artifact, {
+    ...options.renderOptions,
+    format: "png",
+    renderer: options.renderer,
+    baseline,
+    pixelDiff: Boolean(baseline),
+    pixelThreshold: options.pixelThreshold ?? 0,
+    minBytes: options.minBytes ?? 100,
+    maxChars: options.maxChars ?? 20_000,
+  });
+  if (options.writeBaseline && options.baselinePath) {
+    await fs.mkdir(path.dirname(options.baselinePath), { recursive: true });
+    await qa.blob.save(options.baselinePath);
+  }
+  return qa;
+}
+
+async function renderModelPages(pdf, outputDir, options = {}) {
+  const pagesDir = path.join(outputDir, "model-pages");
+  const layoutsDir = path.join(outputDir, "layouts");
+  await Promise.all([fs.mkdir(pagesDir, { recursive: true }), fs.mkdir(layoutsDir, { recursive: true })]);
+  const renderer = createPlaywrightRenderer({ viewport: options.viewport || { width: 900, height: 1100 }, deviceScaleFactor: options.deviceScaleFactor ?? 1, timeout: options.timeout ?? 30_000 });
+  const pages = [];
+  const qaLines = [];
+  for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
+    const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-page-${pageIndex + 1}.png`) : undefined;
+    const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
+    const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
+    const layoutPath = path.join(layoutsDir, `page-${pageIndex + 1}.json`);
+    await Promise.all([qa.blob.save(pagePath), fs.writeFile(layoutPath, await (await pdf.render({ format: "layout", pageIndex })).text(), "utf8")]);
+    qaLines.push(qa.ndjson);
+    pages.push({ page: pageIndex + 1, path: pagePath, layoutPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+  }
+  const qaPath = path.join(outputDir, "model-visual-qa.ndjson");
+  await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
+  return { status: "passed", pages, qaPath };
+}
+
+async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, options = {}) {
+  const info = pdfInfo(pdfPath);
+  if (info.pages !== expectedPages) throw new Error(`PDF reports ${info.pages} pages for ${expectedPages} modeled pages.`);
+  const pagesDir = path.join(outputDir, "native-pages");
+  await fs.mkdir(pagesDir, { recursive: true });
+  const renderer = createPopplerRenderer({ dpi: options.dpi ?? 144, timeoutMs: options.nativeTimeout ?? 60_000 });
+  const pages = [];
+  const qaLines = [];
+  for (let pageIndex = 0; pageIndex < info.pages; pageIndex += 1) {
+    const png = await renderer({ input: pdfBlob, inputType: PDF_MIME, outputType: "image/png", format: "png", artifactKind: "pdf", pageIndex });
+    const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
+    const baselinePath = options.baselineDir ? path.join(options.baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
+    const qa = await runPngQa({ render: () => png }, { baselinePath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, minBytes: options.minBytes, maxChars: options.maxChars });
+    await png.save(pagePath);
+    qaLines.push(qa.ndjson);
+    pages.push({ page: pageIndex + 1, path: pagePath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+  }
+  const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
+  const infoPath = path.join(outputDir, "pdfinfo.txt");
+  await Promise.all([fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8"), fs.writeFile(infoPath, info.text, "utf8")]);
+  return { status: "passed", pageCount: info.pages, pages, qaPath, infoPath };
+}
+
+async function parseWithPdfjs(pdfBlob, expectedPages, outputDir, options = {}) {
+  const requested = String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase();
+  if (requested === "off" || requested === "false") return { status: "skipped", reason: "PDF.js parsing disabled" };
+  try {
+    const parsed = await PdfFile.importPdf(pdfBlob, { parser: createPdfjsParser(), preferParser: true, parserName: "pdfjs" });
+    if (parsed.pages.length !== expectedPages) throw new Error(`PDF.js parsed ${parsed.pages.length} pages for ${expectedPages} modeled pages.`);
+    const verify = verifyArtifact(parsed, { maxChars: options.maxChars ?? 30_000 });
+    const inspect = parsed.inspect({ kind: "page,text,textItem,region,table,image,chart", maxChars: options.maxChars ?? 30_000 });
+    const text = parsed.extractText();
+    const tables = parsed.extractTables();
+    const paths = { inspect: path.join(outputDir, "pdfjs-inspect.ndjson"), verify: path.join(outputDir, "pdfjs-verify.ndjson"), text: path.join(outputDir, "pdfjs-text.txt"), tables: path.join(outputDir, "pdfjs-tables.json") };
+    await Promise.all([fs.writeFile(paths.inspect, inspect.ndjson, "utf8"), fs.writeFile(paths.verify, `${verify.ndjson}\n`, "utf8"), fs.writeFile(paths.text, text, "utf8"), fs.writeFile(paths.tables, `${JSON.stringify(tables, null, 2)}\n`, "utf8")]);
+    if (!verify.ok) throw new Error(`PDF.js parsed model failed verification. See ${paths.verify}`);
+    return { status: "passed", pdf: parsed, verify, inspect, text, tables, paths };
+  } catch (error) {
+    if (requested === "required" || requested === "true") throw error;
+    return { status: "skipped", reason: error.message };
+  }
+}
+
+export async function verifyPdfFile(inputPath, options = {}) {
+  const absoluteInput = path.resolve(inputPath);
+  const outputDir = path.resolve(options.outputDir || path.join(path.dirname(absoluteInput), `${path.basename(absoluteInput, path.extname(absoluteInput))}-qa`));
+  await fs.mkdir(outputDir, { recursive: true });
+  const loaded = await FileBlob.load(absoluteInput);
+  const pdfBlob = new FileBlob(loaded.bytes, { type: PDF_MIME, name: path.basename(absoluteInput) });
+  const pdf = await PdfFile.importPdf(pdfBlob);
+  const maxChars = options.maxChars ?? 30_000;
+  const inspect = pdf.inspect({ kind: options.inspectKind || "page,text,textItem,region,table,image,chart", maxChars });
+  const fileInspect = await PdfFile.inspectPdf(pdfBlob, { maxObjects: options.maxObjects, maxChars });
+  const verify = verifyArtifact(pdf, { maxChars });
+  const extractedText = pdf.extractText();
+  const extractedTables = pdf.extractTables();
+  const baselineDir = options.baselineDir ? path.resolve(options.baselineDir) : undefined;
+  const modelRender = await renderModelPages(pdf, outputDir, { ...options, maxChars, baselineDir });
+  const paths = { inspect: path.join(outputDir, "inspect.ndjson"), fileInspect: path.join(outputDir, "file-inspect.ndjson"), verify: path.join(outputDir, "verify.ndjson"), text: path.join(outputDir, "text.txt"), tables: path.join(outputDir, "tables.json"), summary: path.join(outputDir, "summary.json") };
+  await Promise.all([fs.writeFile(paths.inspect, inspect.ndjson, "utf8"), fs.writeFile(paths.fileInspect, fileInspect.ndjson, "utf8"), fs.writeFile(paths.verify, `${verify.ndjson}\n`, "utf8"), fs.writeFile(paths.text, extractedText, "utf8"), fs.writeFile(paths.tables, `${JSON.stringify(extractedTables, null, 2)}\n`, "utf8")]);
+
+  const nativeStatus = nativePdfRenderStatus();
+  const requestedNative = String(options.nativeRender ?? "auto").toLowerCase();
+  let nativeRender = { status: "skipped", reason: "native render disabled" };
+  if (requestedNative !== "off" && requestedNative !== "false") {
+    if (nativeStatus.available) nativeRender = await renderNativePages(pdfBlob, absoluteInput, outputDir, pdf.pages.length, { ...options, maxChars, baselineDir });
+    else if (requestedNative === "required" || requestedNative === "true") throw new Error(`Native PDF render requires pdftoppm and pdfinfo: ${JSON.stringify(nativeStatus.commands)}`);
+    else nativeRender = { status: "skipped", reason: "Poppler commands unavailable", commands: nativeStatus.commands };
+  }
+  const pdfjs = await parseWithPdfjs(pdfBlob, pdf.pages.length, outputDir, { ...options, maxChars });
+  const summary = { input: absoluteInput, outputDir, pages: pdf.pages.length, verifyOk: verify.ok, file: fileInspect.summary, extractedTextChars: extractedText.length, extractedTables: extractedTables.length, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, pdfjs: { status: pdfjs.status, reason: pdfjs.reason, pages: pdfjs.pdf?.pages.length, textChars: pdfjs.text?.length, tables: pdfjs.tables?.length, paths: pdfjs.paths }, files: paths };
+  await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  const visualFailed = modelRender.pages.some((page) => !page.ok) || (nativeRender.status === "passed" && nativeRender.pages.some((page) => !page.ok));
+  const parserFailed = (String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "required" || String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "true") && pdfjs.status !== "passed";
+  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}. See ${outputDir}`);
+  return { pdf, inspect, fileInspect, verify, extractedText, extractedTables, modelRender, nativeRender, pdfjs, summary };
+}
+
+export async function runPdfFixture(fixturePath, options = {}) {
+  const absoluteFixture = path.resolve(fixturePath);
+  const fixture = JSON.parse(await fs.readFile(absoluteFixture, "utf8"));
+  const outputDir = path.resolve(options.outputDir || path.join("tmp", "pdf-skill", fixture.name || "fixture"));
+  await fs.mkdir(outputDir, { recursive: true });
+  const pdf = createPdfFromFixture(fixture);
+  const pdfPath = path.join(outputDir, fixture.outputName || `${fixture.name || "artifact"}.pdf`);
+  await (await PdfFile.exportPdf(pdf)).save(pdfPath);
+  const qa = await verifyPdfFile(pdfPath, { outputDir: path.join(outputDir, "qa"), nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto", pdfjs: options.pdfjs ?? fixture.qa?.pdfjs ?? "auto", baselineDir: options.baselineDir, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, inspectKind: fixture.qa?.inspectKind, maxChars: fixture.qa?.maxChars });
+  for (const expected of fixture.expectText || []) assert.match(qa.extractedText, new RegExp(expected));
+  for (const expected of fixture.expectPdfjsText || []) if (qa.pdfjs.status === "passed") assert.match(qa.pdfjs.text, new RegExp(expected));
+  return { fixture, pdfPath, qa };
+}
