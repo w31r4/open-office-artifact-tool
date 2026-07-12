@@ -30,7 +30,7 @@ The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotn
 
 GitHub CI and the manual release workflow install Playwright Chromium, LibreOffice Writer/Calc/Impress, Poppler, and .NET 8 before running these gates. Their environment-probe step is required, so hosted runs exercise real browser and native render branches instead of silently accepting skips.
 
-`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, spreadsheet Pivot aggregation/filter/formula/OOXML modules, and third-party notices while rejecting reference reference/handoff material and local dotnet `bin/obj` build output. The current 75-file unpacked package is 1,418,435 bytes (about 1.418 MB) and must remain below the deliberately tight 1.424 MB gate, which still catches accidentally bundled fonts, references, fixtures outside the published skills, and build artifacts while allowing the split Pivot filter/formula modules and their published QA contract.
+`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, spreadsheet Pivot date/group/filter/formula/aggregation/OOXML modules, and third-party notices while rejecting reference reference/handoff material and local dotnet `bin/obj` build output. The current 77-file unpacked package is 1,433,637 bytes (about 1.434 MB) and must remain below the deliberately tight 1.439 MB gate, which still catches accidentally bundled fonts, references, fixtures outside the published skills, and build artifacts while allowing the separated Pivot date/group decisions and their published QA contract.
 
 ## Latest observed blockers in this environment
 

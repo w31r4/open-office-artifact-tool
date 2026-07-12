@@ -1,5 +1,7 @@
 import { pivotFormulaToOoxml } from "./pivot-formulas.mjs";
 import { PIVOT_DATE_FILTER_TYPES, pivotItemVisible } from "./pivot-filters.mjs";
+import { pivotDateKey } from "./pivot-dates.mjs";
+import { pivotGroupItems } from "./pivot-groups.mjs";
 import { pivotValueLabel } from "./pivots.mjs";
 
 function decodeXml(value) {
@@ -60,6 +62,12 @@ function sharedItems(cacheFieldXml) {
   return [...shared.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:s|n|b|d|e|m)\b[^>]*\/?\s*>/g)].map((match) => parseSharedItem(match[0]));
 }
 
+function cacheFieldItems(cacheFieldXml) {
+  const shared = sharedItems(cacheFieldXml);
+  if (shared.length) return shared;
+  return elements(body(cacheFieldXml, "groupItems"), "s").map((item) => attributes(item.opening).v).filter((item) => item != null);
+}
+
 export function parseWorkbookPivotCaches(xml = "") {
   const block = body(xml, "pivotCaches");
   return [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?pivotCache\b[^>]*\/?>/g)].map((match) => {
@@ -75,6 +83,33 @@ export function parsePivotCacheDefinition(xml = "") {
   const fieldEntries = elements(cacheFields, "cacheField");
   const fieldAttributes = fieldEntries.map((entry, index) => ({ ...attributes(entry.opening), name: attributes(entry.opening).name || `Field${index + 1}` }));
   const fields = fieldAttributes.map((entry) => entry.name);
+  const groupFields = fieldEntries.flatMap((entry, index) => {
+    const groupOpening = tag(entry.xml, "fieldGroup");
+    const rangeOpening = tag(entry.xml, "rangePr");
+    if (!groupOpening || !rangeOpening) return [];
+    const groupAttrs = attributes(groupOpening);
+    const rangeAttrs = attributes(rangeOpening);
+    const base = Number(groupAttrs.base);
+    const parent = Number(groupAttrs.par);
+    if (!Number.isInteger(base) || base < 0 || base >= fields.length || !rangeAttrs.groupBy) return [];
+    return [{
+      name: fields[index],
+      sourceField: fields[base],
+      groupBy: rangeAttrs.groupBy,
+      parent: Number.isInteger(parent) && parent >= 0 && parent < fields.length ? fields[parent] : undefined,
+      items: elements(body(entry.xml, "groupItems"), "s").map((item) => attributes(item.opening).v).filter((item) => item != null),
+      range: {
+        autoStart: booleanAttribute(rangeAttrs.autoStart, true),
+        autoEnd: booleanAttribute(rangeAttrs.autoEnd, true),
+        startDate: rangeAttrs.startDate,
+        endDate: rangeAttrs.endDate,
+        startNum: rangeAttrs.startNum == null ? undefined : Number(rangeAttrs.startNum),
+        endNum: rangeAttrs.endNum == null ? undefined : Number(rangeAttrs.endNum),
+        groupInterval: rangeAttrs.groupInterval == null ? undefined : Number(rangeAttrs.groupInterval),
+      },
+    }];
+  });
+  const groupFieldNames = new Set(groupFields.map((field) => field.name));
   return {
     source: {
       sheet: sourceAttrs.sheet,
@@ -83,9 +118,10 @@ export function parsePivotCacheDefinition(xml = "") {
       relationshipId: relationshipId(sourceAttrs),
     },
     fields,
-    sourceFields: fieldAttributes.filter((entry) => entry.formula == null && booleanAttribute(entry.databaseField, true)).map((entry) => entry.name),
+    sourceFields: fieldAttributes.filter((entry) => entry.formula == null && !groupFieldNames.has(entry.name) && booleanAttribute(entry.databaseField, true)).map((entry) => entry.name),
+    groupFields,
     calculatedFields: fieldAttributes.filter((entry) => entry.formula != null).map((entry) => ({ name: entry.name, formula: entry.formula, numFmtId: Number(entry.numFmtId || 0) })),
-    items: fieldEntries.map((entry) => sharedItems(entry.xml)),
+    items: fieldEntries.map((entry) => cacheFieldItems(entry.xml)),
     refreshPolicy: {
       refreshOnLoad: booleanAttribute(rootAttrs.refreshOnLoad, false),
       saveData: booleanAttribute(rootAttrs.saveData, true),
@@ -165,8 +201,10 @@ function uniqueValues(values = []) {
   });
 }
 
-function cacheItemXml(value) {
+function cacheItemXml(value, dateSystem = "1900", asDate = false) {
   if (value == null || value === "") return "<m/>";
+  const date = asDate ? pivotDateKey(value, dateSystem) : undefined;
+  if (date) return `<d v="${date}T00:00:00"/>`;
   if (typeof value === "number" && Number.isFinite(value)) return `<n v="${value}"/>`;
   if (typeof value === "boolean") return `<b v="${value ? 1 : 0}"/>`;
   return `<s v="${attrEscape(value)}"/>`;
@@ -177,42 +215,68 @@ function pivotSourceHeaders(pivot) {
 }
 
 function pivotAllFields(pivot) {
-  return [...pivotSourceHeaders(pivot), ...(pivot.calculatedFields || []).map((field) => field.name)];
+  return [...pivotSourceHeaders(pivot), ...(pivot.groupFields || []).map((field) => field.name), ...(pivot.calculatedFields || []).map((field) => field.name)];
 }
 
 function pivotFieldValues(pivot, fieldIndex) {
-  return uniqueValues(pivot.sourceValues().slice(1).map((row) => row[fieldIndex]).filter((value) => value != null && value !== ""));
+  const sourceFields = pivotSourceHeaders(pivot);
+  if (fieldIndex < sourceFields.length) return uniqueValues(pivot.sourceValues().slice(1).map((row) => row[fieldIndex]).filter((value) => value != null && value !== ""));
+  const group = (pivot.groupFields || [])[fieldIndex - sourceFields.length];
+  return group ? pivotGroupItems(pivot.sourceValues(), group, pivot.dateSystem, sourceFields) : [];
+}
+
+function rangePropertiesXml(group) {
+  const range = group.range || {};
+  const attrs = [`groupBy="${attrEscape(group.groupBy)}"`, `autoStart="${range.autoStart === false ? 0 : 1}"`, `autoEnd="${range.autoEnd === false ? 0 : 1}"`];
+  for (const [name, value] of [["startDate", range.startDate], ["endDate", range.endDate], ["startNum", range.startNum], ["endNum", range.endNum], ["groupInterval", range.groupInterval]]) if (value != null && value !== "") attrs.push(`${name}="${attrEscape(value)}"`);
+  return `<rangePr ${attrs.join(" ")}/>`;
+}
+
+function pivotGroupCacheFieldsXml(pivot, sourceFields) {
+  const groups = pivot.groupFields || [];
+  const allFields = [...sourceFields, ...groups.map((group) => group.name)];
+  return groups.map((group) => {
+    const base = sourceFields.indexOf(group.sourceField);
+    const parent = group.parent ? allFields.indexOf(group.parent) : -1;
+    const items = pivotGroupItems(pivot.sourceValues(), group, pivot.dateSystem, sourceFields);
+    const groupItems = `<groupItems count="${items.length}">${items.map((value) => `<s v="${attrEscape(value)}"/>`).join("")}</groupItems>`;
+    return `<cacheField name="${attrEscape(group.name)}" databaseField="0" numFmtId="0"><fieldGroup base="${base}"${parent >= 0 ? ` par="${parent}"` : ""}>${rangePropertiesXml(group)}${groupItems}</fieldGroup></cacheField>`;
+  }).join("");
 }
 
 export function spreadsheetPivotCacheDefinitionXml(part) {
   const { pivot } = part;
   const sourceSheet = pivot.sourceRange.sheetName || pivot.worksheet.name;
   const sourceFields = pivotSourceHeaders(pivot);
+  const dateGroupSources = new Set((pivot.groupFields || []).map((group) => group.sourceField));
   const sourceCacheFields = sourceFields.map((header, index) => {
     const values = pivotFieldValues(pivot, index);
-    const containsNumber = values.some((value) => typeof value === "number" && Number.isFinite(value));
-    const containsString = values.some((value) => typeof value !== "number" && typeof value !== "boolean");
+    const dateField = dateGroupSources.has(header);
+    const isDate = (value) => dateField && Boolean(pivotDateKey(value, pivot.dateSystem));
+    const containsDate = values.some(isDate);
+    const containsNumber = values.some((value) => !isDate(value) && typeof value === "number" && Number.isFinite(value));
+    const containsString = values.some((value) => !isDate(value) && typeof value !== "number" && typeof value !== "boolean");
+    const containsNonDate = dateField && values.some((value) => !isDate(value));
     const containsBlank = pivot.sourceValues().slice(1).some((row) => row[index] == null || row[index] === "");
-    const containsMixedTypes = [containsNumber, containsString, values.some((value) => typeof value === "boolean")].filter(Boolean).length > 1;
-    const flags = `${containsNumber ? ' containsNumber="1"' : ""}${containsString ? ' containsString="1"' : ""}${containsBlank ? ' containsBlank="1"' : ""}${containsMixedTypes ? ' containsMixedTypes="1"' : ""}`;
-    return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0"><sharedItems${flags} count="${values.length}">${values.map(cacheItemXml).join("")}</sharedItems></cacheField>`;
+    const containsMixedTypes = [containsDate, containsNumber, containsString, values.some((value) => typeof value === "boolean")].filter(Boolean).length > 1;
+    const flags = `${containsDate ? ' containsDate="1"' : ""}${containsNonDate ? ' containsNonDate="1"' : ""}${containsNumber ? ' containsNumber="1"' : ""}${containsString ? ' containsString="1"' : ""}${containsBlank ? ' containsBlank="1"' : ""}${containsMixedTypes ? ' containsMixedTypes="1"' : ""}`;
+    return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0"><sharedItems${flags} count="${values.length}">${values.map((value) => cacheItemXml(value, pivot.dateSystem, dateField)).join("")}</sharedItems></cacheField>`;
   }).join("");
+  const groupedCacheFields = pivotGroupCacheFieldsXml(pivot, sourceFields);
   const calculatedCacheFields = (pivot.calculatedFields || []).map((field) => `<cacheField name="${attrEscape(field.name)}" formula="${attrEscape(field.supported === false ? field.formula.replace(/^=/, "") : pivotFormulaToOoxml(field.formula, sourceFields))}" databaseField="0" numFmtId="${Number(field.numFmtId || 0)}"><sharedItems containsNumber="1" count="0"/></cacheField>`).join("");
-  const fieldCount = sourceFields.length + (pivot.calculatedFields?.length || 0);
+  const fieldCount = sourceFields.length + (pivot.groupFields?.length || 0) + (pivot.calculatedFields?.length || 0);
   const policy = pivot.refreshPolicy || {};
   const recordsRelationship = policy.saveData === false ? "" : ` r:id="${attrEscape(part.recordsRelId || "rId1")}"`;
   const refreshedBy = policy.refreshedBy ? ` refreshedBy="${attrEscape(policy.refreshedBy)}"` : "";
   const refreshedDateIso = policy.refreshedDateIso ? ` refreshedDateIso="${attrEscape(policy.refreshedDateIso)}"` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"${recordsRelationship} refreshOnLoad="${policy.refreshOnLoad === false ? 0 : 1}" saveData="${policy.saveData === false ? 0 : 1}" enableRefresh="${policy.enableRefresh === false ? 0 : 1}" invalid="${policy.invalid ? 1 : 0}" missingItemsLimit="${Number(policy.missingItemsLimit || 0)}"${refreshedBy}${refreshedDateIso} recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${fieldCount}">${sourceCacheFields}${calculatedCacheFields}</cacheFields></pivotCacheDefinition>`;
-}
-
-function cacheRecordValueXml(value) {
-  return cacheItemXml(value);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"${recordsRelationship} refreshOnLoad="${policy.refreshOnLoad === false ? 0 : 1}" saveData="${policy.saveData === false ? 0 : 1}" enableRefresh="${policy.enableRefresh === false ? 0 : 1}" invalid="${policy.invalid ? 1 : 0}" missingItemsLimit="${Number(policy.missingItemsLimit || 0)}"${refreshedBy}${refreshedDateIso} recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${fieldCount}">${sourceCacheFields}${groupedCacheFields}${calculatedCacheFields}</cacheFields></pivotCacheDefinition>`;
 }
 
 export function spreadsheetPivotCacheRecordsXml(part) {
+  const sourceFields = pivotSourceHeaders(part.pivot);
+  const dateGroupSources = new Set((part.pivot.groupFields || []).map((group) => group.sourceField));
   const rows = part.pivot.sourceValues().slice(1);
-  const records = rows.map((row) => `<r>${row.map(cacheRecordValueXml).join("")}</r>`).join("");
+  const records = rows.map((row) => `<r>${row.map((value, index) => cacheItemXml(value, part.pivot.dateSystem, dateGroupSources.has(sourceFields[index]))).join("")}</r>`).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${rows.length}">${records}</pivotCacheRecords>`;
 }
 

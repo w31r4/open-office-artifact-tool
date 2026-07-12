@@ -1,3 +1,5 @@
+import { normalizePivotDate, pivotDateKey } from "./pivot-dates.mjs";
+
 export const PIVOT_DATE_FILTER_TYPES = new Set([
   "dateEqual", "dateNotEqual", "dateOlderThan", "dateOlderThanOrEqual",
   "dateNewerThan", "dateNewerThanOrEqual", "dateBetween", "dateNotBetween",
@@ -25,23 +27,8 @@ function filterEntries(value) {
   return Object.entries(value).map(([field, filter]) => Array.isArray(filter) ? { field, include: filter } : { field, ...(filter || {}) });
 }
 
-function isoDateKey(value) {
-  if (value instanceof Date) return Number.isNaN(value.valueOf()) ? undefined : value.toISOString().slice(0, 10);
-  const text = String(value ?? "").trim();
-  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(text);
-  if (!match || Number.isNaN(Date.parse(text))) return undefined;
-  const [year, month, day] = match.slice(1).map(Number);
-  const calendar = new Date(0);
-  calendar.setUTCFullYear(year, month - 1, day);
-  calendar.setUTCHours(0, 0, 0, 0);
-  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return undefined;
-  return `${match[1]}-${match[2]}-${match[3]}`;
-}
-
 function canonicalDate(value, label) {
-  const result = isoDateKey(value);
-  if (!result) throw new TypeError(`${label} must be an ISO date or Date.`);
-  return result;
+  return normalizePivotDate(value, label);
 }
 
 function dateFilter(filter, field) {
@@ -74,22 +61,11 @@ export function normalizePivotFilters(value, axisFields) {
   return filters;
 }
 
-function excelDateKey(value, dateSystem = "1900") {
-  let milliseconds;
-  if (value instanceof Date) milliseconds = value.valueOf();
-  else if (typeof value === "number" && Number.isFinite(value)) {
-    const epoch = Date.UTC(dateSystem === "1904" ? 1904 : 1899, dateSystem === "1904" ? 0 : 11, dateSystem === "1904" ? 1 : 31);
-    const days = dateSystem === "1904" ? value : value - (value >= 60 ? 1 : 0);
-    milliseconds = epoch + days * 86_400_000;
-  } else return isoDateKey(value);
-  return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString().slice(0, 10) : undefined;
-}
-
 export function pivotItemVisible(filters = [], field, value, dateSystem = "1900") {
   const filter = filters.find((entry) => entry.field === field);
   if (!filter) return true;
   if (PIVOT_DATE_FILTER_TYPES.has(filter.type)) {
-    const current = excelDateKey(value, dateSystem);
+    const current = pivotDateKey(value, dateSystem);
     if (!current) return false;
     if (filter.type === "dateEqual") return current === filter.value1;
     if (filter.type === "dateNotEqual") return current !== filter.value1;

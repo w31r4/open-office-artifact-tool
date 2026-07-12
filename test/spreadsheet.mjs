@@ -6,6 +6,7 @@ import { FileBlob, SpreadsheetFile, Workbook } from "../src/index.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition } from "../src/spreadsheet/ooxml-pivots.mjs";
 import { evaluatePivotFormula } from "../src/spreadsheet/pivot-formulas.mjs";
 import { pivotItemVisible } from "../src/spreadsheet/pivot-filters.mjs";
+import { pivotGroupValue } from "../src/spreadsheet/pivot-groups.mjs";
 
 assert.equal(evaluatePivotFormula("=2+3*4", {}, []), 14);
 assert.equal(evaluatePivotFormula("=('Revenue'-'Cost')/2", { Revenue: 15, Cost: 9 }), 3);
@@ -14,6 +15,11 @@ assert.equal(evaluatePivotFormula("=Revenue/0", { Revenue: 10 }), "#DIV/0!");
 assert.equal(evaluatePivotFormula("=-(Revenue/0)%", { Revenue: 10 }), "#DIV/0!");
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1904-01-01" }], "Date", 0, "1904"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-03-01" }], "Date", 61, "1900"), true);
+assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-02-29" }], "Date", 60, "1900"), true);
+assert.equal(pivotGroupValue({ groupBy: "years" }, 0, "1904"), "1904");
+assert.equal(pivotGroupValue({ groupBy: "months" }, 60, "1900"), "Feb");
+assert.equal(pivotGroupValue({ groupBy: "quarters" }, new Date("2026-07-15T00:00:00Z")), "Q3");
+assert.equal(pivotGroupValue({ groupBy: "years" }, Number.MAX_VALUE), null);
 for (const [type, current, expected] of [
   ["dateEqual", "2026-02-01", true],
   ["dateNotEqual", "2026-02-01", false],
@@ -293,6 +299,28 @@ assert.deepEqual(regionalPivot.filters, [{ field: "Quarter", include: ["Q1"] }, 
 assert.equal(regionalPivot.refreshPolicy.saveData, true);
 assert.match(regionalPivot.inspectRecord().columnFields.join(","), /Quarter/);
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /refreshPolicy/);
+const calendarPivot = sheet.pivotTables.add({
+  name: "CalendarPivot",
+  sourceRange: "P1:U7",
+  targetRange: "W8:Z12",
+  groupFields: [
+    { name: "Order Year", sourceField: "OrderDate", groupBy: "years" },
+    { name: "Order Quarter", sourceField: "OrderDate", groupBy: "quarters" },
+    { name: "Order Month", sourceField: "OrderDate", groupBy: "months" },
+  ],
+  rowFields: ["Order Year", "Order Quarter"],
+  columnFields: ["Order Month"],
+  valueFields: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue by month" }],
+  filters: [{ field: "Order Month", exclude: ["Jan"] }],
+});
+assert.deepEqual(calendarPivot.groupFields, [
+  { name: "Order Year", sourceField: "OrderDate", groupBy: "years" },
+  { name: "Order Quarter", sourceField: "OrderDate", groupBy: "quarters", parent: "Order Year" },
+  { name: "Order Month", sourceField: "OrderDate", groupBy: "months", parent: "Order Quarter" },
+]);
+assert.deepEqual(calendarPivot.computedValues(), [["Order Year", "Order Quarter", "Feb", "Mar", "Apr"], ["2026", "Q1", 50, 45, 0], ["2026", "Q2", 0, 0, 7]]);
+assert.match(calendarPivot.inspectRecord().groupFields[2].parent, /Order Quarter/);
+assert.equal(workbook.verify().issues.some((issue) => issue.code === "pivotFieldMissing" && issue.id === calendarPivot.id), false);
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
@@ -312,9 +340,19 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateBetween", value1: "2026-04-01", value2: "2026-03-01" }] }), /must not be after/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "today", value1: "2026-03-01" }] }), /unsupported type today/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-03-01", useWholeDay: false }] }), /requires useWholeDay=true/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: {}, rowFields: ["Region"] }), /groupFields must be an array/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: Array.from({ length: 129 }, (_, index) => ({ name: `Year ${index}`, sourceField: "OrderDate", groupBy: "years" })), rowFields: ["Region"] }), /exceeds 128 fields/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Region", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Region"] }), /must not replace a source field/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Year", sourceField: "Missing", groupBy: "years" }], rowFields: ["Year"] }), /unknown source field Missing/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Day", sourceField: "OrderDate", groupBy: "days" }], rowFields: ["Day"] }), /must be years, quarters, or months/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Month 1", sourceField: "OrderDate", groupBy: "months" }, { name: "Month 2", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Month 1"] }), /must not repeat a groupBy/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Period", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Period"], calculatedFields: [{ name: "Period", formula: "Revenue" }] }), /must not replace a group field/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Year", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Year"], filters: [{ field: "Year", type: "dateEqual", value1: "2026-01-01" }] }), /must target a source date field/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Month", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Month"], filters: [{ field: "Month", include: ["Not a month"] }] }), /references unknown item Not a month/);
 assert.equal(workbook.resolve(revenuePivot.id).name, "RevenuePivot");
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /pivot table facade/);
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /dateBetween/);
+assert.match(workbook.help("sheet.pivotTables.add").ndjson, /groupFields/);
 const image = sheet.images.add({
   name: "LogoImage",
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -1083,7 +1121,7 @@ assert.match(tableXml, /displayName="TasksTable"/);
 assert.match(tableXml, /ref="A1:D4"/);
 assert.match(tableXml, /<tableColumns count="4">/);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
-assert.equal(pivotPartNames.length, 2);
+assert.equal(pivotPartNames.length, 3);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");
 assert.match(pivotTableXml, /<pivotTableDefinition/);
 assert.match(pivotTableXml, /name="RevenuePivot"/);
@@ -1097,6 +1135,11 @@ assert.match(regionalPivotTableXml, /<pivotField axis="axisCol" multipleItemSele
 assert.match(regionalPivotTableXml, /<dataField name="Profit total" fld="6" subtotal="sum"\/>/);
 assert.match(regionalPivotTableXml, /<filters count="1"><filter fld="5" type="dateBetween" id="1" stringValue1="2026-02-01" stringValue2="2026-03-31">/);
 assert.match(regionalPivotTableXml, /<customFilters and="1"><customFilter operator="greaterThanOrEqual" val="2026-02-01"\/><customFilter operator="lessThanOrEqual" val="2026-03-31"\/><\/customFilters>/);
+const calendarPivotTableXml = await zip.file(pivotPartNames[2]).async("text");
+assert.match(calendarPivotTableXml, /name="CalendarPivot"/);
+assert.match(calendarPivotTableXml, /<rowFields count="2"><field x="6"\/><field x="7"\/><\/rowFields>/);
+assert.match(calendarPivotTableXml, /<colFields count="1"><field x="8"\/><\/colFields>/);
+assert.match(calendarPivotTableXml, /<pivotField axis="axisCol" multipleItemSelectionAllowed="1" showAll="0"><items count="5"><item x="0" h="1"\/><item x="1"\/><item x="2"\/><item x="3"\/><item t="default"\/><\/items><\/pivotField>/);
 const pivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
 assert.match(pivotCacheXml, /<pivotCacheDefinition/);
 assert.match(pivotCacheXml, /r:id="rId1"/);
@@ -1114,6 +1157,13 @@ const regionalPivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition
 assert.match(regionalPivotCacheXml, /refreshOnLoad="0" saveData="1" enableRefresh="0" invalid="1" missingItemsLimit="3" refreshedBy="QA Agent" refreshedDateIso="2026-07-12T00:00:00Z"/);
 assert.match(regionalPivotCacheXml, /<cacheFields count="7">/);
 assert.match(regionalPivotCacheXml, /<cacheField name="Profit" formula="\('Revenue'-'Cost'\)\*100%" databaseField="0" numFmtId="0"><sharedItems containsNumber="1" count="0"\/><\/cacheField>/);
+const calendarPivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition3.xml").async("text");
+assert.match(calendarPivotCacheXml, /<cacheFields count="9">/);
+assert.match(calendarPivotCacheXml, /<cacheField name="OrderDate" numFmtId="0"><sharedItems containsDate="1" count="6"><d v="2026-01-15T00:00:00"\/>/);
+assert.match(calendarPivotCacheXml, /<cacheField name="Order Year" databaseField="0" numFmtId="0"><fieldGroup base="5"><rangePr groupBy="years" autoStart="1" autoEnd="1"\/><groupItems count="1"><s v="2026"\/><\/groupItems><\/fieldGroup><\/cacheField>/);
+assert.match(calendarPivotCacheXml, /<cacheField name="Order Quarter" databaseField="0" numFmtId="0"><fieldGroup base="5" par="6"><rangePr groupBy="quarters" autoStart="1" autoEnd="1"\/><groupItems count="2"><s v="Q1"\/><s v="Q2"\/><\/groupItems><\/fieldGroup><\/cacheField>/);
+assert.match(calendarPivotCacheXml, /<cacheField name="Order Month" databaseField="0" numFmtId="0"><fieldGroup base="5" par="7"><rangePr groupBy="months" autoStart="1" autoEnd="1"\/><groupItems count="4"><s v="Jan"\/><s v="Feb"\/><s v="Mar"\/><s v="Apr"\/><\/groupItems><\/fieldGroup><\/cacheField>/);
+assert.match(await zip.file("xl/pivotCache/pivotCacheRecords3.xml").async("text"), /<d v="2026-01-15T00:00:00"\/>/);
 const pivotTableDefinitionRelsXml = await zip.file("xl/pivotTables/_rels/pivotTable1.xml.rels").async("text");
 assert.match(pivotTableDefinitionRelsXml, /relationships\/pivotCacheDefinition/);
 assert.match(pivotTableDefinitionRelsXml, /Target="\.\.\/pivotCache\/pivotCacheDefinition1\.xml"/);
@@ -1137,7 +1187,7 @@ assert.doesNotMatch(workbookXml, /<workbookPr\b[^>]*date1904=/);
 assert.match(workbookXml, /<definedNames>/);
 assert.match(workbookXml, /name="RevenueData"/);
 assert.match(workbookXml, /Sheet1!G2:G4/);
-assert.match(workbookXml, /<pivotCaches><pivotCache cacheId="1" r:id="rId\d+"\/><pivotCache cacheId="2" r:id="rId\d+"\/><\/pivotCaches>/);
+assert.match(workbookXml, /<pivotCaches><pivotCache cacheId="1" r:id="rId\d+"\/><pivotCache cacheId="2" r:id="rId\d+"\/><pivotCache cacheId="3" r:id="rId\d+"\/><\/pivotCaches>/);
 const stylesXml = await zip.file("xl/styles.xml").async("text");
 assert.match(stylesXml, /<dxfs count="2">/);
 assert.match(stylesXml, /<fgColor rgb="FF22C55E"/);
@@ -1220,7 +1270,7 @@ const nativeOnlyWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await n
 const nativeOnlySheet = nativeOnlyWorkbook.worksheets.getItem("Sheet1");
 assert.equal(nativeOnlySheet.images.items.length, 1);
 assert.equal(nativeOnlySheet.charts.items.length, 2);
-assert.equal(nativeOnlySheet.pivotTables.items.length, 2);
+assert.equal(nativeOnlySheet.pivotTables.items.length, 3);
 const nativeOnlyPivot = nativeOnlySheet.pivotTables.getItemOrNullObject("RevenuePivot");
 assert.deepEqual(nativeOnlyPivot.computedValues(), [["Month", "Revenue sum"], ["Jan", 100], ["Feb", 120], ["Mar", 130]]);
 assert.equal(nativeOnlyWorkbook.resolve("RevenuePivot"), nativeOnlyPivot);
@@ -1234,6 +1284,13 @@ assert.deepEqual(nativeOnlyRegionalPivot.refreshPolicy, { refreshOnLoad: false, 
 const nativeOnlyRegionalRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeOnlyWorkbook));
 assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").computedValues(), [["Region", "OrderDate", "Q1 — Revenue total", "Q1 — Profit total"], ["West", "2026-02-20", 30, 10], ["East", "2026-03-05", 5, 2]]);
 assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").filters, [{ field: "Quarter", exclude: ["Q2"] }, { field: "OrderDate", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
+const nativeOnlyCalendarPivot = nativeOnlySheet.pivotTables.getItemOrNullObject("CalendarPivot");
+assert.deepEqual(nativeOnlyCalendarPivot.groupFields.map(({ name, sourceField, groupBy, parent }) => ({ name, sourceField, groupBy, ...(parent ? { parent } : {}) })), calendarPivot.groupFields);
+assert.deepEqual(nativeOnlyCalendarPivot.computedValues(), calendarPivot.computedValues());
+assert.deepEqual(nativeOnlyCalendarPivot.filters, [{ field: "Order Month", exclude: ["Jan"] }]);
+const nativeOnlyCalendarRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeOnlyWorkbook));
+assert.deepEqual(nativeOnlyCalendarRoundtrip.resolve("CalendarPivot").groupFields.map(({ name, sourceField, groupBy, parent }) => ({ name, sourceField, groupBy, ...(parent ? { parent } : {}) })), calendarPivot.groupFields);
+assert.deepEqual(nativeOnlyCalendarRoundtrip.resolve("CalendarPivot").computedValues(), calendarPivot.computedValues());
 const unsupportedCalculatedZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedCalculatedZip.remove("customXml/open-office-artifact.json");
 unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"SUM('Revenue')\""));
@@ -1244,6 +1301,16 @@ assert.equal(unsupportedCalculatedPivot.computedValues()[1][3], "#NAME?");
 assert.match(unsupportedCalculatedWorkbook.verify().ndjson, /pivotCalculatedFieldUnsupported/);
 const unsupportedCalculatedRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedCalculatedWorkbook)).arrayBuffer()));
 assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SUM\('Revenue'\)"/);
+const unsupportedGroupZip = await JSZip.loadAsync(xlsxBytes);
+unsupportedGroupZip.remove("customXml/open-office-artifact.json");
+unsupportedGroupZip.file("xl/pivotCache/pivotCacheDefinition3.xml", calendarPivotCacheXml.replace('groupBy="months"', 'groupBy="days"'));
+const unsupportedGroupWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await unsupportedGroupZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
+const unsupportedGroupPivot = unsupportedGroupWorkbook.resolve("CalendarPivot");
+assert.equal(unsupportedGroupPivot.groupFields.find((field) => field.name === "Order Month").supported, false);
+assert.match(unsupportedGroupPivot.computedValues()[0].join(","), /#NAME\?/);
+assert.match(unsupportedGroupWorkbook.verify().ndjson, /pivotGroupFieldUnsupported/);
+const unsupportedGroupRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedGroupWorkbook)).arrayBuffer()));
+assert.match(await unsupportedGroupRoundtripZip.file("xl/pivotCache/pivotCacheDefinition3.xml").async("text"), /groupBy="days"/);
 const nativeOnlyImage = nativeOnlySheet.images.getItemOrNullObject("LogoImage");
 assert.equal(nativeOnlyImage.alt, "Logo placeholder");
 assert.match(nativeOnlyImage.dataUrl, /^data:image\/png;base64,/);

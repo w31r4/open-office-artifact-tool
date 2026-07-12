@@ -158,7 +158,12 @@
           "name": "RevenuePivot",
           "sourceRange": "A1:E4",
           "targetRange": "I18:J22",
-          "rowFields": ["Month", "Period End"],
+          "groupFields": [
+            { "name": "Period Year", "sourceField": "Period End", "groupBy": "years" },
+            { "name": "Period Quarter", "sourceField": "Period End", "groupBy": "quarters" },
+            { "name": "Period Month", "sourceField": "Period End", "groupBy": "months" }
+          ],
+          "rowFields": ["Period Year", "Period Quarter", "Period Month", "Month", "Period End"],
           "filters": [
             { "field": "Month", "include": ["Jan", "Mar"] },
             { "field": "Period End", "type": "dateBetween", "value1": "2026-02-01", "value2": "2026-03-31" }

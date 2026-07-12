@@ -10,7 +10,7 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
-const maxUnpackedBytes = 1_424_000;
+const maxUnpackedBytes = 1_439_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
@@ -27,8 +27,10 @@ for (const required of [
   "src/spreadsheet/ooxml-drawings.mjs",
   "src/spreadsheet/ooxml-pivots.mjs",
   "src/spreadsheet/ooxml-styles.mjs",
+  "src/spreadsheet/pivot-dates.mjs",
   "src/spreadsheet/pivot-filters.mjs",
   "src/spreadsheet/pivot-formulas.mjs",
+  "src/spreadsheet/pivot-groups.mjs",
   "src/spreadsheet/pivots.mjs",
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
