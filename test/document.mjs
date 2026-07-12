@@ -233,9 +233,80 @@ assert.match(document.help("document.addImage").ndjson, /native DOCX media/);
 assert.match(document.help("document.addSection").ndjson, /w:sectPr/);
 assert.match(document.help("document.addInsertion").ndjson, /w:ins/);
 assert.match(document.help("document.addDeletion").ndjson, /w:del/);
+assert.match(document.help("document.setSectionSettings").ndjson, /different-first-page/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
 assert.equal(document.verify({ visualQa: true }).ok, true);
+const inheritedHeaderDocument = DocumentModel.create({ blocks: [] });
+const inheritedDefaultHeader = inheritedHeaderDocument.addHeader("Section zero default header", { sectionIndex: 0 });
+const inheritedFirstHeader = inheritedHeaderDocument.addHeader("Section zero first header", { sectionIndex: 0, referenceType: "first" });
+const inheritedEvenHeader = inheritedHeaderDocument.addHeader("Section zero even header", { sectionIndex: 0, referenceType: "even" });
+const inheritedDefaultFooter = inheritedHeaderDocument.addFooter("Section zero default footer", { sectionIndex: 0 });
+const inheritedEvenFooter = inheritedHeaderDocument.addFooter("Section zero even footer", { sectionIndex: 0, referenceType: "even" });
+inheritedHeaderDocument.addParagraph("Section zero body");
+inheritedHeaderDocument.addSection({ breakType: "nextPage" });
+for (let index = 0; index < 4; index += 1) inheritedHeaderDocument.addParagraph(`Section one body ${index + 1}`);
+const inheritedHeaderLayout = inheritedHeaderDocument.layoutJson({ pageHeight: 90, margin: 10 });
+assert.equal(inheritedHeaderLayout.pages.length, 3);
+assert.deepEqual(inheritedHeaderLayout.pages[0].headers, [inheritedFirstHeader.id]);
+assert.deepEqual(inheritedHeaderLayout.pages[0].footers, []);
+assert.equal(inheritedHeaderLayout.pages[0].header.referenceType, "first");
+assert.equal(inheritedHeaderLayout.pages[0].header.inherited, false);
+assert.deepEqual(inheritedHeaderLayout.pages[1].headers, [inheritedDefaultHeader.id]);
+assert.deepEqual(inheritedHeaderLayout.pages[1].footers, [inheritedDefaultFooter.id]);
+assert.equal(inheritedHeaderLayout.pages[1].sectionIndex, 1);
+assert.equal(inheritedHeaderLayout.pages[1].pageInSection, 1);
+assert.equal(inheritedHeaderLayout.pages[1].header.inherited, true);
+assert.equal(inheritedHeaderLayout.pages[1].header.sourceSectionIndex, 0);
+assert.deepEqual(inheritedHeaderLayout.pages[2].headers, [inheritedEvenHeader.id]);
+assert.deepEqual(inheritedHeaderLayout.pages[2].footers, [inheritedEvenFooter.id]);
+assert.equal(inheritedHeaderLayout.pages[2].pageInSection, 2);
+assert.equal(inheritedHeaderLayout.pages[2].header.referenceType, "even");
+assert.equal(inheritedHeaderLayout.pages[2].header.inherited, true);
+inheritedHeaderDocument.setSectionSettings(0, { differentFirstPage: false });
+assert.deepEqual(inheritedHeaderDocument.layoutJson({ pageHeight: 90, margin: 10 }).pages[0].headers, [inheritedDefaultHeader.id]);
+inheritedHeaderDocument.setSectionSettings(0, { differentFirstPage: true });
+assert.deepEqual(inheritedHeaderDocument.layoutJson({ pageHeight: 90, margin: 10 }).pages[0].headers, [inheritedFirstHeader.id]);
+assert.throws(() => inheritedHeaderDocument.setSectionSettings(2, { differentFirstPage: true }), /must be an integer from 0 through 1/);
+
+const dormantVariantDocument = DocumentModel.create({
+  blocks: [{ kind: "paragraph", text: "Dormant header variants" }],
+  settings: { evenAndOddHeaders: false },
+  sectionSettings: [{ sectionIndex: 0, differentFirstPage: false }],
+  headers: [
+    { text: "Active default header", referenceType: "default" },
+    { text: "Dormant first header", referenceType: "first", variantActive: false },
+    { text: "Dormant even header", referenceType: "even", variantActive: false },
+  ],
+});
+assert.deepEqual(dormantVariantDocument.layoutJson().pages[0].headers, [dormantVariantDocument.headers[0].id]);
+const dormantVariantDocx = await DocumentFile.exportDocx(dormantVariantDocument);
+const dormantVariantZip = await JSZip.loadAsync(new Uint8Array(await dormantVariantDocx.arrayBuffer()));
+const dormantVariantXml = await dormantVariantZip.file("word/document.xml").async("text");
+assert.match(dormantVariantXml, /<w:headerReference w:type="first"/);
+assert.match(dormantVariantXml, /<w:headerReference w:type="even"/);
+assert.doesNotMatch(dormantVariantXml, /<w:titlePg\/>/);
+assert.ok(!dormantVariantZip.file("word/settings.xml") || !/<w:evenAndOddHeaders/.test(await dormantVariantZip.file("word/settings.xml").async("text")));
+dormantVariantZip.remove("word/open-office-artifact.json");
+const dormantNativeDocx = new FileBlob(await dormantVariantZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: dormantVariantDocx.type });
+const dormantNativeDocument = await DocumentFile.importDocx(dormantNativeDocx, { preferNative: true });
+assert.equal(dormantNativeDocument.settings.evenAndOddHeaders, false);
+assert.equal(dormantNativeDocument.sectionSettings[0].differentFirstPage, false);
+assert.equal(dormantNativeDocument.headers.find((item) => item.referenceType === "first")?.variantActive, false);
+assert.equal(dormantNativeDocument.headers.find((item) => item.referenceType === "even")?.variantActive, false);
+assert.deepEqual(dormantNativeDocument.layoutJson().pages[0].headers, [dormantNativeDocument.headers.find((item) => item.referenceType === "default").id]);
+const dormantSecondExportZip = await JSZip.loadAsync(new Uint8Array(await (await DocumentFile.exportDocx(dormantNativeDocument)).arrayBuffer()));
+assert.doesNotMatch(await dormantSecondExportZip.file("word/document.xml").async("text"), /<w:titlePg\/>/);
+assert.ok(!dormantSecondExportZip.file("word/settings.xml") || !/<w:evenAndOddHeaders/.test(await dormantSecondExportZip.file("word/settings.xml").async("text")));
+const alternateSectionPrefixZip = await JSZip.loadAsync(new Uint8Array(await dormantNativeDocx.arrayBuffer()));
+const alternateSectionPrefixXml = dormantVariantXml
+  .replace("<w:document ", '<w:document xmlns:s="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ')
+  .replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g, (sectionXml) => sectionXml.replaceAll("<w:", "<s:").replaceAll("</w:", "</s:").replaceAll(" w:", " s:"));
+alternateSectionPrefixZip.file("word/document.xml", alternateSectionPrefixXml);
+const alternateSectionPrefixDocx = new FileBlob(await alternateSectionPrefixZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: dormantVariantDocx.type });
+const alternateSectionPrefixNative = await DocumentFile.importDocx(alternateSectionPrefixDocx, { preferNative: true });
+assert.equal(alternateSectionPrefixNative.sectionSettings[0].differentFirstPage, false);
+assert.deepEqual(alternateSectionPrefixNative.headers.map((item) => item.referenceType).sort(), ["default", "even", "first"]);
 const invalidBookmarkDocument = DocumentModel.create({ paragraphs: ["First", "Second"] });
 invalidBookmarkDocument.addBookmark(invalidBookmarkDocument.blocks[1], "ReversedRange", { endTarget: invalidBookmarkDocument.blocks[0] });
 invalidBookmarkDocument.addBookmark(invalidBookmarkDocument.blocks[0], "DuplicateName");
@@ -311,7 +382,8 @@ assert.match(svg, /Noto Naskh Arabic/);
 assert.match(svg, /Risk callout inherits bold styling/);
 assert.match(svg, /#b91c1c/);
 assert.match(svg, /DOCX styles/);
-assert.match(svg, /Confidential research memo/);
+assert.match(svg, /Opening-section header/);
+assert.doesNotMatch(svg, /Confidential research memo/);
 assert.match(svg, /w31r4 research note/);
 assert.match(svg, /PAGE/);
 assert.match(svg, /Source: Market brief/);

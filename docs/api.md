@@ -12,8 +12,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addComment` | api | Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity. |
 | `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
-| `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references. |
-| `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references. |
+| `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
+| `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
@@ -23,19 +23,20 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
 | `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
-| `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing. |
+| `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Reply to a document comment on the same target through commentsExtended paraIdParent threading. |
 | `document.resolve` | api | Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs. |
+| `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
 | `document.setSettings` | api | Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, external/internal links, bookmark ranges, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, bookmark ranges, internal/external links, fields, durable comment identities/people metadata, headers, and footers. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped header/footer references and activation state, links, bookmarks, fields, citations, and metadata. |
+| `DocumentFile.importDocx` | api | Import relationship-driven DOCX semantics, preserving section titlePg and dormant/active even/first header/footer references alongside styles, numbering, links, bookmarks, fields, and comments. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks. |
+| `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
 
 ### document details
 
@@ -138,7 +139,7 @@ Append a Word field block exported as w:fldSimple with instruction text such as 
 
 #### `document.addFooter`
 
-Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references.
+Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference.
 
 **Schema parameters:**
 
@@ -147,6 +148,7 @@ Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-
 - `styleId` (string) — Named style ID.
 - `referenceType` (string) — default, first, or even section reference type.
 - `sectionIndex` (number) — Zero-based target section. Omit to bind to the final section for backward compatibility.
+- `activateVariant` (boolean) — Set false to preserve a dormant first/even reference without enabling different-first-page or even/odd behavior.
 
 **Schema returns:**
 
@@ -154,7 +156,7 @@ Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-
 
 #### `document.addHeader`
 
-Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references.
+Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference.
 
 **Schema parameters:**
 
@@ -163,6 +165,7 @@ Add a default, first-page, or even-page DOCX header, optionally bound to a zero-
 - `styleId` (string) — Named style ID.
 - `referenceType` (string) — default, first, or even section reference type.
 - `sectionIndex` (number) — Zero-based target section. Omit to bind to the final section for backward compatibility.
+- `activateVariant` (boolean) — Set false to preserve a dormant first/even reference without enabling different-first-page or even/odd behavior.
 
 **Schema returns:**
 
@@ -338,7 +341,7 @@ Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, head
 
 #### `document.layoutJson`
 
-Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing.
+Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing.
 
 **Schema parameters:**
 
@@ -402,6 +405,19 @@ Resolve stable document, block, bookmark ID/name, header/footer, comment, style,
 
 - `object` (object|undefined) — Resolved editable facade/record or undefined.
 
+#### `document.setSectionSettings`
+
+Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references.
+
+**Schema parameters:**
+
+- `sectionIndex` (number) required — Zero-based section index from 0 through the number of section-break blocks.
+- `differentFirstPage` (boolean) — Whether the section activates first-page header/footer references through w:titlePg.
+
+**Schema returns:**
+
+- `document` (DocumentModel) — Document facade with normalized per-section settings.
+
 #### `document.setSettings`
 
 Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions.
@@ -453,7 +469,7 @@ Return QA issues for fake lists, invalid links/citations, duplicate/dangling/rev
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, external/internal links, bookmark ranges, fields, citations, and metadata.
+Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped header/footer references and activation state, links, bookmarks, fields, citations, and metadata.
 
 **Schema parameters:**
 
@@ -465,7 +481,7 @@ Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classi
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, bookmark ranges, internal/external links, fields, durable comment identities/people metadata, headers, and footers.
+Import relationship-driven DOCX semantics, preserving section titlePg and dormant/active even/first header/footer references alongside styles, numbering, links, bookmarks, fields, and comments.
 
 **Schema parameters:**
 
@@ -522,7 +538,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks.
+Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks.
 
 **Schema parameters:**
 
@@ -535,6 +551,7 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 - `blocks` (object[]) — Ordered paragraph/list/table/link/field/citation/image/section/change block models.
 - `headers` (object[]) — Header block models.
 - `footers` (object[]) — Footer block models.
+- `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.
 - `comments` (object[]) — Comment models targeting stable block IDs, with optional parentId/paraId/resolved thread metadata.
 - `settings` (object) — Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless documentProtection.
 

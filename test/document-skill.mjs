@@ -15,14 +15,19 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const fixturePath = path.join(repoRoot, "skills", "documents", "fixtures", "business-brief.json");
 const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-document-skill-"));
 const baselineDir = path.join(outputDir, "baselines");
+const nativeStatus = nativeDocumentRenderStatus();
 
 try {
-  const result = await runDocumentFixture(fixturePath, { outputDir, nativeRender: "off" });
+  const result = await runDocumentFixture(fixturePath, { outputDir, nativeRender: nativeStatus.available ? "required" : "auto" });
   assert.equal(result.fixture.name, "business-brief");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
-  assert.equal(result.qa.summary.nativeRender.status, "skipped");
+  assert.equal(result.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  if (nativeStatus.available) {
+    assert.equal(result.qa.summary.nativeRender.pageCount, 2);
+    assert.equal(result.qa.summary.nativeRender.pages.length, 2);
+  }
   for (const filePath of Object.values(result.qa.summary.files)) {
     const stat = await fs.stat(filePath);
     assert.ok(stat.isFile() && stat.size > 0, `Expected non-empty document skill output ${filePath}`);
@@ -32,11 +37,11 @@ try {
   assert.match(inspect, /Office artifact readiness brief/);
   assert.match(inspect, /readiness-table/);
   assert.match(inspect, /native render review/);
-  assert.match(inspect, /Opening section evidence/);
+  assert.match(inspect, /Clean-room document workflow/);
   assert.match(inspect, /Business Brief Theme/);
   assert.match(inspect, /Theme fidelity/);
   assert.match(inspect, /RecommendationSection/);
-  assert.equal(imported.headers.find((item) => item.name === "opening-header")?.sectionIndex, 0);
+  assert.equal(imported.headers.find((item) => item.name === "inherited-header")?.sectionIndex, 0);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/document\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/commentsExtended\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/commentsIds\.xml/);
@@ -63,8 +68,15 @@ try {
   assert.equal(inheritedRun?.style.fontSize, 26);
   assert.equal(inheritedRun?.style.bold, false);
   assert.equal(inheritedRun?.style.italic, false);
-  assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Opening section evidence")?.sectionIndex, 0);
-  assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Clean-room document workflow")?.sectionIndex, 1);
+  assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Clean-room document workflow")?.sectionIndex, 0);
+  assert.equal(nativePreferredDocument.footers.find((item) => item.text === "Internal QA fixture")?.sectionIndex, 0);
+  const inheritedLayout = nativePreferredDocument.layoutJson();
+  assert.equal(inheritedLayout.pages[1]?.header.inherited, true);
+  assert.equal(inheritedLayout.pages[1]?.header.sourceSectionIndex, 0);
+  assert.deepEqual(inheritedLayout.pages[1]?.headers, [nativePreferredDocument.headers[0].id]);
+  assert.equal(inheritedLayout.pages[1]?.footer.inherited, true);
+  assert.equal(inheritedLayout.pages[1]?.footer.sourceSectionIndex, 0);
+  assert.deepEqual(inheritedLayout.pages[1]?.footers, [nativePreferredDocument.footers[0].id]);
   assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.author, "QA Agent");
   assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.date, "2026-07-11T00:20:00.000Z");
   const nativeReviewRoot = nativePreferredDocument.comments.find((item) => item.text.includes("native render review"));
@@ -87,6 +99,11 @@ try {
   assert.match(await businessBriefZip.file("word/commentsExtensible.xml").async("text"), /w16cex:dateUtc="2026-07-11T00:20:00\.000Z"/);
   assert.match(await businessBriefZip.file("word/people.xml").async("text"), /w15:userId="qa-agent@example\.test"/);
   const businessBriefDocumentXml = await businessBriefZip.file("word/document.xml").async("text");
+  const businessBriefSections = [...businessBriefDocumentXml.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)].map((match) => match[0]);
+  assert.equal(businessBriefSections.length, 2);
+  assert.match(businessBriefSections[0], /<w:headerReference\b/);
+  assert.match(businessBriefSections[0], /<w:footerReference\b/);
+  assert.doesNotMatch(businessBriefSections[1], /<w:(?:header|footer)Reference\b/);
   assert.match(businessBriefDocumentXml, /<w:bookmarkStart w:id="42" w:name="RecommendationSection"\/>/);
   assert.match(businessBriefDocumentXml, /<w:bookmarkEnd w:id="42"\/>/);
   assert.match(businessBriefDocumentXml, /<w:hyperlink w:anchor="RecommendationSection" w:history="0" w:tooltip="Open the recommendation section">/);
@@ -112,7 +129,6 @@ try {
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.numberFormat, "lowerRoman");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.level, 1);
 
-  const nativeStatus = nativeDocumentRenderStatus();
   const packageComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-comments.json"), {
     outputDir: path.join(outputDir, "package-comments"),
     nativeRender: nativeStatus.available ? "required" : "auto",

@@ -8,6 +8,7 @@ import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./oox
 import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxDefaultRunPropertiesXml, parseDocxRunPropertiesXml, parseDocxRunStyleId, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
 import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE, DOCX_COMMENTS_EXTENSIBLE_PATH, DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_CONTENT_TYPE, DOCX_COMMENTS_IDS_PATH, DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_PEOPLE_CONTENT_TYPE, DOCX_PEOPLE_PATH, DOCX_PEOPLE_RELATIONSHIP_TYPE, docxCommentsExtendedXml, docxCommentsExtensibleXml, docxCommentsIdsXml, docxCommentsXml, docxPeopleXml, parseDocxComments, planDocxComments, validateDocxCommentPackageSemantics } from "./ooxml/docx-comments.mjs";
 import { docxBookmarkEntriesForBlock, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
+import { collectDocxHeaderFooterParts, normalizeDocxSectionSettings, parseDocxSectionDeclarations, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
@@ -1046,11 +1047,11 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
-  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks." },
+  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances." },
-  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
-  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
+  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
+  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state." },
   { artifactKind: "document", kind: "api", name: "document.addBookmark", summary: "Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes." },
@@ -1064,16 +1065,17 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity." },
   { artifactKind: "document", kind: "api", name: "document.replyToComment", summary: "Reply to a document comment on the same target through commentsExtended paraIdParent threading." },
   { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions." },
+  { artifactKind: "document", kind: "api", name: "document.setSectionSettings", summary: "Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
-  { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
+  { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, external/internal links, bookmark ranges, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, bookmark ranges, internal/external links, fields, durable comment identities/people metadata, headers, and footers." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped header/footer references and activation state, links, bookmarks, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics, preserving section titlePg and dormant/active even/first header/footer references alongside styles, numbering, links, bookmarks, fields, and comments." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
@@ -1614,6 +1616,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     blocks: { type: "object[]", description: "Ordered paragraph/list/table/link/field/citation/image/section/change block models." },
     headers: { type: "object[]", description: "Header block models." },
     footers: { type: "object[]", description: "Footer block models." },
+    sectionSettings: { type: "object[]", description: "Per-section settings with zero-based sectionIndex and differentFirstPage activation state." },
     comments: { type: "object[]", description: "Comment models targeting stable block IDs, with optional parentId/paraId/resolved thread metadata." },
     settings: { type: "object", description: "Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless documentProtection." },
   }, "document", "DocumentModel", "Editable document facade."),
@@ -1639,6 +1642,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     styleId: { type: "string", description: "Named style ID." },
     referenceType: { type: "string", description: "default, first, or even section reference type." },
     sectionIndex: { type: "number", description: "Zero-based target section. Omit to bind to the final section for backward compatibility." },
+    activateVariant: { type: "boolean", description: "Set false to preserve a dormant first/even reference without enabling different-first-page or even/odd behavior." },
   }, "header", "DocumentHeaderFooterBlock", "Appended header block."),
   "document.addFooter": helpSchema({
     text: { type: "string", required: true, description: "Footer text." },
@@ -1646,6 +1650,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     styleId: { type: "string", description: "Named style ID." },
     referenceType: { type: "string", description: "default, first, or even section reference type." },
     sectionIndex: { type: "number", description: "Zero-based target section. Omit to bind to the final section for backward compatibility." },
+    activateVariant: { type: "boolean", description: "Set false to preserve a dormant first/even reference without enabling different-first-page or even/odd behavior." },
   }, "footer", "DocumentHeaderFooterBlock", "Appended footer block."),
   "document.addHyperlink": helpSchema({
     text: { type: "string", required: true, description: "Visible link text." },
@@ -1743,6 +1748,10 @@ const DOCUMENT_HELP_SCHEMAS = {
   "document.setSettings": helpSchema({
     settings: { type: "object", required: true, description: "Partial settings object. Boolean fields are trackRevisions, updateFields, evenAndOddHeaders, and mirrorMargins; nested passwordless documentProtection accepts false/off or mode none, readOnly, comments, trackedChanges, or forms plus enforcement/formatting booleans." },
   }, "document", "DocumentModel", "Document facade with normalized settings."),
+  "document.setSectionSettings": helpSchema({
+    sectionIndex: { type: "number", required: true, description: "Zero-based section index from 0 through the number of section-break blocks." },
+    differentFirstPage: { type: "boolean", description: "Whether the section activates first-page header/footer references through w:titlePg." },
+  }, "document", "DocumentModel", "Document facade with normalized per-section settings."),
   "document.applyDesignPreset": helpSchema({
     name: { type: "string", required: true, description: "report, memo, or a custom preset name." },
     styles: { type: "object", description: "Style overrides merged into the preset." },
@@ -8911,10 +8920,11 @@ class DocumentHeaderFooterBlock {
     this.relationshipId = config.relationshipId || config.relId;
     this.partPath = config.partPath;
     this.sectionIndex = config.sectionIndex === undefined || config.sectionIndex === null ? undefined : Number(config.sectionIndex);
+    this.variantActive = config.variantActive ?? config.activateVariant ?? config.active;
   }
 
-  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text }; }
+  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text }; }
 }
 
 function documentCommentInitials(author) {
@@ -8993,24 +9003,39 @@ function documentLayoutJson(document, options = {}) {
   const pageWidth = Number(options.pageWidth || 612);
   const pageHeight = Number(options.pageHeight || 792);
   const margin = Number(options.margin || 72);
+  const headerFooterPlan = planDocxHeaderFooterSections(document);
   const pages = [];
   const elements = [];
   let page = 1;
+  let sectionIndex = 0;
+  let pageInSection = 1;
   let y = margin;
   const ensurePage = () => {
-    if (!pages.find((item) => item.page === page)) pages.push({ id: `${document.id}/page/${page}`, page, width: pageWidth, height: pageHeight, margin, headers: document.headers.map((header) => header.id), footers: document.footers.map((footer) => footer.id) });
+    if (!pages.find((item) => item.page === page)) {
+      const headerFooter = resolveDocxPageHeaderFooter(headerFooterPlan, sectionIndex, pageInSection);
+      pages.push({ id: `${document.id}/page/${page}`, page, width: pageWidth, height: pageHeight, margin, sectionIndex, sectionIndexes: [sectionIndex], ...headerFooter });
+    }
   };
   ensurePage();
   for (const block of document.blocks) {
     const height = documentBlockHeight(document, block, pageWidth, margin);
-    if (y + height > pageHeight - margin && y > margin) { page += 1; y = margin; ensurePage(); }
+    if (y + height > pageHeight - margin && y > margin) { page += 1; pageInSection += 1; y = margin; ensurePage(); }
     const textPreview = documentBlockLayoutText(block).slice(0, 120);
     const comments = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => comment.id);
     const effectiveStyle = block.styleId ? document.styles.effective(block.styleId) : undefined;
     const runs = block.kind === "paragraph" && block.runs?.length ? block.runs.map((run) => ({ text: run.text, style: documentEffectiveRunStyle(document, block, run) })) : undefined;
     elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, effectiveStyle, runs, textPreview });
     y += height;
-    if (block.kind === "section" && block.breakType === "nextPage") { page += 1; y = margin; ensurePage(); }
+    if (block.kind === "section") {
+      sectionIndex += 1;
+      pageInSection = 1;
+      if (block.breakType === "nextPage") { page += 1; y = margin; ensurePage(); }
+      else {
+        const currentPage = pages.find((item) => item.page === page);
+        if (currentPage && !currentPage.sectionIndexes.includes(sectionIndex)) currentPage.sectionIndexes.push(sectionIndex);
+        if (currentPage) currentPage.continuousSectionBoundary = true;
+      }
+    }
   }
   return documentLayoutSlice(document, { schema: "open-office-artifact.document-layout/v1", unit: "px", document: { id: document.id, name: document.name, designPreset: document.designPreset, theme: document.theme }, pages, elements }, options);
 }
@@ -9093,6 +9118,8 @@ export class DocumentModel {
     this.comments = [];
     this.headers = [];
     this.footers = [];
+    this.sectionSettings = [];
+    const preservesEvenOddActivation = Object.prototype.hasOwnProperty.call(options.settings || {}, "evenAndOddHeaders");
     const sourceBlocks = options.blocks || (options.paragraphs ? options.paragraphs.map((text, index) => ({ kind: "paragraph", text, styleId: index === 0 ? "Title" : "Normal" })) : [{ kind: "paragraph", text: "Start writing here...", styleId: "Normal" }]);
     for (const block of sourceBlocks) {
       if (block.kind === "table") this.addTable(block);
@@ -9105,8 +9132,10 @@ export class DocumentModel {
       else if (block.kind === "change") this.addChange(block.changeType || block.type, block.text ?? "", block);
       else this.addParagraph(block.text ?? "", block);
     }
-    for (const header of options.headers || []) this.addHeader(header.text, header);
-    for (const footer of options.footers || []) this.addFooter(footer.text, footer);
+    this.sectionSettings = normalizeDocxSectionSettings(options.sectionSettings || [], this.blocks);
+    for (const header of options.headers || []) this.addHeader(header.text, { ...header, _restore: true });
+    for (const footer of options.footers || []) this.addFooter(footer.text, { ...footer, _restore: true });
+    if (!preservesEvenOddActivation && [...this.headers, ...this.footers].some((block) => block.referenceType === "even" && block.variantActive !== false)) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true });
     for (const bookmark of options.bookmarks || []) this.addBookmark(bookmark.targetId, bookmark.name, bookmark);
     for (const comment of options.comments || []) this.addComment(comment.targetId, comment.text, comment);
   }
@@ -9157,8 +9186,8 @@ export class DocumentModel {
   addInsertion(text, config = {}) { return this.addChange("insert", text, config); }
   addDeletion(text, config = {}) { return this.addChange("delete", text, config); }
   addTable(config = {}) { const block = new DocumentTableBlock(this, config); this.blocks.push(block); return block; }
-  addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); return block; }
-  addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); return block; }
+  addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); if (!config._restore && block.referenceType === "even" && block.variantActive !== false) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true }); return block; }
+  addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); if (!config._restore && block.referenceType === "even" && block.variantActive !== false) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true }); return block; }
   addBookmark(target, name, config = {}) {
     const targetId = typeof target === "string" ? target : target?.id;
     const bookmarkName = String(name || config.name || "");
@@ -9176,14 +9205,15 @@ export class DocumentModel {
   addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
   replyToComment(parent, text, config = {}) { const comment = typeof parent === "string" ? this.comments.find((item) => item.id === parent) : parent; if (!comment || !this.comments.includes(comment)) throw new Error(`Unknown parent document comment: ${typeof parent === "string" ? parent : parent?.id}`); return this.addComment(comment.targetId, text, { ...config, parentId: comment.id }); }
   setSettings(settings = {}) { this.settings = normalizeDocxSettings({ ...this.settings, ...settings }); return this; }
+  setSectionSettings(sectionIndex, settings = {}) { this.sectionSettings = normalizeDocxSectionSettings([...this.sectionSettings.filter((entry) => entry.sectionIndex !== Number(sectionIndex)), { sectionIndex: Number(sectionIndex), ...settings }], this.blocks); return this; }
   resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : id === `${this.id}/settings` ? this.settings : id === `${this.id}/theme` ? this.theme : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.bookmarks.find((bookmark) => bookmark.id === id || bookmark.name === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
     const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "bookmark", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, bookmarks: this.bookmarks.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
@@ -9342,7 +9372,10 @@ export class DocumentModel {
     const margin = 72;
     let y = 72;
     const parts = [`<rect width="100%" height="100%" fill="white"/>`];
-    for (const header of this.headers) {
+    const firstPageHeaderFooter = resolveDocxPageHeaderFooter(planDocxHeaderFooterSections(this), 0, 1);
+    const firstPageHeaderIds = new Set(firstPageHeaderFooter.headers);
+    const firstPageFooterIds = new Set(firstPageHeaderFooter.footers);
+    for (const header of this.headers.filter((block) => firstPageHeaderIds.has(block.id))) {
       parts.push(`<text x="${margin}" y="${Math.max(28, y - 36)}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(header.text)}</text>`);
     }
     let listCounters = new Map();
@@ -9415,26 +9448,11 @@ export class DocumentModel {
       }
     }
     const height = Math.max(792, y + 72);
-    for (const footer of this.footers) {
+    for (const footer of this.footers.filter((block) => firstPageFooterIds.has(block.id))) {
       parts.push(`<text x="${margin}" y="${height - 36}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(footer.text)}</text>`);
     }
     return new FileBlob(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${parts.join("")}</svg>`, { type: "image/svg+xml" });
   }
-}
-
-function collectDocxHeaderFooterParts(document, kind) {
-  const blocks = kind === "header" ? document.headers : document.footers;
-  const finalSectionIndex = document.blocks.filter((block) => block.kind === "section").length;
-  const groups = new Map();
-  for (const block of blocks) {
-    const referenceType = ["default", "first", "even"].includes(block.referenceType) ? block.referenceType : "default";
-    const sectionIndex = block.sectionIndex === undefined ? finalSectionIndex : block.sectionIndex;
-    if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex > finalSectionIndex) throw new RangeError(`DOCX ${kind} ${block.id} sectionIndex must be an integer from 0 through ${finalSectionIndex}.`);
-    const key = `${sectionIndex}\u0000${referenceType}`;
-    if (!groups.has(key)) groups.set(key, { sectionIndex, referenceType, blocks: [] });
-    groups.get(key).blocks.push(block);
-  }
-  return [...groups.values()].map((group, index) => ({ kind, ...group, partPath: `word/${kind}${index + 1}.xml`, target: `${kind}${index + 1}.xml` }));
 }
 
 function docxContentTypes({ hasComments, hasCommentsExtended, headerParts = [], footerParts = [], hasNumbering, hasSettings, imageParts = [] }) {
@@ -9558,12 +9576,12 @@ function docxSectionPrXml(section, refs = "", options = {}) {
   return `<w:sectPr>${refs}${type}${options.titlePage ? "<w:titlePg/>" : ""}<w:pgSz w:w="${Math.round(size.widthTwips || 12240)}" w:h="${Math.round(size.heightTwips || 15840)}"${orient}/><w:pgMar w:top="${Math.round(margins.top ?? 1440)}" w:right="${Math.round(margins.right ?? 1440)}" w:bottom="${Math.round(margins.bottom ?? 1440)}" w:left="${Math.round(margins.left ?? 1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
 }
 
-function docxSectionXml(block, commentIndexes = [], sectionReferences = []) {
+function docxSectionXml(block, commentIndexes = [], sectionReferences = [], sectionSettings = {}) {
   const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
   const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
   const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
   const sectionRefs = sectionReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
-  return `<w:p><w:pPr>${docxSectionPrXml(block, sectionRefs, { titlePage: sectionReferences.some((reference) => reference.referenceType === "first") })}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
+  return `<w:p><w:pPr>${docxSectionPrXml(block, sectionRefs, { titlePage: Boolean(sectionSettings.differentFirstPage) })}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
 }
 
 function docxHyperlinkXml(block, relId, commentIndexes = []) {
@@ -9622,14 +9640,17 @@ function docxDocumentXml(document, relIds = {}, bookmarkPlan = planDocxBookmarks
     else if (block.kind === "field") xml = docxFieldXml(block, indexes);
     else if (block.kind === "citation") xml = docxCitationXml(block, indexes);
     else if (block.kind === "image") xml = docxImageXml(block, relIds.images?.get(block.id), indexes);
-    else if (block.kind === "section") xml = docxSectionXml(block, indexes, referencesForSection(sectionIndex++));
+    else if (block.kind === "section") {
+      xml = docxSectionXml(block, indexes, referencesForSection(sectionIndex), relIds.sectionPlan?.sections?.[sectionIndex]);
+      sectionIndex += 1;
+    }
     else if (block.kind === "change") xml = docxChangeXml(block, indexes);
     else xml = docxParagraphXml(block, indexes, relIds.numbering?.get(block.id), document.theme);
     return block.kind === "table" ? xml : wrapDocxParagraphBookmarks(xml, docxBookmarkEntriesForBlock(bookmarkPlan, block.id));
   }).join("");
   const finalReferences = referencesForSection(sectionIndex);
   const refs = finalReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
-  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs, { titlePage: finalReferences.some((reference) => reference.referenceType === "first") });
+  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs, { titlePage: Boolean(relIds.sectionPlan?.sections?.[sectionIndex]?.differentFirstPage) });
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}${finalSection}</w:body></w:document>`;
 }
 
@@ -9740,15 +9761,14 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
   const { theme = {} } = context;
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = docxCommentIds(part);
-  const sectionMatch = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/.exec(part);
-  if (sectionMatch) {
-    const sectionXml = sectionMatch[1] || "";
-    const type = /<w:type[^>]*w:val="([^"]+)"/.exec(sectionXml)?.[1] || "nextPage";
-    const sizeAttrs = /<w:pgSz\b([^>]*)\/>/.exec(sectionXml)?.[1] || "";
-    const marginAttrs = /<w:pgMar\b([^>]*)\/>/.exec(sectionXml)?.[1] || "";
-    const orientation = /w:orient="landscape"/.test(sizeAttrs) ? "landscape" : "portrait";
-    const readAttr = (attrs, name, fallback) => Number(new RegExp(`\\bw:${name}="(\\d+)"`).exec(attrs)?.[1] || fallback);
-    return { block: { kind: "section", breakType: type, orientation, pageSize: { widthTwips: readAttr(sizeAttrs, "w", orientation === "landscape" ? 15840 : 12240), heightTwips: readAttr(sizeAttrs, "h", orientation === "landscape" ? 12240 : 15840) }, margins: { top: readAttr(marginAttrs, "top", 1440), right: readAttr(marginAttrs, "right", 1440), bottom: readAttr(marginAttrs, "bottom", 1440), left: readAttr(marginAttrs, "left", 1440) }, styleId }, commentIds };
+  const sectionXml = docxElementBlock(part, "sectPr");
+  if (sectionXml) {
+    const type = docxXmlAttribute(docxElementOpening(sectionXml, "type"), "val") || "nextPage";
+    const sizeTag = docxElementOpening(sectionXml, "pgSz");
+    const marginTag = docxElementOpening(sectionXml, "pgMar");
+    const orientation = docxXmlAttribute(sizeTag, "orient") === "landscape" ? "landscape" : "portrait";
+    const readAttr = (tag, name, fallback) => Number(docxXmlAttribute(tag, name) || fallback);
+    return { block: { kind: "section", breakType: type, orientation, pageSize: { widthTwips: readAttr(sizeTag, "w", orientation === "landscape" ? 15840 : 12240), heightTwips: readAttr(sizeTag, "h", orientation === "landscape" ? 12240 : 15840) }, margins: { top: readAttr(marginTag, "top", 1440), right: readAttr(marginTag, "right", 1440), bottom: readAttr(marginTag, "bottom", 1440), left: readAttr(marginTag, "left", 1440) }, styleId }, commentIds };
   }
   const imageRelId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(part)?.[1];
   if (imageRelId) {
@@ -9837,25 +9857,20 @@ function parseHeaderFooterXml(xml) {
   return [...String(xml || "").matchAll(/<w:p[\s\S]*?<\/w:p>/g)].map((match) => ({ text: decodeXml([...match[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join("")) })).filter((item) => item.text.length > 0);
 }
 
-function docxHeaderFooterReferences(documentXml, relationships) {
+function docxHeaderFooterReferences(documentXml, relationships, declarations = parseDocxSectionDeclarations(documentXml)) {
   const relationshipById = new Map(relationships.map((relationship) => [relationship.id, relationship]));
-  const sections = [...String(documentXml || "").matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map((match) => match[0]);
-  const sources = sections.length ? sections : [String(documentXml || "")];
   const references = [];
   const seen = new Set();
-  sources.forEach((sectionXml, sectionIndex) => {
-    for (const match of sectionXml.matchAll(/<w:(header|footer)Reference\b[^>]*\/?>/g)) {
-      const kind = match[1];
-      const attrs = ooxmlXmlAttributes(match[0]);
-      const relationshipId = attrs["r:id"];
+  declarations.forEach((declaration) => {
+    for (const reference of declaration.references) {
+      const { kind, referenceType, relationshipId } = reference;
       const relationship = relationshipById.get(relationshipId);
       if (!relationship || relationship.targetMode.toLowerCase() === "external" || !relationship.type.endsWith(`/${kind}`)) continue;
       const partPath = ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX");
-      const referenceType = ["default", "first", "even"].includes(attrs["w:type"]) ? attrs["w:type"] : "default";
-      const key = `${sectionIndex}\u0000${kind}\u0000${referenceType}\u0000${relationshipId}\u0000${partPath}`;
+      const key = `${declaration.sectionIndex}\u0000${kind}\u0000${referenceType}\u0000${relationshipId}\u0000${partPath}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      references.push({ kind, referenceType, relationshipId, partPath, sectionIndex });
+      references.push({ kind, referenceType, relationshipId, partPath, sectionIndex: declaration.sectionIndex, differentFirstPage: declaration.differentFirstPage });
     }
   });
   return references;
@@ -10378,10 +10393,10 @@ export class DocumentFile {
     const imageParts = collectDocxImageParts(document);
     const numbering = collectDocxNumbering(document);
     const hasNumbering = numbering.definitions.length > 0;
-    const headerParts = collectDocxHeaderFooterParts(document, "header");
-    const footerParts = collectDocxHeaderFooterParts(document, "footer");
-    const hasEvenHeaderFooter = [...headerParts, ...footerParts].some((part) => part.referenceType === "even");
-    const settingsXml = docxSettingsXml({ ...document.settings, evenAndOddHeaders: hasEvenHeaderFooter || document.settings.evenAndOddHeaders });
+    const sectionPlan = planDocxHeaderFooterSections(document);
+    const headerParts = collectDocxHeaderFooterParts(document, "header", sectionPlan);
+    const footerParts = collectDocxHeaderFooterParts(document, "footer", sectionPlan);
+    const settingsXml = docxSettingsXml(document.settings);
     const hasSettings = Boolean(settingsXml);
     zip.file("[Content_Types].xml", docxContentTypes({ hasComments: commentPlan.entries.length > 0, hasCommentsExtended: commentPlan.entries.length > 0, headerParts, footerParts, hasNumbering, hasSettings, imageParts }));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
@@ -10389,7 +10404,7 @@ export class DocumentFile {
       { id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" },
       { id: "rId2", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" },
     ];
-    const relIds = { numbering: numbering.numIdByBlock };
+    const relIds = { numbering: numbering.numIdByBlock, sectionPlan };
     if (hasNumbering) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering", target: "numbering.xml" });
     if (commentPlan.entries.length) {
       docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
@@ -10466,6 +10481,8 @@ export class DocumentFile {
     const defaultRunStyle = importedStyleData.defaultRunStyle;
     const importedStyleCollection = new DocumentStyleCollection(importedStyles);
     const numberingById = parseDocxNumberingXml(numberingText);
+    const importedSettings = parseDocxSettings(settingsText);
+    const sectionDeclarations = parseDocxSectionDeclarations(xml);
     const commentsRelationship = documentRelationships.find((relationship) => relationship.type.endsWith("/comments") && relationship.targetMode.toLowerCase() !== "external");
     const commentsPartPath = commentsRelationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", commentsRelationship.target), "DOCX") : "word/comments.xml";
     const commentsXml = await zip.file(commentsPartPath)?.async("text");
@@ -10507,17 +10524,18 @@ export class DocumentFile {
       }
       for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
-    const document = DocumentModel.create({ theme, defaultRunStyle, settings: parseDocxSettings(settingsText), styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    const document = DocumentModel.create({ theme, defaultRunStyle, settings: importedSettings, sectionSettings: sectionDeclarations, styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const [nativeId, start] of pendingBookmarkStarts) {
       const end = pendingBookmarkEnds.get(nativeId);
       const target = document.blocks[start.blockIndex];
       const endTarget = document.blocks[end?.blockIndex ?? start.blockIndex];
       if (target && endTarget && start.name) document.addBookmark(target, start.name, { id: `docx-bookmark-${nativeId}`, nativeId, endTarget });
     }
-    for (const reference of docxHeaderFooterReferences(xml, documentRelationships)) {
+    for (const reference of docxHeaderFooterReferences(xml, documentRelationships, sectionDeclarations)) {
       const partXml = await zip.file(reference.partPath)?.async("text");
       for (const block of parseHeaderFooterXml(partXml)) {
-        const config = { ...block, referenceType: reference.referenceType, relationshipId: reference.relationshipId, partPath: reference.partPath, sectionIndex: reference.sectionIndex };
+        const variantActive = reference.referenceType === "first" ? reference.differentFirstPage : reference.referenceType === "even" ? importedSettings.evenAndOddHeaders : true;
+        const config = { ...block, referenceType: reference.referenceType, variantActive, relationshipId: reference.relationshipId, partPath: reference.partPath, sectionIndex: reference.sectionIndex, _restore: true };
         if (reference.kind === "header") document.addHeader(block.text, config);
         else document.addFooter(block.text, config);
       }

@@ -15,11 +15,10 @@
     "BriefCharacter": { "name": "Brief Character", "type": "character", "basedOn": "BriefCharacterBase", "bold": false, "fontTheme": "majorHAnsi" }
   },
   "headers": [
-    { "name": "running-header", "text": "Clean-room document workflow" },
-    { "name": "opening-header", "text": "Opening section evidence", "sectionIndex": 0 }
+    { "name": "inherited-header", "text": "Clean-room document workflow", "sectionIndex": 0 }
   ],
   "footers": [
-    { "name": "running-footer", "text": "Internal QA fixture" }
+    { "name": "inherited-footer", "text": "Internal QA fixture", "sectionIndex": 0 }
   ],
   "blocks": [
     { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Office artifact readiness brief" },
@@ -81,7 +80,7 @@
     { "kind": "table", "pattern": "readiness-table" },
     { "kind": "comment", "pattern": "native render review" },
     { "kind": "comment", "pattern": "wording is approved" },
-    { "kind": "header", "pattern": "Opening section evidence" },
+    { "kind": "header", "pattern": "Clean-room document workflow" },
     { "kind": "comment", "pattern": "table comment anchor" }
   ],
   "qa": {

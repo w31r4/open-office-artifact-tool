@@ -92,13 +92,14 @@ export function createDocumentFromFixture(fixture = {}) {
   const document = DocumentModel.create({ name: fixture.name || "Fixture document", theme: fixture.theme || {}, defaultRunStyle: fixture.defaultRunStyle || {}, settings: fixture.settings || {}, blocks: [] });
   if (fixture.designPreset) document.applyDesignPreset(fixture.designPreset, fixture.designOptions || {});
   for (const [id, style] of Object.entries(fixture.styles || {})) document.styles.add(id, style);
-  for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
-  for (const footer of fixture.footers || []) document.addFooter(footer.text || "", footer);
   const byName = new Map();
   for (const block of fixture.blocks || []) {
     const created = addFixtureBlock(document, block);
     if (block.name) byName.set(block.name, created);
   }
+  for (const settings of fixture.sectionSettings || []) document.setSectionSettings(settings.sectionIndex, settings);
+  for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
+  for (const footer of fixture.footers || []) document.addFooter(footer.text || "", footer);
   for (const bookmark of fixture.bookmarks || []) {
     const target = byName.get(bookmark.targetName) || bookmark.targetId;
     const endTarget = byName.get(bookmark.endTargetName) || bookmark.endTargetId;
