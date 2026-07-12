@@ -1,5 +1,6 @@
 {
   "name": "formula-summary",
+  "dateSystem": "1904",
   "outputName": "formula-summary.xlsx",
   "sheets": [
     {
@@ -69,21 +70,23 @@
           "format": { "numberFormat": "0.0%" }
         },
         {
-          "range": "F1:G9",
+          "range": "F1:G11",
           "values": [
             ["Statistic", "Value"],
-            ["Median revenue", null],
-            ["Second largest", null],
-            ["Smallest", null],
-            ["March rank", null],
-            ["Rounded median", null],
-            ["Margin round up", null],
-            ["Margin round down", null],
-            ["Mode margin", null]
+            ["Median", null],
+            ["2nd max", null],
+            ["Minimum", null],
+            ["Mar rank", null],
+            ["Rounded", null],
+            ["Margin+", null],
+            ["Margin-", null],
+            ["Mode", null],
+            ["1904=0", null],
+            ["Leap#", null]
           ]
         },
         {
-          "range": "G2:G9",
+          "range": "G2:G11",
           "formulas": [
             ["=MEDIAN(B2:B4)"],
             ["=LARGE(B2:B4,2)"],
@@ -92,7 +95,9 @@
             ["=ROUND(G2,-2)"],
             ["=ROUNDUP(D3,2)"],
             ["=ROUNDDOWN(D3,2)"],
-            ["=MODE.SNGL(D2:D4)"]
+            ["=MODE.SNGL(D2:D4)"],
+            ["=DATE(1904,1,1)"],
+            ["=DATE(2024,2,29)"]
           ]
         },
         {
@@ -120,13 +125,13 @@
     },
     {
       "sheet": "Summary",
-      "range": "G2:G9",
-      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4]]
+      "range": "G2:G11",
+      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889]]
     }
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:G9",
+    "range": "A1:G11",
     "renderFormat": "svg",
     "inspectKind": "workbook,sheet,table,formula,style,computedStyle",
     "maxChars": 12000

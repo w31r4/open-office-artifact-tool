@@ -24,11 +24,13 @@ try {
     assert.ok(stat.isFile() && stat.size > 0, `Expected non-empty skill output ${filePath}`);
   }
   const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(result.workbookPath));
+  assert.equal(workbook.dateSystem, "1904");
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("B2:D4").values, [
     [100, 60, 0.4],
     [120, 70, 0.4166666666666667],
     [150, 90, 0.4],
   ]);
+  assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G11").values, [[0], [43889]]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
@@ -48,11 +50,11 @@ try {
 
   const nativeStatus = nativeSpreadsheetRenderStatus();
   const csvPath = path.join(outputDir, "summary.csv");
-  await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G9" })).save(csvPath);
+  await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G11" })).save(csvPath);
   const csvQa = await verifyWorkbookFile(csvPath, {
     outputDir: path.join(outputDir, "csv-qa"),
     sheetName: "Summary",
-    range: "A1:G9",
+    range: "A1:G11",
     renderFormat: "svg",
     nativeRender: nativeStatus.available ? "required" : "off",
     coerceTypes: true,
@@ -60,18 +62,18 @@ try {
   assert.equal(csvQa.summary.inputFormat, "csv");
   assert.equal(csvQa.summary.inputType, "text/csv");
   assert.equal(csvQa.packageInspect.summary.kind, "delimitedFile");
-  assert.equal(csvQa.packageInspect.summary.rows, 9);
+  assert.equal(csvQa.packageInspect.summary.rows, 11);
   assert.equal(csvQa.summary.verifyOk, true);
   assert.equal(csvQa.summary.visualQaOk, true);
   assert.match(await fs.readFile(csvQa.summary.files.packageInspect, "utf8"), /delimitedRow/);
   if (nativeStatus.available) assert.equal(csvQa.summary.nativeRender.status, "passed");
 
   const tsvPath = path.join(outputDir, "summary.tsv");
-  await (await SpreadsheetFile.exportTsv(workbook, { sheetName: "Summary", range: "A1:G9" })).save(tsvPath);
+  await (await SpreadsheetFile.exportTsv(workbook, { sheetName: "Summary", range: "A1:G11" })).save(tsvPath);
   const tsvQa = await verifyWorkbookFile(tsvPath, {
     outputDir: path.join(outputDir, "tsv-qa"),
     sheetName: "Summary",
-    range: "A1:G9",
+    range: "A1:G11",
     renderFormat: "svg",
     nativeRender: nativeStatus.available ? "required" : "off",
     coerceTypes: true,

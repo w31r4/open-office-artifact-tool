@@ -1695,7 +1695,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
-| `Workbook.create` | api | Create an empty workbook; add worksheets before editing. |
+| `Workbook.create` | api | Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
@@ -1703,6 +1703,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.recalculate` | api | Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
 | `workbook.resolve` | api | Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
+| `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
 | `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata. |
 | `workbook.structuredReferences` | formula | Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
@@ -3411,11 +3412,16 @@ Create threaded comments after comments.setSelf({ displayName }); resolve with w
 
 #### `Workbook.create`
 
-Create an empty workbook; add worksheets before editing.
+Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system.
+
+**Schema parameters:**
+
+- `dateSystem` (string) — Excel serial-date system: '1900' (default) or '1904'.
+- `date1904` (boolean) — Boolean alias for dateSystem; true selects the 1904 system.
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Empty editable workbook facade.
+- `workbook` (Workbook) — Empty editable workbook facade with a normalized date system.
 
 #### `workbook.definedNames.add`
 
@@ -3549,6 +3555,18 @@ Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule,
 **Schema returns:**
 
 - `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+#### `workbook.setDateSystem`
+
+Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export.
+
+**Schema parameters:**
+
+- `dateSystem` (string|boolean) required — '1900' or false for the 1900 system; '1904' or true for the 1904 system.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — The same workbook after changing its formula and OOXML date-system context.
 
 #### `workbook.sharedArrayFormulas`
 

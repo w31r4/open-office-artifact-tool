@@ -745,6 +745,7 @@ assert.match(sharedStringsXml, /<sst/);
 assert.match(sharedStringsXml, /<t>Month<\/t>/);
 assert.match(sharedStringsXml, /<t>Not Started<\/t>/);
 const workbookXml = await zip.file("xl/workbook.xml").async("text");
+assert.doesNotMatch(workbookXml, /<workbookPr\b[^>]*date1904=/);
 assert.match(workbookXml, /<definedNames>/);
 assert.match(workbookXml, /name="RevenueData"/);
 assert.match(workbookXml, /Sheet1!G2:G4/);

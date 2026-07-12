@@ -58,6 +58,8 @@ await csv.save("output.csv");
 const importedTsv = await SpreadsheetFile.importTsv("Name\tValue\nRevenue\t120", { coerceTypes: true });
 ```
 
+For workbooks that use Excel's 1904 serial-date system, create the workbook with `Workbook.create({ dateSystem: "1904" })` or call `workbook.setDateSystem("1904")`. The setting drives date formulas and native `workbookPr date1904` import/export; do not manually offset stored dates by 1,462 days.
+
 ## Verification commands
 
 Verify any exported workbook and write bounded inspect, verify, layout, visual-QA, and preview evidence:

@@ -123,7 +123,7 @@ function applyRangeOperation(sheet, operation = {}) {
 }
 
 export function createWorkbookFromFixture(fixture = {}) {
-  const workbook = Workbook.create();
+  const workbook = Workbook.create({ dateSystem: fixture.dateSystem, date1904: fixture.date1904 });
   for (const sheetFixture of fixture.sheets || []) {
     const sheet = workbook.worksheets.add(sheetFixture.name);
     for (const operation of sheetFixture.ranges || []) applyRangeOperation(sheet, operation);
