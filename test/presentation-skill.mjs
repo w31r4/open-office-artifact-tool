@@ -127,10 +127,30 @@ try {
   assert.match(packageReview.qa.presentation.slides.items[0].speakerNotes.text, /author identity and package relationships/);
   assert.deepEqual(packageReview.qa.presentation.slides.items[0].comments.items[0].comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(packageReview.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
+  const modernComments = await runPresentationFixture("skills/presentations/fixtures/modern-comments.json", {
+    outputDir: path.join(root, "modern-comments"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(modernComments.qa.summary.packageOk, true);
+  assert.equal(modernComments.qa.verify.ok, true);
+  assert.equal(modernComments.qa.presentation.commentFormat, "modern");
+  assert.ok(modernComments.qa.packageInspect.parts.some((part) => part.path === "ppt/authors.xml"));
+  assert.ok(modernComments.qa.packageInspect.parts.some((part) => part.path === "ppt/comments/comment1.xml"));
+  const modernSkillZip = await JSZip.loadAsync(await fs.readFile(modernComments.pptxPath));
+  assert.match(await modernSkillZip.file("ppt/authors.xml").async("text"), /p188:authorLst/);
+  assert.match(await modernSkillZip.file("ppt/comments/comment1.xml").async("text"), /p188:replyLst/);
+  const modernSkillThread = modernComments.qa.presentation.slides.items[0].comments.items[0];
+  assert.equal(modernSkillThread.nativeFormat, "modern");
+  assert.equal(modernSkillThread.resolved, true);
+  assert.deepEqual(modernSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
+  assert.ok(modernSkillThread.comments.every((comment) => /^\{[0-9A-F-]+\}$/.test(comment.nativeId)));
+  assert.equal(modernComments.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   const skillText = await fs.readFile("skills/presentations/SKILL.md", "utf8");
   assert.match(skillText, /PresentationFile\.patchPptx/);
   assert.match(skillText, /package-drawing\.json/);
   assert.match(skillText, /package-notes-comments\.json/);
+  assert.match(skillText, /modern-comments\.json/);
 
   console.log("presentation skill smoke ok");
 } finally {

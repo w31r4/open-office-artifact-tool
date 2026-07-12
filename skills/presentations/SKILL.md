@@ -27,7 +27,7 @@ Use this project skill for standalone `.pptx` artifact work. It is the clean-roo
    For bounded package surgery, `PresentationFile.patchPptx(...)` can attach caller-supplied image bytes or public chart XML to an existing slide with `recipe: { kind: "image"|"chart", source: "ppt/slides/slideN.xml", sourceReference: { objectId, name, alt, position } }`. Position is explicit pixels; the patcher owns DrawingML namespaces, relationship references, non-visual ID collision checks, deterministic replacement, and deletion cleanup.
 5. Run `presentation.verify()` and `presentation.validateLayout()`; fix every material issue.
 6. Export PPTX and import the exported file again.
-7. Inspect native package parts with `PresentationFile.inspectPptx()`. Treat any notes/comments semantic issue as a delivery blocker: review relationships must originate from the correct slide/presentation part, roots/content types must match, and every legacy comment author/index must resolve through the singleton author registry.
+7. Inspect native package parts with `PresentationFile.inspectPptx()`. Treat any notes/comments semantic issue as a delivery blocker: review relationships must originate from the correct slide/presentation part, roots/content types must match, every legacy comment author/index must resolve through the singleton author registry, and every Office 2021 modern comment/reply GUID must resolve through the singleton modern Author part.
 8. Render every modeled slide with Playwright and render the original PPTX through LibreOffice to PDF plus Poppler PNGs.
 9. Inspect every model and native slide image at full size. When a baseline is approved, compare PNG pixels on subsequent runs.
 
@@ -36,6 +36,7 @@ import { Presentation, PresentationFile } from "open-office-artifact-tool";
 
 const deck = Presentation.create({
   slideSize: { width: 1280, height: 720 },
+  commentFormat: "modern", // omit for legacy commentAuthors.xml compatibility
   master: {
     name: "Evidence Master",
     background: { fill: "bg1", mode: "reference", index: 1001 },
@@ -105,6 +106,15 @@ node skills/presentations/scripts/run-fixture.mjs \
   --native-render required
 ```
 
+Run the Office 2021 comments fixture when author/reply/status fidelity matters:
+
+```sh
+node skills/presentations/scripts/run-fixture.mjs \
+  --fixture skills/presentations/fixtures/modern-comments.json \
+  --output-dir tmp/presentation-modern-comments \
+  --native-render required
+```
+
 `--native-render auto` runs LibreOffice + Poppler when available and records a skip otherwise. Use `required` for final local delivery when those runtimes are installed, and `off` only for an explicitly documented structural-only check.
 
 ## QA gates
@@ -116,6 +126,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - Master/layout evidence must restore native `p:bg` solid or scheme references and merge placeholders by `type` plus `idx`; slide backgrounds override layout backgrounds, which override the linked master. Inspect and render must report the same effective background.
 - The checked-in `package-drawing.json` fixture generates a chart part through the public facade, attaches it and an arbitrary-path image to an existing slide through `patchPptx`, restores both as editable agent-facing objects, and passes the real render gate.
 - The checked-in `package-notes-comments.json` fixture relocates notes, comments, and the singleton author registry to arbitrary valid paths, proves semantic validation reports zero issues, restores author identity and note text, and passes LibreOffice/Poppler rendering.
+- The checked-in `modern-comments.json` fixture emits Office 2021 `p188` Comment and Author parts, preserves GUID identities, native reply nesting, dates, authors, and resolved state across metadata-free import/export, and passes semantic plus LibreOffice/Poppler gates. Shape-level modern anchors are currently serialized as the standards-defined `unknownAnchor`; richer drawing/text monikers remain a fidelity target.
 - `presentation.verify()` and `presentation.validateLayout()` catch structural, overlap, off-canvas, overflow, chart, table, image, placeholder, and dangling-comment issues.
 - Per-slide Playwright PNGs catch facade/render regressions; the montage checks deck flow only.
 - LibreOffice PDF plus Poppler slide PNGs are the native non-Windows render gate.

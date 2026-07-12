@@ -900,7 +900,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `Presentation.create` | api | Create a deck with a slide size, default theme, one or more Slide Masters with optional theme overrides, and master-bound reusable layouts. |
+| `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
@@ -922,7 +922,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output. |
-| `slide.comments.addThread` | api | Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets. |
+| `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, and status through p188 comment parts. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
@@ -964,7 +964,7 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `Presentation.create`
 
-Create a deck with a slide size, default theme, one or more Slide Masters with optional theme overrides, and master-bound reusable layouts.
+Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization.
 
 **Schema parameters:**
 
@@ -973,6 +973,7 @@ Create a deck with a slide size, default theme, one or more Slide Masters with o
 - `master` (object) — Backward-compatible first Slide Master configuration, including an optional partial theme override, used when masters is omitted.
 - `masters` (object[]) — One or more Slide Master definitions with stable IDs, names, backgrounds, optional partial theme overrides, and typed placeholder defaults.
 - `layouts` (object[]) — Reusable slide layouts bound to a masterId.
+- `commentFormat` (string) — Comment serialization: legacy (default) or Office 2021 modern.
 
 **Schema returns:**
 
@@ -1317,7 +1318,7 @@ Add an inspectable bar/line/pie chart facade with chartType, title, categories, 
 
 #### `slide.comments.addThread`
 
-Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets.
+Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, and status through p188 comment parts.
 
 **Schema parameters:**
 
@@ -1325,6 +1326,8 @@ Attach threaded comments to slide elements; export preserves per-comment author 
 - `text` (string) required — Initial comment text.
 - `author` (string) — Comment author.
 - `resolved` (boolean) — Initial resolution state.
+- `created` (string) — XML date-time for the root comment.
+- `comments` (object[]) — Optional root/reply records with author, text, created, native GUID identity, person metadata, and status.
 
 **Schema returns:**
 

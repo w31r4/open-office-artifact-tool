@@ -1,0 +1,54 @@
+{
+  "name": "modern-comments",
+  "outputName": "modern-comments.pptx",
+  "commentFormat": "modern",
+  "slideSize": { "width": 1280, "height": 720 },
+  "theme": {
+    "name": "Modern Review",
+    "colors": { "accent1": "#2563eb", "accent2": "#16a34a", "tx1": "#0f172a", "bg1": "#ffffff" }
+  },
+  "slides": [
+    {
+      "name": "office-2021-review",
+      "shapes": [
+        {
+          "name": "review-title",
+          "text": "Office 2021 comments survive agent roundtrip",
+          "position": { "left": 72, "top": 64, "width": 1060, "height": 90 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "textStyle": { "fontSize": 40, "bold": true, "color": "#0f172a" }
+        },
+        {
+          "name": "review-evidence",
+          "text": "GUID authors  •  native replies  •  resolved status  •  relationship-owned parts",
+          "position": { "left": 72, "top": 220, "width": 1050, "height": 180 },
+          "fill": "#dbeafe",
+          "line": { "fill": "#2563eb", "width": 2 },
+          "textStyle": { "fontSize": 27, "color": "#1e3a8a" }
+        }
+      ],
+      "comments": [
+        {
+          "targetName": "review-title",
+          "author": "QA Agent",
+          "created": "2026-07-13T01:02:03Z",
+          "text": "Validate the Office 2021 comment graph.",
+          "replies": [
+            { "author": "Maintainer", "created": "2026-07-13T02:03:04Z", "text": "Authors, GUIDs, reply nesting, and status verified." }
+          ],
+          "resolved": true
+        }
+      ]
+    }
+  ],
+  "expectInspect": [
+    { "kind": "comment", "pattern": "Office 2021 comment graph" },
+    { "kind": "shape", "pattern": "GUID authors" }
+  ],
+  "qa": {
+    "nativeRender": "auto",
+    "inspectKind": "deck,slide,shape,comment,textRange",
+    "maxChars": 16000
+  }
+}

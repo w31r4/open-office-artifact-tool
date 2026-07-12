@@ -48,7 +48,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /commentAuthors\.xml/);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /commentAuthors\.xml.*Office 2021/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.connectors.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.theme"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master"));

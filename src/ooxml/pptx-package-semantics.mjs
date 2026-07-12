@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { attributes, decodeXml, rootTag } from "./source-reference-xml.mjs";
+import { validatePresentationModernCommentPackageSemantics } from "../presentation/ooxml-modern-comments.mjs";
 
 const PRESENTATION_NAMESPACES = new Set([
   "http://schemas.openxmlformats.org/presentationml/2006/main",
@@ -17,6 +18,12 @@ const RELATIONSHIP_KINDS = {
   notesSlide: { sourceRoot: "sld", targetRoot: "notes", maximumPerSource: 1 },
   comments: { sourceRoot: "sld", targetRoot: "cmLst", maximumPerSource: 1 },
   commentAuthors: { sourceRoot: "presentation", targetRoot: "cmAuthorLst", maximumPerSource: 1 },
+};
+
+const RELATIONSHIP_TYPES = {
+  notesSlide: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide",
+  comments: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+  commentAuthors: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/commentAuthors",
 };
 
 const decoder = new TextDecoder();
@@ -56,7 +63,7 @@ function hasPresentationRoot(sourceXml, localName) {
 }
 
 function relationshipKind(type) {
-  return Object.keys(RELATIONSHIP_KINDS).find((kind) => String(type || "").endsWith(`/${kind}`));
+  return Object.keys(RELATIONSHIP_KINDS).find((kind) => type === RELATIONSHIP_TYPES[kind]);
 }
 
 function relationships(bytesByPath) {
@@ -202,5 +209,6 @@ export function validatePptxPackageSemantics({ bytesByPath, contentTypes }) {
     ...validatePartReachability(entries, bytesByPath, contentTypes),
     ...validateComments(entries, bytesByPath, contentTypes),
     ...validateNotes(bytesByPath, contentTypes),
+    ...validatePresentationModernCommentPackageSemantics({ bytesByPath, contentTypes }),
   ];
 }

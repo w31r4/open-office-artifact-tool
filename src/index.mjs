@@ -19,6 +19,7 @@ import { parseStructuredReference, scanStructuredReferenceIntersections, scanStr
 import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, parsePresentationBackgroundXml, parsePresentationPlaceholderStyleXml, presentationBackgroundXml, presentationColorXml, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
+import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -1013,7 +1014,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.FLOOR", category: "math-trig", summary: "Round a number down to the nearest significance.", examples: ["=FLOOR(A1,5)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
-  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with a slide size, default theme, one or more Slide Masters with optional theme overrides, and master-bound reusable layouts." },
+  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization." },
   { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable slide with optional name, layout identity, and speaker notes." },
   { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
@@ -1035,7 +1036,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts." },
   { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
-  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets." },
+  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, and status through p188 comment parts." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
@@ -1792,6 +1793,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     master: { type: "object", description: "Backward-compatible first Slide Master configuration, including an optional partial theme override, used when masters is omitted." },
     masters: { type: "object[]", description: "One or more Slide Master definitions with stable IDs, names, backgrounds, optional partial theme overrides, and typed placeholder defaults." },
     layouts: { type: "object[]", description: "Reusable slide layouts bound to a masterId." },
+    commentFormat: { type: "string", description: "Comment serialization: legacy (default) or Office 2021 modern." },
   }, "presentation", "Presentation", "Editable presentation facade."),
   "presentation.slides.add": helpSchema({
     name: { type: "string", description: "Inspectable slide name." },
@@ -1923,6 +1925,8 @@ const PRESENTATION_HELP_SCHEMAS = {
     text: { type: "string", required: true, description: "Initial comment text." },
     author: { type: "string", description: "Comment author." },
     resolved: { type: "boolean", description: "Initial resolution state." },
+    created: { type: "string", description: "XML date-time for the root comment." },
+    comments: { type: "object[]", description: "Optional root/reply records with author, text, created, native GUID identity, person metadata, and status." },
   }, "thread", "SlideCommentThread", "Attached comment thread."),
   "slide.connectors.add": helpSchema({
     from: { type: "string|object", description: "Start element/ID or point." },
@@ -7154,6 +7158,7 @@ export class Presentation {
   constructor(options = {}) {
     this.id = aid("pr");
     this.slideSize = options.slideSize || { width: 1280, height: 720 };
+    this.commentFormat = options.commentFormat || "legacy";
     this.theme = new PresentationTheme(this, options.theme || {});
     this.masters = new PresentationSlideMasterCollection(this);
     const masterConfigs = Array.isArray(options.masters) && options.masters.length ? options.masters : [options.master || {}];
@@ -7192,6 +7197,10 @@ export class Presentation {
   verify(options = {}) {
     const issues = [];
     if (this.slides.items.length === 0) issues.push(verificationIssue("presentation", "noSlides", "Presentation has no slides."));
+    if (this.commentFormat === "modern" || this.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"))) {
+      try { planPresentationModernComments(this.slides.items); }
+      catch (error) { issues.push(verificationIssue("presentation", "invalidModernCommentMetadata", error.message)); }
+    }
     const duplicateMasterIds = this.masters.items.map((master) => master.id).filter((id, index, ids) => ids.indexOf(id) !== index);
     for (const masterId of new Set(duplicateMasterIds)) issues.push(verificationIssue("presentation", "duplicateMasterId", `Presentation contains duplicate master ID ${masterId}.`, { masterId }));
     const knownMasterIds = new Set(this.masters.items.map((master) => master.id));
@@ -7379,11 +7388,13 @@ class SlideCommentThread {
     this.author = config.author || "User";
     this.resolved = Boolean(config.resolved);
     this.created = config.created || new Date(0).toISOString();
-    this.comments = (config.comments || [{ author: this.author, text: String(text ?? ""), created: this.created }]).map((comment) => ({ author: comment.author || this.author, text: String(comment.text ?? ""), created: comment.created || this.created }));
+    this.nativeFormat = config.nativeFormat;
+    this.position = config.position;
+    this.comments = (config.comments || [{ author: this.author, text: String(text ?? ""), created: this.created }]).map((comment) => ({ ...comment, author: comment.author || this.author, text: String(comment.text ?? ""), created: comment.created || this.created }));
   }
 
   addReply(text, config = {}) {
-    this.comments.push({ author: config.author || this.author, text: String(text ?? ""), created: config.created || new Date(0).toISOString() });
+    this.comments.push({ ...config, author: config.author || this.author, text: String(text ?? ""), created: config.created || new Date(0).toISOString() });
     return this;
   }
 
@@ -7391,10 +7402,10 @@ class SlideCommentThread {
   reopen() { this.resolved = false; return this; }
 
   inspectRecord() {
-    return { kind: "comment", id: this.id, slide: this.slide.index + 1, targetId: this.targetId, author: this.author, resolved: this.resolved, replies: Math.max(0, this.comments.length - 1), textPreview: this.comments.map((comment) => comment.text).join("\n").slice(0, 300) };
+    return { kind: "comment", id: this.id, slide: this.slide.index + 1, targetId: this.targetId, author: this.author, resolved: this.resolved, nativeFormat: this.nativeFormat, nativeCommentIds: this.comments.map((comment) => comment.nativeId).filter(Boolean), replies: Math.max(0, this.comments.length - 1), textPreview: this.comments.map((comment) => comment.text).join("\n").slice(0, 300) };
   }
 
-  toJSON() { return { id: this.id, targetId: this.targetId, author: this.author, resolved: this.resolved, created: this.created, comments: this.comments.map((comment) => ({ ...comment })) }; }
+  toJSON() { return { id: this.id, targetId: this.targetId, author: this.author, resolved: this.resolved, created: this.created, nativeFormat: this.nativeFormat, position: this.position, comments: this.comments.map((comment) => ({ ...comment })) }; }
 }
 
 class SlideCommentCollection {
@@ -7966,11 +7977,13 @@ export class PresentationFile {
     const imageParts = collectPresentationImageParts(presentation);
     const chartParts = collectPresentationChartParts(presentation, imageParts);
     const { masterParts, layoutParts, themeParts } = collectPresentationMasterGraph(presentation);
-    const commentAuthors = collectPptxCommentAuthors(presentation);
-    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, imageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts));
+    const useModernComments = presentation.commentFormat === "modern" || presentation.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"));
+    const commentAuthors = useModernComments ? { entries: [], byName: new Map() } : collectPptxCommentAuthors(presentation);
+    const modernComments = useModernComments ? planPresentationModernComments(presentation.slides.items) : { authors: [], parts: [] };
+    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, imageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts, modernComments));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "ppt/presentation.xml" }]));
     zip.file("ppt/presentation.xml", presentationXml(presentation, masterParts));
-    zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, masterParts, commentAuthors.entries.length > 0));
+    zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, masterParts, commentAuthors.entries.length > 0, modernComments.authors.length > 0));
     for (const themePart of themeParts) zip.file(`ppt/theme/theme${themePart.themePartId}.xml`, presentationThemeXml(themePart.theme));
     for (const masterPart of masterParts) {
       const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text || "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style })).join("");
@@ -7991,12 +8004,14 @@ export class PresentationFile {
       const layoutRelId = slideLayoutPart ? `rId${nextRelIndex}` : undefined;
       const notesRelId = slide.speakerNotes.text ? `rId${nextRelIndex + (layoutRelId ? 1 : 0)}` : undefined;
       const commentsRelId = slide.comments.items.length ? `rId${nextRelIndex + (layoutRelId ? 1 : 0) + (notesRelId ? 1 : 0)}` : undefined;
+      const modernCommentPart = modernComments.parts.find((part) => part.slideIndex === i);
       zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, slideImageParts, slideChartParts));
-      if (slideImageParts.length || slideChartParts.length || layoutRelId || notesRelId || commentsRelId) zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, pptxSlideRelsXml(slideImageParts, slideChartParts, { slideIndex: i, layoutRelId, layoutPartId: slideLayoutPart?.layoutPartId, notesRelId, commentsRelId }));
+      if (slideImageParts.length || slideChartParts.length || layoutRelId || notesRelId || commentsRelId) zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, pptxSlideRelsXml(slideImageParts, slideChartParts, { slideIndex: i, layoutRelId, layoutPartId: slideLayoutPart?.layoutPartId, notesRelId, commentsRelId, modernComments: Boolean(modernCommentPart) }));
       if (notesRelId) zip.file(`ppt/notesSlides/notesSlide${i + 1}.xml`, pptxNotesSlideXml(slide));
-      if (commentsRelId) zip.file(`ppt/comments/comment${i + 1}.xml`, pptxCommentsXml(slide, commentAuthors));
+      if (commentsRelId) zip.file(`ppt/comments/comment${i + 1}.xml`, modernCommentPart ? presentationModernCommentsXml(modernCommentPart) : pptxCommentsXml(slide, commentAuthors));
     });
     if (commentAuthors.entries.length) zip.file("ppt/commentAuthors.xml", pptxCommentAuthorsXml(commentAuthors));
+    if (modernComments.authors.length) zip.file("ppt/authors.xml", presentationModernAuthorsXml(modernComments));
     imageParts.forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`ppt/charts/chart${part.chartPartId}.xml`, pptxChartXml(part.chart)));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
@@ -8023,6 +8038,9 @@ export class PresentationFile {
     const commentAuthorsRel = presentationRels.find((rel) => rel.type.endsWith("/commentAuthors") && rel.targetMode?.toLowerCase() !== "external");
     const commentAuthorsTarget = commentAuthorsRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", commentAuthorsRel.target), "PPTX") : undefined;
     const commentAuthorsById = commentAuthorsTarget ? parsePptxCommentAuthors(await zip.file(commentAuthorsTarget)?.async("text")) : new Map();
+    const modernAuthorsRel = presentationRels.find((rel) => rel.type === PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE && rel.targetMode?.toLowerCase() !== "external");
+    const modernAuthorsTarget = modernAuthorsRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", modernAuthorsRel.target), "PPTX") : undefined;
+    const modernAuthorsById = modernAuthorsTarget ? parsePresentationModernAuthors(await zip.file(modernAuthorsTarget)?.async("text")) : new Map();
     const layoutByTarget = new Map();
     const relationshipsById = new Map(presentationRels.map((relationship) => [relationship.id, relationship]));
     const referencedMasters = [...String(presentationXml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldMasterId\b[^>]*\/?\s*>/g)].map((match) => {
@@ -8098,11 +8116,20 @@ export class PresentationFile {
       }
       await parseSlideXml(slide, await zip.file(file).async("text"), { rels, zip, layout: layoutTarget ? layoutByTarget.get(layoutTarget) : undefined });
       const notesRel = rels.find((rel) => rel.type.endsWith("/notesSlide"));
-      const commentsRel = rels.find((rel) => rel.type.endsWith("/comments"));
+      const modernCommentsRel = rels.find((rel) => rel.type === PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE && rel.targetMode?.toLowerCase() !== "external");
+      const commentsRel = modernCommentsRel || rels.find((rel) => rel.type.endsWith("/comments") && rel.targetMode?.toLowerCase() !== "external");
       const notesTarget = notesRel ? pptxRelationshipTarget(rels, notesRel.id) : undefined;
       const commentsTarget = commentsRel ? pptxRelationshipTarget(rels, commentsRel.id) : undefined;
       if (notesTarget) parsePptxNotes(slide, await zip.file(notesTarget)?.async("text"));
-      if (commentsTarget) parsePptxComments(slide, await zip.file(commentsTarget)?.async("text"), commentAuthorsById);
+      if (commentsTarget && modernCommentsRel) {
+        presentation.commentFormat = "modern";
+        const threads = parsePresentationModernComments(await zip.file(commentsTarget)?.async("text"), modernAuthorsById);
+        for (const thread of threads) {
+          const namedTarget = thread.targetName ? [...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.connectors.items].find((item) => item.name === thread.targetName) : undefined;
+          thread.targetId = slide.resolve(thread.targetId)?.id || namedTarget?.id || thread.targetId;
+          slide.comments.addThread(thread.targetId, thread.comments[0]?.text || "", thread);
+        }
+      } else if (commentsTarget) parsePptxComments(slide, await zip.file(commentsTarget)?.async("text"), commentAuthorsById);
     }
     return presentation;
   }
@@ -8150,12 +8177,14 @@ function collectPresentationMasterGraph(presentation) {
   return planPresentationMasterGraph(presentation.masters.items, layouts, presentation.theme);
 }
 
-function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, masterParts = [], layoutParts = [], commentAuthors = [], themeParts = []) {
+function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, masterParts = [], layoutParts = [], commentAuthors = [], themeParts = [], modernComments = { authors: [], parts: [] }) {
   const slides = Array.from({ length: slideCount }, (_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/ppt/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
   const notes = presentation?.slides.items.map((slide, i) => slide.speakerNotes.text ? `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>` : "").join("") || "";
-  const comments = presentation?.slides.items.map((slide, i) => slide.comments.items.length ? `<Override PartName="/ppt/comments/comment${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.comments+xml"/>` : "").join("") || "";
+  const modernSlides = new Set(modernComments.parts.map((part) => part.slideIndex));
+  const comments = presentation?.slides.items.map((slide, i) => slide.comments.items.length ? `<Override PartName="/ppt/comments/comment${i + 1}.xml" ContentType="${modernSlides.has(i) ? PPTX_MODERN_COMMENT_CONTENT_TYPE : "application/vnd.openxmlformats-officedocument.presentationml.comments+xml"}"/>` : "").join("") || "";
   const authors = commentAuthors.length ? `<Override PartName="/ppt/commentAuthors.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml"/>` : "";
+  const modernAuthors = modernComments.authors.length ? `<Override PartName="/ppt/authors.xml" ContentType="${PPTX_MODERN_AUTHOR_CONTENT_TYPE}"/>` : "";
   const theme = (themeParts.length ? themeParts : [{ themePartId: 1 }]).map((part) => `<Override PartName="/ppt/theme/theme${part.themePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`).join("");
   const master = masterParts.map((part) => `<Override PartName="/ppt/slideMasters/slideMaster${part.masterPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>`).join("");
   const layouts = layoutParts.map((part) => `<Override PartName="/ppt/slideLayouts/slideLayout${part.layoutPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>`).join("");
@@ -8166,7 +8195,7 @@ function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presenta
     ["gif", "image/gif"],
     ["svg", "image/svg+xml"],
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${theme}${master}${layouts}${notes}${comments}${authors}</Types>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${theme}${master}${layouts}${notes}${comments}${authors}${modernAuthors}</Types>`;
 }
 
 function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
@@ -8175,15 +8204,16 @@ function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
     ...chartParts.map((part) => ({ id: part.slideRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart", target: `../charts/chart${part.chartPartId}.xml` })),
     ...(extras.layoutRelId ? [{ id: extras.layoutRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: `../slideLayouts/slideLayout${extras.layoutPartId}.xml` }] : []),
     ...(extras.notesRelId ? [{ id: extras.notesRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide", target: `../notesSlides/notesSlide${extras.slideIndex + 1}.xml` }] : []),
-    ...(extras.commentsRelId ? [{ id: extras.commentsRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: `../comments/comment${extras.slideIndex + 1}.xml` }] : []),
+    ...(extras.commentsRelId ? [{ id: extras.commentsRelId, type: extras.modernComments ? PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE : "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: `../comments/comment${extras.slideIndex + 1}.xml` }] : []),
   ]);
 }
 
-function pptxPresentationRelsXml(presentation, masterParts = [], hasCommentAuthors = false) {
+function pptxPresentationRelsXml(presentation, masterParts = [], hasCommentAuthors = false, hasModernAuthors = false) {
   const relationships = presentation.slides.items.map((_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", target: `slides/slide${i + 1}.xml` }));
   relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" });
   for (const masterPart of masterParts) relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: `slideMasters/slideMaster${masterPart.masterPartId}.xml` });
   if (hasCommentAuthors) relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/commentAuthors", target: "commentAuthors.xml" });
+  if (hasModernAuthors) relationships.push({ id: `rId${relationships.length + 1}`, type: PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, target: "authors.xml" });
   return relsXml(relationships);
 }
 
@@ -9745,6 +9775,8 @@ const OOXML_FAMILY_PART_RECIPES = {
     notesslide: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/notesSlide` },
     comments: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.comments+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/comments` },
     commentauthors: { contentType: "application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/commentAuthors` },
+    moderncomments: { contentType: PPTX_MODERN_COMMENT_CONTENT_TYPE, relationshipType: PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE },
+    modernauthors: { contentType: PPTX_MODERN_AUTHOR_CONTENT_TYPE, relationshipType: PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE },
   },
 };
 

@@ -632,4 +632,62 @@ const loadedSummarySurface = loaded.slides.items[0].shapes.items.find((item) => 
 assert.equal(loadedSummarySurface.text.style.fontSize, 32);
 assert.equal(loadedSummarySurface.text.style.bold, true);
 assert.equal(loadedSummarySurface.fill.toLowerCase(), "#ffffff");
+
+const modernPresentation = Presentation.create({ commentFormat: "modern" });
+const modernSlide = modernPresentation.slides.add();
+const modernTarget = modernSlide.shapes.add({ name: "modern-comment-target", text: "Office 2021 review target" });
+modernSlide.comments.addThread(modernTarget, "Review the modern comment contract.", { author: "Modern Reviewer", created: "2026-07-13T01:02:03Z" })
+  .addReply("The native reply is preserved.", { author: "Modern Editor", created: "2026-07-13T02:03:04Z", userId: "editor@example.test", providerId: "None" })
+  .resolve();
+const modernPptx = await PresentationFile.exportPptx(modernPresentation);
+assert.equal((await PresentationFile.inspectPptx(modernPptx)).ok, true);
+const modernZip = await JSZip.loadAsync(new Uint8Array(await modernPptx.arrayBuffer()));
+const modernCommentsXml = await modernZip.file("ppt/comments/comment1.xml").async("text");
+const modernAuthorsXml = await modernZip.file("ppt/authors.xml").async("text");
+assert.match(modernCommentsXml, /p188:cmLst/);
+assert.match(modernCommentsXml, /p188:unknownAnchor/);
+assert.match(modernCommentsXml, /p188:replyLst/);
+assert.match(modernCommentsXml, /status="resolved"/);
+assert.equal((modernCommentsXml.match(/id="\{[0-9A-F-]+\}"/g) || []).length, 2);
+assert.match(modernAuthorsXml, /p188:authorLst/);
+assert.match(modernAuthorsXml, /name="Modern Reviewer"/);
+assert.match(modernAuthorsXml, /name="Modern Editor"/);
+assert.match(await modernZip.file("ppt/_rels/presentation.xml.rels").async("text"), /office\/2018\/10\/relationships\/authors/);
+assert.match(await modernZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /office\/2018\/10\/relationships\/comments/);
+assert.match(await modernZip.file("[Content_Types].xml").async("text"), /application\/vnd\.ms-powerpoint\.comments\+xml/);
+const modernLoaded = await PresentationFile.importPptx(modernPptx);
+assert.equal(modernLoaded.commentFormat, "modern");
+const modernLoadedThread = modernLoaded.slides.items[0].comments.items[0];
+assert.equal(modernLoadedThread.nativeFormat, "modern");
+assert.equal(modernLoadedThread.resolved, true);
+assert.equal(modernLoadedThread.targetId, undefined);
+assert.deepEqual(modernLoadedThread.comments.map((comment) => comment.author), ["Modern Reviewer", "Modern Editor"]);
+assert.ok(modernLoadedThread.comments.every((comment) => /^\{[0-9A-F-]+\}$/.test(comment.nativeId)));
+const modernSecondExport = await PresentationFile.exportPptx(modernLoaded);
+const modernSecondZip = await JSZip.loadAsync(new Uint8Array(await modernSecondExport.arrayBuffer()));
+const modernSecondXml = await modernSecondZip.file("ppt/comments/comment1.xml").async("text");
+assert.match(modernSecondXml, new RegExp(modernLoadedThread.comments[0].nativeId.replace(/[{}]/g, "\\$&")));
+assert.match(modernSecondXml, new RegExp(modernLoadedThread.comments[1].nativeId.replace(/[{}]/g, "\\$&")));
+
+const relocatedModern = await PresentationFile.patchPptx(modernPptx, [
+  { path: "ppt/comments/comment1.xml", remove: true },
+  { path: "ppt/authors.xml", remove: true },
+  { path: "ppt/custom/reviews/modern.xml", xml: modernCommentsXml.replaceAll("<p188:", "<review:").replaceAll("</p188:", "</review:").replace("xmlns:p188=", "xmlns:review="), recipe: { kind: "modernComments", source: "ppt/slides/slide1.xml" } },
+  { path: "ppt/custom/reviews/people.xml", xml: modernAuthorsXml.replaceAll("<p188:", "<people:").replaceAll("</p188:", "</people:").replace("xmlns:p188=", "xmlns:people="), recipe: { kind: "modernAuthors", source: "ppt/presentation.xml" } },
+]);
+assert.equal((await PresentationFile.inspectPptx(relocatedModern)).ok, true);
+const relocatedModernLoaded = await PresentationFile.importPptx(relocatedModern);
+assert.equal(relocatedModernLoaded.commentFormat, "modern");
+assert.deepEqual(relocatedModernLoaded.slides.items[0].comments.items[0].comments.map((comment) => comment.text), ["Review the modern comment contract.", "The native reply is preserved."]);
+await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/comment1.xml", xml: modernCommentsXml.replace(/id="\{[0-9A-F-]+\}"/, 'id="not-a-guid"') }]), /invalid OOXML package.*pptxModernCommentIdInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/authors.xml", xml: modernAuthorsXml.replace(/<p188:author\b[^>]*\/>/, "") }]), /invalid OOXML package.*pptxModernCommentAuthorNotFound/);
+await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/comment1.xml", xml: modernCommentsXml.replace("<p188:unknownAnchor/>", "") }]), /invalid OOXML package.*pptxModernCommentAnchorMissing/);
+await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/comment1.xml", xml: modernCommentsXml.replace("<p188:unknownAnchor/>", "<p188:unknownAnchor/><p188:unknownAnchor/>") }]), /invalid OOXML package.*pptxModernCommentAnchorMissing/);
+await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/comment1.xml", xml: modernCommentsXml.replace(/<p188:pos x="[^"]+"/, '<p188:pos x="NaN"') }]), /invalid OOXML package.*pptxModernCommentPositionInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/_rels/comment1.xml.rels", xml: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide1.xml"/></Relationships>' }]), /invalid OOXML package.*pptxModernCommentPartRelationshipsForbidden/);
+const invalidModernModel = Presentation.create({ commentFormat: "modern" });
+const invalidModernSlide = invalidModernModel.slides.add();
+invalidModernSlide.comments.addThread(undefined, "Invalid identity", { comments: [{ nativeId: "not-a-guid", author: "Reviewer", text: "Invalid identity", created: "2026-07-13T01:02:03Z" }] });
+assert.ok(invalidModernModel.verify().issues.some((issue) => issue.type === "invalidModernCommentMetadata"));
+await assert.rejects(() => PresentationFile.exportPptx(invalidModernModel), /must be a brace-delimited GUID/);
 console.log("presentation smoke ok");
