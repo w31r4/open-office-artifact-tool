@@ -69,3 +69,9 @@ export function normalizePivotDate(value, label) {
   if (!result || typeof value === "number") throw new TypeError(`${label} must be an ISO date or Date.`);
   return result;
 }
+
+export function normalizePivotDateTime(value, label) {
+  const result = pivotDateTimeKey(value);
+  if (!result || typeof value === "number") throw new TypeError(`${label} must be an ISO date-time or Date.`);
+  return result;
+}

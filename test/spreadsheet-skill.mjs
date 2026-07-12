@@ -64,6 +64,9 @@ try {
   const fixtureZip = await JSZip.loadAsync(await fs.readFile(result.workbookPath));
   assert.match(await fixtureZip.file("xl/styles.xml").async("text"), /patternType="darkGrid"><fgColor theme="4" tint="0.4"/);
   assert.match(await fixtureZip.file("xl/theme/theme1.xml").async("text"), /name="Agent Spreadsheet Theme"/);
+  const fixturePivotXml = await fixtureZip.file("xl/pivotTables/pivotTable1.xml").async("text");
+  assert.match(fixturePivotXml, /x14:pivotFilter useWholeDay="0"/);
+  assert.match(fixturePivotXml, /stringValue1="2026-03-31T17:00:00" stringValue2="2026-03-31T19:00:00"/);
   const summaryDrawings = workbook.worksheets.getItem("Summary");
   assert.equal(summaryDrawings.charts.items.length, 1);
   assert.equal(summaryDrawings.charts.items[0].title, "Quarter performance");
@@ -76,13 +79,13 @@ try {
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.equal(summaryDrawings.pivotTables.items.length, 1);
   const summaryPivot = summaryDrawings.pivotTables.getItemOrNullObject("RevenuePivot");
-  assert.deepEqual(summaryPivot.computedValues(), [["Period Year", "Period Quarter", "Period Month", "Month", "Period End", "Revenue total", "Gross profit"], ["2026", "Q1", "Mar", "Mar", "2026-03-31", 150, 60]]);
+  assert.deepEqual(summaryPivot.computedValues(), [["Period Year", "Period Quarter", "Period Month", "Month", "Period End", "Revenue total", "Gross profit"], ["2026", "Q1", "Mar", "Mar", "2026-03-31T18:00:00Z", 150, 60]]);
   assert.deepEqual(summaryPivot.groupFields, [
     { name: "Period Year", sourceField: "Period End", groupBy: "years" },
     { name: "Period Quarter", sourceField: "Period End", groupBy: "quarters", parent: "Period Year" },
     { name: "Period Month", sourceField: "Period End", groupBy: "months", parent: "Period Quarter" },
   ]);
-  assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }, { field: "Period End", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
+  assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }, { field: "Period End", type: "dateBetween", value1: "2026-03-31T17:00:00", value2: "2026-03-31T19:00:00", useWholeDay: false }]);
   assert.deepEqual(summaryPivot.calculatedFields, [{ name: "Gross Profit", formula: "='Revenue'-'Cost'", numFmtId: 0, references: ["Revenue", "Cost"] }]);
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
@@ -100,6 +103,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"pivotTable"[\s\S]*"name":"RevenuePivot"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"filters":\[\{"field":"Month","include":\["Jan","Mar"\]/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"field":"Period End","type":"dateBetween"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"useWholeDay":false/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"groupBy":"quarters"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Gross Profit"/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);

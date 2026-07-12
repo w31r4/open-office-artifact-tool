@@ -48,9 +48,9 @@
           "range": "A1:E4",
           "values": [
             ["Month", "Revenue", "Cost", "Margin", "Period End"],
-            ["Jan", null, null, null, "2026-01-31"],
-            ["Feb", null, null, null, "2026-02-28"],
-            ["Mar", null, null, null, "2026-03-31"]
+            ["Jan", null, null, null, "2026-01-31T08:00:00Z"],
+            ["Feb", null, null, null, "2026-02-28T12:00:00Z"],
+            ["Mar", null, null, null, "2026-03-31T18:00:00Z"]
           ]
         },
         {
@@ -177,7 +177,7 @@
           "rowFields": ["Period Year", "Period Quarter", "Period Month", "Month", "Period End"],
           "filters": [
             { "field": "Month", "include": ["Jan", "Mar"] },
-            { "field": "Period End", "type": "dateBetween", "value1": "2026-02-01", "value2": "2026-03-31" }
+            { "field": "Period End", "type": "dateBetween", "value1": "2026-03-31T17:00:00Z", "value2": "2026-03-31T19:00:00Z", "useWholeDay": false }
           ],
           "refreshPolicy": {
             "refreshOnLoad": false,

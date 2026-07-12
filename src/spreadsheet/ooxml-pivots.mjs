@@ -179,12 +179,14 @@ export function parsePivotTableDefinition(xml = "", cache = {}) {
     const fieldIndex = Number(attrs.fld);
     const field = Number.isInteger(fieldIndex) && fieldIndex >= 0 && fieldIndex < fields.length ? fields[fieldIndex] : undefined;
     if (!field) return [];
-    if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(attrs.type)) return [{ field, type: attrs.type, useWholeDay: true }];
+    const extensionAttrs = attributes(tag(entry.xml, "pivotFilter"));
+    const useWholeDay = extensionAttrs.useWholeDay === undefined ? true : booleanAttribute(extensionAttrs.useWholeDay, true);
+    if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(attrs.type)) return [{ field, type: attrs.type, useWholeDay }];
     const customValues = elements(body(entry.xml, "customFilters"), "customFilter").map((item) => attributes(item.opening).val).filter((value) => value != null);
     const value1 = attrs.stringValue1 || customValues[0];
     const between = attrs.type === "dateBetween" || attrs.type === "dateNotBetween";
     const value2 = attrs.stringValue2 || customValues[1];
-    return value1 && (!between || value2) ? [{ field, type: attrs.type, value1, value2: between ? value2 : undefined, useWholeDay: true }] : [];
+    return value1 && (!between || value2) ? [{ field, type: attrs.type, value1, value2: between ? value2 : undefined, useWholeDay }] : [];
   });
   const dateFilterFields = new Set(dateFilters.map((filter) => filter.field));
   const filters = pivotFieldEntries.flatMap((entry, fieldIndex) => {
@@ -334,7 +336,8 @@ function dateFilterXml(filter, fieldIndex, id) {
   const custom = operators[filter.type].map((operator, index) => `<customFilter operator="${operator}" val="${attrEscape(values[index])}"/>`).join("");
   const join = values.length > 1 ? ` and="${filter.type === "dateBetween" ? 1 : 0}"` : "";
   const second = filter.value2 ? ` stringValue2="${attrEscape(filter.value2)}"` : "";
-  return `<filter fld="${fieldIndex}" type="${filter.type}" id="${id}" stringValue1="${attrEscape(filter.value1)}"${second}><autoFilter ref="A1"><filterColumn colId="0"><customFilters${join}>${custom}</customFilters></filterColumn></autoFilter></filter>`;
+  const extension = filter.useWholeDay === false ? '<extLst><ext uri="{0605FD5F-26C8-4aeb-8148-2DB25E43C511}"><x14:pivotFilter useWholeDay="0"/></ext></extLst>' : "";
+  return `<filter fld="${fieldIndex}" type="${filter.type}" id="${id}" stringValue1="${attrEscape(filter.value1)}"${second}><autoFilter ref="A1"><filterColumn colId="0"><customFilters${join}>${custom}</customFilters></filterColumn></autoFilter>${extension}</filter>`;
 }
 
 export function spreadsheetPivotTableDefinitionXml(part) {
@@ -359,5 +362,6 @@ export function spreadsheetPivotTableDefinitionXml(part) {
   const dataFields = pivot.valueFields.length ? `<dataFields count="${pivot.valueFields.length}">${pivot.valueFields.map((field) => `<dataField name="${attrEscape(pivotValueLabel(field))}" fld="${Math.max(0, headers.indexOf(String(field.field || field.name)))}" subtotal="${attrEscape(field.summarizeBy || "sum")}"/>`).join("")}</dataFields>` : "";
   const dateFilters = pivot.filters.filter((filter) => PIVOT_DATE_FILTER_TYPES.has(filter.type));
   const filters = dateFilters.length ? `<filters count="${dateFilters.length}">${dateFilters.map((filter, index) => dateFilterXml(filter, headers.indexOf(filter.field), index + 1)).join("")}</filters>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="${attrEscape(pivot.name)}" cacheId="${part.cacheId}" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3" multipleFieldFilters="1"><location ref="${attrEscape(ref)}" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="${headers.length}">${pivotFields}</pivotFields>${rowFields}${columnFields}${dataFields}${filters}</pivotTableDefinition>`;
+  const subDayNamespace = dateFilters.some((filter) => filter.useWholeDay === false) ? ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14"' : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"${subDayNamespace} name="${attrEscape(pivot.name)}" cacheId="${part.cacheId}" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3" multipleFieldFilters="1"><location ref="${attrEscape(ref)}" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="${headers.length}">${pivotFields}</pivotFields>${rowFields}${columnFields}${dataFields}${filters}</pivotTableDefinition>`;
 }

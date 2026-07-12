@@ -1,4 +1,4 @@
-import { normalizePivotDate, pivotDateKey } from "./pivot-dates.mjs";
+import { normalizePivotDate, normalizePivotDateTime, pivotDateKey, pivotDateTimeKey } from "./pivot-dates.mjs";
 
 export const PIVOT_ABSOLUTE_DATE_FILTER_TYPES = new Set([
   "dateEqual", "dateNotEqual", "dateOlderThan", "dateOlderThanOrEqual",
@@ -35,25 +35,26 @@ function filterEntries(value) {
   return Object.entries(value).map(([field, filter]) => Array.isArray(filter) ? { field, include: filter } : { field, ...(filter || {}) });
 }
 
-function canonicalDate(value, label) {
-  return normalizePivotDate(value, label);
+function canonicalDate(value, label, useWholeDay = true) {
+  return useWholeDay ? normalizePivotDate(value, label) : normalizePivotDateTime(value, label);
 }
 
 function dateFilter(filter, field) {
   const type = String(filter.type || "");
   if (!PIVOT_DATE_FILTER_TYPES.has(type)) throw new TypeError(`PivotTable filter ${field} has unsupported type ${type}.`);
-  if (filter.useWholeDay === false) throw new TypeError(`PivotTable date filter ${field} currently requires useWholeDay=true.`);
+  const useWholeDay = filter.useWholeDay !== false;
   if (Object.hasOwn(filter, "include") || Object.hasOwn(filter, "exclude")) throw new Error(`PivotTable date filter ${field} cannot combine type with include or exclude.`);
   if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(type)) {
+    if (!useWholeDay) throw new TypeError(`PivotTable relative date filter ${field} requires useWholeDay=true; sub-day thresholds apply only to absolute date filters.`);
     if (["value", "value1", "value2", "start", "end"].some((key) => Object.hasOwn(filter, key))) throw new Error(`PivotTable relative date filter ${field} cannot define absolute date values.`);
     const asOf = canonicalDate(filter.asOf ?? new Date(), `PivotTable relative date filter ${field} asOf`);
     return { field, type, asOf, useWholeDay: true };
   }
-  const value1 = canonicalDate(filter.value1 ?? filter.start ?? filter.value, `PivotTable date filter ${field} value1`);
+  const value1 = canonicalDate(filter.value1 ?? filter.start ?? filter.value, `PivotTable date filter ${field} value1`, useWholeDay);
   const between = type === "dateBetween" || type === "dateNotBetween";
-  const value2 = between ? canonicalDate(filter.value2 ?? filter.end, `PivotTable date filter ${field} value2`) : undefined;
+  const value2 = between ? canonicalDate(filter.value2 ?? filter.end, `PivotTable date filter ${field} value2`, useWholeDay) : undefined;
   if (between && value1 > value2) throw new RangeError(`PivotTable date filter ${field} value1 must not be after value2.`);
-  return { field, type, value1, value2, useWholeDay: true };
+  return { field, type, value1, value2, useWholeDay };
 }
 
 function dateKey(date) {
@@ -119,7 +120,7 @@ export function pivotItemVisible(filters = [], field, value, dateSystem = "1900"
   const filter = filters.find((entry) => entry.field === field);
   if (!filter) return true;
   if (PIVOT_DATE_FILTER_TYPES.has(filter.type)) {
-    const current = pivotDateKey(value, dateSystem);
+    const current = filter.useWholeDay === false ? pivotDateTimeKey(value, dateSystem) : pivotDateKey(value, dateSystem);
     if (!current) return false;
     if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(filter.type)) {
       const [start, end] = relativeDateBounds(filter.type, filter.asOf);

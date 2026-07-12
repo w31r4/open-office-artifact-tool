@@ -458,6 +458,63 @@ assert.deepEqual(nativeRelativeBook.resolve("RelativeDatePivot").filters, relati
 assert.deepEqual(nativeRelativeBook.resolve("RelativeDatePivot").computedValues(), relativePivot.computedValues());
 const relativeRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeRelativeBook), { relativeDateAsOf: "2026-07-12" });
 assert.deepEqual(relativeRoundtrip.resolve("RelativeDatePivot").computedValues(), relativePivot.computedValues());
+const preciseDateBook = Workbook.create();
+const preciseDateSheet = preciseDateBook.worksheets.add("Precise Dates");
+preciseDateSheet.getRange("A1:B5").values = [
+  ["Timestamp", "Amount"],
+  ["2026-07-12T08:30:00Z", 10],
+  ["2026-07-12T12:00:00Z", 20],
+  ["2026-07-12T17:45:00Z", 30],
+  ["2026-07-13T00:00:00Z", 40],
+];
+const preciseDatePivot = preciseDateSheet.pivotTables.add({
+  name: "PreciseDatePivot",
+  sourceRange: "A1:B5",
+  targetRange: "D1:E4",
+  rowFields: ["Timestamp"],
+  filters: [{ field: "Timestamp", type: "dateBetween", value1: "2026-07-12T09:00:00Z", value2: "2026-07-12T17:00:00Z", useWholeDay: false }],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+});
+const wholeDayPivot = preciseDateSheet.pivotTables.add({
+  name: "WholeDayPivot",
+  sourceRange: "A1:B5",
+  targetRange: "G1:H6",
+  rowFields: ["Timestamp"],
+  filters: [{ field: "Timestamp", type: "dateEqual", value1: "2026-07-12", useWholeDay: true }],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+});
+assert.deepEqual(preciseDatePivot.filters, [{ field: "Timestamp", type: "dateBetween", value1: "2026-07-12T09:00:00", value2: "2026-07-12T17:00:00", useWholeDay: false }]);
+assert.deepEqual(preciseDatePivot.computedValues(), [["Timestamp", "sum of Amount"], ["2026-07-12T12:00:00Z", 20]]);
+assert.deepEqual(wholeDayPivot.computedValues(), [["Timestamp", "sum of Amount"], ["2026-07-12T08:30:00Z", 10], ["2026-07-12T12:00:00Z", 20], ["2026-07-12T17:45:00Z", 30]]);
+const offsetPrecisePivot = preciseDateSheet.pivotTables.add({
+  name: "OffsetPrecisePivot",
+  sourceRange: "A1:B5",
+  targetRange: "J1:K3",
+  rowFields: ["Timestamp"],
+  filters: [{ field: "Timestamp", type: "dateEqual", value1: "2026-07-12T10:30:00+02:00", useWholeDay: false }],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+});
+assert.equal(offsetPrecisePivot.filters[0].value1, "2026-07-12T08:30:00");
+assert.deepEqual(offsetPrecisePivot.computedValues(), [["Timestamp", "sum of Amount"], ["2026-07-12T08:30:00Z", 10]]);
+const preciseDateXlsx = await SpreadsheetFile.exportXlsx(preciseDateBook);
+const preciseDateZip = await JSZip.loadAsync(new Uint8Array(await preciseDateXlsx.arrayBuffer()));
+const precisePivotXml = await preciseDateZip.file("xl/pivotTables/pivotTable1.xml").async("text");
+assert.match(precisePivotXml, /xmlns:x14="http:\/\/schemas\.microsoft\.com\/office\/spreadsheetml\/2010\/11\/main"/);
+assert.match(precisePivotXml, /mc:Ignorable="x14"/);
+assert.match(precisePivotXml, /stringValue1="2026-07-12T09:00:00" stringValue2="2026-07-12T17:00:00"/);
+assert.match(precisePivotXml, /<ext uri="\{0605FD5F-26C8-4aeb-8148-2DB25E43C511\}"><x14:pivotFilter useWholeDay="0"\/><\/ext>/);
+preciseDateZip.remove("customXml/open-office-artifact.json");
+const nativePreciseDateBook = await SpreadsheetFile.importXlsx(new FileBlob(await preciseDateZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: preciseDateXlsx.type }));
+assert.deepEqual(nativePreciseDateBook.resolve("PreciseDatePivot").filters, preciseDatePivot.filters);
+assert.deepEqual(nativePreciseDateBook.resolve("PreciseDatePivot").computedValues(), preciseDatePivot.computedValues());
+const nativePreciseRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativePreciseDateBook));
+assert.deepEqual(nativePreciseRoundtrip.resolve("PreciseDatePivot").filters, preciseDatePivot.filters);
+assert.deepEqual(nativePreciseRoundtrip.resolve("PreciseDatePivot").computedValues(), preciseDatePivot.computedValues());
+const alternatePrefixPreciseZip = await JSZip.loadAsync(new Uint8Array(await preciseDateXlsx.arrayBuffer()));
+alternatePrefixPreciseZip.remove("customXml/open-office-artifact.json");
+alternatePrefixPreciseZip.file("xl/pivotTables/pivotTable1.xml", precisePivotXml.replaceAll("xmlns:x14=", "xmlns:p14=").replaceAll("x14:pivotFilter", "p14:pivotFilter").replace('mc:Ignorable="x14"', 'mc:Ignorable="p14"'));
+const alternatePrefixPrecise = await SpreadsheetFile.importXlsx(new FileBlob(await alternatePrefixPreciseZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: preciseDateXlsx.type }));
+assert.equal(alternatePrefixPrecise.resolve("PreciseDatePivot").filters[0].useWholeDay, false);
 const functionBook = Workbook.create();
 const functionSheet = functionBook.worksheets.add("Calculated Functions");
 functionSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East", 10, 4], ["East", 20, 8], ["West", 5, 0]];
@@ -497,7 +554,8 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "today", value1: "2026-03-01" }] }), /cannot define absolute date values/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "thisMonth", asOf: "not-a-date" }] }), /asOf must be an ISO date/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "thisDecade" }] }), /unsupported type thisDecade/);
-assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-03-01", useWholeDay: false }] }), /requires useWholeDay=true/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-03-01T25:00:00", useWholeDay: false }] }), /value1 must be an ISO date-time/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "today", useWholeDay: false }] }), /relative date filter OrderDate requires useWholeDay=true/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: {}, rowFields: ["Region"] }), /groupFields must be an array/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: Array.from({ length: 129 }, (_, index) => ({ name: `Year ${index}`, sourceField: "OrderDate", groupBy: "years" })), rowFields: ["Region"] }), /exceeds 128 fields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Region", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Region"] }), /must not replace a source field/);
