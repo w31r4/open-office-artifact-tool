@@ -58,7 +58,8 @@ const table = document.addTable({
   values: [["Area", "Status"], ["DOCX styles", "partial"], ["Comments", "roundtrip"]],
 });
 table.getCell(2, 1).value = "anchored";
-const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer" });
+const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z" });
+const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
 
 const inspect = document.inspect({ kind: "document,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 16000 }).ndjson;
 assert.match(inspect, /Research memo/);
@@ -92,6 +93,8 @@ assert.equal(openingHeader.sectionIndex, 0);
 assert.equal(openingFooter.sectionIndex, 0);
 assert.match(inspect, /evidence-table/);
 assert.match(inspect, /Check this heading/);
+assert.match(inspect, /Review the evidence table/);
+assert.match(inspect, /R&D Analyst/);
 assert.match(inspect, /Callout/);
 assert.match(inspect, /Risk Callout/);
 assert.match(inspect, /Risk callout inherits bold styling/);
@@ -130,6 +133,9 @@ assert.equal(document.resolve(header.id).text, "Confidential research memo");
 assert.equal(document.resolve(footer.id).text, "Page footer");
 assert.equal(document.resolve(table.id).getCell(2, 1).value, "anchored");
 assert.equal(document.resolve(comment.id).author, "Reviewer");
+assert.equal(document.resolve(comment.id).initials, "RV");
+assert.equal(document.resolve(comment.id).date, "2026-07-11T00:10:00.000Z");
+assert.equal(document.resolve(tableComment.id).targetId, table.id);
 const targetedDocumentInspect = document.inspect({ kind: "paragraph,table,image,comment", target: logo.id, maxChars: 4000 }).ndjson;
 assert.match(targetedDocumentInspect, /Memo logo/);
 assert.doesNotMatch(targetedDocumentInspect, /evidence-table/);
@@ -145,6 +151,8 @@ assert.match(document.help("document.addTable").ndjson, /Word-style table/);
 assert.match(document.help("document.addListItem").ndjson, /numbering definitions/);
 assert.match(document.help("document.addHeader").ndjson, /DOCX header/);
 assert.match(document.help("document.addHeader").ndjson, /sectionIndex/);
+assert.match(document.help("document.addComment").ndjson, /initials/);
+assert.match(document.help("document.addComment").ndjson, /w:date/);
 assert.match(document.help("document.addHyperlink").ndjson, /w:hyperlink/);
 assert.match(document.help("document.addField").ndjson, /w:fldSimple/);
 assert.match(document.help("document.addCitation").ndjson, /structured metadata/);
@@ -159,6 +167,10 @@ const invalidSectionDocument = DocumentModel.create({ paragraphs: ["Invalid sect
 invalidSectionDocument.addHeader("Out of range", { sectionIndex: 1 });
 assert.ok(invalidSectionDocument.verify().issues.some((issue) => issue.type === "invalidHeaderFooterSection"));
 await assert.rejects(() => DocumentFile.exportDocx(invalidSectionDocument), /sectionIndex must be an integer from 0 through 0/);
+const invalidCommentDocument = DocumentModel.create({ paragraphs: ["Invalid comment fixture"] });
+invalidCommentDocument.addComment(invalidCommentDocument.blocks[0], "Bad timestamp", { date: "not-a-date" });
+assert.ok(invalidCommentDocument.verify().issues.some((issue) => issue.type === "invalidCommentDate"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidCommentDocument), /date must be a valid date string/);
 
 const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
@@ -238,6 +250,7 @@ assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordproce
 const docxBytes = new Uint8Array(await docx.arrayBuffer());
 const zip = await JSZip.loadAsync(docxBytes);
 const documentXml = await zip.file("word/document.xml").async("text");
+const commentsXml = await zip.file("word/comments.xml").async("text");
 const stylesXml = await zip.file("word/styles.xml").async("text");
 assert.match(stylesXml, /w:styleId="RiskCallout"/);
 assert.match(stylesXml, /<w:basedOn w:val="Callout"\/>/);
@@ -264,6 +277,12 @@ assert.match(documentXml, /<w:tcW w:w="3600" w:type="dxa"\/>/);
 assert.match(documentXml, /<w:tcW w:w="5760" w:type="dxa"\/>/);
 assert.match(documentXml, /<w:shd w:val="clear" w:color="auto" w:fill="F2F4F7"\/>/);
 assert.match(documentXml, /<w:rPr><w:b\/><\/w:rPr><w:t>Area<\/w:t>/);
+assert.match(commentsXml, /w:id="0" w:author="Reviewer" w:initials="RV" w:date="2026-07-11T00:10:00\.000Z"/);
+assert.match(commentsXml, /w:id="1" w:author="R&amp;D Analyst" w:initials="RA" w:date="2026-07-11T00:15:00\.000Z"/);
+const exportedTableXml = /<w:tbl[\s\S]*?<\/w:tbl>/.exec(documentXml)?.[0] || "";
+assert.match(exportedTableXml, /<w:commentRangeStart w:id="1"\/>/);
+assert.match(exportedTableXml, /<w:commentRangeEnd w:id="1"\/>/);
+assert.match(exportedTableXml, /<w:commentReference w:id="1"\/>/);
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Id="rIdImage1"/);
 assert.match(documentRelsXml, /Target="media\/image1\.png"/);
@@ -326,6 +345,21 @@ assert.equal(patchedDocx.metadata.validationIssues, 0);
 const patchedInspect = await DocumentFile.inspectDocx(patchedDocx, { includeText: true, maxChars: 12000 });
 assert.match(patchedInspect.ndjson, /customXml\/review-note\.xml/);
 assert.match(patchedInspect.ndjson, /&lt;review&gt;ok&lt;\/review&gt;|<review>ok<\/review>/);
+const relocatedCommentsDocx = await DocumentFile.patchDocx(docx, [
+  { path: "word/comments.xml", remove: true },
+  { path: "word/review/comments-relocated.xml", xml: commentsXml, recipe: { kind: "comments", source: "word/document.xml", id: "rIdRelocatedComments" } },
+]);
+const relocatedCommentsInspect = await DocumentFile.inspectDocx(relocatedCommentsDocx);
+assert.equal(relocatedCommentsInspect.ok, true);
+assert.ok(relocatedCommentsInspect.parts.some((part) => part.path === "word/review/comments-relocated.xml" && part.contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"));
+const relocatedCommentsZip = await JSZip.loadAsync(new Uint8Array(await relocatedCommentsDocx.arrayBuffer()));
+assert.match(await relocatedCommentsZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdRelocatedComments"[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/comments"[^>]*Target="review\/comments-relocated\.xml"/);
+const relocatedCommentsNative = await DocumentFile.importDocx(relocatedCommentsDocx, { preferNative: true });
+assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Check this heading before final export.")?.author, "Reviewer");
+assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Check this heading before final export.")?.initials, "RV");
+assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Review the evidence table.")?.author, "R&D Analyst");
+assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Review the evidence table.")?.date, "2026-07-11T00:15:00.000Z");
+assert.equal(relocatedCommentsNative.resolve(relocatedCommentsNative.comments.find((item) => item.text === "Review the evidence table.")?.targetId)?.kind, "table");
 const recipeHeaderDocx = await DocumentFile.patchDocx(docx, [{
   path: "word/headerReview.xml",
   xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Review header</w:t></w:r></w:p></w:hdr>',
@@ -409,6 +443,11 @@ assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "Opening-sect
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "Confidential research memo")?.sectionIndex, 1);
 assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Opening-section footer")?.sectionIndex, 0);
 assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Page footer")?.sectionIndex, 1);
+assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Check this heading before final export.")?.author, "Reviewer");
+assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Check this heading before final export.")?.initials, "RV");
+assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Review the evidence table.")?.author, "R&D Analyst");
+assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Review the evidence table.")?.date, "2026-07-11T00:15:00.000Z");
+assert.equal(nativeOnlyLoaded.resolve(nativeOnlyLoaded.comments.find((item) => item.text === "Review the evidence table.")?.targetId)?.kind, "table");
 const sharedHeaderDocumentXml = documentXml.replace(new RegExp(`(<w:sectPr\\b[^>]*>[\\s\\S]*?<w:headerReference\\b[^>]*r:id=")${openingHeaderRelId}("[^>]*\\/>[\\s\\S]*?<\\/w:sectPr>)`), `$1${finalHeaderRelId}$2`);
 const sharedHeaderDocx = await DocumentFile.patchDocx(docx, [
   { path: "word/document.xml", xml: sharedHeaderDocumentXml },

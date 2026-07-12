@@ -38,10 +38,15 @@ document.addParagraph("Proceed with the clean-room implementation.", { styleId: 
 document.addListItem("Validate the exported DOCX", { listType: "bullet" });
 document.addHeader("Decision brief", { referenceType: "first", sectionIndex: 0 });
 document.addFooter("Confidential", { referenceType: "even" });
-document.addTable({
+const decisionTable = document.addTable({
   name: "decision-table",
   styleId: "TableGrid",
   values: [["Area", "Status"], ["Semantic QA", "Pass"], ["Native render", "Required"]],
+});
+document.addComment(decisionTable, "Verify the evidence table.", {
+  author: "QA Agent",
+  initials: "QA",
+  date: "2026-07-11T00:00:00.000Z",
 });
 
 const output = await DocumentFile.exportDocx(document);
@@ -98,7 +103,7 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing blocks, styles, anchors, comments, and default/first/even header/footer references plus zero-based section bindings survived roundtrip. Omit `sectionIndex` to target the final section. Native import follows `document.xml.rels` targets rather than assuming `header1.xml` or `footer1.xml`.
+- `document.inspect(...)` proves agent-facing blocks, styles, classic comment author/initials/date metadata and paragraph/table anchors, plus default/first/even header/footer references with zero-based section bindings survived roundtrip. Native import follows `document.xml.rels` targets rather than assuming fixed comments/header/footer filenames. Omit header/footer `sectionIndex` to target the final section.
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.

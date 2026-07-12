@@ -1000,7 +1000,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append a tracked insertion with author/date metadata and native DOCX w:ins export." },
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
-  { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a comment to a paragraph or table block using a stable target ID." },
+  { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a classic Word comment with author, initials, and date metadata to a paragraph or table block using native comment range/reference anchors." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
@@ -1010,7 +1010,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets, reference types, and section indexes." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references." },
 
@@ -1632,6 +1632,8 @@ const DOCUMENT_HELP_SCHEMAS = {
     target: { type: "string|object", required: true, description: "Stable block ID or block facade." },
     text: { type: "string", required: true, description: "Comment text." },
     author: { type: "string", description: "Comment author." },
+    initials: { type: "string", description: "Author initials written to w:initials; derived deterministically from author when omitted." },
+    date: { type: "string", description: "Optional ISO-style comment timestamp written to w:date." },
     resolved: { type: "boolean", description: "Initial resolution state." },
   }, "comment", "DocumentComment", "Attached comment with stable ID."),
   "document.applyDesignPreset": helpSchema({
@@ -7822,6 +7824,11 @@ class DocumentHeaderFooterBlock {
   toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text }; }
 }
 
+function documentCommentInitials(author) {
+  const words = String(author || "User").trim().split(/\s+/).filter(Boolean);
+  return (words.length > 1 ? words.map((word) => word[0]).join("") : (words[0] || "U").slice(0, 2)).slice(0, 4).toUpperCase();
+}
+
 class DocumentComment {
   constructor(document, targetId, text, config = {}) {
     this.document = document;
@@ -7829,12 +7836,14 @@ class DocumentComment {
     this.id = config.id || aid("dc");
     this.targetId = targetId;
     this.author = config.author || "User";
+    this.initials = config.initials || documentCommentInitials(this.author);
+    this.date = config.date || undefined;
     this.text = String(text ?? "");
     this.resolved = Boolean(config.resolved);
   }
 
-  inspectRecord() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, resolved: this.resolved, textPreview: this.text.slice(0, 300) }; }
-  toProto() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, text: this.text, resolved: this.resolved }; }
+  inspectRecord() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, initials: this.initials, date: this.date, resolved: this.resolved, textPreview: this.text.slice(0, 300) }; }
+  toProto() { return { kind: "comment", id: this.id, targetId: this.targetId, author: this.author, initials: this.initials, date: this.date, text: this.text, resolved: this.resolved }; }
 }
 
 function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {
@@ -8131,6 +8140,7 @@ export class DocumentModel {
     }
     for (const comment of this.comments) {
       if (!blockIds.has(comment.targetId)) issues.push(verificationIssue("document", "danglingComment", `Comment ${comment.id} points at a missing block.`, { id: comment.id, targetId: comment.targetId }));
+      if (comment.date && Number.isNaN(Date.parse(comment.date))) issues.push(verificationIssue("document", "invalidCommentDate", `Comment ${comment.id} has an invalid date.`, { id: comment.id, date: comment.date }));
     }
     if (options.visualQa || options.renderQa) {
       const layout = this.layoutJson(options);
@@ -8366,7 +8376,7 @@ function docxCitationXml(block) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:bookmarkStart w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}" w:name="${attrEscape(`OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`)}"/><w:r><w:t>${xmlEscape(label)}</w:t></w:r><w:bookmarkEnd w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}"/></w:p>`;
 }
 
-function docxTableXml(block) {
+function docxTableXml(block, commentIndexes = []) {
   const columns = Math.max(1, block.columns || 1);
   const widthDxa = Number.isFinite(block.widthDxa) && block.widthDxa > 0 ? Math.round(block.widthDxa) : 9360;
   const configuredWidths = Array.isArray(block.columnWidthsDxa) && block.columnWidthsDxa.length === columns && block.columnWidthsDxa.every((value) => Number.isFinite(value) && value > 0)
@@ -8379,7 +8389,10 @@ function docxTableXml(block) {
   const rows = block.values.map((row, rowIndex) => `<w:tr>${Array.from({ length: columns }, (_, column) => {
     const headerProperties = rowIndex === 0 ? `<w:shd w:val="clear" w:color="auto" w:fill="${attrEscape(block.headerFill || "F2F4F7")}"/>` : "";
     const runProperties = rowIndex === 0 ? "<w:rPr><w:b/></w:rPr>" : "";
-    return `<w:tc><w:tcPr><w:tcW w:w="${columnWidths[column]}" w:type="dxa"/>${headerProperties}</w:tcPr><w:p><w:r>${runProperties}<w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r></w:p></w:tc>`;
+    const commentStart = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
+    const commentEnd = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
+    const commentRefs = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
+    return `<w:tc><w:tcPr><w:tcW w:w="${columnWidths[column]}" w:type="dxa"/>${headerProperties}</w:tcPr><w:p>${commentStart}<w:r>${runProperties}<w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r>${commentEnd}${commentRefs}</w:p></w:tc>`;
   }).join("")}</w:tr>`).join("");
   return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="${widthDxa}" w:type="dxa"/><w:tblInd w:w="${Math.max(0, Math.round(block.indentDxa ?? 120))}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${Math.max(0, Math.round(margins.top ?? 80))}" w:type="dxa"/><w:start w:w="${Math.max(0, Math.round(margins.start ?? 120))}" w:type="dxa"/><w:bottom w:w="${Math.max(0, Math.round(margins.bottom ?? 80))}" w:type="dxa"/><w:end w:w="${Math.max(0, Math.round(margins.end ?? 120))}" w:type="dxa"/></w:tblCellMar><w:tblBorders>${border}</w:tblBorders></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
 }
@@ -8390,11 +8403,11 @@ function docxDocumentXml(document, relIds = {}) {
   const referencesForSection = (sectionIndex) => sectionReferences.filter((reference) => reference.sectionIndex === sectionIndex);
   let sectionIndex = 0;
   const body = document.blocks.map((block) => {
-    if (block.kind === "table") return docxTableXml(block);
+    const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
+    if (block.kind === "table") return docxTableXml(block, indexes);
     if (block.kind === "hyperlink") return docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id));
     if (block.kind === "field") return docxFieldXml(block);
     if (block.kind === "citation") return docxCitationXml(block);
-    const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
     if (block.kind === "image") return docxImageXml(block, relIds.images?.get(block.id), indexes);
     if (block.kind === "section") return docxSectionXml(block, indexes, referencesForSection(sectionIndex++));
     if (block.kind === "change") return docxChangeXml(block, indexes);
@@ -8407,8 +8420,31 @@ function docxDocumentXml(document, relIds = {}) {
 }
 
 function docxCommentsXml(document) {
-  const comments = document.comments.map((comment, index) => `<w:comment w:id="${index}" w:author="${attrEscape(comment.author)}"><w:p><w:r><w:t>${xmlEscape(comment.text)}</w:t></w:r></w:p></w:comment>`).join("");
+  const comments = document.comments.map((comment, index) => {
+    if (comment.date && Number.isNaN(Date.parse(comment.date))) throw new TypeError(`DOCX comment ${comment.id} date must be a valid date string.`);
+    return `<w:comment w:id="${index}" w:author="${attrEscape(comment.author)}" w:initials="${attrEscape(comment.initials || documentCommentInitials(comment.author))}"${comment.date ? ` w:date="${attrEscape(comment.date)}"` : ""}><w:p><w:r><w:t>${xmlEscape(comment.text)}</w:t></w:r></w:p></w:comment>`;
+  }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${comments}</w:comments>`;
+}
+
+function parseDocxCommentsXml(xml = "") {
+  const comments = new Map();
+  for (const match of String(xml || "").matchAll(/<w:comment\b[^>]*>[\s\S]*?<\/w:comment>/g)) {
+    const opening = /^<w:comment\b[^>]*>/.exec(match[0])?.[0] || "";
+    const attrs = ooxmlXmlAttributes(opening);
+    if (attrs["w:id"] === undefined || comments.has(attrs["w:id"])) continue;
+    comments.set(attrs["w:id"], {
+      text: decodeXml([...match[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((textMatch) => textMatch[1]).join("")),
+      author: attrs["w:author"] || "User",
+      initials: attrs["w:initials"] || undefined,
+      date: attrs["w:date"] || undefined,
+    });
+  }
+  return comments;
+}
+
+function docxCommentIds(part = "") {
+  return [...new Set([...String(part).matchAll(/<w:(?:commentRangeStart|commentReference)\b[^>]*\/?\s*>/g)].map((match) => ooxmlXmlAttributes(match[0])["w:id"]).filter((id) => id !== undefined))];
 }
 
 function parseDocxStylesXml(xml = "") {
@@ -8445,9 +8481,9 @@ function parseDocxRuns(part = "") {
   }).filter(Boolean);
 }
 
-function parseDocxParagraph(part, commentTextById, imageByRelId = new Map()) {
+function parseDocxParagraph(part, imageByRelId = new Map()) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
-  const commentIds = [...part.matchAll(/<w:commentRangeStart[^>]*w:id="(\d+)"/g)].map((match) => match[1]);
+  const commentIds = docxCommentIds(part);
   const sectionMatch = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/.exec(part);
   if (sectionMatch) {
     const sectionXml = sectionMatch[1] || "";
@@ -9199,10 +9235,12 @@ export class DocumentFile {
     const xml = await zip.file("word/document.xml")?.async("text");
     const stylesText = await zip.file("word/styles.xml")?.async("text");
     const importedStyles = parseDocxStylesXml(stylesText);
-    const commentsXml = await zip.file("word/comments.xml")?.async("text");
-    const commentTextById = new Map([...String(commentsXml || "").matchAll(/<w:comment[^>]*w:id="(\d+)"[^>]*>([\s\S]*?)<\/w:comment>/g)].map((match) => [match[1], decodeXml([...match[2].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))]));
     const relsText = await zip.file("word/_rels/document.xml.rels")?.async("text");
     const documentRelationships = parseRelsXml(relsText);
+    const commentsRelationship = documentRelationships.find((relationship) => relationship.type.endsWith("/comments") && relationship.targetMode.toLowerCase() !== "external");
+    const commentsPartPath = commentsRelationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", commentsRelationship.target), "DOCX") : "word/comments.xml";
+    const commentsXml = await zip.file(commentsPartPath)?.async("text");
+    const commentsById = parseDocxCommentsXml(commentsXml);
     const imageByRelId = new Map();
     for (const rel of documentRelationships.filter((item) => item.type.endsWith("/image"))) {
       const target = rel.target.replace(/^\//, "");
@@ -9216,11 +9254,8 @@ export class DocumentFile {
     for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
       const part = match[0];
       if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
-      else {
-        const parsed = parseDocxParagraph(part, commentTextById, imageByRelId);
-        blocks.push(parsed.block);
-        for (const commentId of parsed.commentIds) pendingComments.push({ blockIndex: blocks.length - 1, text: commentTextById.get(commentId) || "" });
-      }
+      else blocks.push(parseDocxParagraph(part, imageByRelId).block);
+      for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
     const document = DocumentModel.create({ styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const reference of docxHeaderFooterReferences(xml, documentRelationships)) {
@@ -9231,7 +9266,10 @@ export class DocumentFile {
         else document.addFooter(block.text, config);
       }
     }
-    pendingComments.forEach((comment) => document.addComment(document.blocks[comment.blockIndex]?.id, comment.text));
+    pendingComments.forEach((comment) => {
+      const nativeComment = commentsById.get(comment.commentId);
+      if (nativeComment) document.addComment(document.blocks[comment.blockIndex]?.id, nativeComment.text, nativeComment);
+    });
     return document;
   }
 }

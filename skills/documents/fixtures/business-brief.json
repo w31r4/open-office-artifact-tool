@@ -38,14 +38,16 @@
     { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
   ],
   "comments": [
-    { "targetName": "recommendation-heading", "author": "QA Agent", "text": "Confirm this recommendation after native render review." }
+    { "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "text": "Confirm this recommendation after native render review." },
+    { "targetName": "readiness-table", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:25:00.000Z", "text": "Confirm the table comment anchor survives native import." }
   ],
   "expectInspect": [
     { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
     { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
     { "kind": "table", "pattern": "readiness-table" },
     { "kind": "comment", "pattern": "native render review" },
-    { "kind": "header", "pattern": "Opening section evidence" }
+    { "kind": "header", "pattern": "Opening section evidence" },
+    { "kind": "comment", "pattern": "table comment anchor" }
   ],
   "qa": {
     "previewFormat": "svg",

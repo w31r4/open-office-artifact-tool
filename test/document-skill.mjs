@@ -41,6 +41,11 @@ try {
   const nativePreferredDocument = await DocumentFile.importDocx(await FileBlob.load(result.docxPath), { preferNative: true });
   assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Opening section evidence")?.sectionIndex, 0);
   assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Clean-room document workflow")?.sectionIndex, 1);
+  assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.author, "QA Agent");
+  assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.date, "2026-07-11T00:20:00.000Z");
+  const nativeTableComment = nativePreferredDocument.comments.find((item) => item.text.includes("table comment anchor"));
+  assert.equal(nativeTableComment?.author, "Maintainer");
+  assert.equal(nativePreferredDocument.resolve(nativeTableComment?.targetId)?.kind, "table");
 
   const nativeStatus = nativeDocumentRenderStatus();
   const baselineWrite = await verifyDocumentFile(result.docxPath, {

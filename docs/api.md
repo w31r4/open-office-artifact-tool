@@ -8,7 +8,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | --- | --- | --- |
 | `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
 | `document.addCitation` | api | Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata. |
-| `document.addComment` | api | Attach a comment to a paragraph or table block using a stable target ID. |
+| `document.addComment` | api | Attach a classic Word comment with author, initials, and date metadata to a paragraph or table block using native comment range/reference anchors. |
 | `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references. |
@@ -29,7 +29,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets, reference types, and section indexes. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
@@ -68,13 +68,15 @@ Append a citation block with visible text and structured metadata preserved thro
 
 #### `document.addComment`
 
-Attach a comment to a paragraph or table block using a stable target ID.
+Attach a classic Word comment with author, initials, and date metadata to a paragraph or table block using native comment range/reference anchors.
 
 **Schema parameters:**
 
 - `target` (string|object) required — Stable block ID or block facade.
 - `text` (string) required — Comment text.
 - `author` (string) — Comment author.
+- `initials` (string) — Author initials written to w:initials; derived deterministically from author when omitted.
+- `date` (string) — Optional ISO-style comment timestamp written to w:date.
 - `resolved` (boolean) — Initial resolution state.
 
 **Schema returns:**
@@ -400,7 +402,7 @@ Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.x
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets, reference types, and section indexes.
+Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes.
 
 **Schema parameters:**
 
