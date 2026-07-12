@@ -1146,8 +1146,12 @@ relocatedDrawingZip.remove("customXml/open-office-artifact.json");
 const relocatedDrawingXml = (await relocatedDrawingZip.file("xl/drawings/drawing1.xml").async("text")).replace(
   /<xdr:oneCellAnchor>((?:(?!<\/xdr:oneCellAnchor>)[\s\S])*?name="Chart 1"(?:(?!<\/xdr:oneCellAnchor>)[\s\S])*?)<\/xdr:oneCellAnchor>/,
   (_anchor, body) => `<xdr:twoCellAnchor editAs="twoCell">${body.replace(/<xdr:ext[^>]*\/>/, '<xdr:to><xdr:col>13</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>10</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>')}</xdr:twoCellAnchor>`,
+).replace(
+  /<xdr:oneCellAnchor>((?:(?!<\/xdr:oneCellAnchor>)[\s\S])*?name="ScoresChart"(?:(?!<\/xdr:oneCellAnchor>)[\s\S])*?)<\/xdr:oneCellAnchor>/,
+  (_anchor, body) => `<xdr:absoluteAnchor>${body.replace(/<xdr:from>[\s\S]*?<\/xdr:from>/, '<xdr:pos x="1905000" y="2857500"/>')}</xdr:absoluteAnchor>`,
 );
 assert.match(relocatedDrawingXml, /<xdr:twoCellAnchor editAs="twoCell">/);
+assert.match(relocatedDrawingXml, /<xdr:absoluteAnchor>/);
 relocatedDrawingZip.file("xl/custom/visuals/workbook-drawing.xml", relocatedDrawingXml);
 relocatedDrawingZip.remove("xl/drawings/drawing1.xml");
 const relocatedDrawingRelationships = (await relocatedDrawingZip.file("xl/drawings/_rels/drawing1.xml.rels").async("text"))
@@ -1180,10 +1184,12 @@ assert.equal(relocatedDrawingSheet.images.items.length, 1);
 assert.equal(relocatedDrawingSheet.charts.items.length, 2);
 assert.equal(relocatedDrawingSheet.images.items[0].alt, "Logo placeholder");
 const relocatedRevenueChart = relocatedDrawingSheet.charts.items.find((chart) => chart.title === "Revenue Trend");
+const relocatedScoreChart = relocatedDrawingSheet.charts.items.find((chart) => chart.title === "Scores");
 assert.deepEqual(relocatedRevenueChart.series.items[0].values, [100, 120, 130]);
 assert.equal(relocatedRevenueChart.series.items[0].formula, "Sheet1!$G$2:$G$4");
 assert.equal(relocatedRevenueChart.series.items[0].categoryFormula, "Sheet1!$F$2:$F$4");
 assert.ok(relocatedRevenueChart.position.width > 100 && relocatedRevenueChart.position.height > 80);
+assert.deepEqual(relocatedScoreChart.position, { left: 240, top: 340, width: 240, height: 160 });
 assert.match(relocatedDrawingSheet.toSvg(), /Revenue Trend/);
 assert.match(relocatedDrawingSheet.toSvg(), /data:image\/png;base64/);
 assert.ok(relocatedDrawingSheet.layoutJson().charts.some((chart) => chart.title === "Revenue Trend"));

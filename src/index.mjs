@@ -6635,6 +6635,12 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
 }
 
 function importedDrawingFrame(sheet, record) {
+  if (record.position) return {
+    left: 40 + Number(record.position.leftPx || 0),
+    top: 40 + Number(record.position.topPx || 0),
+    width: Math.max(1, Number(record.extent?.widthPx || 160)),
+    height: Math.max(1, Number(record.extent?.heightPx || 120)),
+  };
   const from = record.from || { row: 0, col: 0, rowOffsetPx: 0, colOffsetPx: 0 };
   const left = 40 + worksheetAxisOffset(sheet, "column", from.col) + Number(from.colOffsetPx || 0);
   const top = 40 + worksheetAxisOffset(sheet, "row", from.row) + Number(from.rowOffsetPx || 0);
@@ -6667,7 +6673,7 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
           alt: record.alt,
           dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined,
           uri: bytes ? undefined : targetPath,
-          anchor: { from: { row: record.from?.row || 0, col: record.from?.col || 0, rowOffsetPx: record.from?.rowOffsetPx || 0, colOffsetPx: record.from?.colOffsetPx || 0 }, extent: { widthPx: frame.width, heightPx: frame.height } },
+          anchor: { from: { row: record.from?.row || 0, col: record.from?.col || 0, rowOffsetPx: record.position?.topPx ?? record.from?.rowOffsetPx ?? 0, colOffsetPx: record.position?.leftPx ?? record.from?.colOffsetPx ?? 0 }, extent: { widthPx: frame.width, heightPx: frame.height } },
         });
       } else if (record.kind === "chart" && relationship.type.endsWith("/chart")) {
         const chartXml = await zip.file(targetPath)?.async("text");

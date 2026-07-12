@@ -38,6 +38,12 @@ function drawingExtent(anchorXml) {
   return tag ? { widthPx: Number(attrs.cx || 0) / 9525, heightPx: Number(attrs.cy || 0) / 9525 } : undefined;
 }
 
+function absolutePosition(anchorXml) {
+  const tag = /<(?:[A-Za-z_][\w.-]*:)?pos\b[^>]*\b(?:x|y)="[^"]+"[^>]*\/?\s*>/.exec(anchorXml)?.[0];
+  const attrs = attributes(tag);
+  return tag ? { leftPx: Number(attrs.x || 0) / 9525, topPx: Number(attrs.y || 0) / 9525 } : undefined;
+}
+
 export function parseSpreadsheetDrawing(xml = "") {
   const records = [];
   const anchorPattern = /<(?:[A-Za-z_][\w.-]*:)?(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1>/g;
@@ -61,6 +67,7 @@ export function parseSpreadsheetDrawing(xml = "") {
       anchorType: match[1],
       from: marker(body, "from"),
       to: marker(body, "to"),
+      position: absolutePosition(body),
       extent: drawingExtent(body),
     });
   }
