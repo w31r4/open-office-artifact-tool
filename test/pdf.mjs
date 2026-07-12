@@ -23,7 +23,19 @@ const pdf = PdfArtifact.create({
   ],
 });
 
-const inlineTable = pdf.addTable({ name: "inline-table", values: [["A", "B"], ["1", "2"]], bbox: [72, 310, 240, 60] });
+const inlineTable = pdf.addTable({
+  id: "inline-table-id",
+  name: "inline-table",
+  values: [["Evidence", "", "Status"], ["A", "B", ""], ["1", "2", "Pass"]],
+  cells: [
+    { row: 0, column: 0, columnSpan: 2, role: "TH", scope: "Column" },
+    { row: 0, column: 2, rowSpan: 2, role: "TH", scope: "Column" },
+    { row: 1, column: 0, role: "TH", scope: "Column" },
+    { row: 1, column: 1, role: "TH", scope: "Column" },
+    { row: 2, column: 2, headers: ["inline-table-id/cell/1/3"] },
+  ],
+  bbox: [72, 310, 300, 90],
+});
 const image = pdf.addImage({
   name: "logo-image",
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -48,11 +60,23 @@ assert.equal(pdf.resolve(pdf.id), pdf);
 assert.equal(pdf.resolve(pdf.pages[0].id), pdf.pages[0]);
 assert.equal(pdf.resolve(`${pdf.pages[0].id}/text`).text, pdf.pages[0].text);
 assert.equal(pdf.resolve(inlineTable.id), inlineTable);
+const spanningHeader = inlineTable.getCell(0, 0);
+assert.equal(spanningHeader.columnSpan, 2);
+assert.equal(inlineTable.getCell(0, 1).id, spanningHeader.id);
+assert.equal(inlineTable.getCell(0, 2).rowSpan, 2);
+assert.deepEqual(inlineTable.getCell(2, 2).headers, ["inline-table-id/cell/1/3"]);
+assert.deepEqual(inlineTable.getCell(2, 0).effectiveHeaders, ["inline-table-id/cell/1/1", "inline-table-id/cell/2/1"]);
+assert.equal(pdf.resolve(spanningHeader.id).id, spanningHeader.id);
+const editableSpanTable = PdfArtifact.create({ text: "Editable span" }).addTable({ id: "editable-span", values: [["A", "B"], ["1", "2"]] });
+editableSpanTable.getCell(0, 0).columnSpan = 2;
+assert.equal(editableSpanTable.getCell(0, 1).id, "editable-span/cell/1/1");
+assert.equal(editableSpanTable.page.artifact.verify().ok, true);
 assert.equal(pdf.resolve(image.id), image);
 assert.equal(pdf.resolve(chart.id), chart);
 assert.equal(pdf.resolve(positionedText.id).text, "Positioned KPI");
 assert.equal(pdf.resolve("missing/pdf-id"), undefined);
 assert.match(pdf.inspect({ kind: "table", search: "Retention" }).ndjson, /94%/);
+assert.match(pdf.inspect({ kind: "tableCell", target: spanningHeader.id }).ndjson, /"columnSpan":2/);
 const targetedPdfInspect = pdf.inspect({ kind: "table,image", target: image.id, maxChars: 4000 }).ndjson;
 assert.match(targetedPdfInspect, /Report logo/);
 assert.doesNotMatch(targetedPdfInspect, /inline-table/);
@@ -66,6 +90,7 @@ assert.match(pdfContextInspect, /PDF research artifact/);
 assert.match(pdfContextInspect, /Second page notes/);
 assert.equal(pdf.extractTables().length, 2);
 assert.deepEqual(pdf.extractTables()[0].values[1], ["Revenue", "$12M"]);
+assert.equal(pdf.extractTables()[1].cells.filter((cell) => cell.role === "TH").length, 4);
 assert.match(pdf.help("pdf.addImage").ndjson, /image region/);
 assert.match(pdf.help("pdf.addChart").ndjson, /chart region/);
 assert.match(pdf.help("pdf.addText").ndjson, /positioned PDF text/);
@@ -144,20 +169,24 @@ assert.equal(blob.metadata.tagged, true);
 assert.equal(blob.metadata.language, "en-US");
 assert.equal(blob.metadata.title, "PDF research artifact");
 const fileInspect = await PdfFile.inspectPdf(blob, { maxChars: 12000 });
-assert.equal(fileInspect.summary.version, "1.4");
+assert.equal(fileInspect.summary.version, "1.7");
 assert.equal(fileInspect.summary.pages, 2);
 assert.equal(fileInspect.summary.hasEmbeddedModel, true);
 assert.equal(fileInspect.summary.hasEof, true);
 assert.equal(fileInspect.summary.tagged, true);
 assert.equal(fileInspect.summary.language, "en-US");
 assert.equal(fileInspect.summary.tableStructures, 2);
-assert.equal(fileInspect.summary.tableRows, 5);
-assert.equal(fileInspect.summary.tableHeaders, 4);
-assert.equal(fileInspect.summary.tableDataCells, 6);
+assert.equal(fileInspect.summary.tableRows, 6);
+assert.equal(fileInspect.summary.tableHeaders, 6);
+assert.equal(fileInspect.summary.tableDataCells, 7);
+assert.equal(fileInspect.summary.tableCellIds, 13);
+assert.equal(fileInspect.summary.rowSpans, 1);
+assert.equal(fileInspect.summary.columnSpans, 1);
+assert.equal(fileInspect.summary.headerAssociations, 7);
 assert.equal(fileInspect.summary.structureRoles.Table, 2);
-assert.equal(fileInspect.summary.structureRoles.TR, 5);
-assert.equal(fileInspect.summary.structureRoles.TH, 4);
-assert.equal(fileInspect.summary.structureRoles.TD, 6);
+assert.equal(fileInspect.summary.structureRoles.TR, 6);
+assert.equal(fileInspect.summary.structureRoles.TH, 6);
+assert.equal(fileInspect.summary.structureRoles.TD, 7);
 assert.equal(fileInspect.summary.structureElements, fileInspect.summary.markedContentItems + fileInspect.summary.tableStructures + fileInspect.summary.tableRows);
 assert.match(fileInspect.ndjson, /"type":"Page"/);
 const taggedText = await blob.text();
@@ -167,6 +196,10 @@ assert.match(taggedText, /\/S \/TR/);
 assert.match(taggedText, /\/S \/TH/);
 assert.match(taggedText, /\/S \/TD/);
 assert.match(taggedText, /\/A << \/O \/Table \/Scope \/Column >>/);
+assert.match(taggedText, /\/ColSpan 2/);
+assert.match(taggedText, /\/RowSpan 2/);
+assert.match(taggedText, /\/ID \(inline-table-id\/cell\/1\/3\)/);
+assert.match(taggedText, /\/Headers \[\(inline-table-id\/cell\/1\/3\)\]/);
 assert.match(taggedText, /\/Alt \(Report logo\)/);
 
 const unicodePdf = PdfArtifact.create({ metadata: { title: "Unicode résumé", language: "el-GR" }, text: "Unicode résumé\nПривет κόσμος café\nA A\u00a0A" });
@@ -278,6 +311,24 @@ assert.match(loadedInspect, /inline-table/);
 assert.match(loadedInspect, /Report logo/);
 assert.match(loadedInspect, /Pipeline by quarter/);
 assert.deepEqual(loaded.extractTables()[0].values[2], ["Retention", "94%"]);
+assert.equal(loaded.pages[0].tables[1].getCell(0, 0).columnSpan, 2);
+assert.equal(loaded.resolve("inline-table-id/cell/1/3").rowSpan, 2);
+assert.deepEqual(loaded.pages[0].tables[1].getCell(2, 2).headers, ["inline-table-id/cell/1/3"]);
+
+const invalidTablePdf = PdfArtifact.create({ text: "Invalid table semantics" });
+invalidTablePdf.addTable({
+  id: "invalid-table",
+  values: [["A", "B"], ["1", "2"]],
+  cells: [
+    { row: 0, column: 0, columnSpan: 2 },
+    { row: 0, column: 1, rowSpan: 2 },
+    { row: 1, column: 0, headers: ["missing-header"] },
+  ],
+});
+const invalidTableVerification = invalidTablePdf.verify({ maxChars: 8000 });
+assert.equal(invalidTableVerification.ok, false);
+assert.match(invalidTableVerification.ndjson, /overlappingSpan/);
+assert.match(invalidTableVerification.ndjson, /missingHeader/);
 
 const parsed = await PdfFile.importPdf(new FileBlob(new Uint8Array([0x25, 0x50, 0x44, 0x46]), { type: "application/pdf" }), {
   parserName: "unit-parser",

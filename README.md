@@ -45,6 +45,8 @@ DOCX lists use real multi-level numbering definitions rather than assuming `numI
 
 PDF content using Chinese, Cyrillic, Greek, accented Latin, or other non-ASCII characters must provide a legally usable standalone glyf-based TrueType `.ttf` through `PdfFile.exportPdf(..., { font })`. The clean-room writer embeds a Type0/CIDFontType2 font, glyph widths, a `ToUnicode` CMap, and by default a deterministic font subset containing used glyphs plus recursive composite dependencies. It rebuilds `glyf`, long `loca`, Unicode `cmap`, the sfnt directory, table checksums, and `checkSumAdjustment`; `{ subsetFont: false }` preserves the full font only for diagnostics. Missing fonts/glyphs, `.ttc` collections, malformed tables, and oversized inputs fail explicitly rather than corrupting text. Direct Unicode mapping is implemented; complex-script shaping remains roadmap work.
 
+Modeled PDF tables accept zero-based `cells` overrides with `rowSpan`, `columnSpan`, `TH`/`TD` roles, `Row`/`Column`/`Both` scope, and explicit header-cell IDs. `table.getCell(row, column)`, `inspect({ kind: "tableCell" })`, `resolve`, extraction, layout JSON, SVG, and vector PDF output share one normalized grid. Tagged PDF 1.7 export assigns every origin cell a structure ID and emits the standard Table-owner `RowSpan`, `ColSpan`, `Scope`, and `Headers` attributes; verification rejects out-of-range/overlapping spans and missing or non-header associations.
+
 ## Usage
 
 ```js

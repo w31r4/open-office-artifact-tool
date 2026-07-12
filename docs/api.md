@@ -591,19 +591,19 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 | `pdf.addFlowText` | api | Wrap long text into positioned lines and automatically append pages when the configured content box is full. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
 | `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
-| `pdf.addTable` | api | Add a modeled table with cell values and a page-space bounding box to the first PDF page. |
+| `pdf.addTable` | api | Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box. |
 | `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering. |
-| `pdf.extractTables` | api | Extract modeled table values and bounding boxes across all pages or a selected page. |
+| `pdf.extractTables` | api | Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
-| `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude. |
-| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing. |
+| `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude. |
+| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing. |
 | `pdf.render` | api | Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters. |
-| `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts. |
-| `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data. |
-| `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, table regions, and image regions. |
-| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images. |
+| `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables/table cells, images, and charts. |
+| `pdf.verify` | api | Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, bounds, invalid image data URLs, malformed/overlapping table spans, duplicate cell IDs, invalid header associations, and chart data. |
+| `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, RowSpan/ColSpan/Scope/Headers attributes and cell IDs, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role counts, and marked-content count. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role/span/header-association counts, and marked-content count. |
 
 ### pdf details
 
@@ -717,22 +717,23 @@ Append a modeled PDF page with explicit point dimensions and optional text, posi
 
 #### `pdf.addTable`
 
-Add a modeled table with cell values and a page-space bounding box to the first PDF page.
+Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box.
 
 **Examples:**
 
-- pdf.addTable({ name: 'gates', values: [['Gate', 'Status'], ['PDF.js', 'pass']], bbox: [72, 140, 468, 80] })
+- pdf.addTable({ name: 'gates', values: [['Evidence', '', 'Status'], ['Model', 'Native', ''], ['PDF.js', 'Poppler', 'pass']], cells: [{ row: 0, column: 0, columnSpan: 2 }, { row: 0, column: 2, rowSpan: 2 }], bbox: [72, 140, 468, 96] })
 
 **Schema parameters:**
 
 - `name` (string) — Inspectable table name.
 - `values` (unknown[][]) required — Rectangular or ragged cell value matrix.
+- `cells` (object[]) — Optional zero-based cell overrides with id, row, column, value, rowSpan, columnSpan, TH/TD role, Row/Column/Both scope, and header ID array.
 - `bbox` (number[]) — Page-space [left, top, width, height] in points.
 - `source` (string) — Optional extraction/source provenance.
 
 **Schema returns:**
 
-- `table` (PdfTable) — Inspectable table facade with stable ID.
+- `table` (PdfTable) — Inspectable table facade with stable cell IDs and getCell(row, column).
 
 #### `pdf.addText`
 
@@ -759,7 +760,7 @@ Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/lay
 
 #### `pdf.extractTables`
 
-Extract modeled table values and bounding boxes across all pages or a selected page.
+Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page.
 
 **Examples:**
 
@@ -771,7 +772,7 @@ Extract modeled table values and bounding boxes across all pages or a selected p
 
 **Schema returns:**
 
-- `tables` (object[]) — Table records with page, ID, name, values, and bbox.
+- `tables` (object[]) — Table records with page, ID, name, values, normalized cells, and bbox.
 
 #### `pdf.extractText`
 
@@ -791,11 +792,11 @@ Extract modeled text across all pages or a selected page.
 
 #### `pdf.inspect`
 
-Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude.
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated page, text, textItem, region, table, image, and chart record kinds.
+- `kind` (string) — Comma-separated page, text, textItem, region, table, tableCell, image, and chart record kinds.
 - `search` (string) — Case-insensitive record filter.
 - `target` (string) — Stable ID/anchor target; targetId, id, and anchor are aliases.
 - `before` (number) — Records of context before target matches.
@@ -810,7 +811,7 @@ Emit bounded NDJSON for pages, text, positioned text items, layout regions, tabl
 
 #### `pdf.layoutJson`
 
-Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing.
+Return modeled PDF page layout JSON with page text, positioned text items, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing.
 
 **Examples:**
 
@@ -852,7 +853,7 @@ Render a modeled PDF page to SVG by default, return page layout JSON with { form
 
 #### `pdf.resolve`
 
-Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts.
+Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables/table cells, images, and charts.
 
 **Examples:**
 
@@ -860,7 +861,7 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 **Schema parameters:**
 
-- `id` (string) required — Stable artifact, page, text, text-item, region, table, image, or chart ID.
+- `id` (string) required — Stable artifact, page, text, text-item, region, table, table-cell, image, or chart ID.
 
 **Schema returns:**
 
@@ -868,7 +869,7 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 #### `pdf.verify`
 
-Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data.
+Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, bounds, invalid image data URLs, malformed/overlapping table spans, duplicate cell IDs, invalid header associations, and chart data.
 
 **Examples:**
 
@@ -884,7 +885,7 @@ Return QA issues for empty pages, Unicode dashes, text extraction sanity, page g
 
 #### `PdfArtifact.create`
 
-Create a modeled PDF artifact with pages, text, table regions, and image regions.
+Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts.
 
 **Examples:**
 
@@ -903,7 +904,7 @@ Create a modeled PDF artifact with pages, text, table regions, and image regions
 
 #### `PdfFile.exportPdf`
 
-Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images.
+Export a modeled artifact as a real multi-page tagged PDF 1.7 with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, RowSpan/ColSpan/Scope/Headers attributes and cell IDs, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images.
 
 **Examples:**
 
@@ -944,7 +945,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role counts, and marked-content count.
+Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role/span/header-association counts, and marked-content count.
 
 **Examples:**
 

@@ -22,9 +22,13 @@ try {
   assert.equal(first.qa.fileInspect.summary.language, "en-US");
   assert.ok(first.qa.fileInspect.summary.structureElements >= 10);
   assert.equal(first.qa.fileInspect.summary.tableStructures, 2);
-  assert.equal(first.qa.fileInspect.summary.tableRows, 8);
-  assert.equal(first.qa.fileInspect.summary.tableHeaders, 6);
+  assert.equal(first.qa.fileInspect.summary.tableRows, 9);
+  assert.equal(first.qa.fileInspect.summary.tableHeaders, 7);
   assert.equal(first.qa.fileInspect.summary.tableDataCells, 18);
+  assert.equal(first.qa.fileInspect.summary.tableCellIds, 25);
+  assert.equal(first.qa.fileInspect.summary.rowSpans, 1);
+  assert.equal(first.qa.fileInspect.summary.columnSpans, 1);
+  assert.equal(first.qa.fileInspect.summary.headerAssociations, 18);
   assert.equal(first.qa.summary.accessibility.tableStructurePassed, true);
   assert.equal(first.qa.fileInspect.summary.structureElements, first.qa.fileInspect.summary.markedContentItems + first.qa.fileInspect.summary.tableStructures + first.qa.fileInspect.summary.tableRows);
   const untaggedPath = path.join(root, "untagged.pdf");

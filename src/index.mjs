@@ -24,6 +24,7 @@ import { mergePresentationPlaceholders, normalizePresentationBackground, parsePr
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
+import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -1083,22 +1084,22 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
-  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
+  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addFlowText", summary: "Wrap long text into positioned lines and automatically append pages when the configured content box is full." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values and a page-space bounding box to the first PDF page." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values and bounding boxes across all pages or a selected page." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables, images, and charts; narrow with search/target anchors and shape fields with include/exclude." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables, images, and charts." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, layout regions, tables/table cells, images, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, tables, images, charts, and target/search context slicing." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, text/region/table/image/chart bounds, invalid image data URLs, malformed tables, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role counts, and marked-content count." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for empty pages, Unicode dashes, text extraction sanity, page geometry, bounds, invalid image data URLs, malformed/overlapping table spans, duplicate cell IDs, invalid header associations, and chart data." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, RowSpan/ColSpan/Scope/Headers attributes and cell IDs, optional subsetted Unicode TrueType embedding with ToUnicode mapping, positioned text, vector tables/charts, and embedded PNG/JPEG images." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, embedded/subset Type0 and ToUnicode font evidence, structure-role/span/header-association counts, and marked-content count." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
@@ -1357,15 +1358,16 @@ const HELP_DETAIL_OVERRIDES = {
     },
   },
   "pdf.addTable": {
-    examples: ["pdf.addTable({ name: 'gates', values: [['Gate', 'Status'], ['PDF.js', 'pass']], bbox: [72, 140, 468, 80] })"],
+    examples: ["pdf.addTable({ name: 'gates', values: [['Evidence', '', 'Status'], ['Model', 'Native', ''], ['PDF.js', 'Poppler', 'pass']], cells: [{ row: 0, column: 0, columnSpan: 2 }, { row: 0, column: 2, rowSpan: 2 }], bbox: [72, 140, 468, 96] })"],
     schema: {
       parameters: {
         name: { type: "string", description: "Inspectable table name." },
         values: { type: "unknown[][]", required: true, description: "Rectangular or ragged cell value matrix." },
+        cells: { type: "object[]", description: "Optional zero-based cell overrides with id, row, column, value, rowSpan, columnSpan, TH/TD role, Row/Column/Both scope, and header ID array." },
         bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
         source: { type: "string", description: "Optional extraction/source provenance." },
       },
-      returns: { table: { type: "PdfTable", description: "Inspectable table facade with stable ID." } },
+      returns: { table: { type: "PdfTable", description: "Inspectable table facade with stable cell IDs and getCell(row, column)." } },
     },
   },
   "pdf.addImage": {
@@ -1408,13 +1410,13 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["pdf.extractTables({ page: 1 })"],
     schema: {
       parameters: { page: { type: "number", description: "Optional one-based page number." } },
-      returns: { tables: { type: "object[]", description: "Table records with page, ID, name, values, and bbox." } },
+      returns: { tables: { type: "object[]", description: "Table records with page, ID, name, values, normalized cells, and bbox." } },
     },
   },
   "pdf.inspect": {
     schema: {
       parameters: {
-        kind: { type: "string", description: "Comma-separated page, text, textItem, region, table, image, and chart record kinds." },
+        kind: { type: "string", description: "Comma-separated page, text, textItem, region, table, tableCell, image, and chart record kinds." },
         search: { type: "string", description: "Case-insensitive record filter." },
         target: { type: "string", description: "Stable ID/anchor target; targetId, id, and anchor are aliases." },
         before: { type: "number", description: "Records of context before target matches." },
@@ -1429,7 +1431,7 @@ const HELP_DETAIL_OVERRIDES = {
   "pdf.resolve": {
     examples: ["pdf.resolve('pg-1/txt/1')"],
     schema: {
-      parameters: { id: { type: "string", required: true, description: "Stable artifact, page, text, text-item, region, table, image, or chart ID." } },
+      parameters: { id: { type: "string", required: true, description: "Stable artifact, page, text, text-item, region, table, table-cell, image, or chart ID." } },
       returns: { object: { type: "object|undefined", description: "Resolved editable facade/record or undefined." } },
     },
   },
@@ -10834,18 +10836,80 @@ export class DocumentFile {
   }
 }
 
+class PdfTableCell {
+  constructor(table, row, column) {
+    this.table = table;
+    this.row = row;
+    this.column = column;
+  }
+
+  _override() {
+    let config = this.table.cellConfigs.find((cell) => Number(cell.row) === this.row && Number(cell.column ?? cell.col) === this.column);
+    if (!config) { config = { row: this.row, column: this.column }; this.table.cellConfigs.push(config); }
+    return config;
+  }
+
+  _record() { return normalizePdfTableGrid(this.table).occupied[this.row]?.[this.column]; }
+  _setSpan(property, value) {
+    const config = this._override();
+    config[property] = value;
+    const rowSpan = Math.max(1, Number(property === "rowSpan" ? value : config.rowSpan) || 1);
+    const columnSpan = Math.max(1, Number(property === "columnSpan" ? value : config.columnSpan ?? config.colSpan) || 1);
+    this.table.cellConfigs = this.table.cellConfigs.filter((cell) => {
+      const row = Number(cell.row);
+      const column = Number(cell.column ?? cell.col);
+      if (row === this.row && column === this.column) return true;
+      return row < this.row || row >= this.row + rowSpan || column < this.column || column >= this.column + columnSpan;
+    });
+  }
+  get id() { return this._record()?.id; }
+  get value() { return this._record()?.value; }
+  set value(value) { while (this.table.values.length <= this.row) this.table.values.push([]); this.table.values[this.row][this.column] = value; this._override().value = value; }
+  get rowSpan() { return this._record()?.rowSpan || 1; }
+  set rowSpan(value) { this._setSpan("rowSpan", value); }
+  get columnSpan() { return this._record()?.columnSpan || 1; }
+  set columnSpan(value) { this._setSpan("columnSpan", value); }
+  get role() { return this._record()?.role; }
+  set role(value) { this._override().role = value; }
+  get scope() { return this._record()?.scope; }
+  set scope(value) { this._override().scope = value; }
+  get headers() { return [...(this._record()?.headers || [])]; }
+  set headers(value) { this._override().headers = Array.isArray(value) ? [...value] : []; }
+  get effectiveHeaders() { return [...(this._record()?.effectiveHeaders || [])]; }
+  get bbox() { const record = this._record(); return record ? pdfTableCellBBox(this.table, record) : undefined; }
+  toJSON() { return serializePdfTableCells(this.table).find((cell) => cell.row === this.row && cell.column === this.column); }
+}
+
 class PdfTable {
   constructor(page, config = {}) {
     this.page = page;
     this.id = config.id || aid("ptb");
     this.name = config.name || "";
     this.values = (config.values || [[]]).map((row) => [...row]);
+    this.cellConfigs = (config.cells || config.cellConfigs || []).map((cell) => ({ ...cell, headers: Array.isArray(cell.headers) ? [...cell.headers] : undefined }));
+    for (const cell of this.cellConfigs) {
+      const row = Number(cell.row);
+      const column = Number(cell.column ?? cell.col);
+      if (Number.isInteger(row) && Number.isInteger(column) && row >= 0 && column >= 0 && cell.value !== undefined) {
+        while (this.values.length <= row) this.values.push([]);
+        this.values[row][column] = cell.value;
+      }
+    }
     this.bbox = config.bbox || [72, 140, 468, Math.max(24, this.values.length * 24)];
     this.source = config.source;
   }
 
-  inspectRecord(pageIndex) { return { kind: "table", id: this.id, page: pageIndex + 1, name: this.name || undefined, rows: this.values.length, cols: Math.max(0, ...this.values.map((row) => row.length)), bbox: this.bbox, values: this.values, source: this.source || undefined }; }
-  toJSON() { return { id: this.id, name: this.name, values: this.values, bbox: this.bbox, source: this.source }; }
+  grid() { return normalizePdfTableGrid(this); }
+  getCell(row, column) {
+    const owner = this.grid().occupied[Number(row)]?.[Number(column)];
+    return owner ? new PdfTableCell(this, owner.row, owner.column) : undefined;
+  }
+  cellInspectRecords(pageIndex) { return serializePdfTableCells(this).map((cell) => ({ kind: "tableCell", page: pageIndex + 1, tableId: this.id, ...cell })); }
+  inspectRecord(pageIndex) { const grid = this.grid(); return { kind: "table", id: this.id, page: pageIndex + 1, name: this.name || undefined, rows: grid.rows, cols: grid.columns, cells: grid.cells.length, bbox: this.bbox, values: this.values, source: this.source || undefined }; }
+  toJSON() {
+    const cells = this.grid().cells.map(({ id, row, column, rowSpan, columnSpan, role, scope, headers, value }) => ({ id, row, column, rowSpan, columnSpan, role, scope, headers, value }));
+    return { id: this.id, name: this.name, values: this.values, cells, bbox: this.bbox, source: this.source };
+  }
 }
 
 class PdfImage {
@@ -11108,7 +11172,7 @@ export class PdfArtifact {
   addImage(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addImage(config); }
   addChart(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addChart(config); }
   extractText(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.map((page) => page.text).join("\n\n"); }
-  extractTables(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.flatMap((page, index) => page.tables.map((table) => ({ page: options.page || index + 1, id: table.id, name: table.name, values: table.values, bbox: table.bbox }))); }
+  extractTables(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.flatMap((page, index) => page.tables.map((table) => ({ page: options.page || index + 1, id: table.id, name: table.name, values: table.values, cells: serializePdfTableCells(table), bbox: table.bbox }))); }
   resolve(id) {
     if (id === this.id) return this;
     for (const [pageIndex, page] of this.pages.entries()) {
@@ -11120,6 +11184,10 @@ export class PdfArtifact {
       if (region) return region;
       const table = page.tables.find((item) => item.id === id);
       if (table) return table;
+      for (const candidate of page.tables) {
+        const cell = candidate.grid().byId.get(id);
+        if (cell) return candidate.getCell(cell.row, cell.column);
+      }
       const image = page.images.find((item) => item.id === id);
       if (image) return image;
       const chart = page.charts.find((item) => item.id === id);
@@ -11137,6 +11205,7 @@ export class PdfArtifact {
       if (kinds.has("textItem")) records.push(...page.textItemRecords(index));
       if (kinds.has("region")) records.push(...page.regionRecords(index));
       if (kinds.has("table")) records.push(...page.tables.map((table) => table.inspectRecord(index)));
+      if (kinds.has("tableCell")) records.push(...page.tables.flatMap((table) => table.cellInspectRecords(index)));
       if (kinds.has("image")) records.push(...page.images.map((image) => image.inspectRecord(index)));
       if (kinds.has("chart")) records.push(...page.charts.map((chart) => chart.inspectRecord(index)));
     });
@@ -11145,6 +11214,7 @@ export class PdfArtifact {
 
   verify(options = {}) {
     const issues = [];
+    const tableCellIds = new Set();
     if (this.pages.length === 0) issues.push(verificationIssue("pdf", "noPages", "PDF artifact has no pages."));
     this.pages.forEach((page, pageIndex) => {
       if (!page.text.trim() && page.tables.length === 0 && page.images.length === 0 && page.charts.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, images, or charts.`, { page: pageIndex + 1 }));
@@ -11167,6 +11237,12 @@ export class PdfArtifact {
       }
       for (const table of page.tables) {
         if (!table.values.length || !table.values[0]?.length) issues.push(verificationIssue("pdf", "emptyTable", `PDF table ${table.id} on page ${pageIndex + 1} has no cells.`, { page: pageIndex + 1, id: table.id }));
+        const tableGrid = table.grid();
+        for (const cell of tableGrid.cells) {
+          if (tableCellIds.has(cell.id)) issues.push(verificationIssue("pdf", "duplicateCellId", `PDF table cell ID ${cell.id} is duplicated across the artifact.`, { page: pageIndex + 1, id: cell.id, tableId: table.id }));
+          else tableCellIds.add(cell.id);
+        }
+        for (const error of tableGrid.errors) issues.push(verificationIssue("pdf", error.code, `PDF table ${table.id}: ${error.message}`, { page: pageIndex + 1, id: error.id || table.id, tableId: table.id, row: error.row, column: error.column, headerId: error.headerId }));
         const [left, top, width, height] = table.bbox || [];
         if (left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > page.width || top + height > page.height) {
           issues.push(verificationIssue("pdf", "tableOutOfBounds", `PDF table ${table.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: table.id, bbox: table.bbox }));
@@ -11217,7 +11293,7 @@ export class PdfArtifact {
           text: { kind: "text", id: `${page.id}/text`, page: pageNumber, text: page.text, textChars: page.text.length, bbox: [0, 0, page.width, page.height] },
           textItems: page.textItems.map((item) => ({ kind: "textItem", page: pageNumber, ...item })),
           regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
-          tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, bbox: table.bbox, source: table.source || undefined })),
+          tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, cells: serializePdfTableCells(table), bbox: table.bbox, source: table.source || undefined })),
           images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt, isMask: image.isMask || undefined, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
           charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
         };
@@ -11245,7 +11321,7 @@ export class PdfFile {
     const structureRoles = {};
     for (const match of text.matchAll(/\/Type\s*\/StructElem\b[\s\S]*?\/S\s*\/([A-Za-z0-9]+)/g)) structureRoles[match[1]] = (structureRoles[match[1]] || 0) + 1;
     const records = [
-      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, tableCellIds: [...text.matchAll(/\/S\s*\/(?:TH|TD)\b[\s\S]*?\/ID\s*(?:\([^)]*\)|<[A-Fa-f0-9]+>)/g)].length, rowSpans: [...text.matchAll(/\/RowSpan\s+[2-9]\d*/g)].length, columnSpans: [...text.matchAll(/\/ColSpan\s+[2-9]\d*/g)].length, headerAssociations: [...text.matchAll(/\/Headers\s*\[[^\]]+\]/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
@@ -11357,7 +11433,7 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     height: Number(page.height || page.pageHeight || page.geometry?.height || 792),
     textItems: page.textItems || page.items || [],
     regions: page.regions || [],
-    tables: ((page.tables || []).length ? (page.tables || []) : reconstructPdfTablesFromTextGeometry(page, index)).map((table, tableIndex) => ({ name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96], source: table.source })),
+    tables: ((page.tables || []).length ? (page.tables || []) : reconstructPdfTablesFromTextGeometry(page, index)).map((table, tableIndex) => ({ id: table.id, name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], cells: table.cells || table.cellConfigs, bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96], source: table.source })),
     images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120], isMask: image.isMask, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
     charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
   }));
@@ -11414,21 +11490,11 @@ function pdfPageSvg(page) {
   const lineText = lines.map((line, index) => `<text x="72" y="${96 + index * (index ? 22 : 30)}" font-family="Helvetica" font-size="${index === 0 ? 24 : 14}" font-weight="${index === 0 ? "700" : "400"}" fill="${index === 0 ? "#0f172a" : "#334155"}">${xmlEscape(line)}</text>`).join("");
   const text = `${lineText}${positionedText}`;
   const tables = (page.tables || []).map((table) => {
-    const [left, top, tableWidth, tableHeight] = table.bbox;
-    const rows = table.values.length;
-    const cols = Math.max(1, ...table.values.map((row) => row.length));
-    const cellW = tableWidth / cols;
-    const cellH = tableHeight / Math.max(1, rows);
-    const cells = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const x = left + c * cellW;
-        const y = top + r * cellH;
-        cells.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${r === 0 ? "#f1f5f9" : "#ffffff"}" stroke="#cbd5e1"/>`);
-        cells.push(`<text x="${x + 5}" y="${y + Math.min(16, cellH - 4)}" font-family="Helvetica" font-size="11" fill="#111827">${xmlEscape(table.values[r]?.[c] ?? "")}</text>`);
-      }
-    }
-    return cells.join("");
+    return serializePdfTableCells(table).map((cell) => {
+      const [x, y, width, height] = cell.bbox;
+      const textY = y + Math.max(11, (height - 11) / 2 + 11);
+      return `<g data-table-cell-id="${attrEscape(cell.id)}" data-row-span="${cell.rowSpan}" data-column-span="${cell.columnSpan}"><rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${cell.role === "TH" ? "#f1f5f9" : "#ffffff"}" stroke="#cbd5e1"/><text x="${x + 5}" y="${textY}" font-family="Helvetica" font-size="11" fill="#111827">${xmlEscape(cell.value)}</text></g>`;
+    }).join("");
   }).join("");
   const images = (page.images || []).map((image) => {
     const [left, top, imageWidth, imageHeight] = image.bbox || [72, 280, 180, 120];
@@ -11870,22 +11936,24 @@ function pdfPositionedTextCommands(page, fontState) {
 }
 
 function pdfTableSemanticRows(page, table, fontState) {
-  const [left, top, tableWidth, tableHeight] = table.bbox.map(Number);
-  const rows = Math.max(1, table.values.length);
-  const columns = Math.max(1, ...table.values.map((row) => row.length));
-  const cellWidth = tableWidth / columns;
-  const cellHeight = tableHeight / rows;
-  return Array.from({ length: rows }, (_, row) => ({
+  const grid = table.grid();
+  return Array.from({ length: Math.max(1, grid.rows) }, (_, row) => ({
     role: "TR",
-    children: Array.from({ length: columns }, (_, column) => {
-      const bbox = [left + column * cellWidth, top + row * cellHeight, cellWidth, cellHeight];
-      const fontSize = Math.max(8, Math.min(12, cellHeight * 0.32));
+    children: grid.cells.filter((cell) => cell.row === row).map((cell) => {
+      const bbox = pdfTableCellBBox(table, cell);
+      const fontSize = Math.max(8, Math.min(12, bbox[3] * 0.32));
       return {
-        role: row === 0 ? "TH" : "TD",
-        tableHeaderScope: row === 0 ? "Column" : undefined,
+        role: cell.role,
+        structureId: cell.id,
+        tableAttributes: {
+          scope: cell.scope,
+          rowSpan: cell.rowSpan,
+          columnSpan: cell.columnSpan,
+          headers: cell.role === "TD" || cell.headers.length ? cell.effectiveHeaders : [],
+        },
         commands: [
-          pdfRectCommand(page, bbox, { fillColor: row === 0 ? "#e2e8f0" : row % 2 ? "#f8fafc" : "#ffffff", strokeColor: "#94a3b8", lineWidth: 0.75 }),
-          pdfTextCommand(page, pdfFitText(table.values[row]?.[column] ?? "", cellWidth - 12, fontSize, fontState), bbox[0] + 6, bbox[1] + Math.max(5, (cellHeight - fontSize) / 2), { fontSize, bold: row === 0, color: "#0f172a", fontState }),
+          pdfRectCommand(page, bbox, { fillColor: cell.role === "TH" ? "#e2e8f0" : row % 2 ? "#f8fafc" : "#ffffff", strokeColor: "#94a3b8", lineWidth: 0.75 }),
+          pdfTextCommand(page, pdfFitText(cell.value, bbox[2] - 12, fontSize, fontState), bbox[0] + 6, bbox[1] + Math.max(5, (bbox[3] - fontSize) / 2), { fontSize, bold: cell.role === "TH", color: "#0f172a", fontState }),
         ],
       };
     }),
@@ -12021,11 +12089,11 @@ function pdfSemanticNodes(groups) {
 }
 
 function pdfSemanticLeaves(groups) {
-  return groups.flatMap((group) => group.children?.length ? pdfSemanticLeaves(group.children) : [group]);
+  return groups.flatMap((group) => Array.isArray(group.children) ? pdfSemanticLeaves(group.children) : [group]);
 }
 
 function pdfMarkedContent(group) {
-  if (group.children?.length) return group.children.map(pdfMarkedContent).join("\n");
+  if (Array.isArray(group.children)) return group.children.map(pdfMarkedContent).join("\n");
   return `/${group.role} << /MCID ${group.mcid} >> BDC\n${group.commands.join("\n")}\nEMC`;
 }
 
@@ -12118,16 +12186,24 @@ function buildMinimalPdf(artifact, options = {}) {
       const writeStructureGroup = (group, parentObjectId) => {
         const alt = group.alt ? ` /Alt ${pdfStringToken(group.alt)}` : "";
         const titleEntry = group.title ? ` /T ${pdfStringToken(group.title)}` : "";
-        const attributes = group.tableHeaderScope ? ` /A << /O /Table /Scope /${group.tableHeaderScope} >>` : "";
-        const kid = group.children?.length ? `[${group.children.map((child) => `${child.structureObjectId} 0 R`).join(" ")}]` : group.mcid;
-        objects.set(group.structureObjectId, Buffer.from(`<< /Type /StructElem /S /${group.role} /P ${parentObjectId} 0 R /Pg ${plan.pageObjectId} 0 R /K ${kid}${alt}${titleEntry}${attributes} >>`, "ascii"));
+        const tableAttributeEntries = group.tableAttributes ? [
+          "/O /Table",
+          group.tableAttributes.scope ? `/Scope /${group.tableAttributes.scope}` : "",
+          group.tableAttributes.rowSpan > 1 ? `/RowSpan ${group.tableAttributes.rowSpan}` : "",
+          group.tableAttributes.columnSpan > 1 ? `/ColSpan ${group.tableAttributes.columnSpan}` : "",
+          group.tableAttributes.headers?.length ? `/Headers [${group.tableAttributes.headers.map(pdfStringToken).join(" ")}]` : "",
+        ].filter(Boolean) : [];
+        const attributes = tableAttributeEntries.length ? ` /A << ${tableAttributeEntries.join(" ")} >>` : "";
+        const structureId = group.structureId ? ` /ID ${pdfStringToken(group.structureId)}` : "";
+        const kid = Array.isArray(group.children) ? `[${group.children.map((child) => `${child.structureObjectId} 0 R`).join(" ")}]` : group.mcid;
+        objects.set(group.structureObjectId, Buffer.from(`<< /Type /StructElem /S /${group.role} /P ${parentObjectId} 0 R /Pg ${plan.pageObjectId} 0 R /K ${kid}${alt}${titleEntry}${structureId}${attributes} >>`, "ascii"));
         for (const child of group.children || []) writeStructureGroup(child, group.structureObjectId);
       };
       for (const group of plan.semanticGroups) writeStructureGroup(group, structTreeRootObjectId);
     }
   }
   objects.set(infoObjectId, Buffer.from(`<< /Title ${pdfStringToken(title)} /Creator (open-office-artifact-tool) /Producer (open-office-artifact-tool clean-room PDF writer) >>`, "ascii"));
-  const header = Buffer.from(`%PDF-1.4\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");
+  const header = Buffer.from(`%PDF-1.7\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");
   const chunks = [header];
   const offsets = Array(nextObjectId).fill(0);
   let byteLength = header.byteLength;

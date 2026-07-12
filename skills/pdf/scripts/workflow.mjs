@@ -122,13 +122,16 @@ function expectedTaggedTableStructure(tables = []) {
   return tables.reduce((summary, table) => {
     const values = table.values || [];
     const rows = Math.max(1, values.length);
-    const columns = Math.max(1, ...values.map((row) => row.length));
+    const cells = Array.isArray(table.cells) && table.cells.length ? table.cells : Array.from({ length: rows }, (_, row) => Array.from({ length: Math.max(1, ...values.map((entry) => entry.length)) }, (_, column) => ({ role: row === 0 ? "TH" : "TD", row, column }))).flat();
     summary.tables += 1;
     summary.rows += rows;
-    summary.headers += columns;
-    summary.dataCells += Math.max(0, rows - 1) * columns;
+    summary.headers += cells.filter((cell) => cell.role === "TH").length;
+    summary.dataCells += cells.filter((cell) => cell.role === "TD").length;
+    summary.rowSpans += cells.filter((cell) => Number(cell.rowSpan) > 1).length;
+    summary.columnSpans += cells.filter((cell) => Number(cell.columnSpan) > 1).length;
+    summary.headerAssociations += cells.filter((cell) => Array.isArray(cell.effectiveHeaders) && cell.effectiveHeaders.length).length;
     return summary;
-  }, { tables: 0, rows: 0, headers: 0, dataCells: 0 });
+  }, { tables: 0, rows: 0, headers: 0, dataCells: 0, rowSpans: 0, columnSpans: 0, headerAssociations: 0 });
 }
 
 export async function verifyPdfFile(inputPath, options = {}) {
@@ -162,7 +165,10 @@ export async function verifyPdfFile(inputPath, options = {}) {
   const tableStructurePassed = fileInspect.summary.tableStructures >= expectedTableStructure.tables
     && fileInspect.summary.tableRows >= expectedTableStructure.rows
     && fileInspect.summary.tableHeaders >= expectedTableStructure.headers
-    && fileInspect.summary.tableDataCells >= expectedTableStructure.dataCells;
+    && fileInspect.summary.tableDataCells >= expectedTableStructure.dataCells
+    && fileInspect.summary.rowSpans >= expectedTableStructure.rowSpans
+    && fileInspect.summary.columnSpans >= expectedTableStructure.columnSpans
+    && fileInspect.summary.headerAssociations >= expectedTableStructure.headerAssociations;
   const accessibility = { requireTagged: options.requireTagged === true, tagged: fileInspect.summary.tagged, expectedTableStructure, tableStructurePassed };
   const summary = { input: absoluteInput, outputDir, pages: pdf.pages.length, verifyOk: verify.ok, file: fileInspect.summary, accessibility, extractedTextChars: extractedText.length, extractedTables: extractedTables.length, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, pdfjs: { status: pdfjs.status, reason: pdfjs.reason, pages: pdfjs.pdf?.pages.length, textChars: pdfjs.text?.length, tables: pdfjs.tables?.length, paths: pdfjs.paths }, files: paths };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
