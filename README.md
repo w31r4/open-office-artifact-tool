@@ -64,8 +64,16 @@ Presentation compose-first authoring uses helper nodes that mirror the agent-ori
 ```js
 import { column, paragraph, Presentation, PresentationFile, row, box } from "open-office-artifact-tool";
 
-const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
-const slide = presentation.slides.add();
+const presentation = Presentation.create({
+  slideSize: { width: 1280, height: 720 },
+  master: {
+    name: "Clean Room Master",
+    background: { fill: "bg1", mode: "reference", index: 1001 },
+    placeholders: [{ type: "title", idx: 1, position: { left: 42, top: 36, width: 1196, height: 80 }, style: { fontSize: 42, bold: true, color: "accent1" } }],
+  },
+  layouts: [{ id: "layout/content", name: "Content", type: "titleAndContent", background: "#FFFFFF" }],
+});
+const slide = presentation.slides.add({ layoutId: "layout/content" });
 slide.compose(
   column({ name: "content-frame", width: "fill", height: "fill", gap: 16, padding: { x: 24, y: 20 } }, [
     paragraph({ id: "sh/stable-headline", name: "primary-heading", className: "text-slate-950 text-4xl font-bold" }, ["Quarterly readiness"]),

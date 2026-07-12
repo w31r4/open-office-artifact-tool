@@ -9,11 +9,26 @@ const aliasedThemePresentation = Presentation.create({ theme: { colors: { dk1: "
 assert.equal(aliasedThemePresentation.theme.colors.tx1, "#112233");
 assert.equal(aliasedThemePresentation.theme.colors.bg1, "#fefefe");
 assert.equal("dk1" in aliasedThemePresentation.theme.colors, false);
+const masterOnlyPresentation = Presentation.create({ master: { name: "Master Only", background: "#123456" } });
+masterOnlyPresentation.slides.add();
+const masterOnlyLoaded = await PresentationFile.importPptx(await PresentationFile.exportPptx(masterOnlyPresentation));
+assert.equal(masterOnlyLoaded.layouts.items.length, 1);
+assert.equal(masterOnlyLoaded.master.name, "Master Only");
+assert.deepEqual(masterOnlyLoaded.slides.items[0].effectiveBackground(), { fill: "#123456", mode: "solid" });
 presentation.theme
   .setColors({ accent1: "#0ea5e9", accent2: "#f97316", accent4: "#7c3aed", accent5: "#16a34a", accent6: "#dc2626", tx2: "#334155", bg2: "#f8fafc", hlink: "#2563eb", folHlink: "#9333ea" })
   .setFonts({ major: "Aptos Display", minor: "Aptos", majorEastAsia: "PingFang SC", majorComplexScript: "Arial", minorEastAsia: "Noto Sans CJK SC", minorComplexScript: "Arial" })
   .setTextStyles({ title: { fontSize: 38, color: "accent1", alignment: "center" }, body: { fontSize: 22, color: "tx2", fontFamily: "+mn-lt" }, other: { fontSize: 16, italic: true, color: "#475569" } })
   .setColorMap({ accent1: "accent2", accent2: "accent1" });
+presentation.master.update({
+  id: "master/clean-room",
+  name: "Clean Room Master",
+  background: { fill: "accent1", mode: "reference", index: 1001 },
+  placeholders: [
+    { id: "master/title", type: "title", idx: 1, name: "Master Title", position: { left: 48, top: 24, width: 900, height: 72 }, required: true, style: { fontSize: 32, bold: true, color: "accent2", fontFamily: "Aptos Display" } },
+    { id: "master/body", type: "body", idx: 2, name: "Master Body", position: { left: 72, top: 140, width: 760, height: 360 }, style: { fontSize: 20, color: "tx2" } },
+  ],
+});
 assert.throws(() => presentation.theme.setColors({ accent7: "#000000" }), /Unsupported presentation theme color accent7/);
 assert.throws(() => presentation.theme.setColors({ accent3: "transparent" }), /six-digit RGB color/);
 assert.throws(() => presentation.theme.setFonts({ major: "" }), /must not be empty/);
@@ -24,14 +39,22 @@ const titleLayout = presentation.layouts.add({
   id: "layout/title-content",
   name: "Title and Content",
   type: "titleAndContent",
+  background: "#fff7ed",
   placeholders: [
-    { id: "ph/title", type: "title", name: "Title Placeholder", position: { left: 72, top: 36, width: 720, height: 52 }, required: true, style: { fontSize: 28, bold: true } },
-    { id: "ph/body", type: "body", name: "Body Placeholder", position: { left: 72, top: 520, width: 560, height: 80 } },
+    { id: "ph/title", type: "title", idx: 1, name: "Title Placeholder", position: { left: 72, top: 36, width: 720, height: 52 }, required: true, style: { fontSize: 28 } },
+    { id: "ph/body", type: "body", idx: 2, name: "Body Placeholder", position: { left: 72, top: 520, width: 560, height: 80 } },
   ],
 });
 const slide = presentation.slides.add();
 const [titlePlaceholder] = slide.applyLayout(titleLayout);
 titlePlaceholder.text = "Quarterly plan template";
+assert.deepEqual(slide.effectiveBackground(), { fill: "#fff7ed", mode: "solid" });
+assert.equal(titlePlaceholder.text.style.fontSize, 28);
+assert.equal(titlePlaceholder.text.style.bold, true);
+assert.equal(titlePlaceholder.text.style.color, "accent2");
+assert.equal(titleLayout.effectivePlaceholders()[1].style.fontSize, 20);
+assert.throws(() => presentation.layouts.add({ name: "Invalid Placeholder", placeholders: [{ type: "title", idx: 0 }] }), /unsigned positive 32-bit/);
+assert.throws(() => presentation.master.setBackground("transparent"), /scheme color, six-digit RGB/);
 const themeLayoutSnapshot = presentation.inspect({ kind: "theme,layout,textbox", maxChars: 8000 }).ndjson;
 assert.match(themeLayoutSnapshot, /Open Office Clean Room/);
 assert.match(themeLayoutSnapshot, /Title and Content/);
@@ -131,6 +154,7 @@ const nativeImage = slide.images.add({
   position: { left: 840, top: 450, width: 120, height: 90 },
 });
 const pieSlide = presentation.slides.add();
+pieSlide.background = { fill: "#ecfeff", mode: "solid" };
 const pieChart = pieSlide.charts.add("pie", {
   name: "market-share-pie",
   title: "Market Share",
@@ -342,6 +366,10 @@ assert.equal((/<a:effectStyleLst>([\s\S]*?)<\/a:effectStyleLst>/.exec(themeXml)?
 assert.equal((/<a:bgFillStyleLst>([\s\S]*?)<\/a:bgFillStyleLst>/.exec(themeXml)?.[1].match(/<a:solidFill>/g) || []).length, 3);
 const masterXml = await zip.file("ppt/slideMasters/slideMaster1.xml").async("text");
 assert.match(masterXml, /sldLayoutId/);
+assert.match(masterXml, /<p:cSld name="Clean Room Master"><p:bg><p:bgRef idx="1001"><a:schemeClr val="accent1"\/><\/p:bgRef><\/p:bg>/);
+assert.match(masterXml, /<p:ph type="title" idx="1"\/>/);
+assert.match(masterXml, /<a:rPr lang="en-US" sz="2400" b="1">/);
+assert.match(masterXml, /<a:schemeClr val="accent2"\/>/);
 assert.match(masterXml, /<p:clrMap[^>]*accent1="accent2"[^>]*accent2="accent1"/);
 assert.match(masterXml, /<p:titleStyle>[\s\S]*?<a:defRPr sz="3800" b="1" i="0">[\s\S]*?<a:schemeClr val="accent1"/);
 assert.match(masterXml, /<p:bodyStyle>[\s\S]*?<a:defRPr sz="2200" b="0" i="0">[\s\S]*?<a:schemeClr val="tx2"/);
@@ -354,6 +382,9 @@ const alternatePrefixPptx = await PresentationFile.patchPptx(pptx, [
   { path: "ppt/slideMasters/slideMaster1.xml", xml: alternateMasterPrefixXml },
 ]);
 const alternatePrefixLoaded = await PresentationFile.importPptx(alternatePrefixPptx);
+assert.equal(alternatePrefixLoaded.master.name, "Clean Room Master");
+assert.deepEqual(alternatePrefixLoaded.master.background, { fill: "accent1", mode: "reference", index: 1001 });
+assert.equal(alternatePrefixLoaded.master.placeholders[0].style.bold, true);
 assert.equal(alternatePrefixLoaded.theme.colors.accent6, "#dc2626");
 assert.equal(alternatePrefixLoaded.theme.colors.tx1, "#0f172a");
 assert.equal(alternatePrefixLoaded.theme.fonts.majorEastAsia, "PingFang SC");
@@ -361,6 +392,7 @@ assert.equal(alternatePrefixLoaded.theme.textStyles.title.fontSize, 38);
 assert.equal(alternatePrefixLoaded.theme.colorMap.accent1, "accent2");
 const layoutXml = await zip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
 assert.match(layoutXml, /Title and Content/);
+assert.match(layoutXml, /<p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFF7ED"\/><\/a:solidFill>/);
 assert.match(layoutXml, /<p:ph type="title"/);
 assert.match(await zip.file("ppt/presentation.xml").async("text"), /<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId\d+"\/><\/p:sldMasterIdLst>/);
 assert.match(await zip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /relationships\/slideMaster" Target="\.\.\/slideMasters\/slideMaster1\.xml"/);
@@ -374,6 +406,8 @@ assert.match(slideXml, /shape-to-table/);
 assert.match(slideXml, /<a:rPr lang="en-US" sz="2400" b="1">/);
 assert.match(slideXml, /<a:solidFill><a:srgbClr val="FFFFFF"\/><\/a:solidFill>/);
 assert.match(slideXml, /<a:tcPr[^>]*><a:solidFill><a:srgbClr val="EDEDED"\/>/);
+const pieSlideXml = await zip.file("ppt/slides/slide2.xml").async("text");
+assert.match(pieSlideXml, /<p:bg><p:bgPr><a:solidFill><a:srgbClr val="ECFEFF"\/><\/a:solidFill>/);
 const notesXml = await zip.file("ppt/notesSlides/notesSlide1.xml").async("text");
 assert.match(notesXml, /Speaker note/);
 const commentsXml = await zip.file("ppt/comments/comment1.xml").async("text");
@@ -454,8 +488,19 @@ assert.match(pieChartXml, /<c:v>45<\/c:v>/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
+assert.equal(loaded.master.id, "pptx-master-2147483648");
+assert.equal(loaded.master.name, "Clean Room Master");
+assert.deepEqual(loaded.master.background, { fill: "accent1", mode: "reference", index: 1001 });
+assert.equal(loaded.master.placeholders.length, 2);
+assert.equal(loaded.master.placeholders[0].style.bold, true);
+assert.equal(loaded.master.placeholders[0].style.color, "accent2");
 assert.equal(loaded.layouts.items[0].id, "pptx-layout-2147483649");
 assert.equal(loaded.layouts.items[0].masterId, "pptx-master-2147483648");
+assert.deepEqual(loaded.layouts.items[0].background, { fill: "#fff7ed", mode: "solid" });
+assert.equal(loaded.layouts.items[0].effectivePlaceholders()[0].style.bold, true);
+assert.equal(loaded.layouts.items[0].effectivePlaceholders()[0].style.fontSize, 28);
+assert.deepEqual(loaded.slides.items[0].effectiveBackground(), { fill: "#fff7ed", mode: "solid" });
+assert.deepEqual(loaded.slides.items[1].effectiveBackground(), { fill: "#ecfeff", mode: "solid" });
 assert.equal(loaded.theme.colors.accent6, "#dc2626");
 assert.equal(loaded.theme.colors.tx2, "#334155");
 assert.equal(loaded.theme.fonts.majorEastAsia, "PingFang SC");
@@ -470,6 +515,8 @@ const loadedThemeRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (awai
 assert.match(await loadedThemeRoundtripZip.file("ppt/theme/theme1.xml").async("text"), /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
 assert.match(await loadedThemeRoundtripZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:clrMap[^>]*accent1="accent2"[^>]*accent2="accent1"/);
 assert.match(await loadedThemeRoundtripZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:titleStyle>[\s\S]*?<a:defRPr sz="3800"/);
+assert.match(await loadedThemeRoundtripZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:bg><p:bgRef idx="1001">/);
+assert.match(await loadedThemeRoundtripZip.file("ppt/slideLayouts/slideLayout1.xml").async("text"), /<a:srgbClr val="FFF7ED"/);
 const loadedAll = loaded.inspect({ kind: "theme,layout,textbox,table,chart,image,notes,comment,connector", maxChars: 12000 }).ndjson;
 assert.match(loadedAll, /Revenue plan/);
 assert.match(loadedAll, /Imported Theme|Open Office Clean Room/);

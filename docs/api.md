@@ -878,10 +878,11 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `Presentation.create` | api | Create a deck with a default or explicit slide size. |
+| `Presentation.create` | api | Create a deck with a default or explicit slide size, theme, single Slide Master, and reusable layouts. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
-| `presentation.layouts.add` | api | Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip. |
+| `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
+| `presentation.master` | api | Configure the deck's single Slide Master identity, native background, and typed placeholder position/style defaults; layouts and slides inherit these values deterministically. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
 | `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
@@ -938,12 +939,13 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `Presentation.create`
 
-Create a deck with a default or explicit slide size.
+Create a deck with a default or explicit slide size, theme, single Slide Master, and reusable layouts.
 
 **Schema parameters:**
 
 - `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
 - `theme` (object) — Theme name, colors, and major/minor fonts.
+- `master` (object) — Single Slide Master ID/name, background, and typed placeholder defaults.
 - `layouts` (object[]) — Reusable slide layout definitions.
 
 **Schema returns:**
@@ -1005,18 +1007,34 @@ Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, 
 
 #### `presentation.layouts.add`
 
-Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip.
+Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts.
 
 **Schema parameters:**
 
 - `name` (string) required — Layout name.
 - `type` (string) — Layout type.
 - `masterId` (string) — Master identity.
-- `placeholders` (object[]) — Placeholder type/name/frame/text/required/style definitions.
+- `background` (string|object) — Optional layout background overriding the linked master background.
+- `placeholders` (object[]) — Placeholder type/idx/name/frame/text/required/style definitions merged over matching master defaults.
 
 **Schema returns:**
 
 - `layout` (SlideLayoutTemplate) — Appended reusable layout facade.
+
+#### `presentation.master`
+
+Configure the deck's single Slide Master identity, native background, and typed placeholder position/style defaults; layouts and slides inherit these values deterministically.
+
+**Schema parameters:**
+
+- `id` (string) — Stable master identity used by layouts.
+- `name` (string) — Native Slide Master name.
+- `background` (string|object) — Solid RGB/scheme background or native background reference with index.
+- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, and text style.
+
+**Schema returns:**
+
+- `master` (PresentationSlideMaster) — Mutable single Slide Master facade.
 
 #### `presentation.resolve`
 

@@ -25,6 +25,10 @@ try {
   assert.equal(first.qa.presentation.slides.count, 3);
   assert.equal(first.qa.presentation.layouts.items[0].id, "pptx-layout-2147483649");
   assert.equal(first.qa.presentation.layouts.items[0].masterId, "pptx-master-2147483648");
+  assert.equal(first.qa.presentation.master.name, "Agent Readiness Master");
+  assert.deepEqual(first.qa.presentation.master.background, { fill: "bg1", mode: "reference", index: 1001 });
+  assert.equal(first.qa.presentation.master.placeholders[0].style.color, "accent1");
+  assert.deepEqual(first.qa.presentation.layouts.items[0].background, { fill: "#ffffff", mode: "solid" });
   assert.equal(first.qa.presentation.theme.colors.accent6, "#dc2626");
   assert.equal(first.qa.presentation.theme.fonts.majorEastAsia, "PingFang SC");
   assert.equal(first.qa.presentation.theme.textStyles.title.fontSize, 42);
@@ -45,6 +49,8 @@ try {
   assert.equal((/<a:fillStyleLst>([\s\S]*?)<\/a:fillStyleLst>/.exec(fixtureThemeXml)?.[1].match(/<a:solidFill>/g) || []).length, 3);
   assert.match(fixtureMasterXml, /<p:clrMap[^>]*accent1="accent2"/);
   assert.match(fixtureMasterXml, /<p:titleStyle>[\s\S]*?<a:defRPr sz="4200"/);
+  assert.match(fixtureMasterXml, /<p:cSld name="Agent Readiness Master"><p:bg><p:bgRef idx="1001">/);
+  assert.match(fixtureMasterXml, /<p:ph type="title" idx="1"\/>/);
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);

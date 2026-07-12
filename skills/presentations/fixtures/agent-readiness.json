@@ -13,8 +13,16 @@
     },
     "colorMap": { "accent1": "accent2", "accent2": "accent1" }
   },
+  "master": {
+    "id": "master/agent-readiness",
+    "name": "Agent Readiness Master",
+    "background": { "fill": "bg1", "mode": "reference", "index": 1001 },
+    "placeholders": [
+      { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "Agent Readiness Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
+    ]
+  },
   "layouts": [
-    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "placeholders": [] }
+    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [] }
   ],
   "slides": [
     {
@@ -82,7 +90,7 @@
   ],
   "qa": {
     "nativeRender": "auto",
-    "inspectKind": "deck,theme,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange",
+    "inspectKind": "deck,theme,slideMaster,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange",
     "maxChars": 30000
   }
 }

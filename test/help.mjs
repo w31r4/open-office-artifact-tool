@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 209);
+assert.equal(HELP_CATALOG.length, 210);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -47,6 +47,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"))
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /commentAuthors\.xml/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.connectors.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.theme"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.layouts.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.applyLayout"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
@@ -163,7 +164,7 @@ assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 26);
+assert.equal(presentationCatalog.length, 27);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");

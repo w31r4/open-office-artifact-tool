@@ -58,14 +58,14 @@ function addFixtureSlide(presentation, config = {}) {
 }
 
 export function createPresentationFromFixture(fixture = {}) {
-  const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {} });
+  const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {}, master: fixture.master || {} });
   if (fixture.theme?.colors) presentation.theme.setColors(fixture.theme.colors);
   if (fixture.theme?.fonts) presentation.theme.setFonts(fixture.theme.fonts);
   if (fixture.theme?.textStyles) presentation.theme.setTextStyles(fixture.theme.textStyles);
   if (fixture.theme?.colorMap) presentation.theme.setColorMap(fixture.theme.colorMap);
   for (const layout of fixture.layouts || []) presentation.layouts.add(layout);
   for (const slide of fixture.slides || []) addFixtureSlide(presentation, slide);
-  const inspectKind = fixture.qa?.inspectKind || "deck,theme,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange";
+  const inspectKind = fixture.qa?.inspectKind || "deck,theme,slideMaster,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange";
   for (const expected of fixture.expectInspect || []) {
     assert.match(presentation.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));
   }

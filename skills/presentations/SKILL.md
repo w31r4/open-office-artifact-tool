@@ -21,7 +21,7 @@ Use this project skill for standalone `.pptx` artifact work. It is the clean-roo
 ## Authoring workflow
 
 1. Create a `Presentation` or import an existing PPTX with `PresentationFile.importPptx`.
-2. Define the communication job and select a coherent theme/layout system before adding slides. Use `presentation.theme.setColors(...)`, `.setFonts(...)`, `.setTextStyles(...)`, and `.setColorMap(...)` when native Theme/Slide Master inheritance matters; keep individual shape styles for deliberate exceptions.
+2. Define the communication job and select a coherent theme/master/layout system before adding slides. Configure `presentation.master` for the deck-wide background and typed placeholder defaults, then use layout backgrounds/placeholders for overrides. Use `presentation.theme.setColors(...)`, `.setFonts(...)`, `.setTextStyles(...)`, and `.setColorMap(...)` for native theme semantics; keep individual slide/shape styles for deliberate exceptions. The public facade currently exports one Slide Master, so do not imply multi-master authoring support.
 3. Inspect the relevant slides, text ranges, tables, charts, images, notes, and comments before editing.
 4. Apply focused changes through public APIs and keep stable names on important objects.
    For bounded package surgery, `PresentationFile.patchPptx(...)` can attach caller-supplied image bytes or public chart XML to an existing slide with `recipe: { kind: "image"|"chart", source: "ppt/slides/slideN.xml", sourceReference: { objectId, name, alt, position } }`. Position is explicit pixels; the patcher owns DrawingML namespaces, relationship references, non-visual ID collision checks, deterministic replacement, and deletion cleanup.
@@ -34,7 +34,14 @@ Use this project skill for standalone `.pptx` artifact work. It is the clean-roo
 ```js
 import { Presentation, PresentationFile } from "open-office-artifact-tool";
 
-const deck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const deck = Presentation.create({
+  slideSize: { width: 1280, height: 720 },
+  master: {
+    name: "Evidence Master",
+    background: { fill: "bg1", mode: "reference", index: 1001 },
+    placeholders: [{ type: "title", idx: 1, position: { left: 42, top: 36, width: 1196, height: 80 }, style: { fontSize: 42, bold: true, color: "accent1" } }],
+  },
+});
 deck.theme.setColors({ accent1: "#3D8DFF", bg1: "#FFFFFF", tx1: "#000000" });
 const slide = deck.slides.add({ name: "Evidence" });
 const title = slide.shapes.add({
@@ -105,6 +112,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - `presentation.inspect(...)` proves agent-facing objects, master/layout identity, and review metadata survived roundtrip.
 - Package evidence must include the presentation master list, master/layout parts, and the master↔layout plus slide→layout relationship chain when layouts are used.
 - Theme evidence must include all 12 DrawingML color slots, major/minor Latin plus optional East-Asian/complex-script fonts, non-empty fill/line/effect/background format lists, a Slide Master `clrMap`, and title/body/other text styles. Re-import must restore the same agent-facing theme values.
+- Master/layout evidence must restore native `p:bg` solid or scheme references and merge placeholders by `type` plus `idx`; slide backgrounds override layout backgrounds, which override the linked master. Inspect and render must report the same effective background.
 - The checked-in `package-drawing.json` fixture generates a chart part through the public facade, attaches it and an arbitrary-path image to an existing slide through `patchPptx`, restores both as editable agent-facing objects, and passes the real render gate.
 - The checked-in `package-notes-comments.json` fixture relocates notes, comments, and the singleton author registry to arbitrary valid paths, proves semantic validation reports zero issues, restores author identity and note text, and passes LibreOffice/Poppler rendering.
 - `presentation.verify()` and `presentation.validateLayout()` catch structural, overlap, off-canvas, overflow, chart, table, image, placeholder, and dangling-comment issues.
