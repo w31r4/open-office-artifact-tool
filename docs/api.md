@@ -22,17 +22,17 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
-| `document.inspect` | api | Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Reply to a document comment on the same target through commentsExtended paraIdParent threading. |
-| `document.resolve` | api | Resolve stable document, block, header/footer, comment, style, and editable text-range IDs. |
+| `document.resolve` | api | Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs. |
 | `document.setSettings` | api | Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
-| `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown paragraph/character styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, links, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, durable comment identities/people metadata, headers, and footers. |
+| `document.verify` | api | Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, external/internal links, bookmark ranges, fields, citations, and metadata. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, bookmark ranges, internal/external links, fields, durable comment identities/people metadata, headers, and footers. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks. |
@@ -301,7 +301,7 @@ Apply a clean-room report or memo design preset that updates named styles for co
 
 #### `document.inspect`
 
-Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -392,7 +392,7 @@ Reply to a document comment on the same target through commentsExtended paraIdPa
 
 #### `document.resolve`
 
-Resolve stable document, block, header/footer, comment, style, and editable text-range IDs.
+Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs.
 
 **Schema parameters:**
 
@@ -440,7 +440,7 @@ Inspect or resolve stable textRange anchors such as blockId/text for editable do
 
 #### `document.verify`
 
-Return QA issues for fake lists, invalid links/citations, unknown paragraph/character styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells.
+Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
 
 **Schema parameters:**
 
@@ -453,7 +453,7 @@ Return QA issues for fake lists, invalid links/citations, unknown paragraph/char
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, links, fields, citations, and metadata.
+Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, external/internal links, bookmark ranges, fields, citations, and metadata.
 
 **Schema parameters:**
 
@@ -465,7 +465,7 @@ Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classi
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, durable comment identities/people metadata, headers, and footers.
+Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, bookmark ranges, internal/external links, fields, durable comment identities/people metadata, headers, and footers.
 
 **Schema parameters:**
 
