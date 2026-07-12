@@ -247,11 +247,12 @@ function formulaBinary(left, operator, right) {
   if (formulaError(a)) return a;
   if (formulaError(b)) return b;
   if (operator === "/" && b === 0) return "#DIV/0!";
-  if (operator === "+") return a + b;
-  if (operator === "-") return a - b;
-  if (operator === "*") return a * b;
-  if (operator === "/") return a / b;
-  return a ** b;
+  const result = operator === "+" ? a + b
+    : operator === "-" ? a - b
+      : operator === "*" ? a * b
+        : operator === "/" ? a / b
+          : a ** b;
+  return Number.isFinite(result) ? result : "#NUM!";
 }
 
 function formulaUnary(value, transform) {
@@ -278,10 +279,14 @@ function formulaFunction(name, args) {
   const numbers = args.map(numericValue);
   const numericError = numbers.find(formulaError);
   if (numericError) return numericError;
-  if (name === "SUM") return numbers.reduce((sum, value) => sum + value, 0);
+  if (name === "SUM") {
+    const result = numbers.reduce((sum, value) => sum + value, 0);
+    return Number.isFinite(result) ? result : "#NUM!";
+  }
   if (name === "MIN") return Math.min(...numbers);
   if (name === "MAX") return Math.max(...numbers);
-  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+  const result = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+  return Number.isFinite(result) ? result : "#NUM!";
 }
 
 function formulaCondition(value) {

@@ -26,6 +26,8 @@ assert.equal(evaluatePivotFormula("=IF(FALSE,Revenue/0)", { Revenue: 10 }), fals
 assert.equal(evaluatePivotFormula('=IF(Revenue>=Cost,"profit","loss")', { Revenue: 10, Cost: 4 }), "profit");
 assert.equal(evaluatePivotFormula('=IFERROR(Revenue/Cost,"n/a")', { Revenue: 10, Cost: 0 }), "n/a");
 assert.equal(evaluatePivotFormula("=IFERROR(Revenue/Cost,Cost/0)", { Revenue: 10, Cost: 4 }), 2.5);
+assert.equal(evaluatePivotFormula("=IFERROR(1E308*1E308,0)", {}), 0);
+assert.equal(evaluatePivotFormula("=IFERROR(SUM(1E308,1E308),0)", {}), 0);
 assert.equal(evaluatePivotFormula('=IFERROR(Revenue/Cost,"say ""n/a""")', { Revenue: 10, Cost: 0 }), 'say "n/a"');
 assert.equal(evaluatePivotFormula("=IF(Revenue/0,1,2)", { Revenue: 10 }), "#DIV/0!");
 assert.throws(() => evaluatePivotFormula("=ABS(Revenue,Cost)", { Revenue: 1, Cost: 2 }), /exactly one argument/);
