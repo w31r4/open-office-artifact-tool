@@ -16,6 +16,14 @@ assert.equal(evaluatePivotFormula("=-(Revenue/0)%", { Revenue: 10 }), "#DIV/0!")
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1904-01-01" }], "Date", 0, "1904"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-03-01" }], "Date", 61, "1900"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-02-29" }], "Date", 60, "1900"), true);
+for (const [type, current, expected] of [
+  ["yesterday", "2026-07-11", true], ["today", "2026-07-12", true], ["tomorrow", "2026-07-13", true],
+  ["lastWeek", "2026-07-01", true], ["thisWeek", "2026-07-06", true], ["nextWeek", "2026-07-19", true],
+  ["lastMonth", "2026-06-30", true], ["thisMonth", "2026-07-31", true], ["nextMonth", "2026-08-01", true],
+  ["lastQuarter", "2026-06-30", true], ["thisQuarter", "2026-09-30", true], ["nextQuarter", "2026-10-01", true],
+  ["lastYear", "2025-12-31", true], ["thisYear", "2026-01-01", true], ["nextYear", "2027-01-01", true],
+  ["yearToDate", "2026-07-12", true], ["yearToDate", "2026-07-13", false], ["thisWeek", "2026-07-05", false],
+]) assert.equal(pivotItemVisible([{ field: "Date", type, asOf: "2026-07-12" }], "Date", current), expected, `${type} ${current}`);
 assert.equal(pivotGroupValue({ groupBy: "years" }, 0, "1904"), "1904");
 assert.equal(pivotGroupValue({ groupBy: "months" }, 60, "1900"), "Feb");
 assert.equal(pivotGroupValue({ groupBy: "quarters" }, new Date("2026-07-15T00:00:00Z")), "Q3");
@@ -417,6 +425,28 @@ const nativeTimeBook = await SpreadsheetFile.importXlsx(new FileBlob(await timeZ
 assert.deepEqual(nativeTimeBook.resolve("TimeGrouping").computedValues(), timePivot.computedValues());
 const timeRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeTimeBook));
 assert.deepEqual(timeRoundtrip.resolve("TimeGrouping").computedValues(), timePivot.computedValues());
+const relativeBook = Workbook.create();
+const relativeSheet = relativeBook.worksheets.add("Relative Filters");
+relativeSheet.getRange("A1:B6").values = [["Date", "Amount"], ["2026-06-30", 5], ["2026-07-01", 10], ["2026-07-12", 20], ["2026-07-31", 30], ["2026-08-01", 40]];
+const relativePivot = relativeSheet.pivotTables.add({
+  name: "RelativeDatePivot",
+  sourceRange: "A1:B6",
+  targetRange: "D1:E6",
+  rowFields: ["Date"],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+  filters: [{ field: "Date", type: "thisMonth", asOf: "2026-07-12" }],
+});
+assert.deepEqual(relativePivot.filters, [{ field: "Date", type: "thisMonth", asOf: "2026-07-12", useWholeDay: true }]);
+assert.deepEqual(relativePivot.computedValues(), [["Date", "sum of Amount"], ["2026-07-01", 10], ["2026-07-12", 20], ["2026-07-31", 30]]);
+const relativeXlsx = await SpreadsheetFile.exportXlsx(relativeBook);
+const relativeZip = await JSZip.loadAsync(new Uint8Array(await relativeXlsx.arrayBuffer()));
+assert.match(await relativeZip.file("xl/pivotTables/pivotTable1.xml").async("text"), /<filters count="1"><filter fld="0" type="thisMonth" id="1"\/><\/filters>/);
+relativeZip.remove("customXml/open-office-artifact.json");
+const nativeRelativeBook = await SpreadsheetFile.importXlsx(new FileBlob(await relativeZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: relativeXlsx.type }), { relativeDateAsOf: "2026-07-12" });
+assert.deepEqual(nativeRelativeBook.resolve("RelativeDatePivot").filters, relativePivot.filters);
+assert.deepEqual(nativeRelativeBook.resolve("RelativeDatePivot").computedValues(), relativePivot.computedValues());
+const relativeRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeRelativeBook), { relativeDateAsOf: "2026-07-12" });
+assert.deepEqual(relativeRoundtrip.resolve("RelativeDatePivot").computedValues(), relativePivot.computedValues());
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
@@ -434,7 +464,9 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateBetween", value1: "2026-03-01" }] }), /value2 must be an ISO date/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-02-30" }] }), /value1 must be an ISO date/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateBetween", value1: "2026-04-01", value2: "2026-03-01" }] }), /must not be after/);
-assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "today", value1: "2026-03-01" }] }), /unsupported type today/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "today", value1: "2026-03-01" }] }), /cannot define absolute date values/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "thisMonth", asOf: "not-a-date" }] }), /asOf must be an ISO date/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "thisDecade" }] }), /unsupported type thisDecade/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-03-01", useWholeDay: false }] }), /requires useWholeDay=true/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: {}, rowFields: ["Region"] }), /groupFields must be an array/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: Array.from({ length: 129 }, (_, index) => ({ name: `Year ${index}`, sourceField: "OrderDate", groupBy: "years" })), rowFields: ["Region"] }), /exceeds 128 fields/);

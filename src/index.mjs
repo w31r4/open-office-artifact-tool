@@ -7,6 +7,7 @@ import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supported
 import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
+import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
 import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
@@ -906,7 +907,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, Year/Quarter/Month calendar group hierarchies, arithmetic calculated fields, item and absolute whole-day date filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, full date/time plus numeric/discrete grouping, arithmetic calculated fields, item and absolute/relative date filters, refresh/save policy, computed values, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
@@ -1939,6 +1940,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "worksheet.freezePanes.unfreeze": helpSchema({}, "freezePanes", "object", "Worksheet frozen-pane facade reset to zero frozen rows and columns."),
   "SpreadsheetFile.importXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
+    relativeDateAsOf: { type: "string|Date", description: "Optional deterministic ISO/Date evaluation anchor for metadata-free native relative Pivot filters; defaults to the current UTC date." },
   }, "workbook", "Workbook", "Imported editable workbook facade with relationship-driven worksheet tables, worksheet-backed pivots/caches, and basic chart or embedded-image drawings restored from native OOXML parts."),
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
@@ -2112,7 +2114,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     valueFields: { type: "object[]", description: "Value field and aggregation definitions." },
     groupFields: { type: "object[]", description: "Derived group fields with unique name/sourceField. Calendar/time groupBy values years/quarters/months/days/hours/minutes/seconds form OOXML base/par hierarchies and accept bounded groupInterval values; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items." },
     calculatedFields: { type: "object[]", description: "Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected." },
-    filters: { type: "object|object[]", description: "Axis filters. Use exactly one non-empty include/exclude array for item filters, or an absolute whole-day type: dateEqual, dateNotEqual, dateOlderThan, dateOlderThanOrEqual, dateNewerThan, dateNewerThanOrEqual, dateBetween, or dateNotBetween with ISO/Date value1 and value2 for between types. The field must be on a row or column axis; useWholeDay=false and relative date filters are not yet supported." },
+    filters: { type: "object|object[]", description: "Axis filters. Use include/exclude items; absolute dateEqual/dateNotEqual/dateOlderThan/dateNewerThan/dateBetween/dateNotBetween whole-day comparisons; or relative UTC types yesterday/today/tomorrow, last/this/next week/month/quarter/year, and yearToDate. Relative filters accept optional deterministic asOf; ISO weeks start Monday." },
     refreshPolicy: { type: "object", description: "OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso." },
   }, "pivot", "WorksheetPivotTable", "Editable clean-room pivot facade."),
   "sheet.charts.add": helpSchema({
@@ -5899,7 +5901,7 @@ export class SpreadsheetFile {
     return new FileBlob(bytes, { type: XLSX_MIME });
   }
 
-  static async importXlsx(blobOrBuffer) {
+  static async importXlsx(blobOrBuffer, options = {}) {
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const workbook = Workbook.create();
@@ -5930,7 +5932,7 @@ export class SpreadsheetFile {
         parseWorksheetXml(sheet, xml, { sharedStrings, styles });
         await importNativeWorksheetTables(sheet, zip, partPath);
         await importNativeWorksheetDrawings(sheet, zip, partPath);
-        await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches);
+        await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches, options);
       }
     }
     hydrateImportedWorksheetCharts(workbook);
@@ -6632,7 +6634,7 @@ async function importNativePivotCaches(zip, workbookXmlText, workbookRelationshi
   return caches;
 }
 
-async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches) {
+async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches, options = {}) {
   const relationshipRecords = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
   for (const relationship of relationshipRecords) {
     if (!relationship || !relationship.type.endsWith("/pivotTable") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
@@ -6656,7 +6658,7 @@ async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches
       allowUnsupportedCalculatedFields: true,
       groupFields: cache.groupFields,
       allowUnsupportedGroupFields: true,
-      filters: parsed.filters,
+      filters: parsed.filters.map((filter) => PIVOT_RELATIVE_DATE_FILTER_TYPES.has(filter.type) && options.relativeDateAsOf ? { ...filter, asOf: options.relativeDateAsOf } : filter),
       refreshPolicy: cache.refreshPolicy,
       validateSource: false,
     });

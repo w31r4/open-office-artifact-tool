@@ -1,9 +1,17 @@
 import { normalizePivotDate, pivotDateKey } from "./pivot-dates.mjs";
 
-export const PIVOT_DATE_FILTER_TYPES = new Set([
+export const PIVOT_ABSOLUTE_DATE_FILTER_TYPES = new Set([
   "dateEqual", "dateNotEqual", "dateOlderThan", "dateOlderThanOrEqual",
   "dateNewerThan", "dateNewerThanOrEqual", "dateBetween", "dateNotBetween",
 ]);
+export const PIVOT_RELATIVE_DATE_FILTER_TYPES = new Set([
+  "yesterday", "today", "tomorrow",
+  "lastWeek", "thisWeek", "nextWeek",
+  "lastMonth", "thisMonth", "nextMonth",
+  "lastQuarter", "thisQuarter", "nextQuarter",
+  "lastYear", "thisYear", "nextYear", "yearToDate",
+]);
+export const PIVOT_DATE_FILTER_TYPES = new Set([...PIVOT_ABSOLUTE_DATE_FILTER_TYPES, ...PIVOT_RELATIVE_DATE_FILTER_TYPES]);
 
 export function pivotItemKey(value) {
   if (value instanceof Date) return `date:${value.toISOString()}`;
@@ -36,11 +44,57 @@ function dateFilter(filter, field) {
   if (!PIVOT_DATE_FILTER_TYPES.has(type)) throw new TypeError(`PivotTable filter ${field} has unsupported type ${type}.`);
   if (filter.useWholeDay === false) throw new TypeError(`PivotTable date filter ${field} currently requires useWholeDay=true.`);
   if (Object.hasOwn(filter, "include") || Object.hasOwn(filter, "exclude")) throw new Error(`PivotTable date filter ${field} cannot combine type with include or exclude.`);
+  if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(type)) {
+    if (["value", "value1", "value2", "start", "end"].some((key) => Object.hasOwn(filter, key))) throw new Error(`PivotTable relative date filter ${field} cannot define absolute date values.`);
+    const asOf = canonicalDate(filter.asOf ?? new Date(), `PivotTable relative date filter ${field} asOf`);
+    return { field, type, asOf, useWholeDay: true };
+  }
   const value1 = canonicalDate(filter.value1 ?? filter.start ?? filter.value, `PivotTable date filter ${field} value1`);
   const between = type === "dateBetween" || type === "dateNotBetween";
   const value2 = between ? canonicalDate(filter.value2 ?? filter.end, `PivotTable date filter ${field} value2`) : undefined;
   if (between && value1 > value2) throw new RangeError(`PivotTable date filter ${field} value1 must not be after value2.`);
   return { field, type, value1, value2, useWholeDay: true };
+}
+
+function dateKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function relativeDateBounds(type, asOf = dateKey(new Date())) {
+  const current = new Date(`${asOf}T00:00:00Z`);
+  const day = (offset) => new Date(current.valueOf() + offset * 86_400_000);
+  const month = (offset) => new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + offset, 1));
+  const monthBounds = (offset) => [month(offset), new Date(month(offset + 1).valueOf() - 86_400_000)];
+  const weekStart = day(-((current.getUTCDay() + 6) % 7));
+  const weekBounds = (offset) => {
+    const start = new Date(weekStart.valueOf() + offset * 7 * 86_400_000);
+    return [start, new Date(start.valueOf() + 6 * 86_400_000)];
+  };
+  const quarterStart = Math.floor(current.getUTCMonth() / 3) * 3;
+  const quarterBounds = (offset) => {
+    const start = new Date(Date.UTC(current.getUTCFullYear(), quarterStart + offset * 3, 1));
+    const end = new Date(Date.UTC(current.getUTCFullYear(), quarterStart + (offset + 1) * 3, 1) - 86_400_000);
+    return [start, end];
+  };
+  const yearBounds = (offset) => [new Date(Date.UTC(current.getUTCFullYear() + offset, 0, 1)), new Date(Date.UTC(current.getUTCFullYear() + offset, 11, 31))];
+  let bounds;
+  if (type === "yesterday") bounds = [day(-1), day(-1)];
+  else if (type === "today") bounds = [current, current];
+  else if (type === "tomorrow") bounds = [day(1), day(1)];
+  else if (type === "lastWeek") bounds = weekBounds(-1);
+  else if (type === "thisWeek") bounds = weekBounds(0);
+  else if (type === "nextWeek") bounds = weekBounds(1);
+  else if (type === "lastMonth") bounds = monthBounds(-1);
+  else if (type === "thisMonth") bounds = monthBounds(0);
+  else if (type === "nextMonth") bounds = monthBounds(1);
+  else if (type === "lastQuarter") bounds = quarterBounds(-1);
+  else if (type === "thisQuarter") bounds = quarterBounds(0);
+  else if (type === "nextQuarter") bounds = quarterBounds(1);
+  else if (type === "lastYear") bounds = yearBounds(-1);
+  else if (type === "thisYear") bounds = yearBounds(0);
+  else if (type === "nextYear") bounds = yearBounds(1);
+  else bounds = [yearBounds(0)[0], current];
+  return bounds.map(dateKey);
 }
 
 export function normalizePivotFilters(value, axisFields) {
@@ -67,6 +121,10 @@ export function pivotItemVisible(filters = [], field, value, dateSystem = "1900"
   if (PIVOT_DATE_FILTER_TYPES.has(filter.type)) {
     const current = pivotDateKey(value, dateSystem);
     if (!current) return false;
+    if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(filter.type)) {
+      const [start, end] = relativeDateBounds(filter.type, filter.asOf);
+      return current >= start && current <= end;
+    }
     if (filter.type === "dateEqual") return current === filter.value1;
     if (filter.type === "dateNotEqual") return current !== filter.value1;
     if (filter.type === "dateOlderThan") return current < filter.value1;

@@ -1,5 +1,5 @@
 import { pivotFormulaToOoxml } from "./pivot-formulas.mjs";
-import { PIVOT_DATE_FILTER_TYPES, pivotItemVisible } from "./pivot-filters.mjs";
+import { PIVOT_DATE_FILTER_TYPES, PIVOT_RELATIVE_DATE_FILTER_TYPES, pivotItemVisible } from "./pivot-filters.mjs";
 import { pivotDateKey, pivotDateTimeKey } from "./pivot-dates.mjs";
 import { PIVOT_CALENDAR_GROUP_TYPES, pivotGroupItems, pivotGroupValue } from "./pivot-groups.mjs";
 import { pivotValueLabel } from "./pivots.mjs";
@@ -179,6 +179,7 @@ export function parsePivotTableDefinition(xml = "", cache = {}) {
     const fieldIndex = Number(attrs.fld);
     const field = Number.isInteger(fieldIndex) && fieldIndex >= 0 && fieldIndex < fields.length ? fields[fieldIndex] : undefined;
     if (!field) return [];
+    if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(attrs.type)) return [{ field, type: attrs.type, useWholeDay: true }];
     const customValues = elements(body(entry.xml, "customFilters"), "customFilter").map((item) => attributes(item.opening).val).filter((value) => value != null);
     const value1 = attrs.stringValue1 || customValues[0];
     const between = attrs.type === "dateBetween" || attrs.type === "dateNotBetween";
@@ -321,6 +322,7 @@ function targetStart(address = "A1") {
 }
 
 function dateFilterXml(filter, fieldIndex, id) {
+  if (PIVOT_RELATIVE_DATE_FILTER_TYPES.has(filter.type)) return `<filter fld="${fieldIndex}" type="${filter.type}" id="${id}"/>`;
   const operators = {
     dateEqual: ["equal"], dateNotEqual: ["notEqual"],
     dateOlderThan: ["lessThan"], dateOlderThanOrEqual: ["lessThanOrEqual"],
