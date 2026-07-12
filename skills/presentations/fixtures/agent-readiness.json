@@ -8,7 +8,7 @@
     "fonts": { "major": "Arial", "minor": "Arial" }
   },
   "layouts": [
-    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "placeholders": [] }
+    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "placeholders": [] }
   ],
   "slides": [
     {

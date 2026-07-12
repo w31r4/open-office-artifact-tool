@@ -1001,9 +1001,9 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID-list mutations, and atomically reject dangling content types, relationships, or source XML relationship references." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes through presentation/slide relationships, including arbitrary slide, notes, comments, comment-author, theme, layout, chart, and image targets." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1874,7 +1874,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports PPTX slide list entries." },
+    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX slide, slideMaster, and slideLayout recipes safely mutate their owning ID lists and validate explicit or generated IDs." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
   }, "blob", "FileBlob", "Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
@@ -7735,7 +7735,10 @@ export class PresentationFile {
     if (layoutParts.length) {
       zip.file("ppt/slideMasters/slideMaster1.xml", pptxSlideMasterXml(layoutParts));
       zip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", pptxSlideMasterRelsXml(layoutParts));
-      for (const part of layoutParts) zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout));
+      for (const part of layoutParts) {
+        zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout));
+        zip.file(`ppt/slideLayouts/_rels/slideLayout${part.layoutPartId}.xml.rels`, relsXml([{ id: "rId1", type: `${OOXML_RELATIONSHIP_BASE}/slideMaster`, target: "../slideMasters/slideMaster1.xml" }]));
+      }
     }
     presentation.slides.items.forEach((slide, i) => {
       const slideImageParts = imageParts.filter((part) => part.slideIndex === i);
@@ -7772,6 +7775,36 @@ export class PresentationFile {
     const commentAuthorsById = commentAuthorsTarget ? parsePptxCommentAuthors(await zip.file(commentAuthorsTarget)?.async("text")) : new Map();
     const layoutByTarget = new Map();
     const relationshipsById = new Map(presentationRels.map((relationship) => [relationship.id, relationship]));
+    const referencedMasters = [...String(presentationXml || "").matchAll(/<p:sldMasterId\b[^>]*\/?\s*>/g)].map((match) => {
+      const relationship = relationshipsById.get(ooxmlTagRelationshipId(match[0]));
+      if (!relationship?.type.endsWith("/slideMaster") || relationship.targetMode?.toLowerCase() === "external") return undefined;
+      const nativeId = ooxmlXmlAttributes(match[0]).id;
+      return { file: ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target), "PPTX"), masterId: nativeId ? `pptx-master-${nativeId}` : undefined };
+    }).filter(Boolean);
+    const masters = referencedMasters.length
+      ? referencedMasters.filter((master, index, list) => list.findIndex((candidate) => candidate.file === master.file) === index)
+      : presentationRels.filter((relationship) => relationship.type.endsWith("/slideMaster") && relationship.targetMode?.toLowerCase() !== "external").map((relationship) => ({ file: ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target), "PPTX") }));
+    for (const [masterIndex, master] of masters.entries()) {
+      const masterFile = master.file;
+      const masterXml = await zip.file(masterFile)?.async("text");
+      if (!masterXml) continue;
+      const masterRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(masterFile, "PPTX"))?.async("text"));
+      const masterRelationshipsById = new Map(masterRels.map((relationship) => [relationship.id, relationship]));
+      const referencedLayouts = [...String(masterXml).matchAll(/<p:sldLayoutId\b[^>]*\/?\s*>/g)].map((match) => {
+        const relationship = masterRelationshipsById.get(ooxmlTagRelationshipId(match[0]));
+        if (!relationship?.type.endsWith("/slideLayout") || relationship.targetMode?.toLowerCase() === "external") return undefined;
+        const nativeId = ooxmlXmlAttributes(match[0]).id;
+        return { relationship, layoutId: nativeId ? `pptx-layout-${nativeId}` : undefined };
+      }).filter(Boolean);
+      const layouts = referencedLayouts.length ? referencedLayouts : masterRels.filter((relationship) => relationship.type.endsWith("/slideLayout") && relationship.targetMode?.toLowerCase() !== "external").map((relationship) => ({ relationship }));
+      for (const [layoutIndex, layoutEntry] of layouts.entries()) {
+        const relationship = layoutEntry.relationship;
+        const layoutTarget = ooxmlSafePartPath(ooxmlResolveRelationshipTarget(masterFile, relationship.target), "PPTX");
+        if (layoutByTarget.has(layoutTarget)) continue;
+        const layout = parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), layoutEntry.layoutId || `imported-layout-${masterIndex + 1}-${layoutIndex + 1}`, master.masterId || `imported-master-${masterIndex + 1}`);
+        if (layout) layoutByTarget.set(layoutTarget, layout);
+      }
+    }
     const referencedSlideFiles = [...String(presentationXml || "").matchAll(/<p:sldId\b[^>]*\/?\s*>/g)].map((match) => {
       const relationship = relationshipsById.get(ooxmlTagRelationshipId(match[0]));
       return relationship?.type.endsWith("/slide") && relationship.targetMode?.toLowerCase() !== "external" ? ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target) : undefined;
@@ -7779,10 +7812,10 @@ export class PresentationFile {
     const slideFiles = referencedSlideFiles.length ? [...new Set(referencedSlideFiles)] : Object.keys(zip.files).filter((name) => /^ppt\/slides\/[^/]+\.xml$/.test(name)).sort();
     for (const file of slideFiles) {
       const slide = presentation.slides.add();
-      const relsFile = file.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels";
+      const relsFile = ooxmlRelationshipPartPath(file, "PPTX");
       const rels = parseRelsXml(await zip.file(relsFile)?.async("text"));
       const layoutRel = rels.find((rel) => rel.type.endsWith("/slideLayout"));
-      const layoutTarget = layoutRel ? pptxRelationshipTarget(rels, layoutRel.id) : undefined;
+      const layoutTarget = layoutRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget(file, layoutRel.target), "PPTX") : undefined;
       if (layoutTarget) {
         let layout = layoutByTarget.get(layoutTarget);
         if (!layout) {
@@ -7903,8 +7936,9 @@ function pptxSlideLayoutXml(layout) {
 }
 
 function presentationXml(presentation) {
+  const masterIds = presentation.layouts.items.length ? `<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId${presentation.slides.items.length + 2}"/></p:sldMasterIdLst>` : "";
   const ids = presentation.slides.items.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldSz cx="12192000" cy="6858000"/><p:sldIdLst>${ids}</p:sldIdLst></p:presentation>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>`;
 }
 
 function pptxDrawingFillXml(value, fallback = "transparent") {
@@ -8124,7 +8158,7 @@ function parsePptxTheme(presentation, xml = "") {
   return new PresentationTheme(presentation, { name, colors, fonts });
 }
 
-function parsePptxSlideLayout(presentation, xml = "", fallbackId = "imported-layout") {
+function parsePptxSlideLayout(presentation, xml = "", fallbackId = "imported-layout", masterId = "master/default") {
   const text = String(xml || "");
   const name = decodeXml(/<p:cSld[^>]*name="([^"]*)"/.exec(text)?.[1] || fallbackId);
   const type = /<p:sldLayout[^>]*type="([^"]*)"/.exec(text)?.[1] || "custom";
@@ -8140,7 +8174,7 @@ function parsePptxSlideLayout(presentation, xml = "", fallbackId = "imported-lay
   });
   const existing = presentation.layouts.getItem(name);
   if (existing) return existing;
-  return presentation.layouts.add({ id: fallbackId, name, type, placeholders });
+  return presentation.layouts.add({ id: fallbackId, name, type, masterId, placeholders });
 }
 
 function parsePptxTableGraphic(slide, part) {

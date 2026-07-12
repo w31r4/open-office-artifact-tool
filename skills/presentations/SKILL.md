@@ -101,7 +101,8 @@ node skills/presentations/scripts/run-fixture.mjs \
 ## QA gates
 
 - `PresentationFile.inspectPptx(...)` proves required slide, chart, media, notes, comments, comment-author registry, theme, master, and layout parts exist and that source XML relationship references resolve through their `.rels` IDs. Native import must preserve per-comment/reply author identity even when notes, comments, or `commentAuthors.xml` use nonstandard relationship targets.
-- `presentation.inspect(...)` proves agent-facing objects and review metadata survived roundtrip.
+- `presentation.inspect(...)` proves agent-facing objects, master/layout identity, and review metadata survived roundtrip.
+- Package evidence must include the presentation master list, master/layout parts, and the master↔layout plus slide→layout relationship chain when layouts are used.
 - `presentation.verify()` and `presentation.validateLayout()` catch structural, overlap, off-canvas, overflow, chart, table, image, placeholder, and dangling-comment issues.
 - Per-slide Playwright PNGs catch facade/render regressions; the montage checks deck flow only.
 - LibreOffice PDF plus Poppler slide PNGs are the native non-Windows render gate.

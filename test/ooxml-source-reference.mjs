@@ -165,7 +165,65 @@ assert.equal((await SpreadsheetFile.importXlsx(pivotRemoved)).worksheets.getItem
 
 const presentation = Presentation.create();
 presentation.slides.add().shapes.add({ text: "Source reference native check", position: { left: 40, top: 40, width: 400, height: 80 } });
-const pptx = await PresentationFile.patchPptx(await PresentationFile.exportPptx(presentation), [{
+const basePptx = await PresentationFile.exportPptx(presentation);
+const masterPartPath = "ppt/custom/masters/agent-master.xml";
+const layoutPartPath = "ppt/custom/layouts/agent-layout.xml";
+const unusedLayoutPartPath = "ppt/custom/layouts/unused-layout.xml";
+const masterPartXml = '<?xml version="1.0" encoding="UTF-8"?><p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld><p:txStyles/></p:sldMaster>';
+const layoutPartXml = '<?xml version="1.0" encoding="UTF-8"?><p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="title" preserve="1"><p:cSld name="Agent Review Layout"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="Agent review title"/><p:cNvSpPr/><p:nvPr><p:ph type="title" idx="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="381000" y="381000"/><a:ext cx="6096000" cy="762000"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Agent review</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>';
+const masterLayoutPptx = await PresentationFile.patchPptx(basePptx, [
+  {
+    path: masterPartPath,
+    xml: masterPartXml,
+    recipe: { kind: "slideMaster", source: "ppt/presentation.xml", id: "rIdAgentMaster", sourceReference: { masterId: 2_147_483_648 } },
+  },
+  {
+    path: layoutPartPath,
+    xml: layoutPartXml,
+    relationships: [
+      { source: masterPartPath, id: "rIdAgentLayout" },
+      { source: layoutPartPath, id: "rIdAgentLayoutMaster", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: "../masters/agent-master.xml" },
+      { source: "ppt/slides/slide1.xml", id: "rIdAgentSlideLayout", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: "../custom/layouts/agent-layout.xml" },
+    ],
+    recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdAgentLayout", sourceReference: { layoutId: 2_147_483_649 } },
+  },
+  {
+    path: unusedLayoutPartPath,
+    xml: layoutPartXml.replace("Agent Review Layout", "Unused Review Layout"),
+    relationships: [
+      { source: masterPartPath, id: "rIdUnusedLayout" },
+      { source: unusedLayoutPartPath, id: "rIdUnusedLayoutMaster", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: "../masters/agent-master.xml" },
+    ],
+    recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdUnusedLayout", sourceReference: { layoutId: 2_147_483_650 } },
+  },
+]);
+assert.equal(masterLayoutPptx.metadata.sourceReferencesUpdated, 3);
+assert.equal((await PresentationFile.inspectPptx(masterLayoutPptx)).ok, true);
+const masterLayoutZip = await JSZip.loadAsync(new Uint8Array(await masterLayoutPptx.arrayBuffer()));
+assert.match(await masterLayoutZip.file("ppt/presentation.xml").async("text"), /<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rIdAgentMaster"\/><\/p:sldMasterIdLst>/);
+assert.match(await masterLayoutZip.file(masterPartPath).async("text"), /<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rIdAgentLayout"\/><p:sldLayoutId id="2147483650" r:id="rIdUnusedLayout"\/><\/p:sldLayoutIdLst>/);
+assert.match(await masterLayoutZip.file("ppt/custom/layouts/_rels/agent-layout.xml.rels").async("text"), /relationships\/slideMaster" Target="\.\.\/masters\/agent-master\.xml"/);
+const importedMasterLayout = await PresentationFile.importPptx(masterLayoutPptx);
+assert.equal(importedMasterLayout.layouts.items.length, 2);
+assert.equal(importedMasterLayout.layouts.items[0].name, "Agent Review Layout");
+assert.equal(importedMasterLayout.layouts.items[1].name, "Unused Review Layout");
+assert.equal(importedMasterLayout.layouts.items[0].id, "pptx-layout-2147483649");
+assert.equal(importedMasterLayout.layouts.items[0].masterId, "pptx-master-2147483648");
+assert.equal(importedMasterLayout.slides.items[0].layoutId, importedMasterLayout.layouts.items[0].id);
+assert.equal(importedMasterLayout.layouts.items[0].placeholders[0].name, "Agent review title");
+await assert.rejects(() => PresentationFile.patchPptx(masterLayoutPptx, [{ path: "ppt/custom/masters/duplicate.xml", xml: masterPartXml, recipe: { kind: "slideMaster", source: "ppt/presentation.xml", sourceReference: { masterId: 2_147_483_648 } } }]), /masterId 2147483648 already exists/);
+await assert.rejects(() => PresentationFile.patchPptx(masterLayoutPptx, [{ path: "ppt/custom/layouts/duplicate.xml", xml: layoutPartXml, recipe: { kind: "slideLayout", source: masterPartPath, sourceReference: { layoutId: 2_147_483_649 } } }]), /layoutId 2147483649 already exists/);
+const layoutRemovedPptx = await PresentationFile.patchPptx(masterLayoutPptx, [{ path: layoutPartPath, remove: true, recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdAgentLayout", sourceReference: true } }]);
+const layoutRemovedMasterXml = await (await JSZip.loadAsync(new Uint8Array(await layoutRemovedPptx.arrayBuffer()))).file(masterPartPath).async("text");
+assert.doesNotMatch(layoutRemovedMasterXml, /rIdAgentLayout"/);
+assert.match(layoutRemovedMasterXml, /rIdUnusedLayout/);
+const allLayoutsRemovedPptx = await PresentationFile.patchPptx(layoutRemovedPptx, [{ path: unusedLayoutPartPath, remove: true, recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdUnusedLayout", sourceReference: true } }]);
+assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await allLayoutsRemovedPptx.arrayBuffer()))).file(masterPartPath).async("text"), /sldLayoutId/);
+const masterRemovedPptx = await PresentationFile.patchPptx(allLayoutsRemovedPptx, [{ path: masterPartPath, remove: true, recipe: { kind: "slideMaster", source: "ppt/presentation.xml", id: "rIdAgentMaster", sourceReference: true } }]);
+assert.equal((await PresentationFile.inspectPptx(masterRemovedPptx)).ok, true);
+assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await masterRemovedPptx.arrayBuffer()))).file("ppt/presentation.xml").async("text"), /sldMasterId/);
+
+const pptx = await PresentationFile.patchPptx(masterLayoutPptx, [{
   path: "ppt/slides/slideNative.xml",
   xml: '<?xml version="1.0" encoding="UTF-8"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld></p:sld>',
   recipe: { kind: "slide", source: "ppt/presentation.xml", sourceReference: true },

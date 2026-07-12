@@ -18,6 +18,8 @@ const SUPPORTED = new Set([
   "XLSX:pivotcachedefinition",
   "XLSX:pivotcacherecords",
   "PPTX:slide",
+  "PPTX:slidemaster",
+  "PPTX:slidelayout",
 ]);
 
 function decodeXml(value) {
@@ -257,6 +259,42 @@ function mutatePptxSlideReference(xml, ids, addId, config = {}) {
   return appendToRoot(next, "presentation", `<${listName}>${slideTag}</${listName}>`);
 }
 
+function mutatePptxMasterReference(xml, ids, addId, config = {}) {
+  const prefix = rootPrefix(xml, "presentation");
+  let next = removeReferenceTags(xml, "sldMasterId", ids);
+  if (!addId) return next.replace(new RegExp(`<${qname(prefix, "sldMasterIdLst")}\\b[^>]*>\\s*</${qname(prefix, "sldMasterIdLst")}>`), "");
+  const existingIds = [...next.matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldMasterId\b[^>]*\/?>/g)].map((match) => Number(attributes(match[0]).id)).filter(Number.isFinite);
+  const masterId = Number(config.masterId ?? Math.max(2_147_483_647, ...existingIds) + 1);
+  if (!Number.isInteger(masterId) || masterId < 2_147_483_648 || masterId > 4_294_967_295) throw new Error("PPTX slideMaster sourceReference masterId must be an integer from 2147483648 through 4294967295.");
+  if (existingIds.includes(masterId)) throw new Error(`PPTX slideMaster sourceReference masterId ${masterId} already exists.`);
+  const ensured = ensureRelationshipPrefix(next, "presentation");
+  next = ensured.xml;
+  const tag = `<${qname(prefix, "sldMasterId")} id="${masterId}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+  const listName = qname(prefix, "sldMasterIdLst");
+  const block = new RegExp(`<${listName}\\b[^>]*>[\\s\\S]*?</${listName}>`).exec(next)?.[0];
+  if (block) return next.replace(block, block.replace(new RegExp(`</${listName}>$`), `${tag}</${listName}>`));
+  if (new RegExp(`<${listName}\\b[^>]*\\/>`).test(next)) return next.replace(new RegExp(`<${listName}\\b[^>]*\\/>`), (item) => `${item.replace(/\/\s*>$/, ">")}${tag}</${listName}>`);
+  return insertBeforeOrAppend(next, "presentation", `<${listName}>${tag}</${listName}>`, ["sldIdLst", "sldSz", "notesSz", "embeddedFontLst", "custShowLst", "photoAlbum", "custDataLst", "kinsoku", "defaultTextStyle", "modifyVerifier", "extLst"]);
+}
+
+function mutatePptxLayoutReference(xml, ids, addId, config = {}) {
+  const prefix = rootPrefix(xml, "sldMaster");
+  let next = removeReferenceTags(xml, "sldLayoutId", ids);
+  if (!addId) return next.replace(new RegExp(`<${qname(prefix, "sldLayoutIdLst")}\\b[^>]*>\\s*</${qname(prefix, "sldLayoutIdLst")}>`), "");
+  const existingIds = [...next.matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldLayoutId\b[^>]*\/?>/g)].map((match) => Number(attributes(match[0]).id)).filter(Number.isFinite);
+  const layoutId = Number(config.layoutId ?? Math.max(2_147_483_647, ...existingIds) + 1);
+  if (!Number.isInteger(layoutId) || layoutId < 2_147_483_648 || layoutId > 4_294_967_295) throw new Error("PPTX slideLayout sourceReference layoutId must be an integer from 2147483648 through 4294967295.");
+  if (existingIds.includes(layoutId)) throw new Error(`PPTX slideLayout sourceReference layoutId ${layoutId} already exists.`);
+  const ensured = ensureRelationshipPrefix(next, "sldMaster");
+  next = ensured.xml;
+  const tag = `<${qname(prefix, "sldLayoutId")} id="${layoutId}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+  const listName = qname(prefix, "sldLayoutIdLst");
+  const block = new RegExp(`<${listName}\\b[^>]*>[\\s\\S]*?</${listName}>`).exec(next)?.[0];
+  if (block) return next.replace(block, block.replace(new RegExp(`</${listName}>$`), `${tag}</${listName}>`));
+  if (new RegExp(`<${listName}\\b[^>]*\\/>`).test(next)) return next.replace(new RegExp(`<${listName}\\b[^>]*\\/>`), (item) => `${item.replace(/\/\s*>$/, ">")}${tag}</${listName}>`);
+  return insertBeforeOrAppend(next, "sldMaster", `<${listName}>${tag}</${listName}>`, ["transition", "timing", "hf", "txStyles", "extLst"]);
+}
+
 function mutateXlsxDrawingReference(xml, ids, addId) {
   const prefix = rootPrefix(xml, "worksheet");
   let next = removeReferenceTags(xml, "drawing", ids);
@@ -351,14 +389,16 @@ export function supportsOoxmlSourceReference(family, recipeKind) {
 }
 
 export function supportedOoxmlSourceReferenceSummary() {
-  return "DOCX header/footer, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide";
+  return "DOCX header/footer, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide/slideMaster/slideLayout";
 }
 
 export function mutateOoxmlSourceReference({ family, recipeKind, xml, relationshipIds = new Set(), addId, config = {} }) {
   const key = `${family}:${recipeKind}`;
   if (!SUPPORTED.has(key)) throw new Error(`${family} sourceReference is not supported for recipe ${recipeKind || "(missing)"}. Supported recipes: ${supportedOoxmlSourceReferenceSummary()}.`);
   if (family === "DOCX") return mutateDocxSectionReference(xml, recipeKind, relationshipIds, addId, config);
-  if (family === "PPTX") return mutatePptxSlideReference(xml, relationshipIds, addId, config);
+  if (family === "PPTX" && recipeKind === "slide") return mutatePptxSlideReference(xml, relationshipIds, addId, config);
+  if (family === "PPTX" && recipeKind === "slidemaster") return mutatePptxMasterReference(xml, relationshipIds, addId, config);
+  if (family === "PPTX") return mutatePptxLayoutReference(xml, relationshipIds, addId, config);
   if (recipeKind === "worksheet") return mutateXlsxWorksheetReference(xml, relationshipIds, addId, config);
   if (recipeKind === "table") return mutateXlsxTableReference(xml, relationshipIds, addId);
   if (recipeKind === "drawing") return mutateXlsxDrawingReference(xml, relationshipIds, addId);

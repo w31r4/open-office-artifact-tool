@@ -22,6 +22,8 @@ try {
   });
   assert.equal(first.qa.verify.ok, true);
   assert.equal(first.qa.presentation.slides.count, 3);
+  assert.equal(first.qa.presentation.layouts.items[0].id, "pptx-layout-2147483649");
+  assert.equal(first.qa.presentation.layouts.items[0].masterId, "pptx-master-2147483648");
   assert.equal(first.qa.modelRender.slides.length, 3);
   assert.equal(first.qa.modelRender.montage.ok, true);
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/slides/slide1.xml"));

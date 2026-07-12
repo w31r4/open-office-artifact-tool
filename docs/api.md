@@ -874,9 +874,9 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist. |
-| `PresentationFile.importPptx` | api | Import PPTX bytes through presentation/slide relationships, including arbitrary slide, notes, comments, comment-author, theme, layout, chart, and image targets. |
+| `PresentationFile.importPptx` | api | Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references. |
+| `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID-list mutations, and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1097,7 +1097,7 @@ Serialize a presentation facade to native OOXML PPTX bytes, including comment au
 
 #### `PresentationFile.importPptx`
 
-Import PPTX bytes through presentation/slide relationships, including arbitrary slide, notes, comments, comment-author, theme, layout, chart, and image targets.
+Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets.
 
 **Schema parameters:**
 
@@ -1131,7 +1131,7 @@ Inspect bounded PPTX parts, content types, relationships, and namespace-aware so
 
 #### `PresentationFile.patchPptx`
 
-Apply path-validated PPTX part patches and atomically reject dangling content types, relationships, or source XML relationship references.
+Apply path-validated PPTX part patches, including safe slide/master/layout ID-list mutations, and atomically reject dangling content types, relationships, or source XML relationship references.
 
 **Schema parameters:**
 
@@ -1143,7 +1143,7 @@ Apply path-validated PPTX part patches and atomically reject dangling content ty
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports PPTX slide list entries.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX slide, slideMaster, and slideLayout recipes safely mutate their owning ID lists and validate explicit or generated IDs.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**
