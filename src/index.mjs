@@ -897,16 +897,18 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUND", category: "math-trig", summary: "Round a numeric value to decimal places or, with negative digits, positions left of the decimal point.", examples: ["=ROUND(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDUP", category: "math-trig", summary: "Round a numeric value away from zero at the requested positive or negative digit position.", examples: ["=ROUNDUP(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDDOWN", category: "math-trig", summary: "Round a numeric value toward zero at the requested positive or negative digit position.", examples: ["=ROUNDDOWN(A1,2)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.DATE", category: "date-time", summary: "Return an Excel 1900-system date serial with year/month/day overflow and serial-60 leap compatibility.", examples: ["=DATE(2026,7,12)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.YEAR", category: "date-time", summary: "Return the year component of an Excel 1900-system serial date.", examples: ["=YEAR(A1)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.MONTH", category: "date-time", summary: "Return the month component of an Excel 1900-system serial date.", examples: ["=MONTH(A1)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.DAY", category: "date-time", summary: "Return the day component of an Excel 1900-system serial date, including day 29 for compatibility serial 60.", examples: ["=DAY(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DATE", category: "date-time", summary: "Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility.", examples: ["=DATE(2026,7,12)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.YEAR", category: "date-time", summary: "Return the year component of a serial in the workbook's 1900 or 1904 date system.", examples: ["=YEAR(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MONTH", category: "date-time", summary: "Return the month component of a serial in the workbook's 1900 or 1904 date system.", examples: ["=MONTH(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DAY", category: "date-time", summary: "Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60.", examples: ["=DAY(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.EDATE", category: "date-time", summary: "Shift a serial date by whole months and clamp the day to the target month end.", examples: ["=EDATE(A1,3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.EOMONTH", category: "date-time", summary: "Return the final date serial of a month offset from a start date.", examples: ["=EOMONTH(A1,0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.DAYS", category: "date-time", summary: "Return the whole-day difference between two Excel date serials.", examples: ["=DAYS(B1,A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.WEEKDAY", category: "date-time", summary: "Return a weekday number for Excel return types 1, 2, 3, and 11 through 17.", examples: ["=WEEKDAY(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.NETWORKDAYS", category: "date-time", summary: "Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays.", examples: ["=NETWORKDAYS(A1,B1,Holidays)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.WORKDAY", category: "date-time", summary: "Move forward or backward by working days while skipping weekends and optional holidays.", examples: ["=WORKDAY(A1,10,Holidays)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.NETWORKDAYS.INTL", category: "date-time", summary: "Count inclusive workdays with a numbered or Monday-first seven-character custom weekend and optional holidays.", examples: ["=NETWORKDAYS.INTL(A1,B1,7,Holidays)", "=NETWORKDAYS.INTL(A1,B1,\"0000011\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.WORKDAY.INTL", category: "date-time", summary: "Move by workdays using a numbered or Monday-first seven-character custom weekend and optional holidays.", examples: ["=WORKDAY.INTL(A1,10,11,Holidays)", "=WORKDAY.INTL(A1,10,\"0000011\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges all match their criteria.", examples: ["=COUNTIFS(A1:A10,\"East\",B1:B10,\">=10\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIF", category: "statistical", summary: "Average values whose corresponding criteria range entries match a criterion.", examples: ["=AVERAGEIF(A1:A10,\"East\",B1:B10)"] },
@@ -4680,17 +4682,41 @@ function excelHolidaySet(values = [], dateSystem = "1900") {
     const serial = excelFormulaDateNumber(value);
     if (formulaErrorCode(serial)) return { error: serial, holidays: new Set() };
     const day = Math.floor(serial);
-    if (day >= 0 && day <= excelMaxDateSerial(dateSystem)) holidays.add(day);
+    if (day < 0 || day > excelMaxDateSerial(dateSystem)) return { error: "#NUM!", holidays: new Set() };
+    holidays.add(day);
   }
   return { holidays };
 }
 
-function excelBusinessDay(serial, holidays, dateSystem = "1900") {
-  const weekday = excelWeekdayIndex(serial, dateSystem);
-  return weekday !== 0 && weekday !== 6 && !holidays.has(serial);
+function excelWeekendDays(value = 1, allowAllWeekend = false) {
+  const error = formulaErrorCode(value);
+  if (error) return { error, weekends: new Set() };
+  if (typeof value === "string") {
+    const weekend = value.trim();
+    if (/^[01]{7}$/.test(weekend)) {
+      if (weekend === "1111111" && !allowAllWeekend) return { error: "#VALUE!", weekends: new Set() };
+      const weekends = new Set();
+      for (let index = 0; index < 7; index += 1) if (weekend[index] === "1") weekends.add((index + 1) % 7);
+      return { weekends };
+    }
+    if (!/^\d+(?:\.0+)?$/.test(weekend)) return { error: "#VALUE!", weekends: new Set() };
+  }
+  const weekendNumber = Number(value);
+  if (!Number.isInteger(weekendNumber)) return { error: "#NUM!", weekends: new Set() };
+  if (weekendNumber >= 1 && weekendNumber <= 7) {
+    const first = weekendNumber === 1 ? 6 : weekendNumber - 2;
+    return { weekends: new Set([first, (first + 1) % 7]) };
+  }
+  if (weekendNumber >= 11 && weekendNumber <= 17) return { weekends: new Set([weekendNumber - 11]) };
+  return { error: "#NUM!", weekends: new Set() };
 }
 
-function excelNetworkDays(startValue, endValue, holidayValues = [], dateSystem = "1900") {
+function excelBusinessDay(serial, holidays, dateSystem = "1900", weekends = new Set([0, 6])) {
+  const weekday = excelWeekdayIndex(serial, dateSystem);
+  return !weekends.has(weekday) && !holidays.has(serial);
+}
+
+function excelNetworkDays(startValue, endValue, holidayValues = [], dateSystem = "1900", weekendValue = 1, allowAllWeekend = false) {
   const startNumber = excelFormulaDateNumber(startValue);
   const endNumber = excelFormulaDateNumber(endValue);
   if (formulaErrorCode(startNumber)) return startNumber;
@@ -4699,17 +4725,19 @@ function excelNetworkDays(startValue, endValue, holidayValues = [], dateSystem =
   if (!excelDateParts(start, dateSystem) || !excelDateParts(end, dateSystem)) return "#NUM!";
   const holidayResult = excelHolidaySet(holidayValues, dateSystem);
   if (holidayResult.error) return holidayResult.error;
+  const weekendResult = excelWeekendDays(weekendValue, allowAllWeekend);
+  if (weekendResult.error) return weekendResult.error;
   const direction = start <= end ? 1 : -1;
   const low = Math.min(start, end), high = Math.max(start, end);
   const total = high - low + 1;
   const fullWeeks = Math.floor(total / 7);
-  let weekdays = fullWeeks * 5;
-  for (let serial = low + fullWeeks * 7; serial <= high; serial += 1) if (excelBusinessDay(serial, new Set(), dateSystem)) weekdays += 1;
-  for (const holiday of holidayResult.holidays) if (holiday >= low && holiday <= high && excelWeekdayIndex(holiday, dateSystem) !== 0 && excelWeekdayIndex(holiday, dateSystem) !== 6) weekdays -= 1;
+  let weekdays = fullWeeks * (7 - weekendResult.weekends.size);
+  for (let serial = low + fullWeeks * 7; serial <= high; serial += 1) if (excelBusinessDay(serial, new Set(), dateSystem, weekendResult.weekends)) weekdays += 1;
+  for (const holiday of holidayResult.holidays) if (holiday >= low && holiday <= high && !weekendResult.weekends.has(excelWeekdayIndex(holiday, dateSystem))) weekdays -= 1;
   return weekdays * direction;
 }
 
-function excelWorkday(startValue, daysValue, holidayValues = [], dateSystem = "1900") {
+function excelWorkday(startValue, daysValue, holidayValues = [], dateSystem = "1900", weekendValue = 1) {
   const startNumber = excelFormulaDateNumber(startValue);
   const daysNumber = excelFormulaDateNumber(daysValue);
   if (formulaErrorCode(startNumber)) return startNumber;
@@ -4719,12 +4747,14 @@ function excelWorkday(startValue, daysValue, holidayValues = [], dateSystem = "1
   if (!excelDateParts(serial, dateSystem) || Math.abs(days) > excelMaxDateSerial(dateSystem)) return "#NUM!";
   const holidayResult = excelHolidaySet(holidayValues, dateSystem);
   if (holidayResult.error) return holidayResult.error;
+  const weekendResult = excelWeekendDays(weekendValue);
+  if (weekendResult.error) return weekendResult.error;
   const direction = days < 0 ? -1 : 1;
   let remaining = Math.abs(days);
   while (remaining > 0) {
     serial += direction;
     if (!excelDateParts(serial, dateSystem)) return "#NUM!";
-    if (excelBusinessDay(serial, holidayResult.holidays, dateSystem)) remaining -= 1;
+    if (excelBusinessDay(serial, holidayResult.holidays, dateSystem, weekendResult.weekends)) remaining -= 1;
   }
   return serial;
 }
@@ -4933,6 +4963,8 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     }
     case "NETWORKDAYS": return excelNetworkDays(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]), dateSystem);
     case "WORKDAY": return excelWorkday(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]), dateSystem);
+    case "NETWORKDAYS.INTL": return excelNetworkDays(scalar(0, 0), scalar(1, 0), args[3] == null ? [] : values([args[3]]), dateSystem, scalar(2, 1), true);
+    case "WORKDAY.INTL": return excelWorkday(scalar(0, 0), scalar(1, 0), args[3] == null ? [] : values([args[3]]), dateSystem, scalar(2, 1));
     case "IF": return evaluateFormulaCondition(sheet, args[0], context) ? scalar(1, true) : scalar(2, false);
     case "IFERROR": { const value = scalar(0); return formulaErrorCode(value) ? scalar(1, "") : value; }
     case "IFNA": { const value = scalar(0); return formulaErrorCode(value) === "#N/A" ? scalar(1, "") : value; }

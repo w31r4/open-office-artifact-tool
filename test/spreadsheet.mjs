@@ -303,7 +303,7 @@ dateSheet.getRange("B1:B32").formulas = [
 ];
 dateBook.recalculate();
 assert.deepEqual(dateSheet.getRange("B1:B32").values.flat(), [60, 1900, 2, 29, 45351, 45658, 45291, 45351, 45351, 2, 2, 1, 5, 8, 7, -7, 45299, 45300, 45296, "#VALUE!", "#NUM!", "#NUM!", 1, 89, 29, 60, 2, 5, 0, 7, 0, "#VALUE!"]);
-assert.match(dateBook.help("fx.DATE").ndjson, /serial-60 leap compatibility/);
+assert.match(dateBook.help("fx.DATE").ndjson, /1900 serial-60 compatibility/);
 assert.match(dateBook.help("fx.NETWORKDAYS").ndjson, /optional holidays/);
 const dateRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(dateBook));
 assert.deepEqual(dateRoundtrip.worksheets.getItem("Dates").getRange("B1:B32").values, dateSheet.getRange("B1:B32").values);
@@ -357,6 +357,51 @@ invalidDateSystemBook.worksheets.add("Invalid").getRange("A1").values = [[1]];
 invalidDateSystemBook.dateSystem = "invalid";
 assert.ok(invalidDateSystemBook.verify().issues.some((issue) => issue.type === "invalidDateSystem"));
 await assert.rejects(() => SpreadsheetFile.exportXlsx(invalidDateSystemBook), /expected 1900 or 1904/);
+
+const intlDateBook = Workbook.create();
+const intlDateSheet = intlDateBook.worksheets.add("IntlDates");
+intlDateSheet.getRange("A1:A2").values = [[45293], [-1]];
+intlDateSheet.getRange("B1:B22").formulas = [
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7))"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),2)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),11)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),\"0000011\")"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),\"0010001\")"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),\"1111111\")"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,7),DATE(2024,1,1),1)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),1,A1)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),\"bad\")"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),0)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),1.5)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),1,A2)"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),5)"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),1,2)"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),3,\"0010001\")"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),1,1,A1)"],
+  ["=WORKDAY.INTL(DATE(2024,1,8),-5)"],
+  ["=WORKDAY.INTL(DATE(2024,1,6),0)"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),1,\"1111111\")"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),1,8)"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),1,1,A2)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),17)"],
+];
+intlDateBook.recalculate();
+assert.deepEqual(intlDateSheet.getRange("B1:B22").values.flat(), [5, 5, 6, 5, 5, 0, -5, 4, "#VALUE!", "#NUM!", "#NUM!", "#NUM!", 45299, 45293, 45296, 45294, 45292, 45297, "#VALUE!", "#NUM!", "#NUM!", 6]);
+assert.match(intlDateBook.help("fx.NETWORKDAYS.INTL").ndjson, /seven-character custom weekend/);
+assert.match(intlDateBook.help("fx.WORKDAY.INTL").ndjson, /numbered or Monday-first/);
+
+const intl1904Book = Workbook.create({ dateSystem: "1904" });
+const intl1904Sheet = intl1904Book.worksheets.add("Intl1904");
+intl1904Sheet.getRange("A1:A3").formulas = [
+  ["=NETWORKDAYS.INTL(0,6,7)"],
+  ["=WORKDAY.INTL(0,1,7)"],
+  ["=WORKDAY.INTL(0,1,11)"],
+];
+intl1904Book.recalculate();
+assert.deepEqual(intl1904Sheet.getRange("A1:A3").values.flat(), [5, 2, 1]);
+const intl1904Roundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(intl1904Book));
+assert.equal(intl1904Roundtrip.dateSystem, "1904");
+assert.deepEqual(intl1904Roundtrip.worksheets.getItem("Intl1904").getRange("A1:A3").values, [[5], [2], [1]]);
 
 const formulaEdgeBook = Workbook.create();
 const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");
