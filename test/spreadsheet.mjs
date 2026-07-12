@@ -361,7 +361,7 @@ await assert.rejects(() => SpreadsheetFile.exportXlsx(invalidDateSystemBook), /e
 const intlDateBook = Workbook.create();
 const intlDateSheet = intlDateBook.worksheets.add("IntlDates");
 intlDateSheet.getRange("A1:A2").values = [[45293], [-1]];
-intlDateSheet.getRange("B1:B22").formulas = [
+intlDateSheet.getRange("B1:B26").formulas = [
   ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7))"],
   ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),2)"],
   ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),11)"],
@@ -384,9 +384,13 @@ intlDateSheet.getRange("B1:B22").formulas = [
   ["=WORKDAY.INTL(DATE(2024,1,1),1,8)"],
   ["=WORKDAY.INTL(DATE(2024,1,1),1,1,A2)"],
   ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),17)"],
+  ["=NETWORKDAYS.INTL(DATE(2006,1,1),DATE(2006,1,31))"],
+  ["=WORKDAY.INTL(DATE(2012,1,1),30,17)"],
+  ["=NETWORKDAYS.INTL(DATE(2024,1,1),DATE(2024,1,7),\"0000000\")"],
+  ["=WORKDAY.INTL(DATE(2024,1,1),7,\"0000000\")"],
 ];
 intlDateBook.recalculate();
-assert.deepEqual(intlDateSheet.getRange("B1:B22").values.flat(), [5, 5, 6, 5, 5, 0, -5, 4, "#VALUE!", "#NUM!", "#NUM!", "#NUM!", 45299, 45293, 45296, 45294, 45292, 45297, "#VALUE!", "#NUM!", "#NUM!", 6]);
+assert.deepEqual(intlDateSheet.getRange("B1:B26").values.flat(), [5, 5, 6, 5, 5, 0, -5, 4, "#VALUE!", "#NUM!", "#NUM!", "#NUM!", 45299, 45293, 45296, 45294, 45292, 45297, "#VALUE!", "#NUM!", "#NUM!", 6, 22, 40944, 7, 45299]);
 assert.match(intlDateBook.help("fx.NETWORKDAYS.INTL").ndjson, /seven-character custom weekend/);
 assert.match(intlDateBook.help("fx.WORKDAY.INTL").ndjson, /numbered or Monday-first/);
 

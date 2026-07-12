@@ -70,7 +70,7 @@
           "format": { "numberFormat": "0.0%" }
         },
         {
-          "range": "F1:G11",
+          "range": "F1:G13",
           "values": [
             ["Statistic", "Value"],
             ["Median", null],
@@ -82,11 +82,13 @@
             ["Margin-", null],
             ["Mode", null],
             ["1904=0", null],
-            ["Leap#", null]
+            ["Leap#", null],
+            ["Intl#", null],
+            ["Intl+", null]
           ]
         },
         {
-          "range": "G2:G11",
+          "range": "G2:G13",
           "formulas": [
             ["=MEDIAN(B2:B4)"],
             ["=LARGE(B2:B4,2)"],
@@ -97,7 +99,9 @@
             ["=ROUNDDOWN(D3,2)"],
             ["=MODE.SNGL(D2:D4)"],
             ["=DATE(1904,1,1)"],
-            ["=DATE(2024,2,29)"]
+            ["=DATE(2024,2,29)"],
+            ["=NETWORKDAYS.INTL(DATE(1904,1,1),DATE(1904,1,7),7)"],
+            ["=WORKDAY.INTL(DATE(1904,1,1),1,7)"]
           ]
         },
         {
@@ -125,13 +129,13 @@
     },
     {
       "sheet": "Summary",
-      "range": "G2:G11",
-      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889]]
+      "range": "G2:G13",
+      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889], [5], [2]]
     }
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:G11",
+    "range": "A1:G13",
     "renderFormat": "svg",
     "inspectKind": "workbook,sheet,table,formula,style,computedStyle",
     "maxChars": 12000

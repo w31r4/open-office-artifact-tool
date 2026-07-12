@@ -1608,8 +1608,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
 | `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
-| `fx.DATE` | formula | Return an Excel 1900-system date serial with year/month/day overflow and serial-60 leap compatibility. |
-| `fx.DAY` | formula | Return the day component of an Excel 1900-system serial date, including day 29 for compatibility serial 60. |
+| `fx.DATE` | formula | Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility. |
+| `fx.DAY` | formula | Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60. |
 | `fx.DAYS` | formula | Return the whole-day difference between two Excel date serials. |
 | `fx.DROP` | formula | Drop rows and optional columns from the start or end of an array and spill the remainder. |
 | `fx.EDATE` | formula | Shift a serial date by whole months and clamp the day to the target month end. |
@@ -1640,9 +1640,10 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
 | `fx.MODE.SNGL` | formula | Return the most frequently occurring numeric value, or #N/A when no value repeats. |
-| `fx.MONTH` | formula | Return the month component of an Excel 1900-system serial date. |
+| `fx.MONTH` | formula | Return the month component of a serial in the workbook's 1900 or 1904 date system. |
 | `fx.NA` | formula | Return the #N/A error value to mark unavailable data explicitly. |
 | `fx.NETWORKDAYS` | formula | Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays. |
+| `fx.NETWORKDAYS.INTL` | formula | Count inclusive workdays with a numbered or Monday-first seven-character custom weekend and optional holidays. |
 | `fx.NOT` | formula | Reverse the truth value of a condition. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
@@ -1670,11 +1671,12 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.VSTACK` | formula | Append arrays vertically, padding narrower arrays with #N/A to the maximum column count. |
 | `fx.WEEKDAY` | formula | Return a weekday number for Excel return types 1, 2, 3, and 11 through 17. |
 | `fx.WORKDAY` | formula | Move forward or backward by working days while skipping weekends and optional holidays. |
+| `fx.WORKDAY.INTL` | formula | Move by workdays using a numbered or Monday-first seven-character custom weekend and optional holidays. |
 | `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
 | `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
-| `fx.YEAR` | formula | Return the year component of an Excel 1900-system serial date. |
+| `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.format` | api | Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes. |
@@ -1919,7 +1921,7 @@ Count rows where multiple criteria ranges all match their criteria.
 
 #### `fx.DATE`
 
-Return an Excel 1900-system date serial with year/month/day overflow and serial-60 leap compatibility.
+Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility.
 
 **Examples:**
 
@@ -1936,7 +1938,7 @@ Return an Excel 1900-system date serial with year/month/day overflow and serial-
 
 #### `fx.DAY`
 
-Return the day component of an Excel 1900-system serial date, including day 29 for compatibility serial 60.
+Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60.
 
 **Examples:**
 
@@ -2463,7 +2465,7 @@ Return the most frequently occurring numeric value, or #N/A when no value repeat
 
 #### `fx.MONTH`
 
-Return the month component of an Excel 1900-system serial date.
+Return the month component of a serial in the workbook's 1900 or 1904 date system.
 
 **Examples:**
 
@@ -2506,6 +2508,24 @@ Count Monday-through-Friday dates inclusively between two serial dates, excludin
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =NETWORKDAYS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.NETWORKDAYS.INTL`
+
+Count inclusive workdays with a numbered or Monday-first seven-character custom weekend and optional holidays.
+
+**Examples:**
+
+- =NETWORKDAYS.INTL(A1,B1,7,Holidays)
+- =NETWORKDAYS.INTL(A1,B1,"0000011")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =NETWORKDAYS.INTL(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
@@ -2975,6 +2995,24 @@ Move forward or backward by working days while skipping weekends and optional ho
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.WORKDAY.INTL`
+
+Move by workdays using a numbered or Monday-first seven-character custom weekend and optional holidays.
+
+**Examples:**
+
+- =WORKDAY.INTL(A1,10,11,Holidays)
+- =WORKDAY.INTL(A1,10,"0000011")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =WORKDAY.INTL(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.WRAPCOLS`
 
 Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed.
@@ -3045,7 +3083,7 @@ Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard
 
 #### `fx.YEAR`
 
-Return the year component of an Excel 1900-system serial date.
+Return the year component of a serial in the workbook's 1900 or 1904 date system.
 
 **Examples:**
 

@@ -60,6 +60,8 @@ const importedTsv = await SpreadsheetFile.importTsv("Name\tValue\nRevenue\t120",
 
 For workbooks that use Excel's 1904 serial-date system, create the workbook with `Workbook.create({ dateSystem: "1904" })` or call `workbook.setDateSystem("1904")`. The setting drives date formulas and native `workbookPr date1904` import/export; do not manually offset stored dates by 1,462 days.
 
+Use `NETWORKDAYS.INTL` and `WORKDAY.INTL` when weekends are not Saturday/Sunday. The weekend argument may be an Excel weekend number (`1`–`7` or `11`–`17`) or a seven-character Monday-first mask such as `"0000011"`; keep holidays as serial-date cells/ranges in the same workbook date system.
+
 ## Verification commands
 
 Verify any exported workbook and write bounded inspect, verify, layout, visual-QA, and preview evidence:
