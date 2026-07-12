@@ -13,6 +13,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 - Preserve an imported document's content, styles, structure, and review state unless the user requests a redesign.
 - For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in `docs/coverage.md`.
 - Use real list items, tables, comments, hyperlinks, fields, citations, images, sections, and tracked changes rather than visual text imitations.
+- Preserve direct and theme-backed run formatting. Theme fonts/colors and paired complex-script properties must survive a metadata-free native import before delivery.
 - Keep semantic and package inspection bounded. Store QA evidence in a temporary/output directory.
 - Do not deliver a DOCX until semantic verification and page-image review pass.
 
@@ -33,11 +34,23 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 ```js
 import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
 
-const document = DocumentModel.create({ name: "Decision brief", blocks: [] });
+const document = DocumentModel.create({
+  name: "Decision brief",
+  blocks: [],
+  theme: {
+    name: "Decision Theme",
+    colors: { accent1: "#336699" },
+    fonts: { major: "Source Serif 4", minor: "Aptos", majorEastAsia: "Noto Serif CJK SC", majorComplexScript: "Noto Naskh Arabic" },
+  },
+});
 document.applyDesignPreset("report");
 document.setSettings({ updateFields: true, documentProtection: { edit: "comments" } });
 document.addParagraph("Decision brief", { styleId: "Title", name: "title" });
 document.addParagraph("Recommendation", { styleId: "Heading1", name: "recommendation-heading" });
+document.addParagraph("", { styleId: "Normal", runs: [
+  { text: "Theme-backed decision", style: { fontTheme: "majorHAnsi", themeColor: "accent1", themeTint: "80", bold: true } },
+  { text: " العربية", style: { fontThemeComplexScript: "majorBidi", boldComplexScript: true, italicComplexScript: true, fontSizeComplexScript: 32 } },
+] });
 document.addParagraph("Proceed with the clean-room implementation.", { styleId: "Normal" });
 document.addListItem("Validate the exported DOCX", { listType: "number", numberFormat: "upperLetter", start: 1, levelText: "%1)" });
 document.addHeader("Decision brief", { referenceType: "first", sectionIndex: 0 });
@@ -107,7 +120,7 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing settings, blocks, multi-level list formats/start/level text, styles, classic comment metadata and block anchors, plus default/first/even header/footer references survived roundtrip. Native import follows `document.xml.rels` instead of assuming fixed settings/styles/numbering/comments/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
+- `document.inspect(...)` proves agent-facing theme, settings, blocks, multi-level list formats/start/level text, styles, classic comment metadata and block anchors, plus default/first/even header/footer references survived roundtrip. Run styles retain `asciiTheme`/`hAnsiTheme`/`eastAsiaTheme`/`cstheme`, `themeColor`/`themeTint`/`themeShade`, and paired `bCs`/`iCs`/`szCs` semantics together with resolved colors/fonts used by layout and model rendering. Native import follows `document.xml.rels` instead of assuming fixed theme/settings/styles/numbering/comments/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
 - The checked-in `package-comments.json` fixture creates an arbitrary-path Comments part through the public patch API, anchors one comment to a paragraph block and one to a table cell, then verifies both through native-preferred import and the real render gate.
 - The checked-in `package-numbering.json` fixture creates an arbitrary-path Numbering part, binds two ordinary paragraphs to declared multilevel numbering definitions, and verifies their format/start/level metadata through native-preferred import and the real render gate.
 - The checked-in `package-settings.json` fixture creates an arbitrary-path Settings part, preserves unrelated compatibility markup, enables revision/field/header/margin settings, applies comments-only editing restrictions, and verifies the agent-facing state through native-preferred import and the real render gate.

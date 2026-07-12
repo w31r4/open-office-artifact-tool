@@ -78,7 +78,7 @@ function addFixtureBlock(document, block = {}) {
 }
 
 export function createDocumentFromFixture(fixture = {}) {
-  const document = DocumentModel.create({ name: fixture.name || "Fixture document", settings: fixture.settings || {}, blocks: [] });
+  const document = DocumentModel.create({ name: fixture.name || "Fixture document", theme: fixture.theme || {}, settings: fixture.settings || {}, blocks: [] });
   if (fixture.designPreset) document.applyDesignPreset(fixture.designPreset, fixture.designOptions || {});
   for (const [id, style] of Object.entries(fixture.styles || {})) document.styles.add(id, style);
   for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
@@ -175,7 +175,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   const docxBlob = new FileBlob(loaded.bytes, { type: DOCX_MIME, name: path.basename(absoluteInput) });
   const document = await DocumentFile.importDocx(docxBlob, { preferNative: options.preferNative === true });
   const maxChars = options.maxChars ?? 20_000;
-  const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,section,change,style,layout", maxChars });
+  const inspect = document.inspect({ kind: options.inspectKind || "document,theme,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,section,change,style,layout", maxChars });
   const packageInspect = await DocumentFile.inspectDocx(docxBlob, { includeText: options.includePackageText === true, maxChars });
   const verify = verifyArtifact(document, { visualQa: true, maxChars });
   const layoutBlob = await document.render({ format: "layout" });

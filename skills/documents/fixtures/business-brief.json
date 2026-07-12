@@ -2,6 +2,11 @@
   "name": "business-brief",
   "outputName": "business-brief.docx",
   "designPreset": "report",
+  "theme": {
+    "name": "Business Brief Theme",
+    "colors": { "accent1": "#336699", "accent2": "#cc3300" },
+    "fonts": { "major": "Source Serif 4", "minor": "Aptos", "majorEastAsia": "Hiragino Sans GB", "majorComplexScript": "Geeza Pro" }
+  },
   "headers": [
     { "name": "running-header", "text": "Clean-room document workflow" },
     { "name": "opening-header", "text": "Opening section evidence", "sectionIndex": 0 }
@@ -12,6 +17,13 @@
   "blocks": [
     { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Office artifact readiness brief" },
     { "kind": "paragraph", "name": "lead", "styleId": "Normal", "text": "This brief verifies an agent can create, inspect, render, and validate a real DOCX." },
+    { "kind": "paragraph", "name": "theme-runs", "styleId": "Normal", "runs": [
+      { "text": "Theme fidelity ", "style": { "fontTheme": "majorHAnsi", "themeColor": "accent1", "themeTint": "80", "bold": true, "boldComplexScript": false, "fontSize": 28, "fontSizeComplexScript": 34 } },
+      { "text": "中文", "style": { "fontTheme": "minorHAnsi", "fontFamilyEastAsia": "Hiragino Sans GB", "fontThemeEastAsia": "majorEastAsia", "themeColor": "accent2", "themeShade": "BF", "italic": true } }
+    ] },
+    { "kind": "paragraph", "name": "theme-complex-run", "styleId": "Normal", "runs": [
+      { "text": "العربية", "style": { "fontTheme": "minorHAnsi", "fontFamilyComplexScript": "Geeza Pro", "fontThemeComplexScript": "majorBidi", "bold": false, "boldComplexScript": true, "italic": false, "italicComplexScript": true, "fontSize": 22, "fontSizeComplexScript": 32 } }
+    ] },
     { "kind": "paragraph", "name": "recommendation-heading", "styleId": "Heading1", "text": "Recommendation" },
     { "kind": "paragraph", "name": "recommendation", "styleId": "Normal", "text": "Use semantic verification together with native page rendering before delivery." },
     { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "text": "Inspect stable document blocks and comments." },
@@ -45,6 +57,7 @@
   ],
   "expectInspect": [
     { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
+    { "kind": "paragraph", "pattern": "Theme fidelity" },
     { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
     { "kind": "listItem", "pattern": "nested numbering levels" },
     { "kind": "table", "pattern": "readiness-table" },
@@ -55,7 +68,7 @@
   "qa": {
     "previewFormat": "svg",
     "nativeRender": "auto",
-    "inspectKind": "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,style,layout",
-    "maxChars": 20000
+    "inspectKind": "document,theme,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,style,layout",
+    "maxChars": 24000
   }
 }

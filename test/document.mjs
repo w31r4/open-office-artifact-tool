@@ -7,6 +7,11 @@ import { DocumentFile, DocumentModel, FileBlob, renderArtifact } from "../src/in
 const document = DocumentModel.create({
   name: "Research memo",
   paragraphs: ["Research memo", "This document exercises the clean-room DOCX facade."],
+  theme: {
+    name: "Research Theme",
+    colors: { accent1: "#336699", accent2: "#cc3300" },
+    fonts: { major: "Source Serif 4", minor: "Aptos", majorEastAsia: "Noto Serif CJK SC", majorComplexScript: "Noto Naskh Arabic" },
+  },
   settings: { updateFields: true, mirrorMargins: true },
 });
 document.setSettings({ trackRevisions: true, documentProtection: { edit: "trackedChanges" } });
@@ -27,6 +32,16 @@ const runParagraph = document.addParagraph("", {
     { text: "paragraph", style: { italic: true, color: "#f97316" } },
   ],
 });
+const themedRunParagraph = document.addParagraph("", {
+  name: "theme-run-paragraph",
+  styleId: "Normal",
+  runs: [
+    { text: "Theme Latin ", style: { fontTheme: "majorHAnsi", themeColor: "accent1", themeTint: "80", bold: true, boldComplexScript: false, fontSize: 28, fontSizeComplexScript: 34 } },
+    { text: "中文 ", style: { fontTheme: "minorHAnsi", fontThemeEastAsia: "majorEastAsia", themeColor: "accent2", themeShade: "BF", italic: true } },
+    { text: "العربية", style: { fontTheme: "minorHAnsi", fontThemeComplexScript: "majorBidi", bold: false, boldComplexScript: true, italic: false, italicComplexScript: true, fontSize: 22, fontSizeComplexScript: 32 } },
+  ],
+});
+const singleThemeRunParagraph = document.addParagraph("", { name: "single-theme-run", runs: [{ text: "Single theme run", style: { fontTheme: "majorHAnsi", themeColor: "accent1" } }] });
 const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
 const field = document.addField("PAGE", "1", { name: "page-field" });
 const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
@@ -66,10 +81,15 @@ const comment = document.addComment(heading, "Check this heading before final ex
 const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
 const linkComment = document.addComment(hyperlink, "Verify the native hyperlink target.", { author: "Link Reviewer", initials: "LR", date: "2026-07-11T00:18:00.000Z" });
 
-const inspect = document.inspect({ kind: "document,settings,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 16000 }).ndjson;
+const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 24000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /"kind":"document"/);
 assert.match(inspect, /"designPreset":"report"/);
+assert.match(inspect, /Research Theme/);
+assert.match(inspect, /Source Serif 4/);
+assert.match(inspect, /theme-run-paragraph/);
+assert.match(inspect, /"resolvedColor":"#99b3cc"/);
+assert.equal(document.resolve(`${document.id}/theme`), document.theme);
 assert.match(inspect, /"kind":"settings"/);
 assert.match(inspect, /"trackRevisions":true/);
 assert.equal(document.resolve(`${document.id}/settings`), document.settings);
@@ -117,6 +137,12 @@ assert.match(inspect, /"effectiveStyle"/);
 assert.equal(document.resolve(heading.id).styleId, "Heading1");
 assert.equal(document.resolve(runParagraph.id).text, "Run styled paragraph");
 assert.equal(document.resolve(runParagraph.id).runs[1].style.italic, true);
+assert.equal(document.resolve(themedRunParagraph.id).runs[0].style.resolvedFontFamily, "Source Serif 4");
+assert.equal(document.resolve(themedRunParagraph.id).runs[0].style.resolvedColor, "#99b3cc");
+assert.equal(document.resolve(themedRunParagraph.id).runs[1].style.resolvedFontFamilyEastAsia, "Noto Serif CJK SC");
+assert.equal(document.resolve(themedRunParagraph.id).runs[1].style.resolvedColor, "#992600");
+assert.equal(document.resolve(themedRunParagraph.id).runs[2].style.resolvedFontFamilyComplexScript, "Noto Naskh Arabic");
+assert.equal(document.toProto().blocks.find((item) => item.name === "single-theme-run")?.runs[0].style.themeColor, "accent1");
 assert.equal(document.resolve(riskCallout.id).styleId, "RiskCallout");
 assert.equal(document.styles.effective("RiskCallout").bold, true);
 assert.equal(document.styles.effective("RiskCallout").italic, true);
@@ -200,6 +226,11 @@ assert.match(svg, /Research memo/);
 assert.match(svg, /Run styled /);
 assert.match(svg, /#0ea5e9/);
 assert.match(svg, /#f97316/);
+assert.match(svg, /#99b3cc/);
+assert.match(svg, /#992600/);
+assert.match(svg, /Source Serif 4/);
+assert.match(svg, /Noto Serif CJK SC/);
+assert.match(svg, /Noto Naskh Arabic/);
 assert.match(svg, /Risk callout inherits bold styling/);
 assert.match(svg, /#b91c1c/);
 assert.match(svg, /DOCX styles/);
@@ -220,6 +251,12 @@ assert.equal(layout.document.designPreset, "report");
 assert.ok(layout.pages.length >= 1);
 assert.equal(layout.elements.find((element) => element.id === riskCallout.id).effectiveStyle.bold, true);
 assert.equal(layout.elements.find((element) => element.id === riskCallout.id).effectiveStyle.italic, true);
+const themedRunLayout = layout.elements.find((element) => element.id === themedRunParagraph.id);
+assert.equal(themedRunLayout.runs[0].style.effectiveColor, "#99b3cc");
+assert.equal(themedRunLayout.runs[1].style.effectiveFontFamily, "Noto Serif CJK SC");
+assert.equal(themedRunLayout.runs[2].style.effectiveBold, true);
+assert.equal(themedRunLayout.runs[2].style.effectiveItalic, true);
+assert.equal(themedRunLayout.runs[2].style.effectiveFontSize, 32);
 assert.ok(layout.elements.some((element) => element.id === table.id));
 const targetedLayoutBlob = await document.render({ format: "layout", target: table.id });
 assert.equal(targetedLayoutBlob.metadata.artifactKind, "document");
@@ -278,6 +315,10 @@ const documentXml = await zip.file("word/document.xml").async("text");
 const commentsXml = await zip.file("word/comments.xml").async("text");
 const numberingXml = await zip.file("word/numbering.xml").async("text");
 const stylesXml = await zip.file("word/styles.xml").async("text");
+const themeXml = await zip.file("word/theme/theme1.xml").async("text");
+assert.match(themeXml, /name="Research Theme"/);
+assert.match(themeXml, /<a:accent1><a:srgbClr val="336699"\/><\/a:accent1>/);
+assert.match(themeXml, /<a:majorFont><a:latin typeface="Source Serif 4"\/><a:ea typeface="Noto Serif CJK SC"\/><a:cs typeface="Noto Naskh Arabic"\/>/);
 assert.match(stylesXml, /w:styleId="RiskCallout"/);
 assert.match(stylesXml, /<w:basedOn w:val="Callout"\/>/);
 assert.match(stylesXml, /<w:i\/>/);
@@ -286,6 +327,14 @@ assert.match(documentXml, /<w:t>Run styled <\/w:t>/);
 assert.match(documentXml, /<w:color w:val="0ea5e9"\/>/);
 assert.match(documentXml, /<w:t>paragraph<\/w:t>/);
 assert.match(documentXml, /<w:color w:val="f97316"\/>/);
+assert.match(documentXml, /<w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"\/>/);
+assert.match(documentXml, /<w:b\/><w:bCs w:val="0"\/>/);
+assert.match(documentXml, /<w:color w:val="99b3cc" w:themeColor="accent1" w:themeTint="80"\/>/);
+assert.match(documentXml, /<w:sz w:val="28"\/><w:szCs w:val="34"\/>/);
+assert.match(documentXml, /w:eastAsiaTheme="majorEastAsia"/);
+assert.match(documentXml, /<w:color w:val="992600" w:themeColor="accent2" w:themeShade="BF"\/>/);
+assert.match(documentXml, /w:cstheme="majorBidi"/);
+assert.match(documentXml, /<w:b w:val="0"\/><w:bCs\/><w:i w:val="0"\/><w:iCs\/>/);
 assert.match(documentXml, /<a:blip r:embed="rIdImage1"\/>/);
 assert.match(documentXml, /<wp:docPr[^>]*name="memo-logo"[^>]*descr="Memo logo"/);
 assert.match(documentXml, /<w:type w:val="nextPage"\/>/);
@@ -319,6 +368,7 @@ assert.match(numberingXml, /<w:lvl w:ilvl="0"><w:start w:val="2"\/><w:numFmt w:v
 assert.match(numberingXml, /<w:lvl w:ilvl="1"><w:start w:val="3"\/><w:numFmt w:val="lowerRoman"\/><w:lvlText w:val="%1\.%2\)"/);
 assert.match(documentXml, new RegExp(`<w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr>[\\s\\S]*?Nested roman evidence`));
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/theme" Target="theme\/theme1\.xml"/);
 assert.match(documentRelsXml, /Id="rIdImage1"/);
 assert.match(documentRelsXml, /Target="media\/image1\.png"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/header" Target="header2\.xml"/);
@@ -357,6 +407,7 @@ assert.ok(docxMediaBytes.byteLength > 10);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
 assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
 assert.match(contentTypesXml, /PartName="\/word\/settings\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.settings\+xml"/);
+assert.match(contentTypesXml, /PartName="\/word\/theme\/theme1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.theme\+xml"/);
 const packageInspect = await DocumentFile.inspectDocx(docx, { includeText: true, maxChars: 12000 });
 assert.equal(packageInspect.ok, true);
 assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml"));
@@ -496,6 +547,21 @@ const nativeOnlyZip = await JSZip.loadAsync(docxBytes);
 nativeOnlyZip.remove("word/open-office-artifact.json");
 const nativeOnlyDocx = new FileBlob(await nativeOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
 const nativeOnlyLoaded = await DocumentFile.importDocx(nativeOnlyDocx);
+assert.equal(nativeOnlyLoaded.theme.name, "Research Theme");
+assert.equal(nativeOnlyLoaded.theme.colors.accent1, "#336699");
+assert.equal(nativeOnlyLoaded.theme.fonts.major, "Source Serif 4");
+const nativeThemeRuns = nativeOnlyLoaded.blocks.find((item) => item.text === "Theme Latin 中文 العربية")?.runs;
+assert.equal(nativeThemeRuns?.[0].style.fontTheme, "majorHAnsi");
+assert.equal(nativeThemeRuns?.[0].style.themeTint, "80");
+assert.equal(nativeThemeRuns?.[0].style.resolvedColor, "#99b3cc");
+assert.equal(nativeThemeRuns?.[0].style.boldComplexScript, false);
+assert.equal(nativeThemeRuns?.[0].style.fontSizeComplexScript, 34);
+assert.equal(nativeThemeRuns?.[1].style.fontThemeEastAsia, "majorEastAsia");
+assert.equal(nativeThemeRuns?.[1].style.resolvedFontFamilyEastAsia, "Noto Serif CJK SC");
+assert.equal(nativeThemeRuns?.[1].style.themeShade, "BF");
+assert.equal(nativeThemeRuns?.[2].style.fontThemeComplexScript, "majorBidi");
+assert.equal(nativeThemeRuns?.[2].style.boldComplexScript, true);
+assert.equal(nativeThemeRuns?.[2].style.italicComplexScript, true);
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "Confidential research memo")?.referenceType, "default");
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "First-page research memo")?.referenceType, "first");
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "First-page research memo")?.partPath, "word/header2.xml");
@@ -524,6 +590,18 @@ const nativeOnlyCitation = nativeOnlyLoaded.blocks.find((item) => item.kind === 
 assert.match(nativeOnlyCitation?.text || "", /Source: Market brief/);
 assert.match(nativeOnlyCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
 assert.equal(nativeOnlyLoaded.resolve(nativeOnlyLoaded.comments.find((item) => item.text === "Verify the native hyperlink target.")?.targetId)?.kind, "hyperlink");
+const relocatedThemeZip = await JSZip.loadAsync(docxBytes);
+relocatedThemeZip.remove("word/open-office-artifact.json");
+relocatedThemeZip.remove("word/theme/theme1.xml");
+const alternatePrefixThemeXml = themeXml.replaceAll("xmlns:a=", "xmlns:d=").replaceAll("<a:", "<d:").replaceAll("</a:", "</d:");
+relocatedThemeZip.file("word/config/theme-custom.xml", alternatePrefixThemeXml);
+relocatedThemeZip.file("word/_rels/document.xml.rels", documentRelsXml.replace('Target="theme/theme1.xml"', 'Target="config/theme-custom.xml"'));
+relocatedThemeZip.file("[Content_Types].xml", contentTypesXml.replace('PartName="/word/theme/theme1.xml"', 'PartName="/word/config/theme-custom.xml"'));
+const relocatedThemeDocx = new FileBlob(await relocatedThemeZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
+const relocatedThemeNative = await DocumentFile.importDocx(relocatedThemeDocx, { preferNative: true });
+assert.equal(relocatedThemeNative.theme.name, "Research Theme");
+assert.equal(relocatedThemeNative.theme.fonts.majorEastAsia, "Noto Serif CJK SC");
+assert.equal(relocatedThemeNative.blocks.find((item) => item.text === "Theme Latin 中文 العربية")?.runs[0].style.resolvedColor, "#99b3cc");
 const sharedHeaderDocumentXml = documentXml.replace(new RegExp(`(<w:sectPr\\b[^>]*>[\\s\\S]*?<w:headerReference\\b[^>]*r:id=")${openingHeaderRelId}("[^>]*\\/>[\\s\\S]*?<\\/w:sectPr>)`), `$1${finalHeaderRelId}$2`);
 const sharedHeaderDocx = await DocumentFile.patchDocx(docx, [
   { path: "word/document.xml", xml: sharedHeaderDocumentXml },
@@ -531,7 +609,7 @@ const sharedHeaderDocx = await DocumentFile.patchDocx(docx, [
 ]);
 const sharedHeaderNative = await DocumentFile.importDocx(sharedHeaderDocx, { preferNative: true });
 assert.deepEqual(sharedHeaderNative.headers.filter((item) => item.text === "Confidential research memo").map((item) => item.sectionIndex).sort(), [0, 1]);
-const nativeOnlyInspect = nativeOnlyLoaded.inspect({ kind: "image,section,change,style,paragraph,table", maxChars: 16000 }).ndjson;
+const nativeOnlyInspect = nativeOnlyLoaded.inspect({ kind: "theme,image,section,change,style,paragraph,table", maxChars: 24000 }).ndjson;
 assert.match(nativeOnlyInspect, /Memo logo/);
 assert.match(nativeOnlyInspect, /memo-logo/);
 assert.match(nativeOnlyInspect, /landscape/);
@@ -542,8 +620,14 @@ assert.match(nativeOnlyInspect, /Risk Callout/);
 assert.match(nativeOnlyInspect, /Run styled paragraph/);
 assert.match(nativeOnlyInspect, /0ea5e9/);
 assert.match(nativeOnlyInspect, /"basedOn":"Callout"/);
+assert.match(nativeOnlyInspect, /Research Theme/);
+assert.match(nativeOnlyInspect, /Noto Naskh Arabic/);
 assert.equal(nativeOnlyLoaded.styles.effective("RiskCallout").bold, true);
 assert.equal(nativeOnlyLoaded.styles.effective("RiskCallout").italic, true);
+const reexportedNativeTheme = await DocumentFile.exportDocx(nativeOnlyLoaded);
+const reexportedNativeThemeZip = await JSZip.loadAsync(new Uint8Array(await reexportedNativeTheme.arrayBuffer()));
+assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /w:cstheme="majorBidi"/);
+assert.match(await reexportedNativeThemeZip.file("word/theme/theme1.xml").async("text"), /typeface="Noto Naskh Arabic"/);
 const nativeOnlyTable = nativeOnlyLoaded.blocks.find((block) => block.kind === "table");
 assert.deepEqual(nativeOnlyTable.columnWidthsDxa, [3600, 5760]);
 assert.equal(nativeOnlyTable.widthDxa, 9360);
@@ -554,6 +638,7 @@ assert.equal(nativeOnlyTable.borderSize, 4);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.docx`);
 await docx.save(out);
 const loaded = await DocumentFile.importDocx(await FileBlob.load(out));
+assert.equal(loaded.blocks.find((item) => item.name === "single-theme-run")?.runs[0].style.themeColor, "accent1");
 const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
 assert.match(loadedInspect, /clean-room DOCX facade/);
 assert.match(loadedInspect, /Risk callout inherits bold styling/);
