@@ -15,6 +15,8 @@ const maxUnpackedBytes = 1_340_000;
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
   "src/index.mjs",
+  "src/ooxml/docx-source-references.mjs",
+  "src/ooxml/source-reference-xml.mjs",
   "src/ooxml/source-references.mjs",
   "src/shared/colors.mjs",
   "src/spreadsheet/formula-criteria.mjs",
