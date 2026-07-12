@@ -1706,7 +1706,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.unmerge` | api | Remove merged regions intersecting the target range. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
-| `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with row/column cross-tabs, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip. |
+| `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with row/column cross-tabs, arithmetic calculated fields, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
@@ -3281,7 +3281,7 @@ Create an inspectable worksheet image placeholder from a data URL, URI, or promp
 
 #### `sheet.pivotTables.add`
 
-Create a clean-room pivot table facade with row/column cross-tabs, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip.
+Create a clean-room pivot table facade with row/column cross-tabs, arithmetic calculated fields, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip.
 
 **Schema parameters:**
 
@@ -3291,6 +3291,7 @@ Create a clean-room pivot table facade with row/column cross-tabs, item filters,
 - `rowFields` (string[]) — Row field names.
 - `columnFields` (string[]) — Column field names.
 - `valueFields` (object[]) — Value field and aggregation definitions.
+- `calculatedFields` (object[]) — Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected.
 - `filters` (object|object[]) — Axis item filters. Each field accepts exactly one non-empty include or exclude array.
 - `refreshPolicy` (object) — OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso.
 

@@ -3,6 +3,17 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { FileBlob, SpreadsheetFile, Workbook } from "../src/index.mjs";
+import { parsePivotCacheDefinition } from "../src/spreadsheet/ooxml-pivots.mjs";
+import { evaluatePivotFormula } from "../src/spreadsheet/pivots.mjs";
+
+assert.equal(evaluatePivotFormula("=2+3*4", {}, []), 14);
+assert.equal(evaluatePivotFormula("=('Revenue'-'Cost')/2", { Revenue: 15, Cost: 9 }), 3);
+assert.equal(evaluatePivotFormula("='Owner''s Revenue'*10%", { "Owner's Revenue": 80 }), 8);
+assert.equal(evaluatePivotFormula("=Revenue/0", { Revenue: 10 }), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=-(Revenue/0)%", { Revenue: 10 }), "#DIV/0!");
+const groupedCacheContract = parsePivotCacheDefinition(`<pivotCacheDefinition><cacheSource><worksheetSource ref="A1:A2" sheet="S"/></cacheSource><cacheFields count="2"><cacheField name="Source"><sharedItems count="1"><s v="A"/></sharedItems></cacheField><cacheField name="Grouped" databaseField="0"><fieldGroup base="0"/></cacheField></cacheFields></pivotCacheDefinition>`);
+assert.deepEqual(groupedCacheContract.sourceFields, ["Source"]);
+assert.deepEqual(groupedCacheContract.calculatedFields, []);
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
@@ -221,30 +232,33 @@ const revenuePivot = sheet.pivotTables.add({
   values: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue sum" }],
 });
 assert.deepEqual(revenuePivot.computedValues(), [["Month", "Revenue sum"], ["Jan", 100], ["Feb", 120], ["Mar", 130]]);
-sheet.getRange("P1:S7").values = [
-  ["Region", "Quarter", "Product", "Revenue"],
-  ["East", "Q1", "Core", 10],
-  ["East", "Q2", "Core", 20],
-  ["West", "Q1", "Core", 30],
-  ["West", "Q2", "Legacy", 40],
-  ["East", "Q1", "Legacy", 5],
-  ["West", "Q1", "Legacy", 7],
+sheet.getRange("P1:T7").values = [
+  ["Region", "Quarter", "Product", "Revenue", "Cost"],
+  ["East", "Q1", "Core", 10, 6],
+  ["East", "Q2", "Core", 20, 12],
+  ["West", "Q1", "Core", 30, 20],
+  ["West", "Q2", "Legacy", 40, 25],
+  ["East", "Q1", "Legacy", 5, 3],
+  ["West", "Q1", "Legacy", 7, 4],
 ];
 const regionalPivot = sheet.pivotTables.add({
   name: "RegionalPivot",
-  sourceRange: "P1:S7",
-  targetRange: "T1:V4",
+  sourceRange: "P1:T7",
+  targetRange: "V1:X4",
   rowFields: ["Region"],
   columnFields: ["Quarter"],
-  valueFields: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue total" }],
+  valueFields: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue total" }, { field: "Profit", name: "Profit total" }],
+  calculatedFields: [{ name: "Profit", formula: "=([Revenue] - [Cost]) * 100%" }],
   filters: { Quarter: { include: ["Q1"] } },
   refreshPolicy: { refreshOnLoad: false, saveData: true, enableRefresh: false, invalid: true, missingItemsLimit: 3, refreshedBy: "QA Agent", refreshedDateIso: "2026-07-12T00:00:00Z" },
 });
-assert.deepEqual(regionalPivot.computedValues(), [["Region", "Q1"], ["East", 15], ["West", 37]]);
+assert.deepEqual(regionalPivot.computedValues(), [["Region", "Q1 — Revenue total", "Q1 — Profit total"], ["East", 15, 6], ["West", 37, 13]]);
+assert.deepEqual(regionalPivot.calculatedFields, [{ name: "Profit", formula: "=('Revenue'-'Cost')*100%", numFmtId: 0, references: ["Revenue", "Cost"] }]);
 assert.deepEqual(regionalPivot.filters, [{ field: "Quarter", include: ["Q1"] }]);
 assert.equal(regionalPivot.refreshPolicy.saveData, true);
 assert.match(regionalPivot.inspectRecord().columnFields.join(","), /Quarter/);
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /refreshPolicy/);
+assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], filters: { Quarter: ["Q1"] } }), /must also be a row or column field/);
@@ -252,6 +266,12 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], filters: { Region: ["North"] } }), /unknown item North/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], refreshPolicy: { saveData: "yes" } }), /saveData must be a boolean/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], refreshPolicy: { refreshedDateIso: "today" } }), /XML date-time string/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Revenue", formula: "Cost" }] }), /must be unique/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Profit", formula: "Revenue - Missing" }] }), /unknown source field Missing/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Profit", formula: "Revenue +" }] }), /ended unexpectedly/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Profit", formula: "Revenue-Cost", numFmtId: -1 }] }), /non-negative integer/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Profit", formula: `Revenue+${"1+".repeat(2050)}1` }] }), /4096 characters/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: Array.from({ length: 129 }, (_, index) => ({ name: `C${index}`, formula: "Revenue" })) }), /exceeds 128 fields/);
 assert.equal(workbook.resolve(revenuePivot.id).name, "RevenuePivot");
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /pivot table facade/);
 const image = sheet.images.add({
@@ -1033,6 +1053,7 @@ const regionalPivotTableXml = await zip.file(pivotPartNames[1]).async("text");
 assert.match(regionalPivotTableXml, /name="RegionalPivot"/);
 assert.match(regionalPivotTableXml, /<colFields count="1"><field x="1"\/><\/colFields>/);
 assert.match(regionalPivotTableXml, /<pivotField axis="axisCol" multipleItemSelectionAllowed="1" showAll="0"><items count="3"><item x="0"\/><item x="1" h="1"\/><item t="default"\/><\/items><\/pivotField>/);
+assert.match(regionalPivotTableXml, /<dataField name="Profit total" fld="5" subtotal="sum"\/>/);
 const pivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
 assert.match(pivotCacheXml, /<pivotCacheDefinition/);
 assert.match(pivotCacheXml, /r:id="rId1"/);
@@ -1048,6 +1069,8 @@ assert.match(pivotCacheDefinitionRelsXml, /relationships\/pivotCacheRecords/);
 assert.match(pivotCacheDefinitionRelsXml, /Target="pivotCacheRecords1\.xml"/);
 const regionalPivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text");
 assert.match(regionalPivotCacheXml, /refreshOnLoad="0" saveData="1" enableRefresh="0" invalid="1" missingItemsLimit="3" refreshedBy="QA Agent" refreshedDateIso="2026-07-12T00:00:00Z"/);
+assert.match(regionalPivotCacheXml, /<cacheFields count="6">/);
+assert.match(regionalPivotCacheXml, /<cacheField name="Profit" formula="\('Revenue'-'Cost'\)\*100%" databaseField="0" numFmtId="0"><sharedItems containsNumber="1" count="0"\/><\/cacheField>/);
 const pivotTableDefinitionRelsXml = await zip.file("xl/pivotTables/_rels/pivotTable1.xml.rels").async("text");
 assert.match(pivotTableDefinitionRelsXml, /relationships\/pivotCacheDefinition/);
 assert.match(pivotTableDefinitionRelsXml, /Target="\.\.\/pivotCache\/pivotCacheDefinition1\.xml"/);
@@ -1160,13 +1183,24 @@ assert.deepEqual(nativeOnlyPivot.computedValues(), [["Month", "Revenue sum"], ["
 assert.equal(nativeOnlyWorkbook.resolve("RevenuePivot"), nativeOnlyPivot);
 assert.match(nativeOnlyWorkbook.inspect({ kind: "pivotTable", target: "RevenuePivot", maxChars: 4000 }).ndjson, /Revenue sum/);
 const nativeOnlyRegionalPivot = nativeOnlySheet.pivotTables.getItemOrNullObject("RegionalPivot");
-assert.deepEqual(nativeOnlyRegionalPivot.computedValues(), [["Region", "Q1"], ["East", 15], ["West", 37]]);
+assert.deepEqual(nativeOnlyRegionalPivot.computedValues(), [["Region", "Q1 — Revenue total", "Q1 — Profit total"], ["East", 15, 6], ["West", 37, 13]]);
 assert.deepEqual(nativeOnlyRegionalPivot.columnFields, ["Quarter"]);
+assert.deepEqual(nativeOnlyRegionalPivot.calculatedFields, [{ name: "Profit", formula: "=('Revenue'-'Cost')*100%", numFmtId: 0, references: ["Revenue", "Cost"] }]);
 assert.deepEqual(nativeOnlyRegionalPivot.filters, [{ field: "Quarter", exclude: ["Q2"] }]);
 assert.deepEqual(nativeOnlyRegionalPivot.refreshPolicy, { refreshOnLoad: false, saveData: true, enableRefresh: false, invalid: true, missingItemsLimit: 3, refreshedBy: "QA Agent", refreshedDateIso: "2026-07-12T00:00:00Z" });
 const nativeOnlyRegionalRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeOnlyWorkbook));
-assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").computedValues(), [["Region", "Q1"], ["East", 15], ["West", 37]]);
+assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").computedValues(), [["Region", "Q1 — Revenue total", "Q1 — Profit total"], ["East", 15, 6], ["West", 37, 13]]);
 assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").filters, [{ field: "Quarter", exclude: ["Q2"] }]);
+const unsupportedCalculatedZip = await JSZip.loadAsync(xlsxBytes);
+unsupportedCalculatedZip.remove("customXml/open-office-artifact.json");
+unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"SUM('Revenue')\""));
+const unsupportedCalculatedWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await unsupportedCalculatedZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
+const unsupportedCalculatedPivot = unsupportedCalculatedWorkbook.resolve("RegionalPivot");
+assert.equal(unsupportedCalculatedPivot.calculatedFields[0].supported, false);
+assert.equal(unsupportedCalculatedPivot.computedValues()[1][2], "#NAME?");
+assert.match(unsupportedCalculatedWorkbook.verify().ndjson, /pivotCalculatedFieldUnsupported/);
+const unsupportedCalculatedRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedCalculatedWorkbook)).arrayBuffer()));
+assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SUM\('Revenue'\)"/);
 const nativeOnlyImage = nativeOnlySheet.images.getItemOrNullObject("LogoImage");
 assert.equal(nativeOnlyImage.alt, "Logo placeholder");
 assert.match(nativeOnlyImage.dataUrl, /^data:image\/png;base64,/);

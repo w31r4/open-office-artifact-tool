@@ -906,7 +906,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, arithmetic calculated fields, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
@@ -2110,6 +2110,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     rowFields: { type: "string[]", description: "Row field names." },
     columnFields: { type: "string[]", description: "Column field names." },
     valueFields: { type: "object[]", description: "Value field and aggregation definitions." },
+    calculatedFields: { type: "object[]", description: "Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected." },
     filters: { type: "object|object[]", description: "Axis item filters. Each field accepts exactly one non-empty include or exclude array." },
     refreshPolicy: { type: "object", description: "OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso." },
   }, "pivot", "WorksheetPivotTable", "Editable clean-room pivot facade."),
@@ -2793,6 +2794,7 @@ class WorksheetPivotTable {
     this.rowFields = normalized.rowFields;
     this.columnFields = normalized.columnFields;
     this.valueFields = normalized.valueFields;
+    this.calculatedFields = normalized.calculatedFields;
     this.filters = normalized.filters;
     this.refreshPolicy = normalized.refreshPolicy;
   }
@@ -2809,7 +2811,7 @@ class WorksheetPivotTable {
 
   inspectRecord() {
     const values = this.computedValues();
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
   }
 
   layoutJson(bounds) {
@@ -2818,7 +2820,7 @@ class WorksheetPivotTable {
     const rowCount = Math.max(values.length, target.rowCount || 1);
     const colCount = Math.max(values[0]?.length || 0, target.colCount || 1);
     const frame = worksheetRangeFrame(this.worksheet, { top: target.top, left: target.left, bottom: target.top + rowCount - 1, right: target.left + colCount - 1, rowCount, colCount }, bounds);
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
   }
 
   toSvg(bounds) {
@@ -2837,7 +2839,7 @@ class WorksheetPivotTable {
     return `<rect x="${left}" y="${Math.max(0, top - 18)}" width="${Math.max(120, layout.bbox[2])}" height="18" fill="#cffafe" stroke="#06b6d4"/><text x="${left + 5}" y="${Math.max(12, top - 5)}" font-family="Arial" font-size="11" font-weight="700" fill="#155e75">${xmlEscape(this.name)}</text>${cells.join("")}`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, sourceFields: this.sourceFields, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters, refreshPolicy: this.refreshPolicy }; }
+  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, sourceFields: this.sourceFields, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy }; }
 }
 
 class WorksheetPivotTableCollection {
@@ -3569,9 +3571,13 @@ export class Workbook {
         const source = workbookRangeTarget(this, sheet, pivot.sourceRange);
         if (!source.sheet || !source.bounds) issues.push(verificationIssue("workbook", "pivotSourceInvalid", `Pivot table ${pivot.name || pivot.id} on ${sheet.name} has invalid source range.`, { sheet: sheet.name, id: pivot.id, sourceRange: pivot.sourceRange.address }));
         const headers = pivot.sourceValues()[0]?.map((value) => String(value ?? "")) || [];
-        for (const field of [...pivot.rowFields, ...pivot.valueFields.map((item) => item.field || item.name)]) {
+        for (const field of [...pivot.rowFields, ...pivot.columnFields]) {
           if (field && !headers.includes(String(field))) issues.push(verificationIssue("workbook", "pivotFieldMissing", `Pivot table ${pivot.name || pivot.id} references missing field ${field}.`, { sheet: sheet.name, id: pivot.id, field }));
         }
+        const valueFields = new Set([...headers, ...pivot.calculatedFields.map((field) => field.name)]);
+        for (const field of pivot.valueFields.map((item) => item.field || item.name)) if (field && !valueFields.has(String(field))) issues.push(verificationIssue("workbook", "pivotFieldMissing", `Pivot table ${pivot.name || pivot.id} references missing value field ${field}.`, { sheet: sheet.name, id: pivot.id, field }));
+        for (const calculatedField of pivot.calculatedFields) for (const field of calculatedField.references) if (!headers.includes(String(field))) issues.push(verificationIssue("workbook", "pivotCalculatedFieldMissing", `Pivot table ${pivot.name || pivot.id} calculated field ${calculatedField.name} references missing source field ${field}.`, { sheet: sheet.name, id: pivot.id, calculatedField: calculatedField.name, field }));
+        for (const calculatedField of pivot.calculatedFields) if (calculatedField.supported === false) issues.push(verificationIssue("workbook", "pivotCalculatedFieldUnsupported", `Pivot table ${pivot.name || pivot.id} calculated field ${calculatedField.name} uses a formula outside the supported arithmetic subset.`, { sheet: sheet.name, id: pivot.id, calculatedField: calculatedField.name, formula: calculatedField.formula, error: calculatedField.error }));
       }
       for (const chart of sheet.charts.items) {
         if (!chart.title) issues.push(verificationIssue("workbook", "untitledChart", `Chart ${chart.name} on ${sheet.name} has no title.`, { severity: "warning", sheet: sheet.name, id: chart.id }));
@@ -6630,11 +6636,13 @@ async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches
     sheet.pivotTables.add({
       name: parsed.name,
       sourceRange: { sheetName: cache.source.sheet, address: cache.source.ref },
-      sourceFields: cache.fields,
+      sourceFields: cache.sourceFields,
       targetRange: { sheetName: sheet.name, address: parsed.targetRange },
       rowFields: parsed.rowFields,
       columnFields: parsed.columnFields,
       valueFields: parsed.valueFields,
+      calculatedFields: cache.calculatedFields,
+      allowUnsupportedCalculatedFields: true,
       filters: parsed.filters,
       refreshPolicy: cache.refreshPolicy,
       validateSource: false,

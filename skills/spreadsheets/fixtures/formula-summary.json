@@ -167,8 +167,12 @@
             "refreshedBy": "Spreadsheet skill",
             "refreshedDateIso": "2026-07-12T00:00:00Z"
           },
+          "calculatedFields": [
+            { "name": "Gross Profit", "formula": "=[Revenue] - [Cost]" }
+          ],
           "valueFields": [
-            { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" }
+            { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" },
+            { "field": "Gross Profit", "name": "Gross profit" }
           ]
         }
       ],

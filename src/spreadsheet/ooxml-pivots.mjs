@@ -1,4 +1,4 @@
-import { pivotItemVisible, pivotValueLabel } from "./pivots.mjs";
+import { pivotFormulaToOoxml, pivotItemVisible, pivotValueLabel } from "./pivots.mjs";
 
 function decodeXml(value) {
   return String(value ?? "")
@@ -70,7 +70,8 @@ export function parsePivotCacheDefinition(xml = "") {
   const sourceAttrs = attributes(tag(body(xml, "cacheSource"), "worksheetSource"));
   const cacheFields = body(xml, "cacheFields");
   const fieldEntries = elements(cacheFields, "cacheField");
-  const fields = fieldEntries.map((entry, index) => attributes(entry.opening).name || `Field${index + 1}`);
+  const fieldAttributes = fieldEntries.map((entry, index) => ({ ...attributes(entry.opening), name: attributes(entry.opening).name || `Field${index + 1}` }));
+  const fields = fieldAttributes.map((entry) => entry.name);
   return {
     source: {
       sheet: sourceAttrs.sheet,
@@ -79,6 +80,8 @@ export function parsePivotCacheDefinition(xml = "") {
       relationshipId: relationshipId(sourceAttrs),
     },
     fields,
+    sourceFields: fieldAttributes.filter((entry) => entry.formula == null && booleanAttribute(entry.databaseField, true)).map((entry) => entry.name),
+    calculatedFields: fieldAttributes.filter((entry) => entry.formula != null).map((entry) => ({ name: entry.name, formula: entry.formula, numFmtId: Number(entry.numFmtId || 0) })),
     items: fieldEntries.map((entry) => sharedItems(entry.xml)),
     refreshPolicy: {
       refreshOnLoad: booleanAttribute(rootAttrs.refreshOnLoad, false),
@@ -157,6 +160,10 @@ function pivotSourceHeaders(pivot) {
   return pivot.sourceFields?.length ? [...pivot.sourceFields] : (pivot.sourceValues()[0] || []).map((value) => String(value ?? ""));
 }
 
+function pivotAllFields(pivot) {
+  return [...pivotSourceHeaders(pivot), ...(pivot.calculatedFields || []).map((field) => field.name)];
+}
+
 function pivotFieldValues(pivot, fieldIndex) {
   return uniqueValues(pivot.sourceValues().slice(1).map((row) => row[fieldIndex]).filter((value) => value != null && value !== ""));
 }
@@ -164,8 +171,8 @@ function pivotFieldValues(pivot, fieldIndex) {
 export function spreadsheetPivotCacheDefinitionXml(part) {
   const { pivot } = part;
   const sourceSheet = pivot.sourceRange.sheetName || pivot.worksheet.name;
-  const headers = pivotSourceHeaders(pivot);
-  const cacheFields = headers.map((header, index) => {
+  const sourceFields = pivotSourceHeaders(pivot);
+  const sourceCacheFields = sourceFields.map((header, index) => {
     const values = pivotFieldValues(pivot, index);
     const containsNumber = values.some((value) => typeof value === "number" && Number.isFinite(value));
     const containsString = values.some((value) => typeof value !== "number" && typeof value !== "boolean");
@@ -174,11 +181,13 @@ export function spreadsheetPivotCacheDefinitionXml(part) {
     const flags = `${containsNumber ? ' containsNumber="1"' : ""}${containsString ? ' containsString="1"' : ""}${containsBlank ? ' containsBlank="1"' : ""}${containsMixedTypes ? ' containsMixedTypes="1"' : ""}`;
     return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0"><sharedItems${flags} count="${values.length}">${values.map(cacheItemXml).join("")}</sharedItems></cacheField>`;
   }).join("");
+  const calculatedCacheFields = (pivot.calculatedFields || []).map((field) => `<cacheField name="${attrEscape(field.name)}" formula="${attrEscape(field.supported === false ? field.formula.replace(/^=/, "") : pivotFormulaToOoxml(field.formula, sourceFields))}" databaseField="0" numFmtId="${Number(field.numFmtId || 0)}"><sharedItems containsNumber="1" count="0"/></cacheField>`).join("");
+  const fieldCount = sourceFields.length + (pivot.calculatedFields?.length || 0);
   const policy = pivot.refreshPolicy || {};
   const recordsRelationship = policy.saveData === false ? "" : ` r:id="${attrEscape(part.recordsRelId || "rId1")}"`;
   const refreshedBy = policy.refreshedBy ? ` refreshedBy="${attrEscape(policy.refreshedBy)}"` : "";
   const refreshedDateIso = policy.refreshedDateIso ? ` refreshedDateIso="${attrEscape(policy.refreshedDateIso)}"` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"${recordsRelationship} refreshOnLoad="${policy.refreshOnLoad === false ? 0 : 1}" saveData="${policy.saveData === false ? 0 : 1}" enableRefresh="${policy.enableRefresh === false ? 0 : 1}" invalid="${policy.invalid ? 1 : 0}" missingItemsLimit="${Number(policy.missingItemsLimit || 0)}"${refreshedBy}${refreshedDateIso} recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${headers.length}">${cacheFields}</cacheFields></pivotCacheDefinition>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"${recordsRelationship} refreshOnLoad="${policy.refreshOnLoad === false ? 0 : 1}" saveData="${policy.saveData === false ? 0 : 1}" enableRefresh="${policy.enableRefresh === false ? 0 : 1}" invalid="${policy.invalid ? 1 : 0}" missingItemsLimit="${Number(policy.missingItemsLimit || 0)}"${refreshedBy}${refreshedDateIso} recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${fieldCount}">${sourceCacheFields}${calculatedCacheFields}</cacheFields></pivotCacheDefinition>`;
 }
 
 function cacheRecordValueXml(value) {
@@ -211,7 +220,7 @@ function targetStart(address = "A1") {
 
 export function spreadsheetPivotTableDefinitionXml(part) {
   const { pivot } = part;
-  const headers = pivotSourceHeaders(pivot);
+  const headers = pivotAllFields(pivot);
   const start = targetStart(pivot.targetRange.address);
   const values = pivot.computedValues();
   const targetEnd = cellAddress(start.row + Math.max(0, values.length - 1), start.column + Math.max(0, (values[0]?.length || 1) - 1));

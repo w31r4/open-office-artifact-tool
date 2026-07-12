@@ -188,6 +188,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXls
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importDelimited")?.schema?.parameters?.maxRows?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportCsv")?.schema?.parameters?.formulas?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectDelimited")?.schema?.returns?.inspection?.type, "object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.type, "object[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");
