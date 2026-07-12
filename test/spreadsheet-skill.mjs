@@ -25,6 +25,8 @@ try {
   }
   const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(result.workbookPath));
   assert.equal(workbook.dateSystem, "1904");
+  assert.equal(workbook.worksheets.getItem("Summary").showGridLines, false);
+  assert.deepEqual(workbook.worksheets.getItem("Summary").freezePanes.toJSON(), { rows: 1, columns: 1, frozen: true, topLeftCell: "B2", activePane: "bottomRight" });
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("B2:D4").values, [
     [100, 60, 0.4],
     [120, 70, 0.4166666666666667],
@@ -33,6 +35,7 @@ try {
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);

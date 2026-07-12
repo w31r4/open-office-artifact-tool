@@ -126,6 +126,9 @@ export function createWorkbookFromFixture(fixture = {}) {
   const workbook = Workbook.create({ dateSystem: fixture.dateSystem, date1904: fixture.date1904 });
   for (const sheetFixture of fixture.sheets || []) {
     const sheet = workbook.worksheets.add(sheetFixture.name);
+    if (sheetFixture.showGridLines != null) sheet.showGridLines = Boolean(sheetFixture.showGridLines);
+    if (sheetFixture.freezePanes?.rows != null) sheet.freezePanes.freezeRows(sheetFixture.freezePanes.rows);
+    if (sheetFixture.freezePanes?.columns != null) sheet.freezePanes.freezeColumns(sheetFixture.freezePanes.columns);
     for (const operation of sheetFixture.ranges || []) applyRangeOperation(sheet, operation);
     for (const table of sheetFixture.tables || []) {
       const created = sheet.tables.add(table.range, table.hasHeaders !== false, table.name);

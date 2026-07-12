@@ -860,6 +860,9 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportTsv", summary: "Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectDelimited", summary: "Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeRows", summary: "Freeze a leading row count in the worksheet view while preserving any frozen columns." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeColumns", summary: "Freeze a leading column count in the worksheet view while preserving any frozen rows." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.unfreeze", summary: "Remove all frozen worksheet panes and restore a single scrollable view." },
   { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
   { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing." },
@@ -1871,6 +1874,13 @@ const WORKBOOK_HELP_SCHEMAS = {
   "workbook.worksheets.add": helpSchema({
     name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
   }, "worksheet", "Worksheet", "Appended editable worksheet."),
+  "worksheet.freezePanes.freezeRows": helpSchema({
+    rowCount: { type: "number", required: true, description: "Integer number of leading rows to freeze; zero clears only the row freeze." },
+  }, "freezePanes", "object", "Worksheet frozen-pane facade with rows, columns, topLeftCell, activePane, and frozen state."),
+  "worksheet.freezePanes.freezeColumns": helpSchema({
+    columnCount: { type: "number", required: true, description: "Integer number of leading columns to freeze; zero clears only the column freeze." },
+  }, "freezePanes", "object", "Worksheet frozen-pane facade with rows, columns, topLeftCell, activePane, and frozen state."),
+  "worksheet.freezePanes.unfreeze": helpSchema({}, "freezePanes", "object", "Worksheet frozen-pane facade reset to zero frozen rows and columns."),
   "SpreadsheetFile.importXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
   }, "workbook", "Workbook", "Imported editable workbook facade."),
@@ -3388,7 +3398,7 @@ export class Workbook {
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
     if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904" });
     for (const sheet of this.worksheets) {
-      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount });
+      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON() });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
@@ -3419,6 +3429,10 @@ export class Workbook {
     }
     for (const sheet of this.worksheets) {
       const entries = sheet.store.entries();
+      const frozenRows = Number(sheet.freezePanes?.rows ?? 0);
+      const frozenColumns = Number(sheet.freezePanes?.columns ?? 0);
+      if (!Number.isInteger(frozenRows) || frozenRows < 0 || frozenRows > XLSX_MAX_FREEZE_ROWS) issues.push(verificationIssue("workbook", "invalidFrozenRows", `Worksheet ${sheet.name} has invalid frozen row count ${sheet.freezePanes?.rows}.`, { sheet: sheet.name, rows: sheet.freezePanes?.rows }));
+      if (!Number.isInteger(frozenColumns) || frozenColumns < 0 || frozenColumns > XLSX_MAX_FREEZE_COLUMNS) issues.push(verificationIssue("workbook", "invalidFrozenColumns", `Worksheet ${sheet.name} has invalid frozen column count ${sheet.freezePanes?.columns}.`, { sheet: sheet.name, columns: sheet.freezePanes?.columns }));
       if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
       for (const [address, cell] of entries) {
         const value = String(cell.value ?? "");
@@ -3636,6 +3650,54 @@ function worksheetLayoutSlice(layout, options = {}) {
   return sliced;
 }
 
+const XLSX_MAX_FREEZE_ROWS = 1_048_575;
+const XLSX_MAX_FREEZE_COLUMNS = 16_383;
+
+function normalizeFreezeCount(value, maximum, axis) {
+  const count = Number(value);
+  if (!Number.isInteger(count) || count < 0 || count > maximum) throw new Error(`Worksheet frozen ${axis} must be an integer from 0 through ${maximum}.`);
+  return count;
+}
+
+class WorksheetFreezePanes {
+  constructor(worksheet) {
+    this.worksheet = worksheet;
+    this._rows = 0;
+    this._columns = 0;
+  }
+
+  get rows() { return this._rows; }
+  get columns() { return this._columns; }
+  get frozen() { return this._rows > 0 || this._columns > 0; }
+  get topLeftCell() { return this.frozen ? makeCellAddress(this._rows, this._columns) : undefined; }
+  get activePane() {
+    if (this._rows > 0 && this._columns > 0) return "bottomRight";
+    if (this._rows > 0) return "bottomLeft";
+    if (this._columns > 0) return "topRight";
+    return undefined;
+  }
+
+  freezeRows(rowCount = 1) {
+    this._rows = normalizeFreezeCount(rowCount, XLSX_MAX_FREEZE_ROWS, "row count");
+    return this;
+  }
+
+  freezeColumns(columnCount = 1) {
+    this._columns = normalizeFreezeCount(columnCount, XLSX_MAX_FREEZE_COLUMNS, "column count");
+    return this;
+  }
+
+  unfreeze() {
+    this._rows = 0;
+    this._columns = 0;
+    return this;
+  }
+
+  toJSON() {
+    return { rows: this.rows, columns: this.columns, frozen: this.frozen, topLeftCell: this.topLeftCell, activePane: this.activePane };
+  }
+}
+
 export class Worksheet {
   constructor(workbook, name) {
     this.workbook = workbook;
@@ -3652,7 +3714,7 @@ export class Worksheet {
     this.sparklines = this.sparklineGroups;
     this.dataValidations = new WorksheetRuleCollection(this, "dataValidation");
     this.conditionalFormattings = new WorksheetRuleCollection(this, "conditionalFormat");
-    this.freezePanes = { freezeRows() {}, freezeColumns() {}, unfreeze() {} };
+    this.freezePanes = new WorksheetFreezePanes(this);
     this.showGridLines = true;
   }
 
@@ -3818,6 +3880,7 @@ export class Worksheet {
       unit: "px",
       origin: { left: 40, top: 40 },
       cell: { width: cellW, height: cellH },
+      view: { showGridLines: this.showGridLines, freezePanes: this.freezePanes.toJSON() },
       width,
       height,
       cells,
@@ -6094,6 +6157,17 @@ function conditionalFormattingXml(sheet, styleTable = {}) {
   }).join("");
 }
 
+function worksheetViewXml(sheet) {
+  const rows = normalizeFreezeCount(sheet.freezePanes?.rows ?? 0, XLSX_MAX_FREEZE_ROWS, "row count");
+  const columns = normalizeFreezeCount(sheet.freezePanes?.columns ?? 0, XLSX_MAX_FREEZE_COLUMNS, "column count");
+  const showGridLines = sheet.showGridLines !== false;
+  if (rows === 0 && columns === 0 && showGridLines) return "";
+  const pane = rows > 0 || columns > 0
+    ? `<pane${columns > 0 ? ` xSplit="${columns}"` : ""}${rows > 0 ? ` ySplit="${rows}"` : ""} topLeftCell="${makeCellAddress(rows, columns)}" activePane="${rows > 0 && columns > 0 ? "bottomRight" : rows > 0 ? "bottomLeft" : "topRight"}" state="frozen"/>`
+    : "";
+  return `<sheetViews><sheetView workbookViewId="0"${showGridLines ? "" : ' showGridLines="0"'}>${pane}</sheetView></sheetViews>`;
+}
+
 function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
   const rows = new Map();
   for (const [address, cell] of sheet.store.entries()) {
@@ -6105,7 +6179,7 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
   const sparklineXml = sparklineGroupExtXml(sheet);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}<sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
 function cellFormulaXml(address, cell) {
@@ -6209,6 +6283,7 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
 }
 
 function parseWorksheetXml(sheet, xml, options = {}) {
+  parseWorksheetViewXml(sheet, xml);
   const cellMatches = [...String(xml || "").matchAll(/<c\s+([^>]*)>([\s\S]*?)<\/c>/g)].map((match) => {
     const attrs = match[1];
     const body = match[2];
@@ -6254,6 +6329,25 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   parseDataValidationsXml(sheet, xml);
   parseConditionalFormattingXml(sheet, xml, options.styles || []);
   parseSparklineGroupsXml(sheet, xml);
+}
+
+function parseWorksheetViewXml(sheet, xml = "") {
+  sheet.showGridLines = true;
+  sheet.freezePanes.unfreeze();
+  const sheetViews = /<(?:[A-Za-z_][\w.-]*:)?sheetViews\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sheetViews>/.exec(String(xml || ""))?.[1];
+  if (!sheetViews) return;
+  const viewMatch = /<(?:[A-Za-z_][\w.-]*:)?sheetView\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sheetView>)/.exec(sheetViews);
+  if (!viewMatch) return;
+  const viewAttrs = ooxmlXmlAttributes(viewMatch[1] || "");
+  if (viewAttrs.showGridLines != null) sheet.showGridLines = !["0", "false", "off"].includes(String(viewAttrs.showGridLines).trim().toLowerCase());
+  const paneMatch = /<(?:[A-Za-z_][\w.-]*:)?pane\b[^>]*\/?>/.exec(viewMatch[2] || "");
+  if (!paneMatch) return;
+  const paneAttrs = ooxmlXmlAttributes(paneMatch[0]);
+  if (!new Set(["frozen", "frozenSplit"]).has(paneAttrs.state)) return;
+  const rows = Number(paneAttrs.ySplit || 0);
+  const columns = Number(paneAttrs.xSplit || 0);
+  if (Number.isInteger(rows) && rows >= 0 && rows <= XLSX_MAX_FREEZE_ROWS) sheet.freezePanes._rows = rows;
+  if (Number.isInteger(columns) && columns >= 0 && columns <= XLSX_MAX_FREEZE_COLUMNS) sheet.freezePanes._columns = columns;
 }
 
 class SlideCollection {

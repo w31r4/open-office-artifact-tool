@@ -34,6 +34,8 @@
     },
     {
       "name": "Summary",
+      "showGridLines": false,
+      "freezePanes": { "rows": 1, "columns": 1 },
       "ranges": [
         {
           "range": "A1:D4",
