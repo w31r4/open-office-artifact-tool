@@ -42,10 +42,10 @@ try {
   assert.match(nativePreferred.inspect.ndjson, /Office artifact readiness brief/);
   const nativePreferredDocument = await DocumentFile.importDocx(await FileBlob.load(result.docxPath), { preferNative: true });
   assert.equal(nativePreferredDocument.theme.name, "Business Brief Theme");
-  assert.equal(nativePreferredDocument.theme.fonts.majorEastAsia, "Hiragino Sans GB");
-  const themeRuns = nativePreferredDocument.blocks.find((item) => item.text === "Theme fidelity 中文")?.runs;
+  assert.equal(nativePreferredDocument.theme.fonts.majorEastAsia, "Arial Unicode MS");
+  const themeRuns = nativePreferredDocument.blocks.find((item) => item.text === "Theme fidelity East Asia")?.runs;
   assert.equal(themeRuns?.[0].style.resolvedColor, "#99b3cc");
-  assert.equal(themeRuns?.[1].style.resolvedFontFamilyEastAsia, "Hiragino Sans GB");
+  assert.equal(themeRuns?.[1].style.resolvedFontFamilyEastAsia, "Arial Unicode MS");
   const complexThemeRun = nativePreferredDocument.blocks.find((item) => item.text === "العربية")?.runs[0];
   assert.equal(complexThemeRun?.style.resolvedFontFamilyComplexScript, "Geeza Pro");
   assert.equal(complexThemeRun?.style.boldComplexScript, true);

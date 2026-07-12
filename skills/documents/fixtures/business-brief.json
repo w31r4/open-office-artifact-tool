@@ -5,7 +5,7 @@
   "theme": {
     "name": "Business Brief Theme",
     "colors": { "accent1": "#336699", "accent2": "#cc3300" },
-    "fonts": { "major": "Source Serif 4", "minor": "Aptos", "majorEastAsia": "Hiragino Sans GB", "majorComplexScript": "Geeza Pro" }
+    "fonts": { "major": "Source Serif 4", "minor": "Aptos", "majorEastAsia": "Arial Unicode MS", "majorComplexScript": "Geeza Pro" }
   },
   "headers": [
     { "name": "running-header", "text": "Clean-room document workflow" },
@@ -19,7 +19,7 @@
     { "kind": "paragraph", "name": "lead", "styleId": "Normal", "text": "This brief verifies an agent can create, inspect, render, and validate a real DOCX." },
     { "kind": "paragraph", "name": "theme-runs", "styleId": "Normal", "runs": [
       { "text": "Theme fidelity ", "style": { "fontTheme": "majorHAnsi", "themeColor": "accent1", "themeTint": "80", "bold": true, "boldComplexScript": false, "fontSize": 28, "fontSizeComplexScript": 34 } },
-      { "text": "中文", "style": { "fontTheme": "minorHAnsi", "fontFamilyEastAsia": "Hiragino Sans GB", "fontThemeEastAsia": "majorEastAsia", "themeColor": "accent2", "themeShade": "BF", "italic": true } }
+      { "text": "East Asia", "style": { "fontTheme": "minorHAnsi", "fontFamilyEastAsia": "Arial Unicode MS", "fontThemeEastAsia": "majorEastAsia" } }
     ] },
     { "kind": "paragraph", "name": "theme-complex-run", "styleId": "Normal", "runs": [
       { "text": "العربية", "style": { "fontTheme": "minorHAnsi", "fontFamilyComplexScript": "Geeza Pro", "fontThemeComplexScript": "majorBidi", "bold": false, "boldComplexScript": true, "italic": false, "italicComplexScript": true, "fontSize": 22, "fontSizeComplexScript": 32 } }
