@@ -7,6 +7,10 @@ export const PPTX_MODERN_COMMENT_CONTENT_TYPE = "application/vnd.ms-powerpoint.c
 export const PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2018/10/relationships/comments";
 export const PPTX_MODERN_AUTHOR_CONTENT_TYPE = "application/vnd.ms-powerpoint.authors+xml";
 export const PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2018/10/relationships/authors";
+export const PPTX_DRAWING_COMMAND_NAMESPACE = "http://schemas.microsoft.com/office/drawing/2013/main/command";
+export const PPTX_PRESENTATION_COMMAND_NAMESPACE = "http://schemas.microsoft.com/office/powerpoint/2013/main/command";
+export const PPTX_CREATION_ID_NAMESPACE = "http://schemas.microsoft.com/office/drawing/2014/main";
+export const PPTX_CREATION_ID_EXTENSION_URI = "{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}";
 
 const PRESENTATION_NAMESPACES = new Set([
   "http://schemas.openxmlformats.org/presentationml/2006/main",
@@ -40,6 +44,42 @@ function hashWords(value) {
 export function deterministicPresentationGuid(seed) {
   const words = hashWords(seed).map((word) => word.toString(16).toUpperCase().padStart(8, "0")).join("");
   return `{${words.slice(0, 8)}-${words.slice(8, 12)}-4${words.slice(13, 16)}-8${words.slice(17, 20)}-${words.slice(20, 32)}}`;
+}
+
+export function planPresentationSlideElementIdentities(slide, entries = []) {
+  const used = new Set();
+  let nextId = 2;
+  for (const { element } of entries) {
+    const candidate = Number(element.nativeId);
+    if (Number.isInteger(candidate) && candidate >= 2 && candidate <= 4_294_967_295 && !used.has(candidate)) used.add(candidate);
+    else element.nativeId = undefined;
+  }
+  for (const { element, moniker } of entries) {
+    if (!element.nativeId) {
+      while (used.has(nextId)) nextId += 1;
+      element.nativeId = nextId;
+      used.add(nextId);
+    }
+    element.creationId = normalizeGuid(element.creationId || deterministicPresentationGuid(`drawing:${slide.id}:${element.id}`), `PowerPoint drawing element ${element.id} creationId`);
+    element.moniker = moniker;
+  }
+  return entries.map(({ element, moniker }) => ({ element, targetId: element.id, nativeId: element.nativeId, creationId: element.creationId, moniker }));
+}
+
+export function presentationCreationIdExtensionXml(creationId) {
+  if (!creationId) return "";
+  const id = normalizeGuid(creationId, "PowerPoint drawing element creationId");
+  return `<a:extLst><a:ext uri="${PPTX_CREATION_ID_EXTENSION_URI}"><a16:creationId xmlns:a16="${PPTX_CREATION_ID_NAMESPACE}" id="${id}"/></a:ext></a:extLst>`;
+}
+
+export function parsePresentationElementIdentity(xml = "", moniker) {
+  const cNvPr = /<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*>/.exec(String(xml))?.[0] || /<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*\/\s*>/.exec(String(xml))?.[0] || "";
+  const rawCreationId = localAttribute(/<(?:[A-Za-z_][\w.-]*:)?creationId\b[^>]*\/\s*>/.exec(String(xml))?.[0] || "", "id")?.toUpperCase();
+  return {
+    nativeId: /^\d+$/.test(localAttribute(cNvPr, "id") || "") ? Number(localAttribute(cNvPr, "id")) : undefined,
+    creationId: rawCreationId && GUID.test(rawCreationId) ? rawCreationId : undefined,
+    moniker,
+  };
 }
 
 function validDate(value, label) {
@@ -98,6 +138,11 @@ export function planPresentationModernComments(slides = []) {
         id: comments[0].id,
         targetId: thread.targetId,
         targetName: slide.resolve(thread.targetId)?.name || "",
+        anchor: (() => {
+          const target = slide.resolve(thread.targetId);
+          if (target?.nativeId && target?.moniker) return { nativeId: target.nativeId, creationId: target.creationId, moniker: target.moniker, slideId: slide.nativeSlideId };
+          return thread.nativeAnchor;
+        })(),
         position: commentPosition(thread.position || { x: 100 + threadIndex * 32, y: 100 + threadIndex * 32 }, `PowerPoint modern comment ${comments[0].id} position`),
         root: comments[0],
         replies: comments.slice(1),
@@ -112,6 +157,13 @@ function textBody(text) {
   return `<p188:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${attrEscape(text)}</a:t></a:r></a:p></p188:txBody>`;
 }
 
+function anchorXml(entry) {
+  const anchor = entry.anchor;
+  if (!anchor?.nativeId || !anchor.moniker || !Number.isInteger(Number(anchor.slideId))) return "<p188:unknownAnchor/>";
+  const creationId = anchor.creationId ? ` creationId="${attrEscape(normalizeGuid(anchor.creationId, "PowerPoint modern comment anchor creationId"))}"` : "";
+  return `<oac:deMkLst><pc:sldMkLst><pc:docMk/><pc:sldMk sldId="${Number(anchor.slideId)}"/></pc:sldMkLst><oac:${anchor.moniker} id="${Number(anchor.nativeId)}"${creationId}/></oac:deMkLst>`;
+}
+
 export function presentationModernAuthorsXml(plan) {
   const authors = plan.authors.map((author) => `<p188:author id="${attrEscape(author.id)}" name="${attrEscape(author.name)}" initials="${attrEscape(author.initials)}" userId="${attrEscape(author.userId)}" providerId="${attrEscape(author.providerId)}"/>`).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p188:authorLst xmlns:p188="${PPTX_MODERN_COMMENT_NAMESPACE}">${authors}</p188:authorLst>`;
@@ -121,9 +173,9 @@ export function presentationModernCommentsXml(part) {
   const comments = part.roots.map((entry) => {
     const replies = entry.replies.length ? `<p188:replyLst>${entry.replies.map((reply) => `<p188:reply id="${attrEscape(reply.id)}" authorId="${attrEscape(reply.authorId)}" status="${reply.status}" created="${attrEscape(reply.created)}">${textBody(reply.text)}</p188:reply>`).join("")}</p188:replyLst>` : "";
     const root = entry.root;
-    return `<p188:cm id="${attrEscape(root.id)}" authorId="${attrEscape(root.authorId)}" status="${root.status}" created="${attrEscape(root.created)}"><p188:unknownAnchor/><p188:pos x="${Math.round(entry.position.x)}" y="${Math.round(entry.position.y)}"/>${replies}${textBody(root.text)}</p188:cm>`;
+    return `<p188:cm id="${attrEscape(root.id)}" authorId="${attrEscape(root.authorId)}" status="${root.status}" created="${attrEscape(root.created)}">${anchorXml(entry)}<p188:pos x="${Math.round(entry.position.x)}" y="${Math.round(entry.position.y)}"/>${replies}${textBody(root.text)}</p188:cm>`;
   }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p188:cmLst xmlns:p188="${PPTX_MODERN_COMMENT_NAMESPACE}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${comments}</p188:cmLst>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p188:cmLst xmlns:p188="${PPTX_MODERN_COMMENT_NAMESPACE}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pc="${PPTX_PRESENTATION_COMMAND_NAMESPACE}" xmlns:oac="${PPTX_DRAWING_COMMAND_NAMESPACE}">${comments}</p188:cmLst>`;
 }
 
 export function parsePresentationModernAuthors(xml = "") {
@@ -163,13 +215,14 @@ export function parsePresentationModernComments(xml = "", authors = new Map()) {
     const rootWithoutReplies = source.replace(/<(?:[A-Za-z_][\w.-]*:)?replyLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?replyLst>/, "");
     const root = parseCommentElement(rootWithoutReplies, authors);
     const replies = [...replyList.matchAll(/<(?:[A-Za-z_][\w.-]*:)?reply\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?reply>/g)].map((reply) => parseCommentElement(reply[0], authors));
-    const anchor = /<(?:[A-Za-z_][\w.-]*:)?anchor\b[^>]*\/?\s*>/.exec(source)?.[0] || "";
+    const moniker = /<(?:[A-Za-z_][\w.-]*:)?(spMk|graphicFrameMk|cxnSpMk|picMk|grpSpMk|inkMk)\b[^>]*\/\s*>/.exec(source);
+    const monikerTag = moniker?.[0] || "";
+    const slideMoniker = /<(?:[A-Za-z_][\w.-]*:)?sldMk\b[^>]*\/\s*>/.exec(source)?.[0] || "";
     const pos = /<(?:[A-Za-z_][\w.-]*:)?pos\b[^>]*\/?\s*>/.exec(source)?.[0] || "";
     threads.push({
       id: root.nativeId,
       nativeFormat: "modern",
-      targetId: localAttribute(anchor, "targetId") || undefined,
-      targetName: localAttribute(anchor, "targetName") || undefined,
+      nativeAnchor: monikerTag ? { nativeId: Number(localAttribute(monikerTag, "id")), creationId: localAttribute(monikerTag, "creationId")?.toUpperCase(), moniker: moniker?.[1], slideId: Number(localAttribute(slideMoniker, "sldId")) } : undefined,
       author: root.author,
       resolved: root.status === "resolved" || root.status === "closed",
       created: root.created,
@@ -257,6 +310,73 @@ function hasOutgoingRelationships(bytesByPath, source) {
   return /<(?:[A-Za-z_][\w.-]*:)?Relationship\b/.test(packageXml(bytesByPath, relationshipsPartPath(source)));
 }
 
+function presentationSlideIds(bytesByPath) {
+  const result = new Map();
+  for (const [partPath] of bytesByPath) {
+    if (!PRESENTATION_NAMESPACES.has(rootNamespace(packageXml(bytesByPath, partPath), "presentation"))) continue;
+    const relsXml = packageXml(bytesByPath, relationshipsPartPath(partPath));
+    const byId = new Map();
+    for (const match of relsXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?Relationship\b[^>]*\/\s*>/g)) {
+      const attrs = attributes(match[0]);
+      if (String(attrs.Type || "").endsWith("/slide") && String(attrs.TargetMode || "").toLowerCase() !== "external") byId.set(attrs.Id, resolveTarget(partPath, attrs.Target));
+    }
+    for (const match of packageXml(bytesByPath, partPath).matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldId\b[^>]*\/\s*>/g)) {
+      const attrs = attributes(match[0]);
+      const relationshipId = Object.entries(attrs).find(([name]) => name.endsWith(":id"))?.[1];
+      const target = byId.get(relationshipId);
+      const nativeSlideId = Number(attrs.id);
+      if (target && Number.isInteger(nativeSlideId)) result.set(target, nativeSlideId);
+    }
+  }
+  return result;
+}
+
+function slideElementIdentities(xml = "") {
+  const identities = [];
+  const kinds = { sp: "spMk", graphicFrame: "graphicFrameMk", cxnSp: "cxnSpMk", pic: "picMk" };
+  for (const [localName, moniker] of Object.entries(kinds)) {
+    const pattern = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>`, "g");
+    for (const match of String(xml).matchAll(pattern)) identities.push(parsePresentationElementIdentity(match[0], moniker));
+  }
+  return identities.filter((identity) => identity.nativeId);
+}
+
+function validateDrawingAnchor(rootXml, slideXml, expectedSlideId, partPath, commentId) {
+  const issues = [];
+  const anchor = /<(?:[A-Za-z_][\w.-]*:)?deMkLst\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?deMkLst>/.exec(rootXml);
+  if (!anchor) return issues;
+  const slideMoniker = /<(?:[A-Za-z_][\w.-]*:)?sldMk\b[^>]*\/\s*>/.exec(anchor[1])?.[0] || "";
+  const slideId = Number(localAttribute(slideMoniker, "sldId"));
+  if (!/<(?:[A-Za-z_][\w.-]*:)?docMk\b[^>]*\/\s*>/.test(anchor[1]) || !slideMoniker || !Number.isInteger(slideId) || slideId < 256 || slideId >= 2_147_483_648) issues.push(issue("pptxModernCommentSlideMonikerInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid slide moniker chain.`, { path: partPath, commentId, slideId }));
+  else if (expectedSlideId && slideId !== expectedSlideId) issues.push(issue("pptxModernCommentSlideMonikerMismatch", `PPTX modern comment ${commentId || "(missing)"} slide moniker ${slideId} does not match relationship source slide ${expectedSlideId}.`, { path: partPath, commentId, slideId, expectedSlideId }));
+  const moniker = /<(?:[A-Za-z_][\w.-]*:)?(spMk|graphicFrameMk|cxnSpMk|picMk|grpSpMk|inkMk)\b[^>]*\/\s*>/.exec(anchor[1]);
+  const nativeId = Number(localAttribute(moniker?.[0] || "", "id"));
+  const creationId = localAttribute(moniker?.[0] || "", "creationId")?.toUpperCase();
+  if (!moniker || !Number.isInteger(nativeId) || nativeId < 1 || nativeId > 4_294_967_295 || (creationId && !GUID.test(creationId))) {
+    issues.push(issue("pptxModernCommentDrawingMonikerInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid drawing-element moniker.`, { path: partPath, commentId, nativeId, creationId, moniker: moniker?.[1] }));
+    return issues;
+  }
+  const candidates = slideElementIdentities(slideXml).filter((identity) => identity.moniker === moniker[1]);
+  const target = creationId ? candidates.find((identity) => identity.creationId === creationId) : candidates.find((identity) => identity.nativeId === nativeId);
+  if (!target) issues.push(issue("pptxModernCommentDrawingTargetNotFound", `PPTX modern comment ${commentId || "(missing)"} drawing anchor does not resolve in its source slide.`, { path: partPath, commentId, nativeId, creationId, moniker: moniker[1] }));
+  else if (target.nativeId !== nativeId) issues.push(issue("pptxModernCommentDrawingIdentityMismatch", `PPTX modern comment ${commentId || "(missing)"} drawing ID and creationId resolve to different elements.`, { path: partPath, commentId, nativeId, creationId, resolvedNativeId: target.nativeId, moniker: moniker[1] }));
+  return issues;
+}
+
+function validateSlideElementIdentityUniqueness(slideXml, source) {
+  const issues = [];
+  const nativeIds = new Set();
+  const creationIds = new Set();
+  for (const identity of slideElementIdentities(slideXml)) {
+    if (nativeIds.has(identity.nativeId)) issues.push(issue("pptxModernDrawingNativeIdDuplicate", `PPTX slide ${source} contains duplicate drawing native ID ${identity.nativeId}.`, { path: source, nativeId: identity.nativeId }));
+    nativeIds.add(identity.nativeId);
+    if (!identity.creationId) continue;
+    if (creationIds.has(identity.creationId)) issues.push(issue("pptxModernDrawingCreationIdDuplicate", `PPTX slide ${source} contains duplicate drawing creationId ${identity.creationId}.`, { path: source, creationId: identity.creationId }));
+    creationIds.add(identity.creationId);
+  }
+  return issues;
+}
+
 export function validatePresentationModernCommentPackageSemantics({ bytesByPath, contentTypes }) {
   const issues = [];
   const rels = relationships(bytesByPath);
@@ -282,11 +402,17 @@ export function validatePresentationModernCommentPackageSemantics({ bytesByPath,
   }
   const commentCountBySource = new Map();
   const ids = new Set();
+  const slideIds = presentationSlideIds(bytesByPath);
+  const validatedSlideIdentities = new Set();
   for (const rel of commentRels) {
     commentCountBySource.set(rel.source, (commentCountBySource.get(rel.source) || 0) + 1);
     if (rel.external) issues.push(issue("pptxModernCommentRelationshipExternal", "PPTX modern comment relationship must be internal.", { path: rel.path, relationshipId: rel.id }));
     if (!PRESENTATION_NAMESPACES.has(rootNamespace(packageXml(bytesByPath, rel.source), "sld"))) issues.push(issue("pptxModernCommentRelationshipSourceInvalid", "PPTX modern comment relationship must originate from a Slide part.", { path: rel.path, source: rel.source }));
     if (!rel.target || !bytesByPath.has(rel.target)) continue;
+    if (!validatedSlideIdentities.has(rel.source)) {
+      issues.push(...validateSlideElementIdentityUniqueness(packageXml(bytesByPath, rel.source), rel.source));
+      validatedSlideIdentities.add(rel.source);
+    }
     if (hasOutgoingRelationships(bytesByPath, rel.target)) issues.push(issue("pptxModernCommentPartRelationshipsForbidden", `PPTX modern comment part ${rel.target} must not own package relationships.`, { path: relationshipsPartPath(rel.target), source: rel.target }));
     if (declaredContentType(contentTypes, rel.target) !== PPTX_MODERN_COMMENT_CONTENT_TYPE) issues.push(issue("pptxModernCommentContentTypeInvalid", `PPTX modern comment part ${rel.target} has the wrong content type.`, { path: rel.target }));
     const xml = packageXml(bytesByPath, rel.target);
@@ -296,10 +422,12 @@ export function validatePresentationModernCommentPackageSemantics({ bytesByPath,
       const repliesXml = /<(?:[A-Za-z_][\w.-]*:)?replyLst\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?replyLst>/.exec(source)?.[1] || "";
       const rootXml = source.replace(/<(?:[A-Za-z_][\w.-]*:)?replyLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?replyLst>/, "");
       const root = parseCommentElement(rootXml, authors);
-      root.anchorCount = [...rootXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:sldMkLst|sldLayoutMkLst|sldMasterMkLst|deMkLst|txBodyMkLst|txMkLst|tcMkLst|trMkLst|gridColMkLst|unknownAnchor)\b/g)].length;
+      const anchorNames = [...rootXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(sldMkLst|sldLayoutMkLst|sldMasterMkLst|deMkLst|txBodyMkLst|txMkLst|tcMkLst|trMkLst|gridColMkLst|unknownAnchor)\b/g)].map((match) => match[1]);
+      root.anchorCount = anchorNames.filter((name) => name !== "sldMkLst" || !anchorNames.includes("deMkLst")).length;
       const position = /<(?:[A-Za-z_][\w.-]*:)?pos\b[^>]*\/?\s*>/.exec(rootXml)?.[0];
       if (position) root.position = { x: Number(localAttribute(position, "x")), y: Number(localAttribute(position, "y")) };
       issues.push(...validateCommentNode(root, authors, ids, rel.target, true));
+      issues.push(...validateDrawingAnchor(rootXml, packageXml(bytesByPath, rel.source), slideIds.get(rel.source), rel.target, root.nativeId));
       for (const reply of repliesXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?reply\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?reply>/g)) issues.push(...validateCommentNode(parseCommentElement(reply[0], authors), authors, ids, rel.target));
     }
   }
