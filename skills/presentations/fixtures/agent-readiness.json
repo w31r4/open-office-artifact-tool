@@ -13,21 +13,32 @@
     },
     "colorMap": { "accent1": "accent2", "accent2": "accent1" }
   },
-  "master": {
-    "id": "master/agent-readiness",
-    "name": "Agent Readiness Master",
-    "background": { "fill": "bg1", "mode": "reference", "index": 1001 },
-    "placeholders": [
-      { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "Agent Readiness Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
-    ]
-  },
+  "masters": [
+    {
+      "id": "master/agent-readiness",
+      "name": "Agent Readiness Master",
+      "background": { "fill": "bg1", "mode": "reference", "index": 1001 },
+      "placeholders": [
+        { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "Agent Readiness Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
+      ]
+    },
+    {
+      "id": "master/verification",
+      "name": "Verification Master",
+      "background": { "fill": "bg2", "mode": "reference", "index": 1002 },
+      "placeholders": [
+        { "id": "master/verification/title", "type": "title", "idx": 1, "name": "Verification Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 40, "bold": true, "color": "accent2", "fontFamily": "+mj-lt" } }
+      ]
+    }
+  ],
   "layouts": [
-    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [] }
+    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [] },
+    { "id": "layout/verification-grid", "name": "Verification Grid", "type": "blank", "masterId": "master/verification", "background": "#F8FAFC", "placeholders": [] }
   ],
   "slides": [
     {
       "name": "Opening",
-      "layoutId": "layout/blank-grid",
+      "layoutId": "layout/verification-grid",
       "background": "#FFFFFF",
       "notes": "Open by framing the deck as evidence that agent-facing PPTX work can be independently implemented and verified.",
       "shapes": [
@@ -80,6 +91,7 @@
     }
   ],
   "expectInspect": [
+    { "kind": "slideMaster", "pattern": "Verification Master" },
     { "kind": "slide,textbox", "pattern": "PPTX workflows now close the QA loop" },
     { "kind": "table", "pattern": "evidence-table" },
     { "kind": "chart", "pattern": "Evidence produced per gate" },

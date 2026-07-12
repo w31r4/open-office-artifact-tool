@@ -10,7 +10,7 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
-const maxUnpackedBytes = 1_525_000;
+const maxUnpackedBytes = 1_540_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
@@ -23,6 +23,7 @@ for (const required of [
   "src/ooxml/source-references.mjs",
   "src/presentation/ooxml-theme.mjs",
   "src/presentation/ooxml-masters.mjs",
+  "src/presentation/master-graph.mjs",
   "src/shared/colors.mjs",
   "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/ooxml-drawings.mjs",

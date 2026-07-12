@@ -880,19 +880,21 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `Presentation.create` | api | Create a deck with a default or explicit slide size, theme, single Slide Master, and reusable layouts. |
+| `Presentation.create` | api | Create a deck with a slide size, shared theme, one or more Slide Masters, and master-bound reusable layouts. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
-| `presentation.master` | api | Configure the deck's single Slide Master identity, native background, and typed placeholder position/style defaults; layouts and slides inherit these values deterministically. |
+| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure its identity, background, and typed placeholder defaults. |
+| `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, and typed placeholder defaults for its bound layouts. |
+| `presentation.masters.getItem` | api | Resolve a Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
 | `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Configure inspectable complete theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Theme and Slide Master inheritance. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
-| `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
-| `PresentationFile.exportPptx` | api | Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist. |
-| `PresentationFile.importPptx` | api | Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets. |
+| `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
+| `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry. |
+| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, standard master Theme targets, notes, comments, charts, and images. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
@@ -941,14 +943,15 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `Presentation.create`
 
-Create a deck with a default or explicit slide size, theme, single Slide Master, and reusable layouts.
+Create a deck with a slide size, shared theme, one or more Slide Masters, and master-bound reusable layouts.
 
 **Schema parameters:**
 
 - `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
 - `theme` (object) — Theme name, colors, and major/minor fonts.
-- `master` (object) — Single Slide Master ID/name, background, and typed placeholder defaults.
-- `layouts` (object[]) — Reusable slide layout definitions.
+- `master` (object) — Backward-compatible first Slide Master configuration used when masters is omitted.
+- `masters` (object[]) — One or more Slide Master definitions with stable IDs, names, backgrounds, and typed placeholder defaults.
+- `layouts` (object[]) — Reusable slide layouts bound to a masterId.
 
 **Schema returns:**
 
@@ -1025,7 +1028,7 @@ Create a reusable slide layout with an optional background and typed placeholder
 
 #### `presentation.master`
 
-Configure the deck's single Slide Master identity, native background, and typed placeholder position/style defaults; layouts and slides inherit these values deterministically.
+Backward-compatible alias for the first Slide Master; configure its identity, background, and typed placeholder defaults.
 
 **Schema parameters:**
 
@@ -1036,7 +1039,34 @@ Configure the deck's single Slide Master identity, native background, and typed 
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Mutable single Slide Master facade.
+- `master` (PresentationSlideMaster) — Mutable first Slide Master facade.
+
+#### `presentation.masters.add`
+
+Add a Slide Master with stable identity, native background, and typed placeholder defaults for its bound layouts.
+
+**Schema parameters:**
+
+- `id` (string) required — Stable unique master identity used by layouts.
+- `name` (string) — Native Slide Master name.
+- `background` (string|object) — Solid RGB/scheme background or native background reference with index.
+- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, and text style.
+
+**Schema returns:**
+
+- `master` (PresentationSlideMaster) — Appended Slide Master facade.
+
+#### `presentation.masters.getItem`
+
+Resolve a Slide Master by stable ID or name.
+
+**Schema parameters:**
+
+- `idOrName` (string) required — Stable master ID or native master name.
+
+**Schema returns:**
+
+- `master` (PresentationSlideMaster|undefined) — Matching Slide Master or undefined.
 
 #### `presentation.resolve`
 
@@ -1108,7 +1138,7 @@ Detect layout QA issues across slides, including off-canvas elements, geometry o
 
 #### `presentation.verify`
 
-Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments.
+Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments.
 
 **Schema parameters:**
 
@@ -1122,7 +1152,7 @@ Return presentation QA issues for layout validation, placeholder/template fideli
 
 #### `PresentationFile.exportPptx`
 
-Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist.
+Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry.
 
 **Schema parameters:**
 
@@ -1134,7 +1164,7 @@ Serialize a presentation facade to native OOXML PPTX bytes, including comment au
 
 #### `PresentationFile.importPptx`
 
-Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets.
+Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, standard master Theme targets, notes, comments, charts, and images.
 
 **Schema parameters:**
 

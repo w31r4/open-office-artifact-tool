@@ -63,7 +63,7 @@ function addFixtureSlide(presentation, config = {}) {
 }
 
 export function createPresentationFromFixture(fixture = {}) {
-  const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {}, master: fixture.master || {} });
+  const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {}, master: fixture.master || {}, masters: fixture.masters });
   if (fixture.theme?.colors) presentation.theme.setColors(fixture.theme.colors);
   if (fixture.theme?.fonts) presentation.theme.setFonts(fixture.theme.fonts);
   if (fixture.theme?.textStyles) presentation.theme.setTextStyles(fixture.theme.textStyles);

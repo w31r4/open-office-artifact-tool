@@ -15,6 +15,70 @@ const masterOnlyLoaded = await PresentationFile.importPptx(await PresentationFil
 assert.equal(masterOnlyLoaded.layouts.items.length, 1);
 assert.equal(masterOnlyLoaded.master.name, "Master Only");
 assert.deepEqual(masterOnlyLoaded.slides.items[0].effectiveBackground(), { fill: "#123456", mode: "solid" });
+const multiMasterPresentation = Presentation.create({
+  theme: { colors: { accent1: "#abcdef" } },
+  masters: [
+    { id: "master/brand", name: "Brand Master", background: "#112233", placeholders: [{ type: "title", idx: 1, name: "Brand Title", style: { bold: true, color: "accent1" } }] },
+    { id: "master/data", name: "Data Master", background: "#f1f5f9", placeholders: [{ type: "title", idx: 1, name: "Data Title", style: { bold: true, color: "accent2" } }] },
+  ],
+  layouts: [
+    { id: "layout/brand", name: "Brand Layout", masterId: "master/brand", placeholders: [] },
+    { id: "layout/data", name: "Data Layout", masterId: "master/data", placeholders: [] },
+  ],
+});
+multiMasterPresentation.slides.add({ layoutId: "layout/brand" });
+multiMasterPresentation.slides.add({ layoutId: "layout/data" });
+assert.equal(multiMasterPresentation.master, multiMasterPresentation.masters.items[0]);
+assert.equal(multiMasterPresentation.masters.count, 2);
+assert.equal(multiMasterPresentation.layouts.getItem("layout/data").effectivePlaceholders()[0].name, "Data Title");
+assert.deepEqual(multiMasterPresentation.slides.items[1].effectiveBackground(), { fill: "#f1f5f9", mode: "solid" });
+assert.match(multiMasterPresentation.inspect({ kind: "slideMaster" }).ndjson, /Brand Master/);
+assert.match(multiMasterPresentation.inspect({ kind: "slideMaster" }).ndjson, /Data Master/);
+assert.equal(multiMasterPresentation.resolve("master/data").name, "Data Master");
+const multiMasterPptx = await PresentationFile.exportPptx(multiMasterPresentation);
+assert.equal((await PresentationFile.inspectPptx(multiMasterPptx)).ok, true);
+const multiMasterZip = await JSZip.loadAsync(new Uint8Array(await multiMasterPptx.arrayBuffer()));
+assert.ok(multiMasterZip.file("ppt/slideMasters/slideMaster1.xml"));
+assert.ok(multiMasterZip.file("ppt/slideMasters/slideMaster2.xml"));
+assert.match(await multiMasterZip.file("ppt/presentation.xml").async("text"), /<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId4"\/><p:sldMasterId id="2147483649" r:id="rId5"\/><\/p:sldMasterIdLst>/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /Brand Master/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/slideMaster2.xml").async("text"), /Data Master/);
+assert.match(await multiMasterZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /slideMaster1\.xml/);
+assert.match(await multiMasterZip.file("ppt/slideLayouts/_rels/slideLayout2.xml.rels").async("text"), /slideMaster2\.xml/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text"), /relationships\/theme" Target="\.\.\/theme\/theme1\.xml"/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/_rels/slideMaster2.xml.rels").async("text"), /relationships\/theme" Target="\.\.\/theme\/theme1\.xml"/);
+assert.match(await multiMasterZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /slideLayout1\.xml/);
+assert.match(await multiMasterZip.file("ppt/slides/_rels/slide2.xml.rels").async("text"), /slideLayout2\.xml/);
+const multiMasterLoaded = await PresentationFile.importPptx(multiMasterPptx);
+assert.equal(multiMasterLoaded.masters.count, 2);
+assert.equal(multiMasterLoaded.masters.items[0].name, "Brand Master");
+assert.equal(multiMasterLoaded.masters.items[1].name, "Data Master");
+assert.equal(multiMasterLoaded.layouts.items[0].masterId, multiMasterLoaded.masters.items[0].id);
+assert.equal(multiMasterLoaded.layouts.items[1].masterId, multiMasterLoaded.masters.items[1].id);
+assert.deepEqual(multiMasterLoaded.slides.items[1].effectiveBackground(), { fill: "#f1f5f9", mode: "solid" });
+assert.equal(multiMasterLoaded.theme.colors.accent1, "#abcdef");
+const multiMasterRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(multiMasterLoaded)).arrayBuffer()));
+assert.ok(multiMasterRoundtripZip.file("ppt/slideMasters/slideMaster2.xml"));
+assert.match(await multiMasterRoundtripZip.file("ppt/slideLayouts/_rels/slideLayout2.xml.rels").async("text"), /slideMaster2\.xml/);
+const masterThemeFallbackZip = await JSZip.loadAsync(new Uint8Array(await multiMasterPptx.arrayBuffer()));
+const multiMasterPresentationRels = await masterThemeFallbackZip.file("ppt/_rels/presentation.xml.rels").async("text");
+masterThemeFallbackZip.file("ppt/_rels/presentation.xml.rels", multiMasterPresentationRels.replace(/<Relationship\b(?=[^>]*Type="[^"]*\/theme")[^>]*\/>/, ""));
+const alternateMultiMasterPresentationXml = (await masterThemeFallbackZip.file("ppt/presentation.xml").async("text")).replaceAll("<p:", "<deck:").replaceAll("</p:", "</deck:").replace("xmlns:p=", "xmlns:deck=");
+masterThemeFallbackZip.file("ppt/presentation.xml", alternateMultiMasterPresentationXml);
+const masterThemeFallbackPptx = new FileBlob(await masterThemeFallbackZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: multiMasterPptx.type });
+const masterThemeFallbackLoaded = await PresentationFile.importPptx(masterThemeFallbackPptx);
+assert.equal(masterThemeFallbackLoaded.theme.colors.accent1, "#abcdef");
+assert.equal(masterThemeFallbackLoaded.masters.count, 2);
+const missingMasterPresentation = Presentation.create();
+missingMasterPresentation.layouts.add({ id: "layout/missing-master", masterId: "master/missing" });
+missingMasterPresentation.slides.add({ layoutId: "layout/missing-master" });
+assert.ok(missingMasterPresentation.verify().issues.some((issue) => issue.type === "missingMaster"));
+await assert.rejects(() => PresentationFile.exportPptx(missingMasterPresentation), /references missing master/);
+const missingLayoutPresentation = Presentation.create({ master: { id: "master/valid" } });
+missingLayoutPresentation.slides.add({ layoutId: "layout/missing" });
+assert.ok(missingLayoutPresentation.verify().issues.some((issue) => issue.type === "missingLayout"));
+await assert.rejects(() => PresentationFile.exportPptx(missingLayoutPresentation), /references missing layout/);
+assert.throws(() => Presentation.create({ masters: [{ id: "master/duplicate" }, { id: "master/duplicate" }] }), /Duplicate presentation master ID/);
 presentation.theme
   .setColors({ accent1: "#0ea5e9", accent2: "#f97316", accent4: "#7c3aed", accent5: "#16a34a", accent6: "#dc2626", tx2: "#334155", bg2: "#f8fafc", hlink: "#2563eb", folHlink: "#9333ea" })
   .setFonts({ major: "Aptos Display", minor: "Aptos", majorEastAsia: "PingFang SC", majorComplexScript: "Arial", minorEastAsia: "Noto Sans CJK SC", minorComplexScript: "Arial" })
@@ -61,6 +125,8 @@ assert.match(themeLayoutSnapshot, /Title and Content/);
 assert.match(themeLayoutSnapshot, /Quarterly plan template/);
 assert.equal(presentation.resolve("layout/title-content").name, "Title and Content");
 assert.match(presentation.help("presentation.theme").ndjson, /theme colors/);
+assert.match(presentation.help("presentation.masters.add").ndjson, /Slide Master/);
+assert.match(presentation.help("presentation.masters.getItem").ndjson, /master ID/);
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
 assert.match(presentation.help("slide.applyLayout").ndjson, /placeholder/);
 const shape = slide.shapes.add({
