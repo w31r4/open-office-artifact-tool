@@ -19,6 +19,7 @@ for (const required of [
   "src/shared/colors.mjs",
   "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/ooxml-drawings.mjs",
+  "src/spreadsheet/ooxml-pivots.mjs",
   "src/spreadsheet/ooxml-styles.mjs",
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",

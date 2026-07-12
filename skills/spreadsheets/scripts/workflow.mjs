@@ -142,6 +142,7 @@ export function createWorkbookFromFixture(fixture = {}) {
       if (table.showTotals != null) created.showTotals = table.showTotals;
       if (table.showBandedColumns != null) created.showBandedColumns = table.showBandedColumns;
     }
+    for (const pivotFixture of sheetFixture.pivots || sheetFixture.pivotTables || []) sheet.pivotTables.add(pivotFixture);
     for (const chartFixture of sheetFixture.charts || []) {
       const source = chartFixture.sourceRange ? sheet.getRange(chartFixture.sourceRange) : chartFixture;
       const created = sheet.charts.add(chartFixture.chartType || chartFixture.type || "bar", source);

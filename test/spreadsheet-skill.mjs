@@ -60,6 +60,10 @@ try {
   assert.match(summaryDrawings.images.items[0].dataUrl, /^data:image\/png;base64,/);
   assert.equal(workbook.resolve(summaryDrawings.charts.items[0].id), summaryDrawings.charts.items[0]);
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
+  assert.equal(summaryDrawings.pivotTables.items.length, 1);
+  const summaryPivot = summaryDrawings.pivotTables.getItemOrNullObject("RevenuePivot");
+  assert.deepEqual(summaryPivot.computedValues(), [["Month", "Revenue total"], ["Jan", 100], ["Feb", 120], ["Mar", 150]]);
+  assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);
   assert.match(workbook.help("workbook.structuredReferences").ndjson, /special-character headers/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("G14").values[0][0], 1);
@@ -70,6 +74,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"mergedCell"[\s\S]*"range":"A15:G15"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"Quarter performance"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"Green status marker"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"pivotTable"[\s\S]*"name":"RevenuePivot"/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
@@ -101,6 +106,7 @@ try {
     assert.equal(libreOfficeSummary.getRange("G14").values[0][0], 1);
     assert.ok(libreOfficeSummary.charts.items.length >= 1);
     assert.ok(libreOfficeSummary.images.items.length >= 1);
+    assert.ok(libreOfficeSummary.pivotTables.items.some((pivot) => pivot.name === "RevenuePivot"));
   }
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);

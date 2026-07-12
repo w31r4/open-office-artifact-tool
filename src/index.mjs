@@ -6,6 +6,7 @@ import { mutateOoxmlSourceReference, supportedOoxmlSourceReferenceSummary, suppo
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
+import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches } from "./spreadsheet/ooxml-pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
 
@@ -854,10 +855,10 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system." },
   { artifactKind: "workbook", kind: "api", name: "workbook.setDateSystem", summary: "Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export." },
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart source references, and atomically reject dangling content types or relationships." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importDelimited", summary: "Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportDelimited", summary: "Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importCsv", summary: "Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser." },
@@ -1917,7 +1918,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "worksheet.freezePanes.unfreeze": helpSchema({}, "freezePanes", "object", "Worksheet frozen-pane facade reset to zero frozen rows and columns."),
   "SpreadsheetFile.importXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
-  }, "workbook", "Workbook", "Imported editable workbook facade with relationship-driven worksheet tables plus basic chart and embedded-image drawings restored from native OOXML parts."),
+  }, "workbook", "Workbook", "Imported editable workbook facade with relationship-driven worksheet tables, worksheet-backed pivots/caches, and basic chart or embedded-image drawings restored from native OOXML parts."),
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
@@ -1939,8 +1940,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; XLSX sourceReference supports worksheet/table lists plus explicit-anchor drawing, image, and chart nodes." },
-    sourceReference: { type: "boolean|object", description: "Opt-in source XML mutation. Image/chart objects require anchor.type oneCell, twoCell, or absolute plus explicit geometry; optional name, alt, and objectId control non-visual properties." },
+    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; XLSX supports worksheet/table lists, pivot cache/record bindings, typed pivotTable relationships, and explicit-anchor drawing/image/chart nodes." },
+    sourceReference: { type: "boolean|object", description: "Opt-in source XML mutation. Image/chart objects require explicit anchor geometry; pivotCacheDefinition requires a unique cacheId; pivotCacheRecords binds the cache root to its records relationship." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
   }, "blob", "FileBlob", "Patched XLSX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "SpreadsheetFile.importDelimited": helpSchema({
@@ -5877,6 +5878,7 @@ export class SpreadsheetFile {
     tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId)));
     pivotParts.forEach((part) => {
       zip.file(`xl/pivotTables/pivotTable${part.pivotPartId}.xml`, pivotTableXml(part));
+      zip.file(`xl/pivotTables/_rels/pivotTable${part.pivotPartId}.xml.rels`, pivotTableDefinitionRelsXml(part));
       zip.file(`xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml`, pivotCacheDefinitionXml(part));
       zip.file(`xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml`, pivotCacheRecordsXml(part));
       zip.file(`xl/pivotCache/_rels/pivotCacheDefinition${part.cachePartId}.xml.rels`, pivotCacheDefinitionRelsXml(part));
@@ -5912,6 +5914,7 @@ export class SpreadsheetFile {
       const relationship = workbookRelationships.get(relationshipId);
       return { name: attrs.name || `Sheet${position + 1}`, index: position + 1, sheetId: Number(attrs.sheetId || position + 1), relationshipId, partPath: relationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target) : `xl/worksheets/sheet${attrs.sheetId || position + 1}.xml` };
     });
+    const nativePivotCaches = await importNativePivotCaches(zip, workbookText, workbookRelationships, sheetNames);
     for (const { name, partPath } of sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1, partPath: "xl/worksheets/sheet1.xml" }]) {
       const sheet = workbook.worksheets.add(name);
       const xml = await zip.file(partPath)?.async("text");
@@ -5919,6 +5922,7 @@ export class SpreadsheetFile {
         parseWorksheetXml(sheet, xml, { sharedStrings, styles });
         await importNativeWorksheetTables(sheet, zip, partPath);
         await importNativeWorksheetDrawings(sheet, zip, partPath);
+        await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches);
       }
     }
     hydrateImportedWorksheetCharts(workbook);
@@ -6320,11 +6324,15 @@ function pivotCacheDefinitionXml(part) {
     const shared = values.length ? `<sharedItems${numeric ? ` containsNumber="1"` : ` containsString="1"`} count="${values.length}">${values.map((value) => numeric ? `<n v="${Number(value)}"/>` : `<s v="${attrEscape(value)}"/>`).join("")}</sharedItems>` : `<sharedItems count="0"/>`;
     return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0">${shared}</cacheField>`;
   }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" refreshOnLoad="1" recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${headers.length}">${cacheFields}</cacheFields></pivotCacheDefinition>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${attrEscape(part.recordsRelId || "rId1")}" refreshOnLoad="1" recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${headers.length}">${cacheFields}</cacheFields></pivotCacheDefinition>`;
 }
 
 function pivotCacheDefinitionRelsXml(part) {
   return relsXml([{ id: part.recordsRelId || "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords", target: `pivotCacheRecords${part.recordsPartId}.xml` }]);
+}
+
+function pivotTableDefinitionRelsXml(part) {
+  return relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition", target: `../pivotCache/pivotCacheDefinition${part.cachePartId}.xml` }]);
 }
 
 function pivotCacheRecordValueXml(value) {
@@ -6632,6 +6640,49 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       showBandedColumns: styleAttrs.showColumnStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showColumnStripes).toLowerCase()),
       style: styleAttrs.name || "TableStyleMedium2",
       columnNames,
+    });
+  }
+}
+
+async function importNativePivotCaches(zip, workbookXmlText, workbookRelationships, sheetNames = []) {
+  const caches = new Map();
+  for (const record of parseWorkbookPivotCaches(workbookXmlText)) {
+    const relationship = workbookRelationships.get(record.relationshipId);
+    if (!relationship || !relationship.type.endsWith("/pivotCacheDefinition") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
+    const partPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target);
+    const xml = await zip.file(partPath)?.async("text");
+    if (!xml) continue;
+    const parsed = parsePivotCacheDefinition(xml);
+    if (!parsed.source.sheet && parsed.source.relationshipId) {
+      const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(partPath, "XLSX"))?.async("text"));
+      const sourceRelationship = relationships.find((item) => item.id === parsed.source.relationshipId && String(item.targetMode || "").toLowerCase() !== "external");
+      const sourcePath = sourceRelationship?.target ? ooxmlResolveRelationshipTarget(partPath, sourceRelationship.target) : undefined;
+      parsed.source.sheet = sheetNames.find((sheet) => sheet.partPath === sourcePath)?.name;
+    }
+    caches.set(record.cacheId, { ...parsed, cacheId: record.cacheId, partPath });
+  }
+  return caches;
+}
+
+async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches) {
+  const relationshipRecords = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
+  for (const relationship of relationshipRecords) {
+    if (!relationship || !relationship.type.endsWith("/pivotTable") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
+    const partPath = ooxmlResolveRelationshipTarget(worksheetPartPath, relationship.target);
+    const xml = await zip.file(partPath)?.async("text");
+    if (!xml) continue;
+    const cacheId = Number(ooxmlXmlAttributes(/<(?:[A-Za-z_][\w.-]*:)?pivotTableDefinition\b[^>]*\/?>/.exec(xml)?.[0]).cacheId);
+    const cache = caches.get(cacheId);
+    if (!cache?.source?.ref || !cache.source.sheet) continue;
+    const parsed = parsePivotTableDefinition(xml, cache);
+    if (!parsed.targetRange) continue;
+    sheet.pivotTables.add({
+      name: parsed.name,
+      sourceRange: { sheetName: cache.source.sheet, address: cache.source.ref },
+      targetRange: { sheetName: sheet.name, address: parsed.targetRange },
+      rowFields: parsed.rowFields,
+      columnFields: parsed.columnFields,
+      valueFields: parsed.valueFields,
     });
   }
 }

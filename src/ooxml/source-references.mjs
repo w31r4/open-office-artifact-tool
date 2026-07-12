@@ -15,6 +15,8 @@ const SUPPORTED = new Set([
   "XLSX:drawing",
   "XLSX:image",
   "XLSX:chart",
+  "XLSX:pivotcachedefinition",
+  "XLSX:pivotcacherecords",
   "PPTX:slide",
 ]);
 
@@ -108,6 +110,15 @@ function appendToRoot(xml, rootLocalName, content) {
   return String(xml).replace(closing, `${content}</${qname(prefix, rootLocalName)}>`);
 }
 
+function insertBeforeOrAppend(xml, rootLocalName, content, followingLocalNames = []) {
+  if (followingLocalNames.length) {
+    const alternatives = followingLocalNames.join("|");
+    const following = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?(?:${alternatives})\\b`).exec(String(xml));
+    if (following) return `${String(xml).slice(0, following.index)}${content}${String(xml).slice(following.index)}`;
+  }
+  return appendToRoot(xml, rootLocalName, content);
+}
+
 function mutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
   const prefix = rootPrefix(xml, "document");
   const tagName = qname(prefix, `${kind}Reference`);
@@ -137,27 +148,71 @@ function mutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
   return next.replace(bodyClosing, `<${sectionName}>${referenceTag}${referenceType === "first" ? `<${qname(prefix, "titlePg")}/>` : ""}</${sectionName}>${bodyClosing}`);
 }
 
-function mutateXlsxTableReference(xml, ids, addId) {
-  const prefix = rootPrefix(xml, "worksheet");
-  let next = removeReferenceTags(xml, "tablePart", ids);
-  const tablePartsName = qname(prefix, "tableParts");
+function mutateXlsxCountedReference(xml, rootLocalName, containerLocalName, itemLocalName, ids, addId) {
+  const prefix = rootPrefix(xml, rootLocalName);
+  let next = removeReferenceTags(xml, itemLocalName, ids);
+  const containerName = qname(prefix, containerLocalName);
   if (addId) {
-    const ensured = ensureRelationshipPrefix(next, "worksheet");
+    const ensured = ensureRelationshipPrefix(next, rootLocalName);
     next = ensured.xml;
-    const tableTag = `<${qname(prefix, "tablePart")} ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
-    const blockPattern = new RegExp(`<${tablePartsName}\\b[^>]*>[\\s\\S]*?</${tablePartsName}>`);
+    const itemTag = `<${qname(prefix, itemLocalName)} ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+    const blockPattern = new RegExp(`<${containerName}\\b[^>]*>[\\s\\S]*?</${containerName}>`);
     const block = blockPattern.exec(next)?.[0];
-    if (block) next = next.replace(block, block.replace(new RegExp(`</${tablePartsName}>$`), `${tableTag}</${tablePartsName}>`));
-    else if (new RegExp(`<${tablePartsName}\\b[^>]*\\/>`).test(next)) next = next.replace(new RegExp(`<${tablePartsName}\\b[^>]*\\/>`), (tag) => `${tag.replace(/\/>$/, ">")}${tableTag}</${tablePartsName}>`);
-    else next = appendToRoot(next, "worksheet", `<${tablePartsName} count="1">${tableTag}</${tablePartsName}>`);
+    if (block) next = next.replace(block, block.replace(new RegExp(`</${containerName}>$`), `${itemTag}</${containerName}>`));
+    else if (new RegExp(`<${containerName}\\b[^>]*\\/>`).test(next)) next = next.replace(new RegExp(`<${containerName}\\b[^>]*\\/>`), (tag) => `${tag.replace(/\/>$/, ">")}${itemTag}</${containerName}>`);
+    else next = insertBeforeOrAppend(next, rootLocalName, `<${containerName} count="1">${itemTag}</${containerName}>`, ["extLst"]);
   }
-  const blockPattern = new RegExp(`<${tablePartsName}\\b[^>]*>[\\s\\S]*?</${tablePartsName}>`);
+  const blockPattern = new RegExp(`<${containerName}\\b[^>]*>[\\s\\S]*?</${containerName}>`);
   const block = blockPattern.exec(next)?.[0];
   if (!block) return next;
-  const count = [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?tablePart\b[^>]*\/?>/g)].length;
+  const count = [...block.matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${itemLocalName}\\b[^>]*\\/?>`, "g"))].length;
   if (!count) return next.replace(block, "");
-  const opening = new RegExp(`^<${tablePartsName}\\b[^>]*>`).exec(block)?.[0];
+  const opening = new RegExp(`^<${containerName}\\b[^>]*>`).exec(block)?.[0];
   return opening ? next.replace(block, block.replace(opening, setAttribute(opening, "count", count))) : next;
+}
+
+function mutateXlsxTableReference(xml, ids, addId) {
+  return mutateXlsxCountedReference(xml, "worksheet", "tableParts", "tablePart", ids, addId);
+}
+
+function mutateXlsxPivotCacheReference(xml, ids, addId, config = {}) {
+  const prefix = rootPrefix(xml, "workbook");
+  let next = removeReferenceTags(xml, "pivotCache", ids);
+  const containerName = qname(prefix, "pivotCaches");
+  if (addId) {
+    const cacheId = Number(config.cacheId);
+    if (!Number.isInteger(cacheId) || cacheId < 0) throw new Error("XLSX pivotCacheDefinition sourceReference cacheId must be a non-negative integer.");
+    const existing = [...next.matchAll(/<(?:[A-Za-z_][\w.-]*:)?pivotCache\b[^>]*\/?>/g)].map((match) => Number(attributes(match[0]).cacheId)).filter(Number.isFinite);
+    if (existing.includes(cacheId)) throw new Error(`XLSX pivotCacheDefinition sourceReference cacheId ${cacheId} already exists.`);
+    const ensured = ensureRelationshipPrefix(next, "workbook");
+    next = ensured.xml;
+    const cacheTag = `<${qname(prefix, "pivotCache")} cacheId="${cacheId}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
+    const block = new RegExp(`<${containerName}\\b[^>]*>[\\s\\S]*?</${containerName}>`).exec(next)?.[0];
+    if (block) next = next.replace(block, block.replace(new RegExp(`</${containerName}>$`), `${cacheTag}</${containerName}>`));
+    else if (new RegExp(`<${containerName}\\b[^>]*\\/>`).test(next)) next = next.replace(new RegExp(`<${containerName}\\b[^>]*\\/>`), (tag) => `${tag.replace(/\/>$/, ">")}${cacheTag}</${containerName}>`);
+    else next = insertBeforeOrAppend(next, "workbook", `<${containerName}>${cacheTag}</${containerName}>`, ["smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"]);
+  }
+  const block = new RegExp(`<${containerName}\\b[^>]*>[\\s\\S]*?</${containerName}>`).exec(next)?.[0];
+  if (!block) return next;
+  return /<(?:[A-Za-z_][\w.-]*:)?pivotCache\b[^>]*\/?>/.test(block) ? next : next.replace(block, "");
+}
+
+function mutateXlsxPivotCacheRecordsReference(xml, ids, addId) {
+  let next = String(xml);
+  let root = rootTag(next, "pivotCacheDefinition");
+  if (!root) throw new Error("OOXML source reference could not find root element pivotCacheDefinition.");
+  const attrs = attributes(root[0]);
+  let rootText = root[0];
+  for (const [name, value] of Object.entries(attrs)) {
+    if (/:id$/.test(name) && ids.has(value)) rootText = rootText.replace(new RegExp(`\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=\\s*(["']).*?\\1`), "");
+  }
+  if (rootText !== root[0]) next = `${next.slice(0, root.index)}${rootText}${next.slice(root.index + root[0].length)}`;
+  if (!addId) return next;
+  const ensured = ensureRelationshipPrefix(next, "pivotCacheDefinition");
+  next = ensured.xml;
+  root = rootTag(next, "pivotCacheDefinition");
+  const updated = setAttribute(root[0], `${ensured.prefix}:id`, addId);
+  return `${next.slice(0, root.index)}${updated}${next.slice(root.index + root[0].length)}`;
 }
 
 function mutateXlsxWorksheetReference(xml, ids, addId, config = {}) {
@@ -296,7 +351,7 @@ export function supportsOoxmlSourceReference(family, recipeKind) {
 }
 
 export function supportedOoxmlSourceReferenceSummary() {
-  return "DOCX header/footer, XLSX worksheet/table/drawing/image/chart, PPTX slide";
+  return "DOCX header/footer, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide";
 }
 
 export function mutateOoxmlSourceReference({ family, recipeKind, xml, relationshipIds = new Set(), addId, config = {} }) {
@@ -307,5 +362,7 @@ export function mutateOoxmlSourceReference({ family, recipeKind, xml, relationsh
   if (recipeKind === "worksheet") return mutateXlsxWorksheetReference(xml, relationshipIds, addId, config);
   if (recipeKind === "table") return mutateXlsxTableReference(xml, relationshipIds, addId);
   if (recipeKind === "drawing") return mutateXlsxDrawingReference(xml, relationshipIds, addId);
+  if (recipeKind === "pivotcachedefinition") return mutateXlsxPivotCacheReference(xml, relationshipIds, addId, config);
+  if (recipeKind === "pivotcacherecords") return mutateXlsxPivotCacheRecordsReference(xml, relationshipIds, addId);
   return mutateXlsxDrawingObject(xml, recipeKind, relationshipIds, addId, config);
 }

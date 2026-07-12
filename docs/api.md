@@ -1698,10 +1698,10 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.importCsv` | api | Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser. |
 | `SpreadsheetFile.importDelimited` | api | Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines. |
 | `SpreadsheetFile.importTsv` | api | Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser. |
-| `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
+| `SpreadsheetFile.importXlsx` | api | Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade. |
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart source references, and atomically reject dangling content types or relationships. |
+| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
@@ -3439,7 +3439,7 @@ Import UTF-8 tab-separated bytes into an editable Workbook through the bounded d
 
 #### `SpreadsheetFile.importXlsx`
 
-Load an XLSX file into a Workbook facade.
+Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade.
 
 **Schema parameters:**
 
@@ -3447,7 +3447,7 @@ Load an XLSX file into a Workbook facade.
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported editable workbook facade with relationship-driven worksheet tables plus basic chart and embedded-image drawings restored from native OOXML parts.
+- `workbook` (Workbook) — Imported editable workbook facade with relationship-driven worksheet tables, worksheet-backed pivots/caches, and basic chart or embedded-image drawings restored from native OOXML parts.
 
 #### `SpreadsheetFile.inspectDelimited`
 
@@ -3487,7 +3487,7 @@ Inspect bounded XLSX parts, content types, relationships, and namespace-aware so
 
 #### `SpreadsheetFile.patchXlsx`
 
-Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart source references, and atomically reject dangling content types or relationships.
+Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships.
 
 **Schema parameters:**
 
@@ -3499,8 +3499,8 @@ Apply path-validated XLSX part patches, build worksheet/table/drawing/image/char
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; XLSX sourceReference supports worksheet/table lists plus explicit-anchor drawing, image, and chart nodes.
-- `sourceReference` (boolean|object) — Opt-in source XML mutation. Image/chart objects require anchor.type oneCell, twoCell, or absolute plus explicit geometry; optional name, alt, and objectId control non-visual properties.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; XLSX supports worksheet/table lists, pivot cache/record bindings, typed pivotTable relationships, and explicit-anchor drawing/image/chart nodes.
+- `sourceReference` (boolean|object) — Opt-in source XML mutation. Image/chart objects require explicit anchor geometry; pivotCacheDefinition requires a unique cacheId; pivotCacheRecords binds the cache root to its records relationship.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**

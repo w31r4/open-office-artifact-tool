@@ -34,6 +34,8 @@ XLSX import follows worksheet and drawing relationships instead of assuming conv
 
 For bounded low-level package edits, `SpreadsheetFile.patchXlsx(...)` can add or remove worksheet/table references and complete DrawingML chains. Create a `drawing` recipe from the worksheet first, then use `image` or `chart` recipes sourced from that drawing with an explicit `sourceReference.anchor`; the patcher owns content types, relationships, namespace prefixes, non-visual object IDs, source nodes, deletion cleanup, and final package validation.
 
+Worksheet-backed native PivotTables are also relationship-driven. Metadata-free import follows workbook `pivotCaches`, cache definitions, and the worksheet's typed pivotTable relationships at arbitrary valid targets to rebuild editable `sheet.pivotTables` facades. Low-level creation uses `pivotCacheRecords` sourced from its cache definition with `sourceReference: true`, `pivotCacheDefinition` sourced from the workbook with a unique `sourceReference.cacheId`, and a `pivotTable` recipe sourced from the target worksheet without an extra sourceReference node. The cache-definition patch should also add a relationship sourced from the PivotTable part back to that cache definition, matching OpenXML part ownership. Inspect, resolve, layout, verify, package validation, and native rendering must all pass afterward.
+
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 

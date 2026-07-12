@@ -152,6 +152,17 @@
           "bottomRight": "M10"
         }
       ],
+      "pivots": [
+        {
+          "name": "RevenuePivot",
+          "sourceRange": "A1:D4",
+          "targetRange": "I12:J16",
+          "rowFields": ["Month"],
+          "valueFields": [
+            { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" }
+          ]
+        }
+      ],
       "images": [
         {
           "name": "Status marker",
@@ -185,7 +196,7 @@
     "sheetName": "Summary",
     "range": "A1:G15",
     "renderFormat": "svg",
-    "inspectKind": "workbook,sheet,table,formula,style,computedStyle,merge,drawing",
+    "inspectKind": "workbook,sheet,table,pivotTable,formula,style,computedStyle,merge,drawing",
     "maxChars": 30000
   }
 }
