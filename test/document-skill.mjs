@@ -27,15 +27,20 @@ try {
     assert.ok(stat.isFile() && stat.size > 0, `Expected non-empty document skill output ${filePath}`);
   }
   const imported = await DocumentFile.importDocx(await FileBlob.load(result.docxPath));
-  const inspect = imported.inspect({ kind: "paragraph,listItem,table,comment,hyperlink,citation,image,field", maxChars: 20_000 }).ndjson;
+  const inspect = imported.inspect({ kind: "paragraph,listItem,table,comment,header,hyperlink,citation,image,field,section", maxChars: 20_000 }).ndjson;
   assert.match(inspect, /Office artifact readiness brief/);
   assert.match(inspect, /readiness-table/);
   assert.match(inspect, /native render review/);
+  assert.match(inspect, /Opening section evidence/);
+  assert.equal(imported.headers.find((item) => item.name === "opening-header")?.sectionIndex, 0);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/document\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
   const nativePreferred = await verifyDocumentFile(result.docxPath, { outputDir: path.join(outputDir, "native-preferred"), preferNative: true, nativeRender: "off" });
   assert.equal(nativePreferred.summary.verifyOk, true);
   assert.match(nativePreferred.inspect.ndjson, /Office artifact readiness brief/);
+  const nativePreferredDocument = await DocumentFile.importDocx(await FileBlob.load(result.docxPath), { preferNative: true });
+  assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Opening section evidence")?.sectionIndex, 0);
+  assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Clean-room document workflow")?.sectionIndex, 1);
 
   const nativeStatus = nativeDocumentRenderStatus();
   const baselineWrite = await verifyDocumentFile(result.docxPath, {

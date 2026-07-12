@@ -42,6 +42,8 @@ const landscapeSection = document.addSection({
   pageSize: { widthTwips: 15840, heightTwips: 12240 },
   margins: { top: 720, right: 900, bottom: 720, left: 900 },
 });
+const openingHeader = document.addHeader("Opening-section header", { name: "opening-header", sectionIndex: 0 });
+const openingFooter = document.addFooter("Opening-section footer", { name: "opening-footer", sectionIndex: 0 });
 const insertion = document.addInsertion("Inserted reviewer clarification.", { author: "Reviewer", date: "2026-07-11T00:00:00.000Z", name: "tracked-insert" });
 const deletion = document.addDeletion("Remove stale claim.", { author: "Reviewer", date: "2026-07-11T00:05:00.000Z", name: "tracked-delete" });
 const bullet = document.addListItem("Use real numbering definitions", { listType: "bullet", name: "numbering-rule" });
@@ -82,8 +84,12 @@ assert.match(inspect, /Confidential research memo/);
 assert.match(inspect, /Page footer/);
 assert.match(inspect, /First-page research memo/);
 assert.match(inspect, /Even-page footer/);
+assert.match(inspect, /Opening-section header/);
+assert.match(inspect, /Opening-section footer/);
 assert.equal(firstHeader.referenceType, "first");
 assert.equal(evenFooter.referenceType, "even");
+assert.equal(openingHeader.sectionIndex, 0);
+assert.equal(openingFooter.sectionIndex, 0);
 assert.match(inspect, /evidence-table/);
 assert.match(inspect, /Check this heading/);
 assert.match(inspect, /Callout/);
@@ -138,6 +144,7 @@ assert.match(document.help("document.addParagraph").ndjson, /run-level styles/);
 assert.match(document.help("document.addTable").ndjson, /Word-style table/);
 assert.match(document.help("document.addListItem").ndjson, /numbering definitions/);
 assert.match(document.help("document.addHeader").ndjson, /DOCX header/);
+assert.match(document.help("document.addHeader").ndjson, /sectionIndex/);
 assert.match(document.help("document.addHyperlink").ndjson, /w:hyperlink/);
 assert.match(document.help("document.addField").ndjson, /w:fldSimple/);
 assert.match(document.help("document.addCitation").ndjson, /structured metadata/);
@@ -148,6 +155,10 @@ assert.match(document.help("document.addDeletion").ndjson, /w:del/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
 assert.equal(document.verify({ visualQa: true }).ok, true);
+const invalidSectionDocument = DocumentModel.create({ paragraphs: ["Invalid section fixture"] });
+invalidSectionDocument.addHeader("Out of range", { sectionIndex: 1 });
+assert.ok(invalidSectionDocument.verify().issues.some((issue) => issue.type === "invalidHeaderFooterSection"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidSectionDocument), /sectionIndex must be an integer from 0 through 0/);
 
 const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
@@ -258,6 +269,8 @@ assert.match(documentRelsXml, /Id="rIdImage1"/);
 assert.match(documentRelsXml, /Target="media\/image1\.png"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/header" Target="header2\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/footer" Target="footer2\.xml"/);
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/header" Target="header3\.xml"/);
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/footer" Target="footer3\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/settings" Target="settings\.xml"/);
 assert.match(documentXml, /<w:headerReference w:type="default" r:id="[^"]+"\/>/);
 assert.match(documentXml, /<w:headerReference w:type="first" r:id="[^"]+"\/>/);
@@ -265,6 +278,24 @@ assert.match(documentXml, /<w:footerReference w:type="even" r:id="[^"]+"\/>/);
 assert.match(documentXml, /<w:titlePg\/>/);
 assert.match(await zip.file("word/header2.xml").async("text"), /First-page research memo/);
 assert.match(await zip.file("word/footer2.xml").async("text"), /Even-page footer/);
+assert.match(await zip.file("word/header3.xml").async("text"), /Opening-section header/);
+assert.match(await zip.file("word/footer3.xml").async("text"), /Opening-section footer/);
+const relationshipIdForTarget = (rels, target) => [...rels.matchAll(/<Relationship\b[^>]*\/?\s*>/g)].map((match) => match[0]).find((tag) => new RegExp(`\\bTarget=["']${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`).test(tag))?.match(/\bId=["']([^"']+)["']/)?.[1];
+const finalHeaderRelId = relationshipIdForTarget(documentRelsXml, "header1.xml");
+const finalFirstHeaderRelId = relationshipIdForTarget(documentRelsXml, "header2.xml");
+const openingHeaderRelId = relationshipIdForTarget(documentRelsXml, "header3.xml");
+const openingFooterRelId = relationshipIdForTarget(documentRelsXml, "footer3.xml");
+assert.ok(finalHeaderRelId && finalFirstHeaderRelId && openingHeaderRelId && openingFooterRelId);
+const exportedSections = [...documentXml.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)].map((match) => match[0]);
+assert.equal(exportedSections.length, 2);
+assert.match(exportedSections[0], new RegExp(`r:id="${openingHeaderRelId}"`));
+assert.match(exportedSections[0], new RegExp(`r:id="${openingFooterRelId}"`));
+assert.doesNotMatch(exportedSections[0], new RegExp(`r:id="${finalHeaderRelId}"`));
+assert.match(exportedSections[1], new RegExp(`r:id="${finalHeaderRelId}"`));
+assert.match(exportedSections[1], new RegExp(`r:id="${finalFirstHeaderRelId}"`));
+assert.doesNotMatch(exportedSections[1], new RegExp(`r:id="${openingHeaderRelId}"`));
+assert.doesNotMatch(exportedSections[0], /<w:titlePg\/>/);
+assert.match(exportedSections[1], /<w:titlePg\/>/);
 assert.match(await zip.file("word/settings.xml").async("text"), /<w:evenAndOddHeaders\/>/);
 const docxMediaBytes = await zip.file("word/media/image1.png").async("uint8array");
 assert.ok(docxMediaBytes.byteLength > 10);
@@ -315,6 +346,24 @@ assert.equal(importedReviewHeader.referenceType, "first");
 assert.equal(importedReviewHeader.relationshipId, "rIdReviewHeader");
 assert.equal(importedReviewHeader.partPath, "word/headerReview.xml");
 assert.equal(importedReviewHeader.sectionIndex, 1);
+const recipeOpeningHeaderDocx = await DocumentFile.patchDocx(recipeHeaderDocx, [{
+  path: "word/headerOpening.xml",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Patched opening header</w:t></w:r></w:p></w:hdr>',
+  recipe: { kind: "header", source: "word/document.xml", id: "rIdOpeningHeader", sourceReference: { type: "default", sectionIndex: 0 } },
+}]);
+const recipeOpeningZip = await JSZip.loadAsync(new Uint8Array(await recipeOpeningHeaderDocx.arrayBuffer()));
+const recipeOpeningXml = await recipeOpeningZip.file("word/document.xml").async("text");
+const recipeOpeningSections = [...recipeOpeningXml.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)].map((match) => match[0]);
+assert.match(recipeOpeningSections[0], /r:id="rIdOpeningHeader"/);
+assert.doesNotMatch(recipeOpeningSections[1], /r:id="rIdOpeningHeader"/);
+assert.match(recipeOpeningSections[1], new RegExp(`r:id="${finalHeaderRelId}"`));
+const recipeOpeningNative = await DocumentFile.importDocx(recipeOpeningHeaderDocx, { preferNative: true });
+assert.equal(recipeOpeningNative.headers.find((item) => item.text === "Patched opening header")?.sectionIndex, 0);
+await assert.rejects(() => DocumentFile.patchDocx(recipeHeaderDocx, [{
+  path: "word/headerInvalidSection.xml",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:hdr>',
+  recipe: { kind: "header", source: "word/document.xml", id: "rIdInvalidSection", sourceReference: { sectionIndex: 2 } },
+}]), /sectionIndex must be an integer from 0 through 1/);
 const removedRecipeHeaderDocx = await DocumentFile.patchDocx(recipeHeaderDocx, [{ path: "word/headerReview.xml", remove: true, recipe: { kind: "header", source: "word/document.xml", id: "rIdReviewHeader", sourceReference: { type: "first" } } }]);
 assert.equal(removedRecipeHeaderDocx.metadata.sourceReferencesUpdated, 1);
 assert.equal((await DocumentFile.inspectDocx(removedRecipeHeaderDocx)).ok, true);
@@ -356,6 +405,17 @@ assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "First-page r
 assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Page footer")?.referenceType, "default");
 assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Even-page footer")?.referenceType, "even");
 assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Even-page footer")?.partPath, "word/footer2.xml");
+assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "Opening-section header")?.sectionIndex, 0);
+assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "Confidential research memo")?.sectionIndex, 1);
+assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Opening-section footer")?.sectionIndex, 0);
+assert.equal(nativeOnlyLoaded.footers.find((item) => item.text === "Page footer")?.sectionIndex, 1);
+const sharedHeaderDocumentXml = documentXml.replace(new RegExp(`(<w:sectPr\\b[^>]*>[\\s\\S]*?<w:headerReference\\b[^>]*r:id=")${openingHeaderRelId}("[^>]*\\/>[\\s\\S]*?<\\/w:sectPr>)`), `$1${finalHeaderRelId}$2`);
+const sharedHeaderDocx = await DocumentFile.patchDocx(docx, [
+  { path: "word/document.xml", xml: sharedHeaderDocumentXml },
+  { path: "word/header3.xml", remove: true },
+]);
+const sharedHeaderNative = await DocumentFile.importDocx(sharedHeaderDocx, { preferNative: true });
+assert.deepEqual(sharedHeaderNative.headers.filter((item) => item.text === "Confidential research memo").map((item) => item.sectionIndex).sort(), [0, 1]);
 const nativeOnlyInspect = nativeOnlyLoaded.inspect({ kind: "image,section,change,style,paragraph,table", maxChars: 16000 }).ndjson;
 assert.match(nativeOnlyInspect, /Memo logo/);
 assert.match(nativeOnlyInspect, /memo-logo/);

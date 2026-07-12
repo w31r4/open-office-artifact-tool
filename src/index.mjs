@@ -989,8 +989,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph, list, table, header/footer, style, and comment blocks." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block with optional run-level styles and return an inspectable/resolveable paragraph object." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
-  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add default, first-page, or even-page header text exported as relationship-driven DOCX header parts and section references." },
-  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add default, first-page, or even-page footer text exported as relationship-driven DOCX footer parts and section references." },
+  { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
+  { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
@@ -1009,8 +1009,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, header/footer parts, hyperlinks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets and reference types." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary header/footer targets, reference types, and section indexes." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references." },
 
@@ -1186,7 +1186,7 @@ const HELP_DETAIL_OVERRIDES = {
         syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
         syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
         validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports DOCX header/footer." },
+        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX header/footer sourceReference accepts type plus a zero-based sectionIndex." },
         relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata." } },
@@ -1560,12 +1560,14 @@ const DOCUMENT_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable block name." },
     styleId: { type: "string", description: "Named style ID." },
     referenceType: { type: "string", description: "default, first, or even section reference type." },
+    sectionIndex: { type: "number", description: "Zero-based target section. Omit to bind to the final section for backward compatibility." },
   }, "header", "DocumentHeaderFooterBlock", "Appended header block."),
   "document.addFooter": helpSchema({
     text: { type: "string", required: true, description: "Footer text." },
     name: { type: "string", description: "Inspectable block name." },
     styleId: { type: "string", description: "Named style ID." },
     referenceType: { type: "string", description: "default, first, or even section reference type." },
+    sectionIndex: { type: "number", description: "Zero-based target section. Omit to bind to the final section for backward compatibility." },
   }, "footer", "DocumentHeaderFooterBlock", "Appended footer block."),
   "document.addHyperlink": helpSchema({
     text: { type: "string", required: true, description: "Visible link text." },
@@ -7813,7 +7815,7 @@ class DocumentHeaderFooterBlock {
     this.referenceType = ["default", "first", "even"].includes(config.referenceType || config.type) ? (config.referenceType || config.type) : "default";
     this.relationshipId = config.relationshipId || config.relId;
     this.partPath = config.partPath;
-    this.sectionIndex = Number.isInteger(config.sectionIndex) ? config.sectionIndex : undefined;
+    this.sectionIndex = config.sectionIndex === undefined || config.sectionIndex === null ? undefined : Number(config.sectionIndex);
   }
 
   inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text, textChars: this.text.length }; }
@@ -8121,6 +8123,12 @@ export class DocumentModel {
       }
     }
     const blockIds = new Set(this.blocks.map((block) => block.id));
+    const finalSectionIndex = this.blocks.filter((block) => block.kind === "section").length;
+    for (const block of [...this.headers, ...this.footers]) {
+      if (block.sectionIndex !== undefined && (!Number.isInteger(block.sectionIndex) || block.sectionIndex < 0 || block.sectionIndex > finalSectionIndex)) {
+        issues.push(verificationIssue("document", "invalidHeaderFooterSection", `${block.kind} ${block.id} targets invalid section index ${block.sectionIndex}; expected 0 through ${finalSectionIndex}.`, { id: block.id, kind: block.kind, sectionIndex: block.sectionIndex, finalSectionIndex }));
+      }
+    }
     for (const comment of this.comments) {
       if (!blockIds.has(comment.targetId)) issues.push(verificationIssue("document", "danglingComment", `Comment ${comment.id} points at a missing block.`, { id: comment.id, targetId: comment.targetId }));
     }
@@ -8228,13 +8236,17 @@ export class DocumentModel {
 
 function collectDocxHeaderFooterParts(document, kind) {
   const blocks = kind === "header" ? document.headers : document.footers;
+  const finalSectionIndex = document.blocks.filter((block) => block.kind === "section").length;
   const groups = new Map();
   for (const block of blocks) {
     const referenceType = ["default", "first", "even"].includes(block.referenceType) ? block.referenceType : "default";
-    if (!groups.has(referenceType)) groups.set(referenceType, []);
-    groups.get(referenceType).push(block);
+    const sectionIndex = block.sectionIndex === undefined ? finalSectionIndex : block.sectionIndex;
+    if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex > finalSectionIndex) throw new RangeError(`DOCX ${kind} ${block.id} sectionIndex must be an integer from 0 through ${finalSectionIndex}.`);
+    const key = `${sectionIndex}\u0000${referenceType}`;
+    if (!groups.has(key)) groups.set(key, { sectionIndex, referenceType, blocks: [] });
+    groups.get(key).blocks.push(block);
   }
-  return ["default", "first", "even"].filter((referenceType) => groups.has(referenceType)).map((referenceType, index) => ({ kind, referenceType, blocks: groups.get(referenceType), partPath: `word/${kind}${index + 1}.xml`, target: `${kind}${index + 1}.xml` }));
+  return [...groups.values()].map((group, index) => ({ kind, ...group, partPath: `word/${kind}${index + 1}.xml`, target: `${kind}${index + 1}.xml` }));
 }
 
 function docxContentTypes({ hasComments, headerParts = [], footerParts = [], hasNumbering, hasSettings, imageParts = [] }) {
@@ -8333,11 +8345,12 @@ function docxSectionPrXml(section, refs = "", options = {}) {
   return `<w:sectPr>${refs}${type}${options.titlePage ? "<w:titlePg/>" : ""}<w:pgSz w:w="${Math.round(size.widthTwips || 12240)}" w:h="${Math.round(size.heightTwips || 15840)}"${orient}/><w:pgMar w:top="${Math.round(margins.top ?? 1440)}" w:right="${Math.round(margins.right ?? 1440)}" w:bottom="${Math.round(margins.bottom ?? 1440)}" w:left="${Math.round(margins.left ?? 1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
 }
 
-function docxSectionXml(block, commentIndexes = []) {
+function docxSectionXml(block, commentIndexes = [], sectionReferences = []) {
   const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
   const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
   const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-  return `<w:p><w:pPr>${docxSectionPrXml(block)}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
+  const sectionRefs = sectionReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
+  return `<w:p><w:pPr>${docxSectionPrXml(block, sectionRefs, { titlePage: sectionReferences.some((reference) => reference.referenceType === "first") })}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
 }
 
 function docxHyperlinkXml(block, relId) {
@@ -8373,6 +8386,9 @@ function docxTableXml(block) {
 
 function docxDocumentXml(document, relIds = {}) {
   const commentIndex = new Map(document.comments.map((comment, index) => [comment, index]));
+  const sectionReferences = [...(relIds.headers || []), ...(relIds.footers || [])];
+  const referencesForSection = (sectionIndex) => sectionReferences.filter((reference) => reference.sectionIndex === sectionIndex);
+  let sectionIndex = 0;
   const body = document.blocks.map((block) => {
     if (block.kind === "table") return docxTableXml(block);
     if (block.kind === "hyperlink") return docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id));
@@ -8380,12 +8396,13 @@ function docxDocumentXml(document, relIds = {}) {
     if (block.kind === "citation") return docxCitationXml(block);
     const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
     if (block.kind === "image") return docxImageXml(block, relIds.images?.get(block.id), indexes);
-    if (block.kind === "section") return docxSectionXml(block, indexes);
+    if (block.kind === "section") return docxSectionXml(block, indexes, referencesForSection(sectionIndex++));
     if (block.kind === "change") return docxChangeXml(block, indexes);
     return docxParagraphXml(block, indexes);
   }).join("");
-  const refs = [...(relIds.headers || []), ...(relIds.footers || [])].map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
-  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs, { titlePage: [...(relIds.headers || []), ...(relIds.footers || [])].some((reference) => reference.referenceType === "first") });
+  const finalReferences = referencesForSection(sectionIndex);
+  const refs = finalReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
+  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs, { titlePage: finalReferences.some((reference) => reference.referenceType === "first") });
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}${finalSection}</w:body></w:document>`;
 }
 
@@ -8514,7 +8531,7 @@ function docxHeaderFooterReferences(documentXml, relationships) {
       if (!relationship || relationship.targetMode.toLowerCase() === "external" || !relationship.type.endsWith(`/${kind}`)) continue;
       const partPath = ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX");
       const referenceType = ["default", "first", "even"].includes(attrs["w:type"]) ? attrs["w:type"] : "default";
-      const key = `${kind}\u0000${referenceType}\u0000${relationshipId}\u0000${partPath}`;
+      const key = `${sectionIndex}\u0000${kind}\u0000${referenceType}\u0000${relationshipId}\u0000${partPath}`;
       if (seen.has(key)) continue;
       seen.add(key);
       references.push({ kind, referenceType, relationshipId, partPath, sectionIndex });
@@ -8957,21 +8974,21 @@ function ooxmlMutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
   if (!addId) return next;
   const referenceType = String(config.type || config.referenceType || "default");
   if (!new Set(["default", "first", "even"]).has(referenceType)) throw new Error(`DOCX ${kind} sourceReference type must be default, first, or even.`);
-  next = next.replace(new RegExp(`<${tagName}\\b[^>]*\\/?>`, "g"), (tag) => ooxmlXmlAttributes(tag)["w:type"] === referenceType ? "" : tag);
   const ensured = ooxmlEnsureRelationshipPrefix(next, "w:document");
   next = ensured.xml;
   const referenceTag = `<${tagName} w:type="${referenceType}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
-  const sections = [...next.matchAll(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g)];
+  const sections = [...next.matchAll(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)/g)];
+  const requestedIndex = config.sectionIndex === undefined ? sections.length - 1 : Number(config.sectionIndex);
   if (sections.length) {
-    const section = sections.at(-1)[0];
-    const titlePage = referenceType === "first" && !/<w:titlePg\b/.test(section) ? "<w:titlePg/>" : "";
-    return next.replace(section, section.replace(/^<w:sectPr\b[^>]*>/, (opening) => `${opening}${referenceTag}${titlePage}`));
+    if (!Number.isInteger(requestedIndex) || requestedIndex < 0 || requestedIndex >= sections.length) throw new RangeError(`DOCX ${kind} sourceReference sectionIndex must be an integer from 0 through ${sections.length - 1}.`);
+    const section = sections[requestedIndex][0];
+    const expanded = section.endsWith("/>") ? `${section.replace(/\/>$/, ">")}</w:sectPr>` : section;
+    const withoutSameType = expanded.replace(new RegExp(`<${tagName}\\b[^>]*\\/?>`, "g"), (tag) => ooxmlXmlAttributes(tag)["w:type"] === referenceType ? "" : tag);
+    const titlePage = referenceType === "first" && !/<w:titlePg\b/.test(withoutSameType) ? "<w:titlePg/>" : "";
+    const updated = withoutSameType.replace(/^<w:sectPr\b[^>]*>/, (opening) => `${opening}${referenceTag}${titlePage}`);
+    return `${next.slice(0, sections[requestedIndex].index)}${updated}${next.slice(sections[requestedIndex].index + section.length)}`;
   }
-  const selfClosingSections = [...next.matchAll(/<w:sectPr\b[^>]*\/>/g)];
-  if (selfClosingSections.length) {
-    const section = selfClosingSections.at(-1)[0];
-    return next.replace(section, `${section.replace(/\/>$/, ">")}${referenceTag}${referenceType === "first" ? "<w:titlePg/>" : ""}</w:sectPr>`);
-  }
+  if (config.sectionIndex !== undefined && Number(config.sectionIndex) !== 0) throw new RangeError(`DOCX ${kind} sourceReference sectionIndex must be 0 when the document has no existing w:sectPr.`);
   if (!/<\/w:body>/.test(next)) throw new Error("DOCX header/footer sourceReference requires w:body or w:sectPr.");
   return next.replace(/<\/w:body>/, `<w:sectPr>${referenceTag}${referenceType === "first" ? "<w:titlePg/>" : ""}</w:sectPr></w:body>`);
 }
@@ -9143,12 +9160,12 @@ export class DocumentFile {
     relIds.headers = headerParts.map((part) => {
       const relId = `rId${docRels.length + 1}`;
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: part.target });
-      return { kind: "header", referenceType: part.referenceType, relId };
+      return { kind: "header", referenceType: part.referenceType, sectionIndex: part.sectionIndex, relId };
     });
     relIds.footers = footerParts.map((part) => {
       const relId = `rId${docRels.length + 1}`;
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", target: part.target });
-      return { kind: "footer", referenceType: part.referenceType, relId };
+      return { kind: "footer", referenceType: part.referenceType, sectionIndex: part.sectionIndex, relId };
     });
     relIds.hyperlinks = new Map();
     for (const block of document.blocks.filter((item) => item.kind === "hyperlink")) {
