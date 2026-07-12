@@ -13,7 +13,7 @@ import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/oo
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
 import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, normalizeXlsxThemeConfig, parseXlsxStylesXml, parseXlsxThemeColors, parseXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint, xlsxStyleKey, xlsxStylesXml, xlsxThemeXml } from "./spreadsheet/ooxml-styles.mjs";
-import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
+import { parseStructuredReference, scanStructuredReferenceIntersections, scanStructuredReferences, splitReferenceIntersectionOperands } from "./spreadsheet/structured-references.mjs";
 import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, parsePresentationBackgroundXml, parsePresentationPlaceholderStyleXml, presentationBackgroundXml, presentationColorXml, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
 
@@ -899,7 +899,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.resolve", summary: "Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
@@ -1463,8 +1463,8 @@ const HELP_DETAIL_OVERRIDES = {
     },
   },
   "workbook.structuredReferences": {
-    examples: ["=SUM(TableName[Column])", "=SUM(TableName[[#Data],[First]:[Last]])", "=[Revenue]-[Cost]", "=TasksTable[@Revenue]", "=SUM(TasksTable[[#This Row],[Revenue]:[Cost]])", "=TasksTable['#Items]", "=TasksTable[Bracket'[Value']]"],
-    notes: ["Supports #Headers/#Data/#All/#Totals/#This Row and @, unqualified current-row references inside tables, contiguous column ranges, comma-separated column unions, and apostrophe escaping for [, ], #, ', and @ in column headers. Current-row references outside the referenced table return #VALUE!."],
+    examples: ["=SUM(TableName[Column])", "=SUM(TableName[[#Data],[First]:[Last]])", "=SUM(TableName[[First]:[Second]] TableName[[Second]:[Third]])", "=[Revenue]-[Cost]", "=TasksTable[@Revenue]", "=SUM(TasksTable[[#This Row],[Revenue]:[Cost]])", "=TasksTable['#Items]", "=TasksTable[Bracket'[Value']]"],
+    notes: ["Supports #Headers/#Data/#All/#Totals/#This Row and @, unqualified current-row references inside tables, contiguous column ranges, comma-separated column unions, space intersections over common cells, and apostrophe escaping for [, ], #, ', and @ in column headers. Disjoint intersections return #NULL!; current-row references outside the referenced table return #VALUE!."],
   },
   createPlaywrightRenderer: {
     examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
@@ -2085,7 +2085,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "workbook.structuredReferences": helpSchema({
     formula: { type: "string", required: true, description: "Formula containing an Excel table structured reference." },
     table: { type: "string", description: "Worksheet table name; omitted only for a calculated-column reference inside that table." },
-    selector: { type: "string", required: true, description: "Column, escaped special-character header, section, current-row, range, or union selector inside brackets." },
+    selector: { type: "string", required: true, description: "Column, escaped special-character header, section, current-row, range, union, or space-intersection selector." },
   }, "value", "unknown", "Calculated scalar/array value with stable table-cell precedents."),
   "workbook.sharedArrayFormulas": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared or array formula records." },
@@ -4593,26 +4593,142 @@ function formulaStructuredRefRange(sheet, refText = "", context = {}) {
   return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), tableName, columnName, table, columnIndex, columns, columnNames, section };
 }
 
+function structuredRangeGeometry(structured) {
+  const start = parseCellAddress(structured.start);
+  const end = parseCellAddress(structured.end);
+  const tableBounds = structured.table ? parseRangeAddress(structured.table.range) : undefined;
+  const columns = structured.absoluteColumns || (tableBounds && structured.columns?.length
+    ? structured.columns.map((index) => tableBounds.left + index)
+    : Array.from({ length: Math.abs(end.col - start.col) + 1 }, (_, index) => Math.min(start.col, end.col) + index));
+  return {
+    top: Math.min(start.row, end.row),
+    bottom: Math.max(start.row, end.row),
+    columns,
+  };
+}
+
+function formulaStructuredRefIntersection(sheet, refText = "", context = {}) {
+  const text = String(refText || "").trim();
+  const groups = scanStructuredReferenceIntersections(text);
+  if (groups.length !== 1 || groups[0].start !== 0 || groups[0].end !== text.length) return undefined;
+  const group = groups[0];
+  const ranges = group.references.map((reference) => formulaStructuredRefRange(sheet, reference.text, context));
+  const failure = ranges.find((range) => !range || range.error || range.missing);
+  if (failure) return failure || { missing: true };
+  if (ranges.some((range) => range.empty)) return { error: "#NULL!", intersectionReferences: group.references.map((reference) => reference.text) };
+  const sheetNames = new Set(ranges.map((range) => range.sheetName || sheet.name));
+  if (sheetNames.size !== 1) return { error: "#NULL!", intersectionReferences: group.references.map((reference) => reference.text) };
+  const geometries = ranges.map(structuredRangeGeometry);
+  const top = Math.max(...geometries.map((geometry) => geometry.top));
+  const bottom = Math.min(...geometries.map((geometry) => geometry.bottom));
+  const commonColumns = geometries[0].columns.filter((column) => geometries.slice(1).every((geometry) => geometry.columns.includes(column)));
+  if (top > bottom || commonColumns.length === 0) return { error: "#NULL!", intersectionReferences: group.references.map((reference) => reference.text) };
+  commonColumns.sort((left, right) => left - right);
+  const sharedTable = ranges.every((range) => range.table === ranges[0].table) ? ranges[0].table : undefined;
+  const sharedTableBounds = sharedTable ? parseRangeAddress(sharedTable.range) : undefined;
+  const columns = sharedTableBounds ? commonColumns.map((column) => column - sharedTableBounds.left) : undefined;
+  const columnNames = columns?.map((column) => sharedTable.columnNames?.[column] ?? `Column${column + 1}`);
+  return {
+    sheetName: [...sheetNames][0],
+    start: makeCellAddress(top, commonColumns[0]),
+    end: makeCellAddress(bottom, commonColumns.at(-1)),
+    absoluteColumns: commonColumns,
+    table: sharedTable,
+    tableName: sharedTable?.name,
+    columns,
+    columnNames,
+    columnName: columnNames?.join(","),
+    section: "intersection",
+    intersectionReferences: group.references.map((reference) => reference.text),
+  };
+}
+
+function formulaA1RefIntersection(sheet, refText = "") {
+  const parts = splitReferenceIntersectionOperands(refText);
+  if (!parts) return undefined;
+  const references = parts.map(formulaRefParts);
+  if (references.some((reference) => !reference)) return undefined;
+  const sheetNames = new Set(references.map((reference) => reference.sheetName || sheet.name));
+  if (sheetNames.size !== 1) return { error: "#NULL!", intersectionReferences: parts };
+  const bounds = references.map((reference) => {
+    const start = parseCellAddress(reference.start);
+    const end = parseCellAddress(reference.end);
+    return {
+      top: Math.min(start.row, end.row),
+      bottom: Math.max(start.row, end.row),
+      left: Math.min(start.col, end.col),
+      right: Math.max(start.col, end.col),
+    };
+  });
+  const top = Math.max(...bounds.map((item) => item.top));
+  const bottom = Math.min(...bounds.map((item) => item.bottom));
+  const left = Math.max(...bounds.map((item) => item.left));
+  const right = Math.min(...bounds.map((item) => item.right));
+  if (top > bottom || left > right) return { error: "#NULL!", intersectionReferences: parts };
+  return {
+    sheetName: [...sheetNames][0],
+    start: makeCellAddress(top, left),
+    end: makeCellAddress(bottom, right),
+    absoluteColumns: Array.from({ length: right - left + 1 }, (_, index) => left + index),
+    section: "intersection",
+    intersectionReferences: parts,
+  };
+}
+
+function scanA1ReferenceIntersections(formula = "") {
+  const text = String(formula || "");
+  const structured = scanStructuredReferences(text);
+  const referenceRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?\$?[A-Za-z]+\$?\d+(?::\$?[A-Za-z]+\$?\d+)?/g;
+  const references = [...text.matchAll(referenceRegex)]
+    .map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }))
+    .filter((reference) => !structured.some((item) => reference.start >= item.start && reference.end <= item.end));
+  const groups = [];
+  for (let index = 0; index < references.length;) {
+    const group = [references[index]];
+    let cursor = index + 1;
+    while (cursor < references.length && /^\s+$/.test(text.slice(group.at(-1).end, references[cursor].start))) {
+      group.push(references[cursor]);
+      cursor += 1;
+    }
+    if (group.length > 1) groups.push({ text: text.slice(group[0].start, group.at(-1).end), start: group[0].start, end: group.at(-1).end, references: group });
+    index = cursor;
+  }
+  return groups;
+}
+
 function formulaReferences(formula, sheet, formulaAddress) {
   const raw = String(formula || "");
   const refs = [];
   const consumed = [];
-  for (const match of scanStructuredReferences(raw)) {
-    consumed.push([match.start, match.end]);
-    const structured = formulaStructuredRefRange(sheet, match.text, { formulaAddress });
-    if (!structured || structured.missing || structured.empty || structured.error) continue;
+  const intersectionGroups = scanStructuredReferenceIntersections(raw);
+  const appendStructuredReferences = (structured, refText) => {
+    if (!structured || structured.missing || structured.empty || structured.error) return;
     const start = parseCellAddress(structured.start);
     const end = parseCellAddress(structured.end);
-    const tableBounds = structured.table ? parseRangeAddress(structured.table.range) : undefined;
-    const cols = tableBounds && structured.columns?.length ? structured.columns.map((index) => tableBounds.left + index) : Array.from({ length: Math.abs(end.col - start.col) + 1 }, (_, index) => Math.min(start.col, end.col) + index);
+    const cols = structuredRangeGeometry(structured).columns;
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
       for (const col of cols) {
-        refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: match.text, tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames });
+        refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: refText, tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames });
       }
     }
+  };
+  for (const group of intersectionGroups) {
+    consumed.push([group.start, group.end]);
+    appendStructuredReferences(formulaStructuredRefIntersection(sheet, group.text, { formulaAddress }), group.text);
+  }
+  for (const group of scanA1ReferenceIntersections(raw)) {
+    consumed.push([group.start, group.end]);
+    appendStructuredReferences(formulaA1RefIntersection(sheet, group.text), group.text);
+  }
+  for (const match of scanStructuredReferences(raw)) {
+    if (intersectionGroups.some((group) => match.start >= group.start && match.end <= group.end)) continue;
+    consumed.push([match.start, match.end]);
+    const structured = formulaStructuredRefRange(sheet, match.text, { formulaAddress });
+    appendStructuredReferences(structured, match.text);
   }
   const rangeRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)\s*:\s*(\$?[A-Za-z]+\$?\d+)/g;
   for (const match of raw.matchAll(rangeRegex)) {
+    if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
     consumed.push([match.index, match.index + match[0].length]);
     const sheetName = match[1] || match[2] || undefined;
     const start = parseCellAddress(match[3].replaceAll("$", ""));
@@ -4821,7 +4937,7 @@ function formulaRefParts(refText = "") {
 }
 
 function formulaRangeMatrix(sheet, refText, context = {}) {
-  const structured = formulaStructuredRefRange(sheet, refText, context);
+  const structured = formulaStructuredRefIntersection(sheet, refText, context) || formulaA1RefIntersection(sheet, refText) || formulaStructuredRefRange(sheet, refText, context);
   if (structured) {
     if (structured.error) return [[structured.error]];
     if (structured.missing) return [["#REF!"]];
@@ -4830,8 +4946,7 @@ function formulaRangeMatrix(sheet, refText, context = {}) {
     if (!targetSheet) return [["#REF!"]];
     const start = parseCellAddress(structured.start);
     const end = parseCellAddress(structured.end);
-    const tableBounds = structured.table ? parseRangeAddress(structured.table.range) : undefined;
-    const cols = tableBounds && structured.columns?.length ? structured.columns.map((index) => tableBounds.left + index) : Array.from({ length: Math.abs(end.col - start.col) + 1 }, (_, index) => Math.min(start.col, end.col) + index);
+    const cols = structuredRangeGeometry(structured).columns;
     const rows = [];
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
       const values = [];

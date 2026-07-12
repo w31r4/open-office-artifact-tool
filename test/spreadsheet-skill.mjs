@@ -90,9 +90,11 @@ try {
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
   assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);
-  assert.match(workbook.help("workbook.structuredReferences").ndjson, /special-character headers/);
+  assert.match(workbook.help("workbook.structuredReferences").ndjson, /space intersection/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("G14").values[0][0], 1);
+  assert.equal(workbook.worksheets.getItem("Summary").getRange("H2").values[0][0], 370);
+  assert.deepEqual(workbook.trace("Summary!H2").tree.precedents.map((node) => node.address), ["B2", "B3", "B4"]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
@@ -106,6 +108,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"useWholeDay":false/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"groupBy":"quarters"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Gross Profit"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable\[\[Month\]:\[Revenue\]\] SummaryTable\[\[Revenue\]:\[Cost\]\]/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
@@ -146,6 +149,7 @@ try {
     assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
     assert.equal(libreOfficeSummary.getRange("A1").format.border.bottom.style, "double");
     assert.equal(libreOfficeSummary.getRange("G14").values[0][0], 1);
+    assert.equal(libreOfficeSummary.getRange("H2").values[0][0], 370);
     assert.ok(libreOfficeSummary.charts.items.length >= 1);
     assert.ok(libreOfficeSummary.images.items.length >= 1);
     assert.ok(libreOfficeSummary.pivotTables.items.some((pivot) => pivot.name === "RevenuePivot"));

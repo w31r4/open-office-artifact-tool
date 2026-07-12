@@ -177,3 +177,67 @@ export function scanStructuredReferences(formula = "") {
   }
   return references;
 }
+
+export function scanStructuredReferenceIntersections(formula = "") {
+  const text = String(formula || "");
+  const references = scanStructuredReferences(text);
+  const intersections = [];
+  for (let index = 0; index < references.length;) {
+    const group = [references[index]];
+    let cursor = index + 1;
+    while (cursor < references.length && /^\s+$/.test(text.slice(group.at(-1).end, references[cursor].start))) {
+      group.push(references[cursor]);
+      cursor += 1;
+    }
+    if (group.length > 1) {
+      intersections.push({
+        text: text.slice(group[0].start, group.at(-1).end),
+        start: group[0].start,
+        end: group.at(-1).end,
+        references: group,
+      });
+    }
+    index = cursor;
+  }
+  return intersections;
+}
+
+export function splitReferenceIntersectionOperands(reference = "") {
+  const text = String(reference || "").trim();
+  const operands = [];
+  let current = "";
+  let bracketDepth = 0;
+  let doubleQuoted = false;
+  let singleQuoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"' && !singleQuoted) {
+      current += character;
+      if (doubleQuoted && text[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else doubleQuoted = !doubleQuoted;
+      continue;
+    }
+    if (character === "'" && !doubleQuoted && bracketDepth === 0) {
+      current += character;
+      if (singleQuoted && text[index + 1] === "'") {
+        current += "'";
+        index += 1;
+      } else singleQuoted = !singleQuoted;
+      continue;
+    }
+    if (!doubleQuoted && !singleQuoted) {
+      if (character === "[") bracketDepth += 1;
+      else if (character === "]") bracketDepth = Math.max(0, bracketDepth - 1);
+      if (/\s/.test(character) && bracketDepth === 0) {
+        if (current.trim()) operands.push(current.trim());
+        current = "";
+        continue;
+      }
+    }
+    current += character;
+  }
+  if (current.trim()) operands.push(current.trim());
+  return operands.length > 1 ? operands : undefined;
+}

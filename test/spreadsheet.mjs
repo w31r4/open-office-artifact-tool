@@ -697,6 +697,32 @@ assert.match(structuredUnionNode, /Structured!A2/);
 assert.match(structuredUnionNode, /Structured!C3/);
 assert.doesNotMatch(structuredUnionNode, /Structured!B2/);
 assert.match(structuredBook.help("workbook.structuredReferences").ndjson, /\[First\]:\[Last\]/);
+structuredSheet.getRange("F1:F4").formulas = [
+  ["=SUM(SalesTable[[Region]:[Revenue]] SalesTable[[Revenue]:[Cost]])"],
+  ["=SUM(SalesTable[[#All],[Revenue]] SalesTable[[#Data],[Revenue]])"],
+  ["=SUM(SalesTable[Region] SalesTable[Cost])"],
+  ["=TEXTJOIN(\"|\",TRUE,SalesTable[[Region]:[Cost]] SalesTable[[Revenue]:[Cost]] SalesTable[[Region]:[Revenue]])"],
+];
+structuredSheet.getRange("G1:G2").formulas = [["=SUM(A1:B3 B2:C4)"], ["=SUM(A1:A2 C1:C2)"]];
+structuredBook.recalculate();
+assert.deepEqual(structuredSheet.getRange("F1:F4").values.flat(), [15, 15, "#NULL!", "10|5"]);
+assert.deepEqual(structuredSheet.getRange("G1:G2").values.flat(), [15, "#NULL!"]);
+const structuredIntersectionTrace = structuredBook.trace("Structured!F1");
+assert.deepEqual(structuredIntersectionTrace.tree.precedents.map((node) => node.address), ["B2", "B3"]);
+const structuredIntersectionNode = structuredBook.inspect({ kind: "formulaNode", target: "Structured!F1", maxChars: 12000 }).ndjson;
+assert.match(structuredIntersectionNode, /SalesTable\[\[Region\]:\[Revenue\]\] SalesTable\[\[Revenue\]:\[Cost\]\]/);
+assert.match(structuredIntersectionNode, /Structured!B2/);
+assert.match(structuredIntersectionNode, /Structured!B3/);
+assert.doesNotMatch(structuredIntersectionNode, /Structured!A2/);
+assert.doesNotMatch(structuredIntersectionNode, /Structured!C2/);
+assert.deepEqual(structuredBook.trace("Structured!G1").tree.precedents.map((node) => node.address), ["B2", "B3"]);
+const structuredIntersectionXlsx = await SpreadsheetFile.exportXlsx(structuredBook);
+const structuredIntersectionZip = await JSZip.loadAsync(new Uint8Array(await structuredIntersectionXlsx.arrayBuffer()));
+assert.match(await structuredIntersectionZip.file("xl/worksheets/sheet1.xml").async("text"), /SalesTable\[\[Region\]:\[Revenue\]\] SalesTable\[\[Revenue\]:\[Cost\]\]/);
+structuredIntersectionZip.remove("customXml/open-office-artifact.json");
+const structuredIntersectionNative = await SpreadsheetFile.importXlsx(new FileBlob(await structuredIntersectionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: structuredIntersectionXlsx.type }));
+assert.deepEqual(structuredIntersectionNative.worksheets.getItem("Structured").getRange("F1:F4").values.flat(), [15, 15, "#NULL!", "10|5"]);
+assert.deepEqual(structuredIntersectionNative.trace("Structured!F1").tree.precedents.map((node) => node.address), ["B2", "B3"]);
 
 const escapedStructuredBook = Workbook.create();
 const escapedStructuredSheet = escapedStructuredBook.worksheets.add("Escaped");
