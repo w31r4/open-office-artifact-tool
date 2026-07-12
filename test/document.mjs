@@ -260,6 +260,7 @@ assert.match(await renderedDocxPdf.text(), /%PDF-docx-render/);
 assert.match(document.help("document.render").ndjson, /source: 'docx'/);
 assert.match(document.help("DocumentFile.inspectDocx").ndjson, /DOCX package/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /path traversal/);
+assert.match(document.help("DocumentFile.patchDocx").ndjson, /comment anchors/);
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

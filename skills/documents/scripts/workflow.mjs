@@ -17,6 +17,15 @@ import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppl
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PREVIEW_EXTENSION = { svg: "svg", png: "png", webp: "webp", jpeg: "jpg", jpg: "jpg", pdf: "pdf" };
 
+function xmlEscape(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function packageCommentsXml(comments = []) {
+  const body = comments.map((comment) => `<w:comment w:id="${xmlEscape(comment.commentId)}" w:author="${xmlEscape(comment.author || "User")}" w:initials="${xmlEscape(comment.initials || "")}"${comment.date ? ` w:date="${xmlEscape(comment.date)}"` : ""}><w:p><w:r><w:t>${xmlEscape(comment.text || "")}</w:t></w:r></w:p></w:comment>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${body}</w:comments>`;
+}
+
 function commandExists(command) {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", [command], {
     encoding: "utf8",
@@ -235,7 +244,21 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const document = createDocumentFromFixture(fixture);
   const docxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "document"}.docx`);
-  await (await DocumentFile.exportDocx(document)).save(docxPath);
+  let docx = await DocumentFile.exportDocx(document);
+  if (fixture.packageComments?.length) {
+    const partPath = fixture.packageCommentsPart || "word/review/fixture-comments.xml";
+    docx = await DocumentFile.patchDocx(docx, [{
+      path: partPath,
+      xml: packageCommentsXml(fixture.packageComments),
+      recipe: {
+        kind: "comments",
+        source: "word/document.xml",
+        id: fixture.packageCommentsRelationshipId,
+        sourceReference: { anchors: fixture.packageComments.map(({ commentId, target }) => ({ commentId, target })) },
+      },
+    }]);
+  }
+  await docx.save(docxPath);
   const qa = await verifyDocumentFile(docxPath, {
     outputDir: path.join(outputDir, "qa"),
     previewFormat: options.previewFormat || fixture.qa?.previewFormat || "svg",
@@ -248,6 +271,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     pixelRegistration: options.pixelRegistration,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
+    preferNative: Boolean(fixture.packageComments?.length),
   });
   return { fixture, docxPath, qa };
 }

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
-import { mutateOoxmlSourceReference, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference } from "./ooxml/source-references.mjs";
+import { mutateOoxmlSourceReference, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference, validateOoxmlSourceReferenceTarget } from "./ooxml/source-references.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
@@ -1033,7 +1033,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation, including safe classic-comment anchors for blocks, paragraphs, and table cells, and atomically reject dangling package or semantic references." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
@@ -1214,7 +1214,8 @@ const HELP_DETAIL_OVERRIDES = {
         syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
         syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
         validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX header/footer sourceReference accepts type plus a zero-based sectionIndex." },
+        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports section-scoped header/footer references plus batch classic-comment anchors for block, paragraph, and table-cell targets." },
+        sourceReference: { type: "boolean|object", description: "Opt-in source XML mutation. Comments accepts { anchors: [{ commentId, target }] }; every ID must be unique in and declared by the Comments part." },
         relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata." } },
@@ -9794,7 +9795,7 @@ function ooxmlReferenceConfig(value) {
 async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family) {
   if (options.syncSourceReferences === false) return 0;
   let updates = 0;
-  for (const { patch } of normalizedPatches) {
+  for (const { patch, partPath } of normalizedPatches) {
     const config = ooxmlReferenceConfig(patch.sourceReference);
     if (!config) continue;
     if (!supportsOoxmlSourceReference(family, patch.recipeKind)) throw new Error(`${family} sourceReference is not supported for recipe ${patch.recipeKind || "(missing)"}. Supported recipes: ${supportedOoxmlSourceReferenceSummary()}.`);
@@ -9808,6 +9809,11 @@ async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family
     const resolvedIds = new Set([...(relationship.resolvedIds || []), relationship.id].filter(Boolean));
     const addId = remove ? undefined : relationship.resolvedId || relationship.id;
     if (!remove && !addId) throw new Error(`${family} ${patch.recipeKind} sourceReference could not resolve a relationship Id.`);
+    if (!remove && family === "DOCX" && patch.recipeKind === "comments") {
+      const targetEntry = zip.file(partPath);
+      if (!targetEntry) throw new Error(`${family} sourceReference target part not found: ${partPath}`);
+      validateOoxmlSourceReferenceTarget({ family, recipeKind: patch.recipeKind, targetXml: await targetEntry.async("text"), config });
+    }
     const xml = await sourceEntry.async("text");
     const next = mutateOoxmlSourceReference({ family, recipeKind: patch.recipeKind, xml, relationshipIds: resolvedIds, addId, config });
     if (next !== xml) { zip.file(safeSource, next); updates += 1; }

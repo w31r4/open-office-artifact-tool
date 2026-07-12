@@ -54,6 +54,22 @@ try {
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.level, 1);
 
   const nativeStatus = nativeDocumentRenderStatus();
+  const packageComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-comments.json"), {
+    outputDir: path.join(outputDir, "package-comments"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(packageComments.qa.summary.packageOk, true);
+  assert.equal(packageComments.qa.summary.verifyOk, true);
+  assert.ok(packageComments.qa.packageInspect.parts.some((part) => part.path === "word/review/agent-comments.xml"));
+  const packageCommentDocument = packageComments.qa.document;
+  const paragraphComment = packageCommentDocument.comments.find((comment) => comment.text === "Confirm the decision paragraph.");
+  const tableComment = packageCommentDocument.comments.find((comment) => comment.text === "Confirm the table-cell anchor.");
+  assert.equal(paragraphComment?.author, "QA Agent");
+  assert.equal(packageCommentDocument.resolve(paragraphComment?.targetId)?.text, "Approve after native package review.");
+  assert.equal(tableComment?.author, "Maintainer");
+  assert.equal(packageCommentDocument.resolve(tableComment?.targetId)?.kind, "table");
+  assert.equal(packageComments.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const baselineWrite = await verifyDocumentFile(result.docxPath, {
     outputDir: path.join(outputDir, "baseline-write"),
     previewFormat: "png",

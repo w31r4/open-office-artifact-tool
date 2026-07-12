@@ -17,21 +17,62 @@ function commandExists(command) {
   return spawnSync(process.platform === "win32" ? "where" : "which", [command], { encoding: "utf8", shell: false }).status === 0;
 }
 
-const document = DocumentModel.create({ paragraphs: ["Source reference native check"] });
-const docx = await DocumentFile.patchDocx(await DocumentFile.exportDocx(document), [{
-  path: "word/headerNative.xml",
-  xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Native header</w:t></w:r></w:p></w:hdr>',
-  recipe: { kind: "header", source: "word/document.xml", sourceReference: { type: "first" } },
-}]);
-assert.equal(docx.metadata.sourceReferencesUpdated, 1);
+const document = DocumentModel.create({ paragraphs: ["Source reference native check", "Second review paragraph"] });
+document.addTable({ values: [["Gate", "Status"], ["Native", "Pass"]], name: "source-reference-table" });
+const commentsPartPath = "word/review/comments-agent.xml";
+const commentsPartXml = '<?xml version="1.0" encoding="UTF-8"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="QA Agent" w:initials="QA"><w:p><w:r><w:t>Review the opening paragraph.</w:t></w:r></w:p></w:comment><w:comment w:id="8" w:author="Maintainer" w:initials="MT"><w:p><w:r><w:t>Confirm the native table cell.</w:t></w:r></w:p></w:comment></w:comments>';
+const baseDocx = await DocumentFile.exportDocx(document);
+const docx = await DocumentFile.patchDocx(baseDocx, [
+  {
+    path: "word/headerNative.xml",
+    xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Native header</w:t></w:r></w:p></w:hdr>',
+    recipe: { kind: "header", source: "word/document.xml", sourceReference: { type: "first" } },
+  },
+  {
+    path: commentsPartPath,
+    xml: commentsPartXml,
+    recipe: {
+      kind: "comments",
+      source: "word/document.xml",
+      id: "rIdAgentComments",
+      sourceReference: {
+        anchors: [
+          { commentId: 7, target: { type: "block", index: 0 } },
+          { commentId: 8, target: { type: "tableCell", tableIndex: 0, rowIndex: 1, columnIndex: 1 } },
+        ],
+      },
+    },
+  },
+]);
+assert.equal(docx.metadata.sourceReferencesUpdated, 2);
 assert.equal((await DocumentFile.inspectDocx(docx)).ok, true);
 const importedPatchedDocument = await DocumentFile.importDocx(docx, { preferNative: true });
 const importedNativeHeader = importedPatchedDocument.headers.find((item) => item.text === "Native header");
 assert.ok(importedNativeHeader);
 assert.equal(importedNativeHeader.referenceType, "first");
 assert.equal(importedNativeHeader.partPath, "word/headerNative.xml");
+const importedParagraphComment = importedPatchedDocument.comments.find((comment) => comment.text === "Review the opening paragraph.");
+const importedTableComment = importedPatchedDocument.comments.find((comment) => comment.text === "Confirm the native table cell.");
+assert.equal(importedParagraphComment?.author, "QA Agent");
+assert.equal(importedPatchedDocument.resolve(importedParagraphComment?.targetId)?.text, "Source reference native check");
+assert.equal(importedTableComment?.author, "Maintainer");
+assert.equal(importedPatchedDocument.resolve(importedTableComment?.targetId)?.kind, "table");
 const docxZip = await JSZip.loadAsync(new Uint8Array(await docx.arrayBuffer()));
 assert.match(await docxZip.file("word/document.xml").async("text"), /<w:headerReference\b[^>]*w:type="first"[^>]*\/>[\s\S]*?<w:titlePg\/>/);
+const anchoredDocumentXml = await docxZip.file("word/document.xml").async("text");
+assert.match(anchoredDocumentXml, /<w:commentRangeStart w:id="7"\/>[\s\S]*?<w:commentRangeEnd w:id="7"\/>[\s\S]*?<w:commentReference w:id="7"\/>/);
+assert.match(anchoredDocumentXml, /<w:tc>[\s\S]*?<w:t>Pass<\/w:t>[\s\S]*?<w:commentRangeEnd w:id="8"\/>[\s\S]*?<w:commentReference w:id="8"\/>[\s\S]*?<\/w:tc>/);
+assert.match(await docxZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdAgentComments"[^>]*relationships\/comments[^>]*Target="review\/comments-agent\.xml"/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/review/duplicate-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 7, target: { type: "block", index: 1 } } } }]), /commentId 7 already exists/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/missing-id-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { target: { type: "block", index: 0 } } } }]), /commentId is required/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/undeclared-id-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 99, target: { type: "block", index: 0 } } } }]), /commentId 99 is not declared/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/duplicate-part-comments.xml", xml: commentsPartXml.replace('w:id="8"', 'w:id="7"'), recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 7, target: { type: "block", index: 0 } } } }]), /duplicate commentId 7/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/out-of-range-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 7, target: { type: "tableCell", tableIndex: 0, rowIndex: 9, columnIndex: 0 } } } }]), /rowIndex 9 is out of range/);
+const commentsRemovedDocx = await DocumentFile.patchDocx(docx, [{ path: commentsPartPath, remove: true, recipe: { kind: "comments", source: "word/document.xml", id: "rIdAgentComments", sourceReference: true } }]);
+assert.equal((await DocumentFile.inspectDocx(commentsRemovedDocx)).ok, true);
+const commentsRemovedZip = await JSZip.loadAsync(new Uint8Array(await commentsRemovedDocx.arrayBuffer()));
+assert.doesNotMatch(await commentsRemovedZip.file("word/document.xml").async("text"), /commentRange|commentReference/);
+assert.equal((await DocumentFile.importDocx(commentsRemovedDocx, { preferNative: true })).comments.length, 0);
 
 const workbook = Workbook.create();
 workbook.worksheets.add("Main").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 120]];

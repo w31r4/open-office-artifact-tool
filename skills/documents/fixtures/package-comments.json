@@ -1,0 +1,45 @@
+{
+  "name": "package-comments",
+  "outputName": "package-comments.docx",
+  "designPreset": "report",
+  "blocks": [
+    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Package comment anchors" },
+    { "kind": "paragraph", "name": "decision", "styleId": "Normal", "text": "Approve after native package review." },
+    {
+      "kind": "table",
+      "name": "evidence-table",
+      "styleId": "TableGrid",
+      "values": [["Gate", "Status"], ["Native", "Pass"]]
+    }
+  ],
+  "packageCommentsPart": "word/review/agent-comments.xml",
+  "packageCommentsRelationshipId": "rIdAgentComments",
+  "packageComments": [
+    {
+      "commentId": 21,
+      "author": "QA Agent",
+      "initials": "QA",
+      "date": "2026-07-12T09:30:00.000Z",
+      "text": "Confirm the decision paragraph.",
+      "target": { "type": "block", "index": 1 }
+    },
+    {
+      "commentId": 22,
+      "author": "Maintainer",
+      "initials": "MT",
+      "date": "2026-07-12T09:31:00.000Z",
+      "text": "Confirm the table-cell anchor.",
+      "target": { "type": "tableCell", "tableIndex": 0, "rowIndex": 1, "columnIndex": 1 }
+    }
+  ],
+  "expectInspect": [
+    { "kind": "paragraph", "pattern": "Approve after native package review" },
+    { "kind": "table", "pattern": "evidence-table" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,table,comment,style,layout",
+    "maxChars": 12000
+  }
+}

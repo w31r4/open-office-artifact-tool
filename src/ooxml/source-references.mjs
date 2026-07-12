@@ -10,6 +10,7 @@ const SPREADSHEET_DRAWING_NAMESPACE = "http://schemas.openxmlformats.org/drawing
 const SUPPORTED = new Set([
   "DOCX:header",
   "DOCX:footer",
+  "DOCX:comments",
   "XLSX:worksheet",
   "XLSX:table",
   "XLSX:drawing",
@@ -119,6 +120,112 @@ function insertBeforeOrAppend(xml, rootLocalName, content, followingLocalNames =
     if (following) return `${String(xml).slice(0, following.index)}${content}${String(xml).slice(following.index)}`;
   }
   return appendToRoot(xml, rootLocalName, content);
+}
+
+function regexEscape(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function wordprocessingId(tag = "") {
+  return Object.entries(attributes(tag)).find(([name]) => name === "id" || name.endsWith(":id"))?.[1];
+}
+
+function removeDocxCommentAnchors(xml, commentIds) {
+  const removeAll = commentIds == null;
+  const ids = commentIds || new Set();
+  const matchesId = (tag) => removeAll || ids.has(String(wordprocessingId(tag)));
+  let next = String(xml).replace(/<(?:[A-Za-z_][\w.-]*:)?r\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?r>/g, (run) => {
+    const references = [...run.matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentReference\b[^>]*\/?\s*>/g)];
+    if (!references.some((match) => matchesId(match[0]))) return run;
+    const withoutReferences = run.replace(/<(?:[A-Za-z_][\w.-]*:)?commentReference\b[^>]*\/?\s*>/g, (tag) => matchesId(tag) ? "" : tag);
+    const substantive = withoutReferences
+      .replace(/^<(?:[A-Za-z_][\w.-]*:)?r\b[^>]*>|<\/(?:[A-Za-z_][\w.-]*:)?r>$/g, "")
+      .replace(/<(?:[A-Za-z_][\w.-]*:)?rPr\b[^>]*(?:\/>|>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?rPr>)/g, "")
+      .trim();
+    return substantive ? withoutReferences : "";
+  });
+  next = next.replace(/<(?:[A-Za-z_][\w.-]*:)?(?:commentRangeStart|commentRangeEnd|commentReference)\b[^>]*\/?\s*>/g, (tag) => matchesId(tag) ? "" : tag);
+  return next;
+}
+
+function nonNegativeIndex(value, label) {
+  const index = Number(value);
+  if (!Number.isInteger(index) || index < 0) throw new RangeError(`DOCX comments sourceReference ${label} must be a non-negative integer.`);
+  return index;
+}
+
+function indexedXmlMatch(xml, pattern, index, label) {
+  const matches = [...String(xml).matchAll(pattern)];
+  if (index >= matches.length) throw new RangeError(`DOCX comments sourceReference ${label} ${index} is out of range; found ${matches.length}.`);
+  return matches[index];
+}
+
+function replaceXmlMatch(xml, match, replacement) {
+  return `${String(xml).slice(0, match.index)}${replacement}${String(xml).slice(match.index + match[0].length)}`;
+}
+
+function anchorDocxParagraph(paragraphXml, prefix, commentId) {
+  const paragraphName = qname(prefix, "p");
+  let paragraph = String(paragraphXml);
+  if (/\/\s*>$/.test(paragraph)) paragraph = `${paragraph.replace(/\/\s*>$/, ">")}</${paragraphName}>`;
+  const opening = new RegExp(`^<${regexEscape(paragraphName)}\\b[^>]*>`).exec(paragraph)?.[0];
+  const closing = `</${paragraphName}>`;
+  if (!opening || !paragraph.endsWith(closing)) throw new Error("DOCX comments sourceReference target paragraph is malformed.");
+  const start = `<${qname(prefix, "commentRangeStart")} ${prefix ? `${prefix}:` : ""}id="${attrEscape(commentId)}"/>`;
+  const end = `<${qname(prefix, "commentRangeEnd")} ${prefix ? `${prefix}:` : ""}id="${attrEscape(commentId)}"/>`;
+  const reference = `<${qname(prefix, "r")}><${qname(prefix, "rPr")}><${qname(prefix, "rStyle")} ${prefix ? `${prefix}:` : ""}val="CommentReference"/></${qname(prefix, "rPr")}><${qname(prefix, "commentReference")} ${prefix ? `${prefix}:` : ""}id="${attrEscape(commentId)}"/></${qname(prefix, "r")}>`;
+  const properties = new RegExp(`^<${regexEscape(paragraphName)}\\b[^>]*><${regexEscape(qname(prefix, "pPr"))}\\b[^>]*(?:\\/>|>[\\s\\S]*?</${regexEscape(qname(prefix, "pPr"))}>)`).exec(paragraph)?.[0];
+  const insertAt = properties?.length || opening.length;
+  paragraph = `${paragraph.slice(0, insertAt)}${start}${paragraph.slice(insertAt)}`;
+  return paragraph.replace(new RegExp(`${regexEscape(closing)}$`), `${end}${reference}${closing}`);
+}
+
+function addDocxCommentAnchor(xml, config = {}) {
+  const commentId = config.commentId ?? config.id;
+  if (commentId === undefined || commentId === null || String(commentId) === "") throw new Error("DOCX comments sourceReference commentId is required.");
+  const normalizedId = String(commentId);
+  if (!/^-?\d+$/.test(normalizedId) || Number(normalizedId) < 0) throw new Error("DOCX comments sourceReference commentId must be a non-negative integer.");
+  const existingIds = new Set([...String(xml).matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:commentRangeStart|commentRangeEnd|commentReference)\b[^>]*\/?\s*>/g)].map((match) => String(wordprocessingId(match[0]))));
+  if (existingIds.has(normalizedId)) throw new Error(`DOCX comments sourceReference commentId ${normalizedId} already exists.`);
+  const prefix = rootPrefix(xml, "document");
+  const paragraphName = regexEscape(qname(prefix, "p"));
+  const tableName = regexEscape(qname(prefix, "tbl"));
+  const rowName = regexEscape(qname(prefix, "tr"));
+  const cellName = regexEscape(qname(prefix, "tc"));
+  const target = config.target && typeof config.target === "object" ? config.target : config;
+  const type = String(target.type || target.kind || (target.tableIndex !== undefined ? "tableCell" : target.paragraphIndex !== undefined ? "paragraph" : "block")).toLowerCase().replace(/[^a-z]/g, "");
+  if (type === "paragraph") {
+    const index = nonNegativeIndex(target.index ?? target.paragraphIndex, "paragraphIndex");
+    const paragraph = indexedXmlMatch(xml, new RegExp(`<${paragraphName}\\b[^>]*(?:\\/>|>[\\s\\S]*?</${paragraphName}>)`, "g"), index, "paragraphIndex");
+    return replaceXmlMatch(xml, paragraph, anchorDocxParagraph(paragraph[0], prefix, normalizedId));
+  }
+  if (type === "block") {
+    const index = nonNegativeIndex(target.index ?? target.blockIndex, "blockIndex");
+    const block = indexedXmlMatch(xml, new RegExp(`<${tableName}\\b[^>]*>[\\s\\S]*?</${tableName}>|<${paragraphName}\\b[^>]*(?:\\/>|>[\\s\\S]*?</${paragraphName}>)`, "g"), index, "blockIndex");
+    if (new RegExp(`^<${paragraphName}\\b`).test(block[0])) return replaceXmlMatch(xml, block, anchorDocxParagraph(block[0], prefix, normalizedId));
+    const paragraph = indexedXmlMatch(block[0], new RegExp(`<${paragraphName}\\b[^>]*(?:\\/>|>[\\s\\S]*?</${paragraphName}>)`, "g"), 0, `blockIndex ${index} paragraphIndex`);
+    return replaceXmlMatch(xml, block, replaceXmlMatch(block[0], paragraph, anchorDocxParagraph(paragraph[0], prefix, normalizedId)));
+  }
+  if (type === "tablecell") {
+    const tableIndex = nonNegativeIndex(target.tableIndex, "tableIndex");
+    const rowIndex = nonNegativeIndex(target.rowIndex ?? target.row, "rowIndex");
+    const columnIndex = nonNegativeIndex(target.columnIndex ?? target.column ?? target.col, "columnIndex");
+    const table = indexedXmlMatch(xml, new RegExp(`<${tableName}\\b[^>]*>[\\s\\S]*?</${tableName}>`, "g"), tableIndex, "tableIndex");
+    const row = indexedXmlMatch(table[0], new RegExp(`<${rowName}\\b[^>]*>[\\s\\S]*?</${rowName}>`, "g"), rowIndex, `tableIndex ${tableIndex} rowIndex`);
+    const cell = indexedXmlMatch(row[0], new RegExp(`<${cellName}\\b[^>]*>[\\s\\S]*?</${cellName}>`, "g"), columnIndex, `tableIndex ${tableIndex} rowIndex ${rowIndex} columnIndex`);
+    const paragraph = indexedXmlMatch(cell[0], new RegExp(`<${paragraphName}\\b[^>]*(?:\\/>|>[\\s\\S]*?</${paragraphName}>)`, "g"), 0, `tableIndex ${tableIndex} rowIndex ${rowIndex} columnIndex ${columnIndex} paragraphIndex`);
+    const nextCell = replaceXmlMatch(cell[0], paragraph, anchorDocxParagraph(paragraph[0], prefix, normalizedId));
+    const nextRow = replaceXmlMatch(row[0], cell, nextCell);
+    return replaceXmlMatch(xml, table, replaceXmlMatch(table[0], row, nextRow));
+  }
+  throw new Error("DOCX comments sourceReference target type must be block, paragraph, or tableCell.");
+}
+
+function mutateDocxCommentReferences(xml, addId, config = {}) {
+  const anchors = Array.isArray(config.anchors) ? config.anchors : [config];
+  if (!addId) return removeDocxCommentAnchors(xml);
+  if (!anchors.length) throw new Error("DOCX comments sourceReference anchors must contain at least one anchor.");
+  return anchors.reduce((next, anchor) => addDocxCommentAnchor(next, anchor), String(xml));
 }
 
 function mutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
@@ -389,12 +496,27 @@ export function supportsOoxmlSourceReference(family, recipeKind) {
 }
 
 export function supportedOoxmlSourceReferenceSummary() {
-  return "DOCX header/footer, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide/slideMaster/slideLayout";
+  return "DOCX header/footer/comments, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide/slideMaster/slideLayout";
+}
+
+export function validateOoxmlSourceReferenceTarget({ family, recipeKind, targetXml, config = {} }) {
+  if (family !== "DOCX" || recipeKind !== "comments") return;
+  const ids = [...String(targetXml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?comment\b[^>]*>/g)].map((match) => wordprocessingId(match[0])).filter((id) => id !== undefined).map(String);
+  const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (duplicates.length) throw new Error(`DOCX comments sourceReference target part has duplicate commentId ${duplicates[0]}.`);
+  const declared = new Set(ids);
+  const anchors = Array.isArray(config.anchors) ? config.anchors : [config];
+  for (const anchor of anchors) {
+    const commentId = anchor?.commentId ?? anchor?.id;
+    if (commentId === undefined || commentId === null || String(commentId) === "") throw new Error("DOCX comments sourceReference commentId is required.");
+    if (!declared.has(String(commentId))) throw new Error(`DOCX comments sourceReference commentId ${commentId} is not declared in the Comments part.`);
+  }
 }
 
 export function mutateOoxmlSourceReference({ family, recipeKind, xml, relationshipIds = new Set(), addId, config = {} }) {
   const key = `${family}:${recipeKind}`;
   if (!SUPPORTED.has(key)) throw new Error(`${family} sourceReference is not supported for recipe ${recipeKind || "(missing)"}. Supported recipes: ${supportedOoxmlSourceReferenceSummary()}.`);
+  if (family === "DOCX" && recipeKind === "comments") return mutateDocxCommentReferences(xml, addId, config);
   if (family === "DOCX") return mutateDocxSectionReference(xml, recipeKind, relationshipIds, addId, config);
   if (family === "PPTX" && recipeKind === "slide") return mutatePptxSlideReference(xml, relationshipIds, addId, config);
   if (family === "PPTX" && recipeKind === "slidemaster") return mutatePptxMasterReference(xml, relationshipIds, addId, config);
