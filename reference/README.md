@@ -11,7 +11,7 @@ This directory contains project-internal reference material for building `open-o
 
 Use this submodule to observe the reference package's public package shape, exported API surface, smoke tests, examples, and observable behavior.
 
-Do **not** vendor the reference package's runtime artifact, runtime module, runtime bindings, or implementation details into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
+Do **not** vendor reference implementation internals into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
 
 ## Relationship to `handoff/reference-skills`
 

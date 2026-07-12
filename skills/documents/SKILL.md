@@ -9,7 +9,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 
 ## Contract
 
-- Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
+- Never import or copy reference implementation internals.
 - Preserve an imported document's content, styles, structure, and review state unless the user requests a redesign.
 - For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in `docs/coverage.md`.
 - Use real list items, tables, comments, hyperlinks, fields, citations, images, sections, and tracked changes rather than visual text imitations.

@@ -1,6 +1,6 @@
 # Third-party notices
 
-`open-office-artifact-tool` is an MIT-licensed clean-room implementation. It does not contain or redistribute the reference package, its runtime artifacts, runtime module modules, or runtime bindings.
+`open-office-artifact-tool` is an MIT-licensed clean-room implementation. It contains this project's implementation code and its declared public dependencies; reference materials are excluded from the npm package.
 
 The npm package declares or optionally integrates the following public libraries. Versions are pinned by `package-lock.json`; consult each installed package's `LICENSE` file for complete license text.
 

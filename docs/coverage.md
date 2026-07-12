@@ -1,6 +1,6 @@
 # Clean-room coverage matrix
 
-This document tracks the target behavior observed from four Office/PDF artifact workflows and the current implementation status of `open-office-artifact-tool`.
+This document tracks the target behavior for four Office/PDF artifact workflows and the current implementation status of `open-office-artifact-tool`.
 
 Status legend:
 

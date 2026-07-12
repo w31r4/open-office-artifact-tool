@@ -9,7 +9,7 @@ Use this project skill for standalone `.pptx` artifact work. It is the clean-roo
 
 ## Contract
 
-- Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
+- Never import or copy reference implementation internals.
 - Preserve an imported deck's content, theme, layouts, notes, comments, and object intent unless the user requests a redesign.
 - Give each slide one narrative job and use audience-facing copy. Do not expose planning notes or production scaffolding on slides.
 - Keep titles at least 50px on covers and 35px on content slides, mid-level text at least 24px, and body text at least 16px unless an inherited template requires otherwise.

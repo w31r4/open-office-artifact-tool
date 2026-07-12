@@ -52,7 +52,7 @@ For a missing add-in, give the user these exact choices:
 2. Or, in Excel, go to **Home > Add-ins**, search for **the spreadsheet add-in**, verify that the publisher is **w31r4, LLC**, and choose **Add** or **Get it now**.
 3. Return to the target workbook and open **the spreadsheet add-in** from the ribbon.
 
-Installing an add-in is a user-controlled software-install action. Ask the user to complete the final install step, then resume inspection. If the Microsoft Marketplace or Office add-in store is blocked by organization policy, ask the user to contact their Microsoft 365 administrator. The official w31r4 setup and admin-deployment guidance is at https://github.com/w31r4/open-office-artifact-tool.
+Installing an add-in is a user-controlled software-install action. Ask the user to complete the final install step, then resume inspection. If the Microsoft Marketplace or Office add-in store is blocked by organization policy, ask the user to contact their Microsoft 365 administrator. The project setup and admin-deployment guidance is at https://github.com/w31r4/open-office-artifact-tool.
 
 ### 3. Open The Spreadsheet add-in Pane
 
@@ -70,7 +70,7 @@ Inspect the contents of the open task pane.
 - A **Sign in**, **Log in**, **Get started**, account-choice, or workspace-access screen means sign-in is incomplete.
 - Do not infer sign-in from the ribbon button, the pane title, or a previously signed-in browser session.
 
-If sign-in is incomplete, ask the user to take over and finish sign-in with the the account and workspace they intend to use. The user must handle credentials, account choice, SSO, and MFA. If the workspace says the add-in is disabled, the user needs a workspace administrator to enable **spreadsheet add-in and Sheets** in workspace permissions. Resume only after the normal chat composer is visible.
+If sign-in is incomplete, ask the user to take over and finish sign-in with the the account and workspace they intend to use. The user must handle credentials, account choice, SSO, and MFA. If the workspace says the add-in is disabled, the user needs a workspace administrator to enable **the spreadsheet add-in and Sheets** in workspace permissions. Resume only after the normal chat composer is visible.
 
 ### 5. Verify Connected-Document Tool Availability
 
@@ -98,11 +98,11 @@ Use the smallest applicable message and wait for the user when their action is r
 
 - **Excel unavailable:** "I cannot find the Microsoft Excel desktop app. Install or make Microsoft Excel available, open it, and tell me to continue. I will not switch this request to another spreadsheet workflow unless you ask me to."
 - **Target workbook unclear:** "Microsoft Excel has more than one workbook open, and I cannot safely identify the target. Tell me the workbook title to use, or bring that workbook to the front and tell me to continue."
-- **Add-in missing:** "Microsoft Excel and the workbook are open, but spreadsheet add-in is not installed. Install the w31r4 add-in from https://marketplace.microsoft.com/en-us/product/office/WA200010215, or use Home > Add-ins in Excel and search for the spreadsheet add-in by w31r4, LLC. Open the spreadsheet add-in from the ribbon when installation finishes, then tell me to continue."
-- **Installation blocked:** "Your organization is blocking the Microsoft Marketplace or the spreadsheet add-in. Ask your Microsoft 365 administrator to deploy spreadsheet add-in using the admin guidance at https://github.com/w31r4/open-office-artifact-tool. After the add-in appears in Excel, open it and tell me to continue."
-- **Pane closed:** "spreadsheet add-in is installed, but its task pane is closed. Open the spreadsheet add-in from the Home ribbon and keep the pane visible, then tell me to continue."
+- **Add-in missing:** "Microsoft Excel and the workbook are open, but the spreadsheet add-in is not installed. Install the w31r4 add-in from https://marketplace.microsoft.com/en-us/product/office/WA200010215, or use Home > Add-ins in Excel and search for the spreadsheet add-in by w31r4, LLC. Open the spreadsheet add-in from the ribbon when installation finishes, then tell me to continue."
+- **Installation blocked:** "Your organization is blocking the Microsoft Marketplace or the spreadsheet add-in. Ask your Microsoft 365 administrator to deploy the spreadsheet add-in using the admin guidance at https://github.com/w31r4/open-office-artifact-tool. After the add-in appears in Excel, open it and tell me to continue."
+- **Pane closed:** "the spreadsheet add-in is installed, but its task pane is closed. Open the spreadsheet add-in from the Home ribbon and keep the pane visible, then tell me to continue."
 - **Signed out:** "The spreadsheet add-in pane is open, but sign-in is not complete. Please finish sign-in, account/workspace selection, and any MFA in the pane. When you see New chat and the Ask anything composer, tell me to continue."
-- **Tools unavailable:** "Excel and spreadsheet add-in are ready, but this agent thread does not have the connected Excel tools. Reinstall or enable the Spreadsheets plugin if needed, then start a new agent thread and retry this request."
+- **Tools unavailable:** "Excel and the spreadsheet add-in are ready, but this agent thread does not have the connected Excel tools. Reinstall or enable the Spreadsheets plugin if needed, then start a new agent thread and retry this request."
 - **Wrong workbook registered:** "agent can see an Excel workbook, but it is not the workbook you asked me to use. Activate the target workbook, open its spreadsheet add-in pane, and tell me to retry. I will not send commands to the other workbook."
 - **Workbook not registered:** "Excel and the signed-in spreadsheet add-in pane are ready, but agent cannot see this workbook yet. Keep the target workbook active, reopen the spreadsheet add-in pane, and tell me to retry. If it still does not connect, reopen the workbook or restart Excel and open the spreadsheet add-in again."
 

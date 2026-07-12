@@ -62,7 +62,7 @@ await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Sheet1" })).save(
 const importedCsv = await SpreadsheetFile.importCsv("Name,Value\r\nRevenue,120", { coerceTypes: true });
 ```
 
-Presentation compose-first authoring uses helper nodes that mirror the agent-oriented JSX vocabulary while staying transpiler-free:
+Presentation compose-first authoring uses helper nodes with an agent-oriented JSX vocabulary while staying transpiler-free:
 
 ```js
 import { column, paragraph, Presentation, PresentationFile, row, box } from "open-office-artifact-tool";
