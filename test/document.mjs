@@ -233,6 +233,7 @@ invalidListDocument.addListItem("Too deep", { level: 9, start: 0 });
 assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListLevel"));
 const missingRunStyleDocument = DocumentModel.create({ blocks: [{ kind: "paragraph", text: "", runs: [{ text: "Missing character style", style: { runStyleId: "MissingCharacterStyle" } }] }] });
 assert.ok(missingRunStyleDocument.verify().issues.some((issue) => issue.type === "unknownRunStyle" && issue.runStyleId === "MissingCharacterStyle"));
+assert.throws(() => DocumentModel.create({ blocks: [{ kind: "paragraph", text: "", runs: [{ text: "Invalid character style", style: { runStyleId: "" } }] }] }), /runStyleId must be a non-empty string/);
 assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListStart"));
 await assert.rejects(() => DocumentFile.exportDocx(invalidListDocument), /level must be an integer from 0 through 8/);
 

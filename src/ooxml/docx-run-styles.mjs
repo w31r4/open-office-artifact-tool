@@ -217,6 +217,10 @@ export function resolveDocxRunStyle(style = {}, theme = {}) {
 export function normalizeDocxRunStyle(style = {}, theme = {}) {
   const input = objectValue(style, "DOCX run style");
   const normalized = { ...input };
+  if ("runStyleId" in normalized) {
+    if (typeof normalized.runStyleId !== "string" || !normalized.runStyleId.trim()) throw new TypeError("DOCX run style runStyleId must be a non-empty string.");
+    normalized.runStyleId = normalized.runStyleId.trim();
+  }
   for (const key of ["bold", "italic", "boldComplexScript", "italicComplexScript"]) {
     if (key in normalized && typeof normalized[key] !== "boolean") throw new TypeError(`DOCX run style ${key} must be a boolean.`);
   }
