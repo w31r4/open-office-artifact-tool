@@ -103,7 +103,7 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing blocks, styles, classic comment author/initials/date metadata and paragraph/table anchors, plus default/first/even header/footer references with zero-based section bindings survived roundtrip. Native import follows `document.xml.rels` targets rather than assuming fixed comments/header/footer filenames. Omit header/footer `sectionIndex` to target the final section.
+- `document.inspect(...)` proves agent-facing blocks, styles, classic comment author/initials/date metadata and block anchors, plus default/first/even header/footer references with zero-based section bindings survived roundtrip. Native import follows `document.xml.rels` targets rather than assuming fixed comments/header/footer filenames, restores external hyperlink URLs/relationship IDs, parses simple and complex fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.
