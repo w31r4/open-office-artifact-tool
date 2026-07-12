@@ -40,6 +40,7 @@ for (const required of [
   "skills/shared/visual-baselines.mjs",
   "skills/spreadsheets/scripts/verify-workbook.mjs",
   "skills/spreadsheets/fixtures/formula-summary.json",
+  "skills/spreadsheets/fixtures/structured-intersection.json",
   "skills/documents/SKILL.md",
   "skills/documents/scripts/verify-document.mjs",
   "skills/documents/fixtures/business-brief.json",

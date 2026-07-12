@@ -1,0 +1,49 @@
+{
+  "name": "structured-intersection",
+  "outputName": "structured-intersection.xlsx",
+  "sheets": [
+    {
+      "name": "Intersection",
+      "ranges": [
+        {
+          "range": "A1:C4",
+          "values": [
+            ["Month", "Revenue", "Cost"],
+            ["Jan", 100, 60],
+            ["Feb", 120, 70],
+            ["Mar", 150, 90]
+          ]
+        },
+        {
+          "range": "D1:D3",
+          "values": [["Evidence"], [null], [null]]
+        },
+        {
+          "range": "D2:D3",
+          "formulas": [
+            ["=SUM(IntersectionTable[[Month]:[Revenue]] IntersectionTable[[Revenue]:[Cost]])"],
+            ["=SUM(IntersectionTable[Month] IntersectionTable[Cost])"]
+          ]
+        },
+        {
+          "range": "A1:D1",
+          "format": { "fill": "#0F766E", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        { "range": "A1:D4", "autofitColumns": true }
+      ],
+      "tables": [
+        { "range": "A1:C4", "name": "IntersectionTable", "style": "TableStyleMedium4" }
+      ]
+    }
+  ],
+  "expectations": [
+    { "sheet": "Intersection", "range": "D2:D3", "values": [[370], ["#NULL!"]] }
+  ],
+  "qa": {
+    "sheetName": "Intersection",
+    "range": "A1:D4",
+    "renderFormat": "png",
+    "inspectKind": "workbook,sheet,table,formula",
+    "maxChars": 16000
+  }
+}

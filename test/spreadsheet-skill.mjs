@@ -93,8 +93,6 @@ try {
   assert.match(workbook.help("workbook.structuredReferences").ndjson, /space intersection/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("G14").values[0][0], 1);
-  assert.equal(workbook.worksheets.getItem("Summary").getRange("H2").values[0][0], 370);
-  assert.deepEqual(workbook.trace("Summary!H2").tree.precedents.map((node) => node.address), ["B2", "B3", "B4"]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
@@ -108,7 +106,6 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"useWholeDay":false/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"groupBy":"quarters"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Gross Profit"/);
-  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable\[\[Month\]:\[Revenue\]\] SummaryTable\[\[Revenue\]:\[Cost\]\]/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
@@ -149,10 +146,29 @@ try {
     assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
     assert.equal(libreOfficeSummary.getRange("A1").format.border.bottom.style, "double");
     assert.equal(libreOfficeSummary.getRange("G14").values[0][0], 1);
-    assert.equal(libreOfficeSummary.getRange("H2").values[0][0], 370);
     assert.ok(libreOfficeSummary.charts.items.length >= 1);
     assert.ok(libreOfficeSummary.images.items.length >= 1);
     assert.ok(libreOfficeSummary.pivotTables.items.some((pivot) => pivot.name === "RevenuePivot"));
+  }
+  const intersectionResult = await runSpreadsheetFixture(path.join(repoRoot, "skills", "spreadsheets", "fixtures", "structured-intersection.json"), {
+    outputDir: path.join(outputDir, "structured-intersection"),
+    nativeRender: "off",
+  });
+  const intersectionWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(intersectionResult.workbookPath));
+  assert.deepEqual(intersectionWorkbook.worksheets.getItem("Intersection").getRange("D2:D3").values, [[370], ["#NULL!"]]);
+  assert.deepEqual(intersectionWorkbook.trace("Intersection!D2").tree.precedents.map((node) => node.address), ["B2", "B3", "B4"]);
+  assert.match(await fs.readFile(intersectionResult.qa.summary.files.inspect, "utf8"), /IntersectionTable\[\[Month\]:\[Revenue\]\] IntersectionTable\[\[Revenue\]:\[Cost\]\]/);
+  const intersectionZip = await JSZip.loadAsync(await fs.readFile(intersectionResult.workbookPath));
+  assert.match(await intersectionZip.file("xl/worksheets/sheet1.xml").async("text"), /IntersectionTable\[\[Month\]:\[Revenue\]\] IntersectionTable\[\[Revenue\]:\[Cost\]\]/);
+  if (nativeStatus.commands.soffice) {
+    const libreOffice = createLibreOfficeRenderer();
+    const intersectionXlsx = await FileBlob.load(intersectionResult.workbookPath);
+    const ods = await libreOffice({ input: intersectionXlsx, inputType: intersectionXlsx.type, outputType: "application/vnd.oasis.opendocument.spreadsheet", format: "ods", artifactKind: "workbook" });
+    const rewrittenXlsx = await libreOffice({ input: ods, inputType: "application/vnd.oasis.opendocument.spreadsheet", outputType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", format: "xlsx", artifactKind: "workbook", libreOffice: { inputExtension: "ods" } });
+    const rewrittenWorkbook = await SpreadsheetFile.importXlsx(rewrittenXlsx);
+    assert.deepEqual(rewrittenWorkbook.worksheets.getItem("Intersection").getRange("D2:D3").values, [[370], ["#NULL!"]]);
+    assert.match(rewrittenWorkbook.worksheets.getItem("Intersection").getRange("D2").formulas[0][0], /\$A\$2:\$B\$4 Intersection!\$B\$2:\$C\$4/);
+    assert.deepEqual(rewrittenWorkbook.trace("Intersection!D2").tree.precedents.map((node) => node.address), ["B2", "B3", "B4"]);
   }
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);
