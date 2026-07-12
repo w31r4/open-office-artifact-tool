@@ -75,9 +75,24 @@ try {
   assert.match(packageDrawing.qa.inspect.ndjson, /Agent readiness chart/);
   assert.match(packageDrawing.qa.inspect.ndjson, /Agent status/);
   assert.equal(packageDrawing.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
+  const packageReview = await runPresentationFixture("skills/presentations/fixtures/package-notes-comments.json", {
+    outputDir: path.join(root, "package-notes-comments"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(packageReview.qa.summary.packageOk, true);
+  assert.equal(packageReview.qa.packageInspect.records[0].semanticValidation, true);
+  assert.equal(packageReview.qa.packageInspect.records[0].semanticIssues, 0);
+  assert.ok(packageReview.qa.packageInspect.parts.some((part) => part.path === "ppt/review/notes/agent-notes.xml"));
+  assert.ok(packageReview.qa.packageInspect.parts.some((part) => part.path === "ppt/review/comments/agent-review.xml"));
+  assert.ok(packageReview.qa.packageInspect.parts.some((part) => part.path === "ppt/review/comments/agent-authors.xml"));
+  assert.match(packageReview.qa.presentation.slides.items[0].speakerNotes.text, /author identity and package relationships/);
+  assert.deepEqual(packageReview.qa.presentation.slides.items[0].comments.items[0].comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
+  assert.equal(packageReview.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   const skillText = await fs.readFile("skills/presentations/SKILL.md", "utf8");
   assert.match(skillText, /PresentationFile\.patchPptx/);
   assert.match(skillText, /package-drawing\.json/);
+  assert.match(skillText, /package-notes-comments\.json/);
 
   console.log("presentation skill smoke ok");
 } finally {

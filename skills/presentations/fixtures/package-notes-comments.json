@@ -1,0 +1,58 @@
+{
+  "name": "package-notes-comments",
+  "outputName": "package-notes-comments.pptx",
+  "slideSize": { "width": 1280, "height": 720 },
+  "theme": {
+    "name": "Package Review",
+    "colors": { "accent1": "#7c3aed", "accent2": "#16a34a", "tx1": "#111827", "bg1": "#ffffff" }
+  },
+  "slides": [
+    {
+      "name": "review-target",
+      "notes": "Explain why author identity and package relationships are both required evidence.",
+      "shapes": [
+        {
+          "name": "review-title",
+          "text": "Notes and comments remain editable",
+          "position": { "left": 70, "top": 70, "width": 1000, "height": 100 },
+          "textStyle": { "fontSize": 42, "bold": true }
+        },
+        {
+          "name": "review-evidence",
+          "text": "Arbitrary part paths, stable authors, native rendering",
+          "position": { "left": 70, "top": 230, "width": 960, "height": 160 },
+          "fill": "#ede9fe",
+          "line": { "fill": "#7c3aed", "width": 2 },
+          "textStyle": { "fontSize": 28 }
+        }
+      ],
+      "comments": [
+        {
+          "targetName": "review-title",
+          "author": "QA Agent",
+          "text": "Verify the relocated review parts before delivery.",
+          "replies": [{ "author": "Maintainer", "text": "Author registry and indexes validated." }],
+          "resolved": true
+        }
+      ]
+    }
+  ],
+  "packageReview": {
+    "slideIndex": 0,
+    "notesPartPath": "ppt/review/notes/agent-notes.xml",
+    "commentsPartPath": "ppt/review/comments/agent-review.xml",
+    "authorsPartPath": "ppt/review/comments/agent-authors.xml",
+    "notesRelationshipId": "rIdAgentNotes",
+    "commentsRelationshipId": "rIdAgentComments",
+    "authorsRelationshipId": "rIdAgentAuthors"
+  },
+  "expectInspect": [
+    { "kind": "notes", "pattern": "author identity and package relationships" },
+    { "kind": "comment", "pattern": "relocated review parts" }
+  ],
+  "qa": {
+    "nativeRender": "auto",
+    "inspectKind": "deck,slide,shape,notes,comment,textRange",
+    "maxChars": 16000
+  }
+}

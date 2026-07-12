@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
+import { validatePptxPackageSemantics } from "./ooxml/pptx-package-semantics.mjs";
 import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference, validateOoxmlSourceReferenceTarget } from "./ooxml/source-references.mjs";
 import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
@@ -18,6 +19,14 @@ const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PDF_MIME = "application/pdf";
 const LAYOUT_MIME = "application/vnd.open-office-artifact.layout+json";
+
+const PPTX_PACKAGE_CONFIG = {
+  family: "PPTX",
+  packageKind: "pptxPackage",
+  partKind: "pptxPart",
+  counts: { slides: /^ppt\/slides\/slide\d+\.xml$/ },
+  semanticIssues: validatePptxPackageSemantics,
+};
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -1001,8 +1010,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package or semantic references." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
@@ -1235,7 +1244,7 @@ const HELP_DETAIL_OVERRIDES = {
         maxTotalBytes: { type: "number", description: "Maximum total uncompressed package bytes." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
-      returns: { package: { type: "object", description: "PPTX package result with ok, issues, parts, records, and bounded NDJSON." } },
+      returns: { package: { type: "object", description: "PPTX package result with ok, issues, parts, records, bounded NDJSON, and notes/comments semantic validation evidence." } },
     },
   },
   "PdfFile.inspectPdf": {
@@ -1880,7 +1889,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     syncContentTypes: { type: "boolean", description: "Synchronize inferred or explicit content-type declarations; defaults to true." },
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
-    validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
+    validateResult: { type: "boolean", description: "Validate final content types, relationships, and PPTX notes/comments semantics atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
     recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX supports slide/master/layout ID lists plus image/chart objects in a slide shape tree." },
     sourceReference: { type: "boolean|object", description: "Opt-in semantic XML mutation. Image/chart objects require explicit pixel position { left, top, width, height }, validate generated or explicit non-visual objectId, and clean matching slide objects on deletion." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
@@ -7721,11 +7730,11 @@ export class ImageElement {
 
 export class PresentationFile {
   static async inspectPptx(blobOrBuffer, options = {}) {
-    return inspectOoxmlPackage(blobOrBuffer, options, { family: "PPTX", packageKind: "pptxPackage", partKind: "pptxPart", counts: { slides: /^ppt\/slides\/slide\d+\.xml$/ } });
+    return inspectOoxmlPackage(blobOrBuffer, options, PPTX_PACKAGE_CONFIG);
   }
 
   static async patchPptx(blobOrBuffer, patches = [], options = {}) {
-    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "PPTX" });
+    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, PPTX_PACKAGE_CONFIG);
     return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
@@ -9645,9 +9654,15 @@ async function ooxmlPackageRecords(zip, options = {}, config = {}) {
     bytesByPath.set(partPath, bytes);
   }
   const issues = ooxmlPackageIssues(files, bytesByPath, contentTypes, family);
+  const semanticIssues = config.semanticIssues ? await config.semanticIssues({ bytesByPath, contentTypes, family }) : [];
+  issues.push(...semanticIssues);
   records[0].uncompressedBytes = totalBytes;
   records[0].relationshipReferences = [...bytesByPath].reduce((count, [partPath, bytes]) => count + (partPath.endsWith(".xml") && partPath !== "[Content_Types].xml" ? ooxmlRelationshipReferences(decoder.decode(bytes)).length : 0), 0);
   records[0].relationshipReferenceIssues = issues.filter((issue) => issue.type === "relationshipReferencePartNotFound" || issue.type === "relationshipReferenceIdNotFound").length;
+  if (config.semanticIssues) {
+    records[0].semanticValidation = true;
+    records[0].semanticIssues = semanticIssues.length;
+  }
   records[0].ok = issues.length === 0;
   records[0].issues = issues.length;
   records.push(...issues);
@@ -9878,7 +9893,7 @@ async function patchOoxmlPackage(blobOrBuffer, patches = [], options = {}, confi
   const validated = options.validateResult !== false;
   let validationIssues = [];
   if (validated) {
-    const records = await ooxmlPackageRecords(zip, { maxParts, maxPartBytes: options.maxPartBytes, maxTotalBytes: options.maxTotalBytes }, { family });
+    const records = await ooxmlPackageRecords(zip, { maxParts, maxPartBytes: options.maxPartBytes, maxTotalBytes: options.maxTotalBytes }, { ...config, family });
     validationIssues = records.filter((record) => record.kind === "ooxmlIssue");
     if (validationIssues.length) {
       const summary = validationIssues.slice(0, 5).map((issue) => `${issue.type}${issue.path ? `:${issue.path}` : ""}`).join(", ");

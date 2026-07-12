@@ -30,7 +30,7 @@ The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotn
 
 GitHub CI and the manual release workflow install Playwright Chromium, LibreOffice Writer/Calc/Impress, Poppler, and .NET 8 before running these gates. Their environment-probe step is required, so hosted runs exercise real browser and native render branches instead of silently accepting skips.
 
-`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, OOXML helper modules, and third-party notices while rejecting reference reference/handoff material and local dotnet `bin/obj` build output. The current 69-file unpacked package is about 1.345 MB and must remain below the deliberately tight 1.365 MB gate, which still catches accidentally bundled fonts, references, fixtures outside the published skills, and build artifacts.
+`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, OOXML helper modules, and third-party notices while rejecting reference reference/handoff material and local dotnet `bin/obj` build output. The current 71-file unpacked package is about 1.363 MB and must remain below the deliberately tight 1.385 MB gate, which still catches accidentally bundled fonts, references, fixtures outside the published skills, and build artifacts.
 
 ## Latest observed blockers in this environment
 

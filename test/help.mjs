@@ -194,6 +194,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPp
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncSourceReferences?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.recipe?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.sourceReference?.description || "", /explicit pixel position/);
+assert.match(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.description || "", /notes\/comments semantics/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.relationship?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.validateResult?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.syncSourceReferences?.type, "boolean");

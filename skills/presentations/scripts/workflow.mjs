@@ -115,6 +115,36 @@ async function applyFixturePackageDrawing(pptx, fixture = {}) {
   return patches.length ? PresentationFile.patchPptx(pptx, patches) : pptx;
 }
 
+async function applyFixturePackageReview(pptx, fixture = {}) {
+  const review = fixture.packageReview;
+  if (!review) return pptx;
+  const slideIndex = Number(review.slideIndex ?? 0);
+  if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex >= (fixture.slides || []).length) throw new RangeError("packageReview.slideIndex is out of range.");
+  const number = slideIndex + 1;
+  const source = `ppt/slides/slide${number}.xml`;
+  const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+  const notesSource = `ppt/notesSlides/notesSlide${number}.xml`;
+  const commentsSource = `ppt/comments/comment${number}.xml`;
+  const authorsSource = "ppt/commentAuthors.xml";
+  const [notesXml, commentsXml, authorsXml] = await Promise.all([
+    zip.file(notesSource)?.async("text"),
+    zip.file(commentsSource)?.async("text"),
+    zip.file(authorsSource)?.async("text"),
+  ]);
+  if (!notesXml || !commentsXml || !authorsXml) throw new Error("packageReview requires the target slide to contain notes and comments with authors.");
+  const notesPath = review.notesPartPath || `ppt/review/notes/slide-${number}.xml`;
+  const commentsPath = review.commentsPartPath || `ppt/review/comments/slide-${number}.xml`;
+  const authorsPath = review.authorsPartPath || "ppt/review/comments/authors.xml";
+  return PresentationFile.patchPptx(pptx, [
+    { path: notesSource, remove: true },
+    { path: commentsSource, remove: true },
+    { path: authorsSource, remove: true },
+    { path: notesPath, xml: notesXml, recipe: { kind: "notesSlide", source, id: review.notesRelationshipId } },
+    { path: commentsPath, xml: commentsXml, recipe: { kind: "comments", source, id: review.commentsRelationshipId } },
+    { path: authorsPath, xml: authorsXml, recipe: { kind: "commentAuthors", source: "ppt/presentation.xml", id: review.authorsRelationshipId } },
+  ]);
+}
+
 function pdfPageCount(pdfPath) {
   const result = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8", shell: false });
   if (result.status !== 0) throw new Error(`pdfinfo failed for ${pdfPath}: ${result.stderr || result.stdout}`);
@@ -305,6 +335,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   const pptxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "presentation"}.pptx`);
   let pptx = await PresentationFile.exportPptx(presentation);
   pptx = await applyFixturePackageDrawing(pptx, fixture);
+  pptx = await applyFixturePackageReview(pptx, fixture);
   await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {
     outputDir: path.join(outputDir, "qa"),

@@ -370,6 +370,31 @@ assert.match(await relocatedZip.file("ppt/_rels/presentation.xml.rels").async("t
 const relocatedLoaded = await PresentationFile.importPptx(relocatedNotesComments);
 assert.match(relocatedLoaded.slides.items[0].speakerNotes.text, /Speaker note/);
 assert.deepEqual(relocatedLoaded.slides.items[0].comments.items[0].comments.map((comment) => comment.author), ["Reviewer", "Editor"]);
+const invalidCommentRootXml = commentsXml.replace(/<p:cmLst\b/, "<p:notes").replace(/<\/p:cmLst>/, "</p:notes>");
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/comments/comment1.xml", xml: invalidCommentRootXml }]), /invalid OOXML package.*pptxSemanticPartRootInvalid/);
+const invalidCommentRootPptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/comments/comment1.xml", xml: invalidCommentRootXml }], { validateResult: false });
+const invalidCommentRootInspect = await PresentationFile.inspectPptx(invalidCommentRootPptx);
+assert.equal(invalidCommentRootInspect.ok, false);
+assert.ok(invalidCommentRootInspect.issues.some((issue) => issue.type === "pptxSemanticPartRootInvalid" && issue.path === "ppt/comments/comment1.xml"));
+const strictPresentationNamespace = "http://purl.oclc.org/ooxml/presentationml/main";
+const strictReviewPptx = await PresentationFile.patchPptx(pptx, [
+  { path: "ppt/notesSlides/notesSlide1.xml", xml: notesXml.replaceAll("http://schemas.openxmlformats.org/presentationml/2006/main", strictPresentationNamespace) },
+  { path: "ppt/comments/comment1.xml", xml: commentsXml.replaceAll("http://schemas.openxmlformats.org/presentationml/2006/main", strictPresentationNamespace) },
+  { path: "ppt/commentAuthors.xml", xml: commentAuthorsXml.replaceAll("http://schemas.openxmlformats.org/presentationml/2006/main", strictPresentationNamespace) },
+]);
+assert.equal((await PresentationFile.inspectPptx(strictReviewPptx)).ok, true);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/comments/comment1.xml", xml: commentsXml.replace('authorId="0"', 'authorId="99"') }]), /invalid OOXML package.*pptxCommentAuthorReferenceNotFound/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/comments/comment1.xml", xml: commentsXml.replace('authorId="1"', 'authorId="0"') }]), /invalid OOXML package.*pptxCommentIndexDuplicate/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/comments/comment1.xml", xml: commentsXml.replace(/ dt="[^"]+"/, ' dt="not-a-date"') }]), /invalid OOXML package.*pptxCommentDateInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/comments/comment1.xml", xml: commentsXml.replace(/<p:pos\b[^>]*\/>/, "") }]), /invalid OOXML package.*pptxCommentPositionInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/commentAuthors.xml", xml: commentAuthorsXml.replace('lastIdx="1"', 'lastIdx="0"') }]), /invalid OOXML package.*pptxCommentLastIndexTooSmall/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/commentAuthors.xml", xml: commentAuthorsXml.replace('id="1"', 'id="0"') }]), /invalid OOXML package.*pptxCommentAuthorDuplicateId/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/notesSlides/notesSlide1.xml", xml: notesXml.replace(/<p:cSld>[\s\S]*?<\/p:cSld>/, "") }]), /invalid OOXML package.*pptxNotesCommonSlideDataMissing/);
+const orphanedCommentsRels = slideRelsXml.replace(/<Relationship\b[^>]*relationships\/comments[^>]*\/>/, "");
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/slides/_rels/slide1.xml.rels", xml: orphanedCommentsRels }]), /invalid OOXML package.*pptxSemanticPartOrphaned/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/commentAuthors.xml", remove: true, recipe: { kind: "commentAuthors", source: "ppt/presentation.xml" } }]), /invalid OOXML package.*pptxCommentAuthorsMissing/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/custom/notes/wrong-source.xml", xml: notesXml, recipe: { kind: "notesSlide", source: "ppt/presentation.xml" } }]), /invalid OOXML package.*pptxSemanticRelationshipSourceInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(pptx, [{ path: "ppt/custom/comments/authors-duplicate.xml", xml: commentAuthorsXml, recipe: { kind: "commentAuthors", source: "ppt/presentation.xml" } }]), /invalid OOXML package.*pptxCommentAuthorsMultiplicity/);
 const chartXml = await zip.file("ppt/charts/chart1.xml").async("text");
 assert.match(chartXml, /Native Import Chart/);
 assert.match(chartXml, /<c:v>14<\/c:v>/);
