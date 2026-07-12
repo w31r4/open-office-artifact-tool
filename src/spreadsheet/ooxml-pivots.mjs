@@ -1,6 +1,6 @@
 import { pivotFormulaToOoxml } from "./pivot-formulas.mjs";
 import { PIVOT_DATE_FILTER_TYPES, pivotItemVisible } from "./pivot-filters.mjs";
-import { pivotDateKey } from "./pivot-dates.mjs";
+import { pivotDateKey, pivotDateTimeKey } from "./pivot-dates.mjs";
 import { PIVOT_CALENDAR_GROUP_TYPES, pivotGroupItems, pivotGroupValue } from "./pivot-groups.mjs";
 import { pivotValueLabel } from "./pivots.mjs";
 
@@ -219,8 +219,8 @@ function uniqueValues(values = []) {
 
 function cacheItemXml(value, dateSystem = "1900", asDate = false) {
   if (value == null || value === "") return "<m/>";
-  const date = asDate ? pivotDateKey(value, dateSystem) : undefined;
-  if (date) return `<d v="${date}T00:00:00"/>`;
+  const date = asDate ? pivotDateTimeKey(value, dateSystem) : undefined;
+  if (date) return `<d v="${date}"/>`;
   if (typeof value === "number" && Number.isFinite(value)) return `<n v="${value}"/>`;
   if (typeof value === "boolean") return `<b v="${value ? 1 : 0}"/>`;
   return `<s v="${attrEscape(value)}"/>`;

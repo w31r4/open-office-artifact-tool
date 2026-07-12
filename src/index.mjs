@@ -2110,7 +2110,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     rowFields: { type: "string[]", description: "Row field names." },
     columnFields: { type: "string[]", description: "Column field names." },
     valueFields: { type: "object[]", description: "Value field and aggregation definitions." },
-    groupFields: { type: "object[]", description: "Derived group fields with unique name/sourceField. Calendar groupBy values years/quarters/months form OOXML base/par hierarchies; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items. Group fields may be used on row/column axes or with item filters." },
+    groupFields: { type: "object[]", description: "Derived group fields with unique name/sourceField. Calendar/time groupBy values years/quarters/months/days/hours/minutes/seconds form OOXML base/par hierarchies and accept bounded groupInterval values; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items." },
     calculatedFields: { type: "object[]", description: "Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected." },
     filters: { type: "object|object[]", description: "Axis filters. Use exactly one non-empty include/exclude array for item filters, or an absolute whole-day type: dateEqual, dateNotEqual, dateOlderThan, dateOlderThanOrEqual, dateNewerThan, dateNewerThanOrEqual, dateBetween, or dateNotBetween with ISO/Date value1 and value2 for between types. The field must be on a row or column axis; useWholeDay=false and relative date filters are not yet supported." },
     refreshPolicy: { type: "object", description: "OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso." },
@@ -6465,6 +6465,10 @@ function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styl
   const f = cellFormulaXml(address, cell);
   const styleIndex = xlsxStyleIndex(cell, styleTable);
   const s = styleIndex ? ` s="${styleIndex}"` : "";
+  if (cell.value instanceof Date && !Number.isNaN(cell.value.valueOf())) {
+    const value = cell.value.toISOString();
+    return f ? `<c r="${address}" t="str"${s}>${f}<v>${value}</v></c>` : `<c r="${address}" t="inlineStr"${s}><is><t>${value}</t></is></c>`;
+  }
   if (typeof cell.value === "number") return `<c r="${address}"${s}>${f}<v>${cell.value}</v></c>`;
   if (typeof cell.value === "boolean") return `<c r="${address}" t="b"${s}>${f}<v>${cell.value ? 1 : 0}</v></c>`;
   if (cell.value == null && !f) return styleIndex ? `<c r="${address}"${s}/>` : "";

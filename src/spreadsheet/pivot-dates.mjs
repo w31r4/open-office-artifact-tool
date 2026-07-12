@@ -59,6 +59,11 @@ export function pivotDateKey(value, dateSystem = "1900") {
   return parts ? `${padded(parts.year, 4)}-${padded(parts.month)}-${padded(parts.day)}` : undefined;
 }
 
+export function pivotDateTimeKey(value, dateSystem = "1900") {
+  const parts = pivotDateParts(value, dateSystem);
+  return parts ? `${padded(parts.year, 4)}-${padded(parts.month)}-${padded(parts.day)}T${padded(parts.hour)}:${padded(parts.minute)}:${padded(parts.second)}` : undefined;
+}
+
 export function normalizePivotDate(value, label) {
   const result = pivotDateKey(value);
   if (!result || typeof value === "number") throw new TypeError(`${label} must be an ISO date or Date.`);

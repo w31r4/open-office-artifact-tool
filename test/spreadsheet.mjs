@@ -23,6 +23,10 @@ assert.equal(pivotGroupValue({ groupBy: "range", range: { startNum: 0, endNum: 2
 assert.equal(pivotGroupValue({ groupBy: "range", range: { startNum: 0, endNum: 29, groupInterval: 10 } }, 30), ">29");
 assert.equal(pivotGroupValue({ groupBy: "discrete", groups: [{ name: "Coasts", items: ["East", "West"] }] }, "West"), "Coasts");
 assert.equal(pivotGroupValue({ groupBy: "discrete", groups: [{ name: "Coasts", items: ["East", "West"] }] }, "Central"), "Central");
+assert.equal(pivotGroupValue({ groupBy: "hours", range: { groupInterval: 1 } }, 0.5, "1904"), "12");
+assert.equal(pivotGroupValue({ groupBy: "minutes", range: { groupInterval: 15 } }, "2026-07-12T09:37:45Z"), "30-44");
+assert.equal(pivotGroupValue({ groupBy: "seconds", range: { groupInterval: 10 } }, "2026-07-12T09:37:45Z"), "40-49");
+assert.equal(pivotGroupValue({ groupBy: "days", range: { groupInterval: 7 } }, "2026-07-12"), "8-14");
 assert.deepEqual(normalizePivotGroupFields([{ name: "Auto Band", sourceField: "Score", groupBy: "range", range: { groupInterval: 10 } }], ["Score"], false, { Score: [5, 25] })[0].range, { autoStart: true, autoEnd: true, startNum: 5, endNum: 25, groupInterval: 10 });
 assert.deepEqual(normalizePivotGroupFields([{ name: "Auto Band", sourceField: "Score", groupBy: "range", range: { groupInterval: 10 } }], ["Score"], false, { Score: [null, "", 5, 25] })[0].range, { autoStart: true, autoEnd: true, startNum: 5, endNum: 25, groupInterval: 10 });
 assert.equal(pivotGroupValue({ groupBy: "range", range: { startNum: 0, endNum: 29, groupInterval: 10 } }, ""), null);
@@ -374,6 +378,45 @@ assert.deepEqual(nativeDiscretePivot.groupFields[0].groups, [{ name: "Coasts", i
 const nativeGroupingRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeGroupingBook));
 assert.deepEqual(nativeGroupingRoundtrip.resolve("NumericGrouping").computedValues(), numericPivot.computedValues());
 assert.deepEqual(nativeGroupingRoundtrip.resolve("DiscreteGrouping").computedValues(), discretePivot.computedValues());
+const timeBook = Workbook.create({ dateSystem: "1904" });
+const timeSheet = timeBook.worksheets.add("Time Groups");
+timeSheet.getRange("A1:B6").values = [
+  ["Timestamp", "Amount"],
+  ["2026-07-01T09:07:05Z", 10],
+  ["2026-07-08T09:22:15Z", 20],
+  [new Date("2026-07-15T10:37:25Z"), 30],
+  ["2026-07-22T10:52:35Z", 40],
+  [0.5, 50],
+];
+const timePivot = timeSheet.pivotTables.add({
+  name: "TimeGrouping",
+  sourceRange: "A1:B6",
+  targetRange: "D1:I8",
+  groupFields: [
+    { name: "Day Band", sourceField: "Timestamp", groupBy: "days", range: { groupInterval: 7 } },
+    { name: "Hour", sourceField: "Timestamp", groupBy: "hours" },
+    { name: "Minute Band", sourceField: "Timestamp", groupBy: "minutes", range: { groupInterval: 15 } },
+    { name: "Second Band", sourceField: "Timestamp", groupBy: "seconds", range: { groupInterval: 10 } },
+  ],
+  rowFields: ["Day Band", "Hour", "Minute Band", "Second Band"],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+});
+assert.deepEqual(timePivot.groupFields.map(({ name, parent }) => [name, parent]), [["Day Band", undefined], ["Hour", "Day Band"], ["Minute Band", "Hour"], ["Second Band", "Minute Band"]]);
+assert.deepEqual(timePivot.computedValues()[1], ["1-7", "09", "00-14", "00-09", 10]);
+assert.deepEqual(timePivot.computedValues().at(-1), ["1-7", "12", "00-14", "00-09", 50]);
+const timeXlsx = await SpreadsheetFile.exportXlsx(timeBook);
+const timeZip = await JSZip.loadAsync(new Uint8Array(await timeXlsx.arrayBuffer()));
+const timeCacheXml = await timeZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
+assert.match(timeCacheXml, /<d v="2026-07-01T09:07:05"\/>/);
+assert.match(timeCacheXml, /<rangePr groupBy="days" autoStart="1" autoEnd="1" groupInterval="7"\/>/);
+assert.match(timeCacheXml, /<rangePr groupBy="hours" autoStart="1" autoEnd="1" groupInterval="1"\/>/);
+assert.match(timeCacheXml, /<rangePr groupBy="minutes" autoStart="1" autoEnd="1" groupInterval="15"\/>/);
+assert.match(timeCacheXml, /<rangePr groupBy="seconds" autoStart="1" autoEnd="1" groupInterval="10"\/>/);
+timeZip.remove("customXml/open-office-artifact.json");
+const nativeTimeBook = await SpreadsheetFile.importXlsx(new FileBlob(await timeZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: timeXlsx.type }));
+assert.deepEqual(nativeTimeBook.resolve("TimeGrouping").computedValues(), timePivot.computedValues());
+const timeRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeTimeBook));
+assert.deepEqual(timeRoundtrip.resolve("TimeGrouping").computedValues(), timePivot.computedValues());
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
@@ -397,7 +440,8 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: Array.from({ length: 129 }, (_, index) => ({ name: `Year ${index}`, sourceField: "OrderDate", groupBy: "years" })), rowFields: ["Region"] }), /exceeds 128 fields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Region", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Region"] }), /must not replace a source field/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Year", sourceField: "Missing", groupBy: "years" }], rowFields: ["Year"] }), /unknown source field Missing/);
-assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Day", sourceField: "OrderDate", groupBy: "days" }], rowFields: ["Day"] }), /must be years, quarters, months, range, or discrete/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Week", sourceField: "OrderDate", groupBy: "weeks" }], rowFields: ["Week"] }), /supported calendar\/time level/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Minute", sourceField: "OrderDate", groupBy: "minutes", range: { groupInterval: 0 } }], rowFields: ["Minute"] }), /integer from 1 to 32767/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Month 1", sourceField: "OrderDate", groupBy: "months" }, { name: "Month 2", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Month 1"] }), /must not repeat a groupBy/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Period", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Period"], calculatedFields: [{ name: "Period", formula: "Revenue" }] }), /must not replace a group field/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Year", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Year"], filters: [{ field: "Year", type: "dateEqual", value1: "2026-01-01" }] }), /must target a source date field/);
@@ -1360,14 +1404,14 @@ const unsupportedCalculatedRoundtripZip = await JSZip.loadAsync(new Uint8Array(a
 assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SUM\('Revenue'\)"/);
 const unsupportedGroupZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedGroupZip.remove("customXml/open-office-artifact.json");
-unsupportedGroupZip.file("xl/pivotCache/pivotCacheDefinition3.xml", calendarPivotCacheXml.replace('groupBy="months"', 'groupBy="days"'));
+unsupportedGroupZip.file("xl/pivotCache/pivotCacheDefinition3.xml", calendarPivotCacheXml.replace('groupBy="months"', 'groupBy="weeks"'));
 const unsupportedGroupWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await unsupportedGroupZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
 const unsupportedGroupPivot = unsupportedGroupWorkbook.resolve("CalendarPivot");
 assert.equal(unsupportedGroupPivot.groupFields.find((field) => field.name === "Order Month").supported, false);
 assert.match(unsupportedGroupPivot.computedValues()[0].join(","), /#NAME\?/);
 assert.match(unsupportedGroupWorkbook.verify().ndjson, /pivotGroupFieldUnsupported/);
 const unsupportedGroupRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedGroupWorkbook)).arrayBuffer()));
-assert.match(await unsupportedGroupRoundtripZip.file("xl/pivotCache/pivotCacheDefinition3.xml").async("text"), /groupBy="days"/);
+assert.match(await unsupportedGroupRoundtripZip.file("xl/pivotCache/pivotCacheDefinition3.xml").async("text"), /groupBy="weeks"/);
 const nativeOnlyImage = nativeOnlySheet.images.getItemOrNullObject("LogoImage");
 assert.equal(nativeOnlyImage.alt, "Logo placeholder");
 assert.match(nativeOnlyImage.dataUrl, /^data:image\/png;base64,/);
