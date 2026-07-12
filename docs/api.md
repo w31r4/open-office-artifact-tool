@@ -1805,7 +1805,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
-| `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
+| `workbook.comments.addThread` | api | Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships. |
 | `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
@@ -3616,16 +3616,20 @@ Apply path-validated XLSX part patches, build worksheet/table/drawing/image/char
 
 #### `workbook.comments.addThread`
 
-Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...').
+Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships.
 
 **Schema parameters:**
 
 - `target` (Range|object) required — Target single-cell range or cell descriptor.
 - `text` (string) required — Initial comment text.
+- `author` (string) — Root comment author; defaults to comments.setSelf identity.
+- `id` (string) — Optional stable model thread ID.
+- `comment` (object) — Optional native root metadata: brace-delimited GUID id/personId, person record, ISO date, and done state.
+- `resolved` (boolean) — Initial thread resolution state.
 
 **Schema returns:**
 
-- `thread` (CommentThread) — Attached threaded comment using comments.setSelf author identity.
+- `thread` (CommentThread) — Attached Office 2019 threaded comment. addReply(text, config) accepts the same native identity/date/person metadata.
 
 #### `Workbook.create`
 

@@ -137,6 +137,14 @@ export function createWorkbookFromFixture(fixture = {}) {
     }
     for (const imageFixture of sheetFixture.images || []) sheet.images.add(imageFixture);
   }
+  if (fixture.commentSelf) workbook.comments.setSelf(fixture.commentSelf);
+  for (const commentFixture of fixture.comments || []) {
+    const sheet = workbook.worksheets.getItem(commentFixture.sheet);
+    assert.ok(sheet, `Missing comment sheet ${commentFixture.sheet}`);
+    const thread = workbook.comments.addThread({ cell: sheet.getRange(commentFixture.address) }, commentFixture.text || "", commentFixture);
+    for (const reply of commentFixture.replies || []) thread.addReply(reply.text || "", reply);
+    if (commentFixture.resolved) thread.resolve();
+  }
   workbook.recalculate();
   for (const expectation of fixture.expectations || []) {
     const sheet = workbook.worksheets.getItem(expectation.sheet);
@@ -166,7 +174,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   if (!sheetName) throw new Error("Workbook verification requires at least one worksheet.");
   const range = options.range;
   const inspect = workbook.inspect({
-    kind: options.inspectKind || "workbook,sheet,table,formula,style,computedStyle,drawing",
+    kind: options.inspectKind || "workbook,sheet,table,formula,style,computedStyle,drawing,thread",
     sheetName,
     range,
     maxChars: options.maxChars ?? 16_000,

@@ -78,7 +78,8 @@
         { "range": "A1:A4", "format": { "columnWidth": 12 } },
         { "range": "B1:C4", "format": { "columnWidthPx": 96 } },
         { "range": "D1:D4", "format": { "columnWidth": 10 } },
-        { "range": "E1:E4", "format": { "columnWidth": 14 } },
+        { "range": "E1:E4", "format": { "columnWidth": 24 } },
+        { "range": "I1:J22", "format": { "columnWidth": 22 } },
         {
           "range": "B2:C4",
           "format": { "numberFormat": "$#,##0" }
@@ -200,11 +201,37 @@
         {
           "name": "Status marker",
           "alt": "Green status marker",
-          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "dataUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMTgiIGZpbGw9IiMyMmM1NWUiLz48cGF0aCBkPSJNMTEgMjBsNiA2IDEyLTE0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjQiLz48L3N2Zz4=",
           "anchor": {
             "from": { "row": 11, "col": 8 },
             "extent": { "widthPx": 48, "heightPx": 48 }
           }
+        }
+      ]
+    }
+  ],
+  "commentSelf": { "displayName": "Spreadsheet Agent" },
+  "comments": [
+    {
+      "sheet": "Summary",
+      "address": "D2",
+      "text": "Verify the modeled margin before delivery.",
+      "resolved": true,
+      "comment": {
+        "id": "{44444444-4444-4444-8444-444444444444}",
+        "personId": "{CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC}",
+        "person": { "id": "{CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC}", "displayName": "Spreadsheet Agent", "userId": "agent@example.com", "providerId": "None" },
+        "date": "2026-07-12T10:00:00.000Z"
+      },
+      "replies": [
+        {
+          "text": "Margin evidence is approved.",
+          "author": "QA Reviewer",
+          "id": "{55555555-5555-4555-8555-555555555555}",
+          "parentId": "{44444444-4444-4444-8444-444444444444}",
+          "personId": "{DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}",
+          "person": { "id": "{DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}", "displayName": "QA Reviewer", "userId": "reviewer@example.com", "providerId": "None" },
+          "date": "2026-07-12T10:05:00.000Z"
         }
       ]
     }
@@ -229,7 +256,7 @@
     "sheetName": "Summary",
     "range": "A1:G15",
     "renderFormat": "svg",
-    "inspectKind": "workbook,sheet,table,pivotTable,formula,style,computedStyle,merge,drawing",
+    "inspectKind": "workbook,sheet,table,pivotTable,formula,style,computedStyle,merge,drawing,thread",
     "maxChars": 30000
   }
 }

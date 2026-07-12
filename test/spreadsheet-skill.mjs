@@ -64,6 +64,16 @@ try {
   const fixtureZip = await JSZip.loadAsync(await fs.readFile(result.workbookPath));
   assert.match(await fixtureZip.file("xl/styles.xml").async("text"), /patternType="darkGrid"><fgColor theme="4" tint="0.4"/);
   assert.match(await fixtureZip.file("xl/theme/theme1.xml").async("text"), /name="Agent Spreadsheet Theme"/);
+  assert.match(await fixtureZip.file("xl/threadedComments/threadedComment1.xml").async("text"), /parentId="\{44444444-4444-4444-8444-444444444444\}"/);
+  assert.match(await fixtureZip.file("xl/persons/person.xml").async("text"), /displayName="QA Reviewer"/);
+  const nativeCommentZip = await JSZip.loadAsync(await fs.readFile(result.workbookPath));
+  nativeCommentZip.remove("customXml/open-office-artifact.json");
+  const nativeCommentWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await nativeCommentZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const nativeCommentThread = nativeCommentWorkbook.comments.threads.find((thread) => thread.target.address === "D2");
+  assert.equal(nativeCommentThread?.resolved, true);
+  assert.equal(nativeCommentThread?.comments[0].id, "{44444444-4444-4444-8444-444444444444}");
+  assert.equal(nativeCommentThread?.comments[1].parentId, nativeCommentThread?.comments[0].id);
+  assert.equal(nativeCommentThread?.comments[1].author, "QA Reviewer");
   const fixturePivotXml = await fixtureZip.file("xl/pivotTables/pivotTable1.xml").async("text");
   assert.match(fixturePivotXml, /x14:pivotFilter useWholeDay="0"/);
   assert.match(fixturePivotXml, /stringValue1="2026-03-31T17:00:00" stringValue2="2026-03-31T19:00:00"/);
@@ -74,7 +84,7 @@ try {
   assert.deepEqual(summaryDrawings.charts.items[0].series.items[0].values, [100, 120, 150]);
   assert.equal(summaryDrawings.images.items.length, 1);
   assert.equal(summaryDrawings.images.items[0].alt, "Green status marker");
-  assert.match(summaryDrawings.images.items[0].dataUrl, /^data:image\/png;base64,/);
+  assert.match(summaryDrawings.images.items[0].dataUrl, /^data:image\/svg\+xml;base64,/);
   assert.equal(workbook.resolve(summaryDrawings.charts.items[0].id), summaryDrawings.charts.items[0]);
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.equal(summaryDrawings.pivotTables.items.length, 1);
@@ -96,7 +106,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
-  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"customColumns":7/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"customColumns":9/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"mergedCell"[\s\S]*"range":"A15:G15"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"Quarter performance"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"Green status marker"/);
@@ -106,8 +116,10 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"useWholeDay":false/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"groupBy":"quarters"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Gross Profit"/);
+  assert.match(result.qa.workbook.inspect({ kind: "thread", maxChars: 4000 }).ndjson, /Margin evidence is approved/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
+  assert.equal(result.qa.packageInspect.records[0].semanticIssues, 0);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {

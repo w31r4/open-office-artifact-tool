@@ -14,6 +14,7 @@ import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/oo
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
 import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, normalizeXlsxThemeConfig, parseXlsxStylesXml, parseXlsxThemeColors, parseXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint, xlsxStyleKey, xlsxStylesXml, xlsxThemeXml } from "./spreadsheet/ooxml-styles.mjs";
+import { XLSX_PERSON_CONTENT_TYPE, XLSX_PERSON_RELATIONSHIP_TYPE, XLSX_THREADED_COMMENTS_CONTENT_TYPE, XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE, parseSpreadsheetPeople, parseSpreadsheetThreadedComments, planSpreadsheetThreadedComments, spreadsheetPersonsXml, spreadsheetThreadRoots, spreadsheetThreadedCommentsXml, validateSpreadsheetThreadedCommentPackageSemantics } from "./spreadsheet/ooxml-threaded-comments.mjs";
 import { parseStructuredReference, scanStructuredReferenceIntersections, scanStructuredReferences, splitReferenceIntersectionOperands } from "./spreadsheet/structured-references.mjs";
 import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, parsePresentationBackgroundXml, parsePresentationPlaceholderStyleXml, presentationBackgroundXml, presentationColorXml, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
@@ -40,6 +41,14 @@ const DOCX_PACKAGE_CONFIG = {
   packageKind: "docxPackage",
   partKind: "docxPart",
   semanticIssues: validateDocxCommentPackageSemantics,
+};
+
+const XLSX_PACKAGE_CONFIG = {
+  family: "XLSX",
+  packageKind: "xlsxPackage",
+  partKind: "xlsxPart",
+  counts: { sheets: /^xl\/worksheets\/sheet\d+\.xml$/ },
+  semanticIssues: validateSpreadsheetThreadedCommentPackageSemantics,
 };
 
 const encoder = new TextEncoder();
@@ -916,7 +925,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitColumns", summary: "Measure displayed range values deterministically and set native best-fit widths on each selected column." },
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic and ABS/SUM/MIN/MAX/AVERAGE/ROUND calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
@@ -2150,7 +2159,11 @@ const WORKBOOK_HELP_SCHEMAS = {
   "workbook.comments.addThread": helpSchema({
     target: { type: "Range|object", required: true, description: "Target single-cell range or cell descriptor." },
     text: { type: "string", required: true, description: "Initial comment text." },
-  }, "thread", "CommentThread", "Attached threaded comment using comments.setSelf author identity."),
+    author: { type: "string", description: "Root comment author; defaults to comments.setSelf identity." },
+    id: { type: "string", description: "Optional stable model thread ID." },
+    comment: { type: "object", description: "Optional native root metadata: brace-delimited GUID id/personId, person record, ISO date, and done state." },
+    resolved: { type: "boolean", description: "Initial thread resolution state." },
+  }, "thread", "CommentThread", "Attached Office 2019 threaded comment. addReply(text, config) accepts the same native identity/date/person metadata."),
   "sheet.tables.add": helpSchema({
     range: { type: "string|Range", required: true, description: "A1 range or range facade." },
     hasHeaders: { type: "boolean", description: "Whether the first row contains headers." },
@@ -2604,25 +2617,25 @@ function workbookRangeRef(rangeOrRef) {
 }
 
 class CommentThread {
-  constructor(workbook, target, text, author) {
+  constructor(workbook, target, text, author, config = {}) {
     this.workbook = workbook;
-    this.id = aid("th");
+    this.id = config.id || aid("th");
     this.target = workbookRangeRef(target);
     this.author = author || workbook.comments.self?.displayName || "User";
-    this.comments = [{ author: this.author, text: String(text ?? "") }];
-    this.resolved = false;
+    this.comments = [{ author: this.author, text: String(text ?? ""), ...(config.comment || {}) }];
+    this.resolved = Boolean(config.resolved);
   }
 
-  addReply(text) {
-    this.comments.push({ author: this.workbook.comments.self?.displayName || this.author, text: String(text ?? "") });
+  addReply(text, config = {}) {
+    this.comments.push({ author: config.author || this.workbook.comments.self?.displayName || this.author, text: String(text ?? ""), ...config });
     return this;
   }
 
-  resolve() { this.resolved = true; return this; }
-  reopen() { this.resolved = false; return this; }
+  resolve() { this.resolved = true; this.comments.forEach((comment) => { comment.done = true; }); return this; }
+  reopen() { this.resolved = false; this.comments.forEach((comment) => { comment.done = false; }); return this; }
 
   inspectRecord() {
-    return { kind: "thread", id: this.id, sheet: this.target.sheetName, address: this.target.address, author: this.author, resolved: this.resolved, replies: Math.max(0, this.comments.length - 1), textPreview: this.comments.map((comment) => comment.text).join("\n").slice(0, 300) };
+    return { kind: "thread", id: this.id, sheet: this.target.sheetName, address: this.target.address, author: this.author, resolved: this.resolved, replies: Math.max(0, this.comments.length - 1), commentIds: this.comments.map((comment) => comment.id).filter(Boolean), personIds: this.comments.map((comment) => comment.personId).filter(Boolean), dates: this.comments.map((comment) => comment.date).filter(Boolean), textPreview: this.comments.map((comment) => comment.text).join("\n").slice(0, 300) };
   }
 
   toJSON() { return { id: this.id, target: this.target, author: this.author, comments: this.comments, resolved: this.resolved }; }
@@ -2631,7 +2644,7 @@ class CommentThread {
 class CommentsCollection {
   constructor(workbook) { this.workbook = workbook; this.self = undefined; this.threads = []; }
   setSelf(self) { this.self = { displayName: self?.displayName || "User" }; return this.self; }
-  addThread(target, text) { const thread = new CommentThread(this.workbook, target, text, this.self?.displayName); this.threads.push(thread); return thread; }
+  addThread(target, text, config = {}) { const thread = new CommentThread(this.workbook, target, text, config.author || this.self?.displayName, config); this.threads.push(thread); return thread; }
   getItem(id) { return this.threads.find((thread) => thread.id === id); }
   toJSON() { return { self: this.self, threads: this.threads.map((thread) => thread.toJSON()) }; }
 }
@@ -3685,6 +3698,8 @@ export class Workbook {
       if (!thread.target?.address) issues.push(verificationIssue("workbook", "unanchoredComment", `Comment thread ${thread.id} is missing a target cell.`, { id: thread.id }));
       else if (!workbookRangeValid(this, thread.target.sheetName ? this.worksheets.getItem(thread.target.sheetName) : this.worksheets.items[0], thread.target)) issues.push(verificationIssue("workbook", "commentTargetInvalid", `Comment thread ${thread.id} points at an invalid target cell.`, { id: thread.id, target: thread.target }));
     }
+    try { planSpreadsheetThreadedComments(collectWorkbookThreadParts(this)); }
+    catch (error) { issues.push(verificationIssue("workbook", "threadedCommentMetadataInvalid", error.message, { error: error.name })); }
     for (const cycle of graph.cycles) {
       issues.push(verificationIssue("workbook", "formulaCycle", `Formula cycle detected: ${cycle.path.join(" -> ")}.`, { cycle: cycle.path, keys: cycle.keys }));
     }
@@ -5934,7 +5949,7 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
   for (const item of metadata.definedNames || []) workbook.definedNames.add(item);
   if (metadata.comments?.self) workbook.comments.setSelf(metadata.comments.self);
   for (const threadData of metadata.comments?.threads || []) {
-    const thread = new CommentThread(workbook, threadData.target, threadData.comments?.[0]?.text || "", threadData.author);
+    const thread = new CommentThread(workbook, threadData.target, threadData.comments?.[0]?.text || "", threadData.author, { id: threadData.id, resolved: threadData.resolved, comment: threadData.comments?.[0] });
     thread.id = threadData.id || thread.id;
     thread.comments = threadData.comments || thread.comments;
     thread.resolved = Boolean(threadData.resolved);
@@ -6022,11 +6037,11 @@ export class SpreadsheetFile {
   static async exportTsv(workbook, options = {}) { return this.exportDelimited(workbook, { ...options, delimiter: "\t", type: TSV_MIME }); }
 
   static async inspectXlsx(blobOrBuffer, options = {}) {
-    return inspectOoxmlPackage(blobOrBuffer, options, { family: "XLSX", packageKind: "xlsxPackage", partKind: "xlsxPart", counts: { sheets: /^xl\/worksheets\/sheet\d+\.xml$/ } });
+    return inspectOoxmlPackage(blobOrBuffer, options, XLSX_PACKAGE_CONFIG);
   }
 
   static async patchXlsx(blobOrBuffer, patches = [], options = {}) {
-    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, { family: "XLSX" });
+    const patched = await patchOoxmlPackage(blobOrBuffer, patches, options, XLSX_PACKAGE_CONFIG);
     return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
@@ -6038,6 +6053,7 @@ export class SpreadsheetFile {
     const imageParts = collectWorkbookImageParts(workbook);
     const chartParts = collectWorkbookChartParts(workbook, imageParts);
     const threadParts = collectWorkbookThreadParts(workbook);
+    const threadedCommentPlan = planSpreadsheetThreadedComments(threadParts);
     const sharedStrings = collectWorkbookSharedStrings(workbook);
     const styleTable = collectWorkbookStyles(workbook);
     const workbookRels = workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0, sharedStrings.strings.length > 0, pivotParts);
@@ -6078,8 +6094,8 @@ export class SpreadsheetFile {
     });
     imageParts.forEach((part) => zip.file(`xl/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`xl/charts/chart${part.chartPartId}.xml`, xlsxChartXml(part.chart)));
-    threadParts.forEach((part) => zip.file(`xl/threadedComments/threadedComment${part.threadPartId}.xml`, threadedCommentsXml(part)));
-    if (threadParts.length) zip.file("xl/persons/person.xml", personsXml(threadParts));
+    threadedCommentPlan.parts.forEach((part) => zip.file(`xl/threadedComments/threadedComment${part.threadPartId}.xml`, spreadsheetThreadedCommentsXml(part)));
+    if (threadParts.length) zip.file("xl/persons/person.xml", spreadsheetPersonsXml(threadedCommentPlan));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
     return new FileBlob(bytes, { type: XLSX_MIME });
   }
@@ -6125,7 +6141,7 @@ export class SpreadsheetFile {
     parseWorkbookDefinedNames(workbook, workbookText);
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
     if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
-    else await importNativeThreadedComments(workbook, zip, sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]);
+    else await importNativeThreadedComments(workbook, zip, "xl/workbook.xml", workbookRelationshipRecords, sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]);
     workbook.recalculate();
     return workbook;
   }
@@ -6294,8 +6310,8 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/xl/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
   const pivots = pivotParts.map((part) => `<Override PartName="/xl/pivotTables/pivotTable${part.pivotPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>${part.pivot.refreshPolicy.saveData === false ? "" : `<Override PartName="/xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>`}`).join("");
-  const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>`).join("");
-  const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>` : "";
+  const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="${XLSX_THREADED_COMMENTS_CONTENT_TYPE}"/>`).join("");
+  const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="${XLSX_PERSON_CONTENT_TYPE}"/>` : "";
   const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${shared}${sheets}${tables}${charts}${pivots}${threadedComments}${persons}</Types>`;
 }
@@ -6341,7 +6357,7 @@ function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrin
   rels.push({ id: `rId${sheetCount + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" });
   let nextId = sheetCount + 2;
   if (hasSharedStrings) rels.push({ id: `rId${nextId++}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings", target: "sharedStrings.xml" });
-  if (hasThreadedComments) rels.push({ id: `rId${nextId++}`, type: "http://schemas.microsoft.com/office/2017/10/relationships/person", target: "persons/person.xml" });
+  if (hasThreadedComments) rels.push({ id: `rId${nextId++}`, type: XLSX_PERSON_RELATIONSHIP_TYPE, target: "persons/person.xml" });
   for (const part of pivotParts) {
     part.cacheRelId = `rId${nextId++}`;
     rels.push({ id: part.cacheRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition", target: `pivotCache/pivotCacheDefinition${part.cachePartId}.xml` });
@@ -6357,66 +6373,33 @@ function worksheetRelsXml(tableParts, drawingRel, threadedPart, pivotParts = [])
     target: `../tables/table${part.tablePartId}.xml`,
   }));
   if (drawingRel) rels.push({ id: drawingRel.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing", target: drawingRel.target });
-  if (threadedPart) rels.push({ id: threadedPart.relId, type: "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment", target: `../threadedComments/threadedComment${threadedPart.threadPartId}.xml` });
+  if (threadedPart) rels.push({ id: threadedPart.relId, type: XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE, target: `../threadedComments/threadedComment${threadedPart.threadPartId}.xml` });
   for (const part of pivotParts) rels.push({ id: part.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable", target: `../pivotTables/pivotTable${part.pivotPartId}.xml` });
   return relsXml(rels);
 }
 
-function stablePersonId(name) {
-  const raw = String(name || "User");
-  const hash = raw.split("").reduce((sum, ch) => ((sum * 33) + ch.charCodeAt(0)) >>> 0, 5381).toString(16).padStart(8, "0");
-  return `{${hash.slice(0, 8)}-0000-4000-8000-000000000000}`;
-}
-
-function threadedCommentsXml(part) {
-  const comments = part.threads.flatMap((thread) => thread.comments.map((comment, index) => {
-    const id = `{${thread.id.replace(/[^A-Za-z0-9]/g, "")}-${index}}`;
-    const parentId = index > 0 ? ` parentId="{${thread.id.replace(/[^A-Za-z0-9]/g, "")}-0}"` : "";
-    return `<threadedComment ref="${attrEscape(thread.target.address)}" id="${attrEscape(id)}" personId="${attrEscape(stablePersonId(comment.author || thread.author))}" dT="${new Date(0).toISOString()}"${parentId} done="${thread.resolved ? 1 : 0}"><text>${xmlEscape(comment.text)}</text></threadedComment>`;
-  })).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">${comments}</ThreadedComments>`;
-}
-
-function personsXml(threadParts) {
-  const names = new Set(threadParts.flatMap((part) => part.threads.flatMap((thread) => thread.comments.map((comment) => comment.author || thread.author || "User"))));
-  const persons = [...names].map((name) => `<person displayName="${attrEscape(name)}" id="${attrEscape(stablePersonId(name))}" userId="${attrEscape(name)}" providerId="None"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">${persons}</personList>`;
-}
-
-function parsePersonsXml(xml) {
-  return new Map([...String(xml || "").matchAll(/<person\b([^>]*)\/>/g)].map((match) => {
-    const attrs = match[1] || "";
-    const id = decodeXml(/\bid="([^"]+)"/.exec(attrs)?.[1] || "");
-    const displayName = decodeXml(/\bdisplayName="([^"]*)"/.exec(attrs)?.[1] || "User");
-    return [id, displayName];
-  }).filter(([id]) => id));
-}
-
-async function importNativeThreadedComments(workbook, zip, sheetRefs) {
-  const persons = parsePersonsXml(await zip.file("xl/persons/person.xml")?.async("text"));
+async function importNativeThreadedComments(workbook, zip, workbookPartPath, workbookRelationships, sheetRefs) {
+  const personRelationship = workbookRelationships.find((relationship) => relationship.type === XLSX_PERSON_RELATIONSHIP_TYPE && String(relationship.targetMode || "").toLowerCase() !== "external");
+  const personPartPath = personRelationship?.target ? ooxmlResolveRelationshipTarget(workbookPartPath, personRelationship.target) : undefined;
+  const people = parseSpreadsheetPeople(personPartPath ? await zip.file(personPartPath)?.async("text") : "");
   for (const [position, sheetRef] of sheetRefs.entries()) {
     const sheet = workbook.worksheets.items[position];
     if (!sheet) continue;
     const sourcePart = sheetRef.partPath || `xl/worksheets/sheet${sheetRef.sheetId || sheetRef.index || position + 1}.xml`;
     const rels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(sourcePart, "XLSX"))?.async("text"));
-    for (const rel of rels.filter((item) => item.type.endsWith("/threadedComment"))) {
+    for (const rel of rels.filter((item) => item.type === XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE && String(item.targetMode || "").toLowerCase() !== "external")) {
       const target = ooxmlResolveRelationshipTarget(sourcePart, rel.target);
       const xml = await zip.file(target)?.async("text");
-      const byRef = new Map();
-      for (const match of String(xml || "").matchAll(/<threadedComment\b([^>]*)>([\s\S]*?)<\/threadedComment>/g)) {
-        const attrs = match[1] || "";
-        const ref = decodeXml(/\bref="([^"]+)"/.exec(attrs)?.[1] || "A1");
-        const personId = decodeXml(/\bpersonId="([^"]+)"/.exec(attrs)?.[1] || "");
-        const author = persons.get(personId) || workbook.comments.self?.displayName || "User";
-        const text = decodeXml(/<text[^>]*>([\s\S]*?)<\/text>/.exec(match[2])?.[1] || "");
-        if (!byRef.has(ref)) {
-          const thread = workbook.comments.addThread({ cell: sheet.getRange(ref) }, text);
-          thread.author = author;
-          thread.comments[0].author = author;
-          thread.resolved = /\bdone="(?:1|true)"/.test(attrs);
-          byRef.set(ref, thread);
-        } else {
-          byRef.get(ref).comments.push({ author, text });
+      for (const group of spreadsheetThreadRoots(parseSpreadsheetThreadedComments(xml))) {
+        const root = group.find((entry) => !entry.parentId) || group[0];
+        const person = people.get(root.personId);
+        const author = person?.displayName || workbook.comments.self?.displayName || "User";
+        const commentConfig = { id: root.id, personId: root.personId, person, date: root.date, done: root.done };
+        const thread = workbook.comments.addThread({ cell: sheet.getRange(root.ref || "A1") }, root.text, { author, resolved: root.done, comment: commentConfig });
+        for (const entry of group) {
+          if (entry === root) continue;
+          const replyPerson = people.get(entry.personId);
+          thread.addReply(entry.text, { id: entry.id, parentId: entry.parentId, personId: entry.personId, person: replyPerson, author: replyPerson?.displayName || author, date: entry.date, done: entry.done });
         }
       }
     }

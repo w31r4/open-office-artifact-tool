@@ -267,8 +267,19 @@ statusRange.dataValidation = { rule: { type: "list", values: ["Not Started", "In
 const cf = sheet.getRange("C2:C3").conditionalFormats.add("cellIs", { operator: "greaterThan", formula: 10, format: { fill: "green" } });
 const customCf = sheet.getRange("A2:B3").conditionalFormats.addCustom("=A2<B2", { fill: "sky-100" });
 workbook.comments.setSelf({ displayName: "Analyst" });
-const thread = workbook.comments.addThread({ cell: sheet.getRange("C2") }, "Formula checks revenue sum.");
-thread.addReply("Reviewed by model.").resolve();
+const rootCommentId = "{11111111-1111-4111-8111-111111111111}";
+const replyCommentId = "{22222222-2222-4222-8222-222222222222}";
+const analystPersonId = "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}";
+const reviewerPersonId = "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}";
+const thread = workbook.comments.addThread({ cell: sheet.getRange("C2") }, "Formula checks revenue sum.", {
+  comment: { id: rootCommentId, personId: analystPersonId, person: { id: analystPersonId, displayName: "Analyst", userId: "analyst@example.com", providerId: "None" }, date: "2026-07-12T09:00:00.000Z" },
+});
+thread.addReply("Reviewed by model.", { id: replyCommentId, parentId: rootCommentId, personId: reviewerPersonId, person: { id: reviewerPersonId, displayName: "Reviewer", userId: "reviewer@example.com", providerId: "None" }, author: "Reviewer", date: "2026-07-12T09:05:00.000Z" }).resolve();
+const invalidThreadWorkbook = Workbook.create();
+const invalidThreadSheet = invalidThreadWorkbook.worksheets.add("Invalid");
+invalidThreadWorkbook.comments.addThread({ cell: invalidThreadSheet.getRange("A1") }, "Invalid native identity", { comment: { id: "not-a-guid" } });
+assert.ok(invalidThreadWorkbook.verify().issues.some((issue) => issue.type === "threadedCommentMetadataInvalid"));
+await assert.rejects(() => SpreadsheetFile.exportXlsx(invalidThreadWorkbook), /brace-delimited GUID/);
 
 const tasksTable = sheet.tables.add("A1:D3", true, "TasksTable");
 tasksTable.style = "TableStyleMedium4";
@@ -1276,6 +1287,8 @@ assert.equal(xlsxInspect.records[0].sheets, 1);
 assert.ok(xlsxInspect.records[0].uncompressedBytes > 0);
 assert.ok(xlsxInspect.records[0].relationshipReferences > 0);
 assert.equal(xlsxInspect.records[0].relationshipReferenceIssues, 0);
+assert.equal(xlsxInspect.records[0].semanticValidation, true);
+assert.equal(xlsxInspect.records[0].semanticIssues, 0);
 assert.ok(xlsxInspect.parts.some((part) => part.path === "xl/workbook.xml" && part.contentType.includes("spreadsheetml.sheet.main+xml")));
 const xlsxReferenceZip = await JSZip.loadAsync(new Uint8Array(await xlsx.arrayBuffer()));
 const xlsxSheetXml = await xlsxReferenceZip.file("xl/worksheets/sheet1.xml").async("text");
@@ -1492,11 +1505,17 @@ assert.match(threadedCommentsXml, /ref="C2"/);
 assert.match(threadedCommentsXml, /Formula checks revenue sum/);
 assert.match(threadedCommentsXml, /Reviewed by model/);
 assert.match(threadedCommentsXml, /done="1"/);
+assert.match(threadedCommentsXml, new RegExp(`id="${rootCommentId.replace(/[{}]/g, "\\$&")}"`));
+assert.match(threadedCommentsXml, new RegExp(`id="${replyCommentId.replace(/[{}]/g, "\\$&")}" parentId="${rootCommentId.replace(/[{}]/g, "\\$&")}"`));
+assert.match(threadedCommentsXml, /dT="2026-07-12T09:00:00\.000Z"/);
 const personsXml = await zip.file("xl/persons/person.xml").async("text");
 assert.match(personsXml, /<personList/);
 assert.match(personsXml, /displayName="Analyst"/);
+assert.match(personsXml, /displayName="Reviewer"/);
+assert.match(personsXml, /userId="analyst@example\.com"/);
 const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels").async("text");
 assert.match(workbookRelsXml, /Target="persons\/person.xml"/);
+assert.match(workbookRelsXml, /relationships\/person/);
 assert.match(workbookRelsXml, /Target="pivotCache\/pivotCacheDefinition1\.xml"/);
 assert.match(workbookRelsXml, /relationships\/pivotCacheDefinition/);
 const mediaBytes = await zip.file("xl/media/image1.png").async("uint8array");
@@ -1581,6 +1600,51 @@ assert.match(nativeThreadInspect, /"kind":"thread"/);
 assert.match(nativeThreadInspect, /Formula checks revenue sum/);
 assert.match(nativeThreadInspect, /Reviewed by model/);
 assert.match(nativeThreadInspect, /"resolved":true/);
+assert.match(nativeThreadInspect, /11111111-1111-4111-8111-111111111111/);
+assert.match(nativeThreadInspect, /BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB/);
+const nativeThread = nativeOnlyWorkbook.comments.threads.find((item) => item.target.address === "C2");
+assert.equal(nativeThread?.comments[0].id, rootCommentId);
+assert.equal(nativeThread?.comments[0].date, "2026-07-12T09:00:00.000Z");
+assert.equal(nativeThread?.comments[0].person.userId, "analyst@example.com");
+assert.equal(nativeThread?.comments[1].id, replyCommentId);
+assert.equal(nativeThread?.comments[1].parentId, rootCommentId);
+assert.equal(nativeThread?.comments[1].author, "Reviewer");
+const nativeThreadRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(nativeOnlyWorkbook)).arrayBuffer()));
+assert.match(await nativeThreadRoundtripZip.file("xl/threadedComments/threadedComment1.xml").async("text"), /id="\{22222222-2222-4222-8222-222222222222\}" parentId="\{11111111-1111-4111-8111-111111111111\}"/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/threadedComments/threadedComment1.xml", xml: threadedCommentsXml.replace(replyCommentId, "{NOT-A-GUID}") }]), /xlsxThreadedCommentIdInvalid/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/threadedComments/threadedComment1.xml", xml: threadedCommentsXml.replace(`parentId="${rootCommentId}"`, 'parentId="{DEADBEEF-DEAD-4EAD-8EAD-DEADBEEFDEAD}"') }]), /xlsxThreadedCommentParentNotFound/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/persons/person.xml", xml: personsXml.replace(analystPersonId, "not-a-guid") }]), /xlsxPersonIdInvalid/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(xlsx, [{ path: "xl/threadedComments/threadedComment1.xml", xml: threadedCommentsXml.replace(`ref="C2" dT="2026-07-12T09:05:00.000Z"`, `ref="D2" dT="2026-07-12T09:05:00.000Z"`) }]), /xlsxThreadedCommentParentRefMismatch/);
+const secondRootId = "{33333333-3333-4333-8333-333333333333}";
+const alternatePeopleXml = personsXml
+  .replace(`<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">`, `<people:personList xmlns:people="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">`)
+  .replaceAll("<person ", "<people:person ")
+  .replace("</personList>", "</people:personList>");
+const alternateThreadsXml = threadedCommentsXml
+  .replace(`<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">`, `<tc:ThreadedComments xmlns:tc="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">`)
+  .replaceAll("<threadedComment ", "<tc:threadedComment ")
+  .replaceAll("</threadedComment>", "</tc:threadedComment>")
+  .replaceAll("<text>", "<tc:text>")
+  .replaceAll("</text>", "</tc:text>")
+  .replace("</ThreadedComments>", `<tc:threadedComment ref="C2" dT="2026-07-12T09:10:00.000Z" personId="${analystPersonId}" id="${secondRootId}" done="0"><tc:text>Independent review on the same cell.</tc:text></tc:threadedComment></tc:ThreadedComments>`);
+const relocatedThreadZip = await JSZip.loadAsync(xlsxBytes);
+relocatedThreadZip.remove("customXml/open-office-artifact.json");
+const metadataFreeThreadXlsx = new FileBlob(await relocatedThreadZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type });
+const relocatedThreadXlsx = await SpreadsheetFile.patchXlsx(metadataFreeThreadXlsx, [
+  { path: "xl/persons/person.xml", remove: true },
+  { path: "xl/threadedComments/threadedComment1.xml", remove: true },
+  { path: "xl/collaboration/people.xml", xml: alternatePeopleXml, recipe: { kind: "person", source: "xl/workbook.xml", id: "rIdRelocatedPeople" } },
+  { path: "xl/collaboration/sheet1-threads.xml", xml: alternateThreadsXml, recipe: { kind: "threadedComments", source: "xl/worksheets/sheet1.xml", id: "rIdRelocatedThreads" } },
+]);
+const relocatedThreadInspect = await SpreadsheetFile.inspectXlsx(relocatedThreadXlsx);
+assert.equal(relocatedThreadInspect.ok, true, JSON.stringify(relocatedThreadInspect.issues));
+assert.ok(relocatedThreadInspect.parts.some((part) => part.path === "xl/collaboration/people.xml" && part.contentType === "application/vnd.ms-excel.person+xml"));
+assert.ok(relocatedThreadInspect.parts.some((part) => part.path === "xl/collaboration/sheet1-threads.xml" && part.contentType === "application/vnd.ms-excel.threadedcomments+xml"));
+const relocatedThreadWorkbook = await SpreadsheetFile.importXlsx(relocatedThreadXlsx);
+const sameCellThreads = relocatedThreadWorkbook.comments.threads.filter((item) => item.target.address === "C2");
+assert.equal(sameCellThreads.length, 2);
+assert.equal(sameCellThreads.find((item) => item.comments[0].id === rootCommentId)?.comments[1].parentId, rootCommentId);
+assert.equal(sameCellThreads.find((item) => item.comments[0].id === secondRootId)?.comments[0].text, "Independent review on the same cell.");
 const nativeStyleInspect = nativeOnlyWorkbook.inspect({ kind: "style", range: "A1:C3", maxChars: 12000 }).ndjson;
 assert.match(nativeStyleInspect, /"kind":"style"/);
 assert.match(nativeStyleInspect, /"numberFormat":"#,##0"/);
