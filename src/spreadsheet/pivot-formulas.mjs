@@ -1,3 +1,5 @@
+const PIVOT_FUNCTIONS = new Set(["ABS", "SUM", "MIN", "MAX", "AVERAGE", "ROUND"]);
+
 function formulaTokens(formula, fields) {
   const text = String(formula || "").trim().replace(/^=/, "");
   if (!text) throw new TypeError("PivotTable calculated field formula must not be empty.");
@@ -9,7 +11,7 @@ function formulaTokens(formula, fields) {
     const rest = text.slice(index);
     const number = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?/.exec(rest)?.[0];
     if (number) { tokens.push({ type: "number", value: Number(number) }); index += number.length; continue; }
-    if ("+-*/^()%".includes(text[index])) { tokens.push({ type: "operator", value: text[index++] }); continue; }
+    if ("+-*/^()%,".includes(text[index])) { tokens.push({ type: "operator", value: text[index++] }); continue; }
     let field;
     if (text[index] === "[") {
       const end = text.indexOf("]", index + 1);
@@ -30,6 +32,14 @@ function formulaTokens(formula, fields) {
     } else {
       const identifier = /^[A-Za-z_][A-Za-z0-9_.]*/.exec(rest)?.[0];
       if (!identifier) throw new SyntaxError(`PivotTable calculated field formula has unsupported token near ${rest.slice(0, 12)}.`);
+      const next = text.slice(index + identifier.length).trimStart()[0];
+      if (next === "(") {
+        const functionName = identifier.toUpperCase();
+        if (!PIVOT_FUNCTIONS.has(functionName)) throw new SyntaxError(`PivotTable calculated field formula uses unsupported function ${identifier}.`);
+        tokens.push({ type: "function", value: functionName });
+        index += identifier.length;
+        continue;
+      }
       field = identifier;
       index += identifier.length;
     }
@@ -91,6 +101,32 @@ function formulaUnary(value, transform) {
   return typeof value === "string" && value.startsWith("#") ? value : transform(Number(value));
 }
 
+function formulaFunction(name, args) {
+  const error = args.find((value) => typeof value === "string" && value.startsWith("#"));
+  if (error) return error;
+  if (name === "ABS") {
+    if (args.length !== 1) throw new SyntaxError("PivotTable ABS requires exactly one argument.");
+    return Math.abs(Number(args[0]));
+  }
+  if (name === "ROUND") {
+    if (args.length !== 2) throw new SyntaxError("PivotTable ROUND requires exactly two arguments.");
+    const digits = Number(args[1]);
+    if (!Number.isInteger(digits) || digits < -15 || digits > 15) throw new RangeError("PivotTable ROUND digits must be an integer from -15 to 15.");
+    const factor = 10 ** Math.abs(digits);
+    const value = Number(args[0]);
+    const scaled = digits >= 0 ? Math.abs(value) * factor : Math.abs(value) / factor;
+    const rounded = Math.sign(value) * Math.round(scaled + Number.EPSILON * scaled) * (digits >= 0 ? 1 / factor : factor);
+    return rounded === 0 ? 0 : rounded;
+  }
+  if (!args.length) throw new SyntaxError(`PivotTable ${name} requires at least one argument.`);
+  if (args.length > 32) throw new RangeError(`PivotTable ${name} exceeds 32 arguments.`);
+  const numbers = args.map(Number);
+  if (name === "SUM") return numbers.reduce((sum, value) => sum + value, 0);
+  if (name === "MIN") return Math.min(...numbers);
+  if (name === "MAX") return Math.max(...numbers);
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
 export function evaluatePivotFormula(formula, aggregates = {}, fields = Object.keys(aggregates)) {
   const tokens = formulaTokens(formula, fields);
   let index = 0;
@@ -99,6 +135,16 @@ export function evaluatePivotFormula(formula, aggregates = {}, fields = Object.k
     if (!token) throw new SyntaxError("PivotTable calculated field formula ended unexpectedly.");
     if (token.type === "number") return token.value;
     if (token.type === "field") return Number(aggregates[token.value]) || 0;
+    if (token.type === "function") {
+      if (tokens[index++]?.value !== "(") throw new SyntaxError(`PivotTable ${token.value} requires an opening parenthesis.`);
+      const args = [];
+      if (tokens[index]?.value !== ")") {
+        args.push(expression());
+        while (tokens[index]?.value === ",") { index += 1; args.push(expression()); }
+      }
+      if (tokens[index++]?.value !== ")") throw new SyntaxError(`PivotTable ${token.value} requires a closing parenthesis.`);
+      return formulaFunction(token.value, args);
+    }
     if (token.value === "(") { const value = expression(); if (tokens[index++]?.value !== ")") throw new SyntaxError("PivotTable calculated field formula requires a closing parenthesis."); return value; }
     throw new SyntaxError(`PivotTable calculated field formula has unexpected token ${token.value}.`);
   };

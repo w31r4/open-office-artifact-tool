@@ -1706,7 +1706,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.unmerge` | api | Remove merged regions intersecting the target range. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
-| `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with row/column cross-tabs, full date/time plus numeric/discrete grouping, arithmetic calculated fields, item and absolute/relative date filters, refresh/save policy, computed values, and native OOXML roundtrip. |
+| `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic and ABS/SUM/MIN/MAX/AVERAGE/ROUND calculated fields, item/date filters, cache policy, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
@@ -3281,7 +3281,7 @@ Create an inspectable worksheet image placeholder from a data URL, URI, or promp
 
 #### `sheet.pivotTables.add`
 
-Create a clean-room pivot table facade with row/column cross-tabs, full date/time plus numeric/discrete grouping, arithmetic calculated fields, item and absolute/relative date filters, refresh/save policy, computed values, and native OOXML roundtrip.
+Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic and ABS/SUM/MIN/MAX/AVERAGE/ROUND calculated fields, item/date filters, cache policy, and native OOXML roundtrip.
 
 **Schema parameters:**
 
@@ -3292,7 +3292,7 @@ Create a clean-room pivot table facade with row/column cross-tabs, full date/tim
 - `columnFields` (string[]) — Column field names.
 - `valueFields` (object[]) — Value field and aggregation definitions.
 - `groupFields` (object[]) — Derived group fields with unique name/sourceField. Calendar/time groupBy values years/quarters/months/days/hours/minutes/seconds form OOXML base/par hierarchies and accept bounded groupInterval values; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items.
-- `calculatedFields` (object[]) — Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected.
+- `calculatedFields` (object[]) — Calculated value fields over grouped source-field sums with arithmetic, percent, parentheses, and bounded ABS/SUM/MIN/MAX/AVERAGE/ROUND functions. Accepts [Field] or quoted field references; cell references, calculated-field chaining, and non-whitelisted functions are rejected.
 - `filters` (object|object[]) — Axis filters. Use include/exclude items; absolute dateEqual/dateNotEqual/dateOlderThan/dateNewerThan/dateBetween/dateNotBetween whole-day comparisons; or relative UTC types yesterday/today/tomorrow, last/this/next week/month/quarter/year, and yearToDate. Relative filters accept optional deterministic asOf; ISO weeks start Monday.
 - `refreshPolicy` (object) — OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso.
 

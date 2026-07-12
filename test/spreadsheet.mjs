@@ -13,6 +13,17 @@ assert.equal(evaluatePivotFormula("=('Revenue'-'Cost')/2", { Revenue: 15, Cost: 
 assert.equal(evaluatePivotFormula("='Owner''s Revenue'*10%", { "Owner's Revenue": 80 }), 8);
 assert.equal(evaluatePivotFormula("=Revenue/0", { Revenue: 10 }), "#DIV/0!");
 assert.equal(evaluatePivotFormula("=-(Revenue/0)%", { Revenue: 10 }), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=SUM(Revenue,Cost*2)", { Revenue: 15, Cost: 4 }), 23);
+assert.equal(evaluatePivotFormula("=AVERAGE(MIN(Revenue,Cost),MAX(Revenue,Cost),ABS(-3))", { Revenue: 15, Cost: 9 }), 9);
+assert.equal(evaluatePivotFormula("=ROUND(-1.25,1)", {}), -1.3);
+assert.equal(evaluatePivotFormula("=ROUND(1.005,2)", {}), 1.01);
+assert.equal(Object.is(evaluatePivotFormula("=ROUND(-0.1,0)", {}), -0), false);
+assert.equal(evaluatePivotFormula("=ROUND(Revenue/0,2)", { Revenue: 10 }), "#DIV/0!");
+assert.throws(() => evaluatePivotFormula("=ABS(Revenue,Cost)", { Revenue: 1, Cost: 2 }), /exactly one argument/);
+assert.throws(() => evaluatePivotFormula("=SUM()", {}), /at least one argument/);
+assert.throws(() => evaluatePivotFormula(`=SUM(${Array(33).fill("1").join(",")})`, {}), /exceeds 32 arguments/);
+assert.throws(() => evaluatePivotFormula("=ROUND(1,16)", {}), /integer from -15 to 15/);
+assert.throws(() => evaluatePivotFormula("=SQRT(Revenue)", { Revenue: 1 }), /unsupported function SQRT/);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1904-01-01" }], "Date", 0, "1904"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-03-01" }], "Date", 61, "1900"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-02-29" }], "Date", 60, "1900"), true);
@@ -447,6 +458,25 @@ assert.deepEqual(nativeRelativeBook.resolve("RelativeDatePivot").filters, relati
 assert.deepEqual(nativeRelativeBook.resolve("RelativeDatePivot").computedValues(), relativePivot.computedValues());
 const relativeRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeRelativeBook), { relativeDateAsOf: "2026-07-12" });
 assert.deepEqual(relativeRoundtrip.resolve("RelativeDatePivot").computedValues(), relativePivot.computedValues());
+const functionBook = Workbook.create();
+const functionSheet = functionBook.worksheets.add("Calculated Functions");
+functionSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East", 10, 4], ["East", 20, 8], ["West", 5, 0]];
+const functionPivot = functionSheet.pivotTables.add({
+  name: "FunctionPivot",
+  sourceRange: "A1:C4",
+  targetRange: "E1:F4",
+  rowFields: ["Region"],
+  calculatedFields: [{ name: "Margin Ratio", formula: "=ROUND(ABS([Revenue]-[Cost])/MAX([Cost],1),2)" }],
+  valueFields: [{ field: "Margin Ratio", name: "Rounded margin" }],
+});
+assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin"], ["East", 1.5], ["West", 5]]);
+const functionXlsx = await SpreadsheetFile.exportXlsx(functionBook);
+const functionZip = await JSZip.loadAsync(new Uint8Array(await functionXlsx.arrayBuffer()));
+assert.match(await functionZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="ROUND\(ABS\('Revenue'-'Cost'\)\/MAX\('Cost',1\),2\)"/);
+functionZip.remove("customXml/open-office-artifact.json");
+const nativeFunctionBook = await SpreadsheetFile.importXlsx(new FileBlob(await functionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: functionXlsx.type }));
+assert.deepEqual(nativeFunctionBook.resolve("FunctionPivot").computedValues(), functionPivot.computedValues());
+assert.deepEqual((await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeFunctionBook))).resolve("FunctionPivot").computedValues(), functionPivot.computedValues());
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
@@ -1426,14 +1456,14 @@ assert.deepEqual(nativeOnlyCalendarRoundtrip.resolve("CalendarPivot").groupField
 assert.deepEqual(nativeOnlyCalendarRoundtrip.resolve("CalendarPivot").computedValues(), calendarPivot.computedValues());
 const unsupportedCalculatedZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedCalculatedZip.remove("customXml/open-office-artifact.json");
-unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"SUM('Revenue')\""));
+unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"SQRT('Revenue')\""));
 const unsupportedCalculatedWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await unsupportedCalculatedZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
 const unsupportedCalculatedPivot = unsupportedCalculatedWorkbook.resolve("RegionalPivot");
 assert.equal(unsupportedCalculatedPivot.calculatedFields[0].supported, false);
 assert.equal(unsupportedCalculatedPivot.computedValues()[1][3], "#NAME?");
 assert.match(unsupportedCalculatedWorkbook.verify().ndjson, /pivotCalculatedFieldUnsupported/);
 const unsupportedCalculatedRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedCalculatedWorkbook)).arrayBuffer()));
-assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SUM\('Revenue'\)"/);
+assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SQRT\('Revenue'\)"/);
 const unsupportedGroupZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedGroupZip.remove("customXml/open-office-artifact.json");
 unsupportedGroupZip.file("xl/pivotCache/pivotCacheDefinition3.xml", calendarPivotCacheXml.replace('groupBy="months"', 'groupBy="weeks"'));
