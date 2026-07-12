@@ -991,9 +991,9 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by DOCX numbering definitions." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
-  { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element." },
-  { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC." },
-  { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata preserved through clean-room DOCX metadata." },
+  { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element; native import restores its target and relationship ID." },
+  { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes." },
+  { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker." },
   { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
   { artifactKind: "document", kind: "api", name: "document.addSection", summary: "Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr." },
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
@@ -1010,7 +1010,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native parts with preferNative, including arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references." },
 
@@ -7722,12 +7722,13 @@ class DocumentHyperlinkBlock {
     this.id = config.id || aid("dhl");
     this.text = String(text ?? "");
     this.url = String(url ?? config.url ?? "");
+    this.relationshipId = config.relationshipId || config.relId;
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
   }
 
-  inspectRecord(index) { return { kind: "hyperlink", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, url: this.url, textChars: this.text.length }; }
-  toProto() { return { kind: "hyperlink", id: this.id, name: this.name, styleId: this.styleId, text: this.text, url: this.url }; }
+  inspectRecord(index) { return { kind: "hyperlink", id: this.id, index, name: this.name || undefined, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url, textChars: this.text.length }; }
+  toProto() { return { kind: "hyperlink", id: this.id, name: this.name, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url }; }
 }
 
 class DocumentFieldBlock {
@@ -8363,17 +8364,26 @@ function docxSectionXml(block, commentIndexes = [], sectionReferences = []) {
   return `<w:p><w:pPr>${docxSectionPrXml(block, sectionRefs, { titlePage: sectionReferences.some((reference) => reference.referenceType === "first") })}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
 }
 
-function docxHyperlinkXml(block, relId) {
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink></w:p>`;
+function docxHyperlinkXml(block, relId, commentIndexes = []) {
+  const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
+  const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
+  const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink>${commentEnd}${refs}</w:p>`;
 }
 
-function docxFieldXml(block) {
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:fldSimple w:instr="${attrEscape(block.instruction)}"><w:r><w:t>${xmlEscape(block.display)}</w:t></w:r></w:fldSimple></w:p>`;
+function docxFieldXml(block, commentIndexes = []) {
+  const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
+  const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
+  const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:fldSimple w:instr="${attrEscape(block.instruction)}"><w:r><w:t>${xmlEscape(block.display)}</w:t></w:r></w:fldSimple>${commentEnd}${refs}</w:p>`;
 }
 
-function docxCitationXml(block) {
+function docxCitationXml(block, commentIndexes = []) {
   const label = block.metadata?.source ? `${block.text} (${block.metadata.source})` : block.text;
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:bookmarkStart w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}" w:name="${attrEscape(`OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`)}"/><w:r><w:t>${xmlEscape(label)}</w:t></w:r><w:bookmarkEnd w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}"/></w:p>`;
+  const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
+  const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
+  const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:bookmarkStart w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}" w:name="${attrEscape(`OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`)}"/><w:r><w:t>${xmlEscape(label)}</w:t></w:r><w:bookmarkEnd w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}"/>${commentEnd}${refs}</w:p>`;
 }
 
 function docxTableXml(block, commentIndexes = []) {
@@ -8405,9 +8415,9 @@ function docxDocumentXml(document, relIds = {}) {
   const body = document.blocks.map((block) => {
     const indexes = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => commentIndex.get(comment));
     if (block.kind === "table") return docxTableXml(block, indexes);
-    if (block.kind === "hyperlink") return docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id));
-    if (block.kind === "field") return docxFieldXml(block);
-    if (block.kind === "citation") return docxCitationXml(block);
+    if (block.kind === "hyperlink") return docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id), indexes);
+    if (block.kind === "field") return docxFieldXml(block, indexes);
+    if (block.kind === "citation") return docxCitationXml(block, indexes);
     if (block.kind === "image") return docxImageXml(block, relIds.images?.get(block.id), indexes);
     if (block.kind === "section") return docxSectionXml(block, indexes, referencesForSection(sectionIndex++));
     if (block.kind === "change") return docxChangeXml(block, indexes);
@@ -8481,7 +8491,7 @@ function parseDocxRuns(part = "") {
   }).filter(Boolean);
 }
 
-function parseDocxParagraph(part, imageByRelId = new Map()) {
+function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = new Map()) {
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = docxCommentIds(part);
   const sectionMatch = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/.exec(part);
@@ -8512,6 +8522,31 @@ function parseDocxParagraph(part, imageByRelId = new Map()) {
     const author = decodeXml(/w:author="([^"]*)"/.exec(attrs)?.[1] || "User");
     const date = decodeXml(/w:date="([^"]*)"/.exec(attrs)?.[1] || "");
     return { block: { kind: "change", changeType, text, styleId, author, date }, commentIds };
+  }
+  const hyperlinkMatch = /<w:hyperlink\b[^>]*>[\s\S]*?<\/w:hyperlink>/.exec(part);
+  if (hyperlinkMatch) {
+    const opening = /^<w:hyperlink\b[^>]*>/.exec(hyperlinkMatch[0])?.[0] || "";
+    const attrs = ooxmlXmlAttributes(opening);
+    const relationship = hyperlinkByRelId.get(attrs["r:id"]);
+    const text = decodeXml([...hyperlinkMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
+    if (relationship) return { block: { kind: "hyperlink", text, url: relationship.target, relationshipId: relationship.id, styleId }, commentIds };
+  }
+  const simpleFieldMatch = /<w:fldSimple\b[^>]*>[\s\S]*?<\/w:fldSimple>/.exec(part);
+  if (simpleFieldMatch) {
+    const opening = /^<w:fldSimple\b[^>]*>/.exec(simpleFieldMatch[0])?.[0] || "";
+    const instruction = ooxmlXmlAttributes(opening)["w:instr"] || "";
+    const display = decodeXml([...simpleFieldMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
+    return { block: { kind: "field", instruction, display, styleId }, commentIds };
+  }
+  const complexInstruction = decodeXml([...part.matchAll(/<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/g)].map((match) => match[1]).join("")).trim();
+  if (complexInstruction && /<w:fldChar\b[^>]*w:fldCharType=["']begin["']/.test(part)) {
+    const display = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
+    return { block: { kind: "field", instruction: complexInstruction, display, styleId }, commentIds };
+  }
+  const citationBookmark = [...part.matchAll(/<w:bookmarkStart\b[^>]*\/?\s*>/g)].map((match) => ooxmlXmlAttributes(match[0])).find((attrs) => String(attrs["w:name"] || "").startsWith("OpenOfficeCitation_"));
+  if (citationBookmark) {
+    const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
+    return { block: { kind: "citation", text, metadata: { bookmark: citationBookmark["w:name"] }, styleId }, commentIds };
   }
   const runs = parseDocxRuns(part);
   const text = runs.length ? runs.map((run) => run.text).join("") : decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
@@ -9249,12 +9284,13 @@ export class DocumentFile {
       const extension = /\.([A-Za-z0-9+]+)$/.exec(target)?.[1] || "bin";
       imageByRelId.set(rel.id, bytes ? { dataUrl: `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` } : { uri: rel.target });
     }
+    const hyperlinkByRelId = new Map(documentRelationships.filter((relationship) => relationship.type.endsWith("/hyperlink") && relationship.targetMode.toLowerCase() === "external").map((relationship) => [relationship.id, relationship]));
     const blocks = [];
     const pendingComments = [];
     for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
       const part = match[0];
       if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
-      else blocks.push(parseDocxParagraph(part, imageByRelId).block);
+      else blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId).block);
       for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
     const document = DocumentModel.create({ styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });

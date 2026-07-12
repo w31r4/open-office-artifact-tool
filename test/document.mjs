@@ -60,6 +60,7 @@ const table = document.addTable({
 table.getCell(2, 1).value = "anchored";
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z" });
 const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
+const linkComment = document.addComment(hyperlink, "Verify the native hyperlink target.", { author: "Link Reviewer", initials: "LR", date: "2026-07-11T00:18:00.000Z" });
 
 const inspect = document.inspect({ kind: "document,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 16000 }).ndjson;
 assert.match(inspect, /Research memo/);
@@ -95,6 +96,7 @@ assert.match(inspect, /evidence-table/);
 assert.match(inspect, /Check this heading/);
 assert.match(inspect, /Review the evidence table/);
 assert.match(inspect, /R&D Analyst/);
+assert.match(inspect, /Verify the native hyperlink target/);
 assert.match(inspect, /Callout/);
 assert.match(inspect, /Risk Callout/);
 assert.match(inspect, /Risk callout inherits bold styling/);
@@ -136,6 +138,7 @@ assert.equal(document.resolve(comment.id).author, "Reviewer");
 assert.equal(document.resolve(comment.id).initials, "RV");
 assert.equal(document.resolve(comment.id).date, "2026-07-11T00:10:00.000Z");
 assert.equal(document.resolve(tableComment.id).targetId, table.id);
+assert.equal(document.resolve(linkComment.id).targetId, hyperlink.id);
 const targetedDocumentInspect = document.inspect({ kind: "paragraph,table,image,comment", target: logo.id, maxChars: 4000 }).ndjson;
 assert.match(targetedDocumentInspect, /Memo logo/);
 assert.doesNotMatch(targetedDocumentInspect, /evidence-table/);
@@ -279,10 +282,15 @@ assert.match(documentXml, /<w:shd w:val="clear" w:color="auto" w:fill="F2F4F7"\/
 assert.match(documentXml, /<w:rPr><w:b\/><\/w:rPr><w:t>Area<\/w:t>/);
 assert.match(commentsXml, /w:id="0" w:author="Reviewer" w:initials="RV" w:date="2026-07-11T00:10:00\.000Z"/);
 assert.match(commentsXml, /w:id="1" w:author="R&amp;D Analyst" w:initials="RA" w:date="2026-07-11T00:15:00\.000Z"/);
+assert.match(commentsXml, /w:id="2" w:author="Link Reviewer" w:initials="LR" w:date="2026-07-11T00:18:00\.000Z"/);
 const exportedTableXml = /<w:tbl[\s\S]*?<\/w:tbl>/.exec(documentXml)?.[0] || "";
 assert.match(exportedTableXml, /<w:commentRangeStart w:id="1"\/>/);
 assert.match(exportedTableXml, /<w:commentRangeEnd w:id="1"\/>/);
 assert.match(exportedTableXml, /<w:commentReference w:id="1"\/>/);
+const exportedHyperlinkParagraph = /<w:p>[\s\S]*?<w:hyperlink\b[\s\S]*?<\/w:p>/.exec(documentXml)?.[0] || "";
+assert.match(exportedHyperlinkParagraph, /<w:commentRangeStart w:id="2"\/>/);
+assert.match(exportedHyperlinkParagraph, /<w:commentRangeEnd w:id="2"\/>/);
+assert.match(exportedHyperlinkParagraph, /<w:commentReference w:id="2"\/>/);
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Id="rIdImage1"/);
 assert.match(documentRelsXml, /Target="media\/image1\.png"/);
@@ -330,6 +338,16 @@ assert.ok(packageInspect.records[0].uncompressedBytes > 0);
 assert.ok(packageInspect.records[0].relationshipReferences > 0);
 assert.equal(packageInspect.records[0].relationshipReferenceIssues, 0);
 assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml" && part.contentType.includes("wordprocessingml.document.main+xml")));
+const complexFieldDocumentXml = documentXml.replace(/<w:fldSimple\b[^>]*>[\s\S]*?<\/w:fldSimple>/, '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> NUMPAGES \\* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>3</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>');
+const entityHyperlinkRelsXml = documentRelsXml.replace('Target="https://example.com/research"', 'Target="https://example.com/research?a=1&amp;b=2"');
+const complexNativeDocx = await DocumentFile.patchDocx(docx, [
+  { path: "word/document.xml", xml: complexFieldDocumentXml },
+  { path: "word/_rels/document.xml.rels", xml: entityHyperlinkRelsXml },
+]);
+const complexNativeDocument = await DocumentFile.importDocx(complexNativeDocx, { preferNative: true });
+assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "field")?.instruction, "NUMPAGES \\* MERGEFORMAT");
+assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "field")?.display, "3");
+assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "hyperlink")?.url, "https://example.com/research?a=1&b=2");
 const brokenDocxReferenceXml = documentXml.replace(/<\/w:body>\s*<\/w:document>\s*$/, '<w:p><w:hyperlink xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdMissingSourceReference"><w:r><w:t>Broken link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>');
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: brokenDocxReferenceXml }]), /invalid OOXML package.*relationshipReferenceIdNotFound/);
 const missingReferencePartXml = '<source xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:link="rIdMissingRelationshipPart"/>';
@@ -360,6 +378,7 @@ assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Chec
 assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Review the evidence table.")?.author, "R&D Analyst");
 assert.equal(relocatedCommentsNative.comments.find((item) => item.text === "Review the evidence table.")?.date, "2026-07-11T00:15:00.000Z");
 assert.equal(relocatedCommentsNative.resolve(relocatedCommentsNative.comments.find((item) => item.text === "Review the evidence table.")?.targetId)?.kind, "table");
+assert.equal(relocatedCommentsNative.resolve(relocatedCommentsNative.comments.find((item) => item.text === "Verify the native hyperlink target.")?.targetId)?.kind, "hyperlink");
 const recipeHeaderDocx = await DocumentFile.patchDocx(docx, [{
   path: "word/headerReview.xml",
   xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Review header</w:t></w:r></w:p></w:hdr>',
@@ -448,6 +467,16 @@ assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Check this 
 assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Review the evidence table.")?.author, "R&D Analyst");
 assert.equal(nativeOnlyLoaded.comments.find((item) => item.text === "Review the evidence table.")?.date, "2026-07-11T00:15:00.000Z");
 assert.equal(nativeOnlyLoaded.resolve(nativeOnlyLoaded.comments.find((item) => item.text === "Review the evidence table.")?.targetId)?.kind, "table");
+const nativeOnlyHyperlink = nativeOnlyLoaded.blocks.find((item) => item.kind === "hyperlink");
+assert.equal(nativeOnlyHyperlink?.text, "w31r4 research note");
+assert.equal(nativeOnlyHyperlink?.url, "https://example.com/research");
+assert.ok(nativeOnlyHyperlink?.relationshipId);
+assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
+assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.display, "1");
+const nativeOnlyCitation = nativeOnlyLoaded.blocks.find((item) => item.kind === "citation");
+assert.match(nativeOnlyCitation?.text || "", /Source: Market brief/);
+assert.match(nativeOnlyCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
+assert.equal(nativeOnlyLoaded.resolve(nativeOnlyLoaded.comments.find((item) => item.text === "Verify the native hyperlink target.")?.targetId)?.kind, "hyperlink");
 const sharedHeaderDocumentXml = documentXml.replace(new RegExp(`(<w:sectPr\\b[^>]*>[\\s\\S]*?<w:headerReference\\b[^>]*r:id=")${openingHeaderRelId}("[^>]*\\/>[\\s\\S]*?<\\/w:sectPr>)`), `$1${finalHeaderRelId}$2`);
 const sharedHeaderDocx = await DocumentFile.patchDocx(docx, [
   { path: "word/document.xml", xml: sharedHeaderDocumentXml },

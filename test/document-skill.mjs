@@ -46,6 +46,9 @@ try {
   const nativeTableComment = nativePreferredDocument.comments.find((item) => item.text.includes("table comment anchor"));
   assert.equal(nativeTableComment?.author, "Maintainer");
   assert.equal(nativePreferredDocument.resolve(nativeTableComment?.targetId)?.kind, "table");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink")?.url, "https://learn.microsoft.com/office/open-xml/open-xml-sdk");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
+  assert.match(nativePreferredDocument.blocks.find((item) => item.kind === "citation")?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
 
   const nativeStatus = nativeDocumentRenderStatus();
   const baselineWrite = await verifyDocumentFile(result.docxPath, {
