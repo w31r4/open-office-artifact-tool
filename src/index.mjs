@@ -906,7 +906,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, arithmetic calculated fields, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, arithmetic calculated fields, item and absolute whole-day date filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
@@ -2111,7 +2111,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     columnFields: { type: "string[]", description: "Column field names." },
     valueFields: { type: "object[]", description: "Value field and aggregation definitions." },
     calculatedFields: { type: "object[]", description: "Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected." },
-    filters: { type: "object|object[]", description: "Axis item filters. Each field accepts exactly one non-empty include or exclude array." },
+    filters: { type: "object|object[]", description: "Axis filters. Use exactly one non-empty include/exclude array for item filters, or an absolute whole-day type: dateEqual, dateNotEqual, dateOlderThan, dateOlderThanOrEqual, dateNewerThan, dateNewerThanOrEqual, dateBetween, or dateNotBetween with ISO/Date value1 and value2 for between types. The field must be on a row or column axis; useWholeDay=false and relative date filters are not yet supported." },
     refreshPolicy: { type: "object", description: "OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso." },
   }, "pivot", "WorksheetPivotTable", "Editable clean-room pivot facade."),
   "sheet.charts.add": helpSchema({
@@ -2790,7 +2790,7 @@ class WorksheetPivotTable {
     const headers = config.sourceFields?.length ? config.sourceFields.map(String) : (matrix[0] || []).map((value) => String(value ?? ""));
     this.sourceFields = [...headers];
     const sourceValues = Object.fromEntries(headers.map((header, index) => [header, matrix.slice(1).map((row) => row[index])]));
-    const normalized = normalizePivotConfig({ ...config, sourceValues }, headers);
+    const normalized = normalizePivotConfig({ ...config, sourceValues, dateSystem: this.dateSystem }, headers);
     this.rowFields = normalized.rowFields;
     this.columnFields = normalized.columnFields;
     this.valueFields = normalized.valueFields;
@@ -2798,6 +2798,8 @@ class WorksheetPivotTable {
     this.filters = normalized.filters;
     this.refreshPolicy = normalized.refreshPolicy;
   }
+
+  get dateSystem() { return this.worksheet.workbook.dateSystem; }
 
   sourceValues() {
     const target = workbookRangeTarget(this.worksheet.workbook, this.worksheet, this.sourceRange);

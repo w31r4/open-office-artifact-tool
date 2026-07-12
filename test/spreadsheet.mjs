@@ -3,17 +3,49 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { FileBlob, SpreadsheetFile, Workbook } from "../src/index.mjs";
-import { parsePivotCacheDefinition } from "../src/spreadsheet/ooxml-pivots.mjs";
-import { evaluatePivotFormula } from "../src/spreadsheet/pivots.mjs";
+import { parsePivotCacheDefinition, parsePivotTableDefinition } from "../src/spreadsheet/ooxml-pivots.mjs";
+import { evaluatePivotFormula } from "../src/spreadsheet/pivot-formulas.mjs";
+import { pivotItemVisible } from "../src/spreadsheet/pivot-filters.mjs";
 
 assert.equal(evaluatePivotFormula("=2+3*4", {}, []), 14);
 assert.equal(evaluatePivotFormula("=('Revenue'-'Cost')/2", { Revenue: 15, Cost: 9 }), 3);
 assert.equal(evaluatePivotFormula("='Owner''s Revenue'*10%", { "Owner's Revenue": 80 }), 8);
 assert.equal(evaluatePivotFormula("=Revenue/0", { Revenue: 10 }), "#DIV/0!");
 assert.equal(evaluatePivotFormula("=-(Revenue/0)%", { Revenue: 10 }), "#DIV/0!");
+assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1904-01-01" }], "Date", 0, "1904"), true);
+assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-03-01" }], "Date", 61, "1900"), true);
+for (const [type, current, expected] of [
+  ["dateEqual", "2026-02-01", true],
+  ["dateNotEqual", "2026-02-01", false],
+  ["dateOlderThan", "2026-01-31", true],
+  ["dateOlderThan", "2026-02-01", false],
+  ["dateOlderThanOrEqual", "2026-02-01", true],
+  ["dateNewerThan", "2026-02-02", true],
+  ["dateNewerThan", "2026-02-01", false],
+  ["dateNewerThanOrEqual", "2026-02-01", true],
+  ["dateBetween", "2026-02-28", true],
+  ["dateNotBetween", "2026-02-28", false],
+  ["dateNotBetween", "2026-04-01", true],
+]) {
+  assert.equal(pivotItemVisible([{ field: "Date", type, value1: "2026-02-01", value2: "2026-03-31" }], "Date", current), expected, `${type} ${current}`);
+}
+assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "2026-02-01" }], "Date", "not-a-date"), false);
 const groupedCacheContract = parsePivotCacheDefinition(`<pivotCacheDefinition><cacheSource><worksheetSource ref="A1:A2" sheet="S"/></cacheSource><cacheFields count="2"><cacheField name="Source"><sharedItems count="1"><s v="A"/></sharedItems></cacheField><cacheField name="Grouped" databaseField="0"><fieldGroup base="0"/></cacheField></cacheFields></pivotCacheDefinition>`);
 assert.deepEqual(groupedCacheContract.sourceFields, ["Source"]);
 assert.deepEqual(groupedCacheContract.calculatedFields, []);
+const customDateFilterContract = parsePivotTableDefinition(`<pivotTableDefinition name="DatePivot" cacheId="3"><location ref="D4:E6"/><pivotFields count="2"><pivotField/><pivotField axis="axisRow"><items count="2"><item x="0" h="1"/><item t="default"/></items></pivotField></pivotFields><rowFields count="1"><field x="1"/></rowFields><filters count="1"><filter fld="1" type="dateBetween" id="1"><autoFilter ref="A1"><filterColumn colId="0"><customFilters and="1"><customFilter operator="greaterThanOrEqual" val="2026-02-01"/><customFilter operator="lessThanOrEqual" val="2026-03-31"/></customFilters></filterColumn></autoFilter></filter></filters></pivotTableDefinition>`, {
+  fields: ["Revenue", "OrderDate"],
+  items: [[], ["2026-01-31"]],
+});
+assert.deepEqual(customDateFilterContract.rowFields, ["OrderDate"]);
+assert.deepEqual(customDateFilterContract.filters, [{ field: "OrderDate", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
+const mutableDateSystemBook = Workbook.create();
+const mutableDateSystemSheet = mutableDateSystemBook.worksheets.add("Dates");
+mutableDateSystemSheet.getRange("A1:B2").values = [["Date", "Amount"], [0, 10]];
+const mutableDateSystemPivot = mutableDateSystemSheet.pivotTables.add({ sourceRange: "A1:B2", targetRange: "D1", rowFields: ["Date"], valueFields: [{ field: "Amount" }], filters: [{ field: "Date", type: "dateEqual", value1: "1904-01-01" }] });
+assert.deepEqual(mutableDateSystemPivot.computedValues(), [["Date", "sum of Amount"]]);
+mutableDateSystemBook.setDateSystem("1904");
+assert.deepEqual(mutableDateSystemPivot.computedValues(), [["Date", "sum of Amount"], [0, 10]]);
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
@@ -232,29 +264,32 @@ const revenuePivot = sheet.pivotTables.add({
   values: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue sum" }],
 });
 assert.deepEqual(revenuePivot.computedValues(), [["Month", "Revenue sum"], ["Jan", 100], ["Feb", 120], ["Mar", 130]]);
-sheet.getRange("P1:T7").values = [
-  ["Region", "Quarter", "Product", "Revenue", "Cost"],
-  ["East", "Q1", "Core", 10, 6],
-  ["East", "Q2", "Core", 20, 12],
-  ["West", "Q1", "Core", 30, 20],
-  ["West", "Q2", "Legacy", 40, 25],
-  ["East", "Q1", "Legacy", 5, 3],
-  ["West", "Q1", "Legacy", 7, 4],
+sheet.getRange("P1:U7").values = [
+  ["Region", "Quarter", "Product", "Revenue", "Cost", "OrderDate"],
+  ["East", "Q1", "Core", 10, 6, "2026-01-15"],
+  ["East", "Q2", "Core", 20, 12, "2026-02-01"],
+  ["West", "Q1", "Core", 30, 20, "2026-02-20"],
+  ["West", "Q2", "Legacy", 40, 25, "2026-03-15"],
+  ["East", "Q1", "Legacy", 5, 3, "2026-03-05"],
+  ["West", "Q1", "Legacy", 7, 4, "2026-04-01"],
 ];
 const regionalPivot = sheet.pivotTables.add({
   name: "RegionalPivot",
-  sourceRange: "P1:T7",
-  targetRange: "V1:X4",
-  rowFields: ["Region"],
+  sourceRange: "P1:U7",
+  targetRange: "W1:Z4",
+  rowFields: ["Region", "OrderDate"],
   columnFields: ["Quarter"],
   valueFields: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue total" }, { field: "Profit", name: "Profit total" }],
   calculatedFields: [{ name: "Profit", formula: "=([Revenue] - [Cost]) * 100%" }],
-  filters: { Quarter: { include: ["Q1"] } },
+  filters: [
+    { field: "Quarter", include: ["Q1"] },
+    { field: "OrderDate", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31" },
+  ],
   refreshPolicy: { refreshOnLoad: false, saveData: true, enableRefresh: false, invalid: true, missingItemsLimit: 3, refreshedBy: "QA Agent", refreshedDateIso: "2026-07-12T00:00:00Z" },
 });
-assert.deepEqual(regionalPivot.computedValues(), [["Region", "Q1 — Revenue total", "Q1 — Profit total"], ["East", 15, 6], ["West", 37, 13]]);
+assert.deepEqual(regionalPivot.computedValues(), [["Region", "OrderDate", "Q1 — Revenue total", "Q1 — Profit total"], ["West", "2026-02-20", 30, 10], ["East", "2026-03-05", 5, 2]]);
 assert.deepEqual(regionalPivot.calculatedFields, [{ name: "Profit", formula: "=('Revenue'-'Cost')*100%", numFmtId: 0, references: ["Revenue", "Cost"] }]);
-assert.deepEqual(regionalPivot.filters, [{ field: "Quarter", include: ["Q1"] }]);
+assert.deepEqual(regionalPivot.filters, [{ field: "Quarter", include: ["Q1"] }, { field: "OrderDate", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
 assert.equal(regionalPivot.refreshPolicy.saveData, true);
 assert.match(regionalPivot.inspectRecord().columnFields.join(","), /Quarter/);
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /refreshPolicy/);
@@ -272,8 +307,14 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Profit", formula: "Revenue-Cost", numFmtId: -1 }] }), /non-negative integer/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: [{ name: "Profit", formula: `Revenue+${"1+".repeat(2050)}1` }] }), /4096 characters/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:T7", targetRange: "V8", rowFields: ["Region"], calculatedFields: Array.from({ length: 129 }, (_, index) => ({ name: `C${index}`, formula: "Revenue" })) }), /exceeds 128 fields/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateBetween", value1: "2026-03-01" }] }), /value2 must be an ISO date/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-02-30" }] }), /value1 must be an ISO date/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateBetween", value1: "2026-04-01", value2: "2026-03-01" }] }), /must not be after/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "today", value1: "2026-03-01" }] }), /unsupported type today/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", rowFields: ["OrderDate"], filters: [{ field: "OrderDate", type: "dateEqual", value1: "2026-03-01", useWholeDay: false }] }), /requires useWholeDay=true/);
 assert.equal(workbook.resolve(revenuePivot.id).name, "RevenuePivot");
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /pivot table facade/);
+assert.match(workbook.help("sheet.pivotTables.add").ndjson, /dateBetween/);
 const image = sheet.images.add({
   name: "LogoImage",
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -1053,7 +1094,9 @@ const regionalPivotTableXml = await zip.file(pivotPartNames[1]).async("text");
 assert.match(regionalPivotTableXml, /name="RegionalPivot"/);
 assert.match(regionalPivotTableXml, /<colFields count="1"><field x="1"\/><\/colFields>/);
 assert.match(regionalPivotTableXml, /<pivotField axis="axisCol" multipleItemSelectionAllowed="1" showAll="0"><items count="3"><item x="0"\/><item x="1" h="1"\/><item t="default"\/><\/items><\/pivotField>/);
-assert.match(regionalPivotTableXml, /<dataField name="Profit total" fld="5" subtotal="sum"\/>/);
+assert.match(regionalPivotTableXml, /<dataField name="Profit total" fld="6" subtotal="sum"\/>/);
+assert.match(regionalPivotTableXml, /<filters count="1"><filter fld="5" type="dateBetween" id="1" stringValue1="2026-02-01" stringValue2="2026-03-31">/);
+assert.match(regionalPivotTableXml, /<customFilters and="1"><customFilter operator="greaterThanOrEqual" val="2026-02-01"\/><customFilter operator="lessThanOrEqual" val="2026-03-31"\/><\/customFilters>/);
 const pivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
 assert.match(pivotCacheXml, /<pivotCacheDefinition/);
 assert.match(pivotCacheXml, /r:id="rId1"/);
@@ -1069,7 +1112,7 @@ assert.match(pivotCacheDefinitionRelsXml, /relationships\/pivotCacheRecords/);
 assert.match(pivotCacheDefinitionRelsXml, /Target="pivotCacheRecords1\.xml"/);
 const regionalPivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text");
 assert.match(regionalPivotCacheXml, /refreshOnLoad="0" saveData="1" enableRefresh="0" invalid="1" missingItemsLimit="3" refreshedBy="QA Agent" refreshedDateIso="2026-07-12T00:00:00Z"/);
-assert.match(regionalPivotCacheXml, /<cacheFields count="6">/);
+assert.match(regionalPivotCacheXml, /<cacheFields count="7">/);
 assert.match(regionalPivotCacheXml, /<cacheField name="Profit" formula="\('Revenue'-'Cost'\)\*100%" databaseField="0" numFmtId="0"><sharedItems containsNumber="1" count="0"\/><\/cacheField>/);
 const pivotTableDefinitionRelsXml = await zip.file("xl/pivotTables/_rels/pivotTable1.xml.rels").async("text");
 assert.match(pivotTableDefinitionRelsXml, /relationships\/pivotCacheDefinition/);
@@ -1183,21 +1226,21 @@ assert.deepEqual(nativeOnlyPivot.computedValues(), [["Month", "Revenue sum"], ["
 assert.equal(nativeOnlyWorkbook.resolve("RevenuePivot"), nativeOnlyPivot);
 assert.match(nativeOnlyWorkbook.inspect({ kind: "pivotTable", target: "RevenuePivot", maxChars: 4000 }).ndjson, /Revenue sum/);
 const nativeOnlyRegionalPivot = nativeOnlySheet.pivotTables.getItemOrNullObject("RegionalPivot");
-assert.deepEqual(nativeOnlyRegionalPivot.computedValues(), [["Region", "Q1 — Revenue total", "Q1 — Profit total"], ["East", 15, 6], ["West", 37, 13]]);
+assert.deepEqual(nativeOnlyRegionalPivot.computedValues(), [["Region", "OrderDate", "Q1 — Revenue total", "Q1 — Profit total"], ["West", "2026-02-20", 30, 10], ["East", "2026-03-05", 5, 2]]);
 assert.deepEqual(nativeOnlyRegionalPivot.columnFields, ["Quarter"]);
 assert.deepEqual(nativeOnlyRegionalPivot.calculatedFields, [{ name: "Profit", formula: "=('Revenue'-'Cost')*100%", numFmtId: 0, references: ["Revenue", "Cost"] }]);
-assert.deepEqual(nativeOnlyRegionalPivot.filters, [{ field: "Quarter", exclude: ["Q2"] }]);
+assert.deepEqual(nativeOnlyRegionalPivot.filters, [{ field: "Quarter", exclude: ["Q2"] }, { field: "OrderDate", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
 assert.deepEqual(nativeOnlyRegionalPivot.refreshPolicy, { refreshOnLoad: false, saveData: true, enableRefresh: false, invalid: true, missingItemsLimit: 3, refreshedBy: "QA Agent", refreshedDateIso: "2026-07-12T00:00:00Z" });
 const nativeOnlyRegionalRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeOnlyWorkbook));
-assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").computedValues(), [["Region", "Q1 — Revenue total", "Q1 — Profit total"], ["East", 15, 6], ["West", 37, 13]]);
-assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").filters, [{ field: "Quarter", exclude: ["Q2"] }]);
+assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").computedValues(), [["Region", "OrderDate", "Q1 — Revenue total", "Q1 — Profit total"], ["West", "2026-02-20", 30, 10], ["East", "2026-03-05", 5, 2]]);
+assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").filters, [{ field: "Quarter", exclude: ["Q2"] }, { field: "OrderDate", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
 const unsupportedCalculatedZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedCalculatedZip.remove("customXml/open-office-artifact.json");
 unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"SUM('Revenue')\""));
 const unsupportedCalculatedWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await unsupportedCalculatedZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
 const unsupportedCalculatedPivot = unsupportedCalculatedWorkbook.resolve("RegionalPivot");
 assert.equal(unsupportedCalculatedPivot.calculatedFields[0].supported, false);
-assert.equal(unsupportedCalculatedPivot.computedValues()[1][2], "#NAME?");
+assert.equal(unsupportedCalculatedPivot.computedValues()[1][3], "#NAME?");
 assert.match(unsupportedCalculatedWorkbook.verify().ndjson, /pivotCalculatedFieldUnsupported/);
 const unsupportedCalculatedRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedCalculatedWorkbook)).arrayBuffer()));
 assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SUM\('Revenue'\)"/);

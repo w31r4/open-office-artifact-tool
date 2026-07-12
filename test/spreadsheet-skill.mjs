@@ -62,8 +62,8 @@ try {
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.equal(summaryDrawings.pivotTables.items.length, 1);
   const summaryPivot = summaryDrawings.pivotTables.getItemOrNullObject("RevenuePivot");
-  assert.deepEqual(summaryPivot.computedValues(), [["Month", "Revenue total", "Gross profit"], ["Jan", 100, 40], ["Mar", 150, 60]]);
-  assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }]);
+  assert.deepEqual(summaryPivot.computedValues(), [["Month", "Period End", "Revenue total", "Gross profit"], ["Mar", "2026-03-31", 150, 60]]);
+  assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }, { field: "Period End", type: "dateBetween", value1: "2026-02-01", value2: "2026-03-31", useWholeDay: true }]);
   assert.deepEqual(summaryPivot.calculatedFields, [{ name: "Gross Profit", formula: "='Revenue'-'Cost'", numFmtId: 0, references: ["Revenue", "Cost"] }]);
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
@@ -74,12 +74,13 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
-  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"customColumns":6/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"customColumns":7/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"mergedCell"[\s\S]*"range":"A15:G15"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"Quarter performance"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"Green status marker"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"pivotTable"[\s\S]*"name":"RevenuePivot"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"filters":\[\{"field":"Month","include":\["Jan","Mar"\]/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"field":"Period End","type":"dateBetween"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Gross Profit"/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);

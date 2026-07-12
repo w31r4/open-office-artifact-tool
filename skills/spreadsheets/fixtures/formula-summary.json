@@ -41,12 +41,12 @@
       "freezePanes": { "rows": 1, "columns": 1 },
       "ranges": [
         {
-          "range": "A1:D4",
+          "range": "A1:E4",
           "values": [
-            ["Month", "Revenue", "Cost", "Margin"],
-            ["Jan", null, null, null],
-            ["Feb", null, null, null],
-            ["Mar", null, null, null]
+            ["Month", "Revenue", "Cost", "Margin", "Period End"],
+            ["Jan", null, null, null, "2026-01-31"],
+            ["Feb", null, null, null, "2026-02-28"],
+            ["Mar", null, null, null, "2026-03-31"]
           ]
         },
         {
@@ -57,7 +57,7 @@
         },
         { "range": "B2:D4", "fillDown": true },
         {
-          "range": "A1:D1",
+          "range": "A1:E1",
           "format": {
             "fill": "#0F172A",
             "font": { "bold": true, "color": "#FFFFFF" },
@@ -74,6 +74,7 @@
         { "range": "A1:A4", "format": { "columnWidth": 12 } },
         { "range": "B1:C4", "format": { "columnWidthPx": 96 } },
         { "range": "D1:D4", "format": { "columnWidth": 10 } },
+        { "range": "E1:E4", "format": { "columnWidth": 14 } },
         {
           "range": "B2:C4",
           "format": { "numberFormat": "$#,##0" }
@@ -140,7 +141,7 @@
         }
       ],
       "tables": [
-        { "range": "A1:D4", "name": "SummaryTable", "style": "TableStyleMedium2" }
+        { "range": "A1:E4", "name": "SummaryTable", "style": "TableStyleMedium2" }
       ],
       "charts": [
         {
@@ -155,10 +156,13 @@
       "pivots": [
         {
           "name": "RevenuePivot",
-          "sourceRange": "A1:D4",
-          "targetRange": "I12:J16",
-          "rowFields": ["Month"],
-          "filters": { "Month": { "include": ["Jan", "Mar"] } },
+          "sourceRange": "A1:E4",
+          "targetRange": "I18:J22",
+          "rowFields": ["Month", "Period End"],
+          "filters": [
+            { "field": "Month", "include": ["Jan", "Mar"] },
+            { "field": "Period End", "type": "dateBetween", "value1": "2026-02-01", "value2": "2026-03-31" }
+          ],
           "refreshPolicy": {
             "refreshOnLoad": false,
             "saveData": true,

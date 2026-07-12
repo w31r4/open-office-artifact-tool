@@ -1,4 +1,6 @@
-import { pivotFormulaToOoxml, pivotItemVisible, pivotValueLabel } from "./pivots.mjs";
+import { pivotFormulaToOoxml } from "./pivot-formulas.mjs";
+import { PIVOT_DATE_FILTER_TYPES, pivotItemVisible } from "./pivot-filters.mjs";
+import { pivotValueLabel } from "./pivots.mjs";
 
 function decodeXml(value) {
   return String(value ?? "")
@@ -39,7 +41,8 @@ function booleanAttribute(value, fallback = false) {
 }
 
 function elements(xml, localName) {
-  return [...String(xml || "").matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*(?:\\/\\s*>|>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>)`, "g"))].map((match) => ({ xml: match[0], opening: tag(match[0], localName), body: body(match[0], localName) }));
+  const prefix = "(?:[A-Za-z_][\\w.-]*:)?";
+  return [...String(xml || "").matchAll(new RegExp(`<${prefix}${localName}\\b[^>]*\\/\\s*>|<${prefix}${localName}\\b[^>]*>[\\s\\S]*?<\\/${prefix}${localName}>`, "g"))].map((match) => ({ xml: match[0], opening: tag(match[0], localName), body: body(match[0], localName) }));
 }
 
 function parseSharedItem(itemXml) {
@@ -118,9 +121,22 @@ export function parsePivotTableDefinition(xml = "", cache = {}) {
     };
   }).filter((field) => field.field);
   const pivotFieldEntries = elements(body(xml, "pivotFields"), "pivotField");
+  const dateFilters = elements(body(xml, "filters"), "filter").flatMap((entry) => {
+    const attrs = attributes(entry.opening);
+    if (!PIVOT_DATE_FILTER_TYPES.has(attrs.type)) return [];
+    const fieldIndex = Number(attrs.fld);
+    const field = Number.isInteger(fieldIndex) && fieldIndex >= 0 && fieldIndex < fields.length ? fields[fieldIndex] : undefined;
+    if (!field) return [];
+    const customValues = elements(body(entry.xml, "customFilters"), "customFilter").map((item) => attributes(item.opening).val).filter((value) => value != null);
+    const value1 = attrs.stringValue1 || customValues[0];
+    const between = attrs.type === "dateBetween" || attrs.type === "dateNotBetween";
+    const value2 = attrs.stringValue2 || customValues[1];
+    return value1 && (!between || value2) ? [{ field, type: attrs.type, value1, value2: between ? value2 : undefined, useWholeDay: true }] : [];
+  });
+  const dateFilterFields = new Set(dateFilters.map((filter) => filter.field));
   const filters = pivotFieldEntries.flatMap((entry, fieldIndex) => {
     const field = fields[fieldIndex];
-    if (!field) return [];
+    if (!field || dateFilterFields.has(field)) return [];
     const hidden = elements(body(entry.xml, "items"), "item").flatMap((item) => {
       const attrs = attributes(item.opening);
       const index = Number(attrs.x);
@@ -135,7 +151,7 @@ export function parsePivotTableDefinition(xml = "", cache = {}) {
     rowFields: indexedFields(xml, "rowFields", fields),
     columnFields: indexedFields(xml, "colFields", fields),
     valueFields,
-    filters,
+    filters: [...filters, ...dateFilters],
   };
 }
 
@@ -218,6 +234,21 @@ function targetStart(address = "A1") {
   return { row: Number(match[2]) - 1, column };
 }
 
+function dateFilterXml(filter, fieldIndex, id) {
+  const operators = {
+    dateEqual: ["equal"], dateNotEqual: ["notEqual"],
+    dateOlderThan: ["lessThan"], dateOlderThanOrEqual: ["lessThanOrEqual"],
+    dateNewerThan: ["greaterThan"], dateNewerThanOrEqual: ["greaterThanOrEqual"],
+    dateBetween: ["greaterThanOrEqual", "lessThanOrEqual"],
+    dateNotBetween: ["lessThan", "greaterThan"],
+  };
+  const values = [filter.value1, filter.value2].filter((value) => value != null);
+  const custom = operators[filter.type].map((operator, index) => `<customFilter operator="${operator}" val="${attrEscape(values[index])}"/>`).join("");
+  const join = values.length > 1 ? ` and="${filter.type === "dateBetween" ? 1 : 0}"` : "";
+  const second = filter.value2 ? ` stringValue2="${attrEscape(filter.value2)}"` : "";
+  return `<filter fld="${fieldIndex}" type="${filter.type}" id="${id}" stringValue1="${attrEscape(filter.value1)}"${second}><autoFilter ref="A1"><filterColumn colId="0"><customFilters${join}>${custom}</customFilters></filterColumn></autoFilter></filter>`;
+}
+
 export function spreadsheetPivotTableDefinitionXml(part) {
   const { pivot } = part;
   const headers = pivotAllFields(pivot);
@@ -231,12 +262,14 @@ export function spreadsheetPivotTableDefinitionXml(part) {
   const pivotFields = headers.map((header, index) => {
     const fieldValues = pivotFieldValues(pivot, index);
     const filter = pivot.filters.find((entry) => entry.field === header);
-    const items = fieldValues.map((value, itemIndex) => `<item x="${itemIndex}"${pivotItemVisible(pivot.filters, header, value) ? "" : ' h="1"'}/>`).join("") + '<item t="default"/>';
+    const items = fieldValues.map((value, itemIndex) => `<item x="${itemIndex}"${pivotItemVisible(pivot.filters, header, value, pivot.dateSystem) ? "" : ' h="1"'}/>`).join("") + '<item t="default"/>';
     const axis = rowIndexes.includes(index) ? ' axis="axisRow"' : columnIndexes.includes(index) ? ' axis="axisCol"' : "";
     return `<pivotField${axis}${valueIndexes.includes(index) ? ' dataField="1"' : ""}${filter ? ' multipleItemSelectionAllowed="1"' : ""} showAll="0"><items count="${fieldValues.length + 1}">${items}</items></pivotField>`;
   }).join("");
   const rowFields = rowIndexes.length ? `<rowFields count="${rowIndexes.length}">${rowIndexes.map((index) => `<field x="${index}"/>`).join("")}</rowFields>` : "";
   const columnFields = columnIndexes.length ? `<colFields count="${columnIndexes.length}">${columnIndexes.map((index) => `<field x="${index}"/>`).join("")}</colFields>` : "";
   const dataFields = pivot.valueFields.length ? `<dataFields count="${pivot.valueFields.length}">${pivot.valueFields.map((field) => `<dataField name="${attrEscape(pivotValueLabel(field))}" fld="${Math.max(0, headers.indexOf(String(field.field || field.name)))}" subtotal="${attrEscape(field.summarizeBy || "sum")}"/>`).join("")}</dataFields>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="${attrEscape(pivot.name)}" cacheId="${part.cacheId}" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3" multipleFieldFilters="1"><location ref="${attrEscape(ref)}" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="${headers.length}">${pivotFields}</pivotFields>${rowFields}${columnFields}${dataFields}</pivotTableDefinition>`;
+  const dateFilters = pivot.filters.filter((filter) => PIVOT_DATE_FILTER_TYPES.has(filter.type));
+  const filters = dateFilters.length ? `<filters count="${dateFilters.length}">${dateFilters.map((filter, index) => dateFilterXml(filter, headers.indexOf(filter.field), index + 1)).join("")}</filters>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="${attrEscape(pivot.name)}" cacheId="${part.cacheId}" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3" multipleFieldFilters="1"><location ref="${attrEscape(ref)}" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="${headers.length}">${pivotFields}</pivotFields>${rowFields}${columnFields}${dataFields}${filters}</pivotTableDefinition>`;
 }
