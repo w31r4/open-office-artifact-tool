@@ -21,7 +21,7 @@ Use this project skill for standalone `.pptx` artifact work. It is the clean-roo
 ## Authoring workflow
 
 1. Create a `Presentation` or import an existing PPTX with `PresentationFile.importPptx`.
-2. Define the communication job and select a coherent theme/layout system before adding slides.
+2. Define the communication job and select a coherent theme/layout system before adding slides. Use `presentation.theme.setColors(...)`, `.setFonts(...)`, `.setTextStyles(...)`, and `.setColorMap(...)` when native Theme/Slide Master inheritance matters; keep individual shape styles for deliberate exceptions.
 3. Inspect the relevant slides, text ranges, tables, charts, images, notes, and comments before editing.
 4. Apply focused changes through public APIs and keep stable names on important objects.
    For bounded package surgery, `PresentationFile.patchPptx(...)` can attach caller-supplied image bytes or public chart XML to an existing slide with `recipe: { kind: "image"|"chart", source: "ppt/slides/slideN.xml", sourceReference: { objectId, name, alt, position } }`. Position is explicit pixels; the patcher owns DrawingML namespaces, relationship references, non-visual ID collision checks, deterministic replacement, and deletion cleanup.
@@ -104,6 +104,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - `PresentationFile.inspectPptx(...)` proves required slide, chart, media, notes, comments, comment-author registry, theme, master, and layout parts exist. It rejects wrong review-part roots/content types/sources, orphan or duplicate review relationships, multiple author registries, missing/duplicate author IDs, invalid or duplicate per-author comment indexes, and `lastIdx` values below the maximum used index. Native import must preserve per-comment/reply author identity even when notes, comments, or `commentAuthors.xml` use nonstandard relationship targets.
 - `presentation.inspect(...)` proves agent-facing objects, master/layout identity, and review metadata survived roundtrip.
 - Package evidence must include the presentation master list, master/layout parts, and the master↔layout plus slide→layout relationship chain when layouts are used.
+- Theme evidence must include all 12 DrawingML color slots, major/minor Latin plus optional East-Asian/complex-script fonts, non-empty fill/line/effect/background format lists, a Slide Master `clrMap`, and title/body/other text styles. Re-import must restore the same agent-facing theme values.
 - The checked-in `package-drawing.json` fixture generates a chart part through the public facade, attaches it and an arbitrary-path image to an existing slide through `patchPptx`, restores both as editable agent-facing objects, and passes the real render gate.
 - The checked-in `package-notes-comments.json` fixture relocates notes, comments, and the singleton author registry to arbitrary valid paths, proves semantic validation reports zero issues, restores author identity and note text, and passes LibreOffice/Poppler rendering.
 - `presentation.verify()` and `presentation.validateLayout()` catch structural, overlap, off-canvas, overflow, chart, table, image, placeholder, and dangling-comment issues.

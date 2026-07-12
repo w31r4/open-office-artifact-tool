@@ -5,7 +5,21 @@ import JSZip from "jszip";
 import { box, column, FileBlob, paragraph, Presentation, PresentationFile, row, run, rule, shape as composeShape } from "../src/index.mjs";
 
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
-presentation.theme.setColors({ accent1: "#0ea5e9", accent2: "#f97316" }).setFonts({ major: "Aptos Display", minor: "Aptos" });
+const aliasedThemePresentation = Presentation.create({ theme: { colors: { dk1: "#112233", lt1: "#fefefe" } } });
+assert.equal(aliasedThemePresentation.theme.colors.tx1, "#112233");
+assert.equal(aliasedThemePresentation.theme.colors.bg1, "#fefefe");
+assert.equal("dk1" in aliasedThemePresentation.theme.colors, false);
+presentation.theme
+  .setColors({ accent1: "#0ea5e9", accent2: "#f97316", accent4: "#7c3aed", accent5: "#16a34a", accent6: "#dc2626", tx2: "#334155", bg2: "#f8fafc", hlink: "#2563eb", folHlink: "#9333ea" })
+  .setFonts({ major: "Aptos Display", minor: "Aptos", majorEastAsia: "PingFang SC", majorComplexScript: "Arial", minorEastAsia: "Noto Sans CJK SC", minorComplexScript: "Arial" })
+  .setTextStyles({ title: { fontSize: 38, color: "accent1", alignment: "center" }, body: { fontSize: 22, color: "tx2", fontFamily: "+mn-lt" }, other: { fontSize: 16, italic: true, color: "#475569" } })
+  .setColorMap({ accent1: "accent2", accent2: "accent1" });
+assert.throws(() => presentation.theme.setColors({ accent7: "#000000" }), /Unsupported presentation theme color accent7/);
+assert.throws(() => presentation.theme.setColors({ accent3: "transparent" }), /six-digit RGB color/);
+assert.throws(() => presentation.theme.setFonts({ major: "" }), /must not be empty/);
+assert.throws(() => presentation.theme.setTextStyles({ title: { fontSize: 0 } }), /fontSize must be greater than 0/);
+assert.throws(() => presentation.theme.setTextStyles({ body: { alignment: "middle" } }), /alignment must be/);
+assert.throws(() => presentation.theme.setColorMap({ accent1: "unknown" }), /unsupported target/);
 const titleLayout = presentation.layouts.add({
   id: "layout/title-content",
   name: "Title and Content",
@@ -315,8 +329,36 @@ const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
 const themeXml = await zip.file("ppt/theme/theme1.xml").async("text");
 assert.match(themeXml, /0ea5e9/i);
 assert.match(themeXml, /Aptos Display/);
+assert.match(themeXml, /<a:dk2><a:srgbClr val="334155"\/><\/a:dk2>/);
+assert.match(themeXml, /<a:lt2><a:srgbClr val="F8FAFC"\/><\/a:lt2>/);
+assert.match(themeXml, /<a:accent4><a:srgbClr val="7C3AED"\/><\/a:accent4>/);
+assert.match(themeXml, /<a:accent5><a:srgbClr val="16A34A"\/><\/a:accent5>/);
+assert.match(themeXml, /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
+assert.match(themeXml, /<a:majorFont><a:latin typeface="Aptos Display"\/><a:ea typeface="PingFang SC"\/><a:cs typeface="Arial"\/><\/a:majorFont>/);
+assert.equal((themeXml.match(/<a:fillStyleLst>[\s\S]*?<\/a:fillStyleLst>/g) || []).length, 1);
+assert.equal((/<a:fillStyleLst>([\s\S]*?)<\/a:fillStyleLst>/.exec(themeXml)?.[1].match(/<a:solidFill>/g) || []).length, 3);
+assert.equal((/<a:lnStyleLst>([\s\S]*?)<\/a:lnStyleLst>/.exec(themeXml)?.[1].match(/<a:ln\b/g) || []).length, 3);
+assert.equal((/<a:effectStyleLst>([\s\S]*?)<\/a:effectStyleLst>/.exec(themeXml)?.[1].match(/<a:effectStyle>/g) || []).length, 3);
+assert.equal((/<a:bgFillStyleLst>([\s\S]*?)<\/a:bgFillStyleLst>/.exec(themeXml)?.[1].match(/<a:solidFill>/g) || []).length, 3);
 const masterXml = await zip.file("ppt/slideMasters/slideMaster1.xml").async("text");
 assert.match(masterXml, /sldLayoutId/);
+assert.match(masterXml, /<p:clrMap[^>]*accent1="accent2"[^>]*accent2="accent1"/);
+assert.match(masterXml, /<p:titleStyle>[\s\S]*?<a:defRPr sz="3800" b="1" i="0">[\s\S]*?<a:schemeClr val="accent1"/);
+assert.match(masterXml, /<p:bodyStyle>[\s\S]*?<a:defRPr sz="2200" b="0" i="0">[\s\S]*?<a:schemeClr val="tx2"/);
+assert.match(masterXml, /<p:otherStyle>[\s\S]*?<a:defRPr sz="1600" b="0" i="1">[\s\S]*?<a:srgbClr val="475569"/);
+assert.equal((masterXml.match(/<a:lvl[1-9]pPr\b/g) || []).length, 27);
+const alternateThemePrefixXml = themeXml.replaceAll("<a:", "<d:").replaceAll("</a:", "</d:").replace("xmlns:a=", "xmlns:d=").replace('<d:dk1><d:srgbClr val="0F172A"/></d:dk1>', '<d:dk1><d:sysClr val="windowText" lastClr="0F172A"/></d:dk1>');
+const alternateMasterPrefixXml = masterXml.replaceAll("<p:", "<m:").replaceAll("</p:", "</m:").replaceAll("<a:", "<d:").replaceAll("</a:", "</d:").replace("xmlns:p=", "xmlns:m=").replace("xmlns:a=", "xmlns:d=");
+const alternatePrefixPptx = await PresentationFile.patchPptx(pptx, [
+  { path: "ppt/theme/theme1.xml", xml: alternateThemePrefixXml },
+  { path: "ppt/slideMasters/slideMaster1.xml", xml: alternateMasterPrefixXml },
+]);
+const alternatePrefixLoaded = await PresentationFile.importPptx(alternatePrefixPptx);
+assert.equal(alternatePrefixLoaded.theme.colors.accent6, "#dc2626");
+assert.equal(alternatePrefixLoaded.theme.colors.tx1, "#0f172a");
+assert.equal(alternatePrefixLoaded.theme.fonts.majorEastAsia, "PingFang SC");
+assert.equal(alternatePrefixLoaded.theme.textStyles.title.fontSize, 38);
+assert.equal(alternatePrefixLoaded.theme.colorMap.accent1, "accent2");
 const layoutXml = await zip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
 assert.match(layoutXml, /Title and Content/);
 assert.match(layoutXml, /<p:ph type="title"/);
@@ -414,6 +456,20 @@ await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
 assert.equal(loaded.layouts.items[0].id, "pptx-layout-2147483649");
 assert.equal(loaded.layouts.items[0].masterId, "pptx-master-2147483648");
+assert.equal(loaded.theme.colors.accent6, "#dc2626");
+assert.equal(loaded.theme.colors.tx2, "#334155");
+assert.equal(loaded.theme.fonts.majorEastAsia, "PingFang SC");
+assert.equal(loaded.theme.fonts.minorComplexScript, "Arial");
+assert.deepEqual(loaded.theme.textStyles.title, { fontSize: 38, bold: true, italic: false, color: "accent1", fontFamily: "+mj-lt", alignment: "center" });
+assert.deepEqual(loaded.theme.textStyles.body, { fontSize: 22, bold: false, italic: false, color: "tx2", fontFamily: "+mn-lt", alignment: "left" });
+assert.equal(loaded.theme.textStyles.other.italic, true);
+assert.equal(loaded.theme.textStyles.other.color, "#475569");
+assert.equal(loaded.theme.colorMap.accent1, "accent2");
+assert.equal(loaded.theme.colorMap.accent2, "accent1");
+const loadedThemeRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(loaded)).arrayBuffer()));
+assert.match(await loadedThemeRoundtripZip.file("ppt/theme/theme1.xml").async("text"), /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
+assert.match(await loadedThemeRoundtripZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:clrMap[^>]*accent1="accent2"[^>]*accent2="accent1"/);
+assert.match(await loadedThemeRoundtripZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:titleStyle>[\s\S]*?<a:defRPr sz="3800"/);
 const loadedAll = loaded.inspect({ kind: "theme,layout,textbox,table,chart,image,notes,comment,connector", maxChars: 12000 }).ndjson;
 assert.match(loadedAll, /Revenue plan/);
 assert.match(loadedAll, /Imported Theme|Open Office Clean Room/);
@@ -431,6 +487,8 @@ assert.match(loadedAll, /Native import logo/);
 assert.match(loadedAll, /Speaker note/);
 assert.match(loadedAll, /Tighten this headline/);
 assert.match(loadedAll, /shape-to-table/);
+assert.match(loadedAll, /"textStyles"/);
+assert.match(loadedAll, /"colorMap"/);
 const loadedComment = loaded.slides.items[0].comments.items[0];
 assert.ok(loaded.slides.items[0].resolve(loadedComment.targetId));
 assert.equal(loadedComment.author, "Reviewer");

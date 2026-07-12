@@ -61,6 +61,8 @@ export function createPresentationFromFixture(fixture = {}) {
   const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {} });
   if (fixture.theme?.colors) presentation.theme.setColors(fixture.theme.colors);
   if (fixture.theme?.fonts) presentation.theme.setFonts(fixture.theme.fonts);
+  if (fixture.theme?.textStyles) presentation.theme.setTextStyles(fixture.theme.textStyles);
+  if (fixture.theme?.colorMap) presentation.theme.setColorMap(fixture.theme.colorMap);
   for (const layout of fixture.layouts || []) presentation.layouts.add(layout);
   for (const slide of fixture.slides || []) addFixtureSlide(presentation, slide);
   const inspectKind = fixture.qa?.inspectKind || "deck,theme,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange";

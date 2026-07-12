@@ -11,6 +11,7 @@ import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/oo
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches } from "./spreadsheet/ooxml-pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
+import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -1004,7 +1005,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure inspectable complete theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Theme and Slide Master inheritance." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create a reusable slide layout with placeholders; export writes slideLayout and slideMaster parts for clean-room PPTX roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
@@ -1838,8 +1839,10 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "image", "ImageElement", "Appended editable image facade."),
   "presentation.theme": helpSchema({
     name: { type: "string", description: "Theme name." },
-    colors: { type: "object", description: "Theme accent/background/text color map." },
-    fonts: { type: "object", description: "Major and minor font families." },
+    colors: { type: "object", description: "Complete tx1/bg1/tx2/bg2, accent1-accent6, hlink, and folHlink color scheme; dk1/lt1/dk2/lt2 aliases are accepted." },
+    fonts: { type: "object", description: "Major/minor Latin plus optional East-Asian and complex-script font families." },
+    textStyles: { type: "object", description: "Slide Master title/body/other defaults with fontSize, bold, italic, color, fontFamily, and alignment." },
+    colorMap: { type: "object", description: "Slide Master semantic color mapping for bg1/tx1/bg2/tx2, accents, and hyperlinks." },
   }, "theme", "PresentationTheme", "Mutable presentation theme facade."),
   "presentation.layouts.add": helpSchema({
     name: { type: "string", required: true, description: "Layout name." },
@@ -6852,24 +6855,28 @@ class SlideCollection {
 
 class PresentationTheme {
   constructor(presentation, config = {}) {
+    const normalized = normalizePresentationThemeConfig(config);
     this.presentation = presentation;
     this.id = config.id || "theme/default";
-    this.name = config.name || "Open Office Clean Room";
-    this.colors = {
-      accent1: "#156082",
-      accent2: "#0ea5e9",
-      accent3: "#64748b",
-      bg1: "#ffffff",
-      tx1: "#0f172a",
-      ...config.colors,
-    };
-    this.fonts = { major: "Aptos Display", minor: "Aptos", ...config.fonts };
+    this.name = normalized.name;
+    this.colors = normalized.colors;
+    this.fonts = normalized.fonts;
+    this.textStyles = normalized.textStyles;
+    this.colorMap = normalized.colorMap;
   }
 
-  setColors(colors = {}) { Object.assign(this.colors, colors); return this; }
-  setFonts(fonts = {}) { Object.assign(this.fonts, fonts); return this; }
-  inspectRecord() { return { kind: "theme", id: this.id, name: this.name, colors: this.colors, fonts: this.fonts }; }
-  toJSON() { return { id: this.id, name: this.name, colors: this.colors, fonts: this.fonts }; }
+  update(config = {}) {
+    const normalized = normalizePresentationThemeConfig(config, this);
+    Object.assign(this, normalized);
+    return this;
+  }
+
+  setColors(colors = {}) { return this.update({ colors }); }
+  setFonts(fonts = {}) { return this.update({ fonts }); }
+  setTextStyles(textStyles = {}) { return this.update({ textStyles }); }
+  setColorMap(colorMap = {}) { return this.update({ colorMap }); }
+  inspectRecord() { return { kind: "theme", id: this.id, name: this.name, colors: this.colors, fonts: this.fonts, textStyles: this.textStyles, colorMap: this.colorMap }; }
+  toJSON() { return { id: this.id, name: this.name, colors: this.colors, fonts: this.fonts, textStyles: this.textStyles, colorMap: this.colorMap }; }
 }
 
 class SlideLayoutTemplate {
@@ -7748,9 +7755,9 @@ export class PresentationFile {
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "ppt/presentation.xml" }]));
     zip.file("ppt/presentation.xml", presentationXml(presentation));
     zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, layoutParts, commentAuthors.entries.length > 0));
-    zip.file("ppt/theme/theme1.xml", pptxThemeXml(presentation.theme));
+    zip.file("ppt/theme/theme1.xml", presentationThemeXml(presentation.theme));
     if (layoutParts.length) {
-      zip.file("ppt/slideMasters/slideMaster1.xml", pptxSlideMasterXml(layoutParts));
+      zip.file("ppt/slideMasters/slideMaster1.xml", presentationSlideMasterXml(layoutParts, presentation.theme));
       zip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", pptxSlideMasterRelsXml(layoutParts));
       for (const part of layoutParts) {
         zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout));
@@ -7786,7 +7793,7 @@ export class PresentationFile {
     const themeRel = presentationRels.find((rel) => rel.type.endsWith("/theme"));
     const themeTarget = themeRel?.target ? (themeRel.target.replace(/^\//, "").startsWith("ppt/") ? themeRel.target.replace(/^\//, "") : path.posix.normalize(`ppt/${themeRel.target}`).replace(/^\.\//, "")) : undefined;
     const themeXml = themeTarget ? await zip.file(themeTarget)?.async("text") : await zip.file("ppt/theme/theme1.xml")?.async("text");
-    if (themeXml) presentation.theme = parsePptxTheme(presentation, themeXml);
+    if (themeXml) presentation.theme = new PresentationTheme(presentation, parsePresentationThemeXml(themeXml));
     const commentAuthorsRel = presentationRels.find((rel) => rel.type.endsWith("/commentAuthors") && rel.targetMode?.toLowerCase() !== "external");
     const commentAuthorsTarget = commentAuthorsRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", commentAuthorsRel.target), "PPTX") : undefined;
     const commentAuthorsById = commentAuthorsTarget ? parsePptxCommentAuthors(await zip.file(commentAuthorsTarget)?.async("text")) : new Map();
@@ -7805,6 +7812,7 @@ export class PresentationFile {
       const masterFile = master.file;
       const masterXml = await zip.file(masterFile)?.async("text");
       if (!masterXml) continue;
+      if (masterIndex === 0) presentation.theme.update(parsePresentationSlideMasterThemeXml(masterXml));
       const masterRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(masterFile, "PPTX"))?.async("text"));
       const masterRelationshipsById = new Map(masterRels.map((relationship) => [relationship.id, relationship]));
       const referencedLayouts = [...String(masterXml).matchAll(/<p:sldLayoutId\b[^>]*\/?\s*>/g)].map((match) => {
@@ -7930,17 +7938,6 @@ function pptxPresentationRelsXml(presentation, layoutParts = [], hasCommentAutho
 
 function pptxColorValue(value, fallback) {
   return String(value || fallback || "#000000").replace(/^#/, "").slice(0, 6).padEnd(6, "0");
-}
-
-function pptxThemeXml(theme) {
-  const colors = theme.colors || {};
-  const fonts = theme.fonts || {};
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="${attrEscape(theme.name || "Open Office Clean Room")}"><a:themeElements><a:clrScheme name="${attrEscape(theme.name || "Clean Room")}"><a:dk1><a:srgbClr val="${pptxColorValue(colors.tx1, "#0f172a")}"/></a:dk1><a:lt1><a:srgbClr val="${pptxColorValue(colors.bg1, "#ffffff")}"/></a:lt1><a:accent1><a:srgbClr val="${pptxColorValue(colors.accent1, "#156082")}"/></a:accent1><a:accent2><a:srgbClr val="${pptxColorValue(colors.accent2, "#0ea5e9")}"/></a:accent2><a:accent3><a:srgbClr val="${pptxColorValue(colors.accent3, "#64748b")}"/></a:accent3><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Clean Room"><a:majorFont><a:latin typeface="${attrEscape(fonts.major || "Aptos Display")}"/></a:majorFont><a:minorFont><a:latin typeface="${attrEscape(fonts.minor || "Aptos")}"/></a:minorFont></a:fontScheme><a:fmtScheme name="Clean Room"><a:fillStyleLst/><a:lnStyleLst/><a:effectStyleLst/><a:bgFillStyleLst/></a:fmtScheme></a:themeElements></a:theme>`;
-}
-
-function pptxSlideMasterXml(layoutParts = []) {
-  const ids = layoutParts.map((part, index) => `<p:sldLayoutId id="${2147483649 + index}" r:id="${part.masterRelId}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld><p:sldLayoutIdLst>${ids}</p:sldLayoutIdLst><p:txStyles/></p:sldMaster>`;
 }
 
 function pptxSlideMasterRelsXml(layoutParts = []) {
@@ -8155,24 +8152,6 @@ function pptxRelationshipTarget(rels, relId) {
   if (!rel?.target) return undefined;
   const target = rel.target.replace(/^\//, "");
   return target.startsWith("ppt/") ? target : path.posix.normalize(`ppt/slides/${target}`).replace(/^\.\//, "");
-}
-
-function parsePptxTheme(presentation, xml = "") {
-  const name = decodeXml(/<a:theme[^>]*name="([^"]*)"/.exec(xml)?.[1] || "Imported Theme");
-  const colors = {};
-  for (const key of ["accent1", "accent2", "accent3"]) {
-    const value = new RegExp(`<a:${key}>[\\s\\S]*?<a:srgbClr[^>]*val="([^"]+)"`).exec(xml)?.[1];
-    if (value) colors[key] = `#${value}`;
-  }
-  const tx1 = /<a:dk1>[\s\S]*?<a:srgbClr[^>]*val="([^"]+)"/.exec(xml)?.[1];
-  const bg1 = /<a:lt1>[\s\S]*?<a:srgbClr[^>]*val="([^"]+)"/.exec(xml)?.[1];
-  if (tx1) colors.tx1 = `#${tx1}`;
-  if (bg1) colors.bg1 = `#${bg1}`;
-  const fonts = {
-    major: decodeXml(/<a:majorFont>[\s\S]*?<a:latin[^>]*typeface="([^"]*)"/.exec(xml)?.[1] || "Aptos Display"),
-    minor: decodeXml(/<a:minorFont>[\s\S]*?<a:latin[^>]*typeface="([^"]*)"/.exec(xml)?.[1] || "Aptos"),
-  };
-  return new PresentationTheme(presentation, { name, colors, fonts });
 }
 
 function parsePptxSlideLayout(presentation, xml = "", fallbackId = "imported-layout", masterId = "master/default") {

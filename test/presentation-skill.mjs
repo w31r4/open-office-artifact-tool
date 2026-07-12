@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 
 import {
   nativePresentationRenderStatus,
@@ -24,6 +25,11 @@ try {
   assert.equal(first.qa.presentation.slides.count, 3);
   assert.equal(first.qa.presentation.layouts.items[0].id, "pptx-layout-2147483649");
   assert.equal(first.qa.presentation.layouts.items[0].masterId, "pptx-master-2147483648");
+  assert.equal(first.qa.presentation.theme.colors.accent6, "#dc2626");
+  assert.equal(first.qa.presentation.theme.fonts.majorEastAsia, "PingFang SC");
+  assert.equal(first.qa.presentation.theme.textStyles.title.fontSize, 42);
+  assert.equal(first.qa.presentation.theme.textStyles.body.color, "tx2");
+  assert.equal(first.qa.presentation.theme.colorMap.accent1, "accent2");
   assert.equal(first.qa.modelRender.slides.length, 3);
   assert.equal(first.qa.modelRender.montage.ok, true);
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/slides/slide1.xml"));
@@ -32,6 +38,13 @@ try {
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/notesSlides/notesSlide1.xml"));
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/comments/comment2.xml"));
   assert.ok(first.qa.packageInspect.parts.some((part) => part.path === "ppt/commentAuthors.xml"));
+  const fixtureZip = await JSZip.loadAsync(await fs.readFile(first.pptxPath));
+  const fixtureThemeXml = await fixtureZip.file("ppt/theme/theme1.xml").async("text");
+  const fixtureMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+  assert.match(fixtureThemeXml, /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
+  assert.equal((/<a:fillStyleLst>([\s\S]*?)<\/a:fillStyleLst>/.exec(fixtureThemeXml)?.[1].match(/<a:solidFill>/g) || []).length, 3);
+  assert.match(fixtureMasterXml, /<p:clrMap[^>]*accent1="accent2"/);
+  assert.match(fixtureMasterXml, /<p:titleStyle>[\s\S]*?<a:defRPr sz="4200"/);
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);

@@ -4,8 +4,14 @@
   "slideSize": { "width": 1280, "height": 720 },
   "theme": {
     "name": "Grid Clean Room",
-    "colors": { "accent1": "#3D8DFF", "accent2": "#6DCBF4", "accent3": "#16A34A", "bg1": "#FFFFFF", "tx1": "#000000" },
-    "fonts": { "major": "Arial", "minor": "Arial" }
+    "colors": { "accent1": "#3D8DFF", "accent2": "#6DCBF4", "accent3": "#16A34A", "accent4": "#7C3AED", "accent5": "#F97316", "accent6": "#DC2626", "bg1": "#FFFFFF", "tx1": "#000000", "bg2": "#F8FAFC", "tx2": "#334155", "hlink": "#2563EB", "folHlink": "#9333EA" },
+    "fonts": { "major": "Arial", "minor": "Arial", "majorEastAsia": "PingFang SC", "majorComplexScript": "Arial", "minorEastAsia": "Noto Sans CJK SC", "minorComplexScript": "Arial" },
+    "textStyles": {
+      "title": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt", "alignment": "left" },
+      "body": { "fontSize": 20, "color": "tx2", "fontFamily": "+mn-lt", "alignment": "left" },
+      "other": { "fontSize": 16, "color": "#475569", "fontFamily": "+mn-lt", "alignment": "left" }
+    },
+    "colorMap": { "accent1": "accent2", "accent2": "accent1" }
   },
   "layouts": [
     { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "placeholders": [] }

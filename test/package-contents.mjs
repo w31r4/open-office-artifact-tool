@@ -21,6 +21,7 @@ for (const required of [
   "src/ooxml/pptx-source-references.mjs",
   "src/ooxml/source-reference-xml.mjs",
   "src/ooxml/source-references.mjs",
+  "src/presentation/ooxml-theme.mjs",
   "src/shared/colors.mjs",
   "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/ooxml-drawings.mjs",
