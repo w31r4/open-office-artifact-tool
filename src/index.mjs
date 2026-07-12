@@ -1038,7 +1038,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts." },
   { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
-  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, and drawing-target monikers through p188 comment parts." },
+  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing targets, and shape text-range monikers through p188 comment parts." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
@@ -1948,7 +1948,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     text: { type: "string", required: true, description: "Speaker notes text." },
   }, "notes", "object", "Mutable speaker-notes record."),
   "slide.comments.addThread": helpSchema({
-    target: { type: "string|object", required: true, description: "Stable element ID or element facade; modern PPTX export binds supported drawing targets with a native moniker and persistent creation ID." },
+    target: { type: "string|object", required: true, description: "Stable element/text-range ID or facade; modern PPTX export binds supported drawing targets or shapeId/text ranges with native monikers and persistent creation IDs." },
     text: { type: "string", required: true, description: "Initial comment text." },
     author: { type: "string", description: "Comment author." },
     resolved: { type: "boolean", description: "Initial resolution state." },
@@ -8182,11 +8182,14 @@ function resolvePresentationModernCommentAnchor(slide, anchor) {
   if (!anchor) return undefined;
   const entries = presentationSlideElementEntries(slide);
   const sameType = entries.filter((entry) => entry.moniker === anchor.moniker);
+  let element;
   if (anchor.creationId) {
     const byCreationId = sameType.find(({ element }) => element.creationId === anchor.creationId);
-    if (byCreationId) return byCreationId.element;
+    if (byCreationId) element = byCreationId.element;
   }
-  return sameType.find(({ element }) => element.nativeId === anchor.nativeId)?.element;
+  element ||= sameType.find(({ element }) => element.nativeId === anchor.nativeId)?.element;
+  if (anchor.type === "textRange" && element && anchor.moniker === "spMk") return slide.resolve(`${element.id}/text`);
+  return element;
 }
 
 function collectPresentationImageParts(presentation) {
@@ -8290,7 +8293,7 @@ function pptxSlideLayoutXml(layout) {
 function presentationXml(presentation, masterParts = []) {
   const masterIds = masterParts.length ? `<p:sldMasterIdLst>${masterParts.map((part, index) => `<p:sldMasterId id="${part.nativeMasterId}" r:id="rId${presentation.slides.items.length + 2 + index}"/>`).join("")}</p:sldMasterIdLst>` : "";
   const ids = presentation.slides.items.map((slide, i) => `<p:sldId id="${slide.nativeSlideId || 256 + i}" r:id="rId${i + 1}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`;
 }
 
 function presentationSlideElementEntries(slide) {

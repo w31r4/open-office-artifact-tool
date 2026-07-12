@@ -700,6 +700,64 @@ assert.ok((await PresentationFile.importPptx(idOnlyModernPptx)).slides.items[0].
 await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/comment1.xml", xml: modernCommentsXml.replace(/<p188:pos x="[^"]+"/, '<p188:pos x="NaN"') }]), /invalid OOXML package.*pptxModernCommentPositionInvalid/);
 await assert.rejects(() => PresentationFile.patchPptx(modernPptx, [{ path: "ppt/comments/_rels/comment1.xml.rels", xml: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide1.xml"/></Relationships>' }]), /invalid OOXML package.*pptxModernCommentPartRelationshipsForbidden/);
 
+const textAnchorPresentation = Presentation.create({ commentFormat: "modern" });
+const textAnchorSlide = textAnchorPresentation.slides.add();
+const textAnchorShape = textAnchorSlide.shapes.add({ name: "text-anchor-shape", text: "Review this exact phrase" });
+const textAnchorTarget = textAnchorSlide.resolve(`${textAnchorShape.id}/text`);
+textAnchorSlide.comments.addThread(textAnchorTarget, "Review the text range.", { author: "Text Reviewer", created: "2026-07-13T04:05:06Z" });
+const textAnchorPptx = await PresentationFile.exportPptx(textAnchorPresentation);
+assert.equal((await PresentationFile.inspectPptx(textAnchorPptx)).ok, true);
+const textAnchorZip = await JSZip.loadAsync(new Uint8Array(await textAnchorPptx.arrayBuffer()));
+const textAnchorCommentsXml = await textAnchorZip.file("ppt/comments/comment1.xml").async("text");
+assert.match(textAnchorCommentsXml, /<oac:txMkLst><pc:sldMkLst><pc:docMk\/><pc:sldMk sldId="256"\/><\/pc:sldMkLst><oac:spMk id="2" creationId="\{[0-9A-F-]+\}"\/><oac:txMk cp="0" len="24"\/><\/oac:txMkLst>/);
+assert.doesNotMatch(textAnchorCommentsXml, /oac:deMkLst/);
+const textAnchorLoaded = await PresentationFile.importPptx(textAnchorPptx);
+const textAnchorLoadedSlide = textAnchorLoaded.slides.items[0];
+const textAnchorLoadedThread = textAnchorLoadedSlide.comments.items[0];
+assert.equal(textAnchorLoadedThread.targetId, `${textAnchorLoadedSlide.shapes.items[0].id}/text`);
+assert.equal(textAnchorLoadedSlide.resolve(textAnchorLoadedThread.targetId)?.kind, "textRange");
+assert.deepEqual({ type: textAnchorLoadedThread.nativeAnchor.type, cp: textAnchorLoadedThread.nativeAnchor.cp, length: textAnchorLoadedThread.nativeAnchor.length }, { type: "textRange", cp: 0, length: 24 });
+assert.equal(textAnchorLoadedThread.nativeAnchor.creationId, textAnchorLoadedSlide.shapes.items[0].creationId);
+const subsetTextAnchorPptx = await PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace('cp="0" len="24"', 'cp="7" len="4"') }]);
+const subsetTextAnchorLoaded = await PresentationFile.importPptx(subsetTextAnchorPptx);
+const subsetTextThread = subsetTextAnchorLoaded.slides.items[0].comments.items[0];
+assert.deepEqual({ cp: subsetTextThread.nativeAnchor.cp, length: subsetTextThread.nativeAnchor.length }, { cp: 7, length: 4 });
+assert.equal(subsetTextAnchorLoaded.slides.items[0].resolve(subsetTextThread.targetId)?.text, "Review this exact phrase");
+const subsetTextSecondExport = await PresentationFile.exportPptx(subsetTextAnchorLoaded);
+const subsetTextSecondZip = await JSZip.loadAsync(new Uint8Array(await subsetTextSecondExport.arrayBuffer()));
+assert.match(await subsetTextSecondZip.file("ppt/comments/comment1.xml").async("text"), /<oac:txMk cp="7" len="4"\/>/);
+const contextualTextAnchorPptx = await PresentationFile.patchPptx(textAnchorPptx, [{
+  path: "ppt/comments/comment1.xml",
+  xml: textAnchorCommentsXml.replace('<oac:txMk cp="0" len="24"/>', '<oac:txMk cp="0" len="24"><oac:context len="24" hash="123456789"/></oac:txMk>'),
+}]);
+const contextualTextLoaded = await PresentationFile.importPptx(contextualTextAnchorPptx);
+assert.deepEqual(
+  { contextLength: contextualTextLoaded.slides.items[0].comments.items[0].nativeAnchor.contextLength, contextHash: contextualTextLoaded.slides.items[0].comments.items[0].nativeAnchor.contextHash },
+  { contextLength: 24, contextHash: 123456789 },
+);
+const contextualTextSecondExport = await PresentationFile.exportPptx(contextualTextLoaded);
+const contextualTextSecondZip = await JSZip.loadAsync(new Uint8Array(await contextualTextSecondExport.arrayBuffer()));
+assert.match(await contextualTextSecondZip.file("ppt/comments/comment1.xml").async("text"), /<oac:txMk cp="0" len="24"><oac:context len="24" hash="123456789"\/><\/oac:txMk>/);
+const alternatePrefixTextAnchorPptx = await PresentationFile.patchPptx(textAnchorPptx, [{
+  path: "ppt/comments/comment1.xml",
+  xml: textAnchorCommentsXml
+    .replaceAll("<oac:", "<anchor:").replaceAll("</oac:", "</anchor:").replace("xmlns:oac=", "xmlns:anchor=")
+    .replaceAll("<pc:", "<location:").replaceAll("</pc:", "</location:").replace("xmlns:pc=", "xmlns:location="),
+}]);
+assert.equal((await PresentationFile.inspectPptx(alternatePrefixTextAnchorPptx)).ok, true);
+assert.equal((await PresentationFile.importPptx(alternatePrefixTextAnchorPptx)).slides.items[0].comments.items[0].nativeAnchor.type, "textRange");
+const textAnchorXml = /<oac:txMkLst>[\s\S]*?<\/oac:txMkLst>/.exec(textAnchorCommentsXml)[0];
+const textAnchorCreationId = /creationId="(\{[0-9A-F-]+\})"/.exec(textAnchorXml)[1];
+await assert.rejects(() => PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace(/<oac:txMk\b[^>]*\/>/, "") }]), /invalid OOXML package.*pptxModernCommentTextRangeMonikerInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace('cp="0" len="24"', 'cp="22" len="3"') }]), /invalid OOXML package.*pptxModernCommentTextRangeOutOfBounds/);
+await assert.rejects(() => PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace('<oac:txMk cp="0" len="24"/>', '<oac:txMk cp="0" len="24"><oac:context len="24"/></oac:txMk>') }]), /invalid OOXML package.*pptxModernCommentTextRangeContextInvalid/);
+await assert.rejects(() => PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace('oac:spMk id="2"', 'oac:spMk id="3"') }]), /invalid OOXML package.*pptxModernCommentTextIdentityMismatch/);
+await assert.rejects(() => PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace(textAnchorCreationId, "{AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE}") }]), /invalid OOXML package.*pptxModernCommentTextTargetNotFound/);
+await assert.rejects(() => PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace(textAnchorXml, textAnchorXml + textAnchorXml) }]), /invalid OOXML package.*pptxModernCommentAnchorMissing/);
+const idOnlyTextAnchorPptx = await PresentationFile.patchPptx(textAnchorPptx, [{ path: "ppt/comments/comment1.xml", xml: textAnchorCommentsXml.replace(/ creationId="\{[0-9A-F-]+\}"/, "") }]);
+assert.equal((await PresentationFile.inspectPptx(idOnlyTextAnchorPptx)).ok, true);
+assert.equal((await PresentationFile.importPptx(idOnlyTextAnchorPptx)).slides.items[0].comments.items[0].nativeAnchor.type, "textRange");
+
 const typedAnchorPresentation = Presentation.create({ commentFormat: "modern" });
 const typedAnchorSlide = typedAnchorPresentation.slides.add();
 const typedShape = typedAnchorSlide.shapes.add({ name: "typed-shape", text: "Shape" });

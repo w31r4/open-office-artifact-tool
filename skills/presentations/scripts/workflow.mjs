@@ -53,8 +53,12 @@ function addFixtureSlide(presentation, config = {}) {
     remember(slide.connectors.add({ ...connector, from, to }), connector.name);
   }
   for (const comment of config.comments || []) {
-    const target = byName.get(comment.targetName) || comment.targetId;
-    assert.ok(target, `Missing presentation fixture comment target ${comment.targetName || comment.targetId}`);
+    const targetElement = byName.get(comment.targetName) || comment.targetId;
+    assert.ok(targetElement, `Missing presentation fixture comment target ${comment.targetName || comment.targetId}`);
+    const target = comment.targetTextRange
+      ? slide.resolve(`${typeof targetElement === "string" ? targetElement : targetElement.id}/text`)
+      : targetElement;
+    assert.ok(target, `Missing presentation fixture text range for ${comment.targetName || comment.targetId}`);
     const thread = slide.comments.addThread(target, comment.text || "", comment);
     for (const reply of comment.replies || []) thread.addReply(reply.text || reply, typeof reply === "object" ? reply : {});
     if (comment.resolved) thread.resolve();

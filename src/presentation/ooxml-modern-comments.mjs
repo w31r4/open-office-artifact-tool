@@ -24,6 +24,10 @@ function localAttribute(tag, localName) {
   return Object.entries(attributes(tag)).find(([name]) => name === localName || name.endsWith(`:${localName}`))?.[1];
 }
 
+function textRangeMonikerXml(xml = "") {
+  return /<(?:[A-Za-z_][\w.-]*:)?txMk\b[^>]*(?:\/\s*>|>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?txMk>)/.exec(String(xml))?.[0] || "";
+}
+
 function normalizeGuid(value, label) {
   const guid = String(value || "").trim().toUpperCase();
   if (!GUID.test(guid)) throw new TypeError(`${label} must be a brace-delimited GUID.`);
@@ -140,6 +144,23 @@ export function planPresentationModernComments(slides = []) {
         targetName: slide.resolve(thread.targetId)?.name || "",
         anchor: (() => {
           const target = slide.resolve(thread.targetId);
+          if (target?.kind === "textRange") {
+            const parent = slide.resolve(target.parentId);
+            if (parent?.nativeId && parent?.moniker === "spMk") {
+              const preserved = thread.nativeAnchor?.type === "textRange" ? thread.nativeAnchor : {};
+              return {
+                type: "textRange",
+                nativeId: parent.nativeId,
+                creationId: parent.creationId,
+                moniker: parent.moniker,
+                slideId: slide.nativeSlideId,
+                cp: preserved.cp ?? 0,
+                length: preserved.length ?? String(target.text ?? "").length,
+                contextLength: preserved.contextLength,
+                contextHash: preserved.contextHash,
+              };
+            }
+          }
           if (target?.nativeId && target?.moniker) return { nativeId: target.nativeId, creationId: target.creationId, moniker: target.moniker, slideId: slide.nativeSlideId };
           return thread.nativeAnchor;
         })(),
@@ -161,6 +182,19 @@ function anchorXml(entry) {
   const anchor = entry.anchor;
   if (!anchor?.nativeId || !anchor.moniker || !Number.isInteger(Number(anchor.slideId))) return "<p188:unknownAnchor/>";
   const creationId = anchor.creationId ? ` creationId="${attrEscape(normalizeGuid(anchor.creationId, "PowerPoint modern comment anchor creationId"))}"` : "";
+  if (anchor.type === "textRange") {
+    const cp = Number(anchor.cp ?? 0);
+    const length = Number(anchor.length ?? 0);
+    if (anchor.moniker !== "spMk" || !Number.isInteger(cp) || cp < 0 || cp > 2_147_483_647 || !Number.isInteger(length) || length < 0 || length > 2_147_483_647 - cp) return "<p188:unknownAnchor/>";
+    const hasContext = anchor.contextHash != null;
+    const contextHash = Number(anchor.contextHash);
+    const contextLength = anchor.contextLength == null ? undefined : Number(anchor.contextLength);
+    if (hasContext && (!Number.isInteger(contextHash) || contextHash < 0 || contextHash > 4_294_967_295 || (contextLength != null && (!Number.isInteger(contextLength) || contextLength < 0 || contextLength > 4_294_967_295)))) return "<p188:unknownAnchor/>";
+    const textMoniker = hasContext
+      ? `<oac:txMk cp="${cp}" len="${length}"><oac:context${contextLength == null ? "" : ` len="${contextLength}"`} hash="${contextHash}"/></oac:txMk>`
+      : `<oac:txMk cp="${cp}" len="${length}"/>`;
+    return `<oac:txMkLst><pc:sldMkLst><pc:docMk/><pc:sldMk sldId="${Number(anchor.slideId)}"/></pc:sldMkLst><oac:spMk id="${Number(anchor.nativeId)}"${creationId}/>${textMoniker}</oac:txMkLst>`;
+  }
   return `<oac:deMkLst><pc:sldMkLst><pc:docMk/><pc:sldMk sldId="${Number(anchor.slideId)}"/></pc:sldMkLst><oac:${anchor.moniker} id="${Number(anchor.nativeId)}"${creationId}/></oac:deMkLst>`;
 }
 
@@ -218,11 +252,27 @@ export function parsePresentationModernComments(xml = "", authors = new Map()) {
     const moniker = /<(?:[A-Za-z_][\w.-]*:)?(spMk|graphicFrameMk|cxnSpMk|picMk|grpSpMk|inkMk)\b[^>]*\/\s*>/.exec(source);
     const monikerTag = moniker?.[0] || "";
     const slideMoniker = /<(?:[A-Za-z_][\w.-]*:)?sldMk\b[^>]*\/\s*>/.exec(source)?.[0] || "";
+    const textRangeList = /<(?:[A-Za-z_][\w.-]*:)?txMkLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?txMkLst>/.exec(source)?.[0] || "";
+    const textRangeMoniker = textRangeMonikerXml(textRangeList);
+    const textRangeOpening = rootTag(textRangeMoniker, "txMk")?.[0] || "";
+    const textRangeContext = rootTag(textRangeMoniker, "context")?.[0] || "";
     const pos = /<(?:[A-Za-z_][\w.-]*:)?pos\b[^>]*\/?\s*>/.exec(source)?.[0] || "";
     threads.push({
       id: root.nativeId,
       nativeFormat: "modern",
-      nativeAnchor: monikerTag ? { nativeId: Number(localAttribute(monikerTag, "id")), creationId: localAttribute(monikerTag, "creationId")?.toUpperCase(), moniker: moniker?.[1], slideId: Number(localAttribute(slideMoniker, "sldId")) } : undefined,
+      nativeAnchor: monikerTag ? {
+        ...(textRangeMoniker ? {
+          type: "textRange",
+          cp: Number(localAttribute(textRangeOpening, "cp")),
+          length: Number(localAttribute(textRangeOpening, "len") || 0),
+          contextLength: textRangeContext && localAttribute(textRangeContext, "len") != null ? Number(localAttribute(textRangeContext, "len")) : undefined,
+          contextHash: textRangeContext ? Number(localAttribute(textRangeContext, "hash")) : undefined,
+        } : {}),
+        nativeId: Number(localAttribute(monikerTag, "id")),
+        creationId: localAttribute(monikerTag, "creationId")?.toUpperCase(),
+        moniker: moniker?.[1],
+        slideId: Number(localAttribute(slideMoniker, "sldId")),
+      } : undefined,
       author: root.author,
       resolved: root.status === "resolved" || root.status === "closed",
       created: root.created,
@@ -336,19 +386,36 @@ function slideElementIdentities(xml = "") {
   const kinds = { sp: "spMk", graphicFrame: "graphicFrameMk", cxnSp: "cxnSpMk", pic: "picMk" };
   for (const [localName, moniker] of Object.entries(kinds)) {
     const pattern = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>`, "g");
-    for (const match of String(xml).matchAll(pattern)) identities.push(parsePresentationElementIdentity(match[0], moniker));
+    for (const match of String(xml).matchAll(pattern)) identities.push({
+      ...parsePresentationElementIdentity(match[0], moniker),
+      plainTextLength: moniker === "spMk" ? officeArtPlainText(match[0]).length : undefined,
+    });
   }
   return identities.filter((identity) => identity.nativeId);
+}
+
+function officeArtPlainText(xml = "") {
+  const body = /<(?:[A-Za-z_][\w.-]*:)?txBody\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?txBody>/.exec(String(xml))?.[1] || "";
+  const paragraphs = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?p\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?p>/g)];
+  return paragraphs.map((paragraph) => [...paragraph[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>|<(?:[A-Za-z_][\w.-]*:)?(tab|br)\b[^>]*\/\s*>/g)]
+    .map((token) => token[1] != null ? decodeXml(token[1]) : token[2] === "tab" ? "\t" : "\v")
+    .join("")).join("\r");
+}
+
+function validateSlideMonikerChain(anchorXml, expectedSlideId, partPath, commentId) {
+  const issues = [];
+  const slideMoniker = /<(?:[A-Za-z_][\w.-]*:)?sldMk\b[^>]*\/\s*>/.exec(anchorXml)?.[0] || "";
+  const slideId = Number(localAttribute(slideMoniker, "sldId"));
+  if (!/<(?:[A-Za-z_][\w.-]*:)?docMk\b[^>]*\/\s*>/.test(anchorXml) || !slideMoniker || !Number.isInteger(slideId) || slideId < 256 || slideId >= 2_147_483_648) issues.push(issue("pptxModernCommentSlideMonikerInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid slide moniker chain.`, { path: partPath, commentId, slideId }));
+  else if (expectedSlideId && slideId !== expectedSlideId) issues.push(issue("pptxModernCommentSlideMonikerMismatch", `PPTX modern comment ${commentId || "(missing)"} slide moniker ${slideId} does not match relationship source slide ${expectedSlideId}.`, { path: partPath, commentId, slideId, expectedSlideId }));
+  return issues;
 }
 
 function validateDrawingAnchor(rootXml, slideXml, expectedSlideId, partPath, commentId) {
   const issues = [];
   const anchor = /<(?:[A-Za-z_][\w.-]*:)?deMkLst\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?deMkLst>/.exec(rootXml);
   if (!anchor) return issues;
-  const slideMoniker = /<(?:[A-Za-z_][\w.-]*:)?sldMk\b[^>]*\/\s*>/.exec(anchor[1])?.[0] || "";
-  const slideId = Number(localAttribute(slideMoniker, "sldId"));
-  if (!/<(?:[A-Za-z_][\w.-]*:)?docMk\b[^>]*\/\s*>/.test(anchor[1]) || !slideMoniker || !Number.isInteger(slideId) || slideId < 256 || slideId >= 2_147_483_648) issues.push(issue("pptxModernCommentSlideMonikerInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid slide moniker chain.`, { path: partPath, commentId, slideId }));
-  else if (expectedSlideId && slideId !== expectedSlideId) issues.push(issue("pptxModernCommentSlideMonikerMismatch", `PPTX modern comment ${commentId || "(missing)"} slide moniker ${slideId} does not match relationship source slide ${expectedSlideId}.`, { path: partPath, commentId, slideId, expectedSlideId }));
+  issues.push(...validateSlideMonikerChain(anchor[1], expectedSlideId, partPath, commentId));
   const moniker = /<(?:[A-Za-z_][\w.-]*:)?(spMk|graphicFrameMk|cxnSpMk|picMk|grpSpMk|inkMk)\b[^>]*\/\s*>/.exec(anchor[1]);
   const nativeId = Number(localAttribute(moniker?.[0] || "", "id"));
   const creationId = localAttribute(moniker?.[0] || "", "creationId")?.toUpperCase();
@@ -360,6 +427,44 @@ function validateDrawingAnchor(rootXml, slideXml, expectedSlideId, partPath, com
   const target = creationId ? candidates.find((identity) => identity.creationId === creationId) : candidates.find((identity) => identity.nativeId === nativeId);
   if (!target) issues.push(issue("pptxModernCommentDrawingTargetNotFound", `PPTX modern comment ${commentId || "(missing)"} drawing anchor does not resolve in its source slide.`, { path: partPath, commentId, nativeId, creationId, moniker: moniker[1] }));
   else if (target.nativeId !== nativeId) issues.push(issue("pptxModernCommentDrawingIdentityMismatch", `PPTX modern comment ${commentId || "(missing)"} drawing ID and creationId resolve to different elements.`, { path: partPath, commentId, nativeId, creationId, resolvedNativeId: target.nativeId, moniker: moniker[1] }));
+  return issues;
+}
+
+function validateTextRangeAnchor(rootXml, slideXml, expectedSlideId, partPath, commentId) {
+  const issues = [];
+  const anchor = /<(?:[A-Za-z_][\w.-]*:)?txMkLst\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?txMkLst>/.exec(rootXml);
+  if (!anchor) return issues;
+  issues.push(...validateSlideMonikerChain(anchor[1], expectedSlideId, partPath, commentId));
+  const shapeMoniker = /<(?:[A-Za-z_][\w.-]*:)?spMk\b[^>]*\/\s*>/.exec(anchor[1])?.[0] || "";
+  const nativeId = Number(localAttribute(shapeMoniker, "id"));
+  const creationId = localAttribute(shapeMoniker, "creationId")?.toUpperCase();
+  if (!shapeMoniker || !Number.isInteger(nativeId) || nativeId < 1 || nativeId > 4_294_967_295 || (creationId && !GUID.test(creationId))) {
+    issues.push(issue("pptxModernCommentTextTargetMonikerInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid text-range shape moniker.`, { path: partPath, commentId, nativeId, creationId }));
+    return issues;
+  }
+  const candidates = slideElementIdentities(slideXml).filter((identity) => identity.moniker === "spMk");
+  const target = creationId ? candidates.find((identity) => identity.creationId === creationId) : candidates.find((identity) => identity.nativeId === nativeId);
+  if (!target) {
+    issues.push(issue("pptxModernCommentTextTargetNotFound", `PPTX modern comment ${commentId || "(missing)"} text-range anchor does not resolve to a shape in its source slide.`, { path: partPath, commentId, nativeId, creationId }));
+    return issues;
+  }
+  if (target.nativeId !== nativeId) issues.push(issue("pptxModernCommentTextIdentityMismatch", `PPTX modern comment ${commentId || "(missing)"} text-range shape ID and creationId resolve to different elements.`, { path: partPath, commentId, nativeId, creationId, resolvedNativeId: target.nativeId }));
+  const rangeMoniker = textRangeMonikerXml(anchor[1]);
+  const rangeOpening = rootTag(rangeMoniker, "txMk")?.[0] || "";
+  const cp = Number(localAttribute(rangeOpening, "cp"));
+  const length = Number(localAttribute(rangeOpening, "len") || 0);
+  if (!rangeMoniker || !Number.isInteger(cp) || cp < 0 || cp > 2_147_483_647 || !Number.isInteger(length) || length < 0 || length > 2_147_483_647 - cp) {
+    issues.push(issue("pptxModernCommentTextRangeMonikerInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid text character-range moniker.`, { path: partPath, commentId, cp, length }));
+  } else if (cp + length > target.plainTextLength) {
+    issues.push(issue("pptxModernCommentTextRangeOutOfBounds", `PPTX modern comment ${commentId || "(missing)"} text range ${cp}:${cp + length} exceeds its shape text length ${target.plainTextLength}.`, { path: partPath, commentId, cp, length, textLength: target.plainTextLength }));
+  }
+  const context = rootTag(rangeMoniker, "context")?.[0] || "";
+  if (context) {
+    const contextHash = Number(localAttribute(context, "hash"));
+    const contextLengthValue = localAttribute(context, "len");
+    const contextLength = contextLengthValue == null ? undefined : Number(contextLengthValue);
+    if (!Number.isInteger(contextHash) || contextHash < 0 || contextHash > 4_294_967_295 || (contextLength != null && (!Number.isInteger(contextLength) || contextLength < 0 || contextLength > 4_294_967_295))) issues.push(issue("pptxModernCommentTextRangeContextInvalid", `PPTX modern comment ${commentId || "(missing)"} has an invalid text-range context hash or length.`, { path: partPath, commentId, contextHash, contextLength }));
+  }
   return issues;
 }
 
@@ -423,11 +528,14 @@ export function validatePresentationModernCommentPackageSemantics({ bytesByPath,
       const rootXml = source.replace(/<(?:[A-Za-z_][\w.-]*:)?replyLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?replyLst>/, "");
       const root = parseCommentElement(rootXml, authors);
       const anchorNames = [...rootXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(sldMkLst|sldLayoutMkLst|sldMasterMkLst|deMkLst|txBodyMkLst|txMkLst|tcMkLst|trMkLst|gridColMkLst|unknownAnchor)\b/g)].map((match) => match[1]);
-      root.anchorCount = anchorNames.filter((name) => name !== "sldMkLst" || !anchorNames.includes("deMkLst")).length;
+      const contentMonikerLists = new Set(["deMkLst", "txBodyMkLst", "txMkLst", "tcMkLst", "trMkLst", "gridColMkLst"]);
+      const hasContentMonikerList = anchorNames.some((name) => contentMonikerLists.has(name));
+      root.anchorCount = anchorNames.filter((name) => name !== "sldMkLst" || !hasContentMonikerList).length;
       const position = /<(?:[A-Za-z_][\w.-]*:)?pos\b[^>]*\/?\s*>/.exec(rootXml)?.[0];
       if (position) root.position = { x: Number(localAttribute(position, "x")), y: Number(localAttribute(position, "y")) };
       issues.push(...validateCommentNode(root, authors, ids, rel.target, true));
       issues.push(...validateDrawingAnchor(rootXml, packageXml(bytesByPath, rel.source), slideIds.get(rel.source), rel.target, root.nativeId));
+      issues.push(...validateTextRangeAnchor(rootXml, packageXml(bytesByPath, rel.source), slideIds.get(rel.source), rel.target, root.nativeId));
       for (const reply of repliesXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?reply\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?reply>/g)) issues.push(...validateCommentNode(parseCommentElement(reply[0], authors), authors, ids, rel.target));
     }
   }

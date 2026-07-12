@@ -7,9 +7,13 @@
     "name": "Modern Review",
     "colors": { "accent1": "#2563eb", "accent2": "#16a34a", "tx1": "#0f172a", "bg1": "#ffffff" }
   },
+  "layouts": [
+    { "id": "modern-blank", "name": "Modern Blank", "type": "blank", "masterId": "master/default" }
+  ],
   "slides": [
     {
       "name": "office-2021-review",
+      "layoutId": "modern-blank",
       "shapes": [
         {
           "name": "review-title",
@@ -31,6 +35,7 @@
       "comments": [
         {
           "targetName": "review-title",
+          "targetTextRange": true,
           "author": "QA Agent",
           "created": "2026-07-13T01:02:03Z",
           "text": "Validate the Office 2021 comment graph.",

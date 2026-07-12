@@ -965,7 +965,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output. |
-| `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, and drawing-target monikers through p188 comment parts. |
+| `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing targets, and shape text-range monikers through p188 comment parts. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
@@ -1361,11 +1361,11 @@ Add an inspectable bar/line/pie chart facade with chartType, title, categories, 
 
 #### `slide.comments.addThread`
 
-Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, and drawing-target monikers through p188 comment parts.
+Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing targets, and shape text-range monikers through p188 comment parts.
 
 **Schema parameters:**
 
-- `target` (string|object) required — Stable element ID or element facade; modern PPTX export binds supported drawing targets with a native moniker and persistent creation ID.
+- `target` (string|object) required — Stable element/text-range ID or facade; modern PPTX export binds supported drawing targets or shapeId/text ranges with native monikers and persistent creation IDs.
 - `text` (string) required — Initial comment text.
 - `author` (string) — Comment author.
 - `resolved` (boolean) — Initial resolution state.
