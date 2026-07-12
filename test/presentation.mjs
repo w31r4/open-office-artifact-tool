@@ -655,6 +655,7 @@ assert.match(modernAuthorsXml, /p188:authorLst/);
 assert.match(modernAuthorsXml, /name="Modern Reviewer"/);
 assert.match(modernAuthorsXml, /name="Modern Editor"/);
 assert.match(await modernZip.file("ppt/_rels/presentation.xml.rels").async("text"), /office\/2018\/10\/relationships\/authors/);
+assert.match(await modernZip.file("ppt/presentation.xml").async("text"), /<p:notesSz cx="6858000" cy="9144000"\/>/);
 assert.match(await modernZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /office\/2018\/10\/relationships\/comments/);
 assert.match(await modernZip.file("[Content_Types].xml").async("text"), /application\/vnd\.ms-powerpoint\.comments\+xml/);
 const modernSlideXml = await modernZip.file("ppt/slides/slide1.xml").async("text");
