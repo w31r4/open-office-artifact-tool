@@ -885,7 +885,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
 | `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
-| `presentation.theme` | api | Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part. |
+| `presentation.theme` | api | Configure inspectable complete theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Theme and Slide Master inheritance. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return presentation QA issues for layout validation, placeholder/template fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist. |
@@ -1058,13 +1058,15 @@ Inspect or resolve stable textRange anchors such as shapeId/text for editable sl
 
 #### `presentation.theme`
 
-Configure inspectable theme colors and major/minor fonts; export writes a real ppt/theme/theme1.xml part.
+Configure inspectable complete theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Theme and Slide Master inheritance.
 
 **Schema parameters:**
 
 - `name` (string) — Theme name.
-- `colors` (object) — Theme accent/background/text color map.
-- `fonts` (object) — Major and minor font families.
+- `colors` (object) — Complete tx1/bg1/tx2/bg2, accent1-accent6, hlink, and folHlink color scheme; dk1/lt1/dk2/lt2 aliases are accepted.
+- `fonts` (object) — Major/minor Latin plus optional East-Asian and complex-script font families.
+- `textStyles` (object) — Slide Master title/body/other defaults with fontSize, bold, italic, color, fontFamily, and alignment.
+- `colorMap` (object) — Slide Master semantic color mapping for bg1/tx1/bg2/tx2, accents, and hyperlinks.
 
 **Schema returns:**
 
