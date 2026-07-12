@@ -1,0 +1,40 @@
+{
+  "name": "package-numbering",
+  "outputName": "package-numbering.docx",
+  "designPreset": "report",
+  "blocks": [
+    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Package numbering assignments" },
+    { "kind": "paragraph", "name": "primary-step", "styleId": "Normal", "text": "Validate the numbering definition." },
+    { "kind": "paragraph", "name": "nested-step", "styleId": "Normal", "text": "Confirm the nested level." }
+  ],
+  "packageNumberingPart": "word/review/agent-numbering.xml",
+  "packageNumberingRelationshipId": "rIdAgentNumbering",
+  "packageNumbering": {
+    "abstracts": [
+      {
+        "abstractNumId": 42,
+        "levels": [
+          { "level": 0, "numberFormat": "upperLetter", "start": 2, "levelText": "%1)" },
+          { "level": 1, "numberFormat": "lowerRoman", "start": 3, "levelText": "%1.%2)" }
+        ]
+      }
+    ],
+    "instances": [
+      { "numId": 77, "abstractNumId": 42 }
+    ],
+    "assignments": [
+      { "numId": 77, "level": 0, "target": { "type": "block", "index": 1 } },
+      { "numId": 77, "level": 1, "target": { "type": "block", "index": 2 } }
+    ]
+  },
+  "expectInspect": [
+    { "kind": "paragraph", "pattern": "Validate the numbering definition" },
+    { "kind": "paragraph", "pattern": "Confirm the nested level" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,listItem,style,layout",
+    "maxChars": 12000
+  }
+}

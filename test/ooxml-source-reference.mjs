@@ -74,6 +74,52 @@ const commentsRemovedZip = await JSZip.loadAsync(new Uint8Array(await commentsRe
 assert.doesNotMatch(await commentsRemovedZip.file("word/document.xml").async("text"), /commentRange|commentReference/);
 assert.equal((await DocumentFile.importDocx(commentsRemovedDocx, { preferNative: true })).comments.length, 0);
 
+const numberingPartPath = "word/review/numbering-agent.xml";
+const numberingPartXml = '<?xml version="1.0" encoding="UTF-8"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="42"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="3"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%1.%2)"/></w:lvl></w:abstractNum><w:num w:numId="77"><w:abstractNumId w:val="42"/></w:num></w:numbering>';
+const numberingDocx = await DocumentFile.patchDocx(baseDocx, [{
+  path: numberingPartPath,
+  xml: numberingPartXml,
+  recipe: {
+    kind: "numbering",
+    source: "word/document.xml",
+    id: "rIdAgentNumbering",
+    sourceReference: {
+      assignments: [
+        { numId: 77, level: 0, target: { type: "block", index: 0 } },
+        { numId: 77, level: 1, target: { type: "block", index: 1 } },
+      ],
+    },
+  },
+}]);
+assert.equal(numberingDocx.metadata.sourceReferencesUpdated, 1);
+assert.equal((await DocumentFile.inspectDocx(numberingDocx)).ok, true);
+const numberingZip = await JSZip.loadAsync(new Uint8Array(await numberingDocx.arrayBuffer()));
+const numberedDocumentXml = await numberingZip.file("word/document.xml").async("text");
+assert.match(numberedDocumentXml, /<w:numPr><w:ilvl w:val="0"\/><w:numId w:val="77"\/><\/w:numPr>[\s\S]*?Source reference native check/);
+assert.match(numberedDocumentXml, /<w:numPr><w:ilvl w:val="1"\/><w:numId w:val="77"\/><\/w:numPr>[\s\S]*?Second review paragraph/);
+assert.match(await numberingZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdAgentNumbering"[^>]*relationships\/numbering[^>]*Target="review\/numbering-agent\.xml"/);
+const importedNumberingDocument = await DocumentFile.importDocx(numberingDocx, { preferNative: true });
+assert.equal(importedNumberingDocument.blocks[0].kind, "listItem");
+assert.equal(importedNumberingDocument.blocks[0].numberFormat, "decimal");
+assert.equal(importedNumberingDocument.blocks[0].numberingId, 77);
+assert.equal(importedNumberingDocument.blocks[1].kind, "listItem");
+assert.equal(importedNumberingDocument.blocks[1].numberFormat, "lowerLetter");
+assert.equal(importedNumberingDocument.blocks[1].level, 1);
+assert.equal(importedNumberingDocument.blocks[1].start, 3);
+const reassignedNumberingDocx = await DocumentFile.patchDocx(numberingDocx, [{ path: numberingPartPath, xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", id: "rIdAgentNumbering", sourceReference: { numId: 77, level: 1, target: { type: "block", index: 0 } } } }]);
+const reassignedFirstParagraph = /<w:p>[\s\S]*?<\/w:p>/.exec(await (await JSZip.loadAsync(new Uint8Array(await reassignedNumberingDocx.arrayBuffer()))).file("word/document.xml").async("text"))?.[0] || "";
+assert.equal((reassignedFirstParagraph.match(/<w:numPr>/g) || []).length, 1);
+assert.match(reassignedFirstParagraph, /<w:ilvl w:val="1"\/>/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/undeclared-numbering.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 99, target: { type: "block", index: 0 } } } }]), /numId 99 is not declared/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/undeclared-level.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 77, level: 8, target: { type: "block", index: 0 } } } }]), /level 8 is not declared/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/duplicate-numbering.xml", xml: numberingPartXml.replace('</w:numbering>', '<w:num w:numId="77"><w:abstractNumId w:val="42"/></w:num></w:numbering>'), recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 77, target: { type: "block", index: 0 } } } }]), /duplicate numId 77/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/duplicate-target-numbering.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { assignments: [{ numId: 77, target: { type: "block", index: 0 } }, { numId: 77, level: 1, target: { type: "block", index: 0 } }] } } }]), /target is assigned more than once/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/out-of-range-numbering.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 77, target: { type: "block", index: 9 } } } }]), /blockIndex 9 is out of range/);
+const numberingRemovedDocx = await DocumentFile.patchDocx(numberingDocx, [{ path: numberingPartPath, remove: true, recipe: { kind: "numbering", source: "word/document.xml", id: "rIdAgentNumbering", sourceReference: true } }]);
+assert.equal((await DocumentFile.inspectDocx(numberingRemovedDocx)).ok, true);
+assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await numberingRemovedDocx.arrayBuffer()))).file("word/document.xml").async("text"), /<w:numPr>/);
+assert.equal((await DocumentFile.importDocx(numberingRemovedDocx, { preferNative: true })).blocks[0].kind, "paragraph");
+
 const workbook = Workbook.create();
 workbook.worksheets.add("Main").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 120]];
 const xlsx = await SpreadsheetFile.patchXlsx(await SpreadsheetFile.exportXlsx(workbook), [{
@@ -277,7 +323,7 @@ const nativeAvailable = commandExists("soffice") && commandExists("pdftoppm");
 if (nativeAvailable) {
   const libreOffice = createLibreOfficeRenderer({ timeoutMs: 60_000 });
   const poppler = createPopplerRenderer({ dpi: 96, timeoutMs: 60_000 });
-  for (const [artifactKind, blob] of [["document", docx], ["workbook", pivotXlsx], ["presentation", pptx]]) {
+  for (const [artifactKind, blob] of [["document", docx], ["document", numberingDocx], ["workbook", pivotXlsx], ["presentation", pptx]]) {
     const pdf = await libreOffice({ input: blob, inputType: blob.type, outputType: "application/pdf", format: "pdf", artifactKind });
     assert.equal(pdf.type, "application/pdf");
     assert.ok(pdf.bytes.length > 100);

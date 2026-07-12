@@ -70,6 +70,26 @@ try {
   assert.equal(packageCommentDocument.resolve(tableComment?.targetId)?.kind, "table");
   assert.equal(packageComments.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
+  const packageNumbering = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-numbering.json"), {
+    outputDir: path.join(outputDir, "package-numbering"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(packageNumbering.qa.summary.packageOk, true);
+  assert.equal(packageNumbering.qa.summary.verifyOk, true);
+  assert.ok(packageNumbering.qa.packageInspect.parts.some((part) => part.path === "word/review/agent-numbering.xml"));
+  const packageNumberingDocument = packageNumbering.qa.document;
+  const primaryStep = packageNumberingDocument.blocks.find((block) => block.text === "Validate the numbering definition.");
+  const nestedStep = packageNumberingDocument.blocks.find((block) => block.text === "Confirm the nested level.");
+  assert.equal(primaryStep?.kind, "listItem");
+  assert.equal(primaryStep?.numberFormat, "upperLetter");
+  assert.equal(primaryStep?.start, 2);
+  assert.equal(primaryStep?.numberingId, 77);
+  assert.equal(nestedStep?.kind, "listItem");
+  assert.equal(nestedStep?.numberFormat, "lowerRoman");
+  assert.equal(nestedStep?.level, 1);
+  assert.equal(nestedStep?.start, 3);
+  assert.equal(packageNumbering.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const baselineWrite = await verifyDocumentFile(result.docxPath, {
     outputDir: path.join(outputDir, "baseline-write"),
     previewFormat: "png",
@@ -107,6 +127,7 @@ try {
   assert.match(skillText, /LibreOffice PDF plus Poppler page PNGs/);
   assert.match(skillText, /baseline-dir/);
   assert.match(skillText, /preferNative/);
+  assert.match(skillText, /package-numbering/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

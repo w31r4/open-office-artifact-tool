@@ -31,7 +31,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata. |
 | `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation, including safe classic-comment anchors for blocks, paragraphs, and table cells, and atomically reject dangling package or semantic references. |
+| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation, including safe classic-comment anchors and numbering assignments, and atomically reject dangling package or semantic references. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
 ### document details
@@ -437,7 +437,7 @@ Inspect bounded DOCX parts, content types, relationships, and namespace-aware so
 
 #### `DocumentFile.patchDocx`
 
-Apply DOCX part patches with path traversal validation, including safe classic-comment anchors for blocks, paragraphs, and table cells, and atomically reject dangling package or semantic references.
+Apply DOCX part patches with path traversal validation, including safe classic-comment anchors and numbering assignments, and atomically reject dangling package or semantic references.
 
 **Examples:**
 
@@ -453,8 +453,8 @@ Apply DOCX part patches with path traversal validation, including safe classic-c
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports section-scoped header/footer references plus batch classic-comment anchors for block, paragraph, and table-cell targets.
-- `sourceReference` (boolean|object) — Opt-in source XML mutation. Comments accepts { anchors: [{ commentId, target }] }; every ID must be unique in and declared by the Comments part.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports section-scoped header/footer references, batch classic-comment anchors, and numbering assignments for block, paragraph, or table-cell targets.
+- `sourceReference` (boolean|object) — Opt-in source XML mutation. Comments accepts { anchors: [{ commentId, target }] }; numbering accepts { assignments: [{ numId, level, target }] }. IDs and levels must be declared uniquely by their target part.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**

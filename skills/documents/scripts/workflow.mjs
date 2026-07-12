@@ -26,6 +26,18 @@ function packageCommentsXml(comments = []) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${body}</w:comments>`;
 }
 
+function packageNumberingXml(numbering = {}) {
+  const abstracts = (numbering.abstracts || []).map((abstract) => {
+    const levels = (abstract.levels || []).map((level) => `<w:lvl w:ilvl="${xmlEscape(level.level ?? level.ilvl ?? 0)}"><w:start w:val="${xmlEscape(level.start ?? 1)}"/><w:numFmt w:val="${xmlEscape(level.numberFormat || level.numFmt || "decimal")}"/><w:lvlText w:val="${xmlEscape(level.levelText || level.lvlText || `%${Number(level.level ?? level.ilvl ?? 0) + 1}.`)}"/></w:lvl>`).join("");
+    return `<w:abstractNum w:abstractNumId="${xmlEscape(abstract.abstractNumId)}">${levels}</w:abstractNum>`;
+  }).join("");
+  const instances = (numbering.instances || []).map((instance) => {
+    const overrides = (instance.overrides || []).map((override) => `<w:lvlOverride w:ilvl="${xmlEscape(override.level ?? override.ilvl ?? 0)}"><w:startOverride w:val="${xmlEscape(override.start ?? override.startOverride ?? 1)}"/></w:lvlOverride>`).join("");
+    return `<w:num w:numId="${xmlEscape(instance.numId)}"><w:abstractNumId w:val="${xmlEscape(instance.abstractNumId)}"/>${overrides}</w:num>`;
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${abstracts}${instances}</w:numbering>`;
+}
+
 function commandExists(command) {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", [command], {
     encoding: "utf8",
@@ -245,9 +257,10 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   const document = createDocumentFromFixture(fixture);
   const docxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "document"}.docx`);
   let docx = await DocumentFile.exportDocx(document);
+  const packagePatches = [];
   if (fixture.packageComments?.length) {
     const partPath = fixture.packageCommentsPart || "word/review/fixture-comments.xml";
-    docx = await DocumentFile.patchDocx(docx, [{
+    packagePatches.push({
       path: partPath,
       xml: packageCommentsXml(fixture.packageComments),
       recipe: {
@@ -256,8 +269,21 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         id: fixture.packageCommentsRelationshipId,
         sourceReference: { anchors: fixture.packageComments.map(({ commentId, target }) => ({ commentId, target })) },
       },
-    }]);
+    });
   }
+  if (fixture.packageNumbering) {
+    packagePatches.push({
+      path: fixture.packageNumberingPart || "word/review/fixture-numbering.xml",
+      xml: packageNumberingXml(fixture.packageNumbering),
+      recipe: {
+        kind: "numbering",
+        source: "word/document.xml",
+        id: fixture.packageNumberingRelationshipId,
+        sourceReference: { assignments: fixture.packageNumbering.assignments || [] },
+      },
+    });
+  }
+  if (packagePatches.length) docx = await DocumentFile.patchDocx(docx, packagePatches);
   await docx.save(docxPath);
   const qa = await verifyDocumentFile(docxPath, {
     outputDir: path.join(outputDir, "qa"),
@@ -271,7 +297,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     pixelRegistration: options.pixelRegistration,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
-    preferNative: Boolean(fixture.packageComments?.length),
+    preferNative: packagePatches.length > 0,
   });
   return { fixture, docxPath, qa };
 }

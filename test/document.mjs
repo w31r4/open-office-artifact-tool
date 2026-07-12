@@ -261,6 +261,7 @@ assert.match(document.help("document.render").ndjson, /source: 'docx'/);
 assert.match(document.help("DocumentFile.inspectDocx").ndjson, /DOCX package/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /path traversal/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /comment anchors/);
+assert.match(document.help("DocumentFile.patchDocx").ndjson, /numbering assignments/);
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
