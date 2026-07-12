@@ -845,7 +845,8 @@ export async function visualQaArtifact(artifact, options = {}) {
 }
 
 export const HELP_CATALOG = [
-  { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook; add worksheets before editing." },
+  { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.setDateSystem", summary: "Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export." },
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
@@ -1858,7 +1859,13 @@ const PRESENTATION_HELP_SCHEMAS = {
 };
 
 const WORKBOOK_HELP_SCHEMAS = {
-  "Workbook.create": helpSchema({}, "workbook", "Workbook", "Empty editable workbook facade."),
+  "Workbook.create": helpSchema({
+    dateSystem: { type: "string", description: "Excel serial-date system: '1900' (default) or '1904'." },
+    date1904: { type: "boolean", description: "Boolean alias for dateSystem; true selects the 1904 system." },
+  }, "workbook", "Workbook", "Empty editable workbook facade with a normalized date system."),
+  "workbook.setDateSystem": helpSchema({
+    dateSystem: { type: "string|boolean", required: true, description: "'1900' or false for the 1900 system; '1904' or true for the 1904 system." },
+  }, "workbook", "Workbook", "The same workbook after changing its formula and OOXML date-system context."),
   "workbook.worksheets.add": helpSchema({
     name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
   }, "worksheet", "Worksheet", "Appended editable worksheet."),
@@ -3272,16 +3279,29 @@ function workbookFrameIntersects(a, b) {
   return right > left && bottom > top;
 }
 
+function normalizeExcelDateSystem(value, fallback = "1900") {
+  if (value == null || value === "") return fallback;
+  if (value === true || String(value).trim() === "1904") return "1904";
+  if (value === false || String(value).trim() === "1900") return "1900";
+  throw new Error(`Unsupported Excel date system ${value}; expected 1900 or 1904.`);
+}
+
 export class Workbook {
-  constructor() {
+  constructor(options = {}) {
     this.id = aid("wb");
+    this.dateSystem = normalizeExcelDateSystem(options.dateSystem ?? options.date1904);
     this.worksheets = new WorksheetCollection(this);
     this.comments = new CommentsCollection(this);
     this.definedNames = new DefinedNameCollection(this);
   }
 
-  static create() {
-    return new Workbook();
+  static create(options = {}) {
+    return new Workbook(options);
+  }
+
+  setDateSystem(value) {
+    this.dateSystem = normalizeExcelDateSystem(value);
+    return this;
   }
 
   static async fromCSV(text, options = {}) {
@@ -3364,7 +3384,7 @@ export class Workbook {
     const kinds = normalizeKinds(options.kind, ["workbook", "sheet", "table", "formula"]);
     const records = [];
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
-    if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length });
+    if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904" });
     for (const sheet of this.worksheets) {
       if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
@@ -3389,6 +3409,7 @@ export class Workbook {
     this.recalculate();
     const graph = this.formulaGraph({ recalculate: false, maxChars: Infinity });
     const issues = [];
+    if (this.dateSystem !== "1900" && this.dateSystem !== "1904") issues.push(verificationIssue("workbook", "invalidDateSystem", `Workbook date system ${this.dateSystem} is invalid; expected 1900 or 1904.`, { dateSystem: this.dateSystem }));
     if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
     for (const definedName of this.definedNames.items) {
       const refersTo = String(definedName.refersTo || "").replace(/^=/, "");
@@ -4563,8 +4584,17 @@ function roundFormulaNumber(value, digits = 0, mode = "nearest") {
   return Object.is(number, -0) || number < 0 ? -result : result;
 }
 
-const EXCEL_DATE_EPOCH_UTC = Date.UTC(1899, 11, 31);
-const EXCEL_MAX_DATE_SERIAL = 2_958_465;
+const EXCEL_1900_DATE_EPOCH_UTC = Date.UTC(1899, 11, 31);
+const EXCEL_1904_DATE_EPOCH_UTC = Date.UTC(1904, 0, 1);
+const EXCEL_MAX_DATE_SERIALS = { "1900": 2_958_465, "1904": 2_957_003 };
+
+function excelFormulaDateSystem(sheet) {
+  return sheet?.workbook?.dateSystem === "1904" ? "1904" : "1900";
+}
+
+function excelMaxDateSerial(dateSystem = "1900") {
+  return EXCEL_MAX_DATE_SERIALS[dateSystem === "1904" ? "1904" : "1900"];
+}
 
 function excelFormulaDateNumber(value) {
   const error = formulaErrorCode(value);
@@ -4575,15 +4605,16 @@ function excelFormulaDateNumber(value) {
   return Number.isFinite(number) ? number : "#VALUE!";
 }
 
-function excelGregorianSerial(year, month, day = 1) {
+function excelGregorianSerial(year, month, day = 1, dateSystem = "1900") {
   const date = new Date(0);
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCFullYear(year, month - 1, day);
-  const days = Math.round((date.getTime() - EXCEL_DATE_EPOCH_UTC) / 86_400_000);
-  return days + (date.getTime() >= Date.UTC(1900, 2, 1) ? 1 : 0);
+  const epoch = dateSystem === "1904" ? EXCEL_1904_DATE_EPOCH_UTC : EXCEL_1900_DATE_EPOCH_UTC;
+  const days = Math.round((date.getTime() - epoch) / 86_400_000);
+  return dateSystem === "1904" ? days : days + (date.getTime() >= Date.UTC(1900, 2, 1) ? 1 : 0);
 }
 
-function excelDateSerial(yearValue, monthValue, dayValue) {
+function excelDateSerial(yearValue, monthValue, dayValue, dateSystem = "1900") {
   let year = Math.trunc(yearValue);
   const month = Math.trunc(monthValue);
   const day = Math.trunc(dayValue);
@@ -4592,50 +4623,55 @@ function excelDateSerial(yearValue, monthValue, dayValue) {
   const normalized = new Date(0);
   normalized.setUTCHours(0, 0, 0, 0);
   normalized.setUTCFullYear(year, month - 1, 1);
-  const serial = excelGregorianSerial(normalized.getUTCFullYear(), normalized.getUTCMonth() + 1, 1) + day - 1;
-  return serial < 0 || serial > EXCEL_MAX_DATE_SERIAL ? "#NUM!" : serial;
+  const serial = excelGregorianSerial(normalized.getUTCFullYear(), normalized.getUTCMonth() + 1, 1, dateSystem) + day - 1;
+  return serial < 0 || serial > excelMaxDateSerial(dateSystem) ? "#NUM!" : serial;
 }
 
-function excelDateParts(serialValue) {
+function excelDateParts(serialValue, dateSystem = "1900") {
   const serial = Math.floor(serialValue);
-  if (!Number.isFinite(serial) || serial < 0 || serial > EXCEL_MAX_DATE_SERIAL) return undefined;
+  if (!Number.isFinite(serial) || serial < 0 || serial > excelMaxDateSerial(dateSystem)) return undefined;
+  if (dateSystem === "1904") {
+    const date = new Date(EXCEL_1904_DATE_EPOCH_UTC + serial * 86_400_000);
+    return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+  }
   if (serial === 0) return { year: 1900, month: 1, day: 0 };
   if (serial === 60) return { year: 1900, month: 2, day: 29 };
-  const date = new Date(EXCEL_DATE_EPOCH_UTC + (serial > 60 ? serial - 1 : serial) * 86_400_000);
+  const date = new Date(EXCEL_1900_DATE_EPOCH_UTC + (serial > 60 ? serial - 1 : serial) * 86_400_000);
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
 }
 
-function excelDaysInMonth(year, month) {
-  if (year === 1900 && month === 2) return 29;
+function excelDaysInMonth(year, month, dateSystem = "1900") {
+  if (dateSystem === "1900" && year === 1900 && month === 2) return 29;
   const date = new Date(0);
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCFullYear(year, month, 0);
   return date.getUTCDate();
 }
 
-function excelShiftMonth(serialValue, monthsValue, endOfMonth = false) {
+function excelShiftMonth(serialValue, monthsValue, endOfMonth = false, dateSystem = "1900") {
   const serial = excelFormulaDateNumber(serialValue);
   const months = excelFormulaDateNumber(monthsValue);
   if (formulaErrorCode(serial)) return serial;
   if (formulaErrorCode(months)) return months;
-  const parts = excelDateParts(serial);
+  const parts = excelDateParts(serial, dateSystem);
   if (!parts) return "#NUM!";
   const first = new Date(0);
   first.setUTCHours(0, 0, 0, 0);
   first.setUTCFullYear(parts.year, parts.month - 1 + Math.trunc(months), 1);
   const year = first.getUTCFullYear();
   const month = first.getUTCMonth() + 1;
-  const day = endOfMonth ? excelDaysInMonth(year, month) : Math.min(Math.max(1, parts.day), excelDaysInMonth(year, month));
-  return excelDateSerial(year, month, day);
+  const day = endOfMonth ? excelDaysInMonth(year, month, dateSystem) : Math.min(Math.max(1, parts.day), excelDaysInMonth(year, month, dateSystem));
+  return excelDateSerial(year, month, day, dateSystem);
 }
 
-function excelWeekdayIndex(serial) {
+function excelWeekdayIndex(serial, dateSystem = "1900") {
   const day = Math.floor(serial);
+  if (dateSystem === "1904") return ((day + 5) % 7 + 7) % 7;
   const adjusted = day > 60 ? day - 1 : day;
   return ((adjusted % 7) + 7) % 7;
 }
 
-function excelHolidaySet(values = []) {
+function excelHolidaySet(values = [], dateSystem = "1900") {
   const error = values.map(formulaErrorCode).find(Boolean);
   if (error) return { error, holidays: new Set() };
   const holidays = new Set();
@@ -4644,51 +4680,51 @@ function excelHolidaySet(values = []) {
     const serial = excelFormulaDateNumber(value);
     if (formulaErrorCode(serial)) return { error: serial, holidays: new Set() };
     const day = Math.floor(serial);
-    if (day >= 0 && day <= EXCEL_MAX_DATE_SERIAL) holidays.add(day);
+    if (day >= 0 && day <= excelMaxDateSerial(dateSystem)) holidays.add(day);
   }
   return { holidays };
 }
 
-function excelBusinessDay(serial, holidays) {
-  const weekday = excelWeekdayIndex(serial);
+function excelBusinessDay(serial, holidays, dateSystem = "1900") {
+  const weekday = excelWeekdayIndex(serial, dateSystem);
   return weekday !== 0 && weekday !== 6 && !holidays.has(serial);
 }
 
-function excelNetworkDays(startValue, endValue, holidayValues = []) {
+function excelNetworkDays(startValue, endValue, holidayValues = [], dateSystem = "1900") {
   const startNumber = excelFormulaDateNumber(startValue);
   const endNumber = excelFormulaDateNumber(endValue);
   if (formulaErrorCode(startNumber)) return startNumber;
   if (formulaErrorCode(endNumber)) return endNumber;
   const start = Math.floor(startNumber), end = Math.floor(endNumber);
-  if (!excelDateParts(start) || !excelDateParts(end)) return "#NUM!";
-  const holidayResult = excelHolidaySet(holidayValues);
+  if (!excelDateParts(start, dateSystem) || !excelDateParts(end, dateSystem)) return "#NUM!";
+  const holidayResult = excelHolidaySet(holidayValues, dateSystem);
   if (holidayResult.error) return holidayResult.error;
   const direction = start <= end ? 1 : -1;
   const low = Math.min(start, end), high = Math.max(start, end);
   const total = high - low + 1;
   const fullWeeks = Math.floor(total / 7);
   let weekdays = fullWeeks * 5;
-  for (let serial = low + fullWeeks * 7; serial <= high; serial += 1) if (excelBusinessDay(serial, new Set())) weekdays += 1;
-  for (const holiday of holidayResult.holidays) if (holiday >= low && holiday <= high && excelWeekdayIndex(holiday) !== 0 && excelWeekdayIndex(holiday) !== 6) weekdays -= 1;
+  for (let serial = low + fullWeeks * 7; serial <= high; serial += 1) if (excelBusinessDay(serial, new Set(), dateSystem)) weekdays += 1;
+  for (const holiday of holidayResult.holidays) if (holiday >= low && holiday <= high && excelWeekdayIndex(holiday, dateSystem) !== 0 && excelWeekdayIndex(holiday, dateSystem) !== 6) weekdays -= 1;
   return weekdays * direction;
 }
 
-function excelWorkday(startValue, daysValue, holidayValues = []) {
+function excelWorkday(startValue, daysValue, holidayValues = [], dateSystem = "1900") {
   const startNumber = excelFormulaDateNumber(startValue);
   const daysNumber = excelFormulaDateNumber(daysValue);
   if (formulaErrorCode(startNumber)) return startNumber;
   if (formulaErrorCode(daysNumber)) return daysNumber;
   let serial = Math.floor(startNumber);
   const days = Math.trunc(daysNumber);
-  if (!excelDateParts(serial) || Math.abs(days) > EXCEL_MAX_DATE_SERIAL) return "#NUM!";
-  const holidayResult = excelHolidaySet(holidayValues);
+  if (!excelDateParts(serial, dateSystem) || Math.abs(days) > excelMaxDateSerial(dateSystem)) return "#NUM!";
+  const holidayResult = excelHolidaySet(holidayValues, dateSystem);
   if (holidayResult.error) return holidayResult.error;
   const direction = days < 0 ? -1 : 1;
   let remaining = Math.abs(days);
   while (remaining > 0) {
     serial += direction;
-    if (!excelDateParts(serial)) return "#NUM!";
-    if (excelBusinessDay(serial, holidayResult.holidays)) remaining -= 1;
+    if (!excelDateParts(serial, dateSystem)) return "#NUM!";
+    if (excelBusinessDay(serial, holidayResult.holidays, dateSystem)) remaining -= 1;
   }
   return serial;
 }
@@ -4804,6 +4840,7 @@ function uniqueFormulaRows(matrix) {
 
 function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
   const values = (parts = args) => parts.flatMap((part) => formulaReferenceValues(sheet, part, context));
+  const dateSystem = excelFormulaDateSystem(sheet);
   const scalar = (index, fallback = undefined) => {
     const value = formulaScalar(sheet, args[index], context);
     return value === undefined ? fallback : value;
@@ -4861,24 +4898,24 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "DATE": {
       const parts = [0, 1, 2].map((index) => excelFormulaDateNumber(scalar(index, 0)));
-      return parts.find(formulaErrorCode) || excelDateSerial(parts[0], parts[1], parts[2]);
+      return parts.find(formulaErrorCode) || excelDateSerial(parts[0], parts[1], parts[2], dateSystem);
     }
     case "YEAR":
     case "MONTH":
     case "DAY": {
       const serial = excelFormulaDateNumber(scalar(0, 0));
       if (formulaErrorCode(serial)) return serial;
-      const parts = excelDateParts(serial);
+      const parts = excelDateParts(serial, dateSystem);
       return parts ? parts[fnName.toLowerCase()] : "#NUM!";
     }
-    case "EDATE": return excelShiftMonth(scalar(0, 0), scalar(1, 0));
-    case "EOMONTH": return excelShiftMonth(scalar(0, 0), scalar(1, 0), true);
+    case "EDATE": return excelShiftMonth(scalar(0, 0), scalar(1, 0), false, dateSystem);
+    case "EOMONTH": return excelShiftMonth(scalar(0, 0), scalar(1, 0), true, dateSystem);
     case "DAYS": {
       const end = excelFormulaDateNumber(scalar(0, 0));
       const start = excelFormulaDateNumber(scalar(1, 0));
       if (formulaErrorCode(end)) return end;
       if (formulaErrorCode(start)) return start;
-      return excelDateParts(end) && excelDateParts(start) ? Math.floor(end) - Math.floor(start) : "#NUM!";
+      return excelDateParts(end, dateSystem) && excelDateParts(start, dateSystem) ? Math.floor(end) - Math.floor(start) : "#NUM!";
     }
     case "WEEKDAY": {
       const serial = excelFormulaDateNumber(scalar(0, 0));
@@ -4886,16 +4923,16 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       if (formulaErrorCode(serial)) return serial;
       if (formulaErrorCode(returnTypeValue)) return returnTypeValue;
       const returnType = Math.trunc(returnTypeValue);
-      if (!excelDateParts(serial)) return "#NUM!";
-      const weekday = excelWeekdayIndex(serial);
+      if (!excelDateParts(serial, dateSystem)) return "#NUM!";
+      const weekday = excelWeekdayIndex(serial, dateSystem);
       if (returnType === 1) return weekday + 1;
       if (returnType === 2 || returnType === 11) return (weekday + 6) % 7 + 1;
       if (returnType === 3) return (weekday + 6) % 7;
       if (returnType >= 12 && returnType <= 17) return (weekday - (returnType - 10) + 7) % 7 + 1;
       return "#NUM!";
     }
-    case "NETWORKDAYS": return excelNetworkDays(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]));
-    case "WORKDAY": return excelWorkday(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]));
+    case "NETWORKDAYS": return excelNetworkDays(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]), dateSystem);
+    case "WORKDAY": return excelWorkday(scalar(0, 0), scalar(1, 0), args[2] == null ? [] : values([args[2]]), dateSystem);
     case "IF": return evaluateFormulaCondition(sheet, args[0], context) ? scalar(1, true) : scalar(2, false);
     case "IFERROR": { const value = scalar(0); return formulaErrorCode(value) ? scalar(1, "") : value; }
     case "IFNA": { const value = scalar(0); return formulaErrorCode(value) === "#N/A" ? scalar(1, "") : value; }
@@ -5201,6 +5238,7 @@ function evaluateFormula(sheet, formula, _address, context = {}) {
 function workbookMetadata(workbook) {
   return {
     version: 1,
+    dateSystem: workbook.dateSystem,
     comments: workbook.comments.toJSON(),
     definedNames: workbook.definedNames.toJSON(),
     sheets: workbook.worksheets.items.map((sheet) => ({
@@ -5374,6 +5412,11 @@ export class SpreadsheetFile {
     const sharedStrings = parseSharedStringsXml(await zip.file("xl/sharedStrings.xml")?.async("text"));
     const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"));
     const workbookText = await zip.file("xl/workbook.xml")?.async("text");
+    const workbookProperties = /<(?:[A-Za-z_][\w.-]*:)?workbookPr\b[^>]*\/?>/.exec(String(workbookText || ""))?.[0];
+    if (workbookProperties) {
+      const date1904 = ooxmlXmlAttributes(workbookProperties).date1904;
+      if (date1904 != null) workbook.setDateSystem(["1", "true", "on"].includes(String(date1904).trim().toLowerCase()) ? "1904" : "1900");
+    }
     const workbookRelationships = new Map(parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text")).map((relationship) => [relationship.id, relationship]));
     const sheetNames = [...String(workbookText || "").matchAll(/<sheet\b[^>]*\/?>/g)].map((match, position) => {
       const attrs = ooxmlXmlAttributes(match[0]);
@@ -5748,6 +5791,8 @@ function parseRelsXml(xml) {
 }
 
 function workbookXml(workbook, pivotParts = []) {
+  const dateSystem = normalizeExcelDateSystem(workbook.dateSystem);
+  const workbookProperties = dateSystem === "1904" ? '<workbookPr date1904="1"/>' : "";
   const sheets = workbook.worksheets.items.map((sheet, i) => `<sheet name="${attrEscape(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
   const definedNames = workbook.definedNames.items.length
     ? `<definedNames>${workbook.definedNames.items.map((item) => {
@@ -5756,7 +5801,7 @@ function workbookXml(workbook, pivotParts = []) {
     }).join("")}</definedNames>`
     : "";
   const pivotCaches = pivotParts.length ? `<pivotCaches>${pivotParts.map((part) => `<pivotCache cacheId="${part.cacheId}" r:id="${part.cacheRelId}"/>`).join("")}</pivotCaches>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets}</sheets>${definedNames}${pivotCaches}</workbook>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${workbookProperties}<sheets>${sheets}</sheets>${definedNames}${pivotCaches}</workbook>`;
 }
 
 function parseWorkbookDefinedNames(workbook, xml = "") {

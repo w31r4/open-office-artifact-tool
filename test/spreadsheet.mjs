@@ -308,6 +308,56 @@ assert.match(dateBook.help("fx.NETWORKDAYS").ndjson, /optional holidays/);
 const dateRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(dateBook));
 assert.deepEqual(dateRoundtrip.worksheets.getItem("Dates").getRange("B1:B32").values, dateSheet.getRange("B1:B32").values);
 
+const date1904Book = Workbook.create({ dateSystem: "1904" });
+assert.equal(date1904Book.dateSystem, "1904");
+assert.equal(Workbook.create({ date1904: true }).dateSystem, "1904");
+assert.equal(Workbook.create().setDateSystem(true).dateSystem, "1904");
+assert.throws(() => Workbook.create({ dateSystem: "unix" }), /expected 1900 or 1904/);
+const date1904Sheet = date1904Book.worksheets.add("Dates1904");
+date1904Sheet.getRange("A1:A16").formulas = [
+  ["=DATE(1904,1,1)"],
+  ["=DATE(1904,1,2)"],
+  ["=DATE(2024,2,29)"],
+  ["=YEAR(0)"],
+  ["=MONTH(0)"],
+  ["=DAY(0)"],
+  ["=EDATE(0,1)"],
+  ["=EOMONTH(0,0)"],
+  ["=DAYS(DATE(2024,3,1),DATE(2024,2,28))"],
+  ["=WEEKDAY(0,1)"],
+  ["=WEEKDAY(0,2)"],
+  ["=NETWORKDAYS(DATE(1904,1,1),DATE(1904,1,10))"],
+  ["=WORKDAY(0,1)"],
+  ["=DATE(1900,1,1)"],
+  ["=DATE(9999,12,31)"],
+  ["=DATE(1904,2,29)"],
+];
+date1904Book.recalculate();
+assert.deepEqual(date1904Sheet.getRange("A1:A16").values.flat(), [0, 1, 43889, 1904, 1, 1, 31, 30, 2, 6, 5, 6, 3, "#NUM!", 2957003, 59]);
+const date1904Inspect = date1904Book.inspect({ kind: "workbook" });
+assert.match(date1904Inspect.ndjson, /"dateSystem":"1904"/);
+assert.match(date1904Inspect.ndjson, /"date1904":true/);
+assert.match(date1904Book.help("workbook.setDateSystem").ndjson, /workbookPr/);
+const date1904Xlsx = await SpreadsheetFile.exportXlsx(date1904Book);
+const date1904Zip = await JSZip.loadAsync(new Uint8Array(await date1904Xlsx.arrayBuffer()));
+const date1904WorkbookXml = await date1904Zip.file("xl/workbook.xml").async("text");
+assert.match(date1904WorkbookXml, /<workbookPr date1904="1"\/>/);
+assert.match(await date1904Zip.file("customXml/open-office-artifact.json").async("text"), /"dateSystem": "1904"/);
+const date1904Roundtrip = await SpreadsheetFile.importXlsx(date1904Xlsx);
+assert.equal(date1904Roundtrip.dateSystem, "1904");
+assert.deepEqual(date1904Roundtrip.worksheets.getItem("Dates1904").getRange("A1:A16").values, date1904Sheet.getRange("A1:A16").values);
+const date1904TrueXlsx = await SpreadsheetFile.patchXlsx(date1904Xlsx, [{ path: "xl/workbook.xml", xml: date1904WorkbookXml.replace('date1904="1"', 'date1904="true"') }]);
+assert.equal((await SpreadsheetFile.importXlsx(date1904TrueXlsx)).dateSystem, "1904");
+const date1900PatchedXlsx = await SpreadsheetFile.patchXlsx(date1904Xlsx, [{ path: "xl/workbook.xml", xml: date1904WorkbookXml.replace('date1904="1"', 'date1904="0"') }]);
+const date1900PatchedBook = await SpreadsheetFile.importXlsx(date1900PatchedXlsx);
+assert.equal(date1900PatchedBook.dateSystem, "1900");
+assert.equal(date1900PatchedBook.worksheets.getItem("Dates1904").getRange("A3").values[0][0], 45351);
+const invalidDateSystemBook = Workbook.create();
+invalidDateSystemBook.worksheets.add("Invalid").getRange("A1").values = [[1]];
+invalidDateSystemBook.dateSystem = "invalid";
+assert.ok(invalidDateSystemBook.verify().issues.some((issue) => issue.type === "invalidDateSystem"));
+await assert.rejects(() => SpreadsheetFile.exportXlsx(invalidDateSystemBook), /expected 1900 or 1904/);
+
 const formulaEdgeBook = Workbook.create();
 const formulaEdgeSheet = formulaEdgeBook.worksheets.add("FormulaEdges");
 formulaEdgeSheet.getRange("A1:B3").values = [[1, 10], [2, 20], [3, 30]];
