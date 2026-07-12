@@ -11,13 +11,15 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 200);
+assert.equal(HELP_CATALOG.length, 202);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitColumns"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
@@ -97,6 +99,8 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.options
 assert.ok(HELP_CATALOG.find((item) => item.name === "workbook.inspect")?.schema?.parameters?.kind);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.schema?.returns?.blob);
 assert.ok(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.colors);
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.columnWidthPx?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.rowHidden?.type, "boolean");
 assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.patches);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");
@@ -147,7 +151,7 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 119);
+assert.equal(workbookCatalog.length, 121);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");

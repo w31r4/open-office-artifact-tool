@@ -1679,7 +1679,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
-| `range.format` | api | Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes. |
+| `range.format` | api | Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade. |
+| `range.format.autofitColumns` | api | Measure displayed range values deterministically and set native best-fit widths on each selected column. |
+| `range.format.autofitRows` | api | Measure explicit/wrapped range text deterministically and set native custom heights on each selected row. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip. |
@@ -3141,11 +3143,12 @@ Assign a validation rule to a range or use sheet.dataValidations.add({ range, ru
 
 #### `range.format`
 
-Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes.
+Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade.
 
 **Examples:**
 
-- sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, alignment: { horizontal: 'center' }, border: { style: 'thin' } }
+- sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, columnWidth: 18, rowHeight: 24 }
+- sheet.getRange('A1:D20').format.columnWidthPx = 120
 
 **Schema parameters:**
 
@@ -3154,10 +3157,32 @@ Assign basic cell style metadata such as fill, font, numberFormat, alignment, an
 - `numberFormat` (string) — Excel number format code.
 - `alignment` (object) — horizontal, vertical, and wrapText alignment options.
 - `border` (object) — Basic border style and color.
+- `columnWidth` (number) — Column width in Excel character units for every column intersecting the range.
+- `columnWidthPx` (number) — Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula.
+- `rowHeight` (number) — Row height in points for every row intersecting the range.
+- `rowHeightPx` (number) — Row height in CSS pixels, converted at 96 DPI.
+- `columnHidden` (boolean) — Hide or show every column intersecting the range.
+- `rowHidden` (boolean) — Hide or show every row intersecting the range.
 
 **Schema returns:**
 
 - `range` (Range) — The formatted range facade.
+
+#### `range.format.autofitColumns`
+
+Measure displayed range values deterministically and set native best-fit widths on each selected column.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after deterministic native best-fit column widths are applied.
+
+#### `range.format.autofitRows`
+
+Measure explicit/wrapped range text deterministically and set native custom heights on each selected row.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after deterministic custom row heights are applied.
 
 #### `sheet.charts.add`
 

@@ -115,6 +115,8 @@ function applyRangeOperation(sheet, operation = {}) {
   if (operation.values) range.values = operation.values;
   if (operation.formulas) range.formulas = operation.formulas;
   if (operation.format) range.format = operation.format;
+  if (operation.autofitColumns === true) range.format.autofitColumns();
+  if (operation.autofitRows === true) range.format.autofitRows();
   if (operation.dataValidation) range.dataValidation = operation.dataValidation;
   for (const rule of operation.conditionalFormats || []) {
     range.conditionalFormats.add(rule.ruleType, rule.config || {});

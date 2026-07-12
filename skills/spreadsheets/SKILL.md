@@ -48,6 +48,9 @@ sheet.getRange("A1:D1").format = {
 };
 sheet.getRange("B2:C3").format = { numberFormat: "$#,##0" };
 sheet.getRange("D2:D3").format = { numberFormat: "0.0%" };
+sheet.getRange("A1:A3").format.columnWidth = 12;
+sheet.getRange("B1:D3").format.columnWidthPx = 96;
+sheet.getRange("A1:D1").format.rowHeight = 24;
 sheet.freezePanes.freezeRows(1);
 workbook.recalculate();
 
@@ -64,6 +67,8 @@ For workbooks that use Excel's 1904 serial-date system, create the workbook with
 Use `NETWORKDAYS.INTL` and `WORKDAY.INTL` when weekends are not Saturday/Sunday. The weekend argument may be an Excel weekend number (`1`–`7` or `11`–`17`) or a seven-character Monday-first mask such as `"0000011"`; keep holidays as serial-date cells/ranges in the same workbook date system.
 
 For scrollable reports, use `sheet.freezePanes.freezeRows(count)` and `freezeColumns(count)`; the two axes compose, and `unfreeze()` clears both. These methods write native SpreadsheetML `sheetViews/pane` state and are preserved when importing third-party XLSX files.
+
+`range.format` is live: assign `columnWidth`/`rowHeight` in Excel character/point units, or `columnWidthPx`/`rowHeightPx` in pixels. `columnHidden` and `rowHidden` preserve hidden axes. Use `autofitColumns()`/`autofitRows()` only on the smallest intended range, then cap unusually large results before delivery.
 
 ## Verification commands
 

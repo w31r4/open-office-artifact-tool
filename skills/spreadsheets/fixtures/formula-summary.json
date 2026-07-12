@@ -20,9 +20,12 @@
           "format": {
             "fill": "#0F766E",
             "font": { "bold": true, "color": "#FFFFFF" },
-            "alignment": { "horizontal": "center" }
+            "alignment": { "horizontal": "center" },
+            "rowHeight": 24
           }
         },
+        { "range": "A1:A4", "format": { "columnWidth": 12 } },
+        { "range": "B1:C4", "format": { "columnWidth": 14 } },
         {
           "range": "B2:C4",
           "format": { "numberFormat": "$#,##0" }
@@ -60,9 +63,13 @@
             "fill": "#0F172A",
             "font": { "bold": true, "color": "#FFFFFF" },
             "alignment": { "horizontal": "center" },
-            "border": { "style": "thin", "color": "#334155" }
+            "border": { "style": "thin", "color": "#334155" },
+            "rowHeightPx": 28
           }
         },
+        { "range": "A1:A4", "format": { "columnWidth": 12 } },
+        { "range": "B1:C4", "format": { "columnWidthPx": 96 } },
+        { "range": "D1:D4", "format": { "columnWidth": 10 } },
         {
           "range": "B2:C4",
           "format": { "numberFormat": "$#,##0" }
@@ -112,7 +119,8 @@
             "fill": "#7C3AED",
             "font": { "bold": true, "color": "#FFFFFF" }
           }
-        }
+        },
+        { "range": "F1:G13", "autofitColumns": true }
       ],
       "tables": [
         { "range": "A1:D4", "name": "SummaryTable", "style": "TableStyleMedium2" }

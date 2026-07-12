@@ -875,7 +875,9 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
-  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign basic cell style metadata such as fill, font, numberFormat, alignment, and borders; XLSX export writes native styles.xml and cell style indexes." },
+  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade." },
+  { artifactKind: "workbook", kind: "api", name: "range.format.autofitColumns", summary: "Measure displayed range values deterministically and set native best-fit widths on each selected column." },
+  { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
@@ -1143,7 +1145,7 @@ const HELP_DETAIL_OVERRIDES = {
     returns: "DefinedName facade with id/name/refersTo/scope",
   },
   "range.format": {
-    examples: ["sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, alignment: { horizontal: 'center' }, border: { style: 'thin' } }"],
+    examples: ["sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, columnWidth: 18, rowHeight: 24 }", "sheet.getRange('A1:D20').format.columnWidthPx = 120"],
     schema: {
       parameters: {
         fill: { type: "string", description: "Cell background color token or hex color." },
@@ -1151,6 +1153,12 @@ const HELP_DETAIL_OVERRIDES = {
         numberFormat: { type: "string", description: "Excel number format code." },
         alignment: { type: "object", description: "horizontal, vertical, and wrapText alignment options." },
         border: { type: "object", description: "Basic border style and color." },
+        columnWidth: { type: "number", description: "Column width in Excel character units for every column intersecting the range." },
+        columnWidthPx: { type: "number", description: "Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula." },
+        rowHeight: { type: "number", description: "Row height in points for every row intersecting the range." },
+        rowHeightPx: { type: "number", description: "Row height in CSS pixels, converted at 96 DPI." },
+        columnHidden: { type: "boolean", description: "Hide or show every column intersecting the range." },
+        rowHidden: { type: "boolean", description: "Hide or show every row intersecting the range." },
       },
       returns: { range: { type: "Range", description: "The formatted range facade." } },
     },
@@ -2034,6 +2042,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     operator: { type: "string", description: "Comparison operator." },
     allowBlank: { type: "boolean", description: "Allow blank cells." },
   }, "validation", "object", "Inspectable data-validation rule anchored to the range."),
+  "range.format.autofitColumns": helpSchema({}, "range", "Range", "The same range after deterministic native best-fit column widths are applied."),
+  "range.format.autofitRows": helpSchema({}, "range", "Range", "The same range after deterministic custom row heights are applied."),
   "workbook.comments.addThread": helpSchema({
     target: { type: "Range|object", required: true, description: "Target single-cell range or cell descriptor." },
     text: { type: "string", required: true, description: "Initial comment text." },
@@ -2634,16 +2644,16 @@ function worksheetRowDimension(sheet, row) {
   return sheet.rowDimensions?.get(row) || {};
 }
 
-function worksheetColumnWidthPx(sheet, column, fallback = undefined) {
+function worksheetColumnWidthPx(sheet, column, fallback = undefined, collapseHidden = true) {
   const dimension = worksheetColumnDimension(sheet, column);
-  if (dimension.hidden) return 0;
+  if (collapseHidden && dimension.hidden) return 0;
   if (dimension.width != null) return xlsxColumnWidthToPixels(dimension.width);
   return Number(fallback ?? xlsxColumnWidthToPixels(xlsxColumnCharactersToWidth(XLSX_DEFAULT_COLUMN_WIDTH)));
 }
 
-function worksheetRowHeightPx(sheet, row, fallback = undefined) {
+function worksheetRowHeightPx(sheet, row, fallback = undefined, collapseHidden = true) {
   const dimension = worksheetRowDimension(sheet, row);
-  if (dimension.hidden) return 0;
+  if (collapseHidden && dimension.hidden) return 0;
   if (dimension.height != null) return dimension.height * 96 / 72;
   return Number(fallback ?? XLSX_DEFAULT_ROW_HEIGHT * 96 / 72);
 }
@@ -3917,8 +3927,8 @@ export class Worksheet {
     const includeColumns = kinds.has("dimension") || kinds.has("column");
     const includeRows = kinds.has("dimension") || kinds.has("row");
     return [
-      ...(includeColumns ? [...this.columnDimensions.entries()].sort((a, b) => a[0] - b[0]).map(([column, dimension]) => ({ kind: "column", sheet: this.name, index: column, column: columnName(column), width: dimension.width == null ? undefined : xlsxColumnWidthToCharacters(dimension.width), widthPx: worksheetColumnWidthPx(this, column), hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })) : []),
-      ...(includeRows ? [...this.rowDimensions.entries()].sort((a, b) => a[0] - b[0]).map(([row, dimension]) => ({ kind: "row", sheet: this.name, index: row, row: row + 1, height: dimension.height, heightPx: worksheetRowHeightPx(this, row), hidden: Boolean(dimension.hidden) })) : []),
+      ...(includeColumns ? [...this.columnDimensions.entries()].sort((a, b) => a[0] - b[0]).map(([column, dimension]) => ({ kind: "column", sheet: this.name, index: column, column: columnNumberToLabel(column), width: dimension.width == null ? undefined : xlsxColumnWidthToCharacters(dimension.width), widthPx: worksheetColumnWidthPx(this, column, undefined, false), visibleWidthPx: worksheetColumnWidthPx(this, column), hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })) : []),
+      ...(includeRows ? [...this.rowDimensions.entries()].sort((a, b) => a[0] - b[0]).map(([row, dimension]) => ({ kind: "row", sheet: this.name, index: row, row: row + 1, height: dimension.height, heightPx: worksheetRowHeightPx(this, row, undefined, false), visibleHeightPx: worksheetRowHeightPx(this, row), hidden: Boolean(dimension.hidden) })) : []),
     ];
   }
 
@@ -4066,7 +4076,7 @@ class RangeFormatFacade {
     const width = xlsxColumnCharactersToWidth(value);
     for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) setWorksheetDimension(this.range.worksheet.columnDimensions, column, { width, bestFit: false });
   }
-  get columnWidthPx() { return worksheetColumnWidthPx(this.range.worksheet, this.range.bounds.left); }
+  get columnWidthPx() { return worksheetColumnWidthPx(this.range.worksheet, this.range.bounds.left, undefined, false); }
   set columnWidthPx(value) {
     const width = xlsxColumnPixelsToWidth(value);
     for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) setWorksheetDimension(this.range.worksheet.columnDimensions, column, { width, bestFit: false });
@@ -4076,7 +4086,7 @@ class RangeFormatFacade {
     const height = xlsxRowHeight(value);
     for (let row = this.range.bounds.top; row <= this.range.bounds.bottom; row += 1) setWorksheetDimension(this.range.worksheet.rowDimensions, row, { height });
   }
-  get rowHeightPx() { return worksheetRowHeightPx(this.range.worksheet, this.range.bounds.top); }
+  get rowHeightPx() { return worksheetRowHeightPx(this.range.worksheet, this.range.bounds.top, undefined, false); }
   set rowHeightPx(value) { this.rowHeight = Number(value) * 72 / 96; }
   get columnHidden() { return Boolean(worksheetColumnDimension(this.range.worksheet, this.range.bounds.left).hidden); }
   set columnHidden(value) {
@@ -6392,6 +6402,7 @@ function worksheetViewXml(sheet) {
 }
 
 function worksheetColumnsXml(sheet) {
+  for (const column of sheet.columnDimensions?.keys() || []) if (!Number.isInteger(column) || column < 0 || column > XLSX_MAX_FREEZE_COLUMNS) throw new Error(`Worksheet column dimension index ${column} must be an integer from 0 through ${XLSX_MAX_FREEZE_COLUMNS}.`);
   const entries = [...(sheet.columnDimensions || new Map()).entries()]
     .filter(([column]) => Number.isInteger(column) && column >= 0 && column <= XLSX_MAX_FREEZE_COLUMNS)
     .sort((left, right) => left[0] - right[0]);
@@ -6404,6 +6415,7 @@ function worksheetColumnsXml(sheet) {
     else groups.push({ min: column, max: column, key, dimension });
   }
   const columns = groups.map(({ min, max, dimension }) => {
+    if (dimension.width != null && (!Number.isFinite(dimension.width) || dimension.width <= 0 || dimension.width > XLSX_MAX_COLUMN_WIDTH)) throw new Error(`Worksheet column ${min + 1} width must be greater than 0 and at most ${XLSX_MAX_COLUMN_WIDTH}.`);
     const width = dimension.width != null ? ` width="${Number(dimension.width)}" customWidth="1"` : "";
     const hidden = dimension.hidden ? ' hidden="1"' : "";
     const bestFit = dimension.bestFit ? ' bestFit="1"' : "";
@@ -6421,7 +6433,9 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   }
   for (const row of sheet.rowDimensions?.keys() || []) if (!rows.has(row)) rows.set(row, []);
   const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => {
+    if (!Number.isInteger(row) || row < 0 || row > XLSX_MAX_FREEZE_ROWS) throw new Error(`Worksheet row dimension index ${row} must be an integer from 0 through ${XLSX_MAX_FREEZE_ROWS}.`);
     const dimension = worksheetRowDimension(sheet, row);
+    if (dimension.height != null && (!Number.isFinite(dimension.height) || dimension.height <= 0 || dimension.height > XLSX_MAX_ROW_HEIGHT)) throw new Error(`Worksheet row ${row + 1} height must be greater than 0 and at most ${XLSX_MAX_ROW_HEIGHT}.`);
     const height = dimension.height != null ? ` ht="${Number(dimension.height)}" customHeight="1"` : "";
     const hidden = dimension.hidden ? ' hidden="1"' : "";
     const content = cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell, sharedStrings, styleTable)).join("");
