@@ -1,4 +1,4 @@
-import { mutateDocxSourceReference, supportsDocxSourceReference, validateDocxSourceReferenceTarget } from "./docx-source-references.mjs";
+import { mutateDocxSourceReference, mutateDocxSourceReferenceTarget, supportsDocxSourceReference, validateDocxSourceReferenceTarget } from "./docx-source-references.mjs";
 import { appendToRoot, attrEscape, attributes, decodeXml, ensureNamespacePrefix, ensureRelationshipPrefix, insertBeforeOrAppend, qname, removeReferenceTags, rootPrefix, rootTag, setAttribute } from "./source-reference-xml.mjs";
 
 const DRAWING_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -256,15 +256,19 @@ export function supportsOoxmlSourceReference(family, recipeKind) {
 }
 
 export function supportedOoxmlSourceReferenceSummary() {
-  return "DOCX header/footer/comments/numbering, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide/slideMaster/slideLayout";
+  return "DOCX header/footer/comments/numbering/settings, XLSX worksheet/table/drawing/image/chart/pivotCacheDefinition/pivotCacheRecords, PPTX slide/slideMaster/slideLayout";
 }
 
 export function validateOoxmlSourceReferenceTarget({ family, recipeKind, targetXml, config = {} }) {
   if (family === "DOCX") validateDocxSourceReferenceTarget(recipeKind, targetXml, config);
 }
 
+export function mutateOoxmlSourceReferenceTarget({ family, recipeKind, targetXml, config = {} }) {
+  if (family === "DOCX") return mutateDocxSourceReferenceTarget(recipeKind, targetXml, config);
+  throw new Error(`${family} ${recipeKind || "(missing)"} does not support target XML mutation.`);
+}
+
 export function mutateOoxmlSourceReference({ family, recipeKind, xml, relationshipIds = new Set(), addId, config = {} }) {
-  const key = `${family}:${recipeKind}`;
   if (!supportsOoxmlSourceReference(family, recipeKind)) throw new Error(`${family} sourceReference is not supported for recipe ${recipeKind || "(missing)"}. Supported recipes: ${supportedOoxmlSourceReferenceSummary()}.`);
   if (family === "DOCX") return mutateDocxSourceReference(recipeKind, xml, relationshipIds, addId, config);
   if (family === "PPTX" && recipeKind === "slide") return mutatePptxSlideReference(xml, relationshipIds, addId, config);

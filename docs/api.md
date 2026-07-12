@@ -25,13 +25,14 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.resolve` | api | Resolve stable document, block, header/footer, comment, style, and editable text-range IDs. |
+| `document.setSettings` | api | Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, relationship-driven settings/styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including settings, styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation, including safe classic-comment anchors and numbering assignments, and atomically reject dangling package or semantic references. |
+| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation, including safe settings mutations, classic-comment anchors, and numbering assignments, and atomically reject dangling package or semantic references. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
 
 ### document details
@@ -355,6 +356,18 @@ Resolve stable document, block, header/footer, comment, style, and editable text
 
 - `object` (object|undefined) — Resolved editable facade/record or undefined.
 
+#### `document.setSettings`
+
+Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions.
+
+**Schema parameters:**
+
+- `settings` (object) required — Partial settings object. Boolean fields are trackRevisions, updateFields, evenAndOddHeaders, and mirrorMargins; nested passwordless documentProtection accepts false/off or mode none, readOnly, comments, trackedChanges, or forms plus enforcement/formatting booleans.
+
+**Schema returns:**
+
+- `document` (DocumentModel) — Document facade with normalized settings.
+
 #### `document.styles.effective`
 
 Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata.
@@ -394,7 +407,7 @@ Return QA issues for fake lists, invalid links/citations, unknown styles, malfor
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata.
+Export DocumentModel to a DOCX package with document.xml, relationship-driven settings/styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata.
 
 **Schema parameters:**
 
@@ -406,7 +419,7 @@ Export DocumentModel to a DOCX package with document.xml, relationship-driven st
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes.
+Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including settings, styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes.
 
 **Schema parameters:**
 
@@ -437,7 +450,7 @@ Inspect bounded DOCX parts, content types, relationships, and namespace-aware so
 
 #### `DocumentFile.patchDocx`
 
-Apply DOCX part patches with path traversal validation, including safe classic-comment anchors and numbering assignments, and atomically reject dangling package or semantic references.
+Apply DOCX part patches with path traversal validation, including safe settings mutations, classic-comment anchors, and numbering assignments, and atomically reject dangling package or semantic references.
 
 **Examples:**
 
@@ -453,8 +466,8 @@ Apply DOCX part patches with path traversal validation, including safe classic-c
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports section-scoped header/footer references, batch classic-comment anchors, and numbering assignments for block, paragraph, or table-cell targets.
-- `sourceReference` (boolean|object) — Opt-in source XML mutation. Comments accepts { anchors: [{ commentId, target }] }; numbering accepts { assignments: [{ numId, level, target }] }. IDs and levels must be declared uniquely by their target part.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports settings mutations, section-scoped header/footer references, batch classic-comment anchors, and numbering assignments for block, paragraph, or table-cell targets.
+- `sourceReference` (boolean|object) — Opt-in semantic XML mutation. Settings accepts trackRevisions/updateFields/evenAndOddHeaders/mirrorMargins booleans and passwordless documentProtection; comments accepts { anchors: [...] }; numbering accepts { assignments: [...] }.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**
@@ -475,6 +488,7 @@ Create a document with paragraph, list, table, header/footer, style, and comment
 - `headers` (object[]) — Header block models.
 - `footers` (object[]) — Footer block models.
 - `comments` (object[]) — Comment models targeting stable block IDs.
+- `settings` (object) — Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless documentProtection.
 
 **Schema returns:**
 

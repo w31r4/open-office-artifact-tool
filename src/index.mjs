@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
-import { mutateOoxmlSourceReference, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference, validateOoxmlSourceReferenceTarget } from "./ooxml/source-references.mjs";
+import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference, validateOoxmlSourceReferenceTarget } from "./ooxml/source-references.mjs";
+import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
@@ -1022,6 +1023,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a classic Word comment with author, initials, and date metadata to a paragraph or table block using native comment range/reference anchors." },
+  { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
@@ -1030,10 +1032,10 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with document.xml, relationship-driven settings/styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including settings, styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation, including safe classic-comment anchors and numbering assignments, and atomically reject dangling package or semantic references." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation, including safe settings mutations, classic-comment anchors, and numbering assignments, and atomically reject dangling package or semantic references." },
 
   { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, table regions, and image regions." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
@@ -1214,8 +1216,8 @@ const HELP_DETAIL_OVERRIDES = {
         syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
         syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
         validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports section-scoped header/footer references, batch classic-comment anchors, and numbering assignments for block, paragraph, or table-cell targets." },
-        sourceReference: { type: "boolean|object", description: "Opt-in source XML mutation. Comments accepts { anchors: [{ commentId, target }] }; numbering accepts { assignments: [{ numId, level, target }] }. IDs and levels must be declared uniquely by their target part." },
+        recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports settings mutations, section-scoped header/footer references, batch classic-comment anchors, and numbering assignments for block, paragraph, or table-cell targets." },
+        sourceReference: { type: "boolean|object", description: "Opt-in semantic XML mutation. Settings accepts trackRevisions/updateFields/evenAndOddHeaders/mirrorMargins booleans and passwordless documentProtection; comments accepts { anchors: [...] }; numbering accepts { assignments: [...] }." },
         relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
       },
       returns: { docx: { type: "FileBlob", description: "Patched DOCX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata." } },
@@ -1571,6 +1573,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     headers: { type: "object[]", description: "Header block models." },
     footers: { type: "object[]", description: "Footer block models." },
     comments: { type: "object[]", description: "Comment models targeting stable block IDs." },
+    settings: { type: "object", description: "Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless documentProtection." },
   }, "document", "DocumentModel", "Editable document facade."),
   "document.addParagraph": helpSchema({
     text: { type: "string", required: true, description: "Paragraph text." },
@@ -1669,6 +1672,9 @@ const DOCUMENT_HELP_SCHEMAS = {
     date: { type: "string", description: "Optional ISO-style comment timestamp written to w:date." },
     resolved: { type: "boolean", description: "Initial resolution state." },
   }, "comment", "DocumentComment", "Attached comment with stable ID."),
+  "document.setSettings": helpSchema({
+    settings: { type: "object", required: true, description: "Partial settings object. Boolean fields are trackRevisions, updateFields, evenAndOddHeaders, and mirrorMargins; nested passwordless documentProtection accepts false/off or mode none, readOnly, comments, trackedChanges, or forms plus enforcement/formatting booleans." },
+  }, "document", "DocumentModel", "Document facade with normalized settings."),
   "document.applyDesignPreset": helpSchema({
     name: { type: "string", required: true, description: "report, memo, or a custom preset name." },
     styles: { type: "object", description: "Style overrides merged into the preset." },
@@ -8666,6 +8672,7 @@ export class DocumentModel {
     this.id = aid("doc");
     this.name = options.name || "New document";
     this.designPreset = options.designPreset || "default";
+    this.settings = normalizeDocxSettings(options.settings || {});
     this.styles = new DocumentStyleCollection(options.styles || {});
     this.blocks = [];
     this.comments = [];
@@ -8737,14 +8744,16 @@ export class DocumentModel {
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); return block; }
   addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
-  resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
+  setSettings(settings = {}) { this.settings = normalizeDocxSettings({ ...this.settings, ...settings }); return this; }
+  resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : id === `${this.id}/settings` ? this.settings : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, settings: this.settings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
     const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset, settings: this.settings });
+    if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(documentInspectRecord(this, block, index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
@@ -9809,10 +9818,16 @@ async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family
     const resolvedIds = new Set([...(relationship.resolvedIds || []), relationship.id].filter(Boolean));
     const addId = remove ? undefined : relationship.resolvedId || relationship.id;
     if (!remove && !addId) throw new Error(`${family} ${patch.recipeKind} sourceReference could not resolve a relationship Id.`);
-    if (!remove && family === "DOCX" && ["comments", "numbering"].includes(patch.recipeKind)) {
+    if (!remove && family === "DOCX" && ["comments", "numbering", "settings"].includes(patch.recipeKind)) {
       const targetEntry = zip.file(partPath);
       if (!targetEntry) throw new Error(`${family} sourceReference target part not found: ${partPath}`);
-      validateOoxmlSourceReferenceTarget({ family, recipeKind: patch.recipeKind, targetXml: await targetEntry.async("text"), config });
+      const targetXml = await targetEntry.async("text");
+      if (patch.recipeKind === "settings") {
+        const nextTarget = mutateOoxmlSourceReferenceTarget({ family, recipeKind: patch.recipeKind, targetXml, config });
+        if (nextTarget !== targetXml) { zip.file(partPath, nextTarget); updates += 1; }
+        continue;
+      }
+      validateOoxmlSourceReferenceTarget({ family, recipeKind: patch.recipeKind, targetXml, config });
     }
     const xml = await sourceEntry.async("text");
     const next = mutateOoxmlSourceReference({ family, recipeKind: patch.recipeKind, xml, relationshipIds: resolvedIds, addId, config });
@@ -9889,13 +9904,15 @@ export class DocumentFile {
     const headerParts = collectDocxHeaderFooterParts(document, "header");
     const footerParts = collectDocxHeaderFooterParts(document, "footer");
     const hasEvenHeaderFooter = [...headerParts, ...footerParts].some((part) => part.referenceType === "even");
-    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, headerParts, footerParts, hasNumbering, hasSettings: hasEvenHeaderFooter, imageParts }));
+    const settingsXml = docxSettingsXml({ ...document.settings, evenAndOddHeaders: hasEvenHeaderFooter || document.settings.evenAndOddHeaders });
+    const hasSettings = Boolean(settingsXml);
+    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: document.comments.length > 0, headerParts, footerParts, hasNumbering, hasSettings, imageParts }));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
     const docRels = [{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" }];
     const relIds = { numbering: numbering.numIdByBlock };
     if (hasNumbering) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering", target: "numbering.xml" });
     if (document.comments.length) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
-    if (hasEvenHeaderFooter) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings", target: "settings.xml" });
+    if (hasSettings) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings", target: "settings.xml" });
     relIds.headers = headerParts.map((part) => {
       const relId = `rId${docRels.length + 1}`;
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: part.target });
@@ -9921,7 +9938,7 @@ export class DocumentFile {
     zip.file("word/styles.xml", docxStylesXml(document));
     if (hasNumbering) zip.file("word/numbering.xml", docxNumberingXml(numbering));
     if (document.comments.length) zip.file("word/comments.xml", docxCommentsXml(document));
-    if (hasEvenHeaderFooter) zip.file("word/settings.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:evenAndOddHeaders/></w:settings>');
+    if (settingsXml) zip.file("word/settings.xml", settingsXml);
     headerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("header", part.blocks)));
     footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
     imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
@@ -9944,8 +9961,10 @@ export class DocumentFile {
     };
     const stylesPartPath = relatedPartPath("styles", "word/styles.xml");
     const numberingPartPath = relatedPartPath("numbering", "word/numbering.xml");
+    const settingsPartPath = relatedPartPath("settings", "word/settings.xml");
     const stylesText = await zip.file(stylesPartPath)?.async("text");
     const numberingText = await zip.file(numberingPartPath)?.async("text");
+    const settingsText = await zip.file(settingsPartPath)?.async("text");
     const importedStyles = parseDocxStylesXml(stylesText);
     const numberingById = parseDocxNumberingXml(numberingText);
     const commentsRelationship = documentRelationships.find((relationship) => relationship.type.endsWith("/comments") && relationship.targetMode.toLowerCase() !== "external");
@@ -9969,7 +9988,7 @@ export class DocumentFile {
       else blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById).block);
       for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
-    const document = DocumentModel.create({ styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    const document = DocumentModel.create({ settings: parseDocxSettings(settingsText), styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const reference of docxHeaderFooterReferences(xml, documentRelationships)) {
       const partXml = await zip.file(reference.partPath)?.async("text");
       for (const block of parseHeaderFooterXml(partXml)) {

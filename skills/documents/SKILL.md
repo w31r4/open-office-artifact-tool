@@ -23,6 +23,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 3. Apply focused changes through public APIs.
    For clean-room package surgery, `DocumentFile.patchDocx(...)` can create a Comments part and add matching block, paragraph, or table-cell anchors with `recipe: { kind: "comments", source: "word/document.xml", sourceReference: { anchors: [...] } }`.
    The same package API can create a Numbering part and assign declared `numId`/level pairs to target paragraphs with `recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { assignments: [...] } }`.
+   A Settings recipe can safely mutate an arbitrary relationship-backed Settings part with `sourceReference: { trackRevisions, updateFields, evenAndOddHeaders, mirrorMargins, documentProtection }`. Protection modes are passwordless `readOnly`, `comments`, `trackedChanges`, or `forms`; they discourage accidental editing but do not encrypt the DOCX.
 4. Run `document.verify({ visualQa: true })` and fix every material issue.
 5. Export DOCX and import the exported file again.
 6. Render the real DOCX through LibreOffice to PDF, then Poppler to page PNGs.
@@ -34,6 +35,7 @@ import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
 
 const document = DocumentModel.create({ name: "Decision brief", blocks: [] });
 document.applyDesignPreset("report");
+document.setSettings({ updateFields: true, documentProtection: { edit: "comments" } });
 document.addParagraph("Decision brief", { styleId: "Title", name: "title" });
 document.addParagraph("Recommendation", { styleId: "Heading1", name: "recommendation-heading" });
 document.addParagraph("Proceed with the clean-room implementation.", { styleId: "Normal" });
@@ -105,9 +107,10 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing blocks, multi-level list formats/start/level text, styles, classic comment metadata and block anchors, plus default/first/even header/footer references survived roundtrip. Native import follows `document.xml.rels` instead of assuming fixed styles/numbering/comments/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
+- `document.inspect(...)` proves agent-facing settings, blocks, multi-level list formats/start/level text, styles, classic comment metadata and block anchors, plus default/first/even header/footer references survived roundtrip. Native import follows `document.xml.rels` instead of assuming fixed settings/styles/numbering/comments/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
 - The checked-in `package-comments.json` fixture creates an arbitrary-path Comments part through the public patch API, anchors one comment to a paragraph block and one to a table cell, then verifies both through native-preferred import and the real render gate.
 - The checked-in `package-numbering.json` fixture creates an arbitrary-path Numbering part, binds two ordinary paragraphs to declared multilevel numbering definitions, and verifies their format/start/level metadata through native-preferred import and the real render gate.
+- The checked-in `package-settings.json` fixture creates an arbitrary-path Settings part, preserves unrelated compatibility markup, enables revision/field/header/margin settings, applies comments-only editing restrictions, and verifies the agent-facing state through native-preferred import and the real render gate.
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.

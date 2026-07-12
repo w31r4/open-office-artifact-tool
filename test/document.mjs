@@ -7,7 +7,9 @@ import { DocumentFile, DocumentModel, FileBlob, renderArtifact } from "../src/in
 const document = DocumentModel.create({
   name: "Research memo",
   paragraphs: ["Research memo", "This document exercises the clean-room DOCX facade."],
+  settings: { updateFields: true, mirrorMargins: true },
 });
+document.setSettings({ trackRevisions: true, documentProtection: { edit: "trackedChanges" } });
 document.applyDesignPreset("report");
 document.styles.add("Callout", { name: "Callout", fontSize: 24, bold: true, fontFamily: "Aptos", color: "#0f172a" });
 document.styles.add("RiskCallout", { name: "Risk Callout", basedOn: "Callout", italic: true, color: "#b91c1c" });
@@ -64,10 +66,13 @@ const comment = document.addComment(heading, "Check this heading before final ex
 const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
 const linkComment = document.addComment(hyperlink, "Verify the native hyperlink target.", { author: "Link Reviewer", initials: "LR", date: "2026-07-11T00:18:00.000Z" });
 
-const inspect = document.inspect({ kind: "document,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 16000 }).ndjson;
+const inspect = document.inspect({ kind: "document,settings,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 16000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /"kind":"document"/);
 assert.match(inspect, /"designPreset":"report"/);
+assert.match(inspect, /"kind":"settings"/);
+assert.match(inspect, /"trackRevisions":true/);
+assert.equal(document.resolve(`${document.id}/settings`), document.settings);
 assert.match(inspect, /"kind":"layout"/);
 assert.match(inspect, /findings-heading/);
 assert.match(inspect, /research-link/);
@@ -262,6 +267,8 @@ assert.match(document.help("DocumentFile.inspectDocx").ndjson, /DOCX package/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /path traversal/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /comment anchors/);
 assert.match(document.help("DocumentFile.patchDocx").ndjson, /numbering assignments/);
+assert.match(document.help("DocumentFile.patchDocx").ndjson, /settings mutations/);
+assert.match(document.help("document.setSettings").ndjson, /passwordless/);
 
 const docx = await DocumentFile.exportDocx(document);
 assert.equal(docx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -344,6 +351,7 @@ assert.doesNotMatch(exportedSections[1], new RegExp(`r:id="${openingHeaderRelId}
 assert.doesNotMatch(exportedSections[0], /<w:titlePg\/>/);
 assert.match(exportedSections[1], /<w:titlePg\/>/);
 assert.match(await zip.file("word/settings.xml").async("text"), /<w:evenAndOddHeaders\/>/);
+assert.match(await zip.file("word/settings.xml").async("text"), /<w:mirrorMargins\/>[\s\S]*?<w:trackRevisions\/>[\s\S]*?<w:documentProtection w:edit="trackedChanges" w:enforcement="1" w:formatting="0"\/>[\s\S]*?<w:evenAndOddHeaders\/>[\s\S]*?<w:updateFields\/>/);
 const docxMediaBytes = await zip.file("word/media/image1.png").async("uint8array");
 assert.ok(docxMediaBytes.byteLength > 10);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");

@@ -1,6 +1,7 @@
 import { attrEscape, attributes, ensureRelationshipPrefix, qname, regexEscape, removeReferenceTags, rootPrefix } from "./source-reference-xml.mjs";
+import { mutateDocxSettings } from "./docx-settings.mjs";
 
-const SUPPORTED = new Set(["header", "footer", "comments", "numbering"]);
+const SUPPORTED = new Set(["header", "footer", "comments", "numbering", "settings"]);
 
 function wordprocessingId(tag = "") {
   return Object.entries(attributes(tag)).find(([name]) => name === "id" || name.endsWith(":id"))?.[1];
@@ -243,7 +244,13 @@ export function validateDocxSourceReferenceTarget(recipeKind, targetXml, config 
   }
 }
 
+export function mutateDocxSourceReferenceTarget(recipeKind, targetXml, config = {}) {
+  if (recipeKind !== "settings") return String(targetXml);
+  return mutateDocxSettings(targetXml, config);
+}
+
 export function mutateDocxSourceReference(recipeKind, xml, relationshipIds, addId, config = {}) {
+  if (recipeKind === "settings") return String(xml);
   if (recipeKind === "comments") return mutateCommentReferences(xml, addId, config);
   if (recipeKind === "numbering") return mutateNumberingReferences(xml, addId, config);
   return mutateSectionReference(xml, recipeKind, relationshipIds, addId, config);

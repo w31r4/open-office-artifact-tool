@@ -1,0 +1,33 @@
+{
+  "name": "package-settings",
+  "outputName": "package-settings.docx",
+  "designPreset": "report",
+  "blocks": [
+    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Package settings mutation" },
+    { "kind": "field", "name": "page-count", "styleId": "Normal", "instruction": "NUMPAGES", "display": "1" },
+    { "kind": "paragraph", "name": "review-note", "styleId": "Normal", "text": "Review through comments while fields refresh on open." }
+  ],
+  "packageSettingsPart": "word/review/agent-settings.xml",
+  "packageSettingsRelationshipId": "rIdAgentSettings",
+  "packageSettings": {
+    "trackRevisions": true,
+    "updateFields": true,
+    "evenAndOddHeaders": true,
+    "mirrorMargins": true,
+    "documentProtection": {
+      "edit": "comments",
+      "enforcement": true,
+      "formatting": false
+    }
+  },
+  "expectInspect": [
+    { "kind": "field", "pattern": "NUMPAGES" },
+    { "kind": "paragraph", "pattern": "Review through comments" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,settings,paragraph,field,style,layout",
+    "maxChars": 12000
+  }
+}

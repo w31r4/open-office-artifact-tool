@@ -38,6 +38,10 @@ function packageNumberingXml(numbering = {}) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${abstracts}${instances}</w:numbering>`;
 }
 
+function packageSettingsXml() {
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:compat><w:compatSetting w:name="compatibilityMode" w:val="15"/></w:compat></w:settings>';
+}
+
 function commandExists(command) {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", [command], {
     encoding: "utf8",
@@ -74,7 +78,7 @@ function addFixtureBlock(document, block = {}) {
 }
 
 export function createDocumentFromFixture(fixture = {}) {
-  const document = DocumentModel.create({ name: fixture.name || "Fixture document", blocks: [] });
+  const document = DocumentModel.create({ name: fixture.name || "Fixture document", settings: fixture.settings || {}, blocks: [] });
   if (fixture.designPreset) document.applyDesignPreset(fixture.designPreset, fixture.designOptions || {});
   for (const [id, style] of Object.entries(fixture.styles || {})) document.styles.add(id, style);
   for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
@@ -280,6 +284,18 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         source: "word/document.xml",
         id: fixture.packageNumberingRelationshipId,
         sourceReference: { assignments: fixture.packageNumbering.assignments || [] },
+      },
+    });
+  }
+  if (fixture.packageSettings) {
+    packagePatches.push({
+      path: fixture.packageSettingsPart || "word/review/fixture-settings.xml",
+      xml: packageSettingsXml(),
+      recipe: {
+        kind: "settings",
+        source: "word/document.xml",
+        id: fixture.packageSettingsRelationshipId,
+        sourceReference: fixture.packageSettings,
       },
     });
   }

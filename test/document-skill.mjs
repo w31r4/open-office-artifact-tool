@@ -90,6 +90,23 @@ try {
   assert.equal(nestedStep?.start, 3);
   assert.equal(packageNumbering.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
+  const packageSettings = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-settings.json"), {
+    outputDir: path.join(outputDir, "package-settings"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(packageSettings.qa.summary.packageOk, true);
+  assert.equal(packageSettings.qa.summary.verifyOk, true);
+  assert.ok(packageSettings.qa.packageInspect.parts.some((part) => part.path === "word/review/agent-settings.xml"));
+  assert.deepEqual(packageSettings.qa.document.settings, {
+    trackRevisions: true,
+    updateFields: true,
+    evenAndOddHeaders: true,
+    mirrorMargins: true,
+    documentProtection: { edit: "comments", enforcement: true, formatting: false },
+  });
+  assert.match(packageSettings.qa.inspect.ndjson, /"kind":"settings"/);
+  assert.equal(packageSettings.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const baselineWrite = await verifyDocumentFile(result.docxPath, {
     outputDir: path.join(outputDir, "baseline-write"),
     previewFormat: "png",
@@ -128,6 +145,7 @@ try {
   assert.match(skillText, /baseline-dir/);
   assert.match(skillText, /preferNative/);
   assert.match(skillText, /package-numbering/);
+  assert.match(skillText, /package-settings/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

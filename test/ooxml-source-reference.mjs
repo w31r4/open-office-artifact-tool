@@ -120,6 +120,80 @@ assert.equal((await DocumentFile.inspectDocx(numberingRemovedDocx)).ok, true);
 assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await numberingRemovedDocx.arrayBuffer()))).file("word/document.xml").async("text"), /<w:numPr>/);
 assert.equal((await DocumentFile.importDocx(numberingRemovedDocx, { preferNative: true })).blocks[0].kind, "paragraph");
 
+const settingsPartPath = "word/review/settings-agent.xml";
+const settingsPartXml = '<?xml version="1.0" encoding="UTF-8"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:compat><w:compatSetting w:name="compatibilityMode" w:val="15"/></w:compat></w:settings>';
+const settingsDocx = await DocumentFile.patchDocx(baseDocx, [{
+  path: settingsPartPath,
+  xml: settingsPartXml,
+  recipe: {
+    kind: "settings",
+    source: "word/document.xml",
+    id: "rIdAgentSettings",
+    sourceReference: {
+      trackRevisions: true,
+      updateFields: true,
+      evenAndOddHeaders: true,
+      mirrorMargins: true,
+      documentProtection: { edit: "comments", enforcement: true, formatting: false },
+    },
+  },
+}]);
+assert.equal(settingsDocx.metadata.sourceReferencesUpdated, 1);
+assert.equal((await DocumentFile.inspectDocx(settingsDocx)).ok, true);
+const settingsZip = await JSZip.loadAsync(new Uint8Array(await settingsDocx.arrayBuffer()));
+const patchedSettingsXml = await settingsZip.file(settingsPartPath).async("text");
+assert.match(patchedSettingsXml, /<w:trackRevisions\/>[\s\S]*?<w:documentProtection w:edit="comments" w:enforcement="1" w:formatting="0"\/>[\s\S]*?<w:evenAndOddHeaders\/>[\s\S]*?<w:updateFields\/>[\s\S]*?<w:compat>/);
+assert.match(patchedSettingsXml, /<w:zoom w:percent="100"\/>/);
+assert.match(patchedSettingsXml, /<w:compatSetting w:name="compatibilityMode" w:val="15"\/>/);
+assert.match(await settingsZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdAgentSettings"[^>]*relationships\/settings[^>]*Target="review\/settings-agent\.xml"/);
+const importedSettingsDocument = await DocumentFile.importDocx(settingsDocx, { preferNative: true });
+assert.deepEqual(importedSettingsDocument.settings, {
+  trackRevisions: true,
+  updateFields: true,
+  evenAndOddHeaders: true,
+  mirrorMargins: true,
+  documentProtection: { edit: "comments", enforcement: true, formatting: false },
+});
+assert.match(importedSettingsDocument.inspect({ kind: "settings" }).ndjson, /"edit":"comments"/);
+assert.equal(importedSettingsDocument.resolve(`${importedSettingsDocument.id}/settings`), importedSettingsDocument.settings);
+const clearedSettingsDocx = await DocumentFile.patchDocx(settingsDocx, [{
+  path: settingsPartPath,
+  xml: patchedSettingsXml,
+  recipe: {
+    kind: "settings",
+    source: "word/document.xml",
+    id: "rIdAgentSettings",
+    sourceReference: { trackRevisions: false, updateFields: false, evenAndOddHeaders: false, mirrorMargins: false, documentProtection: false },
+  },
+}]);
+const clearedSettingsXml = await (await JSZip.loadAsync(new Uint8Array(await clearedSettingsDocx.arrayBuffer()))).file(settingsPartPath).async("text");
+assert.doesNotMatch(clearedSettingsXml, /trackRevisions|updateFields|evenAndOddHeaders|mirrorMargins|documentProtection/);
+assert.match(clearedSettingsXml, /<w:compat>/);
+assert.deepEqual((await DocumentFile.importDocx(clearedSettingsDocx, { preferNative: true })).settings, {
+  trackRevisions: false,
+  updateFields: false,
+  evenAndOddHeaders: false,
+  mirrorMargins: false,
+  documentProtection: null,
+});
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-empty.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: {} } }]), /requires at least one supported setting/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-boolean.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFields: "true" } } }]), /updateFields must be a boolean/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-mode.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: { documentProtection: "encrypted" } } }]), /edit must be none, readOnly, comments, trackedChanges, or forms/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-password.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: { documentProtection: { edit: "readOnly", password: "secret" } } } }]), /Password hashing is intentionally unsupported/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-root.xml", xml: '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>', recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFields: true } } }]), /must have a w:settings root element/);
+await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-namespace.xml", xml: '<w:settings xmlns:w="https://example.invalid/word"/>', recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFields: true } } }]), /must use a WordprocessingML namespace/);
+const strictSettingsDocx = await DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-strict.xml", xml: '<wx:settings xmlns:wx="http://purl.oclc.org/ooxml/wordprocessingml/main"/>', recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFieldsOnOpen: true } } }]);
+assert.match(await (await JSZip.loadAsync(new Uint8Array(await strictSettingsDocx.arrayBuffer()))).file("word/review/settings-strict.xml").async("text"), /<wx:updateFields\/>/);
+const removedSettingsDocx = await DocumentFile.patchDocx(settingsDocx, [{ path: settingsPartPath, remove: true, recipe: { kind: "settings", source: "word/document.xml", id: "rIdAgentSettings", sourceReference: true } }]);
+assert.equal((await DocumentFile.inspectDocx(removedSettingsDocx)).ok, true);
+assert.deepEqual((await DocumentFile.importDocx(removedSettingsDocx, { preferNative: true })).settings, {
+  trackRevisions: false,
+  updateFields: false,
+  evenAndOddHeaders: false,
+  mirrorMargins: false,
+  documentProtection: null,
+});
+
 const workbook = Workbook.create();
 workbook.worksheets.add("Main").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 120]];
 const xlsx = await SpreadsheetFile.patchXlsx(await SpreadsheetFile.exportXlsx(workbook), [{
