@@ -161,6 +161,7 @@ assert.match(mergeSheetXml, /<mergeCells count="4"><mergeCell ref="A1:C1"\/><mer
 const mergeFillRoundtrip = await SpreadsheetFile.importXlsx(mergeFillXlsx);
 assert.deepEqual(mergeFillRoundtrip.worksheets.getItem("Merged").mergedRanges, ["A1:C1", "D1:F1", "D2:F2", "J10:K11"]);
 assert.deepEqual(mergeFillRoundtrip.worksheets.getItem("Fill").getRange("C1:C3").formulas, fillSheet.getRange("C1:C3").formulas);
+assert.equal(mergeFillRoundtrip.worksheets.getItem("Fill").getRange("C3").format.fill, "#ABCDEF");
 const overlappingMergeXml = mergeSheetXml.replace(/<mergeCells[\s\S]*?<\/mergeCells>/, '<mergeCells count="2"><mergeCell ref="A1:C1"/><mergeCell ref="B1:D1"/></mergeCells>');
 mergeFillZip.file("xl/worksheets/sheet1.xml", overlappingMergeXml);
 const overlappingMergeBook = await SpreadsheetFile.importXlsx(new FileBlob(await mergeFillZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: mergeFillXlsx.type }));

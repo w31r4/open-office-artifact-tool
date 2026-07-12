@@ -1679,9 +1679,13 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
+| `range.fillDown` | api | Copy top-row contents and formatting down the range while translating relative A1 formula references. |
+| `range.fillRight` | api | Copy left-column contents and formatting right across the range while translating relative A1 formula references. |
 | `range.format` | api | Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade. |
 | `range.format.autofitColumns` | api | Measure displayed range values deterministically and set native best-fit widths on each selected column. |
 | `range.format.autofitRows` | api | Measure explicit/wrapped range text deterministically and set native custom heights on each selected row. |
+| `range.merge` | api | Merge the target range as one region or as separate row-wise regions when across=true. |
+| `range.unmerge` | api | Remove merged regions intersecting the target range. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip. |
@@ -1717,6 +1721,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
 | `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
+| `worksheet.mergeCells` | api | Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content. |
+| `worksheet.unmergeCells` | api | Remove every merged region intersecting an A1 range without discarding the retained upper-left content. |
 
 ### workbook details
 
@@ -3141,6 +3147,22 @@ Assign a validation rule to a range or use sheet.dataValidations.add({ range, ru
 
 - `validation` (object) — Inspectable data-validation rule anchored to the range.
 
+#### `range.fillDown`
+
+Copy top-row contents and formatting down the range while translating relative A1 formula references.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after top-row contents/formats are filled down with relative formula translation.
+
+#### `range.fillRight`
+
+Copy left-column contents and formatting right across the range while translating relative A1 formula references.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after left-column contents/formats are filled right with relative formula translation.
+
 #### `range.format`
 
 Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade.
@@ -3183,6 +3205,26 @@ Measure explicit/wrapped range text deterministically and set native custom heig
 **Schema returns:**
 
 - `range` (Range) — The same range after deterministic custom row heights are applied.
+
+#### `range.merge`
+
+Merge the target range as one region or as separate row-wise regions when across=true.
+
+**Schema parameters:**
+
+- `across` (boolean) — Merge each target row independently when true.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after merge creation.
+
+#### `range.unmerge`
+
+Remove merged regions intersecting the target range.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after intersecting merges are removed.
 
 #### `sheet.charts.add`
 
@@ -3755,4 +3797,29 @@ Select an A1 range for values, formulas, formatting, merge, fill, and copy opera
 **Schema returns:**
 
 - `range` (Range) — Editable range facade for values, formulas, formatting, and rules.
+
+#### `worksheet.mergeCells`
+
+Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content.
+
+**Schema parameters:**
+
+- `address` (string|Range) required — A1 range to merge.
+- `across` (boolean) — Merge each row as a separate region instead of one rectangular region.
+
+**Schema returns:**
+
+- `worksheet` (Worksheet) — The same worksheet with native merged-range state.
+
+#### `worksheet.unmergeCells`
+
+Remove every merged region intersecting an A1 range without discarding the retained upper-left content.
+
+**Schema parameters:**
+
+- `address` (string|Range) required — A1 range whose intersecting merged regions should be removed.
+
+**Schema returns:**
+
+- `worksheet` (Worksheet) — The same worksheet after intersecting merges are removed.
 

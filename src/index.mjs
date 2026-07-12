@@ -6074,7 +6074,9 @@ function parseSharedStringsXml(xml = "") {
 function normalizeXlsxColor(value, fallback = "000000") {
   const raw = String(value || fallback).trim();
   const token = resolveColorToken(raw, raw);
-  return String(token || fallback).replace(/^#/, "").replace(/^FF/i, "").slice(0, 6).padEnd(6, "0").toUpperCase();
+  const hex = String(token || fallback).replace(/^#/, "");
+  const rgb = /^[0-9a-fA-F]{8}$/.test(hex) ? hex.slice(2) : hex;
+  return rgb.slice(0, 6).padEnd(6, "0").toUpperCase();
 }
 
 function normalizeXlsxBorder(style = {}) {
@@ -6256,9 +6258,9 @@ function parseXlsxStylesXml(xml = "") {
   const bordersBody = /<borders\b[^>]*>([\s\S]*?)<\/borders>/.exec(text)?.[1] || "";
   const borders = [...bordersBody.matchAll(/<border>([\s\S]*?)<\/border>/g)].map((match) => parseXlsxBorderStyle(match[1]));
   const xfsBody = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(text)?.[1] || "";
-  const styles = [...xfsBody.matchAll(/<xf\b([^>]*)(?:\/>|>([\s\S]*?)<\/xf>)/g)].map((match) => {
-    const attrs = parseAttrs(match[1]);
-    const body = match[2] || "";
+  const styles = [...xfsBody.matchAll(/<xf\b([^>]*)\/>|<xf\b([^>]*)>([\s\S]*?)<\/xf>/g)].map((match) => {
+    const attrs = parseAttrs(match[1] || match[2]);
+    const body = match[3] || "";
     const font = fonts[Number(attrs.fontId || 0)] || {};
     const fill = fills[Number(attrs.fillId || 0)];
     const border = borders[Number(attrs.borderId || 0)];
