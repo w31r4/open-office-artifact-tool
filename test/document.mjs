@@ -90,10 +90,10 @@ const table = document.addTable({
 table.getCell(2, 1).value = "anchored";
 const customListParent = document.addListItem("Lettered evidence group", { listType: "number", level: 0, numberFormat: "upperLetter", start: 2, levelText: "%1)", numberingId: 42, name: "lettered-evidence" });
 const customListChild = document.addListItem("Nested roman evidence", { listType: "number", level: 1, numberFormat: "lowerRoman", start: 3, levelText: "%1.%2)", numberingId: 42, name: "roman-evidence" });
-const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z", resolved: true });
+const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z", dateUtc: "2026-07-11T08:10:00+08:00", durableId: "0000A001", person: { providerId: "None", userId: "reviewer@example.test" }, resolved: true });
 const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
 const linkComment = document.addComment(hyperlink, "Verify the native hyperlink target.", { author: "Link Reviewer", initials: "LR", date: "2026-07-11T00:18:00.000Z" });
-const commentReply = document.replyToComment(comment, "Heading language is now approved.", { author: "Editor", initials: "ED", date: "2026-07-11T00:20:00.000Z" });
+const commentReply = document.replyToComment(comment, "Heading language is now approved.", { author: "Editor", initials: "ED", date: "2026-07-11T00:20:00.000Z", durableId: "0000A004", person: { providerId: "None", userId: "editor@example.test" } });
 assert.equal(commentReply.parentId, comment.id);
 assert.equal(commentReply.targetId, comment.targetId);
 
@@ -245,6 +245,19 @@ const invalidCommentParaIdDocument = DocumentModel.create({ paragraphs: ["Invali
 invalidCommentParaIdDocument.addComment(invalidCommentParaIdDocument.blocks[0], "Bad paraId", { paraId: "123" });
 assert.ok(invalidCommentParaIdDocument.verify().issues.some((issue) => issue.type === "invalidCommentParaId"));
 await assert.rejects(() => DocumentFile.exportDocx(invalidCommentParaIdDocument), /exactly eight hexadecimal digits/);
+const invalidCommentDurableIdDocument = DocumentModel.create({ paragraphs: ["Invalid durableId fixture"] });
+invalidCommentDurableIdDocument.addComment(invalidCommentDurableIdDocument.blocks[0], "Bad durableId", { durableId: "7FFFFFFF" });
+assert.ok(invalidCommentDurableIdDocument.verify().issues.some((issue) => issue.type === "invalidCommentDurableId"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidCommentDurableIdDocument), /greater than 0 and less than 7FFFFFFF/);
+const invalidCommentDateUtcDocument = DocumentModel.create({ paragraphs: ["Invalid dateUtc fixture"] });
+invalidCommentDateUtcDocument.addComment(invalidCommentDateUtcDocument.blocks[0], "Bad dateUtc", { dateUtc: "not-a-date" });
+assert.ok(invalidCommentDateUtcDocument.verify().issues.some((issue) => issue.type === "invalidCommentDateUtc"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidCommentDateUtcDocument), /dateUtc must be a valid date string/);
+const invalidPlaceholderReplyDocument = DocumentModel.create({ paragraphs: ["Invalid placeholder reply fixture"] });
+const placeholderRoot = invalidPlaceholderReplyDocument.addComment(invalidPlaceholderReplyDocument.blocks[0], "Root");
+invalidPlaceholderReplyDocument.replyToComment(placeholderRoot, "Reply", { intelligentPlaceholder: true });
+assert.ok(invalidPlaceholderReplyDocument.verify().issues.some((issue) => issue.type === "invalidCommentReplyPlaceholder"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidPlaceholderReplyDocument), /must not be an intelligent placeholder/);
 const invalidListDocument = DocumentModel.create({ paragraphs: ["Invalid list fixture"] });
 invalidListDocument.addListItem("Too deep", { level: 9, start: 0 });
 assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListLevel"));
@@ -358,6 +371,9 @@ const zip = await JSZip.loadAsync(docxBytes);
 const documentXml = await zip.file("word/document.xml").async("text");
 const commentsXml = await zip.file("word/comments.xml").async("text");
 const commentsExtendedXml = await zip.file("word/commentsExtended.xml").async("text");
+const commentsIdsXml = await zip.file("word/commentsIds.xml").async("text");
+const commentsExtensibleXml = await zip.file("word/commentsExtensible.xml").async("text");
+const peopleXml = await zip.file("word/people.xml").async("text");
 const numberingXml = await zip.file("word/numbering.xml").async("text");
 const stylesXml = await zip.file("word/styles.xml").async("text");
 const themeXml = await zip.file("word/theme/theme1.xml").async("text");
@@ -408,6 +424,11 @@ assert.match(commentsXml, /w:id="0"[\s\S]*?<w:p w14:paraId="00000001">/);
 assert.match(commentsXml, /w:id="3"[\s\S]*?<w:p w14:paraId="00000004">[\s\S]*?Heading language is now approved/);
 assert.match(commentsExtendedXml, /<w15:commentEx w15:paraId="00000001" w15:done="1"\/>/);
 assert.match(commentsExtendedXml, /<w15:commentEx w15:paraId="00000004" w15:paraIdParent="00000001" w15:done="0"\/>/);
+assert.match(commentsIdsXml, /<w16cid:commentId w16cid:paraId="00000001" w16cid:durableId="0000A001"\/>/);
+assert.match(commentsIdsXml, /<w16cid:commentId w16cid:paraId="00000004" w16cid:durableId="0000A004"\/>/);
+assert.match(commentsExtensibleXml, /<w16cex:commentExtensible w16cex:durableId="0000A001" w16cex:dateUtc="2026-07-11T00:10:00\.000Z"\/>/);
+assert.match(peopleXml, /<w15:person w15:author="Reviewer"><w15:presenceInfo w15:providerId="None" w15:userId="reviewer@example\.test"\/><\/w15:person>/);
+assert.match(peopleXml, /<w15:person w15:author="Editor"><w15:presenceInfo w15:providerId="None" w15:userId="editor@example\.test"\/><\/w15:person>/);
 assert.doesNotMatch(documentXml, /<w:commentRangeStart w:id="3"\/>/);
 const exportedTableXml = /<w:tbl[\s\S]*?<\/w:tbl>/.exec(documentXml)?.[0] || "";
 assert.match(exportedTableXml, /<w:commentRangeStart w:id="1"\/>/);
@@ -431,6 +452,9 @@ assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/offi
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/footer" Target="footer3\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/settings" Target="settings\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2011\/relationships\/commentsExtended" Target="commentsExtended\.xml"/);
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2016\/09\/relationships\/commentsIds" Target="commentsIds\.xml"/);
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2018\/08\/relationships\/commentsExtensible" Target="commentsExtensible\.xml"/);
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2011\/relationships\/people" Target="people\.xml"/);
 assert.match(documentXml, /<w:headerReference w:type="default" r:id="[^"]+"\/>/);
 assert.match(documentXml, /<w:headerReference w:type="first" r:id="[^"]+"\/>/);
 assert.match(documentXml, /<w:footerReference w:type="even" r:id="[^"]+"\/>/);
@@ -463,6 +487,9 @@ const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
 assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
 assert.match(contentTypesXml, /PartName="\/word\/settings\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.settings\+xml"/);
 assert.match(contentTypesXml, /PartName="\/word\/commentsExtended\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.commentsExtended\+xml"/);
+assert.match(contentTypesXml, /PartName="\/word\/commentsIds\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.commentsIds\+xml"/);
+assert.match(contentTypesXml, /PartName="\/word\/commentsExtensible\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.commentsExtensible\+xml"/);
+assert.match(contentTypesXml, /PartName="\/word\/people\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.people\+xml"/);
 assert.match(contentTypesXml, /PartName="\/word\/theme\/theme1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.theme\+xml"/);
 const packageInspect = await DocumentFile.inspectDocx(docx, { includeText: true, maxChars: 12000 });
 assert.equal(packageInspect.ok, true);
@@ -520,6 +547,14 @@ const relocatedCommentsDocx = await DocumentFile.patchDocx(docx, [
 ]);
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsExtended.xml", xml: commentsExtendedXml.replace('w15:paraIdParent="00000001"', 'w15:paraIdParent="DEADBEEF"') }]), /docxCommentExParentNotFound/);
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsExtended.xml", xml: commentsExtendedXml.replace('w15:paraId="00000004"', 'w15:paraId="00000001"') }]), /docxCommentExParaIdDuplicate/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsIds.xml", xml: commentsIdsXml.replace('w16cid:durableId="0000A004"', 'w16cid:durableId="0000A001"') }]), /docxCommentDurableIdDuplicate/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsIds.xml", xml: commentsIdsXml.replace('w16cid:durableId="0000A001"', 'w16cid:durableId="7FFFFFFF"') }]), /docxCommentDurableIdInvalid/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsIds.xml", xml: commentsIdsXml.replace(/<w16cid:commentId w16cid:paraId="00000001"[^>]*\/>/, "") }]), /docxCommentIdMappingMissing/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsExtensible.xml", xml: commentsExtensibleXml.replace('w16cex:durableId="0000A001"', 'w16cex:durableId="0000BEEF"') }]), /docxCommentExtensibleReferenceNotFound/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsExtensible.xml", xml: commentsExtensibleXml.replace('w16cex:dateUtc="2026-07-11T00:10:00.000Z"', 'w16cex:dateUtc="2026-07-11T08:10:00+08:00"') }]), /docxCommentExtensibleDateUtcInvalid/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/commentsExtensible.xml", xml: commentsExtensibleXml.replace('w16cex:durableId="0000A004"', 'w16cex:durableId="0000A004" w16cex:intelligentPlaceholder="1"') }]), /docxCommentExtensibleReplyPlaceholderInvalid/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/people.xml", xml: peopleXml.replace('w15:author="Editor"', 'w15:author="Reviewer"') }]), /docxPersonAuthorDuplicate/);
+await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/people.xml", xml: peopleXml.replace('w15:author="Editor"', 'w15:author="Unknown Reviewer"') }]), /docxPersonAuthorNotFound/);
 const relocatedCommentsExtendedDocx = await DocumentFile.patchDocx(relocatedCommentsDocx, [
   { path: "word/commentsExtended.xml", remove: true },
   { path: "word/review/comments-extended-relocated.xml", xml: commentsExtendedXml, recipe: { kind: "commentsExtended", source: "word/document.xml", id: "rIdRelocatedCommentsExtended" } },
@@ -534,6 +569,24 @@ const relocatedExtendedRoot = relocatedCommentsExtendedNative.comments.find((ite
 const relocatedExtendedReply = relocatedCommentsExtendedNative.comments.find((item) => item.text === "Heading language is now approved.");
 assert.equal(relocatedExtendedRoot?.resolved, true);
 assert.equal(relocatedExtendedReply?.parentId, relocatedExtendedRoot?.id);
+const relocatedModernCommentPartsDocx = await DocumentFile.patchDocx(relocatedCommentsExtendedDocx, [
+  { path: "word/commentsIds.xml", remove: true },
+  { path: "word/commentsExtensible.xml", remove: true },
+  { path: "word/people.xml", remove: true },
+  { path: "word/review/comments-ids-relocated.xml", xml: commentsIdsXml, recipe: { kind: "commentsIds", source: "word/document.xml", id: "rIdRelocatedCommentsIds" } },
+  { path: "word/review/comments-extensible-relocated.xml", xml: commentsExtensibleXml, recipe: { kind: "commentsExtensible", source: "word/document.xml", id: "rIdRelocatedCommentsExtensible" } },
+  { path: "word/review/people-relocated.xml", xml: peopleXml, recipe: { kind: "people", source: "word/document.xml", id: "rIdRelocatedPeople" } },
+]);
+const relocatedModernInspect = await DocumentFile.inspectDocx(relocatedModernCommentPartsDocx);
+assert.equal(relocatedModernInspect.ok, true, JSON.stringify(relocatedModernInspect.issues));
+assert.ok(relocatedModernInspect.parts.some((part) => part.path === "word/review/comments-ids-relocated.xml" && part.contentType.endsWith("commentsIds+xml")));
+assert.ok(relocatedModernInspect.parts.some((part) => part.path === "word/review/comments-extensible-relocated.xml" && part.contentType.endsWith("commentsExtensible+xml")));
+assert.ok(relocatedModernInspect.parts.some((part) => part.path === "word/review/people-relocated.xml" && part.contentType.endsWith("people+xml")));
+const relocatedModernNative = await DocumentFile.importDocx(relocatedModernCommentPartsDocx, { preferNative: true });
+const relocatedModernRoot = relocatedModernNative.comments.find((item) => item.text === "Check this heading before final export.");
+assert.equal(relocatedModernRoot?.durableId, "0000A001");
+assert.equal(relocatedModernRoot?.dateUtc, "2026-07-11T00:10:00.000Z");
+assert.deepEqual(relocatedModernRoot?.person, { providerId: "None", userId: "reviewer@example.test" });
 const relocatedCommentsInspect = await DocumentFile.inspectDocx(relocatedCommentsDocx);
 assert.equal(relocatedCommentsInspect.ok, true);
 assert.ok(relocatedCommentsInspect.parts.some((part) => part.path === "word/review/comments-relocated.xml" && part.contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"));
@@ -672,11 +725,19 @@ const nativeCommentRoot = nativeOnlyLoaded.comments.find((item) => item.text ===
 const nativeCommentReply = nativeOnlyLoaded.comments.find((item) => item.text === "Heading language is now approved.");
 assert.equal(nativeCommentRoot?.resolved, true);
 assert.equal(nativeCommentRoot?.paraId, "00000001");
+assert.equal(nativeCommentRoot?.durableId, "0000A001");
+assert.equal(nativeCommentRoot?.dateUtc, "2026-07-11T00:10:00.000Z");
+assert.deepEqual(nativeCommentRoot?.person, { providerId: "None", userId: "reviewer@example.test" });
 assert.equal(nativeCommentReply?.paraId, "00000004");
+assert.equal(nativeCommentReply?.durableId, "0000A004");
+assert.deepEqual(nativeCommentReply?.person, { providerId: "None", userId: "editor@example.test" });
 assert.equal(nativeCommentReply?.parentId, nativeCommentRoot?.id);
 assert.equal(nativeCommentReply?.targetId, nativeCommentRoot?.targetId);
 const nativeCommentRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await DocumentFile.exportDocx(nativeOnlyLoaded)).arrayBuffer()));
 assert.match(await nativeCommentRoundtripZip.file("word/commentsExtended.xml").async("text"), /w15:paraId="00000004" w15:paraIdParent="00000001"/);
+assert.match(await nativeCommentRoundtripZip.file("word/commentsIds.xml").async("text"), /w16cid:paraId="00000001" w16cid:durableId="0000A001"/);
+assert.match(await nativeCommentRoundtripZip.file("word/commentsExtensible.xml").async("text"), /w16cex:durableId="0000A001" w16cex:dateUtc="2026-07-11T00:10:00\.000Z"/);
+assert.match(await nativeCommentRoundtripZip.file("word/people.xml").async("text"), /w15:author="Reviewer"[\s\S]*?w15:userId="reviewer@example\.test"/);
 const nativeOnlyHyperlink = nativeOnlyLoaded.blocks.find((item) => item.kind === "hyperlink");
 assert.equal(nativeOnlyHyperlink?.text, "w31r4 research note");
 assert.equal(nativeOnlyHyperlink?.url, "https://example.com/research");
@@ -694,6 +755,9 @@ const alternateCommentPrefixZip = await JSZip.loadAsync(docxBytes);
 alternateCommentPrefixZip.remove("word/open-office-artifact.json");
 alternateCommentPrefixZip.file("word/comments.xml", commentsXml.replace("xmlns:w14=", "xmlns:c14=").replaceAll("w14:", "c14:"));
 alternateCommentPrefixZip.file("word/commentsExtended.xml", commentsExtendedXml.replace("xmlns:w15=", "xmlns:ce=").replaceAll("w15:", "ce:"));
+alternateCommentPrefixZip.file("word/commentsIds.xml", commentsIdsXml.replace("xmlns:w16cid=", "xmlns:ci=").replaceAll("w16cid:", "ci:"));
+alternateCommentPrefixZip.file("word/commentsExtensible.xml", commentsExtensibleXml.replace("xmlns:w16cex=", "xmlns:cx=").replaceAll("w16cex:", "cx:"));
+alternateCommentPrefixZip.file("word/people.xml", peopleXml.replace("xmlns:w15=", "xmlns:pe=").replaceAll("w15:", "pe:"));
 const alternateCommentPrefixDocx = new FileBlob(await alternateCommentPrefixZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
 const alternateCommentPrefixInspect = await DocumentFile.inspectDocx(alternateCommentPrefixDocx);
 assert.equal(alternateCommentPrefixInspect.ok, true, JSON.stringify(alternateCommentPrefixInspect.issues));
@@ -701,6 +765,8 @@ const alternateCommentPrefixLoaded = await DocumentFile.importDocx(alternateComm
 const alternateCommentRoot = alternateCommentPrefixLoaded.comments.find((item) => item.text === "Check this heading before final export.");
 const alternateCommentReply = alternateCommentPrefixLoaded.comments.find((item) => item.text === "Heading language is now approved.");
 assert.equal(alternateCommentRoot?.resolved, true);
+assert.equal(alternateCommentRoot?.durableId, "0000A001");
+assert.deepEqual(alternateCommentRoot?.person, { providerId: "None", userId: "reviewer@example.test" });
 assert.equal(alternateCommentReply?.parentId, alternateCommentRoot?.id);
 const relocatedThemeZip = await JSZip.loadAsync(docxBytes);
 relocatedThemeZip.remove("word/open-office-artifact.json");

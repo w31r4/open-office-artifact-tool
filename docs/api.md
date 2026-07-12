@@ -8,7 +8,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | --- | --- | --- |
 | `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
 | `document.addCitation` | api | Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker. |
-| `document.addComment` | api | Attach a Word comment with classic range/reference anchors plus Office 2013 commentsExtended paraId, resolution, and thread metadata. |
+| `document.addComment` | api | Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity. |
 | `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references. |
@@ -30,10 +30,10 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown paragraph/character styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic comment anchors, commentsExtended replies/resolution, headers/footers, links, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, commentsExtended replies/resolution, headers, and footers. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, links, fields, citations, and metadata. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, durable comment identities/people metadata, headers, and footers. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended parts, and numbering assignments; atomically reject dangling packages and invalid comment thread graphs. |
+| `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks. |
 
 ### document details
@@ -70,7 +70,7 @@ Append a citation block with visible text and structured metadata; native import
 
 #### `document.addComment`
 
-Attach a Word comment with classic range/reference anchors plus Office 2013 commentsExtended paraId, resolution, and thread metadata.
+Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity.
 
 **Schema parameters:**
 
@@ -82,6 +82,10 @@ Attach a Word comment with classic range/reference anchors plus Office 2013 comm
 - `resolved` (boolean) — Initial resolution state written to commentsExtended w15:done.
 - `parentId` (string) — Optional parent comment ID for a threaded reply; replyTo and replyToId aliases are accepted.
 - `paraId` (string) — Optional preserved eight-digit hexadecimal commentsExtended paragraph identity.
+- `durableId` (string) — Optional preserved Office 2019 eight-digit comment identity; values must be greater than 00000000 and less than 7FFFFFFF.
+- `dateUtc` (string) — Optional Office 2021 UTC timestamp; normalized to an ISO Z timestamp on export.
+- `person` (object) — Optional Word people presence identity with providerId and userId; defaults to provider None and the author name.
+- `intelligentPlaceholder` (boolean) — Office 2021 follow-up placeholder flag; forbidden on replies.
 
 **Schema returns:**
 
@@ -359,6 +363,9 @@ Reply to a document comment on the same target through commentsExtended paraIdPa
 - `initials` (string) — Reply author initials.
 - `date` (string) — Optional reply timestamp.
 - `resolved` (boolean) — Reply resolution state.
+- `durableId` (string) — Optional preserved Office 2019 durable comment identity.
+- `dateUtc` (string) — Optional Office 2021 UTC timestamp.
+- `person` (object) — Optional providerId/userId presence identity for the reply author.
 
 **Schema returns:**
 
@@ -427,7 +434,7 @@ Return QA issues for fake lists, invalid links/citations, unknown paragraph/char
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic comment anchors, commentsExtended replies/resolution, headers/footers, links, fields, citations, and metadata.
+Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, links, fields, citations, and metadata.
 
 **Schema parameters:**
 
@@ -439,7 +446,7 @@ Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classi
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, commentsExtended replies/resolution, headers, and footers.
+Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, durable comment identities/people metadata, headers, and footers.
 
 **Schema parameters:**
 
@@ -470,7 +477,7 @@ Inspect bounded DOCX parts, content types, relationships, and namespace-aware so
 
 #### `DocumentFile.patchDocx`
 
-Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended parts, and numbering assignments; atomically reject dangling packages and invalid comment thread graphs.
+Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs.
 
 **Examples:**
 
@@ -486,7 +493,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports settings mutations, section-scoped header/footer references, batch classic-comment anchors, commentsExtended relationships, and numbering assignments for block, paragraph, or table-cell targets.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports settings mutations, section-scoped header/footer references, batch classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people relationships, and numbering assignments for block, paragraph, or table-cell targets.
 - `sourceReference` (boolean|object) — Opt-in semantic XML mutation. Settings accepts trackRevisions/updateFields/evenAndOddHeaders/mirrorMargins booleans and passwordless documentProtection; comments accepts { anchors: [...] }; numbering accepts { assignments: [...] }.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 

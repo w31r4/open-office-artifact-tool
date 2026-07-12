@@ -62,9 +62,9 @@
     { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
   ],
   "comments": [
-    { "name": "recommendation-review", "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "resolved": true, "text": "Confirm this recommendation after native render review." },
-    { "name": "recommendation-reply", "parentName": "recommendation-review", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:22:00.000Z", "text": "Recommendation wording is approved." },
-    { "targetName": "readiness-table", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:25:00.000Z", "text": "Confirm the table comment anchor survives native import." }
+    { "name": "recommendation-review", "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "dateUtc": "2026-07-11T08:20:00+08:00", "durableId": "0010A001", "person": { "providerId": "None", "userId": "qa-agent@example.test" }, "resolved": true, "text": "Confirm this recommendation after native render review." },
+    { "name": "recommendation-reply", "parentName": "recommendation-review", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:22:00.000Z", "durableId": "0010A002", "person": { "providerId": "None", "userId": "maintainer@example.test" }, "text": "Recommendation wording is approved." },
+    { "targetName": "readiness-table", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:25:00.000Z", "person": { "providerId": "None", "userId": "maintainer@example.test" }, "text": "Confirm the table comment anchor survives native import." }
   ],
   "expectInspect": [
     { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
