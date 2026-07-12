@@ -3,6 +3,7 @@ import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { resolveColorToken } from "./shared/colors.mjs";
+import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
 
@@ -923,12 +924,12 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.WORKDAY", category: "date-time", summary: "Move forward or backward by working days while skipping weekends and optional holidays.", examples: ["=WORKDAY(A1,10,Holidays)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.NETWORKDAYS.INTL", category: "date-time", summary: "Count inclusive workdays with a numbered or Monday-first seven-character custom weekend and optional holidays.", examples: ["=NETWORKDAYS.INTL(A1,B1,7,Holidays)", "=NETWORKDAYS.INTL(A1,B1,\"0000011\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.WORKDAY.INTL", category: "date-time", summary: "Move by workdays using a numbered or Monday-first seven-character custom weekend and optional holidays.", examples: ["=WORKDAY.INTL(A1,10,11,Holidays)", "=WORKDAY.INTL(A1,10,\"0000011\")"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values in a range that match a criterion.", examples: ["=COUNTIF(A1:A10,\">0\")"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges all match their criteria.", examples: ["=COUNTIFS(A1:A10,\"East\",B1:B10,\">=10\")"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIF", category: "statistical", summary: "Average values whose corresponding criteria range entries match a criterion.", examples: ["=AVERAGEIF(A1:A10,\"East\",B1:B10)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIFS", category: "statistical", summary: "Average values where all supplied criteria ranges match their criteria.", examples: ["=AVERAGEIFS(C1:C10,A1:A10,\"East\",B1:B10,\">=10\")"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.SUMIF", category: "math-trig", summary: "Sum values whose corresponding criteria range entries match a criterion.", examples: ["=SUMIF(A1:A10,\"East\",B1:B10)"] },
-  { artifactKind: "workbook", kind: "formula", name: "fx.SUMIFS", category: "math-trig", summary: "Sum values where all supplied criteria ranges match their criteria.", examples: ["=SUMIFS(C1:C10,A1:A10,\"East\",B1:B10,\">=10\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIF", category: "statistical", summary: "Count values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcard semantics.", examples: ["=COUNTIF(A1:A10,\"East*\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.COUNTIFS", category: "statistical", summary: "Count rows where multiple criteria ranges of the same size match case-insensitive comparison or wildcard criteria.", examples: ["=COUNTIFS(A1:A10,\"East*\",B1:B10,\">=10\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIF", category: "statistical", summary: "Average values whose corresponding entries match case-insensitive comparison or wildcard criteria.", examples: ["=AVERAGEIF(A1:A10,\"East*\",B1:B10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGEIFS", category: "statistical", summary: "Average values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria.", examples: ["=AVERAGEIFS(C1:C10,A1:A10,\"East*\",B1:B10,\">=10\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SUMIF", category: "math-trig", summary: "Sum corresponding values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcards.", examples: ["=SUMIF(A1:A10,\"East*\",B1:B10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SUMIFS", category: "math-trig", summary: "Sum values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria.", examples: ["=SUMIFS(C1:C10,A1:A10,\"East*\",B1:B10,\">=10\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUMPRODUCT", category: "math-trig", summary: "Multiply corresponding numeric values in equally sized arrays and return the sum of those products.", examples: ["=SUMPRODUCT(A1:A10,B1:B10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.VLOOKUP", category: "lookup-reference", summary: "Look up a value in the first column of a table range and return a value from another column.", examples: ["=VLOOKUP(\"Beta\",A2:B4,2,FALSE)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.HLOOKUP", category: "lookup-reference", summary: "Look up a value in the first row of a table range and return a value from another row.", examples: ["=HLOOKUP(\"Revenue\",A1:D4,3,FALSE)"] },
@@ -4967,26 +4968,6 @@ function evaluateFormulaCondition(sheet, expr, context = {}) {
   return formulaTruthy(formulaScalar(sheet, text, context));
 }
 
-function matchesCriteria(value, criteria) {
-  const raw = formulaText(criteria).trim();
-  const match = /^(>=|<=|<>|=|>|<)?\s*(.*)$/.exec(raw);
-  const op = match?.[1] || "=";
-  const expectedRaw = match?.[2] ?? raw;
-  const actualNum = Number(value);
-  const expectedNum = Number(expectedRaw);
-  const numeric = Number.isFinite(actualNum) && Number.isFinite(expectedNum) && expectedRaw !== "";
-  const actual = numeric ? actualNum : formulaText(value);
-  const expected = numeric ? expectedNum : expectedRaw.replace(/^"|"$/g, "");
-  switch (op) {
-    case ">=": return actual >= expected;
-    case "<=": return actual <= expected;
-    case "<>": return actual !== expected;
-    case ">": return actual > expected;
-    case "<": return actual < expected;
-    default: return actual === expected;
-  }
-}
-
 function aggregateFormulaValues(values, fnName) {
   const errors = values.map(formulaErrorCode).filter(Boolean);
   if (errors.length) return errors[0];
@@ -5305,6 +5286,12 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     const value = formulaScalar(sheet, args[index], context);
     return value === undefined ? fallback : value;
   };
+  const criteriaRange = (part) => {
+    const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, part, context) || [[formulaScalar(sheet, part, context)]]);
+    const columns = Math.max(0, ...matrix.map((row) => row.length));
+    return { values: matrix.flat(), rows: matrix.length, columns, rectangular: matrix.every((row) => row.length === columns) };
+  };
+  const sameCriteriaShape = (left, right) => left.rectangular && right.rectangular && left.rows === right.rows && left.columns === right.columns;
   switch (fnName) {
     case "SUM":
     case "AVERAGE":
@@ -5423,13 +5410,16 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "UPPER": return formulaText(scalar(0, "")).toUpperCase();
     case "LOWER": return formulaText(scalar(0, "")).toLowerCase();
     case "TRIM": return formulaText(scalar(0, "")).trim().replace(/\s+/g, " ");
-    case "COUNTIF": { const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesCriteria(value, criteria)).length; }
+    case "COUNTIF": { if (args.length < 2) return "#VALUE!"; const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesFormulaCriteria(value, criteria)).length; }
     case "COUNTIFS": {
+      if (args.length < 2 || args.length % 2 !== 0) return "#VALUE!";
       const pairs = [];
-      for (let i = 0; i < args.length; i += 2) pairs.push({ range: values([args[i]]), criteria: scalar(i + 1, "") });
-      const length = Math.max(0, ...pairs.map((pair) => pair.range.length));
+      for (let i = 0; i < args.length; i += 2) pairs.push({ range: criteriaRange(args[i]), criteria: scalar(i + 1, "") });
+      const firstRange = pairs[0]?.range;
+      if (!firstRange || pairs.some((pair) => !sameCriteriaShape(pair.range, firstRange))) return "#VALUE!";
+      const length = firstRange.values.length;
       let count = 0;
-      for (let index = 0; index < length; index++) if (pairs.every((pair) => matchesCriteria(pair.range[index], pair.criteria))) count += 1;
+      for (let index = 0; index < length; index++) if (pairs.every((pair) => matchesFormulaCriteria(pair.range.values[index], pair.criteria))) count += 1;
       return count;
     }
     case "SEQUENCE": {
@@ -5569,34 +5559,53 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       }));
     }
     case "SUMIF": {
+      if (args.length < 2) return "#VALUE!";
       const range = values([args[0]]);
       const criteria = scalar(1, "");
       const sumRange = args[2] ? values([args[2]]) : range;
-      return range.reduce((sum, value, index) => sum + (matchesCriteria(value, criteria) ? formulaNumber(sumRange[index]) || 0 : 0), 0);
+      let sum = 0;
+      for (let index = 0; index < range.length; index += 1) {
+        if (!matchesFormulaCriteria(range[index], criteria)) continue;
+        const number = formulaNumber(sumRange[index]);
+        if (formulaErrorCode(number)) return number;
+        sum += number;
+      }
+      return sum;
     }
     case "SUMIFS": {
-      const sumRange = values([args[0]]);
+      if (args.length < 3 || args.length % 2 === 0) return "#VALUE!";
+      const sumRange = criteriaRange(args[0]);
       const pairs = [];
-      for (let i = 1; i < args.length; i += 2) pairs.push({ range: values([args[i]]), criteria: scalar(i + 1, "") });
-      return sumRange.reduce((sum, value, index) => sum + (pairs.every((pair) => matchesCriteria(pair.range[index], pair.criteria)) ? formulaNumber(value) || 0 : 0), 0);
+      for (let i = 1; i < args.length; i += 2) pairs.push({ range: criteriaRange(args[i]), criteria: scalar(i + 1, "") });
+      if (pairs.some((pair) => !sameCriteriaShape(pair.range, sumRange))) return "#VALUE!";
+      let sum = 0;
+      for (let index = 0; index < sumRange.values.length; index += 1) {
+        if (!pairs.every((pair) => matchesFormulaCriteria(pair.range.values[index], pair.criteria))) continue;
+        const number = formulaNumber(sumRange.values[index]);
+        if (formulaErrorCode(number)) return number;
+        sum += number;
+      }
+      return sum;
     }
     case "AVERAGEIF": {
+      if (args.length < 2) return "#VALUE!";
       const range = values([args[0]]);
       const criteria = scalar(1, "");
       const averageRange = args[2] ? values([args[2]]) : range;
       if (averageRange.length !== range.length) return "#VALUE!";
-      const matched = averageRange.filter((_, index) => matchesCriteria(range[index], criteria));
+      const matched = averageRange.filter((_, index) => matchesFormulaCriteria(range[index], criteria));
       const error = matched.map(formulaErrorCode).find(Boolean);
       if (error) return error;
       const numbers = matched.filter((value) => value !== "" && value != null && Number.isFinite(Number(value))).map(Number);
       return numbers.length ? numbers.reduce((sum, value) => sum + value, 0) / numbers.length : "#DIV/0!";
     }
     case "AVERAGEIFS": {
-      const averageRange = values([args[0]]);
+      if (args.length < 3 || args.length % 2 === 0) return "#VALUE!";
+      const averageRange = criteriaRange(args[0]);
       const pairs = [];
-      for (let i = 1; i < args.length; i += 2) pairs.push({ range: values([args[i]]), criteria: scalar(i + 1, "") });
-      if (pairs.some((pair) => pair.range.length !== averageRange.length)) return "#VALUE!";
-      const matched = averageRange.filter((_, index) => pairs.every((pair) => matchesCriteria(pair.range[index], pair.criteria)));
+      for (let i = 1; i < args.length; i += 2) pairs.push({ range: criteriaRange(args[i]), criteria: scalar(i + 1, "") });
+      if (pairs.some((pair) => !sameCriteriaShape(pair.range, averageRange))) return "#VALUE!";
+      const matched = averageRange.values.filter((_, index) => pairs.every((pair) => matchesFormulaCriteria(pair.range.values[index], pair.criteria)));
       const error = matched.map(formulaErrorCode).find(Boolean);
       if (error) return error;
       const numbers = matched.filter((value) => value !== "" && value != null && Number.isFinite(Number(value))).map(Number);

@@ -16,6 +16,7 @@ for (const required of [
   "THIRD_PARTY_NOTICES.md",
   "src/index.mjs",
   "src/shared/colors.mjs",
+  "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/ooxml-styles.mjs",
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",

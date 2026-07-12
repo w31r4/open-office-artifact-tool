@@ -27,6 +27,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "range.fillRight"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitRows"));
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.structuredReferences")?.summary || "", /#This Row/);
+assert.match(HELP_CATALOG.find((item) => item.name === "fx.COUNTIF")?.summary || "", /wildcard/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));

@@ -52,6 +52,7 @@ try {
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.font.color, "#FFFFFF");
   assert.match(workbook.help("workbook.structuredReferences").ndjson, /special-character headers/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
+  assert.equal(workbook.worksheets.getItem("Summary").getRange("G14").values[0][0], 1);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
@@ -85,6 +86,7 @@ try {
     assert.equal(libreOfficeSummary.getRange("A15").format.fill, "#0F766E");
     assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
     assert.equal(libreOfficeSummary.getRange("A1").format.border.bottom.style, "double");
+    assert.equal(libreOfficeSummary.getRange("G14").values[0][0], 1);
   }
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);

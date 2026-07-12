@@ -460,6 +460,41 @@ assert.match(catalogBook.help("fx.AVERAGEIFS").ndjson, /all supplied criteria/);
 assert.match(catalogBook.help("fx.TEXTJOIN").ndjson, /delimiter/);
 assert.match(catalogBook.inspect({ kind: "formula", maxChars: 20000 }).ndjson, /XLOOKUP/);
 
+const criteriaBook = Workbook.create();
+const criteriaSheet = criteriaBook.worksheets.add("Criteria");
+criteriaSheet.getRange("A1:D8").values = [
+  ["Alpha", 1, "East", 1],
+  ["ALPINE", 2, "EAST", "#N/A"],
+  ["Beta", 3, "West", 3],
+  ["A*literal", 4, "East", 4],
+  ["A?literal", 5, "East", 5],
+  ["", 6, "East", 6],
+  [10, 7, "East", 7],
+  ["10", 8, "East", 8],
+];
+criteriaSheet.getRange("F1:F15").formulas = [
+  ["=COUNTIF(A1:A8,\"alp*\")"],
+  ["=COUNTIF(A1:A8,\"A~*literal\")"],
+  ["=COUNTIF(A1:A8,\"A~?literal\")"],
+  ["=COUNTIF(A1:A8,\"*\")"],
+  ["=COUNTIF(A1:A8,\"10\")"],
+  ["=SUMIF(A1:A8,\"alp*\",B1:B8)"],
+  ["=SUMIFS(B1:B8,A1:A8,\"a*\",C1:C8,\"east\")"],
+  ["=AVERAGEIF(A1:A8,\"alp*\",B1:B8)"],
+  ["=COUNTIFS(A1:A2,\"*\",C1:C3,\"east\")"],
+  ["=SUMIFS(B1:B2,A1:A3,\"*\")"],
+  ["=SUMIF(C1:C8,\"east\",D1:D8)"],
+  ["=COUNTIFS(A1:B2,\"*\",A1:D1,\"*\")"],
+  ["=SUMIFS(D1:D8,C1:C8,\"east\")"],
+  ["=AVERAGEIF(C1:C8,\"east\",D1:D8)"],
+  ["=AVERAGEIFS(D1:D8,C1:C8,\"east\")"],
+];
+criteriaBook.recalculate();
+assert.deepEqual(criteriaSheet.getRange("F1:F15").values.flat(), [2, 1, 1, 6, 2, 3, 12, 1.5, "#VALUE!", "#VALUE!", "#N/A", "#VALUE!", "#N/A", "#N/A", "#N/A"]);
+assert.match(criteriaBook.help("fx.SUMIFS").ndjson, /wildcard/);
+const criteriaRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(criteriaBook));
+assert.deepEqual(criteriaRoundtrip.worksheets.getItem("Criteria").getRange("F1:F15").values, criteriaSheet.getRange("F1:F15").values);
+
 const dateBook = Workbook.create();
 const dateSheet = dateBook.worksheets.add("Dates");
 dateSheet.getRange("A1:A2").values = [[45292], [45299]];

@@ -83,7 +83,7 @@
           "format": { "numberFormat": "0.0%" }
         },
         {
-          "range": "F1:G13",
+          "range": "F1:G14",
           "values": [
             ["Statistic", "Value"],
             ["Median", null],
@@ -97,11 +97,12 @@
             ["1904=0", null],
             ["Leap#", null],
             ["Intl#", null],
-            ["Intl+", null]
+            ["Intl+", null],
+            ["Jan wildcard", null]
           ]
         },
         {
-          "range": "G2:G13",
+          "range": "G2:G14",
           "formulas": [
             ["=MEDIAN(B2:B4)"],
             ["=LARGE(B2:B4,2)"],
@@ -114,7 +115,8 @@
             ["=DATE(1904,1,1)"],
             ["=DATE(2024,2,29)"],
             ["=NETWORKDAYS.INTL(DATE(1904,1,1),DATE(1904,1,7),7)"],
-            ["=WORKDAY.INTL(DATE(1904,1,1),1,7)"]
+            ["=WORKDAY.INTL(DATE(1904,1,1),1,7)"],
+            ["=COUNTIF(A2:A4,\"J*\")"]
           ]
         },
         {
@@ -124,7 +126,7 @@
             "font": { "bold": true, "color": "#FFFFFF" }
           }
         },
-        { "range": "F1:G13", "autofitColumns": true },
+        { "range": "F1:G14", "autofitColumns": true },
         {
           "range": "A15:G15",
           "values": [["Prepared by open-office-artifact-tool", null, null, null, null, null, null]],
@@ -154,8 +156,8 @@
     },
     {
       "sheet": "Summary",
-      "range": "G2:G13",
-      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889], [5], [2]]
+      "range": "G2:G14",
+      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889], [5], [2], [1]]
     }
   ],
   "qa": {

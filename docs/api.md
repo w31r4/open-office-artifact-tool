@@ -1599,15 +1599,15 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
-| `fx.AVERAGEIF` | formula | Average values whose corresponding criteria range entries match a criterion. |
-| `fx.AVERAGEIFS` | formula | Average values where all supplied criteria ranges match their criteria. |
+| `fx.AVERAGEIF` | formula | Average values whose corresponding entries match case-insensitive comparison or wildcard criteria. |
+| `fx.AVERAGEIFS` | formula | Average values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
 | `fx.CEILING` | formula | Round a number up to the nearest significance. |
 | `fx.CHOOSECOLS` | formula | Select and reorder one or more 1-based or negative column indexes from an array. |
 | `fx.CHOOSEROWS` | formula | Select and reorder one or more 1-based or negative row indexes from an array. |
 | `fx.CONCAT` | formula | Concatenate text values and ranges. |
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
-| `fx.COUNTIF` | formula | Count values in a range that match a criterion. |
-| `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges all match their criteria. |
+| `fx.COUNTIF` | formula | Count values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcard semantics. |
+| `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges of the same size match case-insensitive comparison or wildcard criteria. |
 | `fx.DATE` | formula | Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility. |
 | `fx.DAY` | formula | Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60. |
 | `fx.DAYS` | formula | Return the whole-day difference between two Excel date serials. |
@@ -1656,8 +1656,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.SMALL` | formula | Return the k-th smallest numeric value in an array or range. |
 | `fx.SORT` | formula | Sort a range by a 1-based column index and spill the sorted rows. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
-| `fx.SUMIF` | formula | Sum values whose corresponding criteria range entries match a criterion. |
-| `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges match their criteria. |
+| `fx.SUMIF` | formula | Sum corresponding values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcards. |
+| `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
 | `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
 | `fx.TAKE` | formula | Take rows and optional columns from the start or end of an array and spill the result. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
@@ -1779,11 +1779,11 @@ Average numeric values across arguments and ranges in the clean-room formula eng
 
 #### `fx.AVERAGEIF`
 
-Average values whose corresponding criteria range entries match a criterion.
+Average values whose corresponding entries match case-insensitive comparison or wildcard criteria.
 
 **Examples:**
 
-- =AVERAGEIF(A1:A10,"East",B1:B10)
+- =AVERAGEIF(A1:A10,"East*",B1:B10)
 
 **Schema parameters:**
 
@@ -1796,11 +1796,11 @@ Average values whose corresponding criteria range entries match a criterion.
 
 #### `fx.AVERAGEIFS`
 
-Average values where all supplied criteria ranges match their criteria.
+Average values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria.
 
 **Examples:**
 
-- =AVERAGEIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
+- =AVERAGEIFS(C1:C10,A1:A10,"East*",B1:B10,">=10")
 
 **Schema parameters:**
 
@@ -1898,11 +1898,11 @@ Count numeric values across arguments and ranges.
 
 #### `fx.COUNTIF`
 
-Count values in a range that match a criterion.
+Count values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcard semantics.
 
 **Examples:**
 
-- =COUNTIF(A1:A10,">0")
+- =COUNTIF(A1:A10,"East*")
 
 **Schema parameters:**
 
@@ -1915,11 +1915,11 @@ Count values in a range that match a criterion.
 
 #### `fx.COUNTIFS`
 
-Count rows where multiple criteria ranges all match their criteria.
+Count rows where multiple criteria ranges of the same size match case-insensitive comparison or wildcard criteria.
 
 **Examples:**
 
-- =COUNTIFS(A1:A10,"East",B1:B10,">=10")
+- =COUNTIFS(A1:A10,"East*",B1:B10,">=10")
 
 **Schema parameters:**
 
@@ -2753,11 +2753,11 @@ Sum numeric values across arguments and ranges.
 
 #### `fx.SUMIF`
 
-Sum values whose corresponding criteria range entries match a criterion.
+Sum corresponding values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcards.
 
 **Examples:**
 
-- =SUMIF(A1:A10,"East",B1:B10)
+- =SUMIF(A1:A10,"East*",B1:B10)
 
 **Schema parameters:**
 
@@ -2770,11 +2770,11 @@ Sum values whose corresponding criteria range entries match a criterion.
 
 #### `fx.SUMIFS`
 
-Sum values where all supplied criteria ranges match their criteria.
+Sum values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria.
 
 **Examples:**
 
-- =SUMIFS(C1:C10,A1:A10,"East",B1:B10,">=10")
+- =SUMIFS(C1:C10,A1:A10,"East*",B1:B10,">=10")
 
 **Schema parameters:**
 
