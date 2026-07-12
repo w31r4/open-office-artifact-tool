@@ -1,7 +1,7 @@
 import { pivotFormulaToOoxml } from "./pivot-formulas.mjs";
 import { PIVOT_DATE_FILTER_TYPES, pivotItemVisible } from "./pivot-filters.mjs";
 import { pivotDateKey } from "./pivot-dates.mjs";
-import { pivotGroupItems } from "./pivot-groups.mjs";
+import { PIVOT_CALENDAR_GROUP_TYPES, pivotGroupItems, pivotGroupValue } from "./pivot-groups.mjs";
 import { pivotValueLabel } from "./pivots.mjs";
 
 function decodeXml(value) {
@@ -65,7 +65,7 @@ function sharedItems(cacheFieldXml) {
 function cacheFieldItems(cacheFieldXml) {
   const shared = sharedItems(cacheFieldXml);
   if (shared.length) return shared;
-  return elements(body(cacheFieldXml, "groupItems"), "s").map((item) => attributes(item.opening).v).filter((item) => item != null);
+  return [...body(cacheFieldXml, "groupItems").matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:s|n|b|d|e|m)\b[^>]*\/?\s*>/g)].map((match) => parseSharedItem(match[0]));
 }
 
 export function parseWorkbookPivotCaches(xml = "") {
@@ -83,21 +83,37 @@ export function parsePivotCacheDefinition(xml = "") {
   const fieldEntries = elements(cacheFields, "cacheField");
   const fieldAttributes = fieldEntries.map((entry, index) => ({ ...attributes(entry.opening), name: attributes(entry.opening).name || `Field${index + 1}` }));
   const fields = fieldAttributes.map((entry) => entry.name);
+  const items = fieldEntries.map((entry) => cacheFieldItems(entry.xml));
   const groupFields = fieldEntries.flatMap((entry, index) => {
     const groupOpening = tag(entry.xml, "fieldGroup");
     const rangeOpening = tag(entry.xml, "rangePr");
-    if (!groupOpening || !rangeOpening) return [];
+    const discreteOpening = tag(entry.xml, "discretePr");
+    if (!groupOpening || (!rangeOpening && !discreteOpening)) return [];
     const groupAttrs = attributes(groupOpening);
-    const rangeAttrs = attributes(rangeOpening);
     const base = Number(groupAttrs.base);
     const parent = Number(groupAttrs.par);
-    if (!Number.isInteger(base) || base < 0 || base >= fields.length || !rangeAttrs.groupBy) return [];
+    if (!Number.isInteger(base) || base < 0 || base >= fields.length) return [];
+    if (discreteOpening) {
+      const mappings = elements(body(entry.xml, "discretePr"), "x").map((item) => Number(attributes(item.opening).v));
+      const grouped = new Map();
+      items[base].forEach((sourceItem, sourceIndex) => {
+        const groupIndex = mappings[sourceIndex];
+        const label = Number.isInteger(groupIndex) && groupIndex >= 0 && groupIndex < items[index].length ? items[index][groupIndex] : sourceItem;
+        if (String(label) === String(sourceItem)) return;
+        const key = String(label);
+        if (!grouped.has(key)) grouped.set(key, { name: key, items: [] });
+        grouped.get(key).items.push(sourceItem);
+      });
+      return [{ name: fields[index], sourceField: fields[base], groupBy: "discrete", groups: [...grouped.values()], items: items[index] }];
+    }
+    const rangeAttrs = attributes(rangeOpening);
+    if (!rangeAttrs.groupBy) return [];
     return [{
       name: fields[index],
       sourceField: fields[base],
       groupBy: rangeAttrs.groupBy,
       parent: Number.isInteger(parent) && parent >= 0 && parent < fields.length ? fields[parent] : undefined,
-      items: elements(body(entry.xml, "groupItems"), "s").map((item) => attributes(item.opening).v).filter((item) => item != null),
+      items: items[index],
       range: {
         autoStart: booleanAttribute(rangeAttrs.autoStart, true),
         autoEnd: booleanAttribute(rangeAttrs.autoEnd, true),
@@ -121,7 +137,7 @@ export function parsePivotCacheDefinition(xml = "") {
     sourceFields: fieldAttributes.filter((entry) => entry.formula == null && !groupFieldNames.has(entry.name) && booleanAttribute(entry.databaseField, true)).map((entry) => entry.name),
     groupFields,
     calculatedFields: fieldAttributes.filter((entry) => entry.formula != null).map((entry) => ({ name: entry.name, formula: entry.formula, numFmtId: Number(entry.numFmtId || 0) })),
-    items: fieldEntries.map((entry) => cacheFieldItems(entry.xml)),
+    items,
     refreshPolicy: {
       refreshOnLoad: booleanAttribute(rootAttrs.refreshOnLoad, false),
       saveData: booleanAttribute(rootAttrs.saveData, true),
@@ -240,6 +256,12 @@ function pivotGroupCacheFieldsXml(pivot, sourceFields) {
     const parent = group.parent ? allFields.indexOf(group.parent) : -1;
     const items = pivotGroupItems(pivot.sourceValues(), group, pivot.dateSystem, sourceFields);
     const groupItems = `<groupItems count="${items.length}">${items.map((value) => `<s v="${attrEscape(value)}"/>`).join("")}</groupItems>`;
+    if (group.groupBy === "discrete") {
+      const sourceItems = pivotFieldValues(pivot, base);
+      const mapping = sourceItems.map((value) => items.findIndex((item) => String(item) === String(pivotGroupValue(group, value, pivot.dateSystem))));
+      const discrete = `<discretePr count="${mapping.length}">${mapping.map((value) => `<x v="${Math.max(0, value)}"/>`).join("")}</discretePr>`;
+      return `<cacheField name="${attrEscape(group.name)}" databaseField="0" numFmtId="0"><fieldGroup base="${base}">${discrete}${groupItems}</fieldGroup></cacheField>`;
+    }
     return `<cacheField name="${attrEscape(group.name)}" databaseField="0" numFmtId="0"><fieldGroup base="${base}"${parent >= 0 ? ` par="${parent}"` : ""}>${rangePropertiesXml(group)}${groupItems}</fieldGroup></cacheField>`;
   }).join("");
 }
@@ -248,7 +270,7 @@ export function spreadsheetPivotCacheDefinitionXml(part) {
   const { pivot } = part;
   const sourceSheet = pivot.sourceRange.sheetName || pivot.worksheet.name;
   const sourceFields = pivotSourceHeaders(pivot);
-  const dateGroupSources = new Set((pivot.groupFields || []).map((group) => group.sourceField));
+  const dateGroupSources = new Set((pivot.groupFields || []).filter((group) => PIVOT_CALENDAR_GROUP_TYPES.has(group.groupBy)).map((group) => group.sourceField));
   const sourceCacheFields = sourceFields.map((header, index) => {
     const values = pivotFieldValues(pivot, index);
     const dateField = dateGroupSources.has(header);
@@ -274,7 +296,7 @@ export function spreadsheetPivotCacheDefinitionXml(part) {
 
 export function spreadsheetPivotCacheRecordsXml(part) {
   const sourceFields = pivotSourceHeaders(part.pivot);
-  const dateGroupSources = new Set((part.pivot.groupFields || []).map((group) => group.sourceField));
+  const dateGroupSources = new Set((part.pivot.groupFields || []).filter((group) => PIVOT_CALENDAR_GROUP_TYPES.has(group.groupBy)).map((group) => group.sourceField));
   const rows = part.pivot.sourceValues().slice(1);
   const records = rows.map((row) => `<r>${row.map((value, index) => cacheItemXml(value, part.pivot.dateSystem, dateGroupSources.has(sourceFields[index]))).join("")}</r>`).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${rows.length}">${records}</pivotCacheRecords>`;

@@ -59,7 +59,7 @@ export function normalizePivotConfig(config = {}, headers = []) {
   const columnFields = stringFields(config.columnFields || config.columns, "PivotTable columnFields");
   const duplicateAxisField = rowFields.find((field) => columnFields.includes(field));
   if (duplicateAxisField) throw new Error(`PivotTable field ${duplicateAxisField} cannot be both a row and column field.`);
-  const groupFields = normalizePivotGroupFields(config.groupFields || config.groups, headers.map(String), config.allowUnsupportedGroupFields === true);
+  const groupFields = normalizePivotGroupFields(config.groupFields || config.groups, headers.map(String), config.allowUnsupportedGroupFields === true, config.sourceValues || {});
   const normalizedCalculatedFields = normalizeCalculatedFields(config.calculatedFields, headers.map(String), config.allowUnsupportedCalculatedFields === true);
   const groupNames = new Set(groupFields.map((field) => field.name));
   const calculatedGroupCollision = normalizedCalculatedFields.find((field) => groupNames.has(field.name));

@@ -3291,7 +3291,7 @@ Create a clean-room pivot table facade with row/column cross-tabs, Year/Quarter/
 - `rowFields` (string[]) — Row field names.
 - `columnFields` (string[]) — Column field names.
 - `valueFields` (object[]) — Value field and aggregation definitions.
-- `groupFields` (object[]) — Derived calendar group fields with unique name, sourceField, and groupBy set to years, quarters, or months. Multiple levels over one source field form an OOXML base/par hierarchy and may be used on row/column axes or with item filters.
+- `groupFields` (object[]) — Derived group fields with unique name/sourceField. Calendar groupBy values years/quarters/months form OOXML base/par hierarchies; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items. Group fields may be used on row/column axes or with item filters.
 - `calculatedFields` (object[]) — Calculated value fields with unique name, arithmetic Pivot formula over source-field aggregates, and optional numFmtId. Accepts [Field] or quoted field references; functions, cell references, and calculated-field chaining are rejected.
 - `filters` (object|object[]) — Axis filters. Use exactly one non-empty include/exclude array for item filters, or an absolute whole-day type: dateEqual, dateNotEqual, dateOlderThan, dateOlderThanOrEqual, dateNewerThan, dateNewerThanOrEqual, dateBetween, or dateNotBetween with ISO/Date value1 and value2 for between types. The field must be on a row or column axis; useWholeDay=false and relative date filters are not yet supported.
 - `refreshPolicy` (object) — OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso.

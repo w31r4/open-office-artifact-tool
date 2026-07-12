@@ -6,7 +6,7 @@ import { FileBlob, SpreadsheetFile, Workbook } from "../src/index.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition } from "../src/spreadsheet/ooxml-pivots.mjs";
 import { evaluatePivotFormula } from "../src/spreadsheet/pivot-formulas.mjs";
 import { pivotItemVisible } from "../src/spreadsheet/pivot-filters.mjs";
-import { pivotGroupValue } from "../src/spreadsheet/pivot-groups.mjs";
+import { normalizePivotGroupFields, pivotGroupValue } from "../src/spreadsheet/pivot-groups.mjs";
 
 assert.equal(evaluatePivotFormula("=2+3*4", {}, []), 14);
 assert.equal(evaluatePivotFormula("=('Revenue'-'Cost')/2", { Revenue: 15, Cost: 9 }), 3);
@@ -19,6 +19,13 @@ assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900
 assert.equal(pivotGroupValue({ groupBy: "years" }, 0, "1904"), "1904");
 assert.equal(pivotGroupValue({ groupBy: "months" }, 60, "1900"), "Feb");
 assert.equal(pivotGroupValue({ groupBy: "quarters" }, new Date("2026-07-15T00:00:00Z")), "Q3");
+assert.equal(pivotGroupValue({ groupBy: "range", range: { startNum: 0, endNum: 29, groupInterval: 10 } }, 18), "10-19");
+assert.equal(pivotGroupValue({ groupBy: "range", range: { startNum: 0, endNum: 29, groupInterval: 10 } }, 30), ">29");
+assert.equal(pivotGroupValue({ groupBy: "discrete", groups: [{ name: "Coasts", items: ["East", "West"] }] }, "West"), "Coasts");
+assert.equal(pivotGroupValue({ groupBy: "discrete", groups: [{ name: "Coasts", items: ["East", "West"] }] }, "Central"), "Central");
+assert.deepEqual(normalizePivotGroupFields([{ name: "Auto Band", sourceField: "Score", groupBy: "range", range: { groupInterval: 10 } }], ["Score"], false, { Score: [5, 25] })[0].range, { autoStart: true, autoEnd: true, startNum: 5, endNum: 25, groupInterval: 10 });
+assert.deepEqual(normalizePivotGroupFields([{ name: "Auto Band", sourceField: "Score", groupBy: "range", range: { groupInterval: 10 } }], ["Score"], false, { Score: [null, "", 5, 25] })[0].range, { autoStart: true, autoEnd: true, startNum: 5, endNum: 25, groupInterval: 10 });
+assert.equal(pivotGroupValue({ groupBy: "range", range: { startNum: 0, endNum: 29, groupInterval: 10 } }, ""), null);
 assert.equal(pivotGroupValue({ groupBy: "years" }, Number.MAX_VALUE), null);
 for (const [type, current, expected] of [
   ["dateEqual", "2026-02-01", true],
@@ -321,6 +328,52 @@ assert.deepEqual(calendarPivot.groupFields, [
 assert.deepEqual(calendarPivot.computedValues(), [["Order Year", "Order Quarter", "Feb", "Mar", "Apr"], ["2026", "Q1", 50, 45, 0], ["2026", "Q2", 0, 0, 7]]);
 assert.match(calendarPivot.inspectRecord().groupFields[2].parent, /Order Quarter/);
 assert.equal(workbook.verify().issues.some((issue) => issue.code === "pivotFieldMissing" && issue.id === calendarPivot.id), false);
+const groupingBook = Workbook.create();
+const groupingSheet = groupingBook.worksheets.add("Grouping");
+groupingSheet.getRange("A1:C7").values = [
+  ["Region", "Score", "Amount"],
+  ["East", 5, 10],
+  ["West", 12, 20],
+  ["Central", 18, 30],
+  ["East", 25, 40],
+  ["West", 35, 50],
+  ["Other", 45, 60],
+];
+const numericPivot = groupingSheet.pivotTables.add({
+  name: "NumericGrouping",
+  sourceRange: "A1:C7",
+  targetRange: "E1:F8",
+  groupFields: [{ name: "Score Band", sourceField: "Score", groupBy: "range", range: { autoStart: false, autoEnd: false, startNum: 0, endNum: 39, groupInterval: 10 } }],
+  rowFields: ["Score Band"],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+});
+const discretePivot = groupingSheet.pivotTables.add({
+  name: "DiscreteGrouping",
+  sourceRange: "A1:C7",
+  targetRange: "H1:I6",
+  groupFields: [{ name: "Region Cluster", sourceField: "Region", groupBy: "discrete", groups: [{ name: "Coasts", items: ["East", "West"] }, { name: "Core", items: ["Central"] }] }],
+  rowFields: ["Region Cluster"],
+  valueFields: [{ field: "Amount", summarizeBy: "sum" }],
+});
+assert.deepEqual(numericPivot.computedValues(), [["Score Band", "sum of Amount"], ["0-9", 10], ["10-19", 50], ["20-29", 40], ["30-39", 50], [">39", 60]]);
+assert.deepEqual(discretePivot.computedValues(), [["Region Cluster", "sum of Amount"], ["Coasts", 120], ["Core", 30], ["Other", 60]]);
+const groupingXlsx = await SpreadsheetFile.exportXlsx(groupingBook);
+const groupingZip = await JSZip.loadAsync(new Uint8Array(await groupingXlsx.arrayBuffer()));
+const numericCacheXml = await groupingZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
+const discreteCacheXml = await groupingZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text");
+assert.match(numericCacheXml, /<fieldGroup base="1"><rangePr groupBy="range" autoStart="0" autoEnd="0" startNum="0" endNum="39" groupInterval="10"\/><groupItems count="5"><s v="0-9"\/><s v="10-19"\/><s v="20-29"\/><s v="30-39"\/><s v="&gt;39"\/><\/groupItems><\/fieldGroup>/);
+assert.match(discreteCacheXml, /<fieldGroup base="0"><discretePr count="4"><x v="0"\/><x v="0"\/><x v="1"\/><x v="2"\/><\/discretePr><groupItems count="3"><s v="Coasts"\/><s v="Core"\/><s v="Other"\/><\/groupItems><\/fieldGroup>/);
+groupingZip.remove("customXml/open-office-artifact.json");
+const nativeGroupingBook = await SpreadsheetFile.importXlsx(new FileBlob(await groupingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: groupingXlsx.type }));
+const nativeNumericPivot = nativeGroupingBook.resolve("NumericGrouping");
+const nativeDiscretePivot = nativeGroupingBook.resolve("DiscreteGrouping");
+assert.deepEqual(nativeNumericPivot.computedValues(), numericPivot.computedValues());
+assert.deepEqual(nativeNumericPivot.groupFields[0].range, { autoStart: false, autoEnd: false, startNum: 0, endNum: 39, groupInterval: 10 });
+assert.deepEqual(nativeDiscretePivot.computedValues(), discretePivot.computedValues());
+assert.deepEqual(nativeDiscretePivot.groupFields[0].groups, [{ name: "Coasts", items: ["East", "West"] }, { name: "Core", items: ["Central"] }]);
+const nativeGroupingRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeGroupingBook));
+assert.deepEqual(nativeGroupingRoundtrip.resolve("NumericGrouping").computedValues(), numericPivot.computedValues());
+assert.deepEqual(nativeGroupingRoundtrip.resolve("DiscreteGrouping").computedValues(), discretePivot.computedValues());
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
@@ -344,11 +397,15 @@ assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: Array.from({ length: 129 }, (_, index) => ({ name: `Year ${index}`, sourceField: "OrderDate", groupBy: "years" })), rowFields: ["Region"] }), /exceeds 128 fields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Region", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Region"] }), /must not replace a source field/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Year", sourceField: "Missing", groupBy: "years" }], rowFields: ["Year"] }), /unknown source field Missing/);
-assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Day", sourceField: "OrderDate", groupBy: "days" }], rowFields: ["Day"] }), /must be years, quarters, or months/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Day", sourceField: "OrderDate", groupBy: "days" }], rowFields: ["Day"] }), /must be years, quarters, months, range, or discrete/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Month 1", sourceField: "OrderDate", groupBy: "months" }, { name: "Month 2", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Month 1"] }), /must not repeat a groupBy/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Period", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Period"], calculatedFields: [{ name: "Period", formula: "Revenue" }] }), /must not replace a group field/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Year", sourceField: "OrderDate", groupBy: "years" }], rowFields: ["Year"], filters: [{ field: "Year", type: "dateEqual", value1: "2026-01-01" }] }), /must target a source date field/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Month", sourceField: "OrderDate", groupBy: "months" }], rowFields: ["Month"], filters: [{ field: "Month", include: ["Not a month"] }] }), /references unknown item Not a month/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Band", sourceField: "Revenue", groupBy: "range", range: { groupInterval: 0 } }], rowFields: ["Band"] }), /positive groupInterval/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Cluster", sourceField: "Region", groupBy: "discrete", groups: [{ name: "Coasts", items: ["East", "Missing"] }] }], rowFields: ["Cluster"] }), /unknown source item Missing/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Cluster", sourceField: "Region", groupBy: "discrete", groups: [{ name: "One", items: ["East"] }, { name: "Two", items: ["East"] }] }], rowFields: ["Cluster"] }), /only one group/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:U7", targetRange: "W8", groupFields: [{ name: "Cluster", sourceField: "Region", groupBy: "discrete", groups: [{ name: "West", items: ["East"] }] }], rowFields: ["Cluster"] }), /conflicts with an ungrouped source item/);
 assert.equal(workbook.resolve(revenuePivot.id).name, "RevenuePivot");
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /pivot table facade/);
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /dateBetween/);
