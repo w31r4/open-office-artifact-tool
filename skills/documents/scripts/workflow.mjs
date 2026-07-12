@@ -99,6 +99,13 @@ export function createDocumentFromFixture(fixture = {}) {
     const created = addFixtureBlock(document, block);
     if (block.name) byName.set(block.name, created);
   }
+  for (const bookmark of fixture.bookmarks || []) {
+    const target = byName.get(bookmark.targetName) || bookmark.targetId;
+    const endTarget = byName.get(bookmark.endTargetName) || bookmark.endTargetId;
+    assert.ok(target, `Missing document fixture bookmark target ${bookmark.targetName || bookmark.targetId}`);
+    if (bookmark.endTargetName || bookmark.endTargetId) assert.ok(endTarget, `Missing document fixture bookmark end target ${bookmark.endTargetName || bookmark.endTargetId}`);
+    document.addBookmark(target, bookmark.name, { ...bookmark, endTarget });
+  }
   const commentsByName = new Map();
   for (const comment of fixture.comments || []) {
     const parent = comment.parentName ? commentsByName.get(comment.parentName) : undefined;
@@ -109,7 +116,7 @@ export function createDocumentFromFixture(fixture = {}) {
     if (comment.name) commentsByName.set(comment.name, created);
   }
   for (const expected of fixture.expectInspect || []) {
-    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,section,change,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
+    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,bookmark,comment,header,footer,hyperlink,field,citation,image,section,change,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
   }
   return document;
 }

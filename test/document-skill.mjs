@@ -28,13 +28,14 @@ try {
     assert.ok(stat.isFile() && stat.size > 0, `Expected non-empty document skill output ${filePath}`);
   }
   const imported = await DocumentFile.importDocx(await FileBlob.load(result.docxPath));
-  const inspect = imported.inspect({ kind: "theme,paragraph,listItem,table,comment,header,hyperlink,citation,image,field,section", maxChars: 24_000 }).ndjson;
+  const inspect = imported.inspect({ kind: "theme,paragraph,listItem,table,bookmark,comment,header,hyperlink,citation,image,field,section", maxChars: 24_000 }).ndjson;
   assert.match(inspect, /Office artifact readiness brief/);
   assert.match(inspect, /readiness-table/);
   assert.match(inspect, /native render review/);
   assert.match(inspect, /Opening section evidence/);
   assert.match(inspect, /Business Brief Theme/);
   assert.match(inspect, /Theme fidelity/);
+  assert.match(inspect, /RecommendationSection/);
   assert.equal(imported.headers.find((item) => item.name === "opening-header")?.sectionIndex, 0);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/document\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/commentsExtended\.xml/);
@@ -85,6 +86,10 @@ try {
   assert.match(await businessBriefZip.file("word/commentsIds.xml").async("text"), /w16cid:durableId="0010A001"/);
   assert.match(await businessBriefZip.file("word/commentsExtensible.xml").async("text"), /w16cex:dateUtc="2026-07-11T00:20:00\.000Z"/);
   assert.match(await businessBriefZip.file("word/people.xml").async("text"), /w15:userId="qa-agent@example\.test"/);
+  const businessBriefDocumentXml = await businessBriefZip.file("word/document.xml").async("text");
+  assert.match(businessBriefDocumentXml, /<w:bookmarkStart w:id="42" w:name="RecommendationSection"\/>/);
+  assert.match(businessBriefDocumentXml, /<w:bookmarkEnd w:id="42"\/>/);
+  assert.match(businessBriefDocumentXml, /<w:hyperlink w:anchor="RecommendationSection" w:history="0" w:tooltip="Open the recommendation section">/);
   const businessBriefRels = await businessBriefZip.file("word/_rels/document.xml.rels").async("text");
   assert.match(businessBriefRels, /relationships\/commentsExtended/);
   assert.match(businessBriefRels, /relationships\/commentsIds/);
@@ -93,7 +98,14 @@ try {
   const nativeTableComment = nativePreferredDocument.comments.find((item) => item.text.includes("table comment anchor"));
   assert.equal(nativeTableComment?.author, "Maintainer");
   assert.equal(nativePreferredDocument.resolve(nativeTableComment?.targetId)?.kind, "table");
-  assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink")?.url, "https://learn.microsoft.com/office/open-xml/open-xml-sdk");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.url)?.url, "https://learn.microsoft.com/office/open-xml/open-xml-sdk");
+  const recommendationLink = nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.anchor === "RecommendationSection");
+  const recommendationBookmark = nativePreferredDocument.bookmarks.find((item) => item.name === "RecommendationSection");
+  assert.equal(recommendationLink?.history, false);
+  assert.equal(recommendationLink?.tooltip, "Open the recommendation section");
+  assert.equal(recommendationBookmark?.nativeId, 42);
+  assert.equal(nativePreferredDocument.resolve(recommendationBookmark?.targetId)?.text, "Recommendation");
+  assert.equal(nativePreferredDocument.resolve(recommendationBookmark?.endTargetId)?.text, "Use semantic verification together with native page rendering before delivery.");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
   assert.match(nativePreferredDocument.blocks.find((item) => item.kind === "citation")?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Preserve native numbering definitions.")?.numberFormat, "upperLetter");

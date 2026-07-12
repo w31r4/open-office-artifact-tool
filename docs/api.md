@@ -6,6 +6,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `document.addBookmark` | api | Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity. |
 | `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
 | `document.addCitation` | api | Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker. |
 | `document.addComment` | api | Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity. |
@@ -13,7 +14,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references. |
 | `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references. |
-| `document.addHyperlink` | api | Append an external hyperlink backed by a DOCX relationship and w:hyperlink element; native import restores its target and relationship ID. |
+| `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
 | `document.addListItem` | api | Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances. |
@@ -37,6 +38,21 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks. |
 
 ### document details
+
+#### `document.addBookmark`
+
+Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity.
+
+**Schema parameters:**
+
+- `target` (string|object) required — Paragraph-backed start block ID or facade.
+- `name` (string) required — Unique Word bookmark name with at most 40 characters.
+- `endTarget` (string|object) — Optional inclusive end block ID/facade for a multi-block range; defaults to target.
+- `nativeId` (number) — Optional preserved Word bookmark numeric identity.
+
+**Schema returns:**
+
+- `bookmark` (DocumentBookmark) — Inspectable and resolvable bookmark range.
 
 #### `document.addChange`
 
@@ -154,17 +170,20 @@ Add a default, first-page, or even-page DOCX header, optionally bound to a zero-
 
 #### `document.addHyperlink`
 
-Append an external hyperlink backed by a DOCX relationship and w:hyperlink element; native import restores its target and relationship ID.
+Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state.
 
 **Schema parameters:**
 
 - `text` (string) required — Visible link text.
-- `url` (string) required — External hyperlink URL.
+- `url` (string|DocumentBookmark) — External HTTP(S) URL, #bookmark name, or bookmark facade.
+- `anchor` (string|DocumentBookmark) — Internal bookmark name/facade; mutually exclusive with an external URL.
+- `tooltip` (string) — Optional Word hyperlink tooltip, at most 260 characters.
+- `history` (boolean) — Whether Word records the hyperlink as visited; defaults to true.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
 
-- `hyperlink` (DocumentHyperlinkBlock) — Appended external hyperlink block.
+- `hyperlink` (DocumentHyperlinkBlock) — Appended external or internal hyperlink block.
 
 #### `document.addImage`
 

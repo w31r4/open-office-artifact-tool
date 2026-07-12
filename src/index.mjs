@@ -7,6 +7,7 @@ import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supported
 import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
 import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxDefaultRunPropertiesXml, parseDocxRunPropertiesXml, parseDocxRunStyleId, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
 import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE, DOCX_COMMENTS_EXTENSIBLE_PATH, DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_CONTENT_TYPE, DOCX_COMMENTS_IDS_PATH, DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_PEOPLE_CONTENT_TYPE, DOCX_PEOPLE_PATH, DOCX_PEOPLE_RELATIONSHIP_TYPE, docxCommentsExtendedXml, docxCommentsExtensibleXml, docxCommentsIdsXml, docxCommentsXml, docxPeopleXml, parseDocxComments, planDocxComments, validateDocxCommentPackageSemantics } from "./ooxml/docx-comments.mjs";
+import { docxBookmarkEntriesForBlock, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
@@ -41,7 +42,7 @@ const DOCX_PACKAGE_CONFIG = {
   family: "DOCX",
   packageKind: "docxPackage",
   partKind: "docxPart",
-  semanticIssues: validateDocxCommentPackageSemantics,
+  semanticIssues: (context) => [...validateDocxCommentPackageSemantics(context), ...validateDocxLinkPackageSemantics(context)],
 };
 
 const XLSX_PACKAGE_CONFIG = {
@@ -1050,7 +1051,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
-  { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append an external hyperlink backed by a DOCX relationship and w:hyperlink element; native import restores its target and relationship ID." },
+  { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state." },
+  { artifactKind: "document", kind: "api", name: "document.addBookmark", summary: "Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker." },
   { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
@@ -1064,14 +1066,14 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
-  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
-  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, header/footer, comment, style, and editable text-range IDs." },
+  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
-  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown paragraph/character styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, links, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, links, fields, durable comment identities/people metadata, headers, and footers." },
+  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, classic and durable comment identity/people parts, headers/footers, external/internal links, bookmark ranges, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes through relationship-driven semantics, including Theme/style cascades, settings, numbering, bookmark ranges, internal/external links, fields, durable comment identities/people metadata, headers, and footers." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
@@ -1647,9 +1649,18 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "footer", "DocumentHeaderFooterBlock", "Appended footer block."),
   "document.addHyperlink": helpSchema({
     text: { type: "string", required: true, description: "Visible link text." },
-    url: { type: "string", required: true, description: "External hyperlink URL." },
+    url: { type: "string|DocumentBookmark", description: "External HTTP(S) URL, #bookmark name, or bookmark facade." },
+    anchor: { type: "string|DocumentBookmark", description: "Internal bookmark name/facade; mutually exclusive with an external URL." },
+    tooltip: { type: "string", description: "Optional Word hyperlink tooltip, at most 260 characters." },
+    history: { type: "boolean", description: "Whether Word records the hyperlink as visited; defaults to true." },
     styleId: { type: "string", description: "Named paragraph style ID." },
-  }, "hyperlink", "DocumentHyperlinkBlock", "Appended external hyperlink block."),
+  }, "hyperlink", "DocumentHyperlinkBlock", "Appended external or internal hyperlink block."),
+  "document.addBookmark": helpSchema({
+    target: { type: "string|object", required: true, description: "Paragraph-backed start block ID or facade." },
+    name: { type: "string", required: true, description: "Unique Word bookmark name with at most 40 characters." },
+    endTarget: { type: "string|object", description: "Optional inclusive end block ID/facade for a multi-block range; defaults to target." },
+    nativeId: { type: "number", description: "Optional preserved Word bookmark numeric identity." },
+  }, "bookmark", "DocumentBookmark", "Inspectable and resolvable bookmark range."),
   "document.addField": helpSchema({
     instruction: { type: "string", required: true, description: "Word field instruction such as PAGE, REF, PAGEREF, or TOC." },
     display: { type: "string", description: "Visible fallback/result text." },
@@ -8781,14 +8792,35 @@ class DocumentHyperlinkBlock {
     this.kind = "hyperlink";
     this.id = config.id || aid("dhl");
     this.text = String(text ?? "");
-    this.url = String(url ?? config.url ?? "");
+    const target = typeof url === "object" && url ? url : config.anchor || config.bookmark;
+    const rawUrl = typeof url === "string" ? url : config.url;
+    this.anchor = String(target?.name || target || config.anchor?.name || config.anchor || config.bookmarkName || (String(rawUrl || "").startsWith("#") ? String(rawUrl).slice(1) : "")).trim() || undefined;
+    this.url = this.anchor ? "" : String(rawUrl || "");
     this.relationshipId = config.relationshipId || config.relId;
+    this.tooltip = config.tooltip;
+    this.history = config.history !== false;
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
   }
 
-  inspectRecord(index) { return { kind: "hyperlink", id: this.id, index, name: this.name || undefined, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url, textChars: this.text.length }; }
-  toProto() { return { kind: "hyperlink", id: this.id, name: this.name, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url }; }
+  inspectRecord(index) { return { kind: "hyperlink", id: this.id, index, name: this.name || undefined, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url || undefined, anchor: this.anchor, tooltip: this.tooltip, history: this.history, textChars: this.text.length }; }
+  toProto() { return { kind: "hyperlink", id: this.id, name: this.name, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url || undefined, anchor: this.anchor, tooltip: this.tooltip, history: this.history }; }
+}
+
+class DocumentBookmark {
+  constructor(document, target, name, config = {}) {
+    this.document = document;
+    this.kind = "bookmark";
+    this.id = config.id || aid("dbm");
+    this.name = String(name ?? config.name ?? "");
+    this.targetId = typeof target === "string" ? target : target?.id || config.targetId;
+    const endTarget = config.endTarget ?? config.end ?? config.endTargetId ?? target;
+    this.endTargetId = typeof endTarget === "string" ? endTarget : endTarget?.id || this.targetId;
+    this.nativeId = config.nativeId === undefined ? undefined : Number(config.nativeId);
+  }
+
+  inspectRecord() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, nativeId: this.nativeId }; }
+  toProto() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, nativeId: this.nativeId }; }
 }
 
 class DocumentFieldBlock {
@@ -9057,6 +9089,7 @@ export class DocumentModel {
     this.settings = normalizeDocxSettings(options.settings || {});
     this.styles = new DocumentStyleCollection(options.styles || {});
     this.blocks = [];
+    this.bookmarks = [];
     this.comments = [];
     this.headers = [];
     this.footers = [];
@@ -9074,6 +9107,7 @@ export class DocumentModel {
     }
     for (const header of options.headers || []) this.addHeader(header.text, header);
     for (const footer of options.footers || []) this.addFooter(footer.text, footer);
+    for (const bookmark of options.bookmarks || []) this.addBookmark(bookmark.targetId, bookmark.name, bookmark);
     for (const comment of options.comments || []) this.addComment(comment.targetId, comment.text, comment);
   }
 
@@ -9115,7 +9149,7 @@ export class DocumentModel {
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
   addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
-  addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); return block; }
+  addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); const bookmarkName = block.metadata.bookmark || `OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`; const bookmark = this.addBookmark(block, bookmarkName, { id: block.metadata.bookmarkId || `${block.id}/bookmark`, nativeId: block.metadata.bookmarkNativeId }); block.metadata.bookmark = bookmark.name; block.metadata.bookmarkId = bookmark.id; return block; }
   addImage(config = {}) { const block = new DocumentImageBlock(this, config); this.blocks.push(block); return block; }
   addSection(config = {}) { const block = new DocumentSectionBlock(this, config); this.blocks.push(block); return block; }
   addPageBreakSection(config = {}) { return this.addSection({ ...config, breakType: "nextPage" }); }
@@ -9125,23 +9159,38 @@ export class DocumentModel {
   addTable(config = {}) { const block = new DocumentTableBlock(this, config); this.blocks.push(block); return block; }
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); return block; }
+  addBookmark(target, name, config = {}) {
+    const targetId = typeof target === "string" ? target : target?.id;
+    const bookmarkName = String(name || config.name || "");
+    const existing = this.bookmarks.find((bookmark) => bookmark.name === bookmarkName);
+    if (existing && existing.targetId === targetId) {
+      if (config.nativeId !== undefined) existing.nativeId = Number(config.nativeId);
+      const configuredEnd = config.endTarget ?? config.end ?? config.endTargetId;
+      if (configuredEnd) existing.endTargetId = typeof configuredEnd === "string" ? configuredEnd : configuredEnd.id;
+      return existing;
+    }
+    const bookmark = new DocumentBookmark(this, target, name, config);
+    this.bookmarks.push(bookmark);
+    return bookmark;
+  }
   addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
   replyToComment(parent, text, config = {}) { const comment = typeof parent === "string" ? this.comments.find((item) => item.id === parent) : parent; if (!comment || !this.comments.includes(comment)) throw new Error(`Unknown parent document comment: ${typeof parent === "string" ? parent : parent?.id}`); return this.addComment(comment.targetId, text, { ...config, parentId: comment.id }); }
   setSettings(settings = {}) { this.settings = normalizeDocxSettings({ ...this.settings, ...settings }); return this; }
-  resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : id === `${this.id}/settings` ? this.settings : id === `${this.id}/theme` ? this.theme : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
+  resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : id === `${this.id}/settings` ? this.settings : id === `${this.id}/theme` ? this.theme : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.bookmarks.find((bookmark) => bookmark.id === id || bookmark.name === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "bookmark", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, bookmarks: this.bookmarks.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(documentInspectRecord(this, block, index)); });
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
+    if (kinds.has("bookmark")) records.push(...this.bookmarks.map((bookmark) => bookmark.inspectRecord()));
     if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
     if (kinds.has("textRange")) records.push(...documentTextRangeRecords(this));
     if (kinds.has("style")) records.push(...this.styles.values().map((style) => ({ kind: "style", ...style })));
@@ -9158,6 +9207,12 @@ export class DocumentModel {
     };
     if (this.blocks.length === 0) issues.push(verificationIssue("document", "emptyDocument", "Document has no body blocks."));
     for (const block of [...this.blocks, ...this.headers, ...this.footers]) checkStyle(block);
+    const bookmarkByName = new Map();
+    for (const bookmark of this.bookmarks) {
+      if (!bookmark.name || bookmark.name.length > 40) issues.push(verificationIssue("document", "invalidBookmarkName", `Bookmark ${bookmark.id} name must contain 1 to 40 characters.`, { id: bookmark.id, name: bookmark.name }));
+      if (bookmarkByName.has(bookmark.name)) issues.push(verificationIssue("document", "duplicateBookmarkName", `Bookmark ${bookmark.id} duplicates name ${bookmark.name}.`, { id: bookmark.id, name: bookmark.name }));
+      else bookmarkByName.set(bookmark.name, bookmark);
+    }
     for (const block of this.blocks) {
       if (block.kind === "paragraph") {
         for (const run of block.runs || []) {
@@ -9167,9 +9222,14 @@ export class DocumentModel {
       if (block.kind === "paragraph" && /^\s*([-*•]|\d+[.)])\s+/.test(block.text)) {
         issues.push(verificationIssue("document", "fakeList", `Paragraph ${block.id} looks like a fake list item; use addListItem instead.`, { id: block.id }));
       }
-      if (block.kind === "hyperlink" && !/^https?:\/\//.test(block.url)) {
-        issues.push(verificationIssue("document", "invalidHyperlink", `Hyperlink ${block.id} is missing an absolute http(s) URL.`, { id: block.id, url: block.url }));
+      if (block.kind === "hyperlink" && block.anchor) {
+        if (block.url) issues.push(verificationIssue("document", "ambiguousHyperlink", `Hyperlink ${block.id} cannot combine an external URL with an internal anchor.`, { id: block.id, url: block.url, anchor: block.anchor }));
+        if (!bookmarkByName.has(block.anchor)) issues.push(verificationIssue("document", "missingHyperlinkAnchor", `Hyperlink ${block.id} targets missing bookmark ${block.anchor}.`, { id: block.id, anchor: block.anchor }));
+        if (block.anchor.length > 255) issues.push(verificationIssue("document", "invalidHyperlinkAnchor", `Hyperlink ${block.id} anchor exceeds 255 characters.`, { id: block.id, anchor: block.anchor }));
+      } else if (block.kind === "hyperlink" && !/^https?:\/\//.test(block.url)) {
+        issues.push(verificationIssue("document", "invalidHyperlink", `Hyperlink ${block.id} is missing an absolute http(s) URL or internal bookmark anchor.`, { id: block.id, url: block.url }));
       }
+      if (block.kind === "hyperlink" && block.tooltip && String(block.tooltip).length > 260) issues.push(verificationIssue("document", "invalidHyperlinkTooltip", `Hyperlink ${block.id} tooltip exceeds 260 characters.`, { id: block.id }));
       if (block.kind === "field" && !block.instruction.trim()) {
         issues.push(verificationIssue("document", "emptyField", `Field ${block.id} is missing an instruction.`, { id: block.id }));
       }
@@ -9218,6 +9278,19 @@ export class DocumentModel {
       }
     }
     const blockIds = new Set(this.blocks.map((block) => block.id));
+    const blockIndexes = new Map(this.blocks.map((block, index) => [block.id, index]));
+    const bookmarkNativeIds = new Set();
+    for (const bookmark of this.bookmarks) {
+      if (!blockIds.has(bookmark.targetId)) issues.push(verificationIssue("document", "missingBookmarkTarget", `Bookmark ${bookmark.id} points at missing start block ${bookmark.targetId}.`, { id: bookmark.id, targetId: bookmark.targetId }));
+      if (!blockIds.has(bookmark.endTargetId)) issues.push(verificationIssue("document", "missingBookmarkEndTarget", `Bookmark ${bookmark.id} points at missing end block ${bookmark.endTargetId}.`, { id: bookmark.id, endTargetId: bookmark.endTargetId }));
+      if (blockIndexes.get(bookmark.targetId) > blockIndexes.get(bookmark.endTargetId)) issues.push(verificationIssue("document", "reversedBookmarkRange", `Bookmark ${bookmark.id} ends before it starts.`, { id: bookmark.id, targetId: bookmark.targetId, endTargetId: bookmark.endTargetId }));
+      if ([this.resolve(bookmark.targetId)?.kind, this.resolve(bookmark.endTargetId)?.kind].includes("table")) issues.push(verificationIssue("document", "unsupportedBookmarkTarget", `Bookmark ${bookmark.id} requires paragraph-backed targets.`, { id: bookmark.id, targetId: bookmark.targetId, endTargetId: bookmark.endTargetId }));
+      if (bookmark.nativeId !== undefined) {
+        if (!Number.isInteger(bookmark.nativeId) || bookmark.nativeId === -1) issues.push(verificationIssue("document", "invalidBookmarkNativeId", `Bookmark ${bookmark.id} has invalid native ID ${bookmark.nativeId}.`, { id: bookmark.id, nativeId: bookmark.nativeId }));
+        else if (bookmarkNativeIds.has(bookmark.nativeId)) issues.push(verificationIssue("document", "duplicateBookmarkNativeId", `Bookmark ${bookmark.id} duplicates native ID ${bookmark.nativeId}.`, { id: bookmark.id, nativeId: bookmark.nativeId }));
+        bookmarkNativeIds.add(bookmark.nativeId);
+      }
+    }
     const finalSectionIndex = this.blocks.filter((block) => block.kind === "section").length;
     for (const block of [...this.headers, ...this.footers]) {
       if (block.sectionIndex !== undefined && (!Number.isInteger(block.sectionIndex) || block.sectionIndex < 0 || block.sectionIndex > finalSectionIndex)) {
@@ -9497,7 +9570,7 @@ function docxHyperlinkXml(block, relId, commentIndexes = []) {
   const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
   const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
   const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:hyperlink r:id="${relId}"><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink>${commentEnd}${refs}</w:p>`;
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:hyperlink${docxHyperlinkAttributes(block, relId)}><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink>${commentEnd}${refs}</w:p>`;
 }
 
 function docxFieldXml(block, commentIndexes = []) {
@@ -9512,7 +9585,7 @@ function docxCitationXml(block, commentIndexes = []) {
   const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
   const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
   const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:bookmarkStart w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}" w:name="${attrEscape(`OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`)}"/><w:r><w:t>${xmlEscape(label)}</w:t></w:r><w:bookmarkEnd w:id="${Math.abs(block.id.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0))}"/>${commentEnd}${refs}</w:p>`;
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:t>${xmlEscape(label)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
 }
 
 function docxTableXml(block, commentIndexes = []) {
@@ -9536,21 +9609,23 @@ function docxTableXml(block, commentIndexes = []) {
   return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="${widthDxa}" w:type="dxa"/><w:tblInd w:w="${Math.max(0, Math.round(block.indentDxa ?? 120))}" w:type="dxa"/><w:tblBorders>${border}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${Math.max(0, Math.round(margins.top ?? 80))}" w:type="dxa"/><w:start w:w="${Math.max(0, Math.round(margins.start ?? 120))}" w:type="dxa"/><w:bottom w:w="${Math.max(0, Math.round(margins.bottom ?? 80))}" w:type="dxa"/><w:end w:w="${Math.max(0, Math.round(margins.end ?? 120))}" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
 }
 
-function docxDocumentXml(document, relIds = {}) {
+function docxDocumentXml(document, relIds = {}, bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks)) {
   const commentIndex = new Map(document.comments.map((comment, index) => [comment, index]));
   const sectionReferences = [...(relIds.headers || []), ...(relIds.footers || [])];
   const referencesForSection = (sectionIndex) => sectionReferences.filter((reference) => reference.sectionIndex === sectionIndex);
   let sectionIndex = 0;
   const body = document.blocks.map((block) => {
     const indexes = document.comments.filter((comment) => comment.targetId === block.id && !comment.parentId).map((comment) => commentIndex.get(comment));
-    if (block.kind === "table") return docxTableXml(block, indexes);
-    if (block.kind === "hyperlink") return docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id), indexes);
-    if (block.kind === "field") return docxFieldXml(block, indexes);
-    if (block.kind === "citation") return docxCitationXml(block, indexes);
-    if (block.kind === "image") return docxImageXml(block, relIds.images?.get(block.id), indexes);
-    if (block.kind === "section") return docxSectionXml(block, indexes, referencesForSection(sectionIndex++));
-    if (block.kind === "change") return docxChangeXml(block, indexes);
-    return docxParagraphXml(block, indexes, relIds.numbering?.get(block.id), document.theme);
+    let xml;
+    if (block.kind === "table") xml = docxTableXml(block, indexes);
+    else if (block.kind === "hyperlink") xml = docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id), indexes);
+    else if (block.kind === "field") xml = docxFieldXml(block, indexes);
+    else if (block.kind === "citation") xml = docxCitationXml(block, indexes);
+    else if (block.kind === "image") xml = docxImageXml(block, relIds.images?.get(block.id), indexes);
+    else if (block.kind === "section") xml = docxSectionXml(block, indexes, referencesForSection(sectionIndex++));
+    else if (block.kind === "change") xml = docxChangeXml(block, indexes);
+    else xml = docxParagraphXml(block, indexes, relIds.numbering?.get(block.id), document.theme);
+    return block.kind === "table" ? xml : wrapDocxParagraphBookmarks(xml, docxBookmarkEntriesForBlock(bookmarkPlan, block.id));
   }).join("");
   const finalReferences = referencesForSection(sectionIndex);
   const refs = finalReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
@@ -9694,13 +9769,10 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
     const date = decodeXml(/w:date="([^"]*)"/.exec(attrs)?.[1] || "");
     return { block: { kind: "change", changeType, text, styleId, author, date }, commentIds };
   }
-  const hyperlinkMatch = /<w:hyperlink\b[^>]*>[\s\S]*?<\/w:hyperlink>/.exec(part);
+  const hyperlinkMatch = /<(?:[A-Za-z_][\w.-]*:)?hyperlink\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?hyperlink>/.exec(part);
   if (hyperlinkMatch) {
-    const opening = /^<w:hyperlink\b[^>]*>/.exec(hyperlinkMatch[0])?.[0] || "";
-    const attrs = ooxmlXmlAttributes(opening);
-    const relationship = hyperlinkByRelId.get(attrs["r:id"]);
-    const text = decodeXml([...hyperlinkMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
-    if (relationship) return { block: { kind: "hyperlink", text, url: relationship.target, relationshipId: relationship.id, styleId }, commentIds };
+    const hyperlink = parseDocxHyperlink(hyperlinkMatch[0], hyperlinkByRelId);
+    if (hyperlink.anchor || hyperlink.url) return { block: { kind: "hyperlink", ...hyperlink, styleId }, commentIds };
   }
   const simpleFieldMatch = /<w:fldSimple\b[^>]*>[\s\S]*?<\/w:fldSimple>/.exec(part);
   if (simpleFieldMatch) {
@@ -9714,10 +9786,10 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
     const display = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
     return { block: { kind: "field", instruction: complexInstruction, display, styleId }, commentIds };
   }
-  const citationBookmark = [...part.matchAll(/<w:bookmarkStart\b[^>]*\/?\s*>/g)].map((match) => ooxmlXmlAttributes(match[0])).find((attrs) => String(attrs["w:name"] || "").startsWith("OpenOfficeCitation_"));
+  const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
   if (citationBookmark) {
-    const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
-    return { block: { kind: "citation", text, metadata: { bookmark: citationBookmark["w:name"] }, styleId }, commentIds };
+    const text = decodeXml([...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => match[1]).join(""));
+    return { block: { kind: "citation", text, metadata: { bookmark: citationBookmark.name, bookmarkNativeId: citationBookmark.nativeId }, styleId }, commentIds };
   }
   const runs = parseDocxRuns(part, { ...context, paragraphStyleId: styleId });
   const text = runs.length ? runs.map((run) => run.text).join("") : decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
@@ -10302,6 +10374,7 @@ export class DocumentFile {
   static async exportDocx(document) {
     const zip = new JSZip();
     const commentPlan = planDocxComments(document.comments);
+    const bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks);
     const imageParts = collectDocxImageParts(document);
     const numbering = collectDocxNumbering(document);
     const hasNumbering = numbering.definitions.length > 0;
@@ -10337,7 +10410,7 @@ export class DocumentFile {
       return { kind: "footer", referenceType: part.referenceType, sectionIndex: part.sectionIndex, relId };
     });
     relIds.hyperlinks = new Map();
-    for (const block of document.blocks.filter((item) => item.kind === "hyperlink")) {
+    for (const block of document.blocks.filter((item) => item.kind === "hyperlink" && !item.anchor)) {
       const relId = `rId${docRels.length + 1}`;
       relIds.hyperlinks.set(block.id, relId);
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", target: block.url, targetMode: "External" });
@@ -10363,7 +10436,7 @@ export class DocumentFile {
     footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
     imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
-    zip.file("word/document.xml", docxDocumentXml(document, relIds));
+    zip.file("word/document.xml", docxDocumentXml(document, relIds, bookmarkPlan));
     return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
   }
 
@@ -10421,13 +10494,26 @@ export class DocumentFile {
     const hyperlinkByRelId = new Map(documentRelationships.filter((relationship) => relationship.type.endsWith("/hyperlink") && relationship.targetMode.toLowerCase() === "external").map((relationship) => [relationship.id, relationship]));
     const blocks = [];
     const pendingComments = [];
+    const pendingBookmarkStarts = new Map();
+    const pendingBookmarkEnds = new Map();
     for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
       const part = match[0];
       if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
-      else blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle }).block);
+      else {
+        blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle }).block);
+        const markers = parseDocxBookmarkMarkers(part);
+        for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
+        for (const end of markers.ends) if (!pendingBookmarkEnds.has(end.nativeId)) pendingBookmarkEnds.set(end.nativeId, { ...end, blockIndex: blocks.length - 1 });
+      }
       for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
     const document = DocumentModel.create({ theme, defaultRunStyle, settings: parseDocxSettings(settingsText), styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    for (const [nativeId, start] of pendingBookmarkStarts) {
+      const end = pendingBookmarkEnds.get(nativeId);
+      const target = document.blocks[start.blockIndex];
+      const endTarget = document.blocks[end?.blockIndex ?? start.blockIndex];
+      if (target && endTarget && start.name) document.addBookmark(target, start.name, { id: `docx-bookmark-${nativeId}`, nativeId, endTarget });
+    }
     for (const reference of docxHeaderFooterReferences(xml, documentRelationships)) {
       const partXml = await zip.file(reference.partPath)?.async("text");
       for (const block of parseHeaderFooterXml(partXml)) {

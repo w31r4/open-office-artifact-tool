@@ -55,6 +55,8 @@ const cascadeParagraph = document.addParagraph("", {
     { text: " Character theme", style: { runStyleId: "CascadeCharacter" } },
   ],
 });
+const findingsBookmark = document.addBookmark(heading, "FindingsSection", { endTarget: riskCallout, nativeId: 42 });
+const internalHyperlink = document.addHyperlink("Jump to findings", findingsBookmark, { name: "findings-link", tooltip: "Open the findings section", history: false });
 const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
 const field = document.addField("PAGE", "1", { name: "page-field" });
 const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
@@ -97,7 +99,7 @@ const commentReply = document.replyToComment(comment, "Heading language is now a
 assert.equal(commentReply.parentId, comment.id);
 assert.equal(commentReply.targetId, comment.targetId);
 
-const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 24000 }).ndjson;
+const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,bookmark,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 32000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /"kind":"document"/);
 assert.match(inspect, /"designPreset":"report"/);
@@ -113,6 +115,8 @@ assert.match(inspect, /"kind":"layout"/);
 assert.match(inspect, /findings-heading/);
 assert.match(inspect, /research-link/);
 assert.match(inspect, /https:\/\/example.com\/research/);
+assert.match(inspect, /findings-link/);
+assert.match(inspect, /FindingsSection/);
 assert.match(inspect, /page-field/);
 assert.match(inspect, /market-citation/);
 assert.match(inspect, /memo-logo/);
@@ -172,6 +176,12 @@ const documentTextRangeInspect = document.inspect({ kind: "textRange", target: `
 assert.match(documentTextRangeInspect, /Findings/);
 assert.match(documentTextRangeInspect, new RegExp(heading.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.equal(document.resolve(hyperlink.id).url, "https://example.com/research");
+assert.equal(document.resolve(internalHyperlink.id).anchor, "FindingsSection");
+assert.equal(document.resolve(findingsBookmark.id), findingsBookmark);
+assert.equal(document.resolve("FindingsSection"), findingsBookmark);
+assert.equal(findingsBookmark.targetId, heading.id);
+assert.equal(findingsBookmark.endTargetId, riskCallout.id);
+assert.equal(findingsBookmark.nativeId, 42);
 assert.equal(document.resolve(field.id).instruction, "PAGE");
 assert.equal(document.resolve(citation.id).metadata.page, 2);
 assert.equal(document.resolve(logo.id).alt, "Memo logo");
@@ -216,6 +226,7 @@ assert.match(document.help("document.addComment").ndjson, /w:date/);
 assert.match(document.help("document.addComment").ndjson, /commentsExtended/);
 assert.match(document.help("document.replyToComment").ndjson, /paraIdParent/);
 assert.match(document.help("document.addHyperlink").ndjson, /w:hyperlink/);
+assert.match(document.help("document.addBookmark").ndjson, /bookmark range/);
 assert.match(document.help("document.addField").ndjson, /w:fldSimple/);
 assert.match(document.help("document.addCitation").ndjson, /structured metadata/);
 assert.match(document.help("document.addImage").ndjson, /native DOCX media/);
@@ -225,6 +236,24 @@ assert.match(document.help("document.addDeletion").ndjson, /w:del/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
 assert.equal(document.verify({ visualQa: true }).ok, true);
+const invalidBookmarkDocument = DocumentModel.create({ paragraphs: ["First", "Second"] });
+invalidBookmarkDocument.addBookmark(invalidBookmarkDocument.blocks[1], "ReversedRange", { endTarget: invalidBookmarkDocument.blocks[0] });
+invalidBookmarkDocument.addBookmark(invalidBookmarkDocument.blocks[0], "DuplicateName");
+invalidBookmarkDocument.addBookmark(invalidBookmarkDocument.blocks[1], "DuplicateName");
+invalidBookmarkDocument.addHyperlink("Missing target", undefined, { anchor: "UnknownBookmark" });
+const invalidBookmarkIssues = invalidBookmarkDocument.verify().issues;
+assert.ok(invalidBookmarkIssues.some((issue) => issue.type === "reversedBookmarkRange"));
+assert.ok(invalidBookmarkIssues.some((issue) => issue.type === "duplicateBookmarkName"));
+assert.ok(invalidBookmarkIssues.some((issue) => issue.type === "missingHyperlinkAnchor"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidBookmarkDocument), /Duplicate DOCX bookmark name/);
+const reversedBookmarkDocument = DocumentModel.create({ paragraphs: ["First", "Second"] });
+reversedBookmarkDocument.addBookmark(reversedBookmarkDocument.blocks[1], "ReversedOnly", { endTarget: reversedBookmarkDocument.blocks[0] });
+await assert.rejects(() => DocumentFile.exportDocx(reversedBookmarkDocument), /end target precedes its start target/);
+const tableBookmarkDocument = DocumentModel.create({ blocks: [] });
+const bookmarkTable = tableBookmarkDocument.addTable({ values: [["Unsupported"]] });
+tableBookmarkDocument.addBookmark(bookmarkTable, "TableBookmark");
+assert.ok(tableBookmarkDocument.verify().issues.some((issue) => issue.type === "unsupportedBookmarkTarget"));
+await assert.rejects(() => DocumentFile.exportDocx(tableBookmarkDocument), /paragraph-backed start and end targets/);
 const invalidSectionDocument = DocumentModel.create({ paragraphs: ["Invalid section fixture"] });
 invalidSectionDocument.addHeader("Out of range", { sectionIndex: 1 });
 assert.ok(invalidSectionDocument.verify().issues.some((issue) => issue.type === "invalidHeaderFooterSection"));
@@ -400,6 +429,9 @@ assert.match(documentXml, /w:eastAsiaTheme="majorEastAsia"/);
 assert.match(documentXml, /<w:color w:val="992600" w:themeColor="accent2" w:themeShade="BF"\/>/);
 assert.match(documentXml, /w:cstheme="majorBidi"/);
 assert.match(documentXml, /<w:b w:val="0"\/><w:bCs\/><w:i w:val="0"\/><w:iCs\/>/);
+assert.match(documentXml, /<w:bookmarkStart w:id="42" w:name="FindingsSection"\/>/);
+assert.match(documentXml, /<w:bookmarkEnd w:id="42"\/>/);
+assert.match(documentXml, /<w:hyperlink w:anchor="FindingsSection" w:history="0" w:tooltip="Open the findings section">/);
 assert.match(documentXml, /<a:blip r:embed="rIdImage1"\/>/);
 assert.match(documentXml, /<wp:docPr[^>]*name="memo-logo"[^>]*descr="Memo logo"/);
 assert.match(documentXml, /<w:type w:val="nextPage"\/>/);
@@ -434,7 +466,7 @@ const exportedTableXml = /<w:tbl[\s\S]*?<\/w:tbl>/.exec(documentXml)?.[0] || "";
 assert.match(exportedTableXml, /<w:commentRangeStart w:id="1"\/>/);
 assert.match(exportedTableXml, /<w:commentRangeEnd w:id="1"\/>/);
 assert.match(exportedTableXml, /<w:commentReference w:id="1"\/>/);
-const exportedHyperlinkParagraph = /<w:p>[\s\S]*?<w:hyperlink\b[\s\S]*?<\/w:p>/.exec(documentXml)?.[0] || "";
+const exportedHyperlinkParagraph = [...documentXml.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map((match) => match[0]).find((paragraph) => paragraph.includes("w31r4 research note")) || "";
 assert.match(exportedHyperlinkParagraph, /<w:commentRangeStart w:id="2"\/>/);
 assert.match(exportedHyperlinkParagraph, /<w:commentRangeEnd w:id="2"\/>/);
 assert.match(exportedHyperlinkParagraph, /<w:commentReference w:id="2"\/>/);
@@ -455,6 +487,8 @@ assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2016\/09\/relationships\/commentsIds" Target="commentsIds\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2018\/08\/relationships\/commentsExtensible" Target="commentsExtensible\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2011\/relationships\/people" Target="people\.xml"/);
+assert.equal((documentRelsXml.match(/relationships\/hyperlink/g) || []).length, 1);
+assert.doesNotMatch(documentRelsXml, /FindingsSection/);
 assert.match(documentXml, /<w:headerReference w:type="default" r:id="[^"]+"\/>/);
 assert.match(documentXml, /<w:headerReference w:type="first" r:id="[^"]+"\/>/);
 assert.match(documentXml, /<w:footerReference w:type="even" r:id="[^"]+"\/>/);
@@ -500,6 +534,19 @@ assert.ok(packageInspect.records[0].uncompressedBytes > 0);
 assert.ok(packageInspect.records[0].relationshipReferences > 0);
 assert.equal(packageInspect.records[0].relationshipReferenceIssues, 0);
 assert.ok(packageInspect.parts.some((part) => part.path === "word/document.xml" && part.contentType.includes("wordprocessingml.document.main+xml")));
+await assert.rejects(
+  () => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: documentXml.replace('w:anchor="FindingsSection"', 'w:anchor="MissingSection"') }]),
+  /docxHyperlinkAnchorNotFound/,
+);
+await assert.rejects(
+  () => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: documentXml.replace('<w:bookmarkEnd w:id="42"/>', "") }]),
+  /docxBookmarkEndMissing/,
+);
+const duplicateBookmarkNameXml = documentXml.replace("</w:body>", '<w:p><w:bookmarkStart w:id="99" w:name="FindingsSection"/><w:r><w:t>Duplicate</w:t></w:r><w:bookmarkEnd w:id="99"/></w:p></w:body>');
+await assert.rejects(
+  () => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: duplicateBookmarkNameXml }]),
+  /docxBookmarkNameDuplicate/,
+);
 const complexFieldDocumentXml = documentXml.replace(/<w:fldSimple\b[^>]*>[\s\S]*?<\/w:fldSimple>/, '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> NUMPAGES \\* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>3</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>');
 const entityHyperlinkRelsXml = documentRelsXml.replace('Target="https://example.com/research"', 'Target="https://example.com/research?a=1&amp;b=2"');
 const complexNativeDocx = await DocumentFile.patchDocx(docx, [
@@ -509,7 +556,7 @@ const complexNativeDocx = await DocumentFile.patchDocx(docx, [
 const complexNativeDocument = await DocumentFile.importDocx(complexNativeDocx, { preferNative: true });
 assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "field")?.instruction, "NUMPAGES \\* MERGEFORMAT");
 assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "field")?.display, "3");
-assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "hyperlink")?.url, "https://example.com/research?a=1&b=2");
+assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "hyperlink" && item.url)?.url, "https://example.com/research?a=1&b=2");
 const overriddenNumberingXml = numberingXml.replace(/(<w:num w:numId="3"><w:abstractNumId w:val="3"\/>)(<\/w:num>)/, '$1<w:lvlOverride w:ilvl="1"><w:startOverride w:val="7"/></w:lvlOverride>$2');
 const relocatedConfigDocx = await DocumentFile.patchDocx(docx, [
   { path: "word/styles.xml", remove: true },
@@ -738,10 +785,19 @@ assert.match(await nativeCommentRoundtripZip.file("word/commentsExtended.xml").a
 assert.match(await nativeCommentRoundtripZip.file("word/commentsIds.xml").async("text"), /w16cid:paraId="00000001" w16cid:durableId="0000A001"/);
 assert.match(await nativeCommentRoundtripZip.file("word/commentsExtensible.xml").async("text"), /w16cex:durableId="0000A001" w16cex:dateUtc="2026-07-11T00:10:00\.000Z"/);
 assert.match(await nativeCommentRoundtripZip.file("word/people.xml").async("text"), /w15:author="Reviewer"[\s\S]*?w15:userId="reviewer@example\.test"/);
-const nativeOnlyHyperlink = nativeOnlyLoaded.blocks.find((item) => item.kind === "hyperlink");
+const nativeOnlyHyperlink = nativeOnlyLoaded.blocks.find((item) => item.kind === "hyperlink" && item.url);
 assert.equal(nativeOnlyHyperlink?.text, "w31r4 research note");
 assert.equal(nativeOnlyHyperlink?.url, "https://example.com/research");
 assert.ok(nativeOnlyHyperlink?.relationshipId);
+const nativeOnlyInternalHyperlink = nativeOnlyLoaded.blocks.find((item) => item.kind === "hyperlink" && item.anchor === "FindingsSection");
+const nativeOnlyBookmark = nativeOnlyLoaded.bookmarks.find((item) => item.name === "FindingsSection");
+assert.equal(nativeOnlyInternalHyperlink?.text, "Jump to findings");
+assert.equal(nativeOnlyInternalHyperlink?.history, false);
+assert.equal(nativeOnlyInternalHyperlink?.tooltip, "Open the findings section");
+assert.equal(nativeOnlyBookmark?.nativeId, 42);
+assert.equal(nativeOnlyLoaded.resolve(nativeOnlyBookmark?.targetId)?.text, "Findings");
+assert.equal(nativeOnlyLoaded.resolve(nativeOnlyBookmark?.endTargetId)?.text, "Risk callout inherits bold styling.");
+assert.equal(nativeOnlyLoaded.resolve("FindingsSection"), nativeOnlyBookmark);
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.display, "1");
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.text === "Lettered evidence group")?.numberFormat, "upperLetter");
@@ -813,6 +869,8 @@ assert.equal(nativeOnlyLoaded.styles.effective("RiskCallout").italic, true);
 const reexportedNativeTheme = await DocumentFile.exportDocx(nativeOnlyLoaded);
 const reexportedNativeThemeZip = await JSZip.loadAsync(new Uint8Array(await reexportedNativeTheme.arrayBuffer()));
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /w:cstheme="majorBidi"/);
+assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:hyperlink w:anchor="FindingsSection" w:history="0" w:tooltip="Open the findings section">/);
+assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:bookmarkStart w:id="42" w:name="FindingsSection"\/>/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:rStyle w:val="CascadeCharacter"\/>/);
 assert.match(await reexportedNativeThemeZip.file("word/styles.xml").async("text"), /<w:docDefaults>/);
 assert.match(await reexportedNativeThemeZip.file("word/theme/theme1.xml").async("text"), /typeface="Noto Naskh Arabic"/);
@@ -827,7 +885,7 @@ const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.docx`);
 await docx.save(out);
 const loaded = await DocumentFile.importDocx(await FileBlob.load(out));
 assert.equal(loaded.blocks.find((item) => item.name === "single-theme-run")?.runs[0].style.themeColor, "accent1");
-const loadedInspect = loaded.inspect({ kind: "paragraph,table,comment,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
+const loadedInspect = loaded.inspect({ kind: "paragraph,table,bookmark,comment,listItem,header,footer,hyperlink,field,citation,image,section,change", maxChars: 12000 }).ndjson;
 assert.match(loadedInspect, /clean-room DOCX facade/);
 assert.match(loadedInspect, /Risk callout inherits bold styling/);
 assert.match(loadedInspect, /Run styled paragraph/);
@@ -836,6 +894,7 @@ assert.match(loadedInspect, /anchored/);
 assert.match(loadedInspect, /Check this heading/);
 assert.match(loadedInspect, /w31r4 research note/);
 assert.match(loadedInspect, /https:\/\/example.com\/research/);
+assert.match(loadedInspect, /FindingsSection/);
 assert.match(loadedInspect, /page-field/);
 assert.match(loadedInspect, /Market brief/);
 assert.match(loadedInspect, /memo-logo/);

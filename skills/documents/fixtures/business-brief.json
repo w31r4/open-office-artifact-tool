@@ -34,6 +34,7 @@
     { "kind": "paragraph", "name": "inherited-run-style", "styleId": "BriefParagraph", "runs": [
       { "text": "Inherited character style", "style": { "runStyleId": "BriefCharacter", "italic": false } }
     ] },
+    { "kind": "hyperlink", "name": "recommendation-jump", "styleId": "Normal", "text": "Jump to recommendation", "anchor": "RecommendationSection", "tooltip": "Open the recommendation section", "history": false },
     { "kind": "paragraph", "name": "recommendation-heading", "styleId": "Heading1", "text": "Recommendation" },
     { "kind": "paragraph", "name": "recommendation", "styleId": "Normal", "text": "Use semantic verification together with native page rendering before delivery." },
     { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "text": "Inspect stable document blocks and comments." },
@@ -61,6 +62,9 @@
     { "kind": "image", "name": "status-mark", "styleId": "Normal", "alt": "Green status mark", "widthPx": 40, "heightPx": 40, "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKwoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC" },
     { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
   ],
+  "bookmarks": [
+    { "name": "RecommendationSection", "targetName": "recommendation-heading", "endTargetName": "recommendation", "nativeId": 42 }
+  ],
   "comments": [
     { "name": "recommendation-review", "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "dateUtc": "2026-07-11T08:20:00+08:00", "durableId": "0010A001", "person": { "providerId": "None", "userId": "qa-agent@example.test" }, "resolved": true, "text": "Confirm this recommendation after native render review." },
     { "name": "recommendation-reply", "parentName": "recommendation-review", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:22:00.000Z", "durableId": "0010A002", "person": { "providerId": "None", "userId": "maintainer@example.test" }, "text": "Recommendation wording is approved." },
@@ -70,6 +74,8 @@
     { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
     { "kind": "paragraph", "pattern": "Theme fidelity" },
     { "kind": "paragraph", "pattern": "Inherited character style" },
+    { "kind": "hyperlink", "pattern": "RecommendationSection" },
+    { "kind": "bookmark", "pattern": "RecommendationSection" },
     { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
     { "kind": "listItem", "pattern": "nested numbering levels" },
     { "kind": "table", "pattern": "readiness-table" },
@@ -81,7 +87,7 @@
   "qa": {
     "previewFormat": "svg",
     "nativeRender": "auto",
-    "inspectKind": "document,theme,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,style,layout",
+    "inspectKind": "document,theme,paragraph,listItem,table,bookmark,comment,header,footer,hyperlink,field,citation,image,style,layout",
     "maxChars": 24000
   }
 }
