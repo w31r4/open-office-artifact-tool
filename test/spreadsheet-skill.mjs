@@ -75,8 +75,10 @@ try {
   assert.equal(nativeCommentThread?.comments[1].parentId, nativeCommentThread?.comments[0].id);
   assert.equal(nativeCommentThread?.comments[1].author, "QA Reviewer");
   const fixturePivotXml = await fixtureZip.file("xl/pivotTables/pivotTable1.xml").async("text");
+  const fixturePivotCacheXml = await fixtureZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
   assert.match(fixturePivotXml, /x14:pivotFilter useWholeDay="0"/);
   assert.match(fixturePivotXml, /stringValue1="2026-03-31T17:00:00" stringValue2="2026-03-31T19:00:00"/);
+  assert.match(fixturePivotCacheXml, /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost'\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
   const summaryDrawings = workbook.worksheets.getItem("Summary");
   assert.equal(summaryDrawings.charts.items.length, 1);
   assert.equal(summaryDrawings.charts.items[0].title, "Quarter performance");
@@ -97,8 +99,11 @@ try {
   ]);
   assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }, { field: "Period End", type: "dateBetween", value1: "2026-03-31T17:00:00", value2: "2026-03-31T19:00:00", useWholeDay: false }]);
   assert.deepEqual(summaryPivot.calculatedFields, [
-    { name: "Margin Rate", formula: "=IF('Revenue'>='Cost',IFERROR(('Revenue'-'Cost')/'Revenue',0),0)", numFmtId: 0, references: ["Revenue", "Cost"] },
+    { name: "Margin Rate", formula: "=IF(AND(ISNUMBER('Revenue'),'Revenue'>='Cost'),IFERROR(ROUND(SQRT(POWER('Revenue'-'Cost',2))/'Revenue',2),0),0)", numFmtId: 0, references: ["Revenue", "Cost"] },
   ]);
+  assert.deepEqual(nativeCommentWorkbook.resolve("RevenuePivot").calculatedFields, summaryPivot.calculatedFields);
+  const nativePivotSecondZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(nativeCommentWorkbook)).arrayBuffer()));
+  assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost'\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
   assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);

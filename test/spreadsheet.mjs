@@ -29,15 +29,50 @@ assert.equal(evaluatePivotFormula("=IFERROR(Revenue/Cost,Cost/0)", { Revenue: 10
 assert.equal(evaluatePivotFormula("=IFERROR(1E308*1E308,0)", {}), 0);
 assert.equal(evaluatePivotFormula("=IFERROR(SUM(1E308,1E308),0)", {}), 0);
 assert.equal(evaluatePivotFormula('=IFERROR(Revenue/Cost,"say ""n/a""")', { Revenue: 10, Cost: 0 }), 'say "n/a"');
+assert.equal(evaluatePivotFormula('=IFERROR("#review","fallback")', {}), "#review");
+assert.equal(evaluatePivotFormula('=IFERROR("#N/A","fallback")', {}), "#N/A");
+assert.equal(evaluatePivotFormula('=IFERROR("#"&"N/A","fallback")', {}), "#N/A");
 assert.equal(evaluatePivotFormula("=IF(Revenue/0,1,2)", { Revenue: 10 }), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=PRODUCT(Revenue,Cost,2)", { Revenue: 3, Cost: 4 }), 24);
+assert.equal(evaluatePivotFormula("=PRODUCT(1E308,1E308)", {}), "#NUM!");
+assert.equal(evaluatePivotFormula("=POWER(3,2)", {}), 9);
+assert.equal(evaluatePivotFormula("=POWER(0,-1)", {}), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=POWER(-1,0.5)", {}), "#NUM!");
+assert.equal(evaluatePivotFormula("=SQRT(81)", {}), 9);
+assert.equal(evaluatePivotFormula("=SQRT(-1)", {}), "#NUM!");
+assert.equal(evaluatePivotFormula("=MOD(-3,2)", {}), 1);
+assert.equal(evaluatePivotFormula("=MOD(3,-2)", {}), -1);
+assert.equal(evaluatePivotFormula("=MOD(3,0)", {}), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=SIGN(-4)+SIGN(0)+SIGN(5)", {}), 0);
+assert.equal(evaluatePivotFormula("=INT(-1.2)", {}), -2);
+assert.equal(evaluatePivotFormula("=AND(Revenue>Cost,Cost>0)", { Revenue: 10, Cost: 4 }), true);
+assert.equal(evaluatePivotFormula("=OR(FALSE,0,Revenue>Cost)", { Revenue: 10, Cost: 4 }), true);
+assert.equal(evaluatePivotFormula("=NOT(Revenue=Cost)", { Revenue: 10, Cost: 4 }), true);
+assert.equal(evaluatePivotFormula('=AND(TRUE,"invalid")', {}), "#VALUE!");
+assert.equal(evaluatePivotFormula("=NA()", {}), "#N/A");
+assert.equal(evaluatePivotFormula("=IFNA(NA(),7)", {}), 7);
+assert.equal(evaluatePivotFormula("=IFNA(1,Revenue/0)", { Revenue: 10 }), 1);
+assert.equal(evaluatePivotFormula("=IFNA(Revenue/0,7)", { Revenue: 10 }), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=ISERROR(Revenue/0)", { Revenue: 10 }), true);
+assert.equal(evaluatePivotFormula("=ISERROR(NA())", {}), true);
+assert.equal(evaluatePivotFormula('=ISERROR("#N/A")', {}), false);
+assert.equal(evaluatePivotFormula("=ISERROR(Revenue)", { Revenue: 10 }), false);
+assert.equal(evaluatePivotFormula("=ISNUMBER(Revenue)", { Revenue: 10 }), true);
+assert.equal(evaluatePivotFormula('=ISNUMBER("10")', {}), false);
+assert.equal(evaluatePivotFormula('=ISTEXT("#review")', {}), true);
+assert.equal(evaluatePivotFormula('=ISTEXT("#N/A")', {}), true);
+assert.equal(evaluatePivotFormula("=ISTEXT(Revenue/0)", { Revenue: 10 }), false);
 assert.throws(() => evaluatePivotFormula("=ABS(Revenue,Cost)", { Revenue: 1, Cost: 2 }), /exactly one argument/);
 assert.throws(() => evaluatePivotFormula("=SUM()", {}), /at least one argument/);
 assert.throws(() => evaluatePivotFormula(`=SUM(${Array(33).fill("1").join(",")})`, {}), /exceeds 32 arguments/);
 assert.throws(() => evaluatePivotFormula("=ROUND(1,16)", {}), /integer from -15 to 15/);
 assert.throws(() => evaluatePivotFormula("=IF(Revenue>0)", { Revenue: 1 }), /requires 2 or 3 arguments/);
 assert.throws(() => evaluatePivotFormula("=IFERROR(Revenue)", { Revenue: 1 }), /exactly two arguments/);
+assert.throws(() => evaluatePivotFormula("=NOT(TRUE,FALSE)", {}), /exactly one argument/);
+assert.throws(() => evaluatePivotFormula("=AND()", {}), /at least one argument/);
+assert.throws(() => evaluatePivotFormula("=NA(1)", {}), /exactly 0 arguments/);
 assert.throws(() => evaluatePivotFormula('=IFERROR(Revenue,"unterminated)', { Revenue: 1 }), /unterminated string constant/);
-assert.throws(() => evaluatePivotFormula("=SQRT(Revenue)", { Revenue: 1 }), /unsupported function SQRT/);
+assert.throws(() => evaluatePivotFormula("=LOG(Revenue)", { Revenue: 1 }), /unsupported function LOG/);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1904-01-01" }], "Date", 0, "1904"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-03-01" }], "Date", 61, "1900"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-02-29" }], "Date", 60, "1900"), true);
@@ -546,26 +581,38 @@ functionSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East"
 const functionPivot = functionSheet.pivotTables.add({
   name: "FunctionPivot",
   sourceRange: "A1:C4",
-  targetRange: "E1:H4",
+  targetRange: "E1:L4",
   rowFields: ["Region"],
   calculatedFields: [
     { name: "Margin Ratio", formula: "=ROUND(ABS([Revenue]-[Cost])/MAX([Cost],1),2)" },
     { name: "Guarded Margin", formula: "=IF([Cost]=0,0,ROUND(([Revenue]-[Cost])/[Cost],2))" },
     { name: "Safe Ratio", formula: '=IFERROR([Revenue]/[Cost],"n/a")' },
+    { name: "Valid Margin", formula: "=AND(ISNUMBER([Revenue]),NOT([Revenue]<[Cost]))" },
+    { name: "Margin Distance", formula: "=IFNA(SQRT(POWER([Revenue]-[Cost],2)),0)" },
+    { name: "Revenue Modulus", formula: "=MOD(INT([Revenue]),MAX(SIGN([Cost]),1)+2)" },
+    { name: "Scaled Margin", formula: "=PRODUCT([Revenue]-[Cost],2)" },
   ],
   valueFields: [
     { field: "Margin Ratio", name: "Rounded margin" },
     { field: "Guarded Margin", name: "Guarded margin" },
     { field: "Safe Ratio", name: "Safe ratio" },
+    { field: "Valid Margin", name: "Valid margin" },
+    { field: "Margin Distance", name: "Margin distance" },
+    { field: "Revenue Modulus", name: "Revenue modulus" },
+    { field: "Scaled Margin", name: "Scaled margin" },
   ],
 });
-assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin", "Guarded margin", "Safe ratio"], ["East", 1.5, 1.5, 2.5], ["West", 5, 0, "n/a"]]);
+assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin", "Guarded margin", "Safe ratio", "Valid margin", "Margin distance", "Revenue modulus", "Scaled margin"], ["East", 1.5, 1.5, 2.5, true, 18, 0, 36], ["West", 5, 0, "n/a", true, 5, 2, 10]]);
 const functionXlsx = await SpreadsheetFile.exportXlsx(functionBook);
 const functionZip = await JSZip.loadAsync(new Uint8Array(await functionXlsx.arrayBuffer()));
 const functionPivotCacheXml = await functionZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
 assert.match(functionPivotCacheXml, /formula="ROUND\(ABS\('Revenue'-'Cost'\)\/MAX\('Cost',1\),2\)"/);
 assert.match(functionPivotCacheXml, /formula="IF\('Cost'=0,0,ROUND\(\('Revenue'-'Cost'\)\/'Cost',2\)\)"/);
 assert.match(functionPivotCacheXml, /formula="IFERROR\('Revenue'\/'Cost',&quot;n\/a&quot;\)"/);
+assert.match(functionPivotCacheXml, /formula="AND\(ISNUMBER\('Revenue'\),NOT\('Revenue'&lt;'Cost'\)\)"/);
+assert.match(functionPivotCacheXml, /formula="IFNA\(SQRT\(POWER\('Revenue'-'Cost',2\)\),0\)"/);
+assert.match(functionPivotCacheXml, /formula="MOD\(INT\('Revenue'\),MAX\(SIGN\('Cost'\),1\)\+2\)"/);
+assert.match(functionPivotCacheXml, /formula="PRODUCT\('Revenue'-'Cost',2\)"/);
 functionZip.remove("customXml/open-office-artifact.json");
 const nativeFunctionBook = await SpreadsheetFile.importXlsx(new FileBlob(await functionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: functionXlsx.type }));
 assert.deepEqual(nativeFunctionBook.resolve("FunctionPivot").computedValues(), functionPivot.computedValues());
@@ -1586,14 +1633,14 @@ assert.deepEqual(nativeOnlyCalendarRoundtrip.resolve("CalendarPivot").groupField
 assert.deepEqual(nativeOnlyCalendarRoundtrip.resolve("CalendarPivot").computedValues(), calendarPivot.computedValues());
 const unsupportedCalculatedZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedCalculatedZip.remove("customXml/open-office-artifact.json");
-unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"SQRT('Revenue')\""));
+unsupportedCalculatedZip.file("xl/pivotCache/pivotCacheDefinition2.xml", regionalPivotCacheXml.replace(/formula="[^"]+"/, "formula=\"LOG('Revenue')\""));
 const unsupportedCalculatedWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await unsupportedCalculatedZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
 const unsupportedCalculatedPivot = unsupportedCalculatedWorkbook.resolve("RegionalPivot");
 assert.equal(unsupportedCalculatedPivot.calculatedFields[0].supported, false);
 assert.equal(unsupportedCalculatedPivot.computedValues()[1][3], "#NAME?");
 assert.match(unsupportedCalculatedWorkbook.verify().ndjson, /pivotCalculatedFieldUnsupported/);
 const unsupportedCalculatedRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(unsupportedCalculatedWorkbook)).arrayBuffer()));
-assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="SQRT\('Revenue'\)"/);
+assert.match(await unsupportedCalculatedRoundtripZip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text"), /formula="LOG\('Revenue'\)"/);
 const unsupportedGroupZip = await JSZip.loadAsync(xlsxBytes);
 unsupportedGroupZip.remove("customXml/open-office-artifact.json");
 unsupportedGroupZip.file("xl/pivotCache/pivotCacheDefinition3.xml", calendarPivotCacheXml.replace('groupBy="months"', 'groupBy="weeks"'));
