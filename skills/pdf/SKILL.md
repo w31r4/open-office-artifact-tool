@@ -118,7 +118,7 @@ node skills/pdf/scripts/run-fixture.mjs \
 - PDF.js independently parses the real exported bytes into page text geometry, regions, inferred tables, and bounded PNG image data when XObject pixels are available; placeholders must be reported when masks or unsupported color spaces prevent extraction.
 - Per-page Playwright PNGs catch modeled preview regressions.
 - Poppler PNGs are the real PDF render gate; inspect every page at full size.
-- Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve changes only after full-page review.
+- Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve changes only after full-page review. Supplying `--baseline-dir` is fail-closed: initialize it with `--write-baseline true`, because missing, empty, or non-contiguously numbered model/native page sets are rejected.
 - Baseline approval replaces stale model/native page files; later page-count changes fail QA even if all remaining pages match.
 - Changed pages write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.

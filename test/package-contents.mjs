@@ -37,6 +37,7 @@ for (const required of [
   "native/OfficeBridge/src/OfficeBridge.csproj",
   "native/OfficeBridge/tests/BridgeProtocolTests.cs",
   "skills/spreadsheets/SKILL.md",
+  "skills/shared/visual-baselines.mjs",
   "skills/spreadsheets/scripts/verify-workbook.mjs",
   "skills/spreadsheets/fixtures/formula-summary.json",
   "skills/documents/SKILL.md",

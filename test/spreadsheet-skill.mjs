@@ -120,6 +120,17 @@ try {
   assert.equal(secondQa.summary.verifyOk, true);
   assert.equal(secondQa.summary.packageOk, true);
   assert.equal(secondQa.summary.sheetName, "Inputs");
+  await assert.rejects(
+    () => verifyWorkbookFile(result.workbookPath, {
+      outputDir: path.join(outputDir, "missing-baseline"),
+      sheetName: "Summary",
+      range: "A1:D4",
+      renderFormat: "png",
+      baselineDir: path.join(outputDir, "not-initialized-baselines"),
+      nativeRender: "off",
+    }),
+    /Visual baseline is missing.*writeBaseline=true/,
+  );
 
   const nativeStatus = nativeSpreadsheetRenderStatus();
   if (nativeStatus.commands.soffice) {

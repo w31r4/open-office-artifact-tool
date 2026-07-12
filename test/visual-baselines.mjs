@@ -52,6 +52,14 @@ try {
   await prepareNumberedVisualBaselines(baselineDir, "native-page", { writeBaseline: true });
   assert.equal((await fs.readFile(path.join(baselineDir, "keep.txt"), "utf8")), "keep");
   await assert.rejects(() => fs.stat(path.join(baselineDir, "native-page-1.png")), { code: "ENOENT" });
+  await Promise.all([
+    fs.writeFile(path.join(baselineDir, "native-page-1.png"), whitePixelPng),
+    fs.writeFile(path.join(baselineDir, "native-page-3.png"), whitePixelPng),
+  ]);
+  await assert.rejects(
+    () => prepareNumberedVisualBaselines(baselineDir, "native-page"),
+    /numbered continuously from 1/,
+  );
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }

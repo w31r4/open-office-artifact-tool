@@ -30,17 +30,21 @@ export async function prepareNumberedVisualBaselines(baselineDir, prefix, option
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
-  const files = entries
+  const numbered = entries
     .map((name) => ({ name, match: pattern.exec(name) }))
     .filter((entry) => entry.match)
-    .sort((left, right) => Number(left.match[1]) - Number(right.match[1]))
-    .map((entry) => path.join(baselineDir, entry.name));
+    .sort((left, right) => Number(left.match[1]) - Number(right.match[1]));
+  const files = numbered.map((entry) => path.join(baselineDir, entry.name));
   if (options.writeBaseline === true) {
     await fs.mkdir(baselineDir, { recursive: true });
     await Promise.all(files.map((filePath) => fs.unlink(filePath)));
     return { files: [], expectedCount: undefined };
   }
   if (files.length === 0) throw missingBaselineError(path.join(baselineDir, `${prefix}-N.png`));
+  const invalidIndex = numbered.findIndex((entry, index) => Number(entry.match[1]) !== index + 1);
+  if (invalidIndex >= 0) {
+    throw new Error(`Visual baseline set must be numbered continuously from 1: ${path.join(baselineDir, `${prefix}-N.png`)}.`);
+  }
   return { files, expectedCount: files.length };
 }
 

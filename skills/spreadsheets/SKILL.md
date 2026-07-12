@@ -148,7 +148,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - For CSV/TSV, save `SpreadsheetFile.inspectDelimited()` evidence and review delimiter, dimensions, quoting, BOM, and formula-like cell counts; remember that delimited delivery cannot preserve workbook-only features.
 - Produce a layout record and visual preview for every user-facing sheet with `--all-sheets true`; the selected `--range` narrows only the primary sheet.
 - Use Playwright raster output for deterministic previews; use LibreOffice or Microsoft Office when native application fidelity is the acceptance criterion.
-- Raster baselines use `visualQaArtifact(..., { pixelDiff: true })`; baseline filenames are stable per worksheet.
+- Raster baselines use `visualQaArtifact(..., { pixelDiff: true })`; baseline filenames are stable per worksheet. Supplying `--baseline-dir` is fail-closed: initialize it with `--write-baseline true`, because missing sheet images and missing, empty, or non-contiguously numbered native-page sets are rejected.
 - When pixels change, the QA output records a `.diff.png` heatmap path for focused agent review.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
 - For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.

@@ -127,7 +127,7 @@ node skills/documents/scripts/verify-document.mjs \
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.
-- PNG baselines compare the modeled preview and every native page through `visualQaArtifact(..., { pixelDiff: true })`; baseline page-count changes fail QA.
+- PNG baselines compare the modeled preview and every native page through `visualQaArtifact(..., { pixelDiff: true })`; baseline page-count changes fail QA. Supplying `--baseline-dir` is fail-closed: initialize it with `--write-baseline true`, because missing, empty, or non-contiguously numbered page sets are rejected.
 - Changed pages write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
 - For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.

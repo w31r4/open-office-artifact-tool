@@ -118,7 +118,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - `presentation.verify()` and `presentation.validateLayout()` catch structural, overlap, off-canvas, overflow, chart, table, image, placeholder, and dangling-comment issues.
 - Per-slide Playwright PNGs catch facade/render regressions; the montage checks deck flow only.
 - LibreOffice PDF plus Poppler slide PNGs are the native non-Windows render gate.
-- Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve baseline changes only after full-size review.
+- Optional PNG baselines use `visualQaArtifact(..., { pixelDiff: true })`; approve baseline changes only after full-size review. Supplying `--baseline-dir` is fail-closed: initialize it with `--write-baseline true`, because missing, empty, or non-contiguously numbered model/native slide sets are rejected.
 - Baseline approval replaces stale model/native slide files; later slide-count changes fail QA even if all remaining slides match.
 - Changed slides write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
 - Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
