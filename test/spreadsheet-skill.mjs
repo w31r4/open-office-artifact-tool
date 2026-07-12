@@ -89,14 +89,16 @@ try {
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.equal(summaryDrawings.pivotTables.items.length, 1);
   const summaryPivot = summaryDrawings.pivotTables.getItemOrNullObject("RevenuePivot");
-  assert.deepEqual(summaryPivot.computedValues(), [["Period Year", "Period Quarter", "Period Month", "Month", "Period End", "Revenue total", "Gross profit"], ["2026", "Q1", "Mar", "Mar", "2026-03-31T18:00:00Z", 150, 60]]);
+  assert.deepEqual(summaryPivot.computedValues(), [["Period Year", "Period Quarter", "Period Month", "Month", "Period End", "Revenue total", "Margin rate"], ["2026", "Q1", "Mar", "Mar", "2026-03-31T18:00:00Z", 150, 0.4]]);
   assert.deepEqual(summaryPivot.groupFields, [
     { name: "Period Year", sourceField: "Period End", groupBy: "years" },
     { name: "Period Quarter", sourceField: "Period End", groupBy: "quarters", parent: "Period Year" },
     { name: "Period Month", sourceField: "Period End", groupBy: "months", parent: "Period Quarter" },
   ]);
   assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }, { field: "Period End", type: "dateBetween", value1: "2026-03-31T17:00:00", value2: "2026-03-31T19:00:00", useWholeDay: false }]);
-  assert.deepEqual(summaryPivot.calculatedFields, [{ name: "Gross Profit", formula: "='Revenue'-'Cost'", numFmtId: 0, references: ["Revenue", "Cost"] }]);
+  assert.deepEqual(summaryPivot.calculatedFields, [
+    { name: "Margin Rate", formula: "=IF('Revenue'>='Cost',IFERROR(('Revenue'-'Cost')/'Revenue',0),0)", numFmtId: 0, references: ["Revenue", "Cost"] },
+  ]);
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
   assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);
@@ -115,7 +117,8 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"field":"Period End","type":"dateBetween"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"useWholeDay":false/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"groupBy":"quarters"/);
-  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Gross Profit"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"calculatedFields":\[\{"name":"Margin Rate"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"name":"Margin Rate"/);
   assert.match(result.qa.workbook.inspect({ kind: "thread", maxChars: 4000 }).ndjson, /Margin evidence is approved/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);

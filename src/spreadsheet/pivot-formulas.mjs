@@ -1,4 +1,26 @@
-const PIVOT_FUNCTIONS = new Set(["ABS", "SUM", "MIN", "MAX", "AVERAGE", "ROUND"]);
+const PIVOT_FUNCTIONS = new Map([
+  ["ABS", { minArgs: 1, maxArgs: 1 }],
+  ["SUM", { minArgs: 1, maxArgs: 32 }],
+  ["MIN", { minArgs: 1, maxArgs: 32 }],
+  ["MAX", { minArgs: 1, maxArgs: 32 }],
+  ["AVERAGE", { minArgs: 1, maxArgs: 32 }],
+  ["ROUND", { minArgs: 2, maxArgs: 2 }],
+  ["IF", { minArgs: 2, maxArgs: 3 }],
+  ["IFERROR", { minArgs: 2, maxArgs: 2 }],
+]);
+
+const COMPARISON_OPERATORS = new Set(["=", "<>", "<", "<=", ">", ">="]);
+
+function quotedStringToken(text, index) {
+  let value = "";
+  index += 1;
+  while (index < text.length) {
+    if (text[index] !== '"') { value += text[index++]; continue; }
+    if (text[index + 1] === '"') { value += '"'; index += 2; continue; }
+    return { token: { type: "string", value }, nextIndex: index + 1 };
+  }
+  throw new SyntaxError("PivotTable calculated field formula has an unterminated string constant.");
+}
 
 function formulaTokens(formula, fields) {
   const text = String(formula || "").trim().replace(/^=/, "");
@@ -11,7 +33,15 @@ function formulaTokens(formula, fields) {
     const rest = text.slice(index);
     const number = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?/.exec(rest)?.[0];
     if (number) { tokens.push({ type: "number", value: Number(number) }); index += number.length; continue; }
-    if ("+-*/^()%,".includes(text[index])) { tokens.push({ type: "operator", value: text[index++] }); continue; }
+    if (text[index] === '"') {
+      const parsed = quotedStringToken(text, index);
+      tokens.push(parsed.token);
+      index = parsed.nextIndex;
+      continue;
+    }
+    const comparison = /^(?:<>|<=|>=)/.exec(rest)?.[0];
+    if (comparison) { tokens.push({ type: "operator", value: comparison }); index += comparison.length; continue; }
+    if ("+-*/^()%,&=<>".includes(text[index])) { tokens.push({ type: "operator", value: text[index++] }); continue; }
     let field;
     if (text[index] === "[") {
       const end = text.indexOf("]", index + 1);
@@ -33,10 +63,15 @@ function formulaTokens(formula, fields) {
       const identifier = /^[A-Za-z_][A-Za-z0-9_.]*/.exec(rest)?.[0];
       if (!identifier) throw new SyntaxError(`PivotTable calculated field formula has unsupported token near ${rest.slice(0, 12)}.`);
       const next = text.slice(index + identifier.length).trimStart()[0];
+      const normalized = identifier.toUpperCase();
       if (next === "(") {
-        const functionName = identifier.toUpperCase();
-        if (!PIVOT_FUNCTIONS.has(functionName)) throw new SyntaxError(`PivotTable calculated field formula uses unsupported function ${identifier}.`);
-        tokens.push({ type: "function", value: functionName });
+        if (!PIVOT_FUNCTIONS.has(normalized)) throw new SyntaxError(`PivotTable calculated field formula uses unsupported function ${identifier}.`);
+        tokens.push({ type: "function", value: normalized });
+        index += identifier.length;
+        continue;
+      }
+      if (normalized === "TRUE" || normalized === "FALSE") {
+        tokens.push({ type: "boolean", value: normalized === "TRUE" });
         index += identifier.length;
         continue;
       }
@@ -51,15 +86,107 @@ function formulaTokens(formula, fields) {
 }
 
 function renderPivotFormula(tokens) {
-  return tokens.map((token) => token.type === "field" ? `'${token.value.replaceAll("'", "''")}'` : String(token.value)).join("");
+  return tokens.map((token) => {
+    if (token.type === "field") return `'${token.value.replaceAll("'", "''")}'`;
+    if (token.type === "string") return `"${token.value.replaceAll('"', '""')}"`;
+    if (token.type === "boolean") return token.value ? "TRUE" : "FALSE";
+    return String(token.value);
+  }).join("");
 }
 
 function uniqueReferences(tokens) {
   return [...new Set(tokens.filter((token) => token.type === "field").map((token) => token.value))];
 }
 
+function pivotFormulaAst(tokens) {
+  let index = 0;
+  const primary = () => {
+    const token = tokens[index++];
+    if (!token) throw new SyntaxError("PivotTable calculated field formula ended unexpectedly.");
+    if (["number", "string", "boolean"].includes(token.type)) return { kind: "literal", value: token.value };
+    if (token.type === "field") return { kind: "field", name: token.value };
+    if (token.type === "function") {
+      if (tokens[index++]?.value !== "(") throw new SyntaxError(`PivotTable ${token.value} requires an opening parenthesis.`);
+      const args = [];
+      if (tokens[index]?.value !== ")") {
+        args.push(comparison());
+        while (tokens[index]?.value === ",") { index += 1; args.push(comparison()); }
+      }
+      if (tokens[index++]?.value !== ")") throw new SyntaxError(`PivotTable ${token.value} requires a closing parenthesis.`);
+      return { kind: "call", name: token.value, args };
+    }
+    if (token.value === "(") {
+      const value = comparison();
+      if (tokens[index++]?.value !== ")") throw new SyntaxError("PivotTable calculated field formula requires a closing parenthesis.");
+      return value;
+    }
+    throw new SyntaxError(`PivotTable calculated field formula has unexpected token ${token.value}.`);
+  };
+  const unary = () => ["+", "-"].includes(tokens[index]?.value) ? { kind: "unary", operator: tokens[index++].value, value: unary() } : primary();
+  const power = () => {
+    let left = unary();
+    if (tokens[index]?.value === "^") { index += 1; left = { kind: "binary", operator: "^", left, right: power() }; }
+    return left;
+  };
+  const percent = () => {
+    let value = power();
+    while (tokens[index]?.value === "%") { index += 1; value = { kind: "percent", value }; }
+    return value;
+  };
+  const term = () => {
+    let left = percent();
+    while (["*", "/"].includes(tokens[index]?.value)) { const operator = tokens[index++].value; left = { kind: "binary", operator, left, right: percent() }; }
+    return left;
+  };
+  const additive = () => {
+    let left = term();
+    while (["+", "-"].includes(tokens[index]?.value)) { const operator = tokens[index++].value; left = { kind: "binary", operator, left, right: term() }; }
+    return left;
+  };
+  const concatenate = () => {
+    let left = additive();
+    while (tokens[index]?.value === "&") { index += 1; left = { kind: "binary", operator: "&", left, right: additive() }; }
+    return left;
+  };
+  const comparison = () => {
+    let left = concatenate();
+    while (COMPARISON_OPERATORS.has(tokens[index]?.value)) { const operator = tokens[index++].value; left = { kind: "binary", operator, left, right: concatenate() }; }
+    return left;
+  };
+  const root = comparison();
+  if (index !== tokens.length) throw new SyntaxError(`PivotTable calculated field formula has unexpected token ${tokens[index].value}.`);
+  return root;
+}
+
+function validateFunction(node) {
+  const contract = PIVOT_FUNCTIONS.get(node.name);
+  if (node.args.length >= contract.minArgs && node.args.length <= contract.maxArgs) return;
+  if (contract.minArgs === contract.maxArgs) {
+    const count = contract.minArgs === 1 ? "one" : contract.minArgs === 2 ? "two" : String(contract.minArgs);
+    throw new SyntaxError(`PivotTable ${node.name} requires exactly ${count} argument${contract.minArgs === 1 ? "" : "s"}.`);
+  }
+  if (contract.minArgs === 1 && node.args.length < 1) throw new SyntaxError(`PivotTable ${node.name} requires at least one argument.`);
+  if (contract.maxArgs === 32 && node.args.length > 32) throw new RangeError(`PivotTable ${node.name} exceeds 32 arguments.`);
+  throw new SyntaxError(`PivotTable ${node.name} requires ${contract.minArgs} or ${contract.maxArgs} arguments.`);
+}
+
+function validatePivotFormulaAst(node) {
+  if (node.kind === "call") validateFunction(node);
+  if (node.left) validatePivotFormulaAst(node.left);
+  if (node.right) validatePivotFormulaAst(node.right);
+  if (node.value?.kind) validatePivotFormulaAst(node.value);
+  for (const arg of node.args || []) validatePivotFormulaAst(arg);
+}
+
+function parsedPivotFormula(formula, fields) {
+  const tokens = formulaTokens(formula, fields);
+  const ast = pivotFormulaAst(tokens);
+  validatePivotFormulaAst(ast);
+  return { tokens, ast };
+}
+
 export function pivotFormulaToOoxml(formula, fields) {
-  return renderPivotFormula(formulaTokens(formula, fields));
+  return renderPivotFormula(parsedPivotFormula(formula, fields).tokens);
 }
 
 export function normalizeCalculatedFields(value, sourceFields, allowUnsupported = false) {
@@ -76,9 +203,9 @@ export function normalizeCalculatedFields(value, sourceFields, allowUnsupported 
     const numFmtId = entry?.numFmtId == null ? 0 : Number(entry.numFmtId);
     if (!Number.isInteger(numFmtId) || numFmtId < 0) throw new TypeError(`PivotTable calculatedFields[${index}] numFmtId must be a non-negative integer.`);
     try {
-      const tokens = formulaTokens(formula, sourceFields);
+      const parsed = parsedPivotFormula(formula, sourceFields);
       evaluatePivotFormula(formula, Object.fromEntries(sourceFields.map((field) => [field, 0])), sourceFields);
-      return { name, formula: `=${renderPivotFormula(tokens)}`, numFmtId, references: uniqueReferences(tokens) };
+      return { name, formula: `=${renderPivotFormula(parsed.tokens)}`, numFmtId, references: uniqueReferences(parsed.tokens) };
     } catch (error) {
       if (!allowUnsupported || error instanceof RangeError) throw error;
       return { name, formula: formula.startsWith("=") ? formula : `=${formula}`, numFmtId, references: [], supported: false, error: error.message };
@@ -86,74 +213,113 @@ export function normalizeCalculatedFields(value, sourceFields, allowUnsupported 
   });
 }
 
+function formulaError(value) {
+  return typeof value === "string" && value.startsWith("#");
+}
+
+function numericValue(value) {
+  if (formulaError(value)) return value;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : "#VALUE!";
+}
+
+function comparisonValue(left, operator, right) {
+  const leftNumber = typeof left !== "string" || left.trim() !== "" ? Number(left) : Number.NaN;
+  const rightNumber = typeof right !== "string" || right.trim() !== "" ? Number(right) : Number.NaN;
+  const numeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+  const a = numeric ? leftNumber : String(left).toLocaleLowerCase("en-US");
+  const b = numeric ? rightNumber : String(right).toLocaleLowerCase("en-US");
+  if (operator === "=") return a === b;
+  if (operator === "<>") return a !== b;
+  if (operator === "<") return a < b;
+  if (operator === "<=") return a <= b;
+  if (operator === ">") return a > b;
+  return a >= b;
+}
+
 function formulaBinary(left, operator, right) {
-  if (typeof left === "string" && left.startsWith("#")) return left;
-  if (typeof right === "string" && right.startsWith("#")) return right;
-  if (operator === "/" && right === 0) return "#DIV/0!";
-  if (operator === "+") return left + right;
-  if (operator === "-") return left - right;
-  if (operator === "*") return left * right;
-  if (operator === "/") return left / right;
-  return left ** right;
+  if (formulaError(left)) return left;
+  if (formulaError(right)) return right;
+  if (COMPARISON_OPERATORS.has(operator)) return comparisonValue(left, operator, right);
+  if (operator === "&") return `${left}${right}`;
+  const a = numericValue(left);
+  const b = numericValue(right);
+  if (formulaError(a)) return a;
+  if (formulaError(b)) return b;
+  if (operator === "/" && b === 0) return "#DIV/0!";
+  if (operator === "+") return a + b;
+  if (operator === "-") return a - b;
+  if (operator === "*") return a * b;
+  if (operator === "/") return a / b;
+  return a ** b;
 }
 
 function formulaUnary(value, transform) {
-  return typeof value === "string" && value.startsWith("#") ? value : transform(Number(value));
+  if (formulaError(value)) return value;
+  const number = numericValue(value);
+  return formulaError(number) ? number : transform(number);
 }
 
 function formulaFunction(name, args) {
-  const error = args.find((value) => typeof value === "string" && value.startsWith("#"));
+  const error = args.find(formulaError);
   if (error) return error;
-  if (name === "ABS") {
-    if (args.length !== 1) throw new SyntaxError("PivotTable ABS requires exactly one argument.");
-    return Math.abs(Number(args[0]));
-  }
+  if (name === "ABS") return formulaUnary(args[0], Math.abs);
   if (name === "ROUND") {
-    if (args.length !== 2) throw new SyntaxError("PivotTable ROUND requires exactly two arguments.");
-    const digits = Number(args[1]);
+    const digits = numericValue(args[1]);
+    if (formulaError(digits)) return digits;
     if (!Number.isInteger(digits) || digits < -15 || digits > 15) throw new RangeError("PivotTable ROUND digits must be an integer from -15 to 15.");
+    const value = numericValue(args[0]);
+    if (formulaError(value)) return value;
     const factor = 10 ** Math.abs(digits);
-    const value = Number(args[0]);
     const scaled = digits >= 0 ? Math.abs(value) * factor : Math.abs(value) / factor;
     const rounded = Math.sign(value) * Math.round(scaled + Number.EPSILON * scaled) * (digits >= 0 ? 1 / factor : factor);
     return rounded === 0 ? 0 : rounded;
   }
-  if (!args.length) throw new SyntaxError(`PivotTable ${name} requires at least one argument.`);
-  if (args.length > 32) throw new RangeError(`PivotTable ${name} exceeds 32 arguments.`);
-  const numbers = args.map(Number);
+  const numbers = args.map(numericValue);
+  const numericError = numbers.find(formulaError);
+  if (numericError) return numericError;
   if (name === "SUM") return numbers.reduce((sum, value) => sum + value, 0);
   if (name === "MIN") return Math.min(...numbers);
   if (name === "MAX") return Math.max(...numbers);
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
 }
 
+function formulaCondition(value) {
+  if (formulaError(value)) return value;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const normalized = String(value).trim().toUpperCase();
+  if (normalized === "TRUE") return true;
+  if (normalized === "FALSE" || normalized === "") return false;
+  return "#VALUE!";
+}
+
+function evaluatePivotAst(node, aggregates) {
+  if (node.kind === "literal") return node.value;
+  if (node.kind === "field") {
+    const value = Object.hasOwn(aggregates, node.name) ? aggregates[node.name] : 0;
+    if (formulaError(value)) return value;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  }
+  if (node.kind === "unary") return formulaUnary(evaluatePivotAst(node.value, aggregates), (value) => node.operator === "-" ? -value : value);
+  if (node.kind === "percent") return formulaUnary(evaluatePivotAst(node.value, aggregates), (value) => value / 100);
+  if (node.kind === "binary") return formulaBinary(evaluatePivotAst(node.left, aggregates), node.operator, evaluatePivotAst(node.right, aggregates));
+  if (node.name === "IF") {
+    const condition = formulaCondition(evaluatePivotAst(node.args[0], aggregates));
+    if (formulaError(condition)) return condition;
+    if (condition) return evaluatePivotAst(node.args[1], aggregates);
+    return node.args[2] ? evaluatePivotAst(node.args[2], aggregates) : false;
+  }
+  if (node.name === "IFERROR") {
+    const value = evaluatePivotAst(node.args[0], aggregates);
+    return formulaError(value) ? evaluatePivotAst(node.args[1], aggregates) : value;
+  }
+  return formulaFunction(node.name, node.args.map((arg) => evaluatePivotAst(arg, aggregates)));
+}
+
 export function evaluatePivotFormula(formula, aggregates = {}, fields = Object.keys(aggregates)) {
-  const tokens = formulaTokens(formula, fields);
-  let index = 0;
-  const primary = () => {
-    const token = tokens[index++];
-    if (!token) throw new SyntaxError("PivotTable calculated field formula ended unexpectedly.");
-    if (token.type === "number") return token.value;
-    if (token.type === "field") return Number(aggregates[token.value]) || 0;
-    if (token.type === "function") {
-      if (tokens[index++]?.value !== "(") throw new SyntaxError(`PivotTable ${token.value} requires an opening parenthesis.`);
-      const args = [];
-      if (tokens[index]?.value !== ")") {
-        args.push(expression());
-        while (tokens[index]?.value === ",") { index += 1; args.push(expression()); }
-      }
-      if (tokens[index++]?.value !== ")") throw new SyntaxError(`PivotTable ${token.value} requires a closing parenthesis.`);
-      return formulaFunction(token.value, args);
-    }
-    if (token.value === "(") { const value = expression(); if (tokens[index++]?.value !== ")") throw new SyntaxError("PivotTable calculated field formula requires a closing parenthesis."); return value; }
-    throw new SyntaxError(`PivotTable calculated field formula has unexpected token ${token.value}.`);
-  };
-  const unary = () => tokens[index]?.value === "+" ? (index++, formulaUnary(unary(), (value) => value)) : tokens[index]?.value === "-" ? (index++, formulaUnary(unary(), (value) => -value)) : primary();
-  const power = () => { let left = unary(); if (tokens[index]?.value === "^") { index += 1; left = formulaBinary(left, "^", power()); } return left; };
-  const percent = () => { let value = power(); while (tokens[index]?.value === "%") { index += 1; value = formulaUnary(value, (number) => number / 100); } return value; };
-  const term = () => { let left = percent(); while (["*", "/"].includes(tokens[index]?.value)) { const operator = tokens[index++].value; left = formulaBinary(left, operator, percent()); } return left; };
-  const expression = () => { let left = term(); while (["+", "-"].includes(tokens[index]?.value)) { const operator = tokens[index++].value; left = formulaBinary(left, operator, term()); } return left; };
-  const result = expression();
-  if (index !== tokens.length) throw new SyntaxError(`PivotTable calculated field formula has unexpected token ${tokens[index].value}.`);
-  return Number.isFinite(result) || (typeof result === "string" && result.startsWith("#")) ? result : "#NUM!";
+  const result = evaluatePivotAst(parsedPivotFormula(formula, fields).ast, aggregates);
+  if (formulaError(result) || typeof result === "string" || typeof result === "boolean") return result;
+  return Number.isFinite(result) ? result : "#NUM!";
 }

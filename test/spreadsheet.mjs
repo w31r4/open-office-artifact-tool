@@ -19,10 +19,22 @@ assert.equal(evaluatePivotFormula("=ROUND(-1.25,1)", {}), -1.3);
 assert.equal(evaluatePivotFormula("=ROUND(1.005,2)", {}), 1.01);
 assert.equal(Object.is(evaluatePivotFormula("=ROUND(-0.1,0)", {}), -0), false);
 assert.equal(evaluatePivotFormula("=ROUND(Revenue/0,2)", { Revenue: 10 }), "#DIV/0!");
+assert.equal(evaluatePivotFormula("=IF(Cost=0,0,Revenue/Cost)", { Revenue: 10, Cost: 0 }), 0);
+assert.equal(evaluatePivotFormula("=IF(Cost<>0,Revenue/Cost,0)", { Revenue: 10, Cost: 4 }), 2.5);
+assert.equal(evaluatePivotFormula("=IF(TRUE,1,Revenue/0)", { Revenue: 10 }), 1);
+assert.equal(evaluatePivotFormula("=IF(FALSE,Revenue/0)", { Revenue: 10 }), false);
+assert.equal(evaluatePivotFormula('=IF(Revenue>=Cost,"profit","loss")', { Revenue: 10, Cost: 4 }), "profit");
+assert.equal(evaluatePivotFormula('=IFERROR(Revenue/Cost,"n/a")', { Revenue: 10, Cost: 0 }), "n/a");
+assert.equal(evaluatePivotFormula("=IFERROR(Revenue/Cost,Cost/0)", { Revenue: 10, Cost: 4 }), 2.5);
+assert.equal(evaluatePivotFormula('=IFERROR(Revenue/Cost,"say ""n/a""")', { Revenue: 10, Cost: 0 }), 'say "n/a"');
+assert.equal(evaluatePivotFormula("=IF(Revenue/0,1,2)", { Revenue: 10 }), "#DIV/0!");
 assert.throws(() => evaluatePivotFormula("=ABS(Revenue,Cost)", { Revenue: 1, Cost: 2 }), /exactly one argument/);
 assert.throws(() => evaluatePivotFormula("=SUM()", {}), /at least one argument/);
 assert.throws(() => evaluatePivotFormula(`=SUM(${Array(33).fill("1").join(",")})`, {}), /exceeds 32 arguments/);
 assert.throws(() => evaluatePivotFormula("=ROUND(1,16)", {}), /integer from -15 to 15/);
+assert.throws(() => evaluatePivotFormula("=IF(Revenue>0)", { Revenue: 1 }), /requires 2 or 3 arguments/);
+assert.throws(() => evaluatePivotFormula("=IFERROR(Revenue)", { Revenue: 1 }), /exactly two arguments/);
+assert.throws(() => evaluatePivotFormula('=IFERROR(Revenue,"unterminated)', { Revenue: 1 }), /unterminated string constant/);
 assert.throws(() => evaluatePivotFormula("=SQRT(Revenue)", { Revenue: 1 }), /unsupported function SQRT/);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1904-01-01" }], "Date", 0, "1904"), true);
 assert.equal(pivotItemVisible([{ field: "Date", type: "dateEqual", value1: "1900-03-01" }], "Date", 61, "1900"), true);
@@ -532,18 +544,30 @@ functionSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East"
 const functionPivot = functionSheet.pivotTables.add({
   name: "FunctionPivot",
   sourceRange: "A1:C4",
-  targetRange: "E1:F4",
+  targetRange: "E1:H4",
   rowFields: ["Region"],
-  calculatedFields: [{ name: "Margin Ratio", formula: "=ROUND(ABS([Revenue]-[Cost])/MAX([Cost],1),2)" }],
-  valueFields: [{ field: "Margin Ratio", name: "Rounded margin" }],
+  calculatedFields: [
+    { name: "Margin Ratio", formula: "=ROUND(ABS([Revenue]-[Cost])/MAX([Cost],1),2)" },
+    { name: "Guarded Margin", formula: "=IF([Cost]=0,0,ROUND(([Revenue]-[Cost])/[Cost],2))" },
+    { name: "Safe Ratio", formula: '=IFERROR([Revenue]/[Cost],"n/a")' },
+  ],
+  valueFields: [
+    { field: "Margin Ratio", name: "Rounded margin" },
+    { field: "Guarded Margin", name: "Guarded margin" },
+    { field: "Safe Ratio", name: "Safe ratio" },
+  ],
 });
-assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin"], ["East", 1.5], ["West", 5]]);
+assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin", "Guarded margin", "Safe ratio"], ["East", 1.5, 1.5, 2.5], ["West", 5, 0, "n/a"]]);
 const functionXlsx = await SpreadsheetFile.exportXlsx(functionBook);
 const functionZip = await JSZip.loadAsync(new Uint8Array(await functionXlsx.arrayBuffer()));
-assert.match(await functionZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="ROUND\(ABS\('Revenue'-'Cost'\)\/MAX\('Cost',1\),2\)"/);
+const functionPivotCacheXml = await functionZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
+assert.match(functionPivotCacheXml, /formula="ROUND\(ABS\('Revenue'-'Cost'\)\/MAX\('Cost',1\),2\)"/);
+assert.match(functionPivotCacheXml, /formula="IF\('Cost'=0,0,ROUND\(\('Revenue'-'Cost'\)\/'Cost',2\)\)"/);
+assert.match(functionPivotCacheXml, /formula="IFERROR\('Revenue'\/'Cost',&quot;n\/a&quot;\)"/);
 functionZip.remove("customXml/open-office-artifact.json");
 const nativeFunctionBook = await SpreadsheetFile.importXlsx(new FileBlob(await functionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: functionXlsx.type }));
 assert.deepEqual(nativeFunctionBook.resolve("FunctionPivot").computedValues(), functionPivot.computedValues());
+assert.deepEqual(nativeFunctionBook.resolve("FunctionPivot").calculatedFields, functionPivot.calculatedFields);
 assert.deepEqual((await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeFunctionBook))).resolve("FunctionPivot").computedValues(), functionPivot.computedValues());
 assert.match(JSON.stringify(regionalPivot.layoutJson()), /calculatedFields/);
 assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
@@ -1522,6 +1546,7 @@ const mediaBytes = await zip.file("xl/media/image1.png").async("uint8array");
 assert.ok(mediaBytes.byteLength > 10);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
 assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
+assert.match(contentTypesXml, /PartName="\/xl\/drawings\/drawing1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.drawing\+xml"/);
 assert.match(contentTypesXml, /table1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.table\+xml"/);
 assert.match(contentTypesXml, /chart1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.drawingml\.chart\+xml"/);
 assert.match(contentTypesXml, /pivotTable1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.pivotTable\+xml"/);
@@ -1681,6 +1706,7 @@ relocatedDrawingZip.remove("xl/charts/chart1.xml");
 relocatedDrawingZip.remove("xl/charts/chart2.xml");
 relocatedDrawingZip.file("xl/worksheets/_rels/sheet1.xml.rels", (await relocatedDrawingZip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text")).replace("../drawings/drawing1.xml", "../custom/visuals/workbook-drawing.xml"));
 relocatedDrawingZip.file("[Content_Types].xml", (await relocatedDrawingZip.file("[Content_Types].xml").async("text"))
+  .replace("/xl/drawings/drawing1.xml", "/xl/custom/visuals/workbook-drawing.xml")
   .replace("/xl/charts/chart1.xml", "/xl/custom/visuals/chart-revenue.xml")
   .replace("/xl/charts/chart2.xml", "/xl/custom/visuals/chart-scores.xml"));
 const relocatedDrawingBlob = new FileBlob(await relocatedDrawingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type });

@@ -189,11 +189,11 @@
             "refreshedDateIso": "2026-07-12T00:00:00Z"
           },
           "calculatedFields": [
-            { "name": "Gross Profit", "formula": "=[Revenue] - [Cost]" }
+            { "name": "Margin Rate", "formula": "=IF([Revenue]>=[Cost],IFERROR(([Revenue]-[Cost])/[Revenue],0),0)" }
           ],
           "valueFields": [
             { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" },
-            { "field": "Gross Profit", "name": "Gross profit" }
+            { "field": "Margin Rate", "name": "Margin rate" }
           ]
         }
       ],

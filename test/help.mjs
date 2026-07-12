@@ -202,6 +202,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importDe
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportCsv")?.schema?.parameters?.formulas?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectDelimited")?.schema?.returns?.inspection?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.type, "object[]");
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /lazy IF\/IFERROR/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");
