@@ -6,7 +6,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `document.addBookmark` | api | Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity. |
+| `document.addBookmark` | api | Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity. |
 | `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
 | `document.addCitation` | api | Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker. |
 | `document.addComment` | api | Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity. |
@@ -42,13 +42,13 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 #### `document.addBookmark`
 
-Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity.
+Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity.
 
 **Schema parameters:**
 
-- `target` (string|object) required — Paragraph-backed start block ID or facade.
+- `target` (string|object) required — Start block ID/facade or exact table.getCell(row, column) facade.
 - `name` (string) required — Unique Word bookmark name with at most 40 characters.
-- `endTarget` (string|object) — Optional inclusive end block ID/facade for a multi-block range; defaults to target.
+- `endTarget` (string|object) — Optional inclusive end block or table-cell facade; defaults to target and must follow it in document order.
 - `nativeId` (number) — Optional preserved Word bookmark numeric identity.
 
 **Schema returns:**
