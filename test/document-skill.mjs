@@ -49,6 +49,14 @@ try {
   const complexThemeRun = nativePreferredDocument.blocks.find((item) => item.text === "العربية")?.runs[0];
   assert.equal(complexThemeRun?.style.resolvedFontFamilyComplexScript, "Geeza Pro");
   assert.equal(complexThemeRun?.style.boldComplexScript, true);
+  const inheritedRun = nativePreferredDocument.blocks.find((item) => item.text === "Inherited character style")?.runs[0];
+  assert.equal(nativePreferredDocument.defaultRunStyle.fontFamily, "Default Serif");
+  assert.equal(inheritedRun?.style.runStyleId, "BriefCharacter");
+  assert.equal(inheritedRun?.style.resolvedColor, "#cc3300");
+  assert.equal(inheritedRun?.style.resolvedFontFamily, "Source Serif 4");
+  assert.equal(inheritedRun?.style.fontSize, 26);
+  assert.equal(inheritedRun?.style.bold, false);
+  assert.equal(inheritedRun?.style.italic, false);
   assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Opening section evidence")?.sectionIndex, 0);
   assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Clean-room document workflow")?.sectionIndex, 1);
   assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.author, "QA Agent");

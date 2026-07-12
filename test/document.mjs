@@ -12,12 +12,17 @@ const document = DocumentModel.create({
     colors: { accent1: "#336699", accent2: "#cc3300" },
     fonts: { major: "Source Serif 4", minor: "Aptos", majorEastAsia: "Noto Serif CJK SC", majorComplexScript: "Noto Naskh Arabic" },
   },
+  defaultRunStyle: { fontFamily: "Default Serif", fontSize: 19, italic: true, color: "#111111" },
   settings: { updateFields: true, mirrorMargins: true },
 });
 document.setSettings({ trackRevisions: true, documentProtection: { edit: "trackedChanges" } });
 document.applyDesignPreset("report");
 document.styles.add("Callout", { name: "Callout", fontSize: 24, bold: true, fontFamily: "Aptos", color: "#0f172a" });
 document.styles.add("RiskCallout", { name: "Risk Callout", basedOn: "Callout", italic: true, color: "#b91c1c" });
+document.styles.add("CascadeParagraphBase", { name: "Cascade Paragraph Base", basedOn: "Normal", fontSize: 26, bold: true });
+document.styles.add("CascadeParagraph", { name: "Cascade Paragraph", basedOn: "CascadeParagraphBase", themeColor: "accent1" });
+document.styles.add("CascadeCharacterBase", { name: "Cascade Character Base", type: "character", italic: true, themeColor: "accent2" });
+document.styles.add("CascadeCharacter", { name: "Cascade Character", type: "character", basedOn: "CascadeCharacterBase", bold: false, fontTheme: "majorHAnsi" });
 const header = document.addHeader("Confidential research memo", { name: "default-header" });
 const footer = document.addFooter("Page footer", { name: "default-footer" });
 const firstHeader = document.addHeader("First-page research memo", { name: "first-header", referenceType: "first" });
@@ -42,6 +47,14 @@ const themedRunParagraph = document.addParagraph("", {
   ],
 });
 const singleThemeRunParagraph = document.addParagraph("", { name: "single-theme-run", runs: [{ text: "Single theme run", style: { fontTheme: "majorHAnsi", themeColor: "accent1" } }] });
+const cascadeParagraph = document.addParagraph("", {
+  name: "run-style-cascade",
+  styleId: "CascadeParagraph",
+  runs: [
+    { text: "Direct override", style: { runStyleId: "CascadeCharacter", italic: false, color: "#123456" } },
+    { text: " Character theme", style: { runStyleId: "CascadeCharacter" } },
+  ],
+});
 const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
 const field = document.addField("PAGE", "1", { name: "page-field" });
 const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
@@ -143,6 +156,8 @@ assert.equal(document.resolve(themedRunParagraph.id).runs[1].style.resolvedFontF
 assert.equal(document.resolve(themedRunParagraph.id).runs[1].style.resolvedColor, "#992600");
 assert.equal(document.resolve(themedRunParagraph.id).runs[2].style.resolvedFontFamilyComplexScript, "Noto Naskh Arabic");
 assert.equal(document.toProto().blocks.find((item) => item.name === "single-theme-run")?.runs[0].style.themeColor, "accent1");
+assert.equal(document.defaultRunStyle.fontFamily, "Default Serif");
+assert.equal(document.toProto().defaultRunStyle.fontSize, 19);
 assert.equal(document.resolve(riskCallout.id).styleId, "RiskCallout");
 assert.equal(document.styles.effective("RiskCallout").bold, true);
 assert.equal(document.styles.effective("RiskCallout").italic, true);
@@ -187,7 +202,7 @@ assert.doesNotMatch(shapedDocumentInspect, /Check this heading/);
 const targetedCommentInspect = document.inspect({ kind: "comment,paragraph", target: comment.id, maxChars: 4000 }).ndjson;
 assert.match(targetedCommentInspect, /Check this heading/);
 assert.doesNotMatch(targetedCommentInspect, /findings-heading/);
-assert.match(document.help("document.addParagraph").ndjson, /run-level styles/);
+assert.match(document.help("document.addParagraph").ndjson, /runStyleId/);
 assert.match(document.help("document.addTable").ndjson, /Word-style table/);
 assert.match(document.help("document.addListItem").ndjson, /numbering definitions/);
 assert.match(document.help("document.addListItem").ndjson, /numberFormat/);
@@ -216,6 +231,8 @@ await assert.rejects(() => DocumentFile.exportDocx(invalidCommentDocument), /dat
 const invalidListDocument = DocumentModel.create({ paragraphs: ["Invalid list fixture"] });
 invalidListDocument.addListItem("Too deep", { level: 9, start: 0 });
 assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListLevel"));
+const missingRunStyleDocument = DocumentModel.create({ blocks: [{ kind: "paragraph", text: "", runs: [{ text: "Missing character style", style: { runStyleId: "MissingCharacterStyle" } }] }] });
+assert.ok(missingRunStyleDocument.verify().issues.some((issue) => issue.type === "unknownRunStyle" && issue.runStyleId === "MissingCharacterStyle"));
 assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListStart"));
 await assert.rejects(() => DocumentFile.exportDocx(invalidListDocument), /level must be an integer from 0 through 8/);
 
@@ -257,6 +274,15 @@ assert.equal(themedRunLayout.runs[1].style.effectiveFontFamily, "Noto Serif CJK 
 assert.equal(themedRunLayout.runs[2].style.effectiveBold, true);
 assert.equal(themedRunLayout.runs[2].style.effectiveItalic, true);
 assert.equal(themedRunLayout.runs[2].style.effectiveFontSize, 32);
+const cascadeRunLayout = layout.elements.find((element) => element.id === cascadeParagraph.id).runs;
+assert.equal(cascadeRunLayout[0].style.runStyleId, "CascadeCharacter");
+assert.equal(cascadeRunLayout[0].style.effectiveColor, "#123456");
+assert.equal(cascadeRunLayout[0].style.effectiveItalic, false);
+assert.equal(cascadeRunLayout[0].style.effectiveBold, false);
+assert.equal(cascadeRunLayout[0].style.effectiveFontSize, 26);
+assert.equal(cascadeRunLayout[0].style.effectiveFontFamily, "Source Serif 4");
+assert.equal(cascadeRunLayout[1].style.effectiveColor, "#cc3300");
+assert.equal(cascadeRunLayout[1].style.effectiveItalic, true);
 assert.ok(layout.elements.some((element) => element.id === table.id));
 const targetedLayoutBlob = await document.render({ format: "layout", target: table.id });
 assert.equal(targetedLayoutBlob.metadata.artifactKind, "document");
@@ -320,12 +346,16 @@ assert.match(themeXml, /name="Research Theme"/);
 assert.match(themeXml, /<a:accent1><a:srgbClr val="336699"\/><\/a:accent1>/);
 assert.match(themeXml, /<a:majorFont><a:latin typeface="Source Serif 4"\/><a:ea typeface="Noto Serif CJK SC"\/><a:cs typeface="Noto Naskh Arabic"\/>/);
 assert.match(stylesXml, /w:styleId="RiskCallout"/);
+assert.match(stylesXml, /<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Default Serif"/);
+assert.match(stylesXml, /w:styleId="CascadeCharacter"/);
+assert.match(stylesXml, /<w:basedOn w:val="CascadeCharacterBase"\/>/);
 assert.match(stylesXml, /<w:basedOn w:val="Callout"\/>/);
 assert.match(stylesXml, /<w:i\/>/);
 assert.match(stylesXml, /<w:color w:val="b91c1c"\/>/);
 assert.match(documentXml, /<w:t>Run styled <\/w:t>/);
 assert.match(documentXml, /<w:color w:val="0ea5e9"\/>/);
 assert.match(documentXml, /<w:t>paragraph<\/w:t>/);
+assert.match(documentXml, /<w:rStyle w:val="CascadeCharacter"\/>/);
 assert.match(documentXml, /<w:color w:val="f97316"\/>/);
 assert.match(documentXml, /<w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"\/>/);
 assert.match(documentXml, /<w:b\/><w:bCs w:val="0"\/>/);
@@ -564,6 +594,17 @@ assert.equal(nativeThemeRuns?.[2].style.fontThemeComplexScript, "majorBidi");
 assert.equal(nativeThemeRuns?.[2].style.fontHint, "cs");
 assert.equal(nativeThemeRuns?.[2].style.boldComplexScript, true);
 assert.equal(nativeThemeRuns?.[2].style.italicComplexScript, true);
+assert.equal(nativeOnlyLoaded.defaultRunStyle.fontFamily, "Default Serif");
+assert.equal(nativeOnlyLoaded.defaultRunStyle.fontSize, 19);
+const nativeCascadeRuns = nativeOnlyLoaded.blocks.find((item) => item.text === "Direct override Character theme")?.runs;
+assert.equal(nativeCascadeRuns?.[0].style.runStyleId, "CascadeCharacter");
+assert.equal(nativeCascadeRuns?.[0].style.resolvedColor, "#123456");
+assert.equal(nativeCascadeRuns?.[0].style.italic, false);
+assert.equal(nativeCascadeRuns?.[0].style.bold, false);
+assert.equal(nativeCascadeRuns?.[0].style.fontSize, 26);
+assert.equal(nativeCascadeRuns?.[0].style.resolvedFontFamily, "Source Serif 4");
+assert.equal(nativeCascadeRuns?.[1].style.resolvedColor, "#cc3300");
+assert.equal(nativeCascadeRuns?.[1].style.italic, true);
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "Confidential research memo")?.referenceType, "default");
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "First-page research memo")?.referenceType, "first");
 assert.equal(nativeOnlyLoaded.headers.find((item) => item.text === "First-page research memo")?.partPath, "word/header2.xml");
@@ -604,6 +645,14 @@ const relocatedThemeNative = await DocumentFile.importDocx(relocatedThemeDocx, {
 assert.equal(relocatedThemeNative.theme.name, "Research Theme");
 assert.equal(relocatedThemeNative.theme.fonts.majorEastAsia, "Noto Serif CJK SC");
 assert.equal(relocatedThemeNative.blocks.find((item) => item.text === "Theme Latin 中文 العربية")?.runs[0].style.resolvedColor, "#99b3cc");
+const alternateStylesPrefixZip = await JSZip.loadAsync(docxBytes);
+alternateStylesPrefixZip.remove("word/open-office-artifact.json");
+alternateStylesPrefixZip.file("word/styles.xml", stylesXml.replaceAll("xmlns:w=", "xmlns:s=").replaceAll("<w:", "<s:").replaceAll("</w:", "</s:").replaceAll(" w:", " s:"));
+const alternateStylesPrefixDocx = new FileBlob(await alternateStylesPrefixZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
+const alternateStylesPrefixLoaded = await DocumentFile.importDocx(alternateStylesPrefixDocx, { preferNative: true });
+assert.equal(alternateStylesPrefixLoaded.defaultRunStyle.fontFamily, "Default Serif");
+assert.equal(alternateStylesPrefixLoaded.styles.get("CascadeCharacter")?.basedOn, "CascadeCharacterBase");
+assert.equal(alternateStylesPrefixLoaded.blocks.find((item) => item.text === "Direct override Character theme")?.runs[1].style.resolvedColor, "#cc3300");
 const sharedHeaderDocumentXml = documentXml.replace(new RegExp(`(<w:sectPr\\b[^>]*>[\\s\\S]*?<w:headerReference\\b[^>]*r:id=")${openingHeaderRelId}("[^>]*\\/>[\\s\\S]*?<\\/w:sectPr>)`), `$1${finalHeaderRelId}$2`);
 const sharedHeaderDocx = await DocumentFile.patchDocx(docx, [
   { path: "word/document.xml", xml: sharedHeaderDocumentXml },
@@ -629,6 +678,8 @@ assert.equal(nativeOnlyLoaded.styles.effective("RiskCallout").italic, true);
 const reexportedNativeTheme = await DocumentFile.exportDocx(nativeOnlyLoaded);
 const reexportedNativeThemeZip = await JSZip.loadAsync(new Uint8Array(await reexportedNativeTheme.arrayBuffer()));
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /w:cstheme="majorBidi"/);
+assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:rStyle w:val="CascadeCharacter"\/>/);
+assert.match(await reexportedNativeThemeZip.file("word/styles.xml").async("text"), /<w:docDefaults>/);
 assert.match(await reexportedNativeThemeZip.file("word/theme/theme1.xml").async("text"), /typeface="Noto Naskh Arabic"/);
 const nativeOnlyTable = nativeOnlyLoaded.blocks.find((block) => block.kind === "table");
 assert.deepEqual(nativeOnlyTable.columnWidthsDxa, [3600, 5760]);

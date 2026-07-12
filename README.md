@@ -1,8 +1,8 @@
 # open-office-artifact-tool
 
-Clean-room Office/PDF artifact toolkit inspired by the public behavior of agent's Office/PDF skills.
+Clean-room Office/PDF artifact toolkit inspired by public Office/PDF artifact workflows.
 
-The goal is not to vendor or copy agent's reference bundle. This package rebuilds a similar agent-facing surface using open implementation code:
+This package is implemented independently using open implementation code:
 
 - `Workbook` / `SpreadsheetFile` for XLSX-style artifacts
 - `Presentation` / `PresentationFile` for PPTX-style artifacts
@@ -25,7 +25,7 @@ PPTX legacy comments export with a native `ppt/commentAuthors.xml` registry, pre
 
 Presentation themes expose the complete `tx1/bg1/tx2/bg2`, `accent1`–`accent6`, hyperlink color scheme, Latin/East-Asian/complex-script major/minor fonts, master title/body/other text styles, and semantic color mapping. Export writes complete DrawingML color/font/format schemes plus Slide Master `clrMap` and 9-level text styles; native import restores those values even when valid namespace prefixes differ. The OOXML mapping is isolated in `src/presentation/ooxml-theme.mjs` rather than leaking schema nodes into the public facade.
 
-DOCX themes and run formatting are native WordprocessingML rather than metadata-only hints. `DocumentModel.create({ theme })` models all 12 scheme colors plus major/minor Latin, East-Asian, and complex-script fonts; export writes a relationship-backed Theme part. Runs preserve direct `w:rFonts` values and `asciiTheme`/`hAnsiTheme`/`eastAsiaTheme`/`cstheme` plus script hints, direct or `themeColor`/`themeTint`/`themeShade` colors, and paired `w:b`/`w:bCs`, `w:i`/`w:iCs`, and `w:sz`/`w:szCs`. Metadata-free import follows arbitrary Theme targets, retains source attributes, and adds resolved colors/fonts consumed by inspect, layout JSON, and SVG rendering. The codec lives in `src/ooxml/docx-run-styles.mjs`.
+DOCX themes and run formatting are native WordprocessingML rather than metadata-only hints. `DocumentModel.create({ theme, defaultRunStyle, styles })` models all 12 scheme colors, major/minor script fonts, document-wide `w:docDefaults`, and paragraph/character styles with `basedOn` inheritance. Runs preserve `w:rStyle` references, direct `w:rFonts`, theme/script font attributes, direct or theme/tint/shade colors, and paired `w:b`/`w:bCs`, `w:i`/`w:iCs`, and `w:sz`/`w:szCs`. Metadata-free import applies the Word run cascade in precedence order—document defaults, paragraph style chain, character style chain, then direct formatting—while retaining source references and resolved colors/fonts for inspect, layout JSON, SVG, and a second export. Alternate valid prefixes in styles and Theme parts are accepted. The codec lives in `src/ooxml/docx-run-styles.mjs`.
 
 DOCX headers and footers support `default`, `first`, and `even` reference types plus an optional zero-based `sectionIndex`. Each section/type combination gets its own relationship-driven part and is attached to that section's `w:sectPr`; omitting `sectionIndex` preserves the original final-section behavior. Export activates first-page/even-page semantics through section-local `w:titlePg` and `settings.xml`, while native import restores arbitrary relationship targets, reference types, and section indexes. `DocumentFile.patchDocx(...)` header/footer recipes accept the same `sourceReference: { type, sectionIndex }` targeting. Use `DocumentFile.importDocx(..., { preferNative: true })` after package-level patches so native OOXML takes precedence over embedded clean-room metadata.
 

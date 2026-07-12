@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { validatePptxPackageSemantics } from "./ooxml/pptx-package-semantics.mjs";
 import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference, validateOoxmlSourceReferenceTarget } from "./ooxml/source-references.mjs";
 import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
-import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxRunPropertiesXml, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
+import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxDefaultRunPropertiesXml, parseDocxRunPropertiesXml, parseDocxRunStyleId, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
@@ -1023,8 +1023,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
-  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with a Word theme plus paragraph, list, table, header/footer, style, and comment blocks." },
-  { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph block with optional run-level styles, including direct/theme and complex-script semantics, returning an inspectable/resolveable paragraph object." },
+  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with a Word theme, default run properties, basedOn paragraph/character styles, and semantic content blocks." },
+  { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally bound to a zero-based section index, and export it through relationship-driven parts and section references." },
@@ -1046,9 +1046,9 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, page records, style IDs, design preset metadata, and target/search context slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
-  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to a DOCX package with a native Theme part, direct/theme/complex-script run properties, document.xml, relationship-driven settings/styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including arbitrary Theme targets, resolved theme run styles, complex-script pairs, settings, styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes." },
+  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, unknown paragraph/character styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme, docDefaults, paragraph/character basedOn styles, rStyle references, settings, numbering, comments, headers/footers, links, fields, citations, and metadata." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import DOCX bytes through relationship-driven native semantics, including Theme, docDefaults, paragraph/character basedOn cascades, rStyle references, complex-script pairs, settings, numbering, links, fields, comments, headers, and footers." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation, including safe settings mutations, classic-comment anchors, and numbering assignments, and atomically reject dangling package or semantic references." },
 
@@ -1583,7 +1583,8 @@ const DOCUMENT_HELP_SCHEMAS = {
     name: { type: "string", description: "Document name." },
     designPreset: { type: "string", description: "Initial design preset name." },
     theme: { type: "object", description: "Word theme name, 12 scheme colors, and major/minor Latin, East-Asian, and complex-script fonts." },
-    styles: { type: "object", description: "Named style definitions." },
+    defaultRunStyle: { type: "object", description: "Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles." },
+    styles: { type: "object", description: "Named paragraph or character style definitions with optional basedOn inheritance." },
     paragraphs: { type: "string[]", description: "Convenience paragraph list; the first paragraph uses Title style." },
     blocks: { type: "object[]", description: "Ordered paragraph/list/table/link/field/citation/image/section/change block models." },
     headers: { type: "object[]", description: "Header block models." },
@@ -1595,7 +1596,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     text: { type: "string", required: true, description: "Paragraph text." },
     styleId: { type: "string", description: "Named paragraph style ID." },
     name: { type: "string", description: "Inspectable block name." },
-    runs: { type: "object[]", description: "Optional run-level text/style spans, including direct and theme font/color references plus paired complex-script bold, italic, and size properties." },
+    runs: { type: "object[]", description: "Optional run spans whose style may include runStyleId plus direct/theme font/color and paired complex-script bold, italic, and size properties." },
   }, "paragraph", "DocumentParagraphBlock", "Appended paragraph block with stable ID."),
   "document.addListItem": helpSchema({
     text: { type: "string", required: true, description: "List item text." },
@@ -8454,6 +8455,13 @@ class DocumentStyleCollection {
     const parent = this.effective(parentId, seen) || {};
     return { ...parent, ...style, basedOn: parentId };
   }
+  cascade(id, seen = new Set()) {
+    const style = this.get(id);
+    if (!style || seen.has(style.id)) return [];
+    seen.add(style.id);
+    const parentId = style.basedOn || style.parent || style.extends;
+    return [...(parentId ? this.cascade(parentId, seen) : []), style];
+  }
   values() { return [...this.items.values()]; }
 }
 
@@ -8507,6 +8515,12 @@ function normalizeDocumentRuns(text, config = {}, theme = {}) {
   if (runs.length) return runs;
   const rawText = String(text ?? "");
   return rawText ? [{ text: rawText, style: normalizeDocxRunStyle({}, theme) }] : [];
+}
+
+function documentEffectiveRunStyle(document, block, run) {
+  const characterStyleId = run.style?.runStyleId;
+  const cascade = [document.defaultRunStyle, ...document.styles.cascade(block.styleId), ...(characterStyleId ? document.styles.cascade(characterStyleId) : []), run.style || {}];
+  return effectiveDocxRunStyle(mergeDocxRunStyleCascade(cascade, document.theme), run.text, document.theme);
 }
 
 function documentRunsNeedSerialization(runs = []) {
@@ -8706,7 +8720,7 @@ function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {
   if (block.kind === "section") return 34;
   if (block.kind === "change") return 22;
   const style = document.styles.effective(block.styleId) || document.styles.get("Normal") || {};
-  const runSizes = block.kind === "paragraph" ? (block.runs || []).map((run) => effectiveDocxRunStyle({ ...style, ...(run.style || {}) }, run.text, document.theme).effectiveFontSize).filter(Number.isFinite) : [];
+  const runSizes = block.kind === "paragraph" ? (block.runs || []).map((run) => documentEffectiveRunStyle(document, block, run).effectiveFontSize).filter(Number.isFinite) : [];
   const fontSize = Math.max(10, Math.max(style.fontSize || 22, ...runSizes) / 2);
   const text = block.text || block.display || "";
   const charsPerLine = Math.max(8, Math.floor((pageWidth - margin * 2) / (fontSize * 0.55)));
@@ -8762,7 +8776,7 @@ function documentLayoutJson(document, options = {}) {
     const textPreview = documentBlockLayoutText(block).slice(0, 120);
     const comments = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => comment.id);
     const effectiveStyle = block.styleId ? document.styles.effective(block.styleId) : undefined;
-    const runs = block.kind === "paragraph" && block.runs?.length ? block.runs.map((run) => ({ text: run.text, style: effectiveDocxRunStyle({ ...(effectiveStyle || {}), ...(run.style || {}) }, run.text, document.theme) })) : undefined;
+    const runs = block.kind === "paragraph" && block.runs?.length ? block.runs.map((run) => ({ text: run.text, style: documentEffectiveRunStyle(document, block, run) })) : undefined;
     elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, effectiveStyle, runs, textPreview });
     y += height;
     if (block.kind === "section" && block.breakType === "nextPage") { page += 1; y = margin; ensurePage(); }
@@ -8840,6 +8854,7 @@ export class DocumentModel {
     this.name = options.name || "New document";
     this.designPreset = options.designPreset || "default";
     this.theme = normalizeDocxThemeConfig(options.theme || {});
+    this.defaultRunStyle = normalizeDocxRunStyle(options.defaultRunStyle || {}, this.theme);
     this.settings = normalizeDocxSettings(options.settings || {});
     this.styles = new DocumentStyleCollection(options.styles || {});
     this.blocks = [];
@@ -8915,12 +8930,12 @@ export class DocumentModel {
   setSettings(settings = {}) { this.settings = normalizeDocxSettings({ ...this.settings, ...settings }); return this; }
   resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : id === `${this.id}/settings` ? this.settings : id === `${this.id}/theme` ? this.theme : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, settings: this.settings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
     const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset, settings: this.settings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
@@ -8944,6 +8959,11 @@ export class DocumentModel {
     if (this.blocks.length === 0) issues.push(verificationIssue("document", "emptyDocument", "Document has no body blocks."));
     for (const block of [...this.blocks, ...this.headers, ...this.footers]) checkStyle(block);
     for (const block of this.blocks) {
+      if (block.kind === "paragraph") {
+        for (const run of block.runs || []) {
+          if (run.style?.runStyleId && !knownStyleIds.has(run.style.runStyleId)) issues.push(verificationIssue("document", "unknownRunStyle", `Paragraph ${block.id} references missing character style ${run.style.runStyleId}.`, { severity: "warning", id: block.id, runStyleId: run.style.runStyleId }));
+        }
+      }
       if (block.kind === "paragraph" && /^\s*([-*•]|\d+[.)])\s+/.test(block.text)) {
         issues.push(verificationIssue("document", "fakeList", `Paragraph ${block.id} looks like a fake list item; use addListItem instead.`, { id: block.id }));
       }
@@ -9040,7 +9060,7 @@ export class DocumentModel {
         const fontSize = Math.max(10, (style.fontSize || 22) / 2);
         const runs = block.runs?.length ? block.runs : [{ text: block.text, style: {} }];
         const tspans = runs.map((run, index) => {
-          const runStyle = effectiveDocxRunStyle({ ...style, ...(run.style || {}) }, run.text, this.theme);
+          const runStyle = documentEffectiveRunStyle(this, block, run);
           return `<tspan${index ? "" : ` x=\"${margin}\"`} font-family="${xmlEscape(runStyle.effectiveFontFamily || runStyle.fontFamily || "Arial")}" font-size="${Math.max(5, (runStyle.effectiveFontSize || style.fontSize || 22) / 2)}" font-style="${runStyle.effectiveItalic ? "italic" : "normal"}" font-weight="${runStyle.effectiveBold ? "700" : "400"}" fill="${xmlEscape(runStyle.effectiveColor || "#111827")}">${xmlEscape(run.text)}</tspan>`;
         }).join("");
         parts.push(`<text x="${margin}" y="${y}">${tspans}</text>`);
@@ -9133,13 +9153,15 @@ function docxContentTypes({ hasComments, headerParts = [], footerParts = [], has
 }
 
 function docxStylesXml(document) {
+  const defaultRunProperties = docxRunPropertiesXml(document.defaultRunStyle, document.theme);
+  const docDefaults = defaultRunProperties ? `<w:docDefaults><w:rPrDefault>${defaultRunProperties}</w:rPrDefault></w:docDefaults>` : "";
   const styles = document.styles.values().map((style) => {
     const type = style.type || "paragraph";
     const basedOn = style.basedOn || style.parent || style.extends;
-    const runProperties = docxRunPropertiesXml({ fontSize: 22, fontFamily: "Aptos", ...style }, document.theme);
+    const runProperties = docxRunPropertiesXml(style, document.theme);
     return `<w:style w:type="${attrEscape(type)}" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/>${basedOn ? `<w:basedOn w:val="${attrEscape(basedOn)}"/>` : ""}${runProperties}</w:style>`;
   }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${styles}</w:styles>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docDefaults}${styles}</w:styles>`;
 }
 
 function collectDocxNumbering(document) {
@@ -9350,26 +9372,34 @@ function docxElementBlock(xml = "", localName = "") {
   return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${escaped}\\b[^>]*>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escaped}>`).exec(String(xml || ""))?.[0] || "";
 }
 
+function docxXmlAttribute(tag = "", localName = "") {
+  return Object.entries(ooxmlXmlAttributes(tag)).find(([key]) => key === localName || key.endsWith(`:${localName}`))?.[1];
+}
+
+function docxElementOpening(xml = "", localName = "") {
+  const escaped = String(localName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${escaped}\\b[^>]*\\/?>`).exec(String(xml || ""))?.[0] || "";
+}
+
 function parseDocxStylesXml(xml = "", theme = {}) {
   const styles = {};
-  for (const match of String(xml || "").matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
-    const attrs = match[1] || "";
+  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?style\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?style>/g)) {
+    const opening = match[0].slice(0, match[0].indexOf(">") + 1);
     const body = match[2] || "";
-    const id = decodeXml(/\bw:styleId="([^"]+)"/.exec(attrs)?.[1] || "");
+    const id = decodeXml(docxXmlAttribute(opening, "styleId") || "");
     if (!id) continue;
-    const type = /\bw:type="([^"]+)"/.exec(attrs)?.[1] || "paragraph";
-    const name = decodeXml(/<w:name[^>]*w:val="([^"]*)"/.exec(body)?.[1] || id);
-    const basedOn = decodeXml(/<w:basedOn[^>]*w:val="([^"]*)"/.exec(body)?.[1] || "") || undefined;
+    const type = docxXmlAttribute(opening, "type") || "paragraph";
+    const name = decodeXml(docxXmlAttribute(docxElementOpening(body, "name"), "val") || id);
+    const basedOn = decodeXml(docxXmlAttribute(docxElementOpening(body, "basedOn"), "val") || "") || undefined;
     const runProperties = parseDocxRunPropertiesXml(docxElementBlock(body, "rPr"), theme);
     styles[id] = { id, name, type, ...(basedOn ? { basedOn } : {}), ...runProperties };
   }
-  return styles;
+  return { styles, defaultRunStyle: parseDocxDefaultRunPropertiesXml(xml, theme) };
 }
 
 function docxChildVal(xml, tagName) {
-  const escaped = String(tagName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const tag = new RegExp(`<w:${escaped}\\b[^>]*\\/?\\s*>`).exec(String(xml || ""))?.[0];
-  return tag ? ooxmlXmlAttributes(tag)["w:val"] : undefined;
+  const tag = docxElementOpening(xml, tagName);
+  return tag ? docxXmlAttribute(tag, "val") : undefined;
 }
 
 function parseDocxNumberingLevel(xml, fallbackLevel = 0) {
@@ -9420,17 +9450,24 @@ function parseDocxNumberingXml(xml = "") {
   return instances;
 }
 
-function parseDocxRuns(part = "", theme = {}) {
+function parseDocxRuns(part = "", context = {}) {
+  const { theme = {}, styles, defaultRunStyle = {}, paragraphStyleId = "Normal" } = context;
+  const paragraphStyles = styles?.cascade(paragraphStyleId) || [];
   return [...String(part || "").matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)].map((match) => {
     const runXml = match[0];
     const text = decodeXml([...runXml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
     if (!text) return undefined;
-    const style = parseDocxRunPropertiesXml(docxElementBlock(runXml, "rPr"), theme);
+    const propertiesXml = docxElementBlock(runXml, "rPr");
+    const runStyleId = parseDocxRunStyleId(propertiesXml);
+    const characterStyles = runStyleId ? styles?.cascade(runStyleId) || [] : [];
+    const directStyle = parseDocxRunPropertiesXml(propertiesXml, theme);
+    const style = mergeDocxRunStyleCascade([defaultRunStyle, ...paragraphStyles, ...characterStyles, directStyle, runStyleId ? { runStyleId } : {}], theme);
     return { text, style };
   }).filter(Boolean);
 }
 
-function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = new Map(), numberingById = new Map(), theme = {}) {
+function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = new Map(), numberingById = new Map(), context = {}) {
+  const { theme = {} } = context;
   const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
   const commentIds = docxCommentIds(part);
   const sectionMatch = /<w:sectPr\b[^>]*>([\s\S]*?)<\/w:sectPr>/.exec(part);
@@ -9487,7 +9524,7 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
     const text = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
     return { block: { kind: "citation", text, metadata: { bookmark: citationBookmark["w:name"] }, styleId }, commentIds };
   }
-  const runs = parseDocxRuns(part, theme);
+  const runs = parseDocxRuns(part, { ...context, paragraphStyleId: styleId });
   const text = runs.length ? runs.map((run) => run.text).join("") : decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
   const numIdTag = /<w:numId\b[^>]*\/?\s*>/.exec(part)?.[0];
   const numId = numIdTag ? ooxmlXmlAttributes(numIdTag)["w:val"] : undefined;
@@ -10137,7 +10174,10 @@ export class DocumentFile {
     const stylesText = await zip.file(stylesPartPath)?.async("text");
     const numberingText = await zip.file(numberingPartPath)?.async("text");
     const settingsText = await zip.file(settingsPartPath)?.async("text");
-    const importedStyles = parseDocxStylesXml(stylesText, theme);
+    const importedStyleData = parseDocxStylesXml(stylesText, theme);
+    const importedStyles = importedStyleData.styles;
+    const defaultRunStyle = importedStyleData.defaultRunStyle;
+    const importedStyleCollection = new DocumentStyleCollection(importedStyles);
     const numberingById = parseDocxNumberingXml(numberingText);
     const commentsRelationship = documentRelationships.find((relationship) => relationship.type.endsWith("/comments") && relationship.targetMode.toLowerCase() !== "external");
     const commentsPartPath = commentsRelationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", commentsRelationship.target), "DOCX") : "word/comments.xml";
@@ -10157,10 +10197,10 @@ export class DocumentFile {
     for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
       const part = match[0];
       if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
-      else blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, theme).block);
+      else blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle }).block);
       for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
-    const document = DocumentModel.create({ theme, settings: parseDocxSettings(settingsText), styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    const document = DocumentModel.create({ theme, defaultRunStyle, settings: parseDocxSettings(settingsText), styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const reference of docxHeaderFooterReferences(xml, documentRelationships)) {
       const partXml = await zip.file(reference.partPath)?.async("text");
       for (const block of parseHeaderFooterXml(partXml)) {

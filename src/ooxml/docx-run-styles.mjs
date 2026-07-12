@@ -68,6 +68,20 @@ const THEME_FONTS = Object.freeze({
   none: undefined,
 });
 
+const DERIVED_RUN_STYLE_KEYS = new Set([
+  "resolvedColor",
+  "resolvedFontFamily",
+  "resolvedFontFamilyEastAsia",
+  "resolvedFontFamilyComplexScript",
+  "effectiveColor",
+  "effectiveFontFamily",
+  "effectiveBold",
+  "effectiveItalic",
+  "effectiveFontSize",
+]);
+
+const STRUCTURAL_STYLE_KEYS = new Set(["id", "name", "type", "basedOn", "parent", "extends"]);
+
 function objectValue(value, label) {
   if (value == null) return {};
   if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object.`);
@@ -227,6 +241,33 @@ export function normalizeDocxRunStyle(style = {}, theme = {}) {
   return resolveDocxRunStyle(normalized, theme);
 }
 
+function sourceRunStyle(style = {}) {
+  return Object.fromEntries(Object.entries(style).filter(([key, value]) => value !== undefined && !DERIVED_RUN_STYLE_KEYS.has(key) && !STRUCTURAL_STYLE_KEYS.has(key)));
+}
+
+export function mergeDocxRunStyleCascade(styles = [], theme = {}) {
+  const merged = {};
+  for (const style of styles) {
+    const source = sourceRunStyle(style || {});
+    if ("color" in source || "themeColor" in source) {
+      for (const key of ["color", "themeColor", "themeTint", "themeShade"]) delete merged[key];
+    }
+    for (const [direct, themed] of [
+      ["fontFamily", "fontTheme"],
+      ["fontFamilyHighAnsi", "fontThemeHighAnsi"],
+      ["fontFamilyEastAsia", "fontThemeEastAsia"],
+      ["fontFamilyComplexScript", "fontThemeComplexScript"],
+    ]) {
+      if (direct in source || themed in source) {
+        delete merged[direct];
+        delete merged[themed];
+      }
+    }
+    Object.assign(merged, source);
+  }
+  return normalizeDocxRunStyle(merged, theme);
+}
+
 function onOffXml(tag, style, key) {
   if (!(key in style)) return "";
   return style[key] ? `<w:${tag}/>` : `<w:${tag} w:val="0"/>`;
@@ -248,7 +289,8 @@ export function docxRunPropertiesXml(style = {}, theme = {}) {
   if (value.themeTint) colorAttrs.push(`w:themeTint="${value.themeTint}"`);
   if (value.themeShade) colorAttrs.push(`w:themeShade="${value.themeShade}"`);
   const color = colorAttrs.length ? `<w:color ${colorAttrs.join(" ")}/>` : "";
-  const body = `${fonts}${onOffXml("b", value, "bold")}${onOffXml("bCs", value, "boldComplexScript")}${onOffXml("i", value, "italic")}${onOffXml("iCs", value, "italicComplexScript")}${color}${value.fontSize ? `<w:sz w:val="${Math.round(value.fontSize)}"/>` : ""}${value.fontSizeComplexScript ? `<w:szCs w:val="${Math.round(value.fontSizeComplexScript)}"/>` : ""}`;
+  const runStyle = value.runStyleId ? `<w:rStyle w:val="${attrEscape(value.runStyleId)}"/>` : "";
+  const body = `${runStyle}${fonts}${onOffXml("b", value, "bold")}${onOffXml("bCs", value, "boldComplexScript")}${onOffXml("i", value, "italic")}${onOffXml("iCs", value, "italicComplexScript")}${color}${value.fontSize ? `<w:sz w:val="${Math.round(value.fontSize)}"/>` : ""}${value.fontSizeComplexScript ? `<w:szCs w:val="${Math.round(value.fontSizeComplexScript)}"/>` : ""}`;
   return body ? `<w:rPr>${body}</w:rPr>` : "";
 }
 
@@ -285,6 +327,18 @@ export function parseDocxRunPropertiesXml(xml = "", theme = {}) {
     if (value !== undefined) style[key] = value;
   }
   return normalizeDocxRunStyle(style, theme);
+}
+
+export function parseDocxRunStyleId(xml = "") {
+  const value = decodeXml(attribute(elementOpening(xml, "rStyle"), "val") || "").trim();
+  return value || undefined;
+}
+
+export function parseDocxDefaultRunPropertiesXml(stylesXml = "", theme = {}) {
+  const defaults = elementBlock(stylesXml, "docDefaults");
+  const runDefaults = elementBlock(defaults, "rPrDefault");
+  const properties = elementBlock(runDefaults, "rPr");
+  return properties ? parseDocxRunPropertiesXml(properties, theme) : normalizeDocxRunStyle({}, theme);
 }
 
 export function effectiveDocxRunStyle(style = {}, text = "", theme = {}) {

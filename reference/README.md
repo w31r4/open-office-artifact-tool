@@ -4,14 +4,14 @@ This directory contains project-internal reference material for building `open-o
 
 ## `office-artifact-tool` submodule
 
-`reference/office-artifact-tool` is a Git submodule pointing at the authorized, non-open-source `office-artifact-tool` reference package:
+`reference/office-artifact-tool` is a Git submodule pointing at the public MIT-licensed `office-artifact-tool` reference package:
 
 - Remote: `https://github.com/w31r4/office-artifact-tool.git`
 - Purpose: behavior/API/workflow reference for creating a publishable open-source clean-room replacement.
 
 Use this submodule to observe the reference package's public package shape, exported API surface, smoke tests, examples, and observable behavior.
 
-Do **not** vendor reference implementation internals into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
+Do **not** vendor the reference package's runtime artifact, runtime module, runtime bindings, or implementation details into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
 
 ## Relationship to `handoff/reference-skills`
 

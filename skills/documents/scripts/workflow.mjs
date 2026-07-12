@@ -84,7 +84,7 @@ function addFixtureBlock(document, block = {}) {
 }
 
 export function createDocumentFromFixture(fixture = {}) {
-  const document = DocumentModel.create({ name: fixture.name || "Fixture document", theme: fixture.theme || {}, settings: fixture.settings || {}, blocks: [] });
+  const document = DocumentModel.create({ name: fixture.name || "Fixture document", theme: fixture.theme || {}, defaultRunStyle: fixture.defaultRunStyle || {}, settings: fixture.settings || {}, blocks: [] });
   if (fixture.designPreset) document.applyDesignPreset(fixture.designPreset, fixture.designOptions || {});
   for (const [id, style] of Object.entries(fixture.styles || {})) document.styles.add(id, style);
   for (const header of fixture.headers || []) document.addHeader(header.text || "", header);

@@ -9,7 +9,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 
 ## Contract
 
-- Use `open-office-artifact-tool` public exports. Do not import the reference package or its compiled internals.
+- Use `open-office-artifact-tool` public exports. Do not import reference implementation internals.
 - Prefer one writable `.mjs` builder that can be rerun after focused edits.
 - Write rectangular value/formula matrices in blocks and keep derived values as formulas.
 - Preserve the style and formulas of an imported workbook unless the user asks for a redesign.

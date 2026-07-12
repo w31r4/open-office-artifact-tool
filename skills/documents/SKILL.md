@@ -9,7 +9,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 
 ## Contract
 
-- Never import or copy the reference package, runtime artifact, runtime module, or runtime bindings.
+- Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
 - Preserve an imported document's content, styles, structure, and review state unless the user requests a redesign.
 - For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in `docs/coverage.md`.
 - Use real list items, tables, comments, hyperlinks, fields, citations, images, sections, and tracked changes rather than visual text imitations.
@@ -42,13 +42,16 @@ const document = DocumentModel.create({
     colors: { accent1: "#336699" },
     fonts: { major: "Source Serif 4", minor: "Aptos", majorEastAsia: "Noto Serif CJK SC", majorComplexScript: "Noto Naskh Arabic" },
   },
+  defaultRunStyle: { fontFamily: "Aptos", fontSize: 22 },
 });
 document.applyDesignPreset("report");
+document.styles.add("DecisionEmphasisBase", { type: "character", italic: true, themeColor: "accent1" });
+document.styles.add("DecisionEmphasis", { type: "character", basedOn: "DecisionEmphasisBase", bold: true });
 document.setSettings({ updateFields: true, documentProtection: { edit: "comments" } });
 document.addParagraph("Decision brief", { styleId: "Title", name: "title" });
 document.addParagraph("Recommendation", { styleId: "Heading1", name: "recommendation-heading" });
 document.addParagraph("", { styleId: "Normal", runs: [
-  { text: "Theme-backed decision", style: { fontTheme: "majorHAnsi", themeColor: "accent1", themeTint: "80", bold: true } },
+  { text: "Theme-backed decision", style: { runStyleId: "DecisionEmphasis", fontTheme: "majorHAnsi", themeTint: "80" } },
   { text: " العربية", style: { fontThemeComplexScript: "majorBidi", boldComplexScript: true, italicComplexScript: true, fontSizeComplexScript: 32 } },
 ] });
 document.addParagraph("Proceed with the clean-room implementation.", { styleId: "Normal" });
