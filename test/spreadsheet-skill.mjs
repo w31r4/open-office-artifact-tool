@@ -35,11 +35,18 @@ try {
     [120, 70, 0.4166666666666667],
     [150, 90, 0.4],
   ]);
+  assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("B2:D4").formulas, [
+    ["=Inputs!B2", "=Inputs!C2", "=(B2-C2)/B2"],
+    ["=Inputs!B3", "=Inputs!C3", "=(B3-C3)/B3"],
+    ["=Inputs!B4", "=Inputs!C4", "=(B4-C4)/B4"],
+  ]);
+  assert.deepEqual(workbook.worksheets.getItem("Summary").mergedRanges, ["A15:G15"]);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"customColumns":6/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"mergedCell"[\s\S]*"range":"A15:G15"/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
@@ -57,11 +64,11 @@ try {
 
   const nativeStatus = nativeSpreadsheetRenderStatus();
   const csvPath = path.join(outputDir, "summary.csv");
-  await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G13" })).save(csvPath);
+  await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);
   const csvQa = await verifyWorkbookFile(csvPath, {
     outputDir: path.join(outputDir, "csv-qa"),
     sheetName: "Summary",
-    range: "A1:G13",
+    range: "A1:G15",
     renderFormat: "svg",
     nativeRender: nativeStatus.available ? "required" : "off",
     coerceTypes: true,
@@ -69,18 +76,18 @@ try {
   assert.equal(csvQa.summary.inputFormat, "csv");
   assert.equal(csvQa.summary.inputType, "text/csv");
   assert.equal(csvQa.packageInspect.summary.kind, "delimitedFile");
-  assert.equal(csvQa.packageInspect.summary.rows, 13);
+  assert.equal(csvQa.packageInspect.summary.rows, 15);
   assert.equal(csvQa.summary.verifyOk, true);
   assert.equal(csvQa.summary.visualQaOk, true);
   assert.match(await fs.readFile(csvQa.summary.files.packageInspect, "utf8"), /delimitedRow/);
   if (nativeStatus.available) assert.equal(csvQa.summary.nativeRender.status, "passed");
 
   const tsvPath = path.join(outputDir, "summary.tsv");
-  await (await SpreadsheetFile.exportTsv(workbook, { sheetName: "Summary", range: "A1:G13" })).save(tsvPath);
+  await (await SpreadsheetFile.exportTsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(tsvPath);
   const tsvQa = await verifyWorkbookFile(tsvPath, {
     outputDir: path.join(outputDir, "tsv-qa"),
     sheetName: "Summary",
-    range: "A1:G13",
+    range: "A1:G15",
     renderFormat: "svg",
     nativeRender: nativeStatus.available ? "required" : "off",
     coerceTypes: true,

@@ -50,13 +50,12 @@
           ]
         },
         {
-          "range": "B2:D4",
+          "range": "B2:D2",
           "formulas": [
-            ["=Inputs!B2", "=Inputs!C2", "=(B2-C2)/B2"],
-            ["=Inputs!B3", "=Inputs!C3", "=(B3-C3)/B3"],
-            ["=Inputs!B4", "=Inputs!C4", "=(B4-C4)/B4"]
+            ["=Inputs!B2", "=Inputs!C2", "=(B2-C2)/B2"]
           ]
         },
+        { "range": "B2:D4", "fillDown": true },
         {
           "range": "A1:D1",
           "format": {
@@ -120,7 +119,18 @@
             "font": { "bold": true, "color": "#FFFFFF" }
           }
         },
-        { "range": "F1:G13", "autofitColumns": true }
+        { "range": "F1:G13", "autofitColumns": true },
+        {
+          "range": "A15:G15",
+          "values": [["Prepared by open-office-artifact-tool", null, null, null, null, null, null]],
+          "format": {
+            "fill": "#0F766E",
+            "font": { "bold": true, "color": "#FFFFFF" },
+            "alignment": { "horizontal": "center" },
+            "rowHeightPx": 24
+          },
+          "merge": true
+        }
       ],
       "tables": [
         { "range": "A1:D4", "name": "SummaryTable", "style": "TableStyleMedium2" }
@@ -145,9 +155,9 @@
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:G13",
+    "range": "A1:G15",
     "renderFormat": "svg",
-    "inspectKind": "workbook,sheet,table,formula,style,computedStyle",
-    "maxChars": 12000
+    "inspectKind": "workbook,sheet,table,formula,style,computedStyle,merge",
+    "maxChars": 30000
   }
 }

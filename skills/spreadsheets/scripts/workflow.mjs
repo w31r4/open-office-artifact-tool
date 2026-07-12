@@ -121,6 +121,10 @@ function applyRangeOperation(sheet, operation = {}) {
   for (const rule of operation.conditionalFormats || []) {
     range.conditionalFormats.add(rule.ruleType, rule.config || {});
   }
+  if (operation.fillDown === true) range.fillDown();
+  if (operation.fillRight === true) range.fillRight();
+  if (operation.unmerge === true) range.unmerge();
+  if (operation.merge === true || operation.merge === "across") range.merge(operation.merge === "across");
   return range;
 }
 

@@ -860,6 +860,12 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportTsv", summary: "Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectDelimited", summary: "Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.mergeCells", summary: "Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.unmergeCells", summary: "Remove every merged region intersecting an A1 range without discarding the retained upper-left content." },
+  { artifactKind: "workbook", kind: "api", name: "range.merge", summary: "Merge the target range as one region or as separate row-wise regions when across=true." },
+  { artifactKind: "workbook", kind: "api", name: "range.unmerge", summary: "Remove merged regions intersecting the target range." },
+  { artifactKind: "workbook", kind: "api", name: "range.fillDown", summary: "Copy top-row contents and formatting down the range while translating relative A1 formula references." },
+  { artifactKind: "workbook", kind: "api", name: "range.fillRight", summary: "Copy left-column contents and formatting right across the range while translating relative A1 formula references." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeRows", summary: "Freeze a leading row count in the worksheet view while preserving any frozen columns." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeColumns", summary: "Freeze a leading column count in the worksheet view while preserving any frozen rows." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.unfreeze", summary: "Remove all frozen worksheet panes and restore a single scrollable view." },
@@ -1882,6 +1888,19 @@ const WORKBOOK_HELP_SCHEMAS = {
   "workbook.worksheets.add": helpSchema({
     name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
   }, "worksheet", "Worksheet", "Appended editable worksheet."),
+  "worksheet.mergeCells": helpSchema({
+    address: { type: "string|Range", required: true, description: "A1 range to merge." },
+    across: { type: "boolean", description: "Merge each row as a separate region instead of one rectangular region." },
+  }, "worksheet", "Worksheet", "The same worksheet with native merged-range state."),
+  "worksheet.unmergeCells": helpSchema({
+    address: { type: "string|Range", required: true, description: "A1 range whose intersecting merged regions should be removed." },
+  }, "worksheet", "Worksheet", "The same worksheet after intersecting merges are removed."),
+  "range.merge": helpSchema({
+    across: { type: "boolean", description: "Merge each target row independently when true." },
+  }, "range", "Range", "The same range after merge creation."),
+  "range.unmerge": helpSchema({}, "range", "Range", "The same range after intersecting merges are removed."),
+  "range.fillDown": helpSchema({}, "range", "Range", "The same range after top-row contents/formats are filled down with relative formula translation."),
+  "range.fillRight": helpSchema({}, "range", "Range", "The same range after left-column contents/formats are filled right with relative formula translation."),
   "worksheet.freezePanes.freezeRows": helpSchema({
     rowCount: { type: "number", required: true, description: "Integer number of leading rows to freeze; zero clears only the row freeze." },
   }, "freezePanes", "object", "Worksheet frozen-pane facade with rows, columns, topLeftCell, activePane, and frozen state."),
@@ -3498,7 +3517,7 @@ export class Workbook {
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
     if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904" });
     for (const sheet of this.worksheets) {
-      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size });
+      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
@@ -3508,6 +3527,7 @@ export class Workbook {
       if (kinds.has("formula")) records.push(...sheet.formulaRecords({ ...options, graph }));
       if (kinds.has("style") || kinds.has("computedStyle")) records.push(...sheet.styleRecords(options));
       if (kinds.has("dimension") || kinds.has("column") || kinds.has("row")) records.push(...sheet.dimensionRecords(kinds));
+      if (kinds.has("merge") || kinds.has("mergedCell")) records.push(...sheet.mergeRecords());
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
       if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
@@ -3541,6 +3561,22 @@ export class Workbook {
       for (const [row, dimension] of sheet.rowDimensions) {
         if (!Number.isInteger(row) || row < 0 || row > XLSX_MAX_FREEZE_ROWS) issues.push(verificationIssue("workbook", "invalidRowDimensionIndex", `Worksheet ${sheet.name} has an invalid row dimension index ${row}.`, { sheet: sheet.name, row }));
         if (dimension.height != null && (!Number.isFinite(dimension.height) || dimension.height <= 0 || dimension.height > XLSX_MAX_ROW_HEIGHT)) issues.push(verificationIssue("workbook", "invalidRowHeight", `Worksheet ${sheet.name} row ${row + 1} has invalid height ${dimension.height}.`, { sheet: sheet.name, row, height: dimension.height }));
+      }
+      const validMerges = [];
+      for (const range of sheet.mergedRanges || []) {
+        let bounds;
+        try { bounds = worksheetRangeBounds(range); } catch {
+          issues.push(verificationIssue("workbook", "invalidMergedRange", `Worksheet ${sheet.name} has invalid merged range ${range}.`, { sheet: sheet.name, range }));
+          continue;
+        }
+        if (bounds.rowCount * bounds.colCount <= 1) issues.push(verificationIssue("workbook", "singleCellMerge", `Worksheet ${sheet.name} merge ${range} does not span multiple cells.`, { sheet: sheet.name, range }));
+        for (const existing of validMerges) if (worksheetBoundsIntersect(existing.bounds, bounds)) issues.push(verificationIssue("workbook", "overlappingMergedRanges", `Worksheet ${sheet.name} merge ${range} overlaps ${existing.range}.`, { sheet: sheet.name, range, existingRange: existing.range }));
+        for (let row = bounds.top; row <= bounds.bottom; row += 1) for (let column = bounds.left; column <= bounds.right; column += 1) {
+          if (row === bounds.top && column === bounds.left) continue;
+          const cell = sheet.store.cells.get(makeCellAddress(row, column));
+          if (cell && (cell.value != null || cell.formula)) issues.push(verificationIssue("workbook", "mergedSubordinateContent", `Worksheet ${sheet.name} merged range ${range} has content outside its upper-left cell.`, { sheet: sheet.name, range, address: makeCellAddress(row, column) }));
+        }
+        validMerges.push({ range, bounds });
       }
       if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
       for (const [address, cell] of entries) {
@@ -3716,7 +3752,7 @@ export class Workbook {
 
 function worksheetLayoutEntries(layout) {
   const entries = [];
-  for (const collection of ["cells", "tables", "pivots", "charts", "images", "sparklines", "rules"]) {
+  for (const collection of ["cells", "merges", "tables", "pivots", "charts", "images", "sparklines", "rules"]) {
     layout[collection].forEach((record, itemIndex) => entries.push({ collection, itemIndex, record }));
   }
   return entries;
@@ -3751,7 +3787,7 @@ function worksheetLayoutSlice(layout, options = {}) {
     keepByCollection.get(entry.collection).add(entry.itemIndex);
   }
   const sliced = { ...layout };
-  for (const collection of ["cells", "tables", "pivots", "charts", "images", "sparklines", "rules"]) {
+  for (const collection of ["cells", "merges", "tables", "pivots", "charts", "images", "sparklines", "rules"]) {
     const kept = keepByCollection.get(collection) || new Set();
     sliced[collection] = layout[collection].filter((_, index) => kept.has(index));
   }
@@ -3807,6 +3843,76 @@ class WorksheetFreezePanes {
   }
 }
 
+function worksheetRangeBounds(value) {
+  const bounds = value instanceof Range ? value.bounds : parseRangeAddress(String(value));
+  if (bounds.top < 0 || bounds.left < 0 || bounds.bottom > XLSX_MAX_FREEZE_ROWS || bounds.right > XLSX_MAX_FREEZE_COLUMNS) throw new Error(`Worksheet range ${rangeToAddress(bounds)} exceeds XLSX row/column limits.`);
+  return bounds;
+}
+
+function worksheetBoundsIntersect(left, right) {
+  return left.left <= right.right && left.right >= right.left && left.top <= right.bottom && left.bottom >= right.top;
+}
+
+function worksheetMergedCellInfo(sheet, row, column) {
+  for (const range of sheet.mergedRanges || []) {
+    let bounds;
+    try { bounds = parseRangeAddress(range); } catch { continue; }
+    if (row < bounds.top || row > bounds.bottom || column < bounds.left || column > bounds.right) continue;
+    return { range, bounds, topLeft: row === bounds.top && column === bounds.left, parent: makeCellAddress(bounds.top, bounds.left) };
+  }
+  return undefined;
+}
+
+function worksheetMergeTargets(bounds, across = false) {
+  if (across) return Array.from({ length: bounds.rowCount }, (_, index) => ({ top: bounds.top + index, bottom: bounds.top + index, left: bounds.left, right: bounds.right, rowCount: 1, colCount: bounds.colCount })).filter((item) => item.colCount > 1);
+  return bounds.rowCount * bounds.colCount > 1 ? [bounds] : [];
+}
+
+function clearMergedSubordinateContents(sheet, bounds) {
+  for (let row = bounds.top; row <= bounds.bottom; row += 1) {
+    for (let column = bounds.left; column <= bounds.right; column += 1) {
+      if (row === bounds.top && column === bounds.left) continue;
+      const address = makeCellAddress(row, column);
+      const cell = sheet.store.cells.get(address);
+      if (!cell) continue;
+      cell.value = null;
+      cell.formula = null;
+      for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
+    }
+  }
+}
+
+function formulaFillTranslation(formula, sourceAddress, targetAddress) {
+  const raw = String(formula || "");
+  const source = parseCellAddress(sourceAddress);
+  const target = parseCellAddress(targetAddress);
+  const rowOffset = target.row - source.row;
+  const columnOffset = target.col - source.col;
+  const protectedParts = [];
+  const protectedFormula = raw.replace(/"(?:[^"]|"")*"|\[[^\]]*\]/g, (part) => {
+    const token = `\uE000${protectedParts.length}\uE001`;
+    protectedParts.push(part);
+    return token;
+  });
+  const shifted = protectedFormula.replace(/(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_. ]*))!)?(\$?)([A-Za-z]{1,3})(\$?)(\d+)/g, (match, quotedSheet, bareSheet, absoluteColumn, columnText, absoluteRow, rowText) => {
+    const column = columnLabelToNumber(columnText);
+    const row = Number(rowText) - 1;
+    const shiftedColumn = absoluteColumn ? column : column + columnOffset;
+    const shiftedRow = absoluteRow ? row : row + rowOffset;
+    const prefix = quotedSheet != null ? `'${quotedSheet}'!` : bareSheet != null ? `${bareSheet}!` : "";
+    if (shiftedColumn < 0 || shiftedRow < 0 || shiftedColumn > XLSX_MAX_FREEZE_COLUMNS || shiftedRow > XLSX_MAX_FREEZE_ROWS) return `${prefix}#REF!`;
+    return `${prefix}${absoluteColumn || ""}${columnNumberToLabel(shiftedColumn)}${absoluteRow || ""}${shiftedRow + 1}`;
+  });
+  return shifted.replace(/\uE000(\d+)\uE001/g, (_, index) => protectedParts[Number(index)] || "");
+}
+
+function cloneCellForFill(source, sourceAddress, targetAddress) {
+  const cell = structuredClone(source || { value: null, formula: null, style: {} });
+  if (cell.formula) cell.formula = formulaFillTranslation(cell.formula, sourceAddress, targetAddress);
+  for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
+  return cell;
+}
+
 export class Worksheet {
   constructor(workbook, name) {
     this.workbook = workbook;
@@ -3815,6 +3921,7 @@ export class Worksheet {
     this.store = new CellStore();
     this.columnDimensions = new Map();
     this.rowDimensions = new Map();
+    this.mergedRanges = [];
     this.charts = new WorksheetChartCollection(this);
     this.shapes = [];
     this.images = new WorksheetImageCollection(this);
@@ -3841,6 +3948,36 @@ export class Worksheet {
     return this.getRangeByIndexes(row, col, 1, 1);
   }
 
+  mergeCells(address, across = false) {
+    const bounds = worksheetRangeBounds(address);
+    const targets = worksheetMergeTargets(bounds, Boolean(across));
+    const existing = this.mergedRanges.map((range) => ({ range, bounds: parseRangeAddress(range) }));
+    for (const target of targets) {
+      const canonical = rangeToAddress(target);
+      for (const item of existing) {
+        if (item.range === canonical) continue;
+        if (worksheetBoundsIntersect(item.bounds, target)) throw new Error(`Worksheet merge ${canonical} overlaps existing merged range ${item.range}.`);
+      }
+    }
+    for (const target of targets) {
+      const canonical = rangeToAddress(target);
+      if (!this.mergedRanges.includes(canonical)) this.mergedRanges.push(canonical);
+      clearMergedSubordinateContents(this, target);
+    }
+    this.mergedRanges.sort((left, right) => {
+      const a = parseRangeAddress(left), b = parseRangeAddress(right);
+      return a.top - b.top || a.left - b.left || a.bottom - b.bottom || a.right - b.right;
+    });
+    this.recalculate();
+    return this;
+  }
+
+  unmergeCells(address) {
+    const bounds = worksheetRangeBounds(address);
+    this.mergedRanges = this.mergedRanges.filter((range) => !worksheetBoundsIntersect(parseRangeAddress(range), bounds));
+    return this;
+  }
+
   getUsedRange() {
     return new Range(this, this.usedBounds());
   }
@@ -3853,6 +3990,10 @@ export class Worksheet {
 
   usedBounds() {
     const coords = this.store.entries().map(([address]) => parseCellAddress(address));
+    for (const range of this.mergedRanges) {
+      const bounds = parseRangeAddress(range);
+      coords.push({ row: bounds.top, col: bounds.left }, { row: bounds.bottom, col: bounds.right });
+    }
     if (coords.length === 0) return { top: 0, left: 0, bottom: 0, right: 0, rowCount: 1, colCount: 1 };
     const top = Math.min(...coords.map((c) => c.row));
     const left = Math.min(...coords.map((c) => c.col));
@@ -3932,6 +4073,13 @@ export class Worksheet {
     ];
   }
 
+  mergeRecords() {
+    return this.mergedRanges.map((range) => {
+      const bounds = parseRangeAddress(range);
+      return { kind: "mergedCell", sheet: this.name, range, address: range, topLeftCell: makeCellAddress(bounds.top, bounds.left), rows: bounds.rowCount, cols: bounds.colCount };
+    });
+  }
+
   matchRecords(options = {}) {
     const term = options.searchTerm || options.search || "";
     if (!term) return [];
@@ -3960,15 +4108,20 @@ export class Worksheet {
         const address = makeCellAddress(r, c);
         const cell = this.store.get(address);
         const computed = worksheetComputedCellStyle(this, address, cell.style);
-        const frame = frameForBounds({ top: r, bottom: r, left: c, right: c, rowCount: 1, colCount: 1 });
+        const merged = worksheetMergedCellInfo(this, r, c);
+        const frame = merged?.topLeft ? frameForBounds(merged.bounds) : frameForBounds({ top: r, bottom: r, left: c, right: c, rowCount: 1, colCount: 1 });
         cells.push({
           kind: "cell",
           sheet: this.name,
           address,
           row: r,
           col: c,
-          bbox: [frame.left, frame.top, frame.width, frame.height],
-          hidden: Boolean(worksheetColumnDimension(this, c).hidden || worksheetRowDimension(this, r).hidden),
+          bbox: merged && !merged.topLeft ? [frame.left, frame.top, 0, 0] : [frame.left, frame.top, frame.width, frame.height],
+          hidden: Boolean(merged && !merged.topLeft || worksheetColumnDimension(this, c).hidden || worksheetRowDimension(this, r).hidden),
+          mergedRange: merged?.range,
+          mergedParent: merged && !merged.topLeft ? merged.parent : undefined,
+          rowSpan: merged?.topLeft ? merged.bounds.rowCount : undefined,
+          colSpan: merged?.topLeft ? merged.bounds.colCount : undefined,
           value: cell.value,
           formula: cell.formula || undefined,
           spillParent: cell.spillParent,
@@ -3979,13 +4132,14 @@ export class Worksheet {
         });
       }
     }
+    const merges = this.mergedRanges.map((range) => { const mergeBounds = parseRangeAddress(range); const frame = frameForBounds(mergeBounds); return { kind: "mergedCell", sheet: this.name, range, topLeftCell: makeCellAddress(mergeBounds.top, mergeBounds.left), bbox: [frame.left, frame.top, frame.width, frame.height], rows: mergeBounds.rowCount, cols: mergeBounds.colCount }; });
     const tables = this.tables.items.map((table) => ({ kind: "table", id: table.id, sheet: this.name, name: table.name, address: table.range, bbox: Object.values(frameForRange(table.range) || {}), rows: table.rowCount, cols: table.columnCount, hasHeaders: table.hasHeaders }));
     const pivots = this.pivotTables.items.map((pivot) => pivot.layoutJson(bounds));
     const charts = this.charts.items.map((chart) => ({ kind: "chart", id: chart.id, sheet: this.name, name: chart.name, chartType: chart.type, title: chart.title, bbox: [chart.position.left, chart.position.top, chart.position.width, chart.position.height], series: chart.series.items.length, categories: chart.categories }));
     const images = this.images.items.map((image) => { const p = image.position; return { kind: "image", id: image.id, sheet: this.name, name: image.name, alt: image.alt, bbox: [p.left, p.top, p.width, p.height], fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt }; });
     const sparklines = this.sparklineGroups.items.map((group) => { const p = group.targetFrame(bounds); return { kind: "sparkline", id: group.id, sheet: this.name, type: group.type, targetRange: group.targetRange.address, sourceData: group.sourceData.address, bbox: [p.left, p.top, p.width, p.height], values: group.values() }; });
     const rules = [...this.dataValidations.items, ...this.conditionalFormattings.items].map((rule) => ({ kind: rule.kind, id: rule.id, sheet: this.name, range: rule.range, bbox: Object.values(frameForRange(rule.range) || {}), ruleType: rule.ruleType, rule: rule.rule }));
-    const drawingFrames = [...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox), ...pivots.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
+    const drawingFrames = [...merges.map((item) => item.bbox), ...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox), ...pivots.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
     const usedFrame = frameForBounds(bounds);
     const width = Math.max(320, usedFrame.width + 80, ...drawingFrames.map((bbox) => bbox[0] + bbox[2] + 40));
     const height = Math.max(180, usedFrame.height + 80, ...drawingFrames.map((bbox) => bbox[1] + bbox[3] + 40));
@@ -4003,6 +4157,7 @@ export class Worksheet {
       width,
       height,
       cells,
+      merges,
       tables,
       pivots,
       charts,
@@ -4031,7 +4186,9 @@ export class Worksheet {
         const cell = this.store.get(address);
         const value = cell.value ?? "";
         const computed = worksheetComputedCellStyle(this, address, cell.style);
-        const frame = worksheetRangeFrame(this, { top: r, bottom: r, left: c, right: c, rowCount: 1, colCount: 1 }, bounds, { cellWidthPx: cellW, cellHeightPx: cellH });
+        const merged = worksheetMergedCellInfo(this, r, c);
+        if (merged && !merged.topLeft) continue;
+        const frame = worksheetRangeFrame(this, merged?.bounds || { top: r, bottom: r, left: c, right: c, rowCount: 1, colCount: 1 }, bounds, { cellWidthPx: cellW, cellHeightPx: cellH });
         const x = frame.left;
         const y = frame.top;
         if (frame.width <= 0 || frame.height <= 0) continue;
@@ -4253,10 +4410,42 @@ export class Range {
 
   get sparklines() { return new RangeSparklineFacade(this); }
 
-  merge() {}
-  unmerge() {}
-  fillDown() {}
-  fillRight() {}
+  merge(across = false) { this.worksheet.mergeCells(this, across); return this; }
+  unmerge() { this.worksheet.unmergeCells(this); return this; }
+  fillDown() {
+    if (this.worksheet.mergedRanges.some((range) => worksheetBoundsIntersect(parseRangeAddress(range), this.bounds))) throw new Error(`Cannot fill down range ${rangeToAddress(this.bounds)} because it intersects merged cells.`);
+    const sources = new Map();
+    for (let column = this.bounds.left; column <= this.bounds.right; column += 1) {
+      const address = makeCellAddress(this.bounds.top, column);
+      sources.set(column, { address, cell: structuredClone(this.worksheet.store.get(address)) });
+    }
+    for (let row = this.bounds.top + 1; row <= this.bounds.bottom; row += 1) {
+      for (let column = this.bounds.left; column <= this.bounds.right; column += 1) {
+        const source = sources.get(column);
+        const targetAddress = makeCellAddress(row, column);
+        this.worksheet.store.cells.set(targetAddress, cloneCellForFill(source.cell, source.address, targetAddress));
+      }
+    }
+    this.worksheet.recalculate();
+    return this;
+  }
+  fillRight() {
+    if (this.worksheet.mergedRanges.some((range) => worksheetBoundsIntersect(parseRangeAddress(range), this.bounds))) throw new Error(`Cannot fill right range ${rangeToAddress(this.bounds)} because it intersects merged cells.`);
+    const sources = new Map();
+    for (let row = this.bounds.top; row <= this.bounds.bottom; row += 1) {
+      const address = makeCellAddress(row, this.bounds.left);
+      sources.set(row, { address, cell: structuredClone(this.worksheet.store.get(address)) });
+    }
+    for (let column = this.bounds.left + 1; column <= this.bounds.right; column += 1) {
+      for (let row = this.bounds.top; row <= this.bounds.bottom; row += 1) {
+        const source = sources.get(row);
+        const targetAddress = makeCellAddress(row, column);
+        this.worksheet.store.cells.set(targetAddress, cloneCellForFill(source.cell, source.address, targetAddress));
+      }
+    }
+    this.worksheet.recalculate();
+    return this;
+  }
   getCell(row, col) { return this.worksheet.getCell(this.bounds.top + row, this.bounds.left + col); }
   getRange(address) { return this.worksheet.getRange(address); }
   getOffsetRange(rowOffset, colOffset) { return this.worksheet.getRangeByIndexes(this.bounds.top + rowOffset, this.bounds.left + colOffset, this.bounds.rowCount, this.bounds.colCount); }
@@ -6424,6 +6613,20 @@ function worksheetColumnsXml(sheet) {
   return `<cols>${columns}</cols>`;
 }
 
+function worksheetMergeCellsXml(sheet) {
+  if (!sheet.mergedRanges?.length) return "";
+  const normalized = [];
+  for (const range of sheet.mergedRanges) {
+    const bounds = worksheetRangeBounds(range);
+    if (bounds.rowCount * bounds.colCount <= 1) continue;
+    const canonical = rangeToAddress(bounds);
+    for (const existing of normalized) if (worksheetBoundsIntersect(existing.bounds, bounds)) throw new Error(`Worksheet merged range ${canonical} overlaps ${existing.range}.`);
+    normalized.push({ range: canonical, bounds });
+  }
+  if (!normalized.length) return "";
+  return `<mergeCells count="${normalized.length}">${normalized.map((item) => `<mergeCell ref="${attrEscape(item.range)}"/>`).join("")}</mergeCells>`;
+}
+
 function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
   const rows = new Map();
   for (const [address, cell] of sheet.store.entries()) {
@@ -6444,7 +6647,7 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
   const sparklineXml = sparklineGroupExtXml(sheet);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${worksheetMergeCellsXml(sheet)}${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
 function cellFormulaXml(address, cell) {
@@ -6595,6 +6798,24 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   parseDataValidationsXml(sheet, xml);
   parseConditionalFormattingXml(sheet, xml, options.styles || []);
   parseSparklineGroupsXml(sheet, xml);
+  parseWorksheetMergeCellsXml(sheet, xml);
+}
+
+function parseWorksheetMergeCellsXml(sheet, xml = "") {
+  sheet.mergedRanges = [];
+  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?mergeCell\b[^>]*\/?>/g)) {
+    const ref = ooxmlXmlAttributes(match[0]).ref;
+    if (!ref) continue;
+    try {
+      const bounds = worksheetRangeBounds(ref);
+      if (bounds.rowCount * bounds.colCount <= 1) continue;
+      const canonical = rangeToAddress(bounds);
+      if (!sheet.mergedRanges.includes(canonical)) sheet.mergedRanges.push(canonical);
+    } catch {
+      // Ignore malformed third-party merge references while retaining the editable sheet.
+    }
+  }
+  for (const range of sheet.mergedRanges) clearMergedSubordinateContents(sheet, parseRangeAddress(range));
 }
 
 function parseWorksheetDimensionsXml(sheet, xml = "") {

@@ -40,7 +40,8 @@ sheet.getRange("A1:C3").values = [
   ["Feb", 120, 70],
 ];
 sheet.getRange("D1").values = [["Margin"]];
-sheet.getRange("D2:D3").formulas = [["=(B2-C2)/B2"], ["=(B3-C3)/B3"]];
+sheet.getRange("D2").formulas = [["=(B2-C2)/B2"]];
+sheet.getRange("D2:D3").fillDown();
 sheet.getRange("A1:D1").format = {
   fill: "#0F766E",
   font: { bold: true, color: "#FFFFFF" },
@@ -51,6 +52,8 @@ sheet.getRange("D2:D3").format = { numberFormat: "0.0%" };
 sheet.getRange("A1:A3").format.columnWidth = 12;
 sheet.getRange("B1:D3").format.columnWidthPx = 96;
 sheet.getRange("A1:D1").format.rowHeight = 24;
+sheet.getRange("A5:D5").values = [["Quarter summary", null, null, null]];
+sheet.getRange("A5:D5").merge();
 sheet.freezePanes.freezeRows(1);
 workbook.recalculate();
 
@@ -65,6 +68,8 @@ const importedTsv = await SpreadsheetFile.importTsv("Name\tValue\nRevenue\t120",
 For workbooks that use Excel's 1904 serial-date system, create the workbook with `Workbook.create({ dateSystem: "1904" })` or call `workbook.setDateSystem("1904")`. The setting drives date formulas and native `workbookPr date1904` import/export; do not manually offset stored dates by 1,462 days.
 
 Use `NETWORKDAYS.INTL` and `WORKDAY.INTL` when weekends are not Saturday/Sunday. The weekend argument may be an Excel weekend number (`1`–`7` or `11`–`17`) or a seven-character Monday-first mask such as `"0000011"`; keep holidays as serial-date cells/ranges in the same workbook date system.
+
+Use `range.fillDown()` or `range.fillRight()` to copy the leading row/column with Excel-style relative formula translation. Use `range.merge()` for one rectangular merge, `range.merge(true)` for separate row-wise merges, and `range.unmerge()` to remove intersecting merged regions. Fill operations reject merged intersections so a workflow cannot silently overwrite ambiguous merged-cell contents.
 
 For scrollable reports, use `sheet.freezePanes.freezeRows(count)` and `freezeColumns(count)`; the two axes compose, and `unfreeze()` clears both. These methods write native SpreadsheetML `sheetViews/pane` state and are preserved when importing third-party XLSX files.
 

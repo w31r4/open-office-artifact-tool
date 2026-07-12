@@ -11,13 +11,19 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 202);
+assert.equal(HELP_CATALOG.length, 208);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.mergeCells"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.unmergeCells"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.merge"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.unmerge"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.fillDown"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "range.fillRight"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
@@ -151,12 +157,15 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 121);
+assert.equal(workbookCatalog.length, 127);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.freezePanes.freezeRows")?.schema?.parameters?.rowCount?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.freezePanes.freezeColumns")?.schema?.parameters?.columnCount?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.mergeCells")?.schema?.parameters?.address?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.merge")?.schema?.parameters?.across?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.fillDown")?.schema?.returns?.range?.type, "Range");
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.setDateSystem")?.schema?.parameters?.dateSystem?.type, "string|boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.category, "date-time");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.WORKDAY.INTL")?.category, "date-time");
