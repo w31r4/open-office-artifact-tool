@@ -4,6 +4,7 @@ import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
+import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -879,7 +880,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.resolve", summary: "Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
@@ -1440,8 +1441,8 @@ const HELP_DETAIL_OVERRIDES = {
     },
   },
   "workbook.structuredReferences": {
-    examples: ["=SUM(TasksTable[Revenue])", "=TEXTJOIN(\"|\",TRUE,TasksTable[#Headers])", "=SUM(TasksTable[[#Data],[Revenue]])", "=SUM(TasksTable[[#Data],[Revenue]:[Cost]])", "=TEXTJOIN(\"|\",TRUE,TasksTable[[#Data],[Region],[Code]])"],
-    notes: ["Current clean-room subset supports #Headers/#Data/#All/#Totals sections, single-column selectors, contiguous column ranges, and comma-separated column unions; special escaping for headers containing brackets remains roadmap."],
+    examples: ["=SUM(TableName[Column])", "=SUM(TableName[[#Data],[First]:[Last]])", "=[Revenue]-[Cost]", "=TasksTable[@Revenue]", "=SUM(TasksTable[[#This Row],[Revenue]:[Cost]])", "=TasksTable['#Items]", "=TasksTable[Bracket'[Value']]"],
+    notes: ["Supports #Headers/#Data/#All/#Totals/#This Row and @, unqualified current-row references inside tables, contiguous column ranges, comma-separated column unions, and apostrophe escaping for [, ], #, ', and @ in column headers. Current-row references outside the referenced table return #VALUE!."],
   },
   createPlaywrightRenderer: {
     examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
@@ -2042,8 +2043,8 @@ const WORKBOOK_HELP_SCHEMAS = {
   }, "graph", "object", "Formula nodes, edges, cycles, errors, and bounded NDJSON."),
   "workbook.structuredReferences": helpSchema({
     formula: { type: "string", required: true, description: "Formula containing an Excel table structured reference." },
-    table: { type: "string", required: true, description: "Worksheet table name." },
-    selector: { type: "string", required: true, description: "Column/section/range/union selector inside brackets." },
+    table: { type: "string", description: "Worksheet table name; omitted only for a calculated-column reference inside that table." },
+    selector: { type: "string", required: true, description: "Column, escaped special-character header, section, current-row, range, or union selector inside brackets." },
   }, "value", "unknown", "Calculated scalar/array value with stable table-cell precedents."),
   "workbook.sharedArrayFormulas": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared or array formula records." },
@@ -2706,6 +2707,7 @@ class WorksheetTable {
     this.showFilterButton = config.showFilterButton ?? true;
     this.style = config.style || "TableStyleMedium2";
     this.values = config.values ? config.values.map((row) => [...row]) : range.values.map((row) => [...row]);
+    this.columnNames = Array.isArray(config.columnNames) ? config.columnNames.map((value) => String(value)) : undefined;
     this.rows = new WorksheetTableRowsFacade(this);
     this.refreshDimensions();
   }
@@ -2727,7 +2729,7 @@ class WorksheetTable {
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {
-    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, values: this.values };
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, columnNames: this.columnNames, values: this.values };
   }
 
   toSvg(bounds) {
@@ -2737,7 +2739,7 @@ class WorksheetTable {
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, style: this.style, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, style: this.style, columnNames: this.columnNames, values: this.values }; }
 }
 
 class WorksheetTableCollection {
@@ -3642,7 +3644,7 @@ export class Workbook {
       };
       if (!cell.formula || depth >= maxDepth || seen.has(key)) return node;
       seen.add(key);
-      for (const ref of formulaReferences(cell.formula, sheet)) {
+      for (const ref of formulaReferences(cell.formula, sheet, address)) {
         const targetSheet = ref.sheetName ? this.worksheets.getItem(ref.sheetName) : sheet;
         if (!targetSheet) {
           node.precedents.push({ kind: "trace", sheet: ref.sheetName, address: ref.address, missing: true, depth: depth + 1, precedents: [] });
@@ -4010,7 +4012,7 @@ export class Worksheet {
         spillRange: cell.spillRange,
         spillValues: cell.spillValues,
         spillError: cell.spillError,
-        precedents: graphNode?.precedents?.map((ref) => ref.key) || formulaReferences(cell.formula, this).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address)),
+        precedents: graphNode?.precedents?.map((ref) => ref.key) || formulaReferences(cell.formula, this, address).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address)),
         dependents: graphNode?.dependents || [],
         error: formulaErrorCode(cell.value) || undefined,
         circular: graphNode?.circular || undefined,
@@ -4455,6 +4457,16 @@ function findWorkbookTable(sheet, tableName) {
   return undefined;
 }
 
+function findContainingWorkbookTable(sheet, address) {
+  if (!sheet || !address) return undefined;
+  const cell = parseCellAddress(String(address).replaceAll("$", "").toUpperCase());
+  const table = sheet.tables.items.find((item) => {
+    const bounds = parseRangeAddress(item.range);
+    return cell.row >= bounds.top && cell.row <= bounds.bottom && cell.col >= bounds.left && cell.col <= bounds.right;
+  });
+  return table ? { sheet, table } : undefined;
+}
+
 function formulaDefinedNameRange(sheet, refText = "", seen = new Set()) {
   const raw = String(refText || "").trim();
   if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(raw)) return undefined;
@@ -4466,55 +4478,6 @@ function formulaDefinedNameRange(sheet, refText = "", seen = new Set()) {
   const ref = formulaRefParts(target);
   if (ref) return { ...ref, name: item.name, id: item.id, refersTo: item.refersTo };
   return { missing: true, name: item.name, refersTo: item.refersTo };
-}
-
-function structuredRefSegments(refBody = "") {
-  const body = String(refBody || "").trim();
-  const segments = [];
-  let last = 0;
-  for (let i = 0; i < body.length; i++) {
-    if (body[i] !== "[") continue;
-    let end = i + 1;
-    while (end < body.length && body[end] !== "]") end += 1;
-    if (end >= body.length) break;
-    if (i > last) segments.push({ type: "sep", text: body.slice(last, i) });
-    segments.push({ type: "token", text: body.slice(i + 1, end).trim() });
-    i = end;
-    last = end + 1;
-  }
-  if (segments.length && last < body.length) segments.push({ type: "sep", text: body.slice(last) });
-  return segments;
-}
-
-function structuredRefParts(refBody = "") {
-  const body = String(refBody || "").trim();
-  const segments = structuredRefSegments(body);
-  if (!segments.length) {
-    const tokens = body.split(",").map((item) => item.trim()).filter(Boolean);
-    return {
-      tokens,
-      sectionTokens: tokens.filter((token) => token.startsWith("#")),
-      columnSelectors: tokens.filter((token) => !token.startsWith("#")).map((token) => {
-        const range = token.split(":").map((item) => item.trim()).filter(Boolean);
-        return range.length === 2 ? { start: range[0], end: range[1] } : { name: token };
-      }),
-    };
-  }
-  const tokens = segments.filter((segment) => segment.type === "token").map((segment) => segment.text).filter(Boolean);
-  const columnSelectors = [];
-  for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
-    if (segment.type !== "token" || !segment.text || segment.text.startsWith("#")) continue;
-    const sep = segments[i + 1]?.type === "sep" ? segments[i + 1].text : "";
-    const next = segments[i + 2];
-    if (sep.includes(":") && next?.type === "token" && next.text && !next.text.startsWith("#")) {
-      columnSelectors.push({ start: segment.text, end: next.text });
-      i += 2;
-    } else {
-      columnSelectors.push({ name: segment.text });
-    }
-  }
-  return { tokens, sectionTokens: tokens.filter((token) => token.startsWith("#")), columnSelectors };
 }
 
 function structuredColumnIndex(headers, columnName) {
@@ -4543,29 +4506,33 @@ function structuredColumnIndexes(selectors, headers) {
   return { indexes };
 }
 
-function formulaStructuredRefRange(sheet, refText = "") {
-  const match = /^([A-Za-z_][A-Za-z0-9_.]*)\[((?:[^\[\]]+|\[[^\]]+\])+)\]$/.exec(String(refText || "").trim());
-  if (!match) return undefined;
-  const tableName = match[1];
-  const parts = structuredRefParts(match[2]);
-  const tokens = parts.tokens;
-  const found = findWorkbookTable(sheet, tableName);
+function formulaStructuredRefRange(sheet, refText = "", context = {}) {
+  const parsed = parseStructuredReference(refText);
+  if (!parsed) return undefined;
+  const tableName = parsed.tableName;
+  const found = tableName ? findWorkbookTable(sheet, tableName) : findContainingWorkbookTable(sheet, context.formulaAddress);
+  const tokens = parsed.tokens;
   if (!found) return { missing: true, tableName, columnName: tokens.join(",") };
   const { table, sheet: tableSheet } = found;
   const bounds = parseRangeAddress(table.range);
   const columnCount = bounds.right - bounds.left + 1;
-  const headers = Array.from({ length: columnCount }, (_, index) => table.hasHeaders ? (table.values[0]?.[index] ?? `Column${index + 1}`) : `Column${index + 1}`);
-  const section = parts.sectionTokens.at(-1) || "#Data";
+  const headers = Array.from({ length: columnCount }, (_, index) => table.columnNames?.[index] ?? (table.hasHeaders ? (table.values[0]?.[index] ?? `Column${index + 1}`) : `Column${index + 1}`));
+  const currentRow = parsed.currentRow || (!parsed.qualified && parsed.sectionTokens.length === 0);
+  const section = currentRow ? "#This Row" : parsed.sectionTokens.at(-1) || "#Data";
   const firstDataRow = bounds.top + (table.showHeaders ? 1 : 0);
   const totalsRow = table.showTotals ? bounds.bottom : undefined;
   const lastDataRow = bounds.bottom - (table.showTotals ? 1 : 0);
   let top = firstDataRow;
   let bottom = lastDataRow;
-  if (/^#Headers$/i.test(section)) {
-    if (!table.showHeaders) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.top, bounds.left), end: makeCellAddress(bounds.top - 1, bounds.left), empty: true, tableName, columnName: parts.columnSelectors.map((item) => item.name || `${item.start}:${item.end}`).join(","), table };
+  if (currentRow) {
+    const formulaCell = context.formulaAddress ? parseCellAddress(String(context.formulaAddress).replaceAll("$", "").toUpperCase()) : undefined;
+    if (!formulaCell || formulaCell.row < firstDataRow || formulaCell.row > lastDataRow || formulaCell.col < bounds.left || formulaCell.col > bounds.right) return { error: "#VALUE!", tableName: table.name, sheetName: tableSheet.name, table, section };
+    top = bottom = formulaCell.row;
+  } else if (/^#Headers$/i.test(section)) {
+    if (!table.showHeaders) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.top, bounds.left), end: makeCellAddress(bounds.top - 1, bounds.left), empty: true, tableName, columnName: parsed.columnSelectors.map((item) => item.name || `${item.start}:${item.end}`).join(","), table };
     top = bottom = bounds.top;
   } else if (/^#Totals$/i.test(section)) {
-    if (totalsRow == null) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.bottom + 1, bounds.left), end: makeCellAddress(bounds.bottom, bounds.left), empty: true, tableName, columnName: parts.columnSelectors.map((item) => item.name || `${item.start}:${item.end}`).join(","), table };
+    if (totalsRow == null) return { sheetName: tableSheet.name, start: makeCellAddress(bounds.bottom + 1, bounds.left), end: makeCellAddress(bounds.bottom, bounds.left), empty: true, tableName, columnName: parsed.columnSelectors.map((item) => item.name || `${item.start}:${item.end}`).join(","), table };
     top = bottom = totalsRow;
   } else if (/^#All$/i.test(section)) {
     top = bounds.top;
@@ -4573,10 +4540,10 @@ function formulaStructuredRefRange(sheet, refText = "") {
   } else if (/^#Data$/i.test(section)) {
     top = firstDataRow;
     bottom = lastDataRow;
-  } else if (parts.sectionTokens.length) {
+  } else if (parsed.sectionTokens.length) {
     return { missing: true, tableName, columnName: section, sheetName: tableSheet.name };
   }
-  const selected = structuredColumnIndexes(parts.columnSelectors, headers);
+  const selected = structuredColumnIndexes(parsed.columnSelectors, headers);
   if (selected.missing) return { missing: true, tableName, columnName: selected.missing, sheetName: tableSheet.name };
   const columns = selected.indexes;
   if (!columns.length) return { missing: true, tableName, columnName: tokens.join(","), sheetName: tableSheet.name };
@@ -4589,22 +4556,21 @@ function formulaStructuredRefRange(sheet, refText = "") {
   return { sheetName: tableSheet.name, start: makeCellAddress(top, left), end: makeCellAddress(bottom, right), tableName, columnName, table, columnIndex, columns, columnNames, section };
 }
 
-function formulaReferences(formula, sheet) {
+function formulaReferences(formula, sheet, formulaAddress) {
   const raw = String(formula || "");
   const refs = [];
   const consumed = [];
-  const structuredRegex = /\b([A-Za-z_][A-Za-z0-9_.]*)\[((?:[^\[\]]+|\[[^\]]+\])+)\]/g;
-  for (const match of raw.matchAll(structuredRegex)) {
-    consumed.push([match.index, match.index + match[0].length]);
-    const structured = formulaStructuredRefRange(sheet, match[0]);
-    if (!structured || structured.missing || structured.empty) continue;
+  for (const match of scanStructuredReferences(raw)) {
+    consumed.push([match.start, match.end]);
+    const structured = formulaStructuredRefRange(sheet, match.text, { formulaAddress });
+    if (!structured || structured.missing || structured.empty || structured.error) continue;
     const start = parseCellAddress(structured.start);
     const end = parseCellAddress(structured.end);
     const tableBounds = structured.table ? parseRangeAddress(structured.table.range) : undefined;
     const cols = tableBounds && structured.columns?.length ? structured.columns.map((index) => tableBounds.left + index) : Array.from({ length: Math.abs(end.col - start.col) + 1 }, (_, index) => Math.min(start.col, end.col) + index);
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
       for (const col of cols) {
-        refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: match[0], tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames });
+        refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: match.text, tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames });
       }
     }
   }
@@ -4700,7 +4666,7 @@ function buildWorkbookFormulaGraph(workbook) {
 
   const edges = [];
   for (const node of nodes) {
-    for (const ref of formulaReferences(node.formula, node.sheetObject)) {
+    for (const ref of formulaReferences(node.formula, node.sheetObject, node.address)) {
       const sheetName = ref.sheetName || node.sheet;
       const targetSheet = workbook.worksheets.getItem(sheetName);
       const targetAddress = String(ref.address || "").replaceAll("$", "").toUpperCase();
@@ -4818,8 +4784,9 @@ function formulaRefParts(refText = "") {
 }
 
 function formulaRangeMatrix(sheet, refText, context = {}) {
-  const structured = formulaStructuredRefRange(sheet, refText);
+  const structured = formulaStructuredRefRange(sheet, refText, context);
   if (structured) {
+    if (structured.error) return [[structured.error]];
     if (structured.missing) return [["#REF!"]];
     if (structured.empty) return [];
     const targetSheet = structured.sheetName ? sheet.workbook?.worksheets.getItem(structured.sheetName) : sheet;
@@ -5701,21 +5668,31 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
   }
 }
 
-function evaluateFormula(sheet, formula, _address, context = {}) {
+function evaluateFormula(sheet, formula, address, context = {}) {
   const raw = String(formula || "").trim();
   if (!raw.startsWith("=")) return raw;
   const expr = raw.slice(1).trim();
+  const evaluationContext = address && !context.formulaAddress ? { ...context, formulaAddress: address } : context;
   const functionMatch = /^([A-Z][A-Z0-9.]*)\((.*)\)$/i.exec(expr);
   if (functionMatch) {
-    return evaluateFormulaFunction(sheet, functionMatch[1].toUpperCase(), splitFormulaArgs(functionMatch[2]), context);
+    return evaluateFormulaFunction(sheet, functionMatch[1].toUpperCase(), splitFormulaArgs(functionMatch[2]), evaluationContext);
   }
 
   let replacementError;
-  const safe = expr.replace(/(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g, (match, quotedSheet, bareSheet, address) => {
+  const structuredReferences = scanStructuredReferences(expr);
+  if (structuredReferences.length === 1 && structuredReferences[0].start === 0 && structuredReferences[0].end === expr.length) return formulaScalar(sheet, structuredReferences[0].text, evaluationContext);
+  let structuredSafe = expr;
+  for (const reference of [...structuredReferences].reverse()) {
+    const value = formulaScalar(sheet, reference.text, evaluationContext);
+    const error = formulaErrorCode(value);
+    if (error) replacementError = error;
+    structuredSafe = `${structuredSafe.slice(0, reference.start)}${formulaNumber(value)}${structuredSafe.slice(reference.end)}`;
+  }
+  const safe = structuredSafe.replace(/(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g, (match, quotedSheet, bareSheet, refAddress) => {
     const refSheetName = quotedSheet || bareSheet || undefined;
-    const refAddress = address.replaceAll("$", "").toUpperCase();
+    refAddress = refAddress.replaceAll("$", "").toUpperCase();
     const targetSheet = refSheetName ? sheet.workbook?.worksheets.getItem(refSheetName) : sheet;
-    const value = context.getValue ? context.getValue({ sheetName: refSheetName, address: refAddress }) : (targetSheet ? targetSheet.store.get(refAddress).value : "#REF!");
+    const value = evaluationContext.getValue ? evaluationContext.getValue({ sheetName: refSheetName, address: refAddress }) : (targetSheet ? targetSheet.store.get(refAddress).value : "#REF!");
     const error = formulaErrorCode(value);
     if (error) replacementError = error;
     return Number(value) || 0;
@@ -5926,7 +5903,10 @@ export class SpreadsheetFile {
     for (const { name, partPath } of sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1, partPath: "xl/worksheets/sheet1.xml" }]) {
       const sheet = workbook.worksheets.add(name);
       const xml = await zip.file(partPath)?.async("text");
-      if (xml) parseWorksheetXml(sheet, xml, { sharedStrings, styles });
+      if (xml) {
+        parseWorksheetXml(sheet, xml, { sharedStrings, styles });
+        await importNativeWorksheetTables(sheet, zip, partPath);
+      }
     }
     parseWorkbookDefinedNames(workbook, workbookText);
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
@@ -6281,9 +6261,11 @@ function sanitizeTableColumnName(value, index, seen) {
 function tableXml(table, tablePartId) {
   const ref = table.range;
   const seen = new Set();
-  const headers = table.showHeaders && table.values[0]
-    ? table.values[0]
-    : Array.from({ length: table.columnCount || 1 }, (_, index) => `Column${index + 1}`);
+  const headers = table.columnNames?.length
+    ? table.columnNames
+    : (table.showHeaders && table.values[0]
+        ? table.values[0]
+        : Array.from({ length: table.columnCount || 1 }, (_, index) => `Column${index + 1}`));
   const columns = Array.from({ length: table.columnCount || headers.length || 1 }, (_, index) => {
     const name = sanitizeTableColumnName(headers[index], index, seen);
     return `<tableColumn id="${index + 1}" name="${attrEscape(name)}"/>`;
@@ -6611,6 +6593,33 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   parseConditionalFormattingXml(sheet, xml, options.styles || []);
   parseSparklineGroupsXml(sheet, xml);
   parseWorksheetMergeCellsXml(sheet, xml);
+}
+
+async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
+  const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
+  for (const relationship of relationships) {
+    if (!relationship.type.endsWith("/table") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
+    const tablePartPath = ooxmlResolveRelationshipTarget(worksheetPartPath, relationship.target);
+    const xml = await zip.file(tablePartPath)?.async("text");
+    if (!xml) continue;
+    const opening = /<(?:[A-Za-z_][\w.-]*:)?table\b[^>]*>/.exec(xml)?.[0];
+    if (!opening) continue;
+    const attrs = ooxmlXmlAttributes(opening);
+    if (!attrs.ref) continue;
+    const columnNames = [...String(xml).matchAll(/<(?:[A-Za-z_][\w.-]*:)?tableColumn\b[^>]*\/?\s*>/g)].map((match) => ooxmlXmlAttributes(match[0]).name).filter((name) => name != null);
+    const styleTag = /<(?:[A-Za-z_][\w.-]*:)?tableStyleInfo\b[^>]*\/?\s*>/.exec(xml)?.[0];
+    const styleAttrs = ooxmlXmlAttributes(styleTag || "");
+    sheet.tables.add({
+      range: attrs.ref,
+      name: attrs.displayName || attrs.name || `Table${sheet.tables.items.length + 1}`,
+      hasHeaders: attrs.headerRowCount == null || !["0", "false", "off"].includes(String(attrs.headerRowCount).toLowerCase()),
+      showTotals: [attrs.totalsRowShown, attrs.totalsRowCount].some((value) => value != null && !["0", "false", "off"].includes(String(value).toLowerCase())),
+      showFilterButton: /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b/.test(xml),
+      showBandedColumns: styleAttrs.showColumnStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showColumnStripes).toLowerCase()),
+      style: styleAttrs.name || "TableStyleMedium2",
+      columnNames,
+    });
+  }
 }
 
 function parseWorksheetMergeCellsXml(sheet, xml = "") {

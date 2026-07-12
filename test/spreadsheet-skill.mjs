@@ -50,6 +50,7 @@ try {
   assert.deepEqual(workbook.worksheets.getItem("Summary").mergedRanges, ["A15:G15"]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.fill, "#0F766E");
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.font.color, "#FFFFFF");
+  assert.match(workbook.help("workbook.structuredReferences").ndjson, /special-character headers/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /SummaryTable/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /Inputs!B2/);

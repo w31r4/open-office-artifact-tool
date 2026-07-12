@@ -1713,7 +1713,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.resolve` | api | Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
 | `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata. |
-| `workbook.structuredReferences` | formula | Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents. |
+| `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
 | `workbook.worksheets.add` | api | Append an editable worksheet with a stable name and ID. |
@@ -3693,21 +3693,23 @@ Import and export native XLSX shared formulas (t=shared) by translating relative
 
 #### `workbook.structuredReferences`
 
-Evaluate Excel-style table structured references such as TableName[Column], TableName[#Headers], TableName[[#Data],[Column]], and TableName[[#Data],[First]:[Last]] in formulas, expanding them to stable table cell precedents.
+Evaluate Excel table references including sections, column ranges/unions, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents.
 
 **Examples:**
 
-- =SUM(TasksTable[Revenue])
-- =TEXTJOIN("|",TRUE,TasksTable[#Headers])
-- =SUM(TasksTable[[#Data],[Revenue]])
-- =SUM(TasksTable[[#Data],[Revenue]:[Cost]])
-- =TEXTJOIN("|",TRUE,TasksTable[[#Data],[Region],[Code]])
+- =SUM(TableName[Column])
+- =SUM(TableName[[#Data],[First]:[Last]])
+- =[Revenue]-[Cost]
+- =TasksTable[@Revenue]
+- =SUM(TasksTable[[#This Row],[Revenue]:[Cost]])
+- =TasksTable['#Items]
+- =TasksTable[Bracket'[Value']]
 
 **Schema parameters:**
 
 - `formula` (string) required — Formula containing an Excel table structured reference.
-- `table` (string) required — Worksheet table name.
-- `selector` (string) required — Column/section/range/union selector inside brackets.
+- `table` (string) — Worksheet table name; omitted only for a calculated-column reference inside that table.
+- `selector` (string) required — Column, escaped special-character header, section, current-row, range, or union selector inside brackets.
 
 **Schema returns:**
 
@@ -3715,7 +3717,7 @@ Evaluate Excel-style table structured references such as TableName[Column], Tabl
 
 **Notes:**
 
-- Current clean-room subset supports #Headers/#Data/#All/#Totals sections, single-column selectors, contiguous column ranges, and comma-separated column unions; special escaping for headers containing brackets remains roadmap.
+- Supports #Headers/#Data/#All/#Totals/#This Row and @, unqualified current-row references inside tables, contiguous column ranges, comma-separated column unions, and apostrophe escaping for [, ], #, ', and @ in column headers. Current-row references outside the referenced table return #VALUE!.
 
 #### `workbook.trace`
 

@@ -70,6 +70,8 @@ For workbooks that use Excel's 1904 serial-date system, create the workbook with
 
 Use `NETWORKDAYS.INTL` and `WORKDAY.INTL` when weekends are not Saturday/Sunday. The weekend argument may be an Excel weekend number (`1`–`7` or `11`–`17`) or a seven-character Monday-first mask such as `"0000011"`; keep holidays as serial-date cells/ranges in the same workbook date system.
 
+Inside a worksheet table, calculated-column formulas may use unqualified current-row references such as `=[Revenue]-[Cost]`, or explicit `@`/`#This Row` references such as `=Sales[@Revenue]`. Escape `[`, `]`, `#`, `'`, and `@` in special-character column headers with a leading apostrophe, for example `Sales['#Items]` or `Sales[Bracket'[Value']]`. The calculator, formula graph, trace output, and metadata-free native XLSX import share the same parser, so verify the exact row precedents rather than only the cached value.
+
 Use `range.fillDown()` or `range.fillRight()` to copy the leading row/column with Excel-style relative formula translation. Use `range.merge()` for one rectangular merge, `range.merge(true)` for separate row-wise merges, and `range.unmerge()` to remove intersecting merged regions. Fill operations reject merged intersections so a workflow cannot silently overwrite ambiguous merged-cell contents.
 
 For scrollable reports, use `sheet.freezePanes.freezeRows(count)` and `freezeColumns(count)`; the two axes compose, and `unfreeze()` clears both. These methods write native SpreadsheetML `sheetViews/pane` state and are preserved when importing third-party XLSX files.

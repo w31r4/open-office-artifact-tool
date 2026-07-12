@@ -347,6 +347,46 @@ assert.match(structuredUnionNode, /Structured!C3/);
 assert.doesNotMatch(structuredUnionNode, /Structured!B2/);
 assert.match(structuredBook.help("workbook.structuredReferences").ndjson, /\[First\]:\[Last\]/);
 
+const escapedStructuredBook = Workbook.create();
+const escapedStructuredSheet = escapedStructuredBook.worksheets.add("Escaped");
+escapedStructuredSheet.getRange("A1:G4").values = [
+  ["Revenue", "Cost", "#Items", "@Rate", "Bracket[Value]", "Owner's", "Net"],
+  [10, 4, 2, 0.1, 7, 1, null],
+  [5, 2, 3, 0.2, 8, 2, null],
+  [12, 6, 1, 0.3, 9, 3, null],
+];
+escapedStructuredSheet.tables.add({ range: "A1:G4", name: "Specials" });
+escapedStructuredSheet.getRange("G2:G4").formulas = [
+  ["=[Revenue]-[Cost]+['#Items]+[Owner''s]"],
+  ["=Specials[@Revenue]-Specials[@Cost]+Specials[@['@Rate]]"],
+  ["=SUM(Specials[[#This Row],[Revenue]:[Bracket'[Value']]])"],
+];
+escapedStructuredSheet.getRange("H2").formulas = [["=Specials[@Revenue]"]];
+escapedStructuredBook.recalculate();
+assert.deepEqual(escapedStructuredSheet.getRange("G2:G4").values.flat(), [9, 3.2, 28.3]);
+assert.equal(escapedStructuredSheet.getRange("H2").values[0][0], "#VALUE!");
+const escapedStructuredG2 = escapedStructuredBook.inspect({ kind: "formulaNode", target: "Escaped!G2", maxChars: 12000 }).ndjson;
+assert.match(escapedStructuredG2, /Escaped!A2/);
+assert.match(escapedStructuredG2, /Escaped!B2/);
+assert.match(escapedStructuredG2, /Escaped!C2/);
+assert.match(escapedStructuredG2, /Escaped!F2/);
+assert.doesNotMatch(escapedStructuredG2, /Escaped!A3/);
+const escapedStructuredTrace = escapedStructuredBook.trace("Escaped!G4");
+assert.deepEqual(escapedStructuredTrace.tree.precedents.map((node) => node.address), ["A4", "B4", "C4", "D4", "E4"]);
+const escapedStructuredXlsx = await SpreadsheetFile.exportXlsx(escapedStructuredBook);
+const escapedStructuredZip = await JSZip.loadAsync(new Uint8Array(await escapedStructuredXlsx.arrayBuffer()));
+assert.match(await escapedStructuredZip.file("xl/worksheets/sheet1.xml").async("text"), /Specials\[\[#This Row\],\[Revenue\]:\[Bracket'\[Value'\]\]\]/);
+escapedStructuredZip.file("xl/custom/native-table.xml", await escapedStructuredZip.file("xl/tables/table1.xml").async("text"));
+escapedStructuredZip.remove("xl/tables/table1.xml");
+escapedStructuredZip.file("xl/worksheets/_rels/sheet1.xml.rels", (await escapedStructuredZip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text")).replace("../tables/table1.xml", "../custom/native-table.xml"));
+escapedStructuredZip.file("[Content_Types].xml", (await escapedStructuredZip.file("[Content_Types].xml").async("text")).replace("/xl/tables/table1.xml", "/xl/custom/native-table.xml"));
+escapedStructuredZip.remove("customXml/open-office-artifact.json");
+const escapedStructuredNative = await SpreadsheetFile.importXlsx(new FileBlob(await escapedStructuredZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: escapedStructuredXlsx.type }));
+assert.deepEqual(escapedStructuredNative.worksheets.getItem("Escaped").getRange("G2:G4").values.flat(), [9, 3.2, 28.3]);
+assert.deepEqual(escapedStructuredNative.worksheets.getItem("Escaped").tables.getItemOrNullObject("Specials").columnNames, ["Revenue", "Cost", "#Items", "@Rate", "Bracket[Value]", "Owner's", "Net"]);
+assert.deepEqual(escapedStructuredNative.trace("Escaped!G3").tree.precedents.map((node) => node.address), ["A3", "B3", "D3"]);
+assert.match(escapedStructuredNative.help("workbook.structuredReferences").ndjson, /#This Row/);
+
 const graphBook = Workbook.create();
 const inputsSheet = graphBook.worksheets.add("Inputs");
 inputsSheet.getRange("A1:A3").values = [[2], [4], [6]];
