@@ -76,9 +76,9 @@
           }
         },
         { "range": "A1:A4", "format": { "columnWidth": 12 } },
-        { "range": "B1:C4", "format": { "columnWidthPx": 96 } },
+        { "range": "B1:C4", "format": { "columnWidthPx": 80 } },
         { "range": "D1:D4", "format": { "columnWidth": 10 } },
-        { "range": "E1:E4", "format": { "columnWidth": 24 } },
+        { "range": "E1:E4", "format": { "columnWidth": 20 } },
         { "range": "I1:J22", "format": { "columnWidth": 22 } },
         {
           "range": "B2:C4",
