@@ -58,6 +58,8 @@ const table = document.addTable({
   values: [["Area", "Status"], ["DOCX styles", "partial"], ["Comments", "roundtrip"]],
 });
 table.getCell(2, 1).value = "anchored";
+const customListParent = document.addListItem("Lettered evidence group", { listType: "number", level: 0, numberFormat: "upperLetter", start: 2, levelText: "%1)", numberingId: 42, name: "lettered-evidence" });
+const customListChild = document.addListItem("Nested roman evidence", { listType: "number", level: 1, numberFormat: "lowerRoman", start: 3, levelText: "%1.%2)", numberingId: 42, name: "roman-evidence" });
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z" });
 const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
 const linkComment = document.addComment(hyperlink, "Verify the native hyperlink target.", { author: "Link Reviewer", initials: "LR", date: "2026-07-11T00:18:00.000Z" });
@@ -82,6 +84,8 @@ assert.match(inspect, /tracked-delete/);
 assert.match(inspect, /Remove stale claim/);
 assert.match(inspect, /numbering-rule/);
 assert.match(inspect, /render-step/);
+assert.match(inspect, /lettered-evidence/);
+assert.match(inspect, /lowerRoman/);
 assert.match(inspect, /Confidential research memo/);
 assert.match(inspect, /Page footer/);
 assert.match(inspect, /First-page research memo/);
@@ -131,6 +135,9 @@ assert.equal(document.resolve(deletion.id).changeType, "delete");
 assert.equal(document.resolve(deletion.id).date, "2026-07-11T00:05:00.000Z");
 assert.equal(document.resolve(bullet.id).listType, "bullet");
 assert.equal(document.resolve(numbered.id).listType, "number");
+assert.equal(document.resolve(customListParent.id).numberFormat, "upperLetter");
+assert.equal(document.resolve(customListChild.id).level, 1);
+assert.equal(document.resolve(customListChild.id).start, 3);
 assert.equal(document.resolve(header.id).text, "Confidential research memo");
 assert.equal(document.resolve(footer.id).text, "Page footer");
 assert.equal(document.resolve(table.id).getCell(2, 1).value, "anchored");
@@ -152,6 +159,7 @@ assert.doesNotMatch(targetedCommentInspect, /findings-heading/);
 assert.match(document.help("document.addParagraph").ndjson, /run-level styles/);
 assert.match(document.help("document.addTable").ndjson, /Word-style table/);
 assert.match(document.help("document.addListItem").ndjson, /numbering definitions/);
+assert.match(document.help("document.addListItem").ndjson, /numberFormat/);
 assert.match(document.help("document.addHeader").ndjson, /DOCX header/);
 assert.match(document.help("document.addHeader").ndjson, /sectionIndex/);
 assert.match(document.help("document.addComment").ndjson, /initials/);
@@ -174,6 +182,11 @@ const invalidCommentDocument = DocumentModel.create({ paragraphs: ["Invalid comm
 invalidCommentDocument.addComment(invalidCommentDocument.blocks[0], "Bad timestamp", { date: "not-a-date" });
 assert.ok(invalidCommentDocument.verify().issues.some((issue) => issue.type === "invalidCommentDate"));
 await assert.rejects(() => DocumentFile.exportDocx(invalidCommentDocument), /date must be a valid date string/);
+const invalidListDocument = DocumentModel.create({ paragraphs: ["Invalid list fixture"] });
+invalidListDocument.addListItem("Too deep", { level: 9, start: 0 });
+assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListLevel"));
+assert.ok(invalidListDocument.verify().issues.some((issue) => issue.type === "invalidListStart"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidListDocument), /level must be an integer from 0 through 8/);
 
 const preview = await document.render();
 assert.equal(preview.type, "image/svg+xml");
@@ -254,6 +267,7 @@ const docxBytes = new Uint8Array(await docx.arrayBuffer());
 const zip = await JSZip.loadAsync(docxBytes);
 const documentXml = await zip.file("word/document.xml").async("text");
 const commentsXml = await zip.file("word/comments.xml").async("text");
+const numberingXml = await zip.file("word/numbering.xml").async("text");
 const stylesXml = await zip.file("word/styles.xml").async("text");
 assert.match(stylesXml, /w:styleId="RiskCallout"/);
 assert.match(stylesXml, /<w:basedOn w:val="Callout"\/>/);
@@ -291,6 +305,10 @@ const exportedHyperlinkParagraph = /<w:p>[\s\S]*?<w:hyperlink\b[\s\S]*?<\/w:p>/.
 assert.match(exportedHyperlinkParagraph, /<w:commentRangeStart w:id="2"\/>/);
 assert.match(exportedHyperlinkParagraph, /<w:commentRangeEnd w:id="2"\/>/);
 assert.match(exportedHyperlinkParagraph, /<w:commentReference w:id="2"\/>/);
+assert.match(numberingXml, /<w:abstractNum w:abstractNumId="3">/);
+assert.match(numberingXml, /<w:lvl w:ilvl="0"><w:start w:val="2"\/><w:numFmt w:val="upperLetter"\/><w:lvlText w:val="%1\)"/);
+assert.match(numberingXml, /<w:lvl w:ilvl="1"><w:start w:val="3"\/><w:numFmt w:val="lowerRoman"\/><w:lvlText w:val="%1\.%2\)"/);
+assert.match(documentXml, new RegExp(`<w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr>[\\s\\S]*?Nested roman evidence`));
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Id="rIdImage1"/);
 assert.match(documentRelsXml, /Target="media\/image1\.png"/);
@@ -348,6 +366,22 @@ const complexNativeDocument = await DocumentFile.importDocx(complexNativeDocx, {
 assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "field")?.instruction, "NUMPAGES \\* MERGEFORMAT");
 assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "field")?.display, "3");
 assert.equal(complexNativeDocument.blocks.find((item) => item.kind === "hyperlink")?.url, "https://example.com/research?a=1&b=2");
+const overriddenNumberingXml = numberingXml.replace(/(<w:num w:numId="3"><w:abstractNumId w:val="3"\/>)(<\/w:num>)/, '$1<w:lvlOverride w:ilvl="1"><w:startOverride w:val="7"/></w:lvlOverride>$2');
+const relocatedConfigDocx = await DocumentFile.patchDocx(docx, [
+  { path: "word/styles.xml", remove: true },
+  { path: "word/numbering.xml", remove: true },
+  { path: "word/config/styles-custom.xml", xml: stylesXml, recipe: { kind: "styles", source: "word/document.xml", id: "rIdCustomStyles" } },
+  { path: "word/config/numbering-custom.xml", xml: overriddenNumberingXml, recipe: { kind: "numbering", source: "word/document.xml", id: "rIdCustomNumbering" } },
+]);
+const relocatedConfigInspect = await DocumentFile.inspectDocx(relocatedConfigDocx);
+assert.equal(relocatedConfigInspect.ok, true);
+assert.ok(relocatedConfigInspect.parts.some((part) => part.path === "word/config/styles-custom.xml" && part.contentType.endsWith("wordprocessingml.styles+xml")));
+assert.ok(relocatedConfigInspect.parts.some((part) => part.path === "word/config/numbering-custom.xml" && part.contentType.endsWith("wordprocessingml.numbering+xml")));
+const relocatedConfigNative = await DocumentFile.importDocx(relocatedConfigDocx, { preferNative: true });
+assert.equal(relocatedConfigNative.styles.effective("RiskCallout").bold, true);
+assert.equal(relocatedConfigNative.blocks.find((item) => item.text === "Nested roman evidence")?.numberFormat, "lowerRoman");
+assert.equal(relocatedConfigNative.blocks.find((item) => item.text === "Nested roman evidence")?.start, 7);
+assert.equal(relocatedConfigNative.blocks.find((item) => item.text === "Nested roman evidence")?.levelText, "%1.%2)");
 const brokenDocxReferenceXml = documentXml.replace(/<\/w:body>\s*<\/w:document>\s*$/, '<w:p><w:hyperlink xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdMissingSourceReference"><w:r><w:t>Broken link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>');
 await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: brokenDocxReferenceXml }]), /invalid OOXML package.*relationshipReferenceIdNotFound/);
 const missingReferencePartXml = '<source xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:link="rIdMissingRelationshipPart"/>';
@@ -473,6 +507,9 @@ assert.equal(nativeOnlyHyperlink?.url, "https://example.com/research");
 assert.ok(nativeOnlyHyperlink?.relationshipId);
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.display, "1");
+assert.equal(nativeOnlyLoaded.blocks.find((item) => item.text === "Lettered evidence group")?.numberFormat, "upperLetter");
+assert.equal(nativeOnlyLoaded.blocks.find((item) => item.text === "Nested roman evidence")?.numberFormat, "lowerRoman");
+assert.equal(nativeOnlyLoaded.blocks.find((item) => item.text === "Nested roman evidence")?.level, 1);
 const nativeOnlyCitation = nativeOnlyLoaded.blocks.find((item) => item.kind === "citation");
 assert.match(nativeOnlyCitation?.text || "", /Source: Market brief/);
 assert.match(nativeOnlyCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
