@@ -129,7 +129,7 @@ function applyRangeOperation(sheet, operation = {}) {
 }
 
 export function createWorkbookFromFixture(fixture = {}) {
-  const workbook = Workbook.create({ dateSystem: fixture.dateSystem, date1904: fixture.date1904 });
+  const workbook = Workbook.create({ dateSystem: fixture.dateSystem, date1904: fixture.date1904, theme: fixture.theme });
   for (const sheetFixture of fixture.sheets || []) {
     const sheet = workbook.worksheets.add(sheetFixture.name);
     if (sheetFixture.showGridLines != null) sheet.showGridLines = Boolean(sheetFixture.showGridLines);

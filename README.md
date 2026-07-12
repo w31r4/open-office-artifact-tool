@@ -44,10 +44,11 @@ PDF content using Chinese, Cyrillic, Greek, accented Latin, or other non-ASCII c
 ```js
 import { Workbook, SpreadsheetFile } from "open-office-artifact-tool";
 
-const workbook = Workbook.create();
+const workbook = Workbook.create({ theme: { name: "Report Theme", colors: { accent1: "#0F766E", accent2: "#7C3AED" } } });
 const sheet = workbook.worksheets.add("Sheet1");
 sheet.getRange("A1:C2").values = [["A", "B", "Sum"], [2, 3, null]];
 sheet.getRange("C2").formulas = [["=A2+B2"]];
+sheet.getRange("A1:C1").format = { fill: { patternType: "lightTrellis", foreground: { theme: 4, tint: 0.4 }, background: "#F8FAFC" }, font: { bold: true, color: { theme: 4, tint: -0.25 } } };
 workbook.recalculate();
 
 console.log((await workbook.inspect({ kind: "table,formula" })).ndjson);

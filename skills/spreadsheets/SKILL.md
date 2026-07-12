@@ -39,7 +39,7 @@ Worksheet-backed native PivotTables are also relationship-driven. Metadata-free 
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 
-const workbook = Workbook.create();
+const workbook = Workbook.create({ theme: { name: "Report Theme", colors: { accent1: "#0F766E", accent2: "#7C3AED" } } });
 const sheet = workbook.worksheets.add("Summary");
 sheet.getRange("A1:C3").values = [
   ["Month", "Revenue", "Cost"],
@@ -50,8 +50,8 @@ sheet.getRange("D1").values = [["Margin"]];
 sheet.getRange("D2").formulas = [["=(B2-C2)/B2"]];
 sheet.getRange("D2:D3").fillDown();
 sheet.getRange("A1:D1").format = {
-  fill: "#0F766E",
-  font: { bold: true, color: "#FFFFFF" },
+  fill: { patternType: "lightTrellis", foreground: { theme: 4, tint: 0.4 }, background: "#F8FAFC" },
+  font: { bold: true, color: { theme: 4, tint: -0.25 } },
   alignment: { horizontal: "center" },
 };
 sheet.getRange("B2:C3").format = { numberFormat: "$#,##0" };
@@ -84,7 +84,7 @@ Use `range.fillDown()` or `range.fillRight()` to copy the leading row/column wit
 
 For scrollable reports, use `sheet.freezePanes.freezeRows(count)` and `freezeColumns(count)`; the two axes compose, and `unfreeze()` clears both. These methods write native SpreadsheetML `sheetViews/pane` state and are preserved when importing third-party XLSX files.
 
-`range.format` is live: assign `columnWidth`/`rowHeight` in Excel character/point units, or `columnWidthPx`/`rowHeightPx` in pixels. `columnHidden` and `rowHidden` preserve hidden axes. Borders accept either one `{ style, color }` record for all four sides or independent `left`/`right`/`top`/`bottom`/`diagonal` records. Imported SpreadsheetML theme, tint, indexed, and automatic colors are resolved to deterministic RGB values. Use `autofitColumns()`/`autofitRows()` only on the smallest intended range, then cap unusually large results before delivery.
+`range.format` is live: assign `columnWidth`/`rowHeight` in Excel character/point units, or `columnWidthPx`/`rowHeightPx` in pixels. `columnHidden` and `rowHidden` preserve hidden axes. Borders accept either one `{ style, color }` record for all four sides or independent `left`/`right`/`top`/`bottom`/`diagonal` records. Colors may be RGB strings or `{ theme, tint }`, `{ indexed }`, or `{ auto: true }`; non-RGB imports retain the symbolic reference plus deterministic `resolved` RGB. Pattern fills use `{ patternType, foreground, background }` and must survive metadata-free import, second export, model rendering, and native LibreOffice rendering. Use `autofitColumns()`/`autofitRows()` only on the smallest intended range, then cap unusually large results before delivery.
 
 ## Verification commands
 
@@ -143,6 +143,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Run `verifyArtifact(workbook)` and resolve every error-level issue.
 - Trace important result cells when the calculation chain is non-trivial.
 - Export and re-import the XLSX before final verification.
+- For theme/pattern styling, inspect `xl/theme/theme1.xml` and `xl/styles.xml`, then confirm the imported style retains `theme`/`tint`/`indexed` and `patternType` instead of only a flattened RGB approximation.
 - Save `SpreadsheetFile.inspectXlsx()` evidence so native package shape, content types, `.rels` targets, source XML `r:id`/`r:embed`/`r:link` references, and decompression budgets are part of QA; require zero relationship-reference issues.
 - For CSV/TSV, save `SpreadsheetFile.inspectDelimited()` evidence and review delimiter, dimensions, quoting, BOM, and formula-like cell counts; remember that delimited delivery cannot preserve workbook-only features.
 - Produce a layout record and visual preview for every user-facing sheet with `--all-sheets true`; the selected `--range` narrows only the primary sheet.

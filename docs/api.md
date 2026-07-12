@@ -1717,7 +1717,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.fillDown` | api | Copy top-row contents and formatting down the range while translating relative A1 formula references. |
 | `range.fillRight` | api | Copy left-column contents and formatting right across the range while translating relative A1 formula references. |
-| `range.format` | api | Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade. |
+| `range.format` | api | Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade. |
 | `range.format.autofitColumns` | api | Measure displayed range values deterministically and set native best-fit widths on each selected column. |
 | `range.format.autofitRows` | api | Measure explicit/wrapped range text deterministically and set native custom heights on each selected row. |
 | `range.merge` | api | Merge the target range as one region or as separate row-wise regions when across=true. |
@@ -1739,7 +1739,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
-| `Workbook.create` | api | Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system. |
+| `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
@@ -3201,7 +3201,7 @@ Copy left-column contents and formatting right across the range while translatin
 
 #### `range.format`
 
-Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade.
+Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade.
 
 **Examples:**
 
@@ -3210,11 +3210,11 @@ Assign cell styles plus native column width, row height, pixel sizing, and hidde
 
 **Schema parameters:**
 
-- `fill` (string) — Cell background color token or hex color.
-- `font` (object) — Font properties: bold, italic, underline, strike, color, size, and name.
+- `fill` (string|object) — Solid color or { patternType, foreground, background }; colors accept RGB strings or { theme|indexed|auto, tint } references.
+- `font` (object) — Font properties: bold, italic, underline, strike, color, size, and name. Color accepts RGB or symbolic SpreadsheetML references.
 - `numberFormat` (string) — Excel number format code.
 - `alignment` (object) — horizontal, vertical, wrapText, textRotation, indent, shrinkToFit, and readingOrder options.
-- `border` (object) — A shared { style, color } border or per-edge left/right/top/bottom/diagonal border records with diagonalUp, diagonalDown, and outline flags.
+- `border` (object) — A shared { style, color } border or per-edge records; colors accept RGB or theme/tint/indexed/auto references.
 - `protection` (object) — Cell locked and hidden flags preserved through SpreadsheetML style records.
 - `columnWidth` (number) — Column width in Excel character units for every column intersecting the range.
 - `columnWidthPx` (number) — Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula.
@@ -3562,12 +3562,13 @@ Create threaded comments after comments.setSelf({ displayName }); resolve with w
 
 #### `Workbook.create`
 
-Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system.
+Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors.
 
 **Schema parameters:**
 
 - `dateSystem` (string) — Excel serial-date system: '1900' (default) or '1904'.
 - `date1904` (boolean) — Boolean alias for dateSystem; true selects the 1904 system.
+- `theme` (object) — Theme name and dk1/lt1/dk2/lt2, accent1-accent6, hlink, and folHlink colors written to xl/theme/theme1.xml.
 
 **Schema returns:**
 

@@ -173,6 +173,8 @@ assert.equal(workbookCatalog.length, 127);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.theme?.type, "object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.fill?.type, "string|object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.freezePanes.freezeRows")?.schema?.parameters?.rowCount?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.freezePanes.freezeColumns")?.schema?.parameters?.columnCount?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.mergeCells")?.schema?.parameters?.address?.required, true);

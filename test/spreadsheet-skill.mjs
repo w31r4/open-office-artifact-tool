@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
@@ -26,6 +27,8 @@ try {
   }
   const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(result.workbookPath));
   assert.equal(workbook.dateSystem, "1904");
+  assert.equal(workbook.theme.name, "Agent Spreadsheet Theme");
+  assert.equal(workbook.theme.colors.accent1, "#0F766E");
   assert.equal(workbook.worksheets.getItem("Summary").showGridLines, false);
   assert.deepEqual(workbook.worksheets.getItem("Summary").freezePanes.toJSON(), { rows: 1, columns: 1, frozen: true, topLeftCell: "B2", activePane: "bottomRight" });
   assert.ok(Math.abs(workbook.worksheets.getItem("Summary").getRange("B1:C4").format.columnWidthPx - 96) <= 1);
@@ -50,6 +53,17 @@ try {
   assert.deepEqual(workbook.worksheets.getItem("Summary").mergedRanges, ["A15:G15"]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.fill, "#0F766E");
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.font.color, "#FFFFFF");
+  const patternedStyle = workbook.worksheets.getItem("Summary").getRange("A14").format;
+  assert.equal(patternedStyle.fill.patternType, "darkGrid");
+  assert.equal(patternedStyle.fill.foreground.theme, 4);
+  assert.equal(patternedStyle.fill.foreground.tint, 0.4);
+  assert.equal(patternedStyle.fill.background, "#F8FAFC");
+  assert.equal(patternedStyle.font.color.theme, 4);
+  assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("B14").format.fill, patternedStyle.fill);
+  assert.match(workbook.worksheets.getItem("Summary").toSvg(), /<pattern id="fill-13-0"/);
+  const fixtureZip = await JSZip.loadAsync(await fs.readFile(result.workbookPath));
+  assert.match(await fixtureZip.file("xl/styles.xml").async("text"), /patternType="darkGrid"><fgColor theme="4" tint="0.4"/);
+  assert.match(await fixtureZip.file("xl/theme/theme1.xml").async("text"), /name="Agent Spreadsheet Theme"/);
   const summaryDrawings = workbook.worksheets.getItem("Summary");
   assert.equal(summaryDrawings.charts.items.length, 1);
   assert.equal(summaryDrawings.charts.items[0].title, "Quarter performance");

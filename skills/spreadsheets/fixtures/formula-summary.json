@@ -1,6 +1,10 @@
 {
   "name": "formula-summary",
   "dateSystem": "1904",
+  "theme": {
+    "name": "Agent Spreadsheet Theme",
+    "colors": { "accent1": "#0F766E", "accent2": "#7C3AED", "accent3": "#38BDF8" }
+  },
   "outputName": "formula-summary.xlsx",
   "sheets": [
     {
@@ -125,6 +129,13 @@
           "format": {
             "fill": "#7C3AED",
             "font": { "bold": true, "color": "#FFFFFF" }
+          }
+        },
+        {
+          "range": "A14:E14",
+          "format": {
+            "fill": { "patternType": "darkGrid", "foreground": { "theme": 4, "tint": 0.4 }, "background": "#F8FAFC" },
+            "font": { "bold": true, "color": { "theme": 4, "tint": -0.25 } }
           }
         },
         { "range": "F1:G14", "autofitColumns": true },

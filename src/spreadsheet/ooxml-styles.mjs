@@ -2,6 +2,19 @@
 
 import { resolveColorToken } from "../shared/colors.mjs";
 
+export const XLSX_THEME_COLOR_NAMES = ["dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"];
+
+const XLSX_DEFAULT_THEME_COLORS = {
+  dk1: "#000000", lt1: "#FFFFFF", dk2: "#1F497D", lt2: "#EEECE1",
+  accent1: "#4F81BD", accent2: "#C0504D", accent3: "#9BBB59", accent4: "#8064A2",
+  accent5: "#4BACC6", accent6: "#F79646", hlink: "#0000FF", folHlink: "#800080",
+};
+
+const XLSX_PATTERN_TYPES = new Set([
+  "none", "solid", "mediumGray", "darkGray", "lightGray", "darkHorizontal", "darkVertical", "darkDown", "darkUp", "darkGrid", "darkTrellis",
+  "lightHorizontal", "lightVertical", "lightDown", "lightUp", "lightGrid", "lightTrellis", "gray125", "gray0625",
+]);
+
 function decodeXml(value) {
   return String(value ?? "")
     .replaceAll("&lt;", "<")
@@ -23,7 +36,55 @@ export function normalizeXlsxColor(value, fallback = "000000") {
   const raw = String(value || fallback).trim();
   const hex = String(resolveColorToken(raw, raw) || fallback).replace(/^#/, "");
   const rgb = /^[0-9a-fA-F]{8}$/.test(hex) ? hex.slice(2) : hex;
-  return rgb.slice(0, 6).padEnd(6, "0").toUpperCase();
+  if (!/^[0-9a-fA-F]{6}$/.test(rgb)) throw new TypeError("Spreadsheet color must be a supported color token or six/eight-digit RGB value.");
+  return rgb.toUpperCase();
+}
+
+function normalizedThemeColors(theme = {}) {
+  const input = Array.isArray(theme) ? Object.fromEntries(XLSX_THEME_COLOR_NAMES.map((name, index) => [name, theme[index]])) : theme.colors || theme;
+  return Object.fromEntries(XLSX_THEME_COLOR_NAMES.map((name) => [name, `#${normalizeXlsxColor(input?.[name], XLSX_DEFAULT_THEME_COLORS[name])}`]));
+}
+
+export function normalizeXlsxThemeConfig(theme = {}) {
+  return { name: String(theme.name || "Office Clean Room"), colors: normalizedThemeColors(theme) };
+}
+
+export function xlsxThemeXml(theme = {}) {
+  const normalized = normalizeXlsxThemeConfig(theme);
+  const colors = XLSX_THEME_COLOR_NAMES.map((name) => `<a:${name}><a:srgbClr val="${normalizeXlsxColor(normalized.colors[name])}"/></a:${name}>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="${attrEscape(normalized.name)}"><a:themeElements><a:clrScheme name="${attrEscape(normalized.name)}">${colors}</a:clrScheme><a:fontScheme name="Office Clean Room"><a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Office Clean Room"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="25400"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="38100"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>`;
+}
+
+export function normalizeXlsxColorReference(value, fallback) {
+  if (value == null || value === "") return fallback == null ? undefined : normalizeXlsxColorReference(fallback);
+  if (typeof value === "string") { normalizeXlsxColor(value); return String(value); }
+  if (typeof value !== "object" || Array.isArray(value)) throw new TypeError("Spreadsheet color must be a color string or reference object.");
+  const kinds = [value.rgb != null, value.theme != null, value.indexed != null, value.auto === true].filter(Boolean).length;
+  if (kinds !== 1) throw new TypeError("Spreadsheet color reference requires exactly one of rgb, theme, indexed, or auto.");
+  const tint = value.tint == null ? undefined : Number(value.tint);
+  if (tint != null && (!Number.isFinite(tint) || tint < -1 || tint > 1)) throw new RangeError("Spreadsheet color tint must be between -1 and 1.");
+  if (value.rgb != null) return `#${normalizeXlsxColor(value.rgb)}`;
+  if (value.theme != null && (!Number.isInteger(Number(value.theme)) || Number(value.theme) < 0 || Number(value.theme) >= XLSX_THEME_COLOR_NAMES.length)) throw new RangeError("Spreadsheet theme color index must be an integer from 0 through 11.");
+  if (value.indexed != null && (!Number.isInteger(Number(value.indexed)) || Number(value.indexed) < 0 || Number(value.indexed) > 65)) throw new RangeError("Spreadsheet indexed color must be an integer from 0 through 65.");
+  return {
+    ...(value.theme != null ? { theme: Number(value.theme) } : {}),
+    ...(value.indexed != null ? { indexed: Number(value.indexed) } : {}),
+    ...(value.auto === true ? { auto: true } : {}),
+    ...(tint == null || tint === 0 ? {} : { tint }),
+    ...(value.resolved ? { resolved: `#${normalizeXlsxColor(value.resolved)}` } : {}),
+  };
+}
+
+export function normalizeXlsxFill(value) {
+  if (value == null || value === "") return undefined;
+  if (typeof value === "string") { normalizeXlsxColor(value, "FFFFFF"); return String(value); }
+  if (typeof value !== "object" || Array.isArray(value)) throw new TypeError("Spreadsheet fill must be a color string or pattern object.");
+  const patternType = String(value.patternType || value.pattern || "solid");
+  if (!XLSX_PATTERN_TYPES.has(patternType)) throw new RangeError(`Unsupported SpreadsheetML patternType ${patternType}.`);
+  const foreground = normalizeXlsxColorReference(value.foreground ?? value.fgColor ?? value.color ?? value.fill);
+  const background = normalizeXlsxColorReference(value.background ?? value.bgColor);
+  if (patternType === "solid" && !foreground) throw new TypeError("A solid spreadsheet fill requires foreground/color.");
+  return { patternType, ...(foreground ? { foreground } : {}), ...(background ? { background } : {}) };
 }
 
 function normalizeBorder(style = {}) {
@@ -37,12 +98,12 @@ function normalizeBorder(style = {}) {
       const edge = base[name];
       if (edge == null || edge === false) continue;
       if (typeof edge === "string") result[name] = { style: edge, color: "#CBD5E1" };
-      else if (edge.style || edge.lineStyle || edge.weight) result[name] = { style: edge.style || edge.lineStyle || edge.weight, color: edge.color || edge.fill || edge.borderColor || "#CBD5E1" };
+      else if (edge.style || edge.lineStyle || edge.weight) result[name] = { style: edge.style || edge.lineStyle || edge.weight, color: normalizeXlsxColorReference(edge.color || edge.fill || edge.borderColor || "#CBD5E1") };
     }
     for (const name of ["diagonalUp", "diagonalDown", "outline"]) if (base[name] != null) result[name] = Boolean(base[name]);
     return Object.keys(result).length ? result : undefined;
   }
-  return { style: base.style || base.lineStyle || base.weight || "thin", color: base.color || base.fill || base.borderColor || "#CBD5E1" };
+  return { style: base.style || base.lineStyle || base.weight || "thin", color: normalizeXlsxColorReference(base.color || base.fill || base.borderColor || "#CBD5E1") };
 }
 
 function normalizeAlignment(style = {}) {
@@ -73,11 +134,11 @@ export function normalizeXlsxStyle(style = {}) {
       italic: Boolean(style.italic ?? font.italic),
       underline: style.underline ?? font.underline ?? undefined,
       strike: Boolean(style.strike ?? font.strike),
-      color: style.fontColor || font.color || style.color || undefined,
+      color: normalizeXlsxColorReference(style.fontColor || font.color || style.color),
       size: Number(style.fontSize || font.size || 11),
       name: style.fontFamily || font.name || "Aptos",
     },
-    fill: style.fill || style.backgroundColor || style.fillColor || undefined,
+    fill: normalizeXlsxFill(style.fill || style.backgroundColor || style.fillColor),
     numberFormat: style.numberFormat || style.numFmt || undefined,
     alignment: normalizeAlignment(style),
     border: normalizeBorder(style),
@@ -94,19 +155,20 @@ export function xlsxStyleKey(style = {}) {
 function fontXml(style = {}) {
   const font = normalizeXlsxStyle(style).font;
   const underline = font.underline ? `<u${typeof font.underline === "string" && font.underline !== "single" ? ` val="${attrEscape(font.underline)}"` : ""}/>` : "";
-  return `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}<sz val="${Number(font.size) || 11}"/><color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/><name val="${attrEscape(font.name || "Aptos")}"/></font>`;
+  return `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}<sz val="${Number(font.size) || 11}"/>${xlsxColorElementXml("color", font.color || "#000000")}<name val="${attrEscape(font.name || "Aptos")}"/></font>`;
 }
 
 function fillXml(style = {}) {
   const fill = normalizeXlsxStyle(style).fill;
   if (!fill) return `<fill><patternFill patternType="none"/></fill>`;
-  return `<fill><patternFill patternType="solid"><fgColor rgb="FF${normalizeXlsxColor(fill, "FFFFFF")}"/><bgColor indexed="64"/></patternFill></fill>`;
+  const normalized = typeof fill === "string" ? { patternType: "solid", foreground: fill } : fill;
+  return `<fill><patternFill patternType="${attrEscape(normalized.patternType)}">${normalized.foreground ? xlsxColorElementXml("fgColor", normalized.foreground) : ""}${normalized.background ? xlsxColorElementXml("bgColor", normalized.background) : normalized.patternType === "solid" ? '<bgColor indexed="64"/>' : ""}</patternFill></fill>`;
 }
 
 function borderXml(style = {}) {
   const border = normalizeXlsxStyle(style).border;
   if (!border) return `<border/>`;
-  const edgeXml = (name, edge) => edge?.style ? `<${name} style="${attrEscape(edge.style)}"><color rgb="FF${normalizeXlsxColor(edge.color, "CBD5E1")}"/></${name}>` : `<${name}/>`;
+  const edgeXml = (name, edge) => edge?.style ? `<${name} style="${attrEscape(edge.style)}">${xlsxColorElementXml("color", edge.color || "#CBD5E1")}</${name}>` : `<${name}/>`;
   if (border.style) {
     const edge = { style: border.style, color: border.color };
     return `<border>${edgeXml("left", edge)}${edgeXml("right", edge)}${edgeXml("top", edge)}${edgeXml("bottom", edge)}<diagonal/></border>`;
@@ -122,7 +184,7 @@ function dxfXml(style = {}) {
   const normalized = normalizeXlsxStyle(style), font = normalized.font || {};
   const underline = font.underline ? `<u${typeof font.underline === "string" && font.underline !== "single" ? ` val="${attrEscape(font.underline)}"` : ""}/>` : "";
   const fontOutput = (font.bold || font.italic || font.underline || font.strike || font.color || font.size || font.name)
-    ? `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}${font.size ? `<sz val="${Number(font.size) || 11}"/>` : ""}${font.color ? `<color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/>` : ""}${font.name ? `<name val="${attrEscape(font.name)}"/>` : ""}</font>`
+    ? `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}${font.size ? `<sz val="${Number(font.size) || 11}"/>` : ""}${font.color ? xlsxColorElementXml("color", font.color) : ""}${font.name ? `<name val="${attrEscape(font.name)}"/>` : ""}</font>`
     : "";
   return `<dxf>${fontOutput}${normalized.fill ? fillXml(normalized) : ""}${normalized.numberFormat ? `<numFmt numFmtId="0" formatCode="${attrEscape(normalized.numberFormat)}"/>` : ""}</dxf>`;
 }
@@ -145,7 +207,10 @@ export function xlsxStylesXml(styleTable = {}) {
     const attrs = `numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="${borderId}" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}${borderId ? ` applyBorder="1"` : ""}${alignment ? ` applyAlignment="1"` : ""}${normalized.protection ? ` applyProtection="1"` : ""}`;
     return alignmentXml || protectionXml ? `<xf ${attrs}>${alignmentXml}${protectionXml}</xf>` : `<xf ${attrs}/>`;
   }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="${styles.length}">${borders}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs><dxfs count="${dxfs.length}">${dxfs.map(dxfXml).join("")}</dxfs></styleSheet>`;
+  const indexedColors = Array.isArray(styleTable.indexedColors) && styleTable.indexedColors.length
+    ? `<colors><indexedColors>${styleTable.indexedColors.map((color) => `<rgbColor rgb="FF${normalizeXlsxColor(color)}"/>`).join("")}</indexedColors></colors>`
+    : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="${styles.length}">${borders}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs><dxfs count="${dxfs.length}">${dxfs.map(dxfXml).join("")}</dxfs>${indexedColors}</styleSheet>`;
 }
 
 function booleanAttribute(attrs, name) {
@@ -208,6 +273,54 @@ function tintedColor(color, tintValue) {
   return hslToRgb(hue, saturation, nextLightness);
 }
 
+function xlsxColorElementXml(name, value) {
+  const normalized = normalizeXlsxColorReference(value, "#000000");
+  if (typeof normalized === "string") return `<${name} rgb="FF${normalizeXlsxColor(normalized)}"/>`;
+  const tint = normalized.tint == null ? "" : ` tint="${normalized.tint}"`;
+  if (normalized.theme != null) return `<${name} theme="${normalized.theme}"${tint}/>`;
+  if (normalized.indexed != null) return `<${name} indexed="${normalized.indexed}"${tint}/>`;
+  return `<${name} auto="1"${tint}/>`;
+}
+
+export function xlsxColorCss(value, resources = {}) {
+  const normalized = normalizeXlsxColorReference(value, resources.fallback || "#000000");
+  if (typeof normalized === "string") return normalized;
+  if (normalized.resolved) return normalized.resolved;
+  const themeColors = Array.isArray(resources.themeColors)
+    ? resources.themeColors
+    : XLSX_THEME_COLOR_NAMES.map((name) => normalizeXlsxThemeConfig(resources.theme || {}).colors[name]);
+  let color;
+  if (normalized.theme != null) color = themeColors[normalized.theme];
+  else if (normalized.indexed != null) color = normalized.indexed === 64 ? resources.autoColor || "#000000" : normalized.indexed === 65 ? resources.background || "#FFFFFF" : (resources.indexedColors || XLSX_INDEXED_COLORS)[normalized.indexed];
+  else if (normalized.auto) color = resources.autoColor || "#000000";
+  return tintedColor(color || resources.fallback || "#000000", normalized.tint);
+}
+
+export function xlsxFillPaint(value, resources = {}) {
+  const fill = normalizeXlsxFill(value) || { patternType: "none" };
+  if (typeof fill === "string") return { patternType: "solid", foreground: xlsxColorCss(fill, resources), background: xlsxColorCss(fill, resources) };
+  const foreground = fill.foreground ? xlsxColorCss(fill.foreground, resources) : resources.foreground || "#000000";
+  const background = fill.background ? xlsxColorCss(fill.background, resources) : fill.patternType === "solid" ? foreground : resources.background || "#FFFFFF";
+  return { patternType: fill.patternType, foreground, background };
+}
+
+export function xlsxFillSvgPaint(value, id, resources = {}) {
+  const fill = xlsxFillPaint(value, resources);
+  if (fill.patternType === "none" || fill.patternType === "solid") return { paint: fill.background };
+  const safeId = String(id || "xlsx-fill").replace(/[^A-Za-z0-9_-]/g, "-");
+  const light = fill.patternType.startsWith("light"), strokeWidth = light ? 1 : 2;
+  const horizontal = /Horizontal|Grid|Trellis/.test(fill.patternType);
+  const vertical = /Vertical|Grid|Trellis/.test(fill.patternType);
+  const down = /Down|Trellis/.test(fill.patternType);
+  const up = /Up|Trellis/.test(fill.patternType);
+  const grayOpacity = { mediumGray: 0.5, darkGray: 0.75, lightGray: 0.25, gray125: 0.125, gray0625: 0.0625 }[fill.patternType];
+  const marks = grayOpacity != null
+    ? `<rect width="8" height="8" fill="${fill.foreground}" opacity="${grayOpacity}"/>`
+    : `${horizontal ? `<path d="M0 4H8"/>` : ""}${vertical ? `<path d="M4 0V8"/>` : ""}${down ? `<path d="M-2 -2L10 10M-2 6L2 10M6 -2L10 2"/>` : ""}${up ? `<path d="M-2 10L10 -2M-2 2L6 10M6 -2L10 2"/>` : ""}`;
+  const stroke = grayOpacity == null ? ` stroke="${fill.foreground}" stroke-width="${strokeWidth}" fill="none"` : "";
+  return { paint: `url(#${safeId})`, definition: `<pattern id="${safeId}" patternUnits="userSpaceOnUse" width="8" height="8"><rect width="8" height="8" fill="${fill.background}"/><g${stroke}>${marks}</g></pattern>` };
+}
+
 function parsedIndexedColors(stylesXml = "") {
   const body = /<indexedColors\b[^>]*>([\s\S]*?)<\/indexedColors>/.exec(String(stylesXml))?.[1] || "";
   const colors = [...body.matchAll(/<rgbColor\b([^>]*)\/?\s*>/g)].map((match) => {
@@ -221,25 +334,39 @@ function parsedColor(body, elementName, resources = {}) {
   const match = new RegExp(`<${elementName}\\b([^>]*)\\/?\\s*>`).exec(body);
   if (!match) return undefined;
   const attrs = parseAttrs(match[1]);
-  let color;
-  if (attrs.rgb) color = `#${attrs.rgb.slice(-6)}`;
-  else if (attrs.theme != null) color = resources.themeColors?.[Number(attrs.theme)];
-  else if (attrs.indexed != null && Number(attrs.indexed) !== 64) color = resources.indexedColors?.[Number(attrs.indexed)];
-  else if (booleanAttribute(attrs, "auto")) color = resources.autoColor || "#000000";
-  return color ? tintedColor(color, attrs.tint) : undefined;
+  if (attrs.rgb) return `#${attrs.rgb.slice(-6).toUpperCase()}`;
+  const tint = attrs.tint == null || Number(attrs.tint) === 0 ? undefined : Number(attrs.tint);
+  if (attrs.theme != null) {
+    const theme = Number(attrs.theme), resolved = resources.themeColors?.[theme];
+    return normalizeXlsxColorReference({ theme, ...(tint == null ? {} : { tint }), ...(resolved ? { resolved: tintedColor(resolved, tint) } : {}) });
+  }
+  if (attrs.indexed != null) {
+    const indexed = Number(attrs.indexed), resolved = indexed === 64 ? resources.autoColor || "#000000" : indexed === 65 ? resources.background || "#FFFFFF" : resources.indexedColors?.[indexed];
+    return normalizeXlsxColorReference({ indexed, ...(tint == null ? {} : { tint }), ...(resolved ? { resolved: tintedColor(resolved, tint) } : {}) });
+  }
+  if (booleanAttribute(attrs, "auto")) return normalizeXlsxColorReference({ auto: true, ...(tint == null ? {} : { tint }), resolved: tintedColor(resources.autoColor || "#000000", tint) });
+  return undefined;
 }
 
 export function parseXlsxThemeColors(xml = "") {
   const text = String(xml || "");
-  const scheme = /<(?:a:)?clrScheme\b[^>]*>([\s\S]*?)<\/(?:a:)?clrScheme>/.exec(text)?.[1] || "";
-  return ["dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"].map((name) => {
-    const body = new RegExp(`<(?:a:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:a:)?${name}>`).exec(scheme)?.[1] || "";
-    const srgb = /<(?:a:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/.exec(body)?.[1];
-    const system = /<(?:a:)?sysClr\b([^>]*)\/?\s*>/.exec(body);
+  const prefix = "(?:[A-Za-z_][\\w.-]*:)?";
+  const scheme = new RegExp(`<${prefix}clrScheme\\b[^>]*>([\\s\\S]*?)<\\/${prefix}clrScheme>`).exec(text)?.[1] || "";
+  return XLSX_THEME_COLOR_NAMES.map((name) => {
+    const body = new RegExp(`<${prefix}${name}\\b[^>]*>([\\s\\S]*?)<\\/${prefix}${name}>`).exec(scheme)?.[1] || "";
+    const srgb = new RegExp(`<${prefix}srgbClr\\b[^>]*\\bval="([0-9A-Fa-f]{6})"`).exec(body)?.[1];
+    const system = new RegExp(`<${prefix}sysClr\\b([^>]*)\\/?\\s*>`).exec(body);
     const systemAttrs = parseAttrs(system?.[1] || "");
     const value = srgb || systemAttrs.lastClr || systemAttrs.val;
     return value && /^[0-9A-Fa-f]{6}$/.test(value) ? `#${value.toUpperCase()}` : undefined;
   });
+}
+
+export function parseXlsxThemeConfig(xml = "") {
+  const text = String(xml || "");
+  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?theme\b[^>]*\bname="([^"]*)"/.exec(text)?.[1] || "Imported Office Theme");
+  const parsed = parseXlsxThemeColors(text);
+  return normalizeXlsxThemeConfig({ name, colors: Object.fromEntries(XLSX_THEME_COLOR_NAMES.map((colorName, index) => [colorName, parsed[index]])) });
 }
 
 function parseFont(body = "", resources = {}) {
@@ -256,7 +383,16 @@ function parseFont(body = "", resources = {}) {
 }
 
 function parseFill(body = "", resources = {}) {
-  return parsedColor(body, "fgColor", resources);
+  const pattern = /<patternFill\b([^>]*)\/?\s*>/.exec(body);
+  if (!pattern) return undefined;
+  const patternType = parseAttrs(pattern[1]).patternType || "none";
+  if (patternType === "none") return undefined;
+  const parsedForeground = parsedColor(body, "fgColor", resources);
+  const parsedBackground = parsedColor(body, "bgColor", resources);
+  const background = patternType === "solid" && parsedBackground?.indexed === 64 ? undefined : parsedBackground;
+  const foreground = parsedForeground || (patternType === "solid" ? background : undefined);
+  if (patternType === "solid" && typeof foreground === "string") return foreground;
+  return normalizeXlsxFill({ patternType, foreground, ...(parsedForeground ? { background } : {}) });
 }
 
 function parseBorder(body = "", resources = {}, borderAttrs = {}) {
@@ -383,6 +519,7 @@ export function parseXlsxStylesXml(xml = "", options = {}) {
   const styles = xfRecords(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(text)?.[1] || "").map((record) => effectiveStyle(record, styleXfs[Number(record.attrs.xfId || 0)], resources));
   const dxfsBody = /<dxfs\b[^>]*>([\s\S]*?)<\/dxfs>/.exec(text)?.[1] || "";
   styles.dxfs = [...dxfsBody.matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)].map((match) => parseDxf(match[1], resources));
+  styles.indexedColors = colorResources.indexedColors;
   return styles;
 }
 

@@ -1586,24 +1586,68 @@ assert.deepEqual(styleFidelityRoundtrip.worksheets.getItem("Sheet1").getRange("C
 const themeStyleZip = await JSZip.loadAsync(xlsxBytes);
 themeStyleZip.remove("customXml/open-office-artifact.json");
 themeStyleZip.file("xl/worksheets/sheet1.xml", assignStyle(worksheetXml, "A2", 1));
-themeStyleZip.file("xl/_rels/workbook.xml.rels", workbookRelsXml.replace("</Relationships>", `<Relationship Id="rTheme99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="appearance/custom-theme.xml"/></Relationships>`));
+themeStyleZip.file("xl/_rels/workbook.xml.rels", workbookRelsXml.replace(/<Relationship\b(?=[^>]*Type="[^"]*\/theme")[^>]*\/>/, `<Relationship Id="rTheme99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="appearance/custom-theme.xml"/>`));
 themeStyleZip.file("xl/appearance/custom-theme.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Clean room theme"><a:themeElements><a:clrScheme name="Clean room"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F497D"/></a:dk2><a:lt2><a:srgbClr val="EEECE1"/></a:lt2><a:accent1><a:srgbClr val="336699"/></a:accent1><a:accent2><a:srgbClr val="C0504D"/></a:accent2><a:accent3><a:srgbClr val="9BBB59"/></a:accent3><a:accent4><a:srgbClr val="8064A2"/></a:accent4><a:accent5><a:srgbClr val="4BACC6"/></a:accent5><a:accent6><a:srgbClr val="F79646"/></a:accent6><a:hlink><a:srgbClr val="0000FF"/></a:hlink><a:folHlink><a:srgbClr val="800080"/></a:folHlink></a:clrScheme></a:themeElements></a:theme>`);
 themeStyleZip.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><sz val="11"/><color theme="4" tint="0.5"/><name val="Aptos"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor indexed="0"/></patternFill></fill></fills><borders count="2"><border/><border diagonalUp="1"><left style="thin"><color theme="4" tint="-0.25"/></left><right style="medium"><color indexed="0"/></right><top/><bottom style="double"><color rgb="FF112233"/></bottom><diagonal style="dashed"><color auto="1"/></diagonal></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs><colors><indexedColors><rgbColor rgb="FFABCDEF"/></indexedColors></colors></styleSheet>`);
 const themeStyleBook = await SpreadsheetFile.importXlsx(new FileBlob(await themeStyleZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
 const themeStyleRange = themeStyleBook.worksheets.getItem("Sheet1").getRange("A2");
-assert.equal(themeStyleRange.format.font.color, "#8CB3D9");
-assert.equal(themeStyleRange.format.fill, "#ABCDEF");
+assert.deepEqual(themeStyleRange.format.font.color, { theme: 4, tint: 0.5, resolved: "#8CB3D9" });
+assert.deepEqual(themeStyleRange.format.fill, { patternType: "solid", foreground: { indexed: 0, resolved: "#ABCDEF" } });
 assert.deepEqual(themeStyleRange.format.border, {
-  left: { style: "thin", color: "#264D73" },
-  right: { style: "medium", color: "#ABCDEF" },
+  left: { style: "thin", color: { theme: 4, tint: -0.25, resolved: "#264D73" } },
+  right: { style: "medium", color: { indexed: 0, resolved: "#ABCDEF" } },
   bottom: { style: "double", color: "#112233" },
-  diagonal: { style: "dashed", color: "#000000" },
+  diagonal: { style: "dashed", color: { auto: true, resolved: "#000000" } },
   diagonalUp: true,
 });
 assert.match(themeStyleBook.worksheets.getItem("Sheet1").toSvg(), /fill="#ABCDEF"/);
 const themeStyleRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(themeStyleBook));
-assert.equal(themeStyleRoundtrip.worksheets.getItem("Sheet1").getRange("A2").format.font.color, "#8CB3D9");
+assert.deepEqual(themeStyleRoundtrip.worksheets.getItem("Sheet1").getRange("A2").format.font.color, themeStyleRange.format.font.color);
 assert.deepEqual(themeStyleRoundtrip.worksheets.getItem("Sheet1").getRange("A2").format.border, themeStyleRange.format.border);
+const patternBook = Workbook.create({ theme: { name: "Pattern Theme", colors: { accent1: "#336699", accent2: "#C0504D" } } });
+const patternSheet = patternBook.worksheets.add("Patterns");
+patternSheet.getRange("A1:B2").values = [["Pattern", "Theme"], ["Grid", "Tint"]];
+patternSheet.getRange("A1:B2").format = {
+  fill: { patternType: "darkGrid", foreground: { theme: 4, tint: 0.25 }, background: "#FFF7ED" },
+  font: { bold: true, color: { theme: 4, tint: -0.25 } },
+  border: { style: "thin", color: { theme: 5 } },
+};
+const patternXlsx = await SpreadsheetFile.exportXlsx(patternBook);
+const patternZip = await JSZip.loadAsync(new Uint8Array(await patternXlsx.arrayBuffer()));
+const patternStylesXml = await patternZip.file("xl/styles.xml").async("text");
+assert.match(patternStylesXml, /<patternFill patternType="darkGrid"><fgColor theme="4" tint="0.25"\/><bgColor rgb="FFFFF7ED"\/><\/patternFill>/);
+assert.match(patternStylesXml, /<color theme="4" tint="-0.25"\/>/);
+assert.match(patternStylesXml, /<color theme="5"\/>/);
+const patternThemeXml = await patternZip.file("xl/theme/theme1.xml").async("text");
+assert.match(patternThemeXml, /<a:accent1><a:srgbClr val="336699"\/><\/a:accent1>/);
+patternZip.file("xl/theme/theme1.xml", patternThemeXml.replaceAll("<a:", "<d:").replaceAll("</a:", "</d:").replace("xmlns:a=", "xmlns:d="));
+patternZip.remove("customXml/open-office-artifact.json");
+const importedPatternBook = await SpreadsheetFile.importXlsx(new FileBlob(await patternZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
+assert.equal(importedPatternBook.theme.name, "Pattern Theme");
+assert.equal(importedPatternBook.theme.colors.accent1, "#336699");
+assert.deepEqual(importedPatternBook.worksheets.getItem("Patterns").getRange("A1").format.fill, {
+  patternType: "darkGrid",
+  foreground: { theme: 4, tint: 0.25, resolved: "#538CC6" },
+  background: "#FFF7ED",
+});
+assert.deepEqual(importedPatternBook.worksheets.getItem("Patterns").getRange("A1").format.font.color, { theme: 4, tint: -0.25, resolved: "#264D73" });
+const patternSvg = importedPatternBook.worksheets.getItem("Patterns").toSvg();
+assert.match(patternSvg, /<pattern id="fill-0-0"/);
+assert.match(patternSvg, /fill="url\(#fill-0-0\)"/);
+assert.match(patternSvg, /stroke="#538CC6"/);
+assert.match(importedPatternBook.inspect({ kind: "theme,style", maxChars: 8000 }).ndjson, /Pattern Theme/);
+const patternRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(importedPatternBook)).arrayBuffer()));
+assert.match(await patternRoundtripZip.file("xl/styles.xml").async("text"), /patternType="darkGrid"><fgColor theme="4" tint="0.25"/);
+for (const invalidStyle of [
+  { fill: { patternType: "unsupported", foreground: "#FFFFFF" } },
+  { fill: { patternType: "solid" } },
+  { font: { color: { theme: 12 } } },
+  { border: { style: "thin", color: { theme: 4, tint: 1.1 } } },
+]) {
+  const invalidBook = Workbook.create();
+  invalidBook.worksheets.add("Invalid").getRange("A1").format = invalidStyle;
+  await assert.rejects(() => SpreadsheetFile.exportXlsx(invalidBook), /patternType|requires foreground|theme color index|tint must be/);
+}
 const nativeColorScaleInspect = nativeOnlyWorkbook.inspect({ kind: "conditionalFormat,computedStyle", target: "Sheet1!G4", maxChars: 12000 }).ndjson;
 assert.match(nativeColorScaleInspect, /"ruleType":"colorScale"/);
 assert.match(nativeColorScaleInspect, /"fill":"#22c55e"/);

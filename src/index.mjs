@@ -11,7 +11,7 @@ import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mj
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
 import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
-import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
+import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, normalizeXlsxThemeConfig, parseXlsxStylesXml, parseXlsxThemeColors, parseXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint, xlsxStyleKey, xlsxStylesXml, xlsxThemeXml } from "./spreadsheet/ooxml-styles.mjs";
 import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
 import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, parsePresentationBackgroundXml, parsePresentationPlaceholderStyleXml, presentationBackgroundXml, presentationColorXml, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
@@ -866,7 +866,7 @@ export async function visualQaArtifact(artifact, options = {}) {
 }
 
 export const HELP_CATALOG = [
-  { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system." },
+  { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors." },
   { artifactKind: "workbook", kind: "api", name: "workbook.setDateSystem", summary: "Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export." },
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
@@ -902,7 +902,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
-  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign cell styles plus native column width, row height, pixel sizing, and hidden row/column state through a live range format facade." },
+  { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade." },
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitColumns", summary: "Measure displayed range values deterministically and set native best-fit widths on each selected column." },
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
@@ -1177,11 +1177,11 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, columnWidth: 18, rowHeight: 24 }", "sheet.getRange('A1:D20').format.columnWidthPx = 120"],
     schema: {
       parameters: {
-        fill: { type: "string", description: "Cell background color token or hex color." },
-        font: { type: "object", description: "Font properties: bold, italic, underline, strike, color, size, and name." },
+        fill: { type: "string|object", description: "Solid color or { patternType, foreground, background }; colors accept RGB strings or { theme|indexed|auto, tint } references." },
+        font: { type: "object", description: "Font properties: bold, italic, underline, strike, color, size, and name. Color accepts RGB or symbolic SpreadsheetML references." },
         numberFormat: { type: "string", description: "Excel number format code." },
         alignment: { type: "object", description: "horizontal, vertical, wrapText, textRotation, indent, shrinkToFit, and readingOrder options." },
-        border: { type: "object", description: "A shared { style, color } border or per-edge left/right/top/bottom/diagonal border records with diagonalUp, diagonalDown, and outline flags." },
+        border: { type: "object", description: "A shared { style, color } border or per-edge records; colors accept RGB or theme/tint/indexed/auto references." },
         protection: { type: "object", description: "Cell locked and hidden flags preserved through SpreadsheetML style records." },
         columnWidth: { type: "number", description: "Column width in Excel character units for every column intersecting the range." },
         columnWidthPx: { type: "number", description: "Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula." },
@@ -1921,6 +1921,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "Workbook.create": helpSchema({
     dateSystem: { type: "string", description: "Excel serial-date system: '1900' (default) or '1904'." },
     date1904: { type: "boolean", description: "Boolean alias for dateSystem; true selects the 1904 system." },
+    theme: { type: "object", description: "Theme name and dk1/lt1/dk2/lt2, accent1-accent6, hlink, and folHlink colors written to xl/theme/theme1.xml." },
   }, "workbook", "Workbook", "Empty editable workbook facade with a normalized date system."),
   "workbook.setDateSystem": helpSchema({
     dateSystem: { type: "string|boolean", required: true, description: "'1900' or false for the 1900 system; '1904' or true for the 1904 system." },
@@ -3412,6 +3413,8 @@ export class Workbook {
   constructor(options = {}) {
     this.id = aid("wb");
     this.dateSystem = normalizeExcelDateSystem(options.dateSystem ?? options.date1904);
+    this.theme = normalizeXlsxThemeConfig(options.theme || {});
+    this.indexedColors = Array.isArray(options.indexedColors) ? [...options.indexedColors] : undefined;
     this.worksheets = new WorksheetCollection(this);
     this.comments = new CommentsCollection(this);
     this.definedNames = new DefinedNameCollection(this);
@@ -3423,6 +3426,11 @@ export class Workbook {
 
   setDateSystem(value) {
     this.dateSystem = normalizeExcelDateSystem(value);
+    return this;
+  }
+
+  setTheme(theme = {}) {
+    this.theme = normalizeXlsxThemeConfig(theme);
     return this;
   }
 
@@ -3506,7 +3514,8 @@ export class Workbook {
     const kinds = normalizeKinds(options.kind, ["workbook", "sheet", "table", "formula"]);
     const records = [];
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
-    if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904" });
+    if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904", theme: this.theme.name });
+    if (kinds.has("theme")) records.push({ kind: "workbookTheme", id: `${this.id}/theme`, name: this.theme.name, colors: this.theme.colors });
     for (const sheet of this.worksheets) {
       if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
@@ -4179,6 +4188,7 @@ export class Worksheet {
     const width = Math.max(320, usedFrame.width + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40), ...imageFrames.map((frame) => frame.left + frame.width + 40), ...sparklineFrames.map((frame) => frame.left + frame.width + 40), ...pivotFrames.map((frame) => frame.left + frame.width + 40));
     const height = Math.max(180, usedFrame.height + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40), ...imageFrames.map((frame) => frame.top + frame.height + 40), ...sparklineFrames.map((frame) => frame.top + frame.height + 40), ...pivotFrames.map((frame) => frame.top + frame.height + 40));
     const rows = [];
+    const fillDefinitions = [];
     for (let r = bounds.top; r <= bounds.bottom; r++) {
       for (let c = bounds.left; c <= bounds.right; c++) {
         const address = makeCellAddress(r, c);
@@ -4191,17 +4201,19 @@ export class Worksheet {
         const x = frame.left;
         const y = frame.top;
         if (frame.width <= 0 || frame.height <= 0) continue;
-        const fill = resolveColorToken(computed.style?.fill || "white", "white");
+        const colorResources = { theme: this.workbook.theme, indexedColors: this.workbook.indexedColors, background: "#FFFFFF" };
+        const fill = xlsxFillSvgPaint(computed.style?.fill || "white", `fill-${r}-${c}`, colorResources);
+        if (fill.definition) fillDefinitions.push(fill.definition);
         const font = computed.style?.font || {};
         const fontWeight = font.bold || computed.style?.bold ? "700" : "400";
-        const fontFill = resolveColorToken(font.color || computed.style?.color || "#24292f", "#24292f");
+        const fontFill = xlsxColorCss(font.color || computed.style?.color || "#24292f", { ...colorResources, fallback: "#24292f" });
         const alignment = computed.style?.alignment || {};
         const textX = alignment.horizontal === "center" ? x + frame.width / 2 : ["right", "end"].includes(alignment.horizontal) ? x + frame.width - 6 : x + 6;
         const textAnchor = alignment.horizontal === "center" ? "middle" : ["right", "end"].includes(alignment.horizontal) ? "end" : "start";
         const textY = y + frame.height / 2;
         const textDecoration = [font.underline ? "underline" : "", font.strike ? "line-through" : ""].filter(Boolean).join(" ");
         const rotation = Number(alignment.textRotation || 0);
-        rows.push(`<rect x="${x}" y="${y}" width="${frame.width}" height="${frame.height}" fill="${xmlEscape(fill)}" stroke="#d0d7de"/>`);
+        rows.push(`<rect x="${x}" y="${y}" width="${frame.width}" height="${frame.height}" fill="${xmlEscape(fill.paint)}" stroke="#d0d7de"/>`);
         rows.push(`<text x="${textX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="middle"${textDecoration ? ` text-decoration="${textDecoration}"` : ""}${rotation ? ` transform="rotate(${-rotation} ${textX} ${textY})"` : ""} font-family="${xmlEscape(font.name || "Arial")}" font-size="13" font-weight="${fontWeight}" fill="${xmlEscape(fontFill)}">${xmlEscape(value)}</text>`);
       }
     }
@@ -4210,7 +4222,7 @@ export class Worksheet {
     const chartOverlays = this.charts.items.map((chart) => chart.toSvg()).join("");
     const imageOverlays = this.images.items.map((image) => image.toSvg()).join("");
     const sparklineOverlays = this.sparklineGroups.items.map((group) => group.toSvg(bounds)).join("");
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${pivotOverlays}${chartOverlays}${imageOverlays}${sparklineOverlays}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${fillDefinitions.length ? `<defs>${fillDefinitions.join("")}</defs>` : ""}<rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${pivotOverlays}${chartOverlays}${imageOverlays}${sparklineOverlays}</svg>`;
   }
 }
 
@@ -5742,6 +5754,8 @@ function workbookMetadata(workbook) {
   return {
     version: 1,
     dateSystem: workbook.dateSystem,
+    theme: workbook.theme,
+    indexedColors: workbook.indexedColors,
     comments: workbook.comments.toJSON(),
     definedNames: workbook.definedNames.toJSON(),
     sheets: workbook.worksheets.items.map((sheet) => ({
@@ -5758,6 +5772,8 @@ function workbookMetadata(workbook) {
 }
 
 function applyWorkbookMetadata(workbook, metadata = {}) {
+  if (metadata.theme) workbook.setTheme(metadata.theme);
+  if (Array.isArray(metadata.indexedColors)) workbook.indexedColors = [...metadata.indexedColors];
   workbook.definedNames.items = [];
   for (const item of metadata.definedNames || []) workbook.definedNames.add(item);
   if (metadata.comments?.self) workbook.comments.setSelf(metadata.comments.self);
@@ -5874,6 +5890,7 @@ export class SpreadsheetFile {
     zip.file("xl/workbook.xml", workbookXml(workbook, pivotParts));
     zip.file("xl/_rels/workbook.xml.rels", workbookRels);
     zip.file("xl/styles.xml", xlsxStylesXml(styleTable));
+    zip.file("xl/theme/theme1.xml", xlsxThemeXml(workbook.theme));
     if (sharedStrings.strings.length) zip.file("xl/sharedStrings.xml", sharedStringsXml(sharedStrings));
     zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
     workbook.worksheets.items.forEach((sheet, index) => {
@@ -5926,8 +5943,11 @@ export class SpreadsheetFile {
     const workbookRelationships = new Map(workbookRelationshipRecords.map((relationship) => [relationship.id, relationship]));
     const themeRelationship = workbookRelationshipRecords.find((relationship) => relationship.type.endsWith("/theme") && String(relationship.targetMode || "").toLowerCase() !== "external");
     const themePath = themeRelationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", themeRelationship.target) : undefined;
-    const themeColors = parseXlsxThemeColors(themePath ? await zip.file(themePath)?.async("text") : "");
+    const nativeThemeXml = themePath ? await zip.file(themePath)?.async("text") : "";
+    workbook.setTheme(parseXlsxThemeConfig(nativeThemeXml));
+    const themeColors = parseXlsxThemeColors(nativeThemeXml);
     const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"), { themeColors });
+    workbook.indexedColors = [...(styles.indexedColors || [])];
     const sheetNames = [...String(workbookText || "").matchAll(/<sheet\b[^>]*\/?>/g)].map((match, position) => {
       const attrs = ooxmlXmlAttributes(match[0]);
       const relationshipId = Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
@@ -6095,7 +6115,7 @@ function collectWorkbookStyles(workbook) {
     for (const [, cell] of sheet.store.entries()) addStyle(cell.style || {});
     for (const rule of sheet.conditionalFormattings.items) addDxf(rule.format || rule.rule?.format || {});
   }
-  return { styles, indexByKey, dxfs, dxfIndexByKey };
+  return { styles, indexByKey, dxfs, dxfIndexByKey, indexedColors: workbook.indexedColors };
 }
 
 function xlsxStyleIndex(cell, styleTable) {
@@ -6121,7 +6141,7 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
   const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>`).join("");
   const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>` : "";
   const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${shared}${sheets}${tables}${charts}${pivots}${threadedComments}${persons}</Types>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${shared}${sheets}${tables}${charts}${pivots}${threadedComments}${persons}</Types>`;
 }
 
 function relsXml(rels) {
@@ -6170,6 +6190,7 @@ function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrin
     part.cacheRelId = `rId${nextId++}`;
     rels.push({ id: part.cacheRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition", target: `pivotCache/pivotCacheDefinition${part.cachePartId}.xml` });
   }
+  rels.push({ id: `rId${nextId++}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" });
   return relsXml(rels);
 }
 
@@ -6549,9 +6570,9 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
 function parseWorksheetXml(sheet, xml, options = {}) {
   parseWorksheetViewXml(sheet, xml);
   parseWorksheetDimensionsXml(sheet, xml);
-  const cellMatches = [...String(xml || "").matchAll(/<c\s+([^>]*)>([\s\S]*?)<\/c>/g)].map((match) => {
+  const cellMatches = [...String(xml || "").matchAll(/<c\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)].map((match) => {
     const attrs = match[1];
-    const body = match[2];
+    const body = match[2] || "";
     const address = /r="([^"]+)"/.exec(attrs)?.[1];
     const formulaMatch = /<f\b([^>]*)>([\s\S]*?)<\/f>/.exec(body);
     return { attrs, body, address, formulaAttrs: parseAttrs(formulaMatch?.[1] || ""), formulaBody: formulaMatch ? decodeXml(formulaMatch[2] || "") : undefined };
