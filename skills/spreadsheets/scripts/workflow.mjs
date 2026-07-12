@@ -142,6 +142,16 @@ export function createWorkbookFromFixture(fixture = {}) {
       if (table.showTotals != null) created.showTotals = table.showTotals;
       if (table.showBandedColumns != null) created.showBandedColumns = table.showBandedColumns;
     }
+    for (const chartFixture of sheetFixture.charts || []) {
+      const source = chartFixture.sourceRange ? sheet.getRange(chartFixture.sourceRange) : chartFixture;
+      const created = sheet.charts.add(chartFixture.chartType || chartFixture.type || "bar", source);
+      if (chartFixture.name) created.name = chartFixture.name;
+      if (chartFixture.title) created.title = chartFixture.title;
+      if (chartFixture.hasLegend != null) created.hasLegend = Boolean(chartFixture.hasLegend);
+      if (chartFixture.topLeft && chartFixture.bottomRight) created.setPosition(chartFixture.topLeft, chartFixture.bottomRight);
+      else if (chartFixture.position) created.position = { ...chartFixture.position };
+    }
+    for (const imageFixture of sheetFixture.images || []) sheet.images.add(imageFixture);
   }
   workbook.recalculate();
   for (const expectation of fixture.expectations || []) {

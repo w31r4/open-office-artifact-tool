@@ -141,6 +141,27 @@
       ],
       "tables": [
         { "range": "A1:D4", "name": "SummaryTable", "style": "TableStyleMedium2" }
+      ],
+      "charts": [
+        {
+          "chartType": "bar",
+          "sourceRange": "A1:C4",
+          "name": "Revenue and cost",
+          "title": "Quarter performance",
+          "topLeft": "I2",
+          "bottomRight": "M10"
+        }
+      ],
+      "images": [
+        {
+          "name": "Status marker",
+          "alt": "Green status marker",
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "anchor": {
+            "from": { "row": 11, "col": 8 },
+            "extent": { "widthPx": 48, "heightPx": 48 }
+          }
+        }
       ]
     }
   ],
@@ -164,7 +185,7 @@
     "sheetName": "Summary",
     "range": "A1:G15",
     "renderFormat": "svg",
-    "inspectKind": "workbook,sheet,table,formula,style,computedStyle,merge",
+    "inspectKind": "workbook,sheet,table,formula,style,computedStyle,merge,drawing",
     "maxChars": 30000
   }
 }

@@ -3447,7 +3447,7 @@ Load an XLSX file into a Workbook facade.
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported editable workbook facade.
+- `workbook` (Workbook) — Imported editable workbook facade with relationship-driven worksheet tables plus basic chart and embedded-image drawings restored from native OOXML parts.
 
 #### `SpreadsheetFile.inspectDelimited`
 

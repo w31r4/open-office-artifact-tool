@@ -4,6 +4,7 @@ import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
+import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
 
@@ -1915,7 +1916,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "worksheet.freezePanes.unfreeze": helpSchema({}, "freezePanes", "object", "Worksheet frozen-pane facade reset to zero frozen rows and columns."),
   "SpreadsheetFile.importXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
-  }, "workbook", "Workbook", "Imported editable workbook facade."),
+  }, "workbook", "Workbook", "Imported editable workbook facade with relationship-driven worksheet tables plus basic chart and embedded-image drawings restored from native OOXML parts."),
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
@@ -3145,7 +3146,7 @@ function compareConditionalValues(actualValue, expectedValue, operator = "equalT
     case "not equal": return actual !== expected;
     case "equal":
     case "equalto": return actual === expected;
-    default: return matchesCriteria(actualValue, `${operator}${expectedValue}`);
+    default: return matchesFormulaCriteria(actualValue, `${operator}${expectedValue}`);
   }
 }
 
@@ -5915,8 +5916,10 @@ export class SpreadsheetFile {
       if (xml) {
         parseWorksheetXml(sheet, xml, { sharedStrings, styles });
         await importNativeWorksheetTables(sheet, zip, partPath);
+        await importNativeWorksheetDrawings(sheet, zip, partPath);
       }
     }
+    hydrateImportedWorksheetCharts(workbook);
     parseWorkbookDefinedNames(workbook, workbookText);
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
     if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
@@ -6628,6 +6631,63 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       style: styleAttrs.name || "TableStyleMedium2",
       columnNames,
     });
+  }
+}
+
+function importedDrawingFrame(sheet, record) {
+  const from = record.from || { row: 0, col: 0, rowOffsetPx: 0, colOffsetPx: 0 };
+  const left = 40 + worksheetAxisOffset(sheet, "column", from.col) + Number(from.colOffsetPx || 0);
+  const top = 40 + worksheetAxisOffset(sheet, "row", from.row) + Number(from.rowOffsetPx || 0);
+  if (record.to) {
+    const right = 40 + worksheetAxisOffset(sheet, "column", record.to.col) + Number(record.to.colOffsetPx || 0);
+    const bottom = 40 + worksheetAxisOffset(sheet, "row", record.to.row) + Number(record.to.rowOffsetPx || 0);
+    return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  }
+  return { left, top, width: Math.max(1, Number(record.extent?.widthPx || 160)), height: Math.max(1, Number(record.extent?.heightPx || 120)) };
+}
+
+async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
+  const worksheetRelationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
+  for (const drawingRelationship of worksheetRelationships) {
+    if (!drawingRelationship.type.endsWith("/drawing") || String(drawingRelationship.targetMode || "").toLowerCase() === "external") continue;
+    const drawingPartPath = ooxmlResolveRelationshipTarget(worksheetPartPath, drawingRelationship.target);
+    const drawingXmlText = await zip.file(drawingPartPath)?.async("text");
+    if (!drawingXmlText) continue;
+    const drawingRelationships = new Map(parseRelsXml(await zip.file(ooxmlRelationshipPartPath(drawingPartPath, "XLSX"))?.async("text")).map((relationship) => [relationship.id, relationship]));
+    for (const record of parseSpreadsheetDrawing(drawingXmlText)) {
+      const relationship = drawingRelationships.get(record.relationshipId);
+      if (!relationship || String(relationship.targetMode || "").toLowerCase() === "external") continue;
+      const targetPath = ooxmlResolveRelationshipTarget(drawingPartPath, relationship.target);
+      const frame = importedDrawingFrame(sheet, record);
+      if (record.kind === "image" && relationship.type.endsWith("/image")) {
+        const bytes = await zip.file(targetPath)?.async("uint8array");
+        const extension = /\.([A-Za-z0-9+]+)$/.exec(targetPath)?.[1] || "bin";
+        sheet.images.add({
+          name: record.name,
+          alt: record.alt,
+          dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined,
+          uri: bytes ? undefined : targetPath,
+          anchor: { from: { row: record.from?.row || 0, col: record.from?.col || 0, rowOffsetPx: record.from?.rowOffsetPx || 0, colOffsetPx: record.from?.colOffsetPx || 0 }, extent: { widthPx: frame.width, heightPx: frame.height } },
+        });
+      } else if (record.kind === "chart" && relationship.type.endsWith("/chart")) {
+        const chartXml = await zip.file(targetPath)?.async("text");
+        if (!chartXml) continue;
+        const parsed = parseSpreadsheetChart(chartXml);
+        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, hasLegend: parsed.hasLegend, categories: parsed.categories, position: frame, series: parsed.series });
+        parsed.series.forEach((series, index) => Object.assign(chart.series.items[index], { formula: series.formula, categoryFormula: series.categoryFormula, fill: series.fill }));
+      }
+    }
+  }
+}
+
+function hydrateImportedWorksheetCharts(workbook) {
+  for (const sheet of workbook.worksheets) {
+    for (const chart of sheet.charts.items) {
+      for (const series of chart.series.items) {
+        if (!series.values.length && series.formula) series.values = (formulaRangeMatrix(sheet, series.formula) || []).flat().map((value) => Number(value) || 0);
+        if (!chart.categories.length && series.categoryFormula) chart.categories = (formulaRangeMatrix(sheet, series.categoryFormula) || []).flat().map((value) => String(value ?? ""));
+      }
+    }
   }
 }
 

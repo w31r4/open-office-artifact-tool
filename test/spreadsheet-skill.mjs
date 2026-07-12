@@ -50,6 +50,16 @@ try {
   assert.deepEqual(workbook.worksheets.getItem("Summary").mergedRanges, ["A15:G15"]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.fill, "#0F766E");
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.font.color, "#FFFFFF");
+  const summaryDrawings = workbook.worksheets.getItem("Summary");
+  assert.equal(summaryDrawings.charts.items.length, 1);
+  assert.equal(summaryDrawings.charts.items[0].title, "Quarter performance");
+  assert.deepEqual(summaryDrawings.charts.items[0].categories, ["Jan", "Feb", "Mar"]);
+  assert.deepEqual(summaryDrawings.charts.items[0].series.items[0].values, [100, 120, 150]);
+  assert.equal(summaryDrawings.images.items.length, 1);
+  assert.equal(summaryDrawings.images.items[0].alt, "Green status marker");
+  assert.match(summaryDrawings.images.items[0].dataUrl, /^data:image\/png;base64,/);
+  assert.equal(workbook.resolve(summaryDrawings.charts.items[0].id), summaryDrawings.charts.items[0]);
+  assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.match(workbook.help("workbook.structuredReferences").ndjson, /special-character headers/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("G14").values[0][0], 1);
@@ -58,6 +68,8 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"freezePanes":\{"rows":1,"columns":1/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"customColumns":6/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"mergedCell"[\s\S]*"range":"A15:G15"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"Quarter performance"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"Green status marker"/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
@@ -87,6 +99,8 @@ try {
     assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
     assert.equal(libreOfficeSummary.getRange("A1").format.border.bottom.style, "double");
     assert.equal(libreOfficeSummary.getRange("G14").values[0][0], 1);
+    assert.ok(libreOfficeSummary.charts.items.length >= 1);
+    assert.ok(libreOfficeSummary.images.items.length >= 1);
   }
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);

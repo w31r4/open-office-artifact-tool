@@ -1110,6 +1110,19 @@ assert.match(contentTypesXml, /sharedStrings\.xml" ContentType="application\/vnd
 const nativeOnlyZip = await JSZip.loadAsync(xlsxBytes);
 nativeOnlyZip.remove("customXml/open-office-artifact.json");
 const nativeOnlyWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await nativeOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
+const nativeOnlySheet = nativeOnlyWorkbook.worksheets.getItem("Sheet1");
+assert.equal(nativeOnlySheet.images.items.length, 1);
+assert.equal(nativeOnlySheet.charts.items.length, 2);
+const nativeOnlyImage = nativeOnlySheet.images.getItemOrNullObject("LogoImage");
+assert.equal(nativeOnlyImage.alt, "Logo placeholder");
+assert.match(nativeOnlyImage.dataUrl, /^data:image\/png;base64,/);
+const nativeOnlyRevenueChart = nativeOnlySheet.charts.items.find((chart) => chart.title === "Revenue Trend");
+assert.equal(nativeOnlyRevenueChart.type, "line");
+assert.deepEqual(nativeOnlyRevenueChart.categories, ["Jan", "Feb", "Mar"]);
+assert.deepEqual(nativeOnlyRevenueChart.series.items[0].values, [100, 120, 130]);
+assert.ok(nativeOnlyRevenueChart.position.width > 100 && nativeOnlyRevenueChart.position.height > 80);
+assert.equal(nativeOnlyWorkbook.resolve(nativeOnlyImage.id), nativeOnlyImage);
+assert.match(nativeOnlyWorkbook.inspect({ kind: "drawing", target: nativeOnlyImage.id, maxChars: 4000 }).ndjson, /LogoImage/);
 assert.equal(nativeOnlyWorkbook.worksheets.getItem("Sheet1").showGridLines, false);
 assert.deepEqual(nativeOnlyWorkbook.worksheets.getItem("Sheet1").freezePanes.toJSON(), { rows: 1, columns: 2, frozen: true, topLeftCell: "C2", activePane: "bottomRight" });
 const nativeSparklineInspect = nativeOnlyWorkbook.inspect({ kind: "sparkline", maxChars: 12000 }).ndjson;
@@ -1128,6 +1141,56 @@ assert.match(nativeStyleInspect, /"kind":"style"/);
 assert.match(nativeStyleInspect, /"numberFormat":"#,##0"/);
 assert.match(nativeStyleInspect, /"alignment":\{"horizontal":"center"/);
 assert.match(nativeStyleInspect, /"border":\{"style":"thin"/);
+const relocatedDrawingZip = await JSZip.loadAsync(xlsxBytes);
+relocatedDrawingZip.remove("customXml/open-office-artifact.json");
+const relocatedDrawingXml = (await relocatedDrawingZip.file("xl/drawings/drawing1.xml").async("text")).replace(
+  /<xdr:oneCellAnchor>((?:(?!<\/xdr:oneCellAnchor>)[\s\S])*?name="Chart 1"(?:(?!<\/xdr:oneCellAnchor>)[\s\S])*?)<\/xdr:oneCellAnchor>/,
+  (_anchor, body) => `<xdr:twoCellAnchor editAs="twoCell">${body.replace(/<xdr:ext[^>]*\/>/, '<xdr:to><xdr:col>13</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>10</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>')}</xdr:twoCellAnchor>`,
+);
+assert.match(relocatedDrawingXml, /<xdr:twoCellAnchor editAs="twoCell">/);
+relocatedDrawingZip.file("xl/custom/visuals/workbook-drawing.xml", relocatedDrawingXml);
+relocatedDrawingZip.remove("xl/drawings/drawing1.xml");
+const relocatedDrawingRelationships = (await relocatedDrawingZip.file("xl/drawings/_rels/drawing1.xml.rels").async("text"))
+  .replace("../media/image1.png", "../../assets/logo.png")
+  .replace("../charts/chart1.xml", "chart-revenue.xml")
+  .replace("../charts/chart2.xml", "chart-scores.xml");
+relocatedDrawingZip.file("xl/custom/visuals/_rels/workbook-drawing.xml.rels", relocatedDrawingRelationships);
+relocatedDrawingZip.remove("xl/drawings/_rels/drawing1.xml.rels");
+relocatedDrawingZip.file("xl/assets/logo.png", await relocatedDrawingZip.file("xl/media/image1.png").async("uint8array"));
+relocatedDrawingZip.remove("xl/media/image1.png");
+const relocatedRevenueChartXml = (await relocatedDrawingZip.file("xl/charts/chart1.xml").async("text"))
+  .replace(/<c:tx><c:v>([\s\S]*?)<\/c:v><\/c:tx>/, '<c:tx><c:strRef><c:f>Sheet1!$G$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>$1</c:v></c:pt></c:strCache></c:strRef></c:tx>')
+  .replace(/<c:cat><c:strLit>([\s\S]*?)<\/c:strLit><\/c:cat>/, '<c:cat><c:strRef><c:f>Sheet1!$F$2:$F$4</c:f><c:strCache>$1</c:strCache></c:strRef></c:cat>')
+  .replace(/<c:val><c:numLit>([\s\S]*?)<\/c:numLit><\/c:val>/, '<c:val><c:numRef><c:f>Sheet1!$G$2:$G$4</c:f><c:numCache>$1</c:numCache></c:numRef></c:val>');
+relocatedDrawingZip.file("xl/custom/visuals/chart-revenue.xml", relocatedRevenueChartXml);
+relocatedDrawingZip.file("xl/custom/visuals/chart-scores.xml", await relocatedDrawingZip.file("xl/charts/chart2.xml").async("text"));
+relocatedDrawingZip.remove("xl/charts/chart1.xml");
+relocatedDrawingZip.remove("xl/charts/chart2.xml");
+relocatedDrawingZip.file("xl/worksheets/_rels/sheet1.xml.rels", (await relocatedDrawingZip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text")).replace("../drawings/drawing1.xml", "../custom/visuals/workbook-drawing.xml"));
+relocatedDrawingZip.file("[Content_Types].xml", (await relocatedDrawingZip.file("[Content_Types].xml").async("text"))
+  .replace("/xl/charts/chart1.xml", "/xl/custom/visuals/chart-revenue.xml")
+  .replace("/xl/charts/chart2.xml", "/xl/custom/visuals/chart-scores.xml"));
+const relocatedDrawingBlob = new FileBlob(await relocatedDrawingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type });
+const relocatedDrawingInspect = await SpreadsheetFile.inspectXlsx(relocatedDrawingBlob);
+assert.equal(relocatedDrawingInspect.ok, true);
+assert.deepEqual(relocatedDrawingInspect.issues, []);
+const relocatedDrawingBook = await SpreadsheetFile.importXlsx(relocatedDrawingBlob);
+const relocatedDrawingSheet = relocatedDrawingBook.worksheets.getItem("Sheet1");
+assert.equal(relocatedDrawingSheet.images.items.length, 1);
+assert.equal(relocatedDrawingSheet.charts.items.length, 2);
+assert.equal(relocatedDrawingSheet.images.items[0].alt, "Logo placeholder");
+const relocatedRevenueChart = relocatedDrawingSheet.charts.items.find((chart) => chart.title === "Revenue Trend");
+assert.deepEqual(relocatedRevenueChart.series.items[0].values, [100, 120, 130]);
+assert.equal(relocatedRevenueChart.series.items[0].formula, "Sheet1!$G$2:$G$4");
+assert.equal(relocatedRevenueChart.series.items[0].categoryFormula, "Sheet1!$F$2:$F$4");
+assert.ok(relocatedRevenueChart.position.width > 100 && relocatedRevenueChart.position.height > 80);
+assert.match(relocatedDrawingSheet.toSvg(), /Revenue Trend/);
+assert.match(relocatedDrawingSheet.toSvg(), /data:image\/png;base64/);
+assert.ok(relocatedDrawingSheet.layoutJson().charts.some((chart) => chart.title === "Revenue Trend"));
+assert.ok(relocatedDrawingBook.verify().issues.every((issue) => !["emptyChart", "emptyImage", "chartDataMismatch", "invalidImageDataUrl"].includes(issue.type)));
+const relocatedDrawingRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(relocatedDrawingBook));
+assert.equal(relocatedDrawingRoundtrip.worksheets.getItem("Sheet1").images.items.length, 1);
+assert.equal(relocatedDrawingRoundtrip.worksheets.getItem("Sheet1").charts.items.length, 2);
 const styleFidelityZip = await JSZip.loadAsync(xlsxBytes);
 styleFidelityZip.remove("customXml/open-office-artifact.json");
 const assignStyle = (xml, address, styleIndex) => xml.replace(new RegExp(`<c r="${address}"([^>]*)>`), (match, attrs) => `<c r="${address}"${attrs.replace(/\s+s="[^"]*"/, "")} s="${styleIndex}">`);

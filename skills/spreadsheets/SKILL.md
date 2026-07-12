@@ -30,6 +30,8 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 
 CSV and TSV deliberately flatten one worksheet/range and cannot preserve styles, drawings, validations, comments, or workbook formulas. Use XLSX for editable fidelity. Delimited export writes calculated values by default; set `formulas: true` only when formula text is explicitly required.
 
+XLSX import follows worksheet and drawing relationships instead of assuming conventional filenames. Metadata-free embedded images and basic bar/line/pie charts are restored from native SpreadsheetDrawingML, including one-/two-cell anchors, chart caches, and range formulas. Always inspect and verify imported drawings; advanced chart styling, axes, data labels, absolute anchors, and grouped shapes remain fidelity work.
+
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 

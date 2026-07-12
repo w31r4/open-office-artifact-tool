@@ -32,6 +32,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
+assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /drawing/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MEDIAN"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
