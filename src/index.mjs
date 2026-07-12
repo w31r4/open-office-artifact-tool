@@ -1026,7 +1026,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-  { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups, native p:grpSp roundtrip, and Office 2021 group-aware comment monikers." },
+  { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
@@ -1878,8 +1878,11 @@ const PRESENTATION_HELP_SCHEMAS = {
     shapes: { type: "object[]", description: "Initial child shape/textbox definitions in local coordinates." },
     connectors: { type: "object[]", description: "Initial child connector definitions in local coordinates." },
     groups: { type: "object[]", description: "Initial nested group definitions." },
-    children: { type: "object[]", description: "Ordered mixed child definitions using kind shape, connector, or groupShape." },
-  }, "group", "GroupShape", "Appended editable grouped-shape facade with shapes, connectors, groups, resolve, inspect, layout, SVG, and PPTX output."),
+    tables: { type: "object[]", description: "Initial native DrawingML table definitions in local coordinates." },
+    charts: { type: "object[]", description: "Initial relationship-backed chart definitions in local coordinates." },
+    images: { type: "object[]", description: "Initial relationship-backed picture definitions in local coordinates." },
+    children: { type: "object[]", description: "Ordered mixed child definitions using kind shape, connector, groupShape, table, chart, or image." },
+  }, "group", "GroupShape", "Appended editable grouped-shape facade with shapes, connectors, groups, tables, charts, images, resolve, inspect, layout, SVG, and PPTX output."),
   "slide.compose": helpSchema({
     node: { type: "object", required: true, description: "Compose tree rooted in row, column, grid, layers, box, paragraph, shape, table, chart, image, or rule." },
     frame: { type: "object", description: "Pixel materialization frame; defaults to an inset slide frame." },
@@ -7247,16 +7250,17 @@ export class Presentation {
     for (const layout of this.layouts.items) if (!knownMasterIds.has(layout.masterId)) issues.push(verificationIssue("presentation", "missingMaster", `Layout ${layout.name || layout.id} references missing master ${layout.masterId}.`, { id: layout.id, masterId: layout.masterId }));
     issues.push(...this.validateLayout(options).issues.map((issue) => ({ ...issue, artifactKind: "presentation" })));
     for (const slide of this.slides) {
+      const slideElements = presentationSlideElements(slide);
       if (slide.layoutId && !this.layouts.getItem(slide.layoutId)) issues.push(verificationIssue("presentation", "missingLayout", `Slide ${slide.index + 1} references missing layout ${slide.layoutId}.`, { slide: slide.index + 1, layoutId: slide.layoutId }));
-      for (const shape of slide.shapes.items) {
+      for (const shape of slideElements.filter((element) => element instanceof Shape)) {
         if (shape.placeholder?.required && !shape.text.value.trim()) issues.push(verificationIssue("presentation", "placeholderMissingContent", `Required ${shape.placeholder.type || "placeholder"} placeholder ${shape.name || shape.id} on slide ${slide.index + 1} is empty.`, { slide: slide.index + 1, id: shape.id, placeholder: shape.placeholder }));
       }
-      for (const table of slide.tables.items) {
+      for (const table of slideElements.filter((element) => element instanceof TableElement)) {
         if (!table.rows || !table.columns || table.values.length === 0 || table.values.every((row) => row.every((cell) => String(cell ?? "").trim() === ""))) issues.push(verificationIssue("presentation", "emptyTable", `Table ${table.name || table.id} on slide ${slide.index + 1} has no visible cell data.`, { slide: slide.index + 1, id: table.id }));
         if (table.values.length !== table.rows) issues.push(verificationIssue("presentation", "tableDataMismatch", `Table ${table.name || table.id} declares ${table.rows} rows but has ${table.values.length} value rows.`, { slide: slide.index + 1, id: table.id, rows: table.rows, valueRows: table.values.length }));
         if (table.values.some((row) => row.length !== table.columns)) issues.push(verificationIssue("presentation", "raggedTableRows", `Table ${table.name || table.id} has rows that do not match its declared column count.`, { slide: slide.index + 1, id: table.id, columns: table.columns, rowLengths: table.values.map((row) => row.length) }));
       }
-      for (const chart of slide.charts.items) {
+      for (const chart of slideElements.filter((element) => element instanceof ChartElement)) {
         if (!/^(bar|line|pie)$/i.test(chart.chartType)) issues.push(verificationIssue("presentation", "unsupportedChartType", `Chart ${chart.name || chart.id} uses unsupported chart type ${chart.chartType}.`, { severity: "warning", slide: slide.index + 1, id: chart.id, chartType: chart.chartType }));
         if (!chart.series.length) issues.push(verificationIssue("presentation", "emptyChart", `Chart ${chart.name || chart.id} on slide ${slide.index + 1} has no data series.`, { slide: slide.index + 1, id: chart.id }));
         for (const series of chart.series) {
@@ -7265,7 +7269,7 @@ export class Presentation {
           if (values.some((value) => value !== "" && value != null && !Number.isFinite(Number(value)))) issues.push(verificationIssue("presentation", "chartDataNonNumeric", `Chart ${chart.name || chart.id} series ${series.name || "Series"} contains non-numeric values.`, { slide: slide.index + 1, id: chart.id, series: series.name }));
         }
       }
-      for (const image of slide.images.items) {
+      for (const image of slideElements.filter((element) => element instanceof ImageElement)) {
         if (!image.dataUrl && !image.uri && !image.prompt) issues.push(verificationIssue("presentation", "emptyImage", `Image ${image.name || image.id} on slide ${slide.index + 1} has no dataUrl, uri, or prompt.`, { slide: slide.index + 1, id: image.id }));
         if (image.dataUrl && !imageDataFromDataUrl(image.dataUrl)) issues.push(verificationIssue("presentation", "invalidImageDataUrl", `Image ${image.name || image.id} on slide ${slide.index + 1} has an unsupported data URL.`, { slide: slide.index + 1, id: image.id }));
       }
@@ -7376,9 +7380,8 @@ function textOverflowIssue(slide, element, frame) {
   };
 }
 
-function tableOverflowIssues(slide, tableElement) {
+function tableOverflowIssues(slide, tableElement, frame = tableElement.position) {
   const issues = [];
-  const frame = tableElement.position;
   const cellW = frame.width / Math.max(1, tableElement.columns);
   const cellH = frame.height / Math.max(1, tableElement.rows);
   const fontSize = 13;
@@ -7500,9 +7503,17 @@ const GroupShape = createPresentationGroupShapeClass({
   createShapeCollection: (slide, owner) => new ShapeCollection(slide, owner),
   createConnectorCollection: (slide, owner) => new ElementCollection(slide, ConnectorElement, owner),
   createGroupCollection: (slide, owner, GroupClass) => new ElementCollection(slide, GroupClass, owner),
+  createTableCollection: (slide, owner) => new ElementCollection(slide, TableElement, owner),
+  createChartCollection: (slide, owner) => new ElementCollection(slide, ChartElement, owner),
+  createImageCollection: (slide, owner) => new ElementCollection(slide, ImageElement, owner),
   isShape: (element) => element instanceof Shape,
   isConnector: (element) => element instanceof ConnectorElement,
   isGroup: (element) => element instanceof GroupShape,
+  isTable: (element) => element instanceof TableElement,
+  isChart: (element) => element instanceof ChartElement,
+  isImage: (element) => element instanceof ImageElement,
+  elementKind: (element) => presentationElementKind(element),
+  validateChildLayout: (element, frame) => element instanceof TableElement ? tableOverflowIssues(element.slide, element, frame) : [],
   createTextRange: (element, id) => createTextRange(element, id, { parentKind: "shape" }),
   textRangeRecord,
   elementLabel,
@@ -8050,11 +8061,11 @@ export class PresentationFile {
 
   static async exportPptx(presentation) {
     const zip = new JSZip();
+    planPresentationNativeIdentities(presentation);
     const imageParts = collectPresentationImageParts(presentation);
     const chartParts = collectPresentationChartParts(presentation, imageParts);
     const { masterParts, layoutParts, themeParts } = collectPresentationMasterGraph(presentation);
     const useModernComments = presentation.commentFormat === "modern" || presentation.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"));
-    if (useModernComments) planPresentationNativeCommentAnchors(presentation);
     const commentAuthors = useModernComments ? { entries: [], byName: new Map() } : collectPptxCommentAuthors(presentation);
     const modernComments = useModernComments ? planPresentationModernComments(presentation.slides.items) : { authors: [], parts: [] };
     zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, imageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts, modernComments));
@@ -8239,7 +8250,7 @@ function collectPresentationImageParts(presentation) {
   let imagePartId = 1;
   presentation.slides.items.forEach((slide, slideIndex) => {
     let relIndex = 1;
-    slide.images.items.forEach((image, imageIndex) => {
+    presentationSlideElements(slide).filter((element) => element instanceof ImageElement).forEach((image, imageIndex) => {
       const data = imageDataFromDataUrl(image.dataUrl);
       if (!data) return;
       parts.push({
@@ -8261,7 +8272,7 @@ function collectPresentationChartParts(presentation, imageParts = []) {
   let chartPartId = 1;
   presentation.slides.items.forEach((slide, slideIndex) => {
     let relIndex = imageParts.filter((part) => part.slideIndex === slideIndex).length + 1;
-    slide.charts.items.forEach((chart, chartIndex) => {
+    presentationSlideElements(slide).filter((element) => element instanceof ChartElement).forEach((chart, chartIndex) => {
       parts.push({ slide, slideIndex, chart, chartIndex, chartPartId: chartPartId++, slideRelId: `rId${relIndex++}` });
     });
   });
@@ -8338,6 +8349,28 @@ function presentationXml(presentation, masterParts = []) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`;
 }
 
+function presentationElementKind(element) {
+  if (element instanceof ConnectorElement) return "connector";
+  if (element instanceof GroupShape) return "groupShape";
+  if (element instanceof TableElement) return "table";
+  if (element instanceof ChartElement) return "chart";
+  if (element instanceof ImageElement) return "image";
+  return "shape";
+}
+
+function presentationElementMoniker(element) {
+  if (element instanceof ConnectorElement) return "cxnSpMk";
+  if (element instanceof GroupShape) return "grpSpMk";
+  if (element instanceof TableElement || element instanceof ChartElement) return "graphicFrameMk";
+  if (element instanceof ImageElement) return "picMk";
+  return "spMk";
+}
+
+function presentationSlideElements(slide) {
+  const direct = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items];
+  return direct.flatMap((element) => element instanceof GroupShape ? element.allElements() : [element]);
+}
+
 function presentationSlideElementEntries(slide) {
   const direct = [
     ...slide.connectors.items.map((element) => ({ element, moniker: "cxnSpMk" })),
@@ -8353,7 +8386,7 @@ function presentationSlideElementEntries(slide) {
       groupEntry,
       ...group.children.flatMap((element) => element instanceof GroupShape
         ? nested(element, path)
-        : [{ element, moniker: element instanceof ConnectorElement ? "cxnSpMk" : "spMk", ancestors: path }]),
+        : [{ element, moniker: presentationElementMoniker(element), ancestors: path }]),
     ];
   };
   return [...direct, ...slide.groups.items.flatMap((group) => nested(group))].map((entry) => {
@@ -8364,7 +8397,7 @@ function presentationSlideElementEntries(slide) {
   });
 }
 
-function planPresentationNativeCommentAnchors(presentation) {
+function planPresentationNativeIdentities(presentation) {
   const usedSlideIds = new Set();
   let nextSlideId = 256;
   for (const slide of presentation.slides.items) {
@@ -8500,7 +8533,7 @@ function parsePptxComments(slide, xml = "", authorsById = new Map()) {
     const threadId = parsedAttrs.threadId || parsedAttrs["ooa:threadId"] || aid("pc");
     const originalTargetId = parsedAttrs.targetId || parsedAttrs["ooa:targetId"] || undefined;
     const targetName = parsedAttrs.targetName || parsedAttrs["ooa:targetName"] || "";
-    const namedTarget = targetName ? [...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.connectors.items].find((item) => item.name === targetName) : undefined;
+    const namedTarget = targetName ? presentationSlideElements(slide).find((item) => item.name === targetName) : undefined;
     const targetId = slide.resolve(originalTargetId)?.id || namedTarget?.id || originalTargetId;
     const resolved = parsedAttrs.resolved === "1" || parsedAttrs["ooa:resolved"] === "1";
     const created = parsedAttrs.dt || new Date(0).toISOString();
@@ -8525,7 +8558,7 @@ function pptxTableXml(index, table) {
       const cellText = table.values[rowIndex]?.[colIndex] ?? "";
       const textStyle = { fontSize: table.styleOptions.fontSize || 18, bold: header, color: header ? "#000000" : "#0f172a", fontFamily: table.styleOptions.fontFamily };
       const fill = header ? "EDEDED" : rowIndex % 2 && table.styleOptions.bandedRows ? "F8FAFC" : "FFFFFF";
-      return `<a:tc><a:txBody><a:bodyPr wrap="square" lIns="76200" tIns="45720" rIns="76200" bIns="45720" anchor="ctr"/><a:lstStyle/><a:p><a:r>${pptxTextRunPropertiesXml(textStyle)}<a:t>${xmlEscape(cellText)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${Math.round(textStyle.fontSize * 75)}"/></a:p></a:txBody><a:tcPr marL="76200" marR="76200" marT="45720" marB="45720"><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>${borderXml}</a:tcPr></a:tc>`;
+      return `<a:tc><a:txBody><a:bodyPr wrap="square" lIns="76200" tIns="45720" rIns="76200" bIns="45720" anchor="ctr"/><a:lstStyle/><a:p><a:r>${pptxTextRunPropertiesXml(textStyle)}<a:t>${xmlEscape(cellText)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${Math.round(textStyle.fontSize * 75)}"/></a:p></a:txBody><a:tcPr marL="76200" marR="76200" marT="45720" marB="45720">${borderXml}<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill></a:tcPr></a:tc>`;
     }).join("");
     return `<a:tr h="${rowHeight}">${cells}</a:tr>`;
   }).join("");
@@ -8569,8 +8602,9 @@ function pptxChartXml(chart) {
 function slideXml(slide, imageParts = [], chartParts = []) {
   const imageRelById = new Map(imageParts.map((part) => [part.image.id, part.slideRelId]));
   const chartRelById = new Map(chartParts.map((part) => [part.chart.id, part.slideRelId]));
+  const relationshipById = new Map([...imageRelById, ...chartRelById]);
   const elements = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items];
-  const shapes = elements.map((element, index) => element.toPptxShape(index, imageRelById.get(element.id) || chartRelById.get(element.id))).join("");
+  const shapes = elements.map((element, index) => element.toPptxShape(index, element instanceof GroupShape ? relationshipById : relationshipById.get(element.id))).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld>${presentationBackgroundXml(slide.background.fill ? slide.background : undefined)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes}</p:spTree></p:cSld></p:sld>`;
 }
 
@@ -8621,15 +8655,16 @@ function applyPresentationElementIdentity(element, xml, moniker) {
   return element;
 }
 
-function parsePptxTableGraphic(slide, part) {
-  const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-  const values = [...part.matchAll(/<a:tr\b[\s\S]*?<\/a:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<a:tc\b[\s\S]*?<\/a:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((t) => t[1]).join(""))));
+function parsePptxTableGraphic(owner, part) {
+  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
+  const values = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?tr\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?tc\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?t>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((t) => t[1]).join(""))));
   if (!values.length) return;
-  return applyPresentationElementIdentity(slide.tables.add({ name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 160 }), values, rows: values.length, columns: Math.max(1, ...values.map((row) => row.length)), styleOptions: { headerRow: /<a:tblPr\b[^>]*firstRow="1"/.test(part), bandedRows: /<a:tblPr\b[^>]*bandRow="1"/.test(part) } }), part, "graphicFrameMk");
+  return applyPresentationElementIdentity(owner.tables.add({ name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 160 }), values, rows: values.length, columns: Math.max(1, ...values.map((row) => row.length)), styleOptions: { headerRow: /<(?:[A-Za-z_][\w.-]*:)?tblPr\b[^>]*firstRow="1"/.test(part), bandedRows: /<(?:[A-Za-z_][\w.-]*:)?tblPr\b[^>]*bandRow="1"/.test(part) } }), part, "graphicFrameMk");
 }
 
-async function parsePptxChartGraphic(slide, part, context) {
-  const relId = /<c:chart[^>]*r:id="([^"]+)"/.exec(part)?.[1];
+async function parsePptxChartGraphic(owner, part, context) {
+  const chartTag = /<(?:[A-Za-z_][\w.-]*:)?chart\b[^>]*\/>/.exec(part)?.[0] || "";
+  const relId = ooxmlTagRelationshipId(chartTag);
   const target = pptxRelationshipTarget(context.rels, relId);
   const chartXml = target ? await context.zip.file(target)?.async("text") : "";
   const chartType = /<c:pieChart>/.test(chartXml) ? "pie" : /<c:lineChart>/.test(chartXml) ? "line" : "bar";
@@ -8647,19 +8682,25 @@ async function parsePptxChartGraphic(slide, part, context) {
     const values = [...( /<c:val>([\s\S]*?)<\/c:val>/.exec(seriesXml)?.[1] || "").matchAll(/<c:v>([\s\S]*?)<\/c:v>/g)].map((m) => Number(decodeXml(m[1])) || 0);
     return { name, values, categories, color: color ? `#${color}` : undefined };
   });
-  const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || title || "chart");
-  return applyPresentationElementIdentity(slide.charts.add(chartType, { name, title, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }), categories: series[0]?.categories || [], series, axes: { category: { title: catAxisTitle }, value: { title: valAxisTitle } }, legend: { visible: Boolean(legendMatch), position: legendMatch?.[1] || "r" }, dataLabels }), part, "graphicFrameMk");
+  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || title || "chart");
+  return applyPresentationElementIdentity(owner.charts.add(chartType, { name, title, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }), categories: series[0]?.categories || [], series, axes: { category: { title: catAxisTitle }, value: { title: valAxisTitle } }, legend: { visible: Boolean(legendMatch), position: legendMatch?.[1] || "r" }, dataLabels }), part, "graphicFrameMk");
 }
 
-async function parsePptxPicture(slide, part, context) {
-  const attrs = /<p:cNvPr\b([^>]*)>/.exec(part)?.[1] || /<p:cNvPr\b([^>]*)\/>/.exec(part)?.[1] || "";
+async function parsePptxPicture(owner, part, context) {
+  const attrs = /<(?:[A-Za-z_][\w.-]*:)?cNvPr\b([^>]*)>/.exec(part)?.[1] || /<(?:[A-Za-z_][\w.-]*:)?cNvPr\b([^>]*)\/>/.exec(part)?.[1] || "";
   const name = decodeXml(/\bname="([^"]*)"/.exec(attrs)?.[1] || "");
   const alt = decodeXml(/\bdescr="([^"]*)"/.exec(attrs)?.[1] || "");
-  const relId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(part)?.[1];
+  const blipTag = /<(?:[A-Za-z_][\w.-]*:)?blip\b[^>]*\/>/.exec(part)?.[0] || "";
+  const relId = ooxmlTagRelationshipId(blipTag, "embed");
   const target = pptxRelationshipTarget(context.rels, relId);
   const bytes = target ? await context.zip.file(target)?.async("uint8array") : undefined;
   const extension = /\.([A-Za-z0-9+]+)$/.exec(target || "")?.[1] || "png";
-  return applyPresentationElementIdentity(slide.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target }), part, "picMk");
+  return applyPresentationElementIdentity(owner.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target }), part, "picMk");
+}
+
+async function parsePptxGraphicFrame(owner, part, context) {
+  if (part.includes("/drawingml/2006/table")) return parsePptxTableGraphic(owner, part);
+  if (part.includes("/drawingml/2006/chart")) return parsePptxChartGraphic(owner, part, context);
 }
 
 function parsePptxConnector(owner, part) {
@@ -8699,8 +8740,8 @@ function parsePptxShape(owner, part, context = {}) {
     return shape;
 }
 
-function parsePptxGroup(owner, part, context) {
-  return parsePresentationGroupTree(owner, part, context, { applyIdentity: applyPresentationElementIdentity, parseShape: parsePptxShape, parseConnector: parsePptxConnector });
+async function parsePptxGroup(owner, part, context) {
+  return parsePresentationGroupTree(owner, part, context, { applyIdentity: applyPresentationElementIdentity, parseShape: parsePptxShape, parseConnector: parsePptxConnector, parseGraphicFrame: parsePptxGraphicFrame, parsePicture: parsePptxPicture });
 }
 
 async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined }) {
@@ -8708,12 +8749,10 @@ async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined })
   for (const child of directPresentationChildren(xml, "spTree")) {
     const part = child.xml;
     if (child.localName === "sp") parsePptxShape(slide, part, context);
-    else if (child.localName === "graphicFrame") {
-      if (part.includes("/drawingml/2006/table")) parsePptxTableGraphic(slide, part);
-      else if (part.includes("/drawingml/2006/chart")) await parsePptxChartGraphic(slide, part, context);
-    } else if (child.localName === "pic") await parsePptxPicture(slide, part, context);
+    else if (child.localName === "graphicFrame") await parsePptxGraphicFrame(slide, part, context);
+    else if (child.localName === "pic") await parsePptxPicture(slide, part, context);
     else if (child.localName === "cxnSp") parsePptxConnector(slide, part);
-    else if (child.localName === "grpSp") parsePptxGroup(slide, part, context);
+    else if (child.localName === "grpSp") await parsePptxGroup(slide, part, context);
   }
 }
 

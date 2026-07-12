@@ -27,16 +27,45 @@
       "groups": [
         {
           "name": "review-evidence-group",
-          "position": { "left": 72, "top": 220, "width": 1050, "height": 180 },
-          "childFrame": { "left": 0, "top": 0, "width": 1050, "height": 180 },
+          "position": { "left": 72, "top": 220, "width": 1050, "height": 300 },
+          "childFrame": { "left": 0, "top": 0, "width": 1050, "height": 300 },
           "shapes": [
             {
               "name": "review-evidence",
               "text": "GUID authors  •  native replies  •  text and group anchors  •  relationship-owned parts",
-              "position": { "left": 0, "top": 0, "width": 1050, "height": 180 },
+              "position": { "left": 0, "top": 0, "width": 1050, "height": 96 },
               "fill": "#dbeafe",
               "line": { "fill": "#2563eb", "width": 2 },
               "textStyle": { "fontSize": 27, "color": "#1e3a8a" }
+            }
+          ],
+          "tables": [
+            {
+              "name": "review-table",
+              "position": { "left": 0, "top": 116, "width": 290, "height": 150 },
+              "values": [["Node", "Anchor"], ["Table", "graphicFrameMk"], ["Image", "picMk"]],
+              "rows": 3,
+              "columns": 2,
+              "styleOptions": { "headerRow": true, "bandedRows": true }
+            }
+          ],
+          "charts": [
+            {
+              "name": "review-chart",
+              "chartType": "bar",
+              "title": "Grouped parts",
+              "position": { "left": 320, "top": 108, "width": 450, "height": 174 },
+              "categories": ["Shape", "Table", "Chart", "Image"],
+              "series": [{ "name": "Validated", "values": [1, 1, 1, 1], "color": "#2563eb" }],
+              "legend": false
+            }
+          ],
+          "images": [
+            {
+              "name": "review-image",
+              "alt": "Grouped picture relationship",
+              "position": { "left": 820, "top": 132, "width": 120, "height": 120 },
+              "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKkoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2T7fC9RXbKdhR9J9rRcgZuSa4uTID2Ff89Xj5OWuW+oGxYnglIsYTdZw5T43DmjNihVC16i3iJ77HU3iCNmneCF/n4owI3Evt1U5bTcrCfwEui+ZHImrRSunAcc+JyP4c2hw7IAiSMKcBG2nElego7YG6CGgfiJOXsNJBFZIN7gu3Lvj47RTukLUVZfy7+kPXyRPo9GHOdsAAAAASUVORK5CYII="
             }
           ]
         }
@@ -58,6 +87,24 @@
           "author": "QA Agent",
           "created": "2026-07-13T03:04:05Z",
           "text": "Validate the native group-shape anchor."
+        },
+        {
+          "targetName": "review-table",
+          "author": "QA Agent",
+          "created": "2026-07-13T04:05:06Z",
+          "text": "Validate the grouped table graphic-frame anchor."
+        },
+        {
+          "targetName": "review-chart",
+          "author": "QA Agent",
+          "created": "2026-07-13T05:06:07Z",
+          "text": "Validate the grouped chart graphic-frame anchor."
+        },
+        {
+          "targetName": "review-image",
+          "author": "QA Agent",
+          "created": "2026-07-13T06:07:08Z",
+          "text": "Validate the grouped picture anchor."
         }
       ]
     }
@@ -65,11 +112,14 @@
   "expectInspect": [
     { "kind": "comment", "pattern": "Office 2021 comment graph" },
     { "kind": "shape", "pattern": "GUID authors" },
-    { "kind": "groupShape", "pattern": "review-evidence-group" }
+    { "kind": "groupShape", "pattern": "review-evidence-group" },
+    { "kind": "table", "pattern": "graphicFrameMk" },
+    { "kind": "chart", "pattern": "Grouped parts" },
+    { "kind": "image", "pattern": "Grouped picture" }
   ],
   "qa": {
     "nativeRender": "auto",
-    "inspectKind": "deck,slide,shape,groupShape,comment,textRange",
+    "inspectKind": "deck,slide,shape,groupShape,table,chart,image,comment,textRange",
     "maxChars": 16000
   }
 }

@@ -126,14 +126,16 @@ export function presentationGroupName(xml = "") {
   return decodeXml(attributes(cNvPr).name || "");
 }
 
-export function parsePresentationGroupTree(owner, xml, context, adapters) {
+export async function parsePresentationGroupTree(owner, xml, context, adapters) {
   const geometry = parsePresentationGroupGeometry(xml);
   const group = owner.groups.add({ name: presentationGroupName(xml), position: geometry.frame, childFrame: geometry.childFrame });
   adapters.applyIdentity(group, xml, "grpSpMk");
   for (const child of directPresentationChildren(xml, "grpSp")) {
     if (child.localName === "sp") adapters.parseShape(group, child.xml, { ...context, layout: undefined });
     else if (child.localName === "cxnSp") adapters.parseConnector(group, child.xml);
-    else if (child.localName === "grpSp") parsePresentationGroupTree(group, child.xml, context, adapters);
+    else if (child.localName === "grpSp") await parsePresentationGroupTree(group, child.xml, context, adapters);
+    else if (child.localName === "graphicFrame") await adapters.parseGraphicFrame(group, child.xml, context);
+    else if (child.localName === "pic") await adapters.parsePicture(group, child.xml, context);
   }
   return group;
 }
@@ -154,14 +156,23 @@ export function createPresentationGroupShapeClass(adapters) {
       this.shapes = adapters.createShapeCollection(slide, this);
       this.connectors = adapters.createConnectorCollection(slide, this);
       this.groups = adapters.createGroupCollection(slide, this, this.constructor);
+      this.tables = adapters.createTableCollection(slide, this);
+      this.charts = adapters.createChartCollection(slide, this);
+      this.images = adapters.createImageCollection(slide, this);
       for (const child of config.children || []) {
         if (child?.kind === "groupShape" || child?.kind === "group") this.groups.add(child);
         else if (child?.kind === "connector") this.connectors.add(child);
+        else if (child?.kind === "table") this.tables.add(child);
+        else if (child?.kind === "chart") this.charts.add(child.chartType || child.type || "bar", child);
+        else if (child?.kind === "image") this.images.add(child);
         else this.shapes.add(child);
       }
       for (const shape of config.shapes || []) this.shapes.add(shape);
       for (const connector of config.connectors || []) this.connectors.add(connector);
       for (const group of config.groups || []) this.groups.add(group);
+      for (const table of config.tables || []) this.tables.add(table);
+      for (const chart of config.charts || []) this.charts.add(chart.chartType || chart.type || "bar", chart);
+      for (const image of config.images || []) this.images.add(image);
     }
 
     _rememberChild(element) { this.children.push(element); }
@@ -207,6 +218,10 @@ export function createPresentationGroupShapeClass(adapters) {
           else if (kinds.has("shape")) records.push({ ...child.inspectRecord("shape"), parentGroupId: this.id, bbox });
           if (kinds.has("textRange") && child.text.value) records.push(adapters.textRangeRecord(child, { parentKind: "shape", record: { slide: this.slide.index + 1, parentGroupId: this.id, bbox, bboxUnit: "px" } }));
         } else if (adapters.isConnector(child) && kinds.has("connector")) records.push({ ...child.inspectRecord(), parentGroupId: this.id });
+        else if ((adapters.isTable(child) && kinds.has("table")) || (adapters.isChart(child) && kinds.has("chart")) || (adapters.isImage(child) && kinds.has("image"))) {
+          const frame = this.absoluteChildFrame(child);
+          records.push({ ...child.inspectRecord(), parentGroupId: this.id, bbox: [frame.left, frame.top, frame.width, frame.height] });
+        }
       }
       return records;
     }
@@ -224,8 +239,8 @@ export function createPresentationGroupShapeClass(adapters) {
       return `<g data-group-id="${attrEscape(this.id)}" transform="${presentationGroupSvgTransform(this.position, this.childFrame)}">${this.children.map((child) => child.toSvg()).join("")}</g>`;
     }
 
-    toPptxShape(index) {
-      const childrenXml = this.children.map((child, childIndex) => child.toPptxShape(index + childIndex + 1)).join("");
+    toPptxShape(index, relationships) {
+      const childrenXml = this.children.map((child, childIndex) => child.toPptxShape(index + childIndex + 1, adapters.isGroup(child) ? relationships : relationships?.get(child.id))).join("");
       return presentationGroupShapeXml(this, childrenXml, adapters.creationIdExtensionXml(this.creationId));
     }
 
@@ -235,13 +250,14 @@ export function createPresentationGroupShapeClass(adapters) {
       for (const child of this.children) {
         const frame = child.position;
         if (frame && (frame.left < bounds.left || frame.top < bounds.top || frame.left + frame.width > bounds.left + bounds.width || frame.top + frame.height > bounds.top + bounds.height)) issues.push({ kind: "layoutIssue", type: "groupChildOutOfBounds", severity: "error", slide: this.slide.index + 1, id: child.id, groupId: this.id, message: `${adapters.elementLabel(child)} extends outside group ${adapters.elementLabel(this)} child coordinates.` });
+        issues.push(...adapters.validateChildLayout(child, this.absoluteChildFrame(child)));
         if (adapters.isGroup(child)) issues.push(...child.validateLayout());
       }
       return issues;
     }
 
     toProto() {
-      return { kind: "groupShape", id: this.id, name: this.name, position: this.position, childFrame: this.childFrame, children: this.children.map((child) => adapters.isGroup(child) ? child.toProto() : { ...child.layoutJson(), kind: adapters.isConnector(child) ? "connector" : "shape" }) };
+      return { kind: "groupShape", id: this.id, name: this.name, position: this.position, childFrame: this.childFrame, children: this.children.map((child) => adapters.isGroup(child) ? child.toProto() : { ...child.layoutJson(), kind: adapters.elementKind(child) }) };
     }
   };
 }

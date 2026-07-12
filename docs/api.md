@@ -968,7 +968,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
-| `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups, native p:grpSp roundtrip, and Office 2021 group-aware comment monikers. |
+| `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
 | `slide.shapes.add` | api | Add a shape/textbox with geometry, position, fill, line, and text. |
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
@@ -1409,7 +1409,7 @@ Add an inspectable connector line between points or element IDs with SVG preview
 
 #### `slide.groups.add`
 
-Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups, native p:grpSp roundtrip, and Office 2021 group-aware comment monikers.
+Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers.
 
 **Schema parameters:**
 
@@ -1419,11 +1419,14 @@ Add an editable grouped-shape tree with local child coordinates, nested shapes/c
 - `shapes` (object[]) — Initial child shape/textbox definitions in local coordinates.
 - `connectors` (object[]) — Initial child connector definitions in local coordinates.
 - `groups` (object[]) — Initial nested group definitions.
-- `children` (object[]) — Ordered mixed child definitions using kind shape, connector, or groupShape.
+- `tables` (object[]) — Initial native DrawingML table definitions in local coordinates.
+- `charts` (object[]) — Initial relationship-backed chart definitions in local coordinates.
+- `images` (object[]) — Initial relationship-backed picture definitions in local coordinates.
+- `children` (object[]) — Ordered mixed child definitions using kind shape, connector, groupShape, table, chart, or image.
 
 **Schema returns:**
 
-- `group` (GroupShape) — Appended editable grouped-shape facade with shapes, connectors, groups, resolve, inspect, layout, SVG, and PPTX output.
+- `group` (GroupShape) — Appended editable grouped-shape facade with shapes, connectors, groups, tables, charts, images, resolve, inspect, layout, SVG, and PPTX output.
 
 #### `slide.images.add`
 
