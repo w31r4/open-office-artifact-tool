@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
+import { mutateOoxmlSourceReference, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference } from "./ooxml/source-references.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
@@ -856,7 +857,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load an XLSX file into a Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart source references, and atomically reject dangling content types or relationships." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importDelimited", summary: "Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportDelimited", summary: "Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importCsv", summary: "Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser." },
@@ -1938,7 +1939,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports XLSX worksheet and table list entries." },
+    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; XLSX sourceReference supports worksheet/table lists plus explicit-anchor drawing, image, and chart nodes." },
+    sourceReference: { type: "boolean|object", description: "Opt-in source XML mutation. Image/chart objects require anchor.type oneCell, twoCell, or absolute plus explicit geometry; optional name, alt, and objectId control non-visual properties." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
   }, "blob", "FileBlob", "Patched XLSX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "SpreadsheetFile.importDelimited": helpSchema({
@@ -9359,6 +9361,7 @@ const OOXML_FAMILY_PART_RECIPES = {
     settings: { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/settings` },
   },
   XLSX: {
+    drawing: { contentType: "application/vnd.openxmlformats-officedocument.drawing+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/drawing` },
     worksheet: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/worksheet` },
     styles: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/styles` },
     sharedstrings: { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml", relationshipType: `${OOXML_RELATIONSHIP_BASE}/sharedStrings` },
@@ -9697,133 +9700,19 @@ function ooxmlTagRelationshipId(tag = "") {
   return Object.entries(ooxmlXmlAttributes(tag)).find(([name]) => /:(?:id|embed|link)$/.test(name))?.[1];
 }
 
-function ooxmlRemoveReferenceTags(xml, tagName, ids) {
-  if (!ids.size) return String(xml);
-  const escapedName = String(tagName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return String(xml).replace(new RegExp(`<${escapedName}\\b[^>]*\\/?>`, "g"), (tag) => ids.has(ooxmlTagRelationshipId(tag)) ? "" : tag);
-}
-
-function ooxmlSetAttribute(tag, name, value) {
-  const escapedName = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`(\\b${escapedName}\\s*=\\s*)(["'])(.*?)\\2`);
-  if (pattern.test(tag)) return tag.replace(pattern, `$1"${attrEscape(value)}"`);
-  return tag.replace(/\s*\/?>$/, (ending) => ` ${name}="${attrEscape(value)}"${ending}`);
-}
-
-function ooxmlEnsureRelationshipPrefix(xml, rootName) {
-  const escapedRoot = String(rootName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const rootPattern = new RegExp(`<${escapedRoot}\\b[^>]*>`);
-  const root = rootPattern.exec(String(xml))?.[0];
-  if (!root) throw new Error(`OOXML source reference could not find root element ${rootName}.`);
-  const attributes = ooxmlXmlAttributes(root);
-  for (const [name, namespace] of Object.entries(attributes)) if (name.startsWith("xmlns:") && OOXML_RELATIONSHIP_NAMESPACES.has(namespace)) return { xml: String(xml), prefix: name.slice(6) };
-  let prefix = "r";
-  let index = 1;
-  while (attributes[`xmlns:${prefix}`]) prefix = `oatrel${index++}`;
-  const nextRoot = root.replace(/>$/, ` xmlns:${prefix}="${OOXML_RELATIONSHIP_BASE}">`);
-  return { xml: String(xml).replace(root, nextRoot), prefix };
-}
-
 function ooxmlReferenceConfig(value) {
   if (value === true) return {};
   if (value && typeof value === "object") return value;
   return undefined;
 }
 
-function ooxmlMutateDocxSectionReference(xml, kind, ids, addId, config = {}) {
-  const tagName = `w:${kind}Reference`;
-  let next = ooxmlRemoveReferenceTags(xml, tagName, ids);
-  if (!addId) return next;
-  const referenceType = String(config.type || config.referenceType || "default");
-  if (!new Set(["default", "first", "even"]).has(referenceType)) throw new Error(`DOCX ${kind} sourceReference type must be default, first, or even.`);
-  const ensured = ooxmlEnsureRelationshipPrefix(next, "w:document");
-  next = ensured.xml;
-  const referenceTag = `<${tagName} w:type="${referenceType}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
-  const sections = [...next.matchAll(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)/g)];
-  const requestedIndex = config.sectionIndex === undefined ? sections.length - 1 : Number(config.sectionIndex);
-  if (sections.length) {
-    if (!Number.isInteger(requestedIndex) || requestedIndex < 0 || requestedIndex >= sections.length) throw new RangeError(`DOCX ${kind} sourceReference sectionIndex must be an integer from 0 through ${sections.length - 1}.`);
-    const section = sections[requestedIndex][0];
-    const expanded = section.endsWith("/>") ? `${section.replace(/\/>$/, ">")}</w:sectPr>` : section;
-    const withoutSameType = expanded.replace(new RegExp(`<${tagName}\\b[^>]*\\/?>`, "g"), (tag) => ooxmlXmlAttributes(tag)["w:type"] === referenceType ? "" : tag);
-    const titlePage = referenceType === "first" && !/<w:titlePg\b/.test(withoutSameType) ? "<w:titlePg/>" : "";
-    const updated = withoutSameType.replace(/^<w:sectPr\b[^>]*>/, (opening) => `${opening}${referenceTag}${titlePage}`);
-    return `${next.slice(0, sections[requestedIndex].index)}${updated}${next.slice(sections[requestedIndex].index + section.length)}`;
-  }
-  if (config.sectionIndex !== undefined && Number(config.sectionIndex) !== 0) throw new RangeError(`DOCX ${kind} sourceReference sectionIndex must be 0 when the document has no existing w:sectPr.`);
-  if (!/<\/w:body>/.test(next)) throw new Error("DOCX header/footer sourceReference requires w:body or w:sectPr.");
-  return next.replace(/<\/w:body>/, `<w:sectPr>${referenceTag}${referenceType === "first" ? "<w:titlePg/>" : ""}</w:sectPr></w:body>`);
-}
-
-function ooxmlMutateXlsxTableReference(xml, ids, addId) {
-  let next = ooxmlRemoveReferenceTags(xml, "tablePart", ids);
-  if (addId) {
-    const ensured = ooxmlEnsureRelationshipPrefix(next, "worksheet");
-    next = ensured.xml;
-    const tableTag = `<tablePart ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
-    const block = /<tableParts\b[^>]*>[\s\S]*?<\/tableParts>/.exec(next)?.[0];
-    if (block) next = next.replace(block, block.replace(/<\/tableParts>$/, `${tableTag}</tableParts>`));
-    else if (/<tableParts\b[^>]*\/>/.test(next)) next = next.replace(/<tableParts\b[^>]*\/>/, (tag) => `${tag.replace(/\/>$/, ">")}${tableTag}</tableParts>`);
-    else if (/<\/worksheet>/.test(next)) next = next.replace(/<\/worksheet>/, `<tableParts count="1">${tableTag}</tableParts></worksheet>`);
-    else throw new Error("XLSX table sourceReference requires a worksheet root.");
-  }
-  const block = /<tableParts\b[^>]*>[\s\S]*?<\/tableParts>/.exec(next)?.[0];
-  if (!block) return next;
-  const count = [...block.matchAll(/<tablePart\b[^>]*\/?>/g)].length;
-  if (!count) return next.replace(block, "");
-  const opening = /^<tableParts\b[^>]*>/.exec(block)?.[0];
-  return opening ? next.replace(block, block.replace(opening, ooxmlSetAttribute(opening, "count", count))) : next;
-}
-
-function ooxmlMutateXlsxWorksheetReference(xml, ids, addId, config = {}) {
-  let next = ooxmlRemoveReferenceTags(xml, "sheet", ids);
-  if (!addId) return next;
-  const name = String(config.name || config.sheetName || "").trim();
-  if (!name) throw new Error("XLSX worksheet sourceReference requires name or sheetName.");
-  const state = config.state == null ? undefined : String(config.state);
-  if (state && !new Set(["visible", "hidden", "veryHidden"]).has(state)) throw new Error("XLSX worksheet sourceReference state must be visible, hidden, or veryHidden.");
-  const existingSheets = [...next.matchAll(/<sheet\b[^>]*\/?>/g)].map((match) => ooxmlXmlAttributes(match[0]));
-  const existingIds = existingSheets.map((attributes) => Number(attributes.sheetId)).filter(Number.isFinite);
-  const sheetId = Number(config.sheetId ?? Math.max(0, ...existingIds) + 1);
-  if (!Number.isInteger(sheetId) || sheetId < 1) throw new Error("XLSX worksheet sourceReference sheetId must be a positive integer.");
-  if (existingIds.includes(sheetId)) throw new Error(`XLSX worksheet sourceReference sheetId ${sheetId} already exists.`);
-  if (existingSheets.some((attributes) => String(attributes.name || "").toLowerCase() === name.toLowerCase())) throw new Error(`XLSX worksheet sourceReference name ${name} already exists.`);
-  const ensured = ooxmlEnsureRelationshipPrefix(next, "workbook");
-  next = ensured.xml;
-  const sheetTag = `<sheet name="${attrEscape(name)}" sheetId="${sheetId}"${state ? ` state="${state}"` : ""} ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
-  const block = /<sheets\b[^>]*>[\s\S]*?<\/sheets>/.exec(next)?.[0];
-  if (block) return next.replace(block, block.replace(/<\/sheets>$/, `${sheetTag}</sheets>`));
-  if (/<sheets\b[^>]*\/>/.test(next)) return next.replace(/<sheets\b[^>]*\/>/, (tag) => `${tag.replace(/\/>$/, ">")}${sheetTag}</sheets>`);
-  if (/<\/workbook>/.test(next)) return next.replace(/<\/workbook>/, `<sheets>${sheetTag}</sheets></workbook>`);
-  throw new Error("XLSX worksheet sourceReference requires a workbook root.");
-}
-
-function ooxmlMutatePptxSlideReference(xml, ids, addId, config = {}) {
-  let next = ooxmlRemoveReferenceTags(xml, "p:sldId", ids);
-  if (!addId) return next;
-  const existingIds = [...next.matchAll(/<p:sldId\b[^>]*\/?>/g)].map((match) => Number(ooxmlXmlAttributes(match[0]).id)).filter(Number.isFinite);
-  const slideId = Number(config.slideId ?? Math.max(255, ...existingIds) + 1);
-  if (!Number.isInteger(slideId) || slideId < 256 || slideId > 2_147_483_647) throw new Error("PPTX slide sourceReference slideId must be an integer from 256 through 2147483647.");
-  if (existingIds.includes(slideId)) throw new Error(`PPTX slide sourceReference slideId ${slideId} already exists.`);
-  const ensured = ooxmlEnsureRelationshipPrefix(next, "p:presentation");
-  next = ensured.xml;
-  const slideTag = `<p:sldId id="${slideId}" ${ensured.prefix}:id="${attrEscape(addId)}"/>`;
-  const block = /<p:sldIdLst\b[^>]*>[\s\S]*?<\/p:sldIdLst>/.exec(next)?.[0];
-  if (block) return next.replace(block, block.replace(/<\/p:sldIdLst>$/, `${slideTag}</p:sldIdLst>`));
-  if (/<p:sldIdLst\b[^>]*\/>/.test(next)) return next.replace(/<p:sldIdLst\b[^>]*\/>/, (tag) => `${tag.replace(/\/>$/, ">")}${slideTag}</p:sldIdLst>`);
-  if (/<\/p:presentation>/.test(next)) return next.replace(/<\/p:presentation>/, `<p:sldIdLst>${slideTag}</p:sldIdLst></p:presentation>`);
-  throw new Error("PPTX slide sourceReference requires a p:presentation root.");
-}
-
 async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family) {
   if (options.syncSourceReferences === false) return 0;
-  const supported = new Set(["DOCX:header", "DOCX:footer", "XLSX:worksheet", "XLSX:table", "PPTX:slide"]);
   let updates = 0;
   for (const { patch } of normalizedPatches) {
     const config = ooxmlReferenceConfig(patch.sourceReference);
     if (!config) continue;
-    const key = `${family}:${patch.recipeKind}`;
-    if (!supported.has(key)) throw new Error(`${family} sourceReference is not supported for recipe ${patch.recipeKind || "(missing)"}. Supported recipes: DOCX header/footer, XLSX worksheet/table, PPTX slide.`);
+    if (!supportsOoxmlSourceReference(family, patch.recipeKind)) throw new Error(`${family} sourceReference is not supported for recipe ${patch.recipeKind || "(missing)"}. Supported recipes: ${supportedOoxmlSourceReferenceSummary()}.`);
     const relationship = patch.relationship || patch.relationships?.[0];
     const source = relationship?.source || relationship?.sourcePart;
     if (!source) throw new Error(`${family} ${patch.recipeKind} sourceReference requires recipe.source.`);
@@ -9835,11 +9724,7 @@ async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family
     const addId = remove ? undefined : relationship.resolvedId || relationship.id;
     if (!remove && !addId) throw new Error(`${family} ${patch.recipeKind} sourceReference could not resolve a relationship Id.`);
     const xml = await sourceEntry.async("text");
-    let next;
-    if (family === "DOCX") next = ooxmlMutateDocxSectionReference(xml, patch.recipeKind, resolvedIds, addId, config);
-    else if (family === "XLSX" && patch.recipeKind === "table") next = ooxmlMutateXlsxTableReference(xml, resolvedIds, addId);
-    else if (family === "XLSX") next = ooxmlMutateXlsxWorksheetReference(xml, resolvedIds, addId, config);
-    else next = ooxmlMutatePptxSlideReference(xml, resolvedIds, addId, config);
+    const next = mutateOoxmlSourceReference({ family, recipeKind: patch.recipeKind, xml, relationshipIds: resolvedIds, addId, config });
     if (next !== xml) { zip.file(safeSource, next); updates += 1; }
   }
   return updates;

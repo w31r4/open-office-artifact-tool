@@ -1701,7 +1701,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.importXlsx` | api | Load an XLSX file into a Workbook facade. |
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references. |
+| `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart source references, and atomically reject dangling content types or relationships. |
 | `workbook.comments.addThread` | api | Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...'). |
 | `Workbook.create` | api | Create an empty workbook using the Excel 1900 date system by default or opt into the 1904 date system. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
@@ -3487,7 +3487,7 @@ Inspect bounded XLSX parts, content types, relationships, and namespace-aware so
 
 #### `SpreadsheetFile.patchXlsx`
 
-Apply path-validated XLSX part patches and atomically reject dangling content types, relationships, or source XML relationship references.
+Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart source references, and atomically reject dangling content types or relationships.
 
 **Schema parameters:**
 
@@ -3499,7 +3499,8 @@ Apply path-validated XLSX part patches and atomically reject dangling content ty
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; sourceReference supports XLSX worksheet and table list entries.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; XLSX sourceReference supports worksheet/table lists plus explicit-anchor drawing, image, and chart nodes.
+- `sourceReference` (boolean|object) — Opt-in source XML mutation. Image/chart objects require anchor.type oneCell, twoCell, or absolute plus explicit geometry; optional name, alt, and objectId control non-visual properties.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**

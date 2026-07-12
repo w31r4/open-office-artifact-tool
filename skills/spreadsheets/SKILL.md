@@ -32,6 +32,8 @@ CSV and TSV deliberately flatten one worksheet/range and cannot preserve styles,
 
 XLSX import follows worksheet and drawing relationships instead of assuming conventional filenames. Metadata-free embedded images and basic bar/line/pie charts are restored from native SpreadsheetDrawingML, including one-cell, two-cell, and absolute anchors, chart caches, and range formulas. Always inspect and verify imported drawings; advanced chart styling, axes, data labels, and grouped shapes remain fidelity work.
 
+For bounded low-level package edits, `SpreadsheetFile.patchXlsx(...)` can add or remove worksheet/table references and complete DrawingML chains. Create a `drawing` recipe from the worksheet first, then use `image` or `chart` recipes sourced from that drawing with an explicit `sourceReference.anchor`; the patcher owns content types, relationships, namespace prefixes, non-visual object IDs, source nodes, deletion cleanup, and final package validation.
+
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 

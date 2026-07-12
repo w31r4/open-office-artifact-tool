@@ -34,6 +34,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /drawing/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
+assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.summary || "", /drawing\/image\/chart source references/);
+assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.sourceReference?.description || "", /oneCell, twoCell, or absolute/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MEDIAN"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));

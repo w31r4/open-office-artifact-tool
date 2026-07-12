@@ -195,7 +195,7 @@ It extracts page size, positioned text items, text-line regions, heuristic table
 
 ## Safe OOXML package inspection and patching
 
-XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, verify internal relationship targets/sources, duplicate relationship IDs, content-type declarations/targets, and namespace-aware source XML `r:id`, `r:embed`, and `r:link` references against the corresponding `.rels` IDs. Package summaries report checked relationship-reference and issue counts while part-count, per-part, and total uncompressed-byte budgets bound work. Results include `ok`, structured `issues`, and `ooxmlIssue` NDJSON records. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits. Content types and relationships are synchronized automatically, with relationship IDs preserved long enough to clean source XML during removal. Public-standard semantic recipes infer content types and relationship URIs for common parts. For standard references that can be constructed without inventing layout, set `recipe.sourceReference`: DOCX header/footer recipes update a selected `sectionIndex` (the final section by default), XLSX worksheet/table recipes update workbook or worksheet lists, and PPTX slide recipes update the presentation slide list. Add/remove operations report `sourceReferencesUpdated`; XLSX/PPTX import follows those relationship targets even when filenames are non-numeric. Rich DrawingML chart/image shapes still require an explicit source XML patch. The final package is revalidated atomically by default. Use `validateResult: false` only when deliberately constructing a broken QA fixture.
+XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records use `[Content_Types].xml`, validate safe relative part paths, verify internal relationship targets/sources, duplicate relationship IDs, content-type declarations/targets, and namespace-aware source XML `r:id`, `r:embed`, and `r:link` references against the corresponding `.rels` IDs. Package summaries report checked relationship-reference and issue counts while part-count, per-part, and total uncompressed-byte budgets bound work. Results include `ok`, structured `issues`, and `ooxmlIssue` NDJSON records. Patch methods accept XML, JSON, text, binary, and remove operations with patch-size and resulting-part-count limits. Content types and relationships are synchronized automatically, with relationship IDs preserved long enough to clean source XML during removal. Public-standard semantic recipes infer content types and relationship URIs for common parts. Set `recipe.sourceReference` for DOCX header/footer section references, XLSX worksheet/table lists, complete XLSX worksheet→drawing→image/chart chains, and PPTX presentation slide lists. Drawing image/chart recipes require explicit one-cell, two-cell, or absolute anchor geometry, so the package layer never invents layout. It owns namespace prefixes, non-visual object IDs, source nodes, add/remove cleanup, and final atomic validation. Add/remove operations report `sourceReferencesUpdated`; relationship-driven import follows arbitrary valid targets rather than conventional filenames. Use `validateResult: false` only when deliberately constructing a broken QA fixture.
 
 ```js
 const report = await SpreadsheetFile.inspectXlsx(xlsx, {
@@ -220,6 +220,31 @@ const patched = await PresentationFile.patchPptx(pptx, [
     path: "ppt/charts/review.xml",
     xml: "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart/></c:chartSpace>",
     recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdReviewChart" },
+  },
+]);
+```
+
+An XLSX drawing chain can be created in one validated patch call. The chart/image part contents remain caller-supplied public OOXML or bytes; the package layer builds the source nodes and relationships:
+
+```js
+const patchedWorkbook = await SpreadsheetFile.patchXlsx(xlsx, [
+  {
+    path: "xl/drawings/agent.xml",
+    xml: '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>',
+    recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", sourceReference: true },
+  },
+  {
+    path: "xl/media/status.png",
+    bytes: pngBytes,
+    recipe: {
+      kind: "image",
+      source: "xl/drawings/agent.xml",
+      sourceReference: {
+        name: "Status",
+        alt: "Green status indicator",
+        anchor: { type: "oneCell", from: { row: 2, col: 5 }, extent: { widthPx: 48, heightPx: 48 } },
+      },
+    },
   },
 ]);
 ```

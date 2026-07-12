@@ -43,6 +43,73 @@ const xlsx = await SpreadsheetFile.patchXlsx(await SpreadsheetFile.exportXlsx(wo
 assert.equal(xlsx.metadata.sourceReferencesUpdated, 1);
 assert.equal((await SpreadsheetFile.inspectXlsx(xlsx)).ok, true);
 assert.ok((await SpreadsheetFile.importXlsx(xlsx)).worksheets.getItem("Native Added"));
+const drawingPartPath = "xl/custom/drawings/agent-drawing.xml";
+const drawingXml = '<?xml version="1.0" encoding="UTF-8"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>';
+const chartXml = (title) => `<?xml version="1.0" encoding="UTF-8"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>${title}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser><c:tx><c:v>Value</c:v></c:tx><c:cat><c:strLit><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>120</c:v></c:pt></c:numLit></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`;
+const drawingXlsx = await SpreadsheetFile.patchXlsx(xlsx, [
+  { path: "customXml/open-office-artifact.json", remove: true },
+  { path: drawingPartPath, xml: drawingXml, recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", id: "rIdAgentDrawing", sourceReference: true } },
+  {
+    path: "xl/custom/media/agent-status.png",
+    bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+    recipe: {
+      kind: "image",
+      source: drawingPartPath,
+      id: "rIdAgentImage",
+      sourceReference: { name: "Agent status", alt: "Green agent status", objectId: 2, anchor: { type: "oneCell", from: { row: 4, col: 0 }, extent: { widthPx: 48, heightPx: 48 } } },
+    },
+  },
+  {
+    path: "xl/custom/charts/agent-absolute.xml",
+    xml: chartXml("Absolute review"),
+    recipe: {
+      kind: "chart",
+      source: drawingPartPath,
+      id: "rIdAgentAbsoluteChart",
+      sourceReference: { name: "Absolute review chart", objectId: 3, anchor: { type: "absolute", position: { leftPx: 180, topPx: 40 }, extent: { widthPx: 260, heightPx: 160 } } },
+    },
+  },
+  {
+    path: "xl/custom/charts/agent-two-cell.xml",
+    xml: chartXml("Two-cell review"),
+    recipe: {
+      kind: "chart",
+      source: drawingPartPath,
+      id: "rIdAgentTwoCellChart",
+      sourceReference: { name: "Two-cell review chart", objectId: 4, anchor: { type: "twoCell", from: { row: 10, col: 0 }, to: { row: 18, col: 5 }, extent: { widthPx: 320, heightPx: 180 } } },
+    },
+  },
+]);
+assert.equal(drawingXlsx.metadata.sourceReferencesUpdated, 4);
+assert.equal((await SpreadsheetFile.inspectXlsx(drawingXlsx)).ok, true);
+const drawingXlsxZip = await JSZip.loadAsync(new Uint8Array(await drawingXlsx.arrayBuffer()));
+assert.match(await drawingXlsxZip.file("xl/worksheets/sheet1.xml").async("text"), /<drawing r:id="rIdAgentDrawing"\/>/);
+const patchedDrawingXml = await drawingXlsxZip.file(drawingPartPath).async("text");
+assert.match(patchedDrawingXml, /<xdr:oneCellAnchor>/);
+assert.match(patchedDrawingXml, /<xdr:absoluteAnchor>/);
+assert.match(patchedDrawingXml, /<xdr:twoCellAnchor>/);
+assert.match(patchedDrawingXml, /r:embed="rIdAgentImage"/);
+assert.match(patchedDrawingXml, /r:id="rIdAgentAbsoluteChart"/);
+const importedDrawingWorkbook = await SpreadsheetFile.importXlsx(drawingXlsx);
+const importedDrawingSheet = importedDrawingWorkbook.worksheets.getItem("Main");
+assert.equal(importedDrawingSheet.images.items.length, 1);
+assert.equal(importedDrawingSheet.images.items[0].alt, "Green agent status");
+assert.equal(importedDrawingSheet.charts.items.length, 2);
+assert.deepEqual(importedDrawingSheet.charts.items.find((chart) => chart.title === "Absolute review").position, { left: 220, top: 80, width: 260, height: 160 });
+assert.ok(importedDrawingSheet.charts.items.find((chart) => chart.title === "Two-cell review").position.width > 200);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(drawingXlsx, [{ path: "xl/custom/charts/missing-anchor.xml", xml: chartXml("Missing anchor"), recipe: { kind: "chart", source: drawingPartPath, sourceReference: true } }]), /requires an explicit anchor/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(drawingXlsx, [{ path: "xl/custom/charts/duplicate-object.xml", xml: chartXml("Duplicate object"), recipe: { kind: "chart", source: drawingPartPath, sourceReference: { objectId: 2, anchor: { type: "oneCell", from: { row: 20, col: 0 }, extent: { widthPx: 240, heightPx: 140 } } } } }]), /objectId 2 already exists/);
+await assert.rejects(() => SpreadsheetFile.patchXlsx(drawingXlsx, [{ path: "xl/custom/drawings/second.xml", xml: drawingXml, recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", sourceReference: true } }]), /without another drawing reference/);
+const drawingObjectsRemoved = await SpreadsheetFile.patchXlsx(drawingXlsx, [
+  { path: "xl/custom/media/agent-status.png", remove: true, recipe: { kind: "image", source: drawingPartPath, id: "rIdAgentImage", sourceReference: true } },
+  { path: "xl/custom/charts/agent-absolute.xml", remove: true, recipe: { kind: "chart", source: drawingPartPath, id: "rIdAgentAbsoluteChart", sourceReference: true } },
+  { path: "xl/custom/charts/agent-two-cell.xml", remove: true, recipe: { kind: "chart", source: drawingPartPath, id: "rIdAgentTwoCellChart", sourceReference: true } },
+]);
+assert.equal((await SpreadsheetFile.inspectXlsx(drawingObjectsRemoved)).ok, true);
+assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await drawingObjectsRemoved.arrayBuffer()))).file(drawingPartPath).async("text"), /(?:oneCell|twoCell|absolute)Anchor/);
+const drawingRemoved = await SpreadsheetFile.patchXlsx(drawingObjectsRemoved, [{ path: drawingPartPath, remove: true, recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", id: "rIdAgentDrawing", sourceReference: true } }]);
+assert.equal((await SpreadsheetFile.inspectXlsx(drawingRemoved)).ok, true);
+assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await drawingRemoved.arrayBuffer()))).file("xl/worksheets/sheet1.xml").async("text"), /<drawing\b/);
 
 const presentation = Presentation.create();
 presentation.slides.add().shapes.add({ text: "Source reference native check", position: { left: 40, top: 40, width: 400, height: 80 } });
@@ -59,7 +126,7 @@ const nativeAvailable = commandExists("soffice") && commandExists("pdftoppm");
 if (nativeAvailable) {
   const libreOffice = createLibreOfficeRenderer({ timeoutMs: 60_000 });
   const poppler = createPopplerRenderer({ dpi: 96, timeoutMs: 60_000 });
-  for (const [artifactKind, blob] of [["document", docx], ["workbook", xlsx], ["presentation", pptx]]) {
+  for (const [artifactKind, blob] of [["document", docx], ["workbook", drawingXlsx], ["presentation", pptx]]) {
     const pdf = await libreOffice({ input: blob, inputType: blob.type, outputType: "application/pdf", format: "pdf", artifactKind });
     assert.equal(pdf.type, "application/pdf");
     assert.ok(pdf.bytes.length > 100);
