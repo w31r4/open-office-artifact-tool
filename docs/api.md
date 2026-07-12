@@ -1711,6 +1711,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
 | `workbook.worksheets.add` | api | Append an editable worksheet with a stable name and ID. |
+| `worksheet.freezePanes.freezeColumns` | api | Freeze a leading column count in the worksheet view while preserving any frozen rows. |
+| `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
+| `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
 
 ### workbook details
@@ -3683,6 +3686,38 @@ Append an editable worksheet with a stable name and ID.
 **Schema returns:**
 
 - `worksheet` (Worksheet) — Appended editable worksheet.
+
+#### `worksheet.freezePanes.freezeColumns`
+
+Freeze a leading column count in the worksheet view while preserving any frozen rows.
+
+**Schema parameters:**
+
+- `columnCount` (number) required — Integer number of leading columns to freeze; zero clears only the column freeze.
+
+**Schema returns:**
+
+- `freezePanes` (object) — Worksheet frozen-pane facade with rows, columns, topLeftCell, activePane, and frozen state.
+
+#### `worksheet.freezePanes.freezeRows`
+
+Freeze a leading row count in the worksheet view while preserving any frozen columns.
+
+**Schema parameters:**
+
+- `rowCount` (number) required — Integer number of leading rows to freeze; zero clears only the row freeze.
+
+**Schema returns:**
+
+- `freezePanes` (object) — Worksheet frozen-pane facade with rows, columns, topLeftCell, activePane, and frozen state.
+
+#### `worksheet.freezePanes.unfreeze`
+
+Remove all frozen worksheet panes and restore a single scrollable view.
+
+**Schema returns:**
+
+- `freezePanes` (object) — Worksheet frozen-pane facade reset to zero frozen rows and columns.
 
 #### `worksheet.getRange`
 
