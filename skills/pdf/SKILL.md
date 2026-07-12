@@ -9,7 +9,7 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 
 ## Contract
 
-- Never import or copy reference implementation internals.
+- Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
 - Preserve imported content and page geometry unless the user requests a redesign.
 - Use real positioned text, tables, PNG/JPEG images, charts, page regions, and multi-page PDF objects rather than flattening semantic objects into labels.
 - Use ASCII hyphens. Avoid U+2010 through U+2015 compatibility dashes.
