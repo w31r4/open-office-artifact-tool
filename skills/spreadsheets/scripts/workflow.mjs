@@ -13,6 +13,12 @@ import {
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+import {
+  loadVisualBaseline,
+  prepareNumberedVisualBaselines,
+  runPngVisualQa,
+  visualBaselineCountResult,
+} from "../../shared/visual-baselines.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -45,11 +51,6 @@ export function nativeSpreadsheetRenderStatus() {
   return { available: Object.values(commands).every(Boolean), commands };
 }
 
-async function optionalBaseline(baselinePath) {
-  if (!baselinePath) return undefined;
-  try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
-}
-
 function safeFileSegment(value) {
   return String(value || "sheet").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "sheet";
 }
@@ -62,16 +63,6 @@ function pdfPageCount(pdfPath) {
   return pages;
 }
 
-async function nativeBaselineFiles(baselineDir) {
-  if (!baselineDir) return [];
-  try {
-    return (await fs.readdir(baselineDir)).filter((name) => /^native-page-\d+\.png$/.test(name)).map((name) => path.join(baselineDir, name));
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-}
-
 async function renderNativePages(inputBlob, outputDir, options = {}) {
   const pdf = await createLibreOfficeRenderer({ timeoutMs: options.nativeTimeout ?? 60_000 })({ input: inputBlob, inputType: options.inputType || inputBlob.type || XLSX_MIME, outputType: "application/pdf", format: "pdf", artifactKind: "workbook" });
   const pdfPath = path.join(outputDir, "native-render.pdf");
@@ -80,11 +71,7 @@ async function renderNativePages(inputBlob, outputDir, options = {}) {
   const pagesDir = path.join(outputDir, "native-pages");
   await fs.mkdir(pagesDir, { recursive: true });
   const baselineDir = options.baselineDir;
-  if (options.writeBaseline && baselineDir) {
-    await fs.mkdir(baselineDir, { recursive: true });
-    await Promise.all((await nativeBaselineFiles(baselineDir)).map((filePath) => fs.unlink(filePath)));
-  }
-  const existingBaselines = options.writeBaseline ? [] : await nativeBaselineFiles(baselineDir);
+  const baselineSet = await prepareNumberedVisualBaselines(baselineDir, "native-page", options);
   const poppler = createPopplerRenderer({ dpi: options.dpi ?? 150, timeoutMs: options.nativeTimeout ?? 60_000 });
   const pages = [];
   const qaLines = [];
@@ -92,18 +79,14 @@ async function renderNativePages(inputBlob, outputDir, options = {}) {
     const png = await poppler({ input: pdf, inputType: "application/pdf", outputType: "image/png", format: "png", artifactKind: "workbook", pageIndex });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const baselinePath = baselineDir ? path.join(baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
-    const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
-    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
+    const diffPath = path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`);
+    const qa = await runPngVisualQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000 });
     await png.save(pagePath);
-    if (options.writeBaseline && baselinePath) await png.save(baselinePath);
-    const diffPath = qa.diffBlob ? path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`) : undefined;
-    if (diffPath) { await fs.mkdir(path.dirname(diffPath), { recursive: true }); await qa.diffBlob.save(diffPath); }
     qaLines.push(qa.ndjson);
-    pages.push({ page: pageIndex + 1, path: pagePath, diffPath, baselinePath, baselineCompared: Boolean(baseline), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    pages.push({ page: pageIndex + 1, path: pagePath, diffPath: qa.diffPath, baselinePath, baselineCompared: Boolean(qa.summary.baselineHash), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
-  const baselinePageCount = baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
-  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
-  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "workbook", severity: "warning", pageCount, baselinePageCount }));
+  const { baselinePageCount, pageCountMatches, issue } = visualBaselineCountResult(baselineSet, pageCount, { artifactKind: "workbook", baselineKind: "native" });
+  if (issue) qaLines.push(issue);
   const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
   await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
   return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pdfPath, qaPath, pageCount, baselinePageCount, pageCountMatches, pages };
@@ -196,7 +179,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
   if (!previewExtension) throw new Error(`Unsupported spreadsheet preview format: ${renderFormat}`);
   const baselineDir = options.baselineDir ? path.resolve(options.baselineDir) : undefined;
   const baselinePath = baselineDir ? path.join(baselineDir, `${safeFileSegment(sheetName)}.${previewExtension}`) : undefined;
-  const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
+  const baseline = await loadVisualBaseline(baselinePath, options);
   const visualQa = await visualQaArtifact(workbook, {
     format: renderFormat,
     renderer,
@@ -259,7 +242,7 @@ export async function verifyWorkbookFile(inputPath, options = {}) {
       if (targetSheet.name === sheetName) continue;
       const segment = safeFileSegment(targetSheet.name);
       const targetBaselinePath = baselineDir ? path.join(baselineDir, `${segment}.${previewExtension}`) : undefined;
-      const targetBaseline = options.writeBaseline ? undefined : await optionalBaseline(targetBaselinePath);
+      const targetBaseline = await loadVisualBaseline(targetBaselinePath, options);
       const targetLayout = await workbook.render({ format: "layout", sheetName: targetSheet.name });
       const targetQa = await visualQaArtifact(workbook, {
         format: renderFormat,

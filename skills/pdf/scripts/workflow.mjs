@@ -8,11 +8,15 @@ import {
   PdfArtifact,
   PdfFile,
   verifyArtifact,
-  visualQaArtifact,
 } from "open-office-artifact-tool";
 import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+import {
+  prepareNumberedVisualBaselines,
+  runPngVisualQa,
+  visualBaselineCountResult,
+} from "../../shared/visual-baselines.mjs";
 
 const PDF_MIME = "application/pdf";
 
@@ -42,60 +46,6 @@ function pdfInfo(pdfPath) {
   return { pages, text: result.stdout };
 }
 
-async function optionalBaseline(baselinePath) {
-  if (!baselinePath) return undefined;
-  try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
-}
-
-async function numberedBaselineFiles(baselineDir, prefix) {
-  if (!baselineDir) return [];
-  try {
-    const pattern = new RegExp(`^${prefix}-\\d+\\.png$`);
-    return (await fs.readdir(baselineDir)).filter((name) => pattern.test(name)).map((name) => path.join(baselineDir, name));
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-async function prepareBaselineSet(baselineDir, prefix, writeBaseline) {
-  if (!baselineDir) return [];
-  const existing = await numberedBaselineFiles(baselineDir, prefix);
-  if (writeBaseline) {
-    await fs.mkdir(baselineDir, { recursive: true });
-    await Promise.all(existing.map((filePath) => fs.unlink(filePath)));
-    return [];
-  }
-  return existing;
-}
-
-async function runPngQa(artifact, options = {}) {
-  const baseline = options.writeBaseline ? undefined : await optionalBaseline(options.baselinePath);
-  const qa = await visualQaArtifact(artifact, {
-    ...options.renderOptions,
-    format: "png",
-    renderer: options.renderer,
-    baseline,
-    pixelDiff: Boolean(baseline),
-    pixelThreshold: options.pixelThreshold ?? 0,
-    diffAlignment: options.diffAlignment,
-    diffPalette: options.diffPalette,
-    pixelRegistration: options.pixelRegistration,
-    minBytes: options.minBytes ?? 100,
-    maxChars: options.maxChars ?? 20_000,
-  });
-  if (options.writeBaseline && options.baselinePath) {
-    await fs.mkdir(path.dirname(options.baselinePath), { recursive: true });
-    await qa.blob.save(options.baselinePath);
-  }
-  if (qa.diffBlob && options.diffPath) {
-    await fs.mkdir(path.dirname(options.diffPath), { recursive: true });
-    await qa.diffBlob.save(options.diffPath);
-    qa.diffPath = options.diffPath;
-  }
-  return qa;
-}
-
 async function renderModelPages(pdf, outputDir, options = {}) {
   const pagesDir = path.join(outputDir, "model-pages");
   const layoutsDir = path.join(outputDir, "layouts");
@@ -103,20 +53,19 @@ async function renderModelPages(pdf, outputDir, options = {}) {
   const renderer = createPlaywrightRenderer({ viewport: options.viewport || { width: 900, height: 1100 }, deviceScaleFactor: options.deviceScaleFactor ?? 1, timeout: options.timeout ?? 30_000 });
   const pages = [];
   const qaLines = [];
-  const existingBaselines = await prepareBaselineSet(options.baselineDir, "model-page", options.writeBaseline);
+  const baselineSet = await prepareNumberedVisualBaselines(options.baselineDir, "model-page", options);
   for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `model-page-${pageIndex + 1}.png`) : undefined;
     const diffPath = path.join(outputDir, "diffs", `model-page-${pageIndex + 1}.png`);
-    const qa = await runPngQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
+    const qa = await runPngVisualQa(pdf, { renderer, renderOptions: { pageIndex }, baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const layoutPath = path.join(layoutsDir, `page-${pageIndex + 1}.json`);
     await Promise.all([qa.blob.save(pagePath), fs.writeFile(layoutPath, await (await pdf.render({ format: "layout", pageIndex })).text(), "utf8")]);
     qaLines.push(qa.ndjson);
     pages.push({ page: pageIndex + 1, path: pagePath, layoutPath, diffPath: qa.diffPath, bytes: qa.blob.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
-  const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
-  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pdf.pages.length;
-  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "pdf", severity: "warning", pageCount: pdf.pages.length, baselinePageCount, baselineKind: "model" }));
+  const { baselinePageCount, pageCountMatches, issue } = visualBaselineCountResult(baselineSet, pdf.pages.length, { artifactKind: "pdf", baselineKind: "model" });
+  if (issue) qaLines.push(issue);
   const qaPath = path.join(outputDir, "model-visual-qa.ndjson");
   await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
   return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pageCount: pdf.pages.length, baselinePageCount, pageCountMatches, pages, qaPath };
@@ -130,20 +79,19 @@ async function renderNativePages(pdfBlob, pdfPath, outputDir, expectedPages, opt
   const renderer = createPopplerRenderer({ dpi: options.dpi ?? 144, timeoutMs: options.nativeTimeout ?? 60_000 });
   const pages = [];
   const qaLines = [];
-  const existingBaselines = await prepareBaselineSet(options.baselineDir, "native-page", options.writeBaseline);
+  const baselineSet = await prepareNumberedVisualBaselines(options.baselineDir, "native-page", options);
   for (let pageIndex = 0; pageIndex < info.pages; pageIndex += 1) {
     const png = await renderer({ input: pdfBlob, inputType: PDF_MIME, outputType: "image/png", format: "png", artifactKind: "pdf", pageIndex });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     const baselinePath = options.baselineDir ? path.join(options.baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
     const diffPath = path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`);
-    const qa = await runPngQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
+    const qa = await runPngVisualQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration, minBytes: options.minBytes, maxChars: options.maxChars });
     await png.save(pagePath);
     qaLines.push(qa.ndjson);
     pages.push({ page: pageIndex + 1, path: pagePath, diffPath: qa.diffPath, bytes: png.bytes.length, hash: qa.summary.hash, baselineCompared: Boolean(qa.summary.baselineHash), pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
-  const baselinePageCount = options.baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
-  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === info.pages;
-  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "pdf", severity: "warning", pageCount: info.pages, baselinePageCount, baselineKind: "native" }));
+  const { baselinePageCount, pageCountMatches, issue } = visualBaselineCountResult(baselineSet, info.pages, { artifactKind: "pdf", baselineKind: "native" });
+  if (issue) qaLines.push(issue);
   const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
   const infoPath = path.join(outputDir, "pdfinfo.txt");
   await Promise.all([fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8"), fs.writeFile(infoPath, info.text, "utf8")]);

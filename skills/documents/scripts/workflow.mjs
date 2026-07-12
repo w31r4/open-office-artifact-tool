@@ -13,6 +13,12 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+import {
+  loadVisualBaseline,
+  prepareNumberedVisualBaselines,
+  runPngVisualQa,
+  visualBaselineCountResult,
+} from "../../shared/visual-baselines.mjs";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PREVIEW_EXTENSION = { svg: "svg", png: "png", webp: "webp", jpeg: "jpg", jpg: "jpg", pdf: "pdf" };
@@ -107,23 +113,6 @@ function pdfPageCount(pdfPath) {
   return pages;
 }
 
-async function optionalBaseline(baselinePath) {
-  if (!baselinePath) return undefined;
-  try { return await FileBlob.load(baselinePath); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
-}
-
-async function nativeBaselineFiles(baselineDir) {
-  if (!baselineDir) return [];
-  try {
-    return (await fs.readdir(baselineDir))
-      .filter((name) => /^native-page-\d+\.png$/.test(name))
-      .map((name) => path.join(baselineDir, name));
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-}
-
 async function renderNativePages(docxBlob, outputDir, options = {}) {
   const pdf = await createLibreOfficeRenderer({ timeoutMs: options.nativeTimeout ?? 60_000 })({
     input: docxBlob,
@@ -141,28 +130,20 @@ async function renderNativePages(docxBlob, outputDir, options = {}) {
   const pages = [];
   const qaLines = [];
   const baselineDir = options.baselineDir;
-  if (options.writeBaseline && baselineDir) {
-    await fs.mkdir(baselineDir, { recursive: true });
-    await Promise.all((await nativeBaselineFiles(baselineDir)).map((filePath) => fs.unlink(filePath)));
-  }
-  const existingBaselines = options.writeBaseline ? [] : await nativeBaselineFiles(baselineDir);
+  const baselineSet = await prepareNumberedVisualBaselines(baselineDir, "native-page", options);
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const png = await poppler({ input: pdf, inputType: "application/pdf", outputType: "image/png", format: "png", artifactKind: "document", pageIndex });
     const pagePath = path.join(pagesDir, `page-${pageIndex + 1}.png`);
     await png.save(pagePath);
     const baselinePath = baselineDir ? path.join(baselineDir, `native-page-${pageIndex + 1}.png`) : undefined;
-    const baseline = options.writeBaseline ? undefined : await optionalBaseline(baselinePath);
-    const qa = await visualQaArtifact({ render: () => png }, { baseline, pixelDiff: Boolean(baseline), minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration });
-    if (options.writeBaseline && baselinePath) await png.save(baselinePath);
-    const diffPath = qa.diffBlob ? path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`) : undefined;
-    if (diffPath) { await fs.mkdir(path.dirname(diffPath), { recursive: true }); await qa.diffBlob.save(diffPath); }
+    const diffPath = path.join(outputDir, "diffs", `native-page-${pageIndex + 1}.png`);
+    const qa = await runPngVisualQa({ render: () => png }, { baselinePath, diffPath, writeBaseline: options.writeBaseline, minBytes: options.minBytes ?? 100, maxChars: options.maxChars ?? 16_000, pixelThreshold: options.pixelThreshold, diffAlignment: options.diffAlignment, diffPalette: options.diffPalette, pixelRegistration: options.pixelRegistration });
     qaLines.push(qa.ndjson);
-    pages.push({ page: pageIndex + 1, path: pagePath, diffPath, baselinePath, baselineCompared: Boolean(baseline), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
+    pages.push({ page: pageIndex + 1, path: pagePath, diffPath: qa.diffPath, baselinePath, baselineCompared: Boolean(qa.summary.baselineHash), bytes: png.bytes.length, hash: qa.summary.hash, pixelDiff: qa.summary.pixelDiff, ok: qa.ok });
   }
   const qaPath = path.join(outputDir, "native-visual-qa.ndjson");
-  const baselinePageCount = baselineDir && !options.writeBaseline ? existingBaselines.length : undefined;
-  const pageCountMatches = baselinePageCount == null || baselinePageCount === 0 || baselinePageCount === pageCount;
-  if (!pageCountMatches) qaLines.push(JSON.stringify({ kind: "visualPageCountDiff", artifactKind: "document", severity: "warning", pageCount, baselinePageCount }));
+  const { baselinePageCount, pageCountMatches, issue } = visualBaselineCountResult(baselineSet, pageCount, { artifactKind: "document", baselineKind: "native" });
+  if (issue) qaLines.push(issue);
   await fs.writeFile(qaPath, `${qaLines.filter(Boolean).join("\n")}\n`, "utf8");
   return { status: "passed", ok: pageCountMatches && pages.every((page) => page.ok), pdfPath, qaPath, pageCount, baselinePageCount, pageCountMatches, pages };
 }
@@ -184,7 +165,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   if (!previewExtension) throw new Error(`Unsupported document model preview format: ${previewFormat}`);
   const baselineDir = options.baselineDir ? path.resolve(options.baselineDir) : undefined;
   const modelBaselinePath = baselineDir ? path.join(baselineDir, `model-preview.${previewExtension}`) : undefined;
-  const modelBaseline = options.writeBaseline ? undefined : await optionalBaseline(modelBaselinePath);
+  const modelBaseline = await loadVisualBaseline(modelBaselinePath, options);
   const visualQa = await visualQaArtifact(document, {
     format: previewFormat,
     renderer: modelRenderer(previewFormat, options),
