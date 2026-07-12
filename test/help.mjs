@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 217);
+assert.equal(HELP_CATALOG.length, 218);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -57,6 +57,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.layouts.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.applyLayout"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "document.addBibliographySource"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.replyToComment"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.setSettings"));
@@ -136,6 +137,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setSectionSettings")?.schema?.parameters?.differentFirstPage?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.endTarget?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.target?.description || "", /table\.getCell/);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.schema?.parameters?.tag?.required, true);
 assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
@@ -172,7 +174,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.maxFontBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.subsetFont?.type, "boolean");
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 31);
+assert.equal(documentCatalog.length, 32);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
@@ -242,6 +244,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.su
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(document.help("document.addBookmark").ndjson, /bookmark range/);
+assert.match(document.help("document.addBibliographySource").ndjson, /bibliography source/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
 assert.match(document.help("document.resolve").ndjson, /stable document/);

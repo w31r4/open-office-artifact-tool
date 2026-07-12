@@ -6,9 +6,10 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `document.addBibliographySource` | api | Add an inspectable Word bibliography source with a unique tag, native source type, authors or corporate author, and structured publication fields. |
 | `document.addBookmark` | api | Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity. |
 | `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
-| `document.addCitation` | api | Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker. |
+| `document.addCitation` | api | Append a native CITATION field whose structured metadata links by tag to a relationship-owned b:Sources entry; metadata-free import restores the source and visible result. |
 | `document.addComment` | api | Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity. |
 | `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
@@ -22,23 +23,43 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
-| `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Reply to a document comment on the same target through commentsExtended paraIdParent threading. |
-| `document.resolve` | api | Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs. |
+| `document.resolve` | api | Resolve stable document, block, bookmark, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
 | `document.setSettings` | api | Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
-| `document.verify` | api | Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped header/footer references and activation state, links, bookmarks, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import relationship-driven DOCX semantics, preserving section titlePg and dormant/active even/first header/footer references alongside styles, numbering, links, bookmarks, fields, and comments. |
+| `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields. |
+| `DocumentFile.importDocx` | api | Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
 
 ### document details
+
+#### `document.addBibliographySource`
+
+Add an inspectable Word bibliography source with a unique tag, native source type, authors or corporate author, and structured publication fields.
+
+**Schema parameters:**
+
+- `tag` (string) required — Unique Word source tag used by CITATION fields, at most 255 characters.
+- `sourceType` (string) required — Word bibliography source type such as Book, Report, JournalArticle, InternetSite, or Misc.
+- `title` (string) — Source title.
+- `authors` (object[]|string[]) — Personal contributors with first/middle/last names.
+- `corporateAuthor` (string) — Corporate author used when personal authors are absent.
+- `year` (string|number) — Publication year.
+- `publisher` (string) — Publisher.
+- `url` (string) — Source URL.
+- `fields` (object) — Additional supported Word bibliography fields such as city, journalName, volume, issue, pages, edition, and standardNumber.
+
+**Schema returns:**
+
+- `source` (DocumentBibliographySource) — Inspectable and resolvable bibliography source.
 
 #### `document.addBookmark`
 
@@ -73,12 +94,12 @@ Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del r
 
 #### `document.addCitation`
 
-Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker.
+Append a native CITATION field whose structured metadata links by tag to a relationship-owned b:Sources entry; metadata-free import restores the source and visible result.
 
 **Schema parameters:**
 
 - `text` (string) required — Visible citation text.
-- `metadata` (object) — Structured citation metadata.
+- `metadata` (object) — Structured citation metadata including bibliography tag/sourceType/title/authors or corporateAuthor and publication fields; a matching source is created when absent.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
@@ -304,7 +325,7 @@ Apply a clean-room report or memo design preset that updates named styles for co
 
 #### `document.inspect`
 
-Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -395,7 +416,7 @@ Reply to a document comment on the same target through commentsExtended paraIdPa
 
 #### `document.resolve`
 
-Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs.
+Resolve stable document, block, bookmark, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs.
 
 **Schema parameters:**
 
@@ -456,7 +477,7 @@ Inspect or resolve stable textRange anchors such as blockId/text for editable do
 
 #### `document.verify`
 
-Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
+Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
 
 **Schema parameters:**
 
@@ -469,7 +490,7 @@ Return QA issues for fake lists, invalid links/citations, duplicate/dangling/rev
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped header/footer references and activation state, links, bookmarks, fields, citations, and metadata.
+Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields.
 
 **Schema parameters:**
 
@@ -481,7 +502,7 @@ Export DocumentModel to DOCX with native Theme/styles/settings/numbering, commen
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven DOCX semantics, preserving section titlePg and dormant/active even/first header/footer references alongside styles, numbering, links, bookmarks, fields, and comments.
+Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments.
 
 **Schema parameters:**
 
@@ -549,6 +570,8 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 - `styles` (object) — Named paragraph or character style definitions with optional basedOn inheritance.
 - `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
 - `blocks` (object[]) — Ordered paragraph/list/table/link/field/citation/image/section/change block models.
+- `bibliography` (object) — Word bibliography style metadata such as selectedStyle, styleName, and URI.
+- `bibliographySources` (object[]) — Word b:Sources entries with unique tags, source types, contributors, and publication fields.
 - `headers` (object[]) — Header block models.
 - `footers` (object[]) — Footer block models.
 - `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.

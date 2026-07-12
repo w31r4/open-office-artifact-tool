@@ -59,7 +59,8 @@ const findingsBookmark = document.addBookmark(heading, "FindingsSection", { endT
 const internalHyperlink = document.addHyperlink("Jump to findings", findingsBookmark, { name: "findings-link", tooltip: "Open the findings section", history: false });
 const hyperlink = document.addHyperlink("w31r4 research note", "https://example.com/research", { name: "research-link" });
 const field = document.addField("PAGE", "1", { name: "page-field" });
-const citation = document.addCitation("Source: Market brief", { source: "Market brief", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
+const uncitedBibliographySource = document.addBibliographySource({ tag: "OpenXmlSdk", sourceType: "InternetSite", title: "Open XML SDK documentation", corporateAuthor: "Microsoft", year: "2026", url: "https://learn.microsoft.com/office/open-xml/open-xml-sdk" });
+const citation = document.addCitation("Source: Market brief", { tag: "MarketBrief26", source: "Market brief", sourceType: "Report", title: "Market brief", authors: [{ first: "Ada", last: "Analyst" }], year: "2026", publisher: "Example Research", url: "https://example.com/brief", page: 2 }, { name: "market-citation" });
 const logo = document.addImage({
   name: "memo-logo",
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
@@ -100,7 +101,7 @@ const commentReply = document.replyToComment(comment, "Heading language is now a
 assert.equal(commentReply.parentId, comment.id);
 assert.equal(commentReply.targetId, comment.targetId);
 
-const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,tableCell,bookmark,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 32000 }).ndjson;
+const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,tableCell,bookmark,bibliographySource,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 32000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /"kind":"document"/);
 assert.match(inspect, /"designPreset":"report"/);
@@ -190,6 +191,10 @@ assert.equal(document.resolve(tableCellBookmark.endTargetId)?.value, "anchored")
 assert.match(inspect, /"kind":"tableCell"/);
 assert.equal(document.resolve(field.id).instruction, "PAGE");
 assert.equal(document.resolve(citation.id).metadata.page, 2);
+assert.equal(document.resolve("MarketBrief26")?.title, "Market brief");
+assert.equal(document.resolve(uncitedBibliographySource.id), uncitedBibliographySource);
+assert.match(inspect, /"kind":"bibliographySource"/);
+assert.match(inspect, /Open XML SDK documentation/);
 assert.equal(document.resolve(logo.id).alt, "Memo logo");
 assert.equal(document.resolve(logo.id).widthPx, 96);
 assert.equal(document.resolve(landscapeSection.id).orientation, "landscape");
@@ -342,6 +347,24 @@ const invalidCellTable = invalidCellBookmarkDocument.addTable({ values: [["Only"
 invalidCellBookmarkDocument.addBookmark(invalidCellTable.getCell(4, 0), "InvalidTableCell");
 assert.ok(invalidCellBookmarkDocument.verify().issues.some((issue) => issue.type === "invalidBookmarkTableCell"));
 await assert.rejects(() => DocumentFile.exportDocx(invalidCellBookmarkDocument), /row 4 is out of range/);
+const duplicateBibliographyDocument = DocumentModel.create({ paragraphs: ["Bibliography fixture"] });
+assert.throws(() => duplicateBibliographyDocument.addBibliographySource({ tag: "BadType", sourceType: "Unknown", title: "Invalid" }), /unsupported SourceType Unknown/);
+assert.throws(() => duplicateBibliographyDocument.addBibliographySource({ tag: "X".repeat(256), sourceType: "Book", title: "Invalid" }), /at most 255 characters/);
+assert.throws(() => duplicateBibliographyDocument.addBibliographySource({ tag: "AmbiguousAuthor", sourceType: "Book", authors: ["Ada Analyst"], corporateAuthor: "Example Corp" }), /cannot combine personal authors/);
+duplicateBibliographyDocument.addBibliographySource({ tag: "DuplicateSource", sourceType: "Book", title: "First" });
+duplicateBibliographyDocument.addBibliographySource({ tag: "DuplicateSource", sourceType: "Report", title: "Second" });
+assert.ok(duplicateBibliographyDocument.verify().issues.some((issue) => issue.type === "duplicateBibliographyTag"));
+await assert.rejects(() => DocumentFile.exportDocx(duplicateBibliographyDocument), /Duplicate DOCX bibliography source tag DuplicateSource/);
+const spacedCitationDocument = DocumentModel.create({ blocks: [] });
+spacedCitationDocument.addBibliographySource({ tag: "Space Tag", sourceType: "Book", title: "Quoted field tag" });
+spacedCitationDocument.addCitation("Quoted citation", { tag: "Space Tag" });
+const spacedCitationDocx = await DocumentFile.exportDocx(spacedCitationDocument);
+const spacedCitationZip = await JSZip.loadAsync(new Uint8Array(await spacedCitationDocx.arrayBuffer()));
+assert.match(await spacedCitationZip.file("word/document.xml").async("text"), /w:instr="CITATION &quot;Space Tag&quot;"/);
+spacedCitationZip.remove("word/open-office-artifact.json");
+const spacedCitationImported = await DocumentFile.importDocx(new FileBlob(await spacedCitationZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: spacedCitationDocx.type }), { preferNative: true });
+assert.equal(spacedCitationImported.blocks[0].metadata.tag, "Space Tag");
+assert.equal(spacedCitationImported.resolve("Space Tag")?.title, "Quoted field tag");
 const invalidSectionDocument = DocumentModel.create({ paragraphs: ["Invalid section fixture"] });
 invalidSectionDocument.addHeader("Out of range", { sectionIndex: 1 });
 assert.ok(invalidSectionDocument.verify().issues.some((issue) => issue.type === "invalidHeaderFooterSection"));
@@ -495,6 +518,14 @@ const peopleXml = await zip.file("word/people.xml").async("text");
 const numberingXml = await zip.file("word/numbering.xml").async("text");
 const stylesXml = await zip.file("word/styles.xml").async("text");
 const themeXml = await zip.file("word/theme/theme1.xml").async("text");
+const bibliographyXml = await zip.file("customXml/item1.xml").async("text");
+assert.match(bibliographyXml, /<b:Sources xmlns:b="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/bibliography">/);
+assert.match(bibliographyXml, /<b:Tag>MarketBrief26<\/b:Tag><b:SourceType>Report<\/b:SourceType>/);
+assert.match(bibliographyXml, /<b:Author><b:Author><b:NameList><b:Person><b:Last>Analyst<\/b:Last><b:First>Ada<\/b:First><\/b:Person><\/b:NameList><\/b:Author><\/b:Author>/);
+assert.match(bibliographyXml, /<b:Title>Market brief<\/b:Title>/);
+assert.match(bibliographyXml, /<b:Publisher>Example Research<\/b:Publisher>/);
+assert.match(bibliographyXml, /<b:Tag>OpenXmlSdk<\/b:Tag><b:SourceType>InternetSite<\/b:SourceType>/);
+assert.match(bibliographyXml, /<b:Corporate>Microsoft<\/b:Corporate>/);
 assert.match(themeXml, /name="Research Theme"/);
 assert.match(themeXml, /<a:accent1><a:srgbClr val="336699"\/><\/a:accent1>/);
 assert.match(themeXml, /<a:majorFont><a:latin typeface="Source Serif 4"\/><a:ea typeface="Noto Serif CJK SC"\/><a:cs typeface="Noto Naskh Arabic"\/>/);
@@ -523,6 +554,7 @@ assert.match(documentXml, /<w:bookmarkEnd w:id="42"\/>/);
 assert.match(documentXml, /<w:bookmarkStart w:id="43" w:name="EvidenceCells"\/><w:r><w:t>DOCX styles<\/w:t>/);
 assert.match(documentXml, /<w:t>anchored<\/w:t><\/w:r><w:bookmarkEnd w:id="43"\/>/);
 assert.match(documentXml, /<w:hyperlink w:anchor="FindingsSection" w:history="0" w:tooltip="Open the findings section">/);
+assert.match(documentXml, /<w:fldSimple w:instr="CITATION MarketBrief26"><w:r><w:t>Source: Market brief \(Market brief\)<\/w:t><\/w:r><\/w:fldSimple>/);
 assert.match(documentXml, /<a:blip r:embed="rIdImage1"\/>/);
 assert.match(documentXml, /<wp:docPr[^>]*name="memo-logo"[^>]*descr="Memo logo"/);
 assert.match(documentXml, /<w:type w:val="nextPage"\/>/);
@@ -578,6 +610,7 @@ assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2016\/09\/relationships\/commentsIds" Target="commentsIds\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2018\/08\/relationships\/commentsExtensible" Target="commentsExtensible\.xml"/);
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.microsoft\.com\/office\/2011\/relationships\/people" Target="people\.xml"/);
+assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/customXml" Target="\.\.\/customXml\/item1\.xml"/);
 assert.equal((documentRelsXml.match(/relationships\/hyperlink/g) || []).length, 1);
 assert.doesNotMatch(documentRelsXml, /FindingsSection/);
 assert.match(documentXml, /<w:headerReference w:type="default" r:id="[^"]+"\/>/);
@@ -640,6 +673,15 @@ const reversedBookmarkXml = documentXml
 await assert.rejects(
   () => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: reversedBookmarkXml }]),
   /docxBookmarkRangeReversed/,
+);
+await assert.rejects(
+  () => DocumentFile.patchDocx(docx, [{ path: "customXml/item1.xml", remove: true }]),
+  /docxCitationSourceMissing/,
+);
+const orphanBibliographyXml = '<?xml version="1.0"?><b:Sources xmlns:b="http://schemas.openxmlformats.org/officeDocument/2006/bibliography"><b:Source><b:Tag>Orphan</b:Tag><b:SourceType>Book</b:SourceType><b:Title>Orphan source</b:Title></b:Source></b:Sources>';
+await assert.rejects(
+  () => DocumentFile.patchDocx(docx, [{ path: "customXml/orphan-sources.xml", xml: orphanBibliographyXml }]),
+  /docxBibliographyMultipleParts|docxBibliographyRelationshipMissing/,
 );
 const duplicateBookmarkNameXml = documentXml.replace("</w:body>", '<w:p><w:bookmarkStart w:id="99" w:name="FindingsSection"/><w:r><w:t>Duplicate</w:t></w:r><w:bookmarkEnd w:id="99"/></w:p></w:body>');
 await assert.rejects(
@@ -910,6 +952,22 @@ assert.equal(nativeOnlyLoaded.blocks.find((item) => item.text === "Nested roman 
 const nativeOnlyCitation = nativeOnlyLoaded.blocks.find((item) => item.kind === "citation");
 assert.match(nativeOnlyCitation?.text || "", /Source: Market brief/);
 assert.match(nativeOnlyCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
+assert.equal(nativeOnlyCitation?.metadata?.tag, "MarketBrief26");
+assert.equal(nativeOnlyCitation?.metadata?.sourceType, "Report");
+assert.equal(nativeOnlyCitation?.metadata?.title, "Market brief");
+assert.deepEqual(nativeOnlyCitation?.metadata?.authors, [{ first: "Ada", last: "Analyst", middle: "" }]);
+assert.equal(nativeOnlyLoaded.bibliographySources.length, 2);
+assert.equal(nativeOnlyLoaded.resolve("OpenXmlSdk")?.corporateAuthor, "Microsoft");
+const relocatedBibliographyZip = await JSZip.loadAsync(docxBytes);
+relocatedBibliographyZip.remove("word/open-office-artifact.json");
+relocatedBibliographyZip.remove("customXml/item1.xml");
+relocatedBibliographyZip.file("customXml/references/sources.xml", bibliographyXml.replace("xmlns:b=", "xmlns:ref=").replaceAll("<b:", "<ref:").replaceAll("</b:", "</ref:"));
+relocatedBibliographyZip.file("word/_rels/document.xml.rels", documentRelsXml.replace('Target="../customXml/item1.xml"', 'Target="../customXml/references/sources.xml"'));
+const relocatedBibliographyDocx = new FileBlob(await relocatedBibliographyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
+assert.equal((await DocumentFile.inspectDocx(relocatedBibliographyDocx)).ok, true);
+const relocatedBibliographyDocument = await DocumentFile.importDocx(relocatedBibliographyDocx, { preferNative: true });
+assert.equal(relocatedBibliographyDocument.resolve("MarketBrief26")?.authors[0].last, "Analyst");
+assert.equal(relocatedBibliographyDocument.blocks.find((item) => item.kind === "citation")?.metadata?.publisher, "Example Research");
 assert.equal(nativeOnlyLoaded.resolve(nativeOnlyLoaded.comments.find((item) => item.text === "Verify the native hyperlink target.")?.targetId)?.kind, "hyperlink");
 const alternateCommentPrefixZip = await JSZip.loadAsync(docxBytes);
 alternateCommentPrefixZip.remove("word/open-office-artifact.json");
@@ -976,6 +1034,8 @@ assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("tex
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:hyperlink w:anchor="FindingsSection" w:history="0" w:tooltip="Open the findings section">/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:bookmarkStart w:id="42" w:name="FindingsSection"\/>/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:bookmarkStart w:id="43" w:name="EvidenceCells"\/>/);
+assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /w:instr="CITATION MarketBrief26"/);
+assert.match(await reexportedNativeThemeZip.file("customXml/item1.xml").async("text"), /<b:Tag>OpenXmlSdk<\/b:Tag>/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:rStyle w:val="CascadeCharacter"\/>/);
 assert.match(await reexportedNativeThemeZip.file("word/styles.xml").async("text"), /<w:docDefaults>/);
 assert.match(await reexportedNativeThemeZip.file("word/theme/theme1.xml").async("text"), /typeface="Noto Naskh Arabic"/);

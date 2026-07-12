@@ -8,6 +8,10 @@
     "fonts": { "major": "Source Serif 4", "minor": "Aptos", "majorEastAsia": "Arial Unicode MS", "majorComplexScript": "Geeza Pro" }
   },
   "defaultRunStyle": { "fontFamily": "Default Serif", "fontSize": 19, "italic": true },
+  "bibliography": { "selectedStyle": "\\APA.XSL", "styleName": "APA" },
+  "bibliographySources": [
+    { "tag": "OpenXmlSdk", "sourceType": "InternetSite", "title": "Open XML SDK documentation", "corporateAuthor": "Microsoft", "year": "2026", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk" }
+  ],
   "styles": {
     "BriefParagraphBase": { "name": "Brief Paragraph Base", "basedOn": "Normal", "fontSize": 26, "bold": true },
     "BriefParagraph": { "name": "Brief Paragraph", "basedOn": "BriefParagraphBase", "themeColor": "accent1" },
@@ -58,7 +62,7 @@
     },
     { "kind": "hyperlink", "name": "readiness-jump", "styleId": "Normal", "text": "Jump to readiness evidence", "url": "#ReadinessEvidence", "tooltip": "Open the readiness table evidence", "history": false },
     { "kind": "hyperlink", "name": "standards-link", "styleId": "Normal", "text": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk" },
-    { "kind": "citation", "name": "source-note", "styleId": "Normal", "text": "Source: ECMA-376 Office Open XML", "metadata": { "source": "ECMA-376", "url": "https://ecma-international.org/publications-and-standards/standards/ecma-376/" } },
+    { "kind": "citation", "name": "source-note", "styleId": "Normal", "text": "Source: ECMA-376 Office Open XML", "metadata": { "tag": "ECMA376", "source": "ECMA-376", "sourceType": "DocumentFromInternetSite", "title": "Office Open XML File Formats", "corporateAuthor": "Ecma International", "year": "2021", "standardNumber": "ECMA-376", "url": "https://ecma-international.org/publications-and-standards/standards/ecma-376/" } },
     { "kind": "image", "name": "status-mark", "styleId": "Normal", "alt": "Green status mark", "widthPx": 40, "heightPx": 40, "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKwoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC" },
     { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
   ],
@@ -78,6 +82,8 @@
     { "kind": "hyperlink", "pattern": "RecommendationSection" },
     { "kind": "bookmark", "pattern": "RecommendationSection" },
     { "kind": "bookmark", "pattern": "ReadinessEvidence" },
+    { "kind": "bibliographySource", "pattern": "ECMA376" },
+    { "kind": "bibliographySource", "pattern": "OpenXmlSdk" },
     { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
     { "kind": "listItem", "pattern": "nested numbering levels" },
     { "kind": "table", "pattern": "readiness-table" },
@@ -89,7 +95,7 @@
   "qa": {
     "previewFormat": "svg",
     "nativeRender": "auto",
-    "inspectKind": "document,theme,paragraph,listItem,table,bookmark,comment,header,footer,hyperlink,field,citation,image,style,layout",
+    "inspectKind": "document,theme,paragraph,listItem,table,bookmark,bibliographySource,comment,header,footer,hyperlink,field,citation,image,style,layout",
     "maxChars": 24000
   }
 }

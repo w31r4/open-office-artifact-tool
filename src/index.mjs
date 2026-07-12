@@ -8,6 +8,7 @@ import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./oox
 import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxDefaultRunPropertiesXml, parseDocxRunPropertiesXml, parseDocxRunStyleId, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
 import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE, DOCX_COMMENTS_EXTENSIBLE_PATH, DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_CONTENT_TYPE, DOCX_COMMENTS_IDS_PATH, DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_PEOPLE_CONTENT_TYPE, DOCX_PEOPLE_PATH, DOCX_PEOPLE_RELATIONSHIP_TYPE, docxCommentsExtendedXml, docxCommentsExtensibleXml, docxCommentsIdsXml, docxCommentsXml, docxPeopleXml, parseDocxComments, planDocxComments, validateDocxCommentPackageSemantics } from "./ooxml/docx-comments.mjs";
 import { docxBookmarkEntriesForBlock, docxBookmarkEntriesForTableCell, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, parseDocxTableBookmarkMarkers, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
+import { DOCX_BIBLIOGRAPHY_PATH, DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE, docxBibliographyXml, docxCitationInstruction, normalizeDocxBibliographySource, parseDocxBibliography, parseDocxCitationInstruction, planDocxBibliography, validateDocxBibliographyPackageSemantics } from "./ooxml/docx-bibliography.mjs";
 import { collectDocxHeaderFooterParts, normalizeDocxSectionSettings, parseDocxSectionDeclarations, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
@@ -44,7 +45,7 @@ const DOCX_PACKAGE_CONFIG = {
   family: "DOCX",
   packageKind: "docxPackage",
   partKind: "docxPart",
-  semanticIssues: (context) => [...validateDocxCommentPackageSemantics(context), ...validateDocxLinkPackageSemantics(context)],
+  semanticIssues: (context) => [...validateDocxCommentPackageSemantics(context), ...validateDocxLinkPackageSemantics(context), ...validateDocxBibliographyPackageSemantics(context)],
 };
 
 const XLSX_PACKAGE_CONFIG = {
@@ -1057,7 +1058,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state." },
   { artifactKind: "document", kind: "api", name: "document.addBookmark", summary: "Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes." },
-  { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker." },
+  { artifactKind: "document", kind: "api", name: "document.addBibliographySource", summary: "Add an inspectable Word bibliography source with a unique tag, native source type, authors or corporate author, and structured publication fields." },
+  { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a native CITATION field whose structured metadata links by tag to a relationship-owned b:Sources entry; metadata-free import restores the source and visible result." },
   { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
   { artifactKind: "document", kind: "api", name: "document.addSection", summary: "Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr." },
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
@@ -1070,14 +1072,14 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.setSectionSettings", summary: "Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
-  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, bookmark ranges, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
-  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, bookmark ID/name, header/footer, comment, style, and editable text-range IDs." },
+  { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, bookmark, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs." },
   { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
-  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations, duplicate/dangling/reversed bookmark ranges, unknown paragraph/character styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped header/footer references and activation state, links, bookmarks, fields, citations, and metadata." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics, preserving section titlePg and dormant/active even/first header/footer references alongside styles, numbering, links, bookmarks, fields, and comments." },
+  { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
@@ -1616,6 +1618,8 @@ const DOCUMENT_HELP_SCHEMAS = {
     styles: { type: "object", description: "Named paragraph or character style definitions with optional basedOn inheritance." },
     paragraphs: { type: "string[]", description: "Convenience paragraph list; the first paragraph uses Title style." },
     blocks: { type: "object[]", description: "Ordered paragraph/list/table/link/field/citation/image/section/change block models." },
+    bibliography: { type: "object", description: "Word bibliography style metadata such as selectedStyle, styleName, and URI." },
+    bibliographySources: { type: "object[]", description: "Word b:Sources entries with unique tags, source types, contributors, and publication fields." },
     headers: { type: "object[]", description: "Header block models." },
     footers: { type: "object[]", description: "Footer block models." },
     sectionSettings: { type: "object[]", description: "Per-section settings with zero-based sectionIndex and differentFirstPage activation state." },
@@ -1675,9 +1679,20 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "field", "DocumentFieldBlock", "Appended field block."),
   "document.addCitation": helpSchema({
     text: { type: "string", required: true, description: "Visible citation text." },
-    metadata: { type: "object", description: "Structured citation metadata." },
+    metadata: { type: "object", description: "Structured citation metadata including bibliography tag/sourceType/title/authors or corporateAuthor and publication fields; a matching source is created when absent." },
     styleId: { type: "string", description: "Named paragraph style ID." },
   }, "citation", "DocumentCitationBlock", "Appended citation block."),
+  "document.addBibliographySource": helpSchema({
+    tag: { type: "string", required: true, description: "Unique Word source tag used by CITATION fields, at most 255 characters." },
+    sourceType: { type: "string", required: true, description: "Word bibliography source type such as Book, Report, JournalArticle, InternetSite, or Misc." },
+    title: { type: "string", description: "Source title." },
+    authors: { type: "object[]|string[]", description: "Personal contributors with first/middle/last names." },
+    corporateAuthor: { type: "string", description: "Corporate author used when personal authors are absent." },
+    year: { type: "string|number", description: "Publication year." },
+    publisher: { type: "string", description: "Publisher." },
+    url: { type: "string", description: "Source URL." },
+    fields: { type: "object", description: "Additional supported Word bibliography fields such as city, journalName, volume, issue, pages, edition, and standardNumber." },
+  }, "source", "DocumentBibliographySource", "Inspectable and resolvable bibliography source."),
   "document.addImage": helpSchema({
     dataUrl: { type: "string", description: "Embedded image data URL." },
     uri: { type: "string", description: "External image URI metadata." },
@@ -8998,6 +9013,16 @@ class DocumentFieldBlock {
   toProto() { return { kind: "field", id: this.id, name: this.name, styleId: this.styleId, instruction: this.instruction, display: this.display }; }
 }
 
+class DocumentBibliographySource {
+  constructor(document, config = {}) {
+    this.document = document;
+    Object.assign(this, normalizeDocxBibliographySource(config, document.bibliographySources.length));
+  }
+
+  inspectRecord(index) { return { ...this.toProto(), index }; }
+  toProto() { return Object.fromEntries(Object.entries(this).filter(([key, value]) => key !== "document" && value !== undefined)); }
+}
+
 class DocumentCitationBlock {
   constructor(document, text, metadata = {}, config = {}) {
     this.document = document;
@@ -9266,10 +9291,17 @@ export class DocumentModel {
     this.blocks = [];
     this.bookmarks = [];
     this.comments = [];
+    this.bibliography = {
+      selectedStyle: String(options.bibliography?.selectedStyle || ""),
+      styleName: String(options.bibliography?.styleName || ""),
+      uri: String(options.bibliography?.uri || ""),
+    };
+    this.bibliographySources = [];
     this.headers = [];
     this.footers = [];
     this.sectionSettings = [];
     const preservesEvenOddActivation = Object.prototype.hasOwnProperty.call(options.settings || {}, "evenAndOddHeaders");
+    for (const source of options.bibliographySources || options.bibliography?.sources || []) this.addBibliographySource(source);
     const sourceBlocks = options.blocks || (options.paragraphs ? options.paragraphs.map((text, index) => ({ kind: "paragraph", text, styleId: index === 0 ? "Title" : "Normal" })) : [{ kind: "paragraph", text: "Start writing here...", styleId: "Normal" }]);
     for (const block of sourceBlocks) {
       if (block.kind === "table") this.addTable(block);
@@ -9328,7 +9360,26 @@ export class DocumentModel {
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
   addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
-  addCitation(text, metadata = {}, config = {}) { const block = new DocumentCitationBlock(this, text, metadata, config); this.blocks.push(block); const bookmarkName = block.metadata.bookmark || `OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`; const bookmark = this.addBookmark(block, bookmarkName, { id: block.metadata.bookmarkId || `${block.id}/bookmark`, nativeId: block.metadata.bookmarkNativeId }); block.metadata.bookmark = bookmark.name; block.metadata.bookmarkId = bookmark.id; return block; }
+  addBibliographySource(config = {}) { const source = new DocumentBibliographySource(this, config); this.bibliographySources.push(source); return source; }
+  addCitation(text, metadata = {}, config = {}) {
+    const block = new DocumentCitationBlock(this, text, metadata, config);
+    const explicitTag = block.metadata.tag ?? block.metadata.bibliographyTag;
+    const seed = explicitTag || block.metadata.source || block.metadata.title || block.name || `Source${this.bibliographySources.length + 1}`;
+    const baseTag = explicitTag ? String(explicitTag).trim() : String(seed).replace(/[^A-Za-z0-9_.:-]+/g, "").slice(0, 255) || `Source${this.bibliographySources.length + 1}`;
+    let tag = baseTag;
+    if (!explicitTag) for (let suffix = 2; this.bibliographySources.some((source) => source.tag === tag && source.title !== (block.metadata.title || block.metadata.source || block.text)); suffix += 1) tag = `${baseTag.slice(0, 250)}${suffix}`;
+    block.metadata.tag = tag;
+    if (!this.bibliographySources.some((source) => source.tag === tag)) {
+      const sourceConfig = { ...block.metadata, ...(block.metadata.bibliography || block.metadata.sourceData || {}), tag, title: block.metadata.title || block.metadata.source || block.text, sourceType: block.metadata.sourceType || (block.metadata.url ? "InternetSite" : "Misc") };
+      this.addBibliographySource(sourceConfig);
+    }
+    this.blocks.push(block);
+    const bookmarkName = block.metadata.bookmark || `OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`;
+    const bookmark = this.addBookmark(block, bookmarkName, { id: block.metadata.bookmarkId || `${block.id}/bookmark`, nativeId: block.metadata.bookmarkNativeId });
+    block.metadata.bookmark = bookmark.name;
+    block.metadata.bookmarkId = bookmark.id;
+    return block;
+  }
   addImage(config = {}) { const block = new DocumentImageBlock(this, config); this.blocks.push(block); return block; }
   addSection(config = {}) { const block = new DocumentSectionBlock(this, config); this.blocks.push(block); return block; }
   addPageBreakSection(config = {}) { return this.addSection({ ...config, breakType: "nextPage" }); }
@@ -9371,15 +9422,15 @@ export class DocumentModel {
       if (table && row < table.rows && column < table.columns) return table.getCell(row, column);
       return undefined;
     }
-    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.comments.find((comment) => comment.id === token) || this.styles.get(token);
+    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.comments.find((comment) => comment.id === token) || this.bibliographySources.find((source) => source.id === token || source.tag === token) || this.styles.get(token);
   }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, bibliography: this.bibliography, bibliographySources: this.bibliographySources.map((source) => source.toProto()), sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "image", "section", "change", "bookmark", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
@@ -9388,6 +9439,7 @@ export class DocumentModel {
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("bookmark")) records.push(...this.bookmarks.map((bookmark) => bookmark.inspectRecord()));
+    if (kinds.has("bibliographySource")) records.push(...this.bibliographySources.map((source, index) => source.inspectRecord(index)));
     if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
     if (kinds.has("textRange")) records.push(...documentTextRangeRecords(this));
     if (kinds.has("style")) records.push(...this.styles.values().map((style) => ({ kind: "style", ...style })));
@@ -9409,6 +9461,13 @@ export class DocumentModel {
       if (!bookmark.name || bookmark.name.length > 40) issues.push(verificationIssue("document", "invalidBookmarkName", `Bookmark ${bookmark.id} name must contain 1 to 40 characters.`, { id: bookmark.id, name: bookmark.name }));
       if (bookmarkByName.has(bookmark.name)) issues.push(verificationIssue("document", "duplicateBookmarkName", `Bookmark ${bookmark.id} duplicates name ${bookmark.name}.`, { id: bookmark.id, name: bookmark.name }));
       else bookmarkByName.set(bookmark.name, bookmark);
+    }
+    const bibliographyByTag = new Map();
+    for (const source of this.bibliographySources) {
+      try { normalizeDocxBibliographySource(source); }
+      catch (error) { issues.push(verificationIssue("document", "invalidBibliographySource", error.message, { id: source.id, tag: source.tag })); }
+      if (bibliographyByTag.has(source.tag)) issues.push(verificationIssue("document", "duplicateBibliographyTag", `Bibliography source ${source.id} duplicates tag ${source.tag}.`, { id: source.id, tag: source.tag }));
+      else bibliographyByTag.set(source.tag, source);
     }
     for (const block of this.blocks) {
       if (block.kind === "paragraph") {
@@ -9433,6 +9492,7 @@ export class DocumentModel {
       if (block.kind === "citation" && block.metadata?.url && !/^https?:\/\//.test(String(block.metadata.url))) {
         issues.push(verificationIssue("document", "invalidCitationUrl", `Citation ${block.id} has a non-http(s) URL.`, { severity: "warning", id: block.id, url: block.metadata.url }));
       }
+      if (block.kind === "citation" && !bibliographyByTag.has(block.metadata?.tag)) issues.push(verificationIssue("document", "missingCitationSource", `Citation ${block.id} references missing bibliography source ${block.metadata?.tag || "(none)"}.`, { id: block.id, tag: block.metadata?.tag }));
       if (block.kind === "image") {
         if (!block.dataUrl && !block.uri && !block.prompt) issues.push(verificationIssue("document", "emptyImage", `Image ${block.id} has no dataUrl, uri, or prompt.`, { id: block.id }));
         if (block.dataUrl && !imageDataFromDataUrl(block.dataUrl)) issues.push(verificationIssue("document", "invalidImageDataUrl", `Image ${block.id} has an unsupported data URL.`, { id: block.id }));
@@ -9787,7 +9847,7 @@ function docxCitationXml(block, commentIndexes = []) {
   const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
   const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
   const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:t>${xmlEscape(label)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
+  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:fldSimple w:instr="${docxCitationInstruction(block.metadata?.tag)}"><w:r><w:t>${xmlEscape(label)}</w:t></w:r></w:fldSimple>${commentEnd}${refs}</w:p>`;
 }
 
 function docxTableXml(block, commentIndexes = [], bookmarkPlan = { entries: [] }) {
@@ -9985,11 +10045,23 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
     const opening = /^<w:fldSimple\b[^>]*>/.exec(simpleFieldMatch[0])?.[0] || "";
     const instruction = ooxmlXmlAttributes(opening)["w:instr"] || "";
     const display = decodeXml([...simpleFieldMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
+    const citationTag = parseDocxCitationInstruction(instruction);
+    if (citationTag) {
+      const source = context.bibliographyByTag?.get(citationTag);
+      const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
+      return { block: { kind: "citation", text: display, metadata: { ...(source || {}), tag: citationTag, bookmark: citationBookmark?.name, bookmarkNativeId: citationBookmark?.nativeId }, styleId }, commentIds };
+    }
     return { block: { kind: "field", instruction, display, styleId }, commentIds };
   }
   const complexInstruction = decodeXml([...part.matchAll(/<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/g)].map((match) => match[1]).join("")).trim();
   if (complexInstruction && /<w:fldChar\b[^>]*w:fldCharType=["']begin["']/.test(part)) {
     const display = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
+    const citationTag = parseDocxCitationInstruction(complexInstruction);
+    if (citationTag) {
+      const source = context.bibliographyByTag?.get(citationTag);
+      const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
+      return { block: { kind: "citation", text: display, metadata: { ...(source || {}), tag: citationTag, bookmark: citationBookmark?.name, bookmarkNativeId: citationBookmark?.nativeId }, styleId }, commentIds };
+    }
     return { block: { kind: "field", instruction: complexInstruction, display, styleId }, commentIds };
   }
   const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
@@ -10576,6 +10648,7 @@ export class DocumentFile {
     const zip = new JSZip();
     const commentPlan = planDocxComments(document.comments);
     const bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks);
+    const bibliographyPlan = planDocxBibliography(document.bibliographySources, document.bibliography);
     const imageParts = collectDocxImageParts(document);
     const numbering = collectDocxNumbering(document);
     const hasNumbering = numbering.definitions.length > 0;
@@ -10600,6 +10673,7 @@ export class DocumentFile {
       docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_PEOPLE_RELATIONSHIP_TYPE, target: "people.xml" });
     }
     if (hasSettings) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings", target: "settings.xml" });
+    if (bibliographyPlan.entries.length) docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE, target: `../${DOCX_BIBLIOGRAPHY_PATH}` });
     relIds.headers = headerParts.map((part) => {
       const relId = `rId${docRels.length + 1}`;
       docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: part.target });
@@ -10633,6 +10707,7 @@ export class DocumentFile {
       zip.file(DOCX_PEOPLE_PATH, docxPeopleXml(commentPlan));
     }
     if (settingsXml) zip.file("word/settings.xml", settingsXml);
+    if (bibliographyPlan.entries.length) zip.file(DOCX_BIBLIOGRAPHY_PATH, docxBibliographyXml(bibliographyPlan));
     headerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("header", part.blocks)));
     footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
     imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
@@ -10649,6 +10724,13 @@ export class DocumentFile {
     const xml = await zip.file("word/document.xml")?.async("text");
     const relsText = await zip.file("word/_rels/document.xml.rels")?.async("text");
     const documentRelationships = parseRelsXml(relsText);
+    let bibliographyPlan = { entries: [], byTag: new Map(), selectedStyle: "", styleName: "", uri: "" };
+    for (const relationship of documentRelationships.filter((item) => item.type.endsWith("/customXml") && item.targetMode.toLowerCase() !== "external")) {
+      const partPath = ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX");
+      const partXml = await zip.file(partPath)?.async("text");
+      const parsed = parseDocxBibliography(partXml);
+      if (parsed.entries.length || /<(?:[A-Za-z_][\w.-]*:)?Sources\b/.test(String(partXml || ""))) { bibliographyPlan = parsed; break; }
+    }
     const relatedPartPath = (kind, fallback) => {
       const relationship = documentRelationships.find((item) => item.type.endsWith(`/${kind}`) && item.targetMode.toLowerCase() !== "external");
       return relationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX") : fallback;
@@ -10707,14 +10789,14 @@ export class DocumentFile {
         for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
         for (const end of markers.ends) if (!pendingBookmarkEnds.has(end.nativeId)) pendingBookmarkEnds.set(end.nativeId, { ...end, blockIndex: blocks.length - 1 });
       } else {
-        blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle }).block);
+        blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle, bibliographyByTag: bibliographyPlan.byTag }).block);
         const markers = parseDocxBookmarkMarkers(part);
         for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
         for (const end of markers.ends) if (!pendingBookmarkEnds.has(end.nativeId)) pendingBookmarkEnds.set(end.nativeId, { ...end, blockIndex: blocks.length - 1 });
       }
       for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
     }
-    const document = DocumentModel.create({ theme, defaultRunStyle, settings: importedSettings, sectionSettings: sectionDeclarations, styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
+    const document = DocumentModel.create({ theme, defaultRunStyle, settings: importedSettings, bibliography: { selectedStyle: bibliographyPlan.selectedStyle, styleName: bibliographyPlan.styleName, uri: bibliographyPlan.uri }, bibliographySources: bibliographyPlan.entries, sectionSettings: sectionDeclarations, styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const [nativeId, start] of pendingBookmarkStarts) {
       const end = pendingBookmarkEnds.get(nativeId) || start;
       const startBlock = document.blocks[start.blockIndex];
