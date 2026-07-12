@@ -62,7 +62,8 @@
     { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
   ],
   "comments": [
-    { "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "text": "Confirm this recommendation after native render review." },
+    { "name": "recommendation-review", "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "resolved": true, "text": "Confirm this recommendation after native render review." },
+    { "name": "recommendation-reply", "parentName": "recommendation-review", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:22:00.000Z", "text": "Recommendation wording is approved." },
     { "targetName": "readiness-table", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:25:00.000Z", "text": "Confirm the table comment anchor survives native import." }
   ],
   "expectInspect": [
@@ -73,6 +74,7 @@
     { "kind": "listItem", "pattern": "nested numbering levels" },
     { "kind": "table", "pattern": "readiness-table" },
     { "kind": "comment", "pattern": "native render review" },
+    { "kind": "comment", "pattern": "wording is approved" },
     { "kind": "header", "pattern": "Opening section evidence" },
     { "kind": "comment", "pattern": "table comment anchor" }
   ],

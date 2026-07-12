@@ -28,8 +28,13 @@ function xmlEscape(value) {
 }
 
 function packageCommentsXml(comments = []) {
-  const body = comments.map((comment) => `<w:comment w:id="${xmlEscape(comment.commentId)}" w:author="${xmlEscape(comment.author || "User")}" w:initials="${xmlEscape(comment.initials || "")}"${comment.date ? ` w:date="${xmlEscape(comment.date)}"` : ""}><w:p><w:r><w:t>${xmlEscape(comment.text || "")}</w:t></w:r></w:p></w:comment>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${body}</w:comments>`;
+  const body = comments.map((comment) => `<w:comment w:id="${xmlEscape(comment.commentId)}" w:author="${xmlEscape(comment.author || "User")}" w:initials="${xmlEscape(comment.initials || "")}"${comment.date ? ` w:date="${xmlEscape(comment.date)}"` : ""}><w:p${comment.paraId ? ` w14:paraId="${xmlEscape(comment.paraId)}"` : ""}><w:r><w:t>${xmlEscape(comment.text || "")}</w:t></w:r></w:p></w:comment>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">${body}</w:comments>`;
+}
+
+function packageCommentsExtendedXml(comments = []) {
+  const body = comments.map((comment) => `<w15:commentEx w15:paraId="${xmlEscape(comment.paraId)}"${comment.parentParaId ? ` w15:paraIdParent="${xmlEscape(comment.parentParaId)}"` : ""} w15:done="${comment.resolved ? 1 : 0}"/>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">${body}</w15:commentsEx>`;
 }
 
 function packageNumberingXml(numbering = {}) {
@@ -94,10 +99,14 @@ export function createDocumentFromFixture(fixture = {}) {
     const created = addFixtureBlock(document, block);
     if (block.name) byName.set(block.name, created);
   }
+  const commentsByName = new Map();
   for (const comment of fixture.comments || []) {
+    const parent = comment.parentName ? commentsByName.get(comment.parentName) : undefined;
     const target = byName.get(comment.targetName) || comment.targetId;
-    assert.ok(target, `Missing document fixture comment target ${comment.targetName || comment.targetId}`);
-    document.addComment(target, comment.text || "", comment);
+    if (comment.parentName) assert.ok(parent, `Missing document fixture parent comment ${comment.parentName}`);
+    else assert.ok(target, `Missing document fixture comment target ${comment.targetName || comment.targetId}`);
+    const created = parent ? document.replyToComment(parent, comment.text || "", comment) : document.addComment(target, comment.text || "", comment);
+    if (comment.name) commentsByName.set(comment.name, created);
   }
   for (const expected of fixture.expectInspect || []) {
     assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,section,change,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
@@ -252,9 +261,20 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         kind: "comments",
         source: "word/document.xml",
         id: fixture.packageCommentsRelationshipId,
-        sourceReference: { anchors: fixture.packageComments.map(({ commentId, target }) => ({ commentId, target })) },
+        sourceReference: { anchors: fixture.packageComments.filter((comment) => !comment.parentParaId).map(({ commentId, target }) => ({ commentId, target })) },
       },
     });
+    if (fixture.packageComments.every((comment) => comment.paraId)) {
+      packagePatches.push({
+        path: fixture.packageCommentsExtendedPart || "word/review/fixture-comments-extended.xml",
+        xml: packageCommentsExtendedXml(fixture.packageComments),
+        recipe: {
+          kind: "commentsExtended",
+          source: "word/document.xml",
+          id: fixture.packageCommentsExtendedRelationshipId,
+        },
+      });
+    }
   }
   if (fixture.packageNumbering) {
     packagePatches.push({

@@ -9,7 +9,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 
 ## Contract
 
-- Never import or copy reference implementation internals.
+- Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
 - Preserve an imported document's content, styles, structure, and review state unless the user requests a redesign.
 - For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in `docs/coverage.md`.
 - Use real list items, tables, comments, hyperlinks, fields, citations, images, sections, and tracked changes rather than visual text imitations.
@@ -22,7 +22,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 1. Create a `DocumentModel` or import an existing DOCX with `DocumentFile.importDocx`. After package-level OOXML patches, pass `{ preferNative: true }` so relationship-driven native parts take precedence over stale embedded model metadata.
 2. Inspect the relevant blocks, styles, comments, and layout before editing.
 3. Apply focused changes through public APIs.
-   For clean-room package surgery, `DocumentFile.patchDocx(...)` can create a Comments part and add matching block, paragraph, or table-cell anchors with `recipe: { kind: "comments", source: "word/document.xml", sourceReference: { anchors: [...] } }`.
+   For clean-room package surgery, `DocumentFile.patchDocx(...)` can create a Comments part and add matching block, paragraph, or table-cell anchors with `recipe: { kind: "comments", source: "word/document.xml", sourceReference: { anchors: [...] } }`. It can also relocate a valid Office 2013 extension part with `recipe: { kind: "commentsExtended", source: "word/document.xml" }`; semantic validation rejects orphan, duplicate, unresolved-parent, and cyclic `paraId` graphs.
    The same package API can create a Numbering part and assign declared `numId`/level pairs to target paragraphs with `recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { assignments: [...] } }`.
    A Settings recipe can safely mutate an arbitrary relationship-backed Settings part with `sourceReference: { trackRevisions, updateFields, evenAndOddHeaders, mirrorMargins, documentProtection }`. Protection modes are passwordless `readOnly`, `comments`, `trackedChanges`, or `forms`; they discourage accidental editing but do not encrypt the DOCX.
 4. Run `document.verify({ visualQa: true })` and fix every material issue.
@@ -63,11 +63,13 @@ const decisionTable = document.addTable({
   styleId: "TableGrid",
   values: [["Area", "Status"], ["Semantic QA", "Pass"], ["Native render", "Required"]],
 });
-document.addComment(decisionTable, "Verify the evidence table.", {
+const review = document.addComment(decisionTable, "Verify the evidence table.", {
   author: "QA Agent",
   initials: "QA",
   date: "2026-07-11T00:00:00.000Z",
+  resolved: true,
 });
+document.replyToComment(review, "Verified after native render.", { author: "Maintainer", initials: "MT" });
 
 const output = await DocumentFile.exportDocx(document);
 await output.save("decision-brief.docx");
@@ -123,7 +125,7 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing theme, settings, blocks, multi-level list formats/start/level text, styles, classic comment metadata and block anchors, plus default/first/even header/footer references survived roundtrip. Run styles retain `asciiTheme`/`hAnsiTheme`/`eastAsiaTheme`/`cstheme`, `themeColor`/`themeTint`/`themeShade`, and paired `bCs`/`iCs`/`szCs` semantics together with resolved colors/fonts used by layout and model rendering. Native import follows `document.xml.rels` instead of assuming fixed theme/settings/styles/numbering/comments/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
+- `document.inspect(...)` proves agent-facing theme, settings, blocks, multi-level list formats/start/level text, styles, classic comment anchors plus `commentsExtended` reply/resolution metadata, and default/first/even header/footer references survived roundtrip. Each comment maps through the last classic-comment paragraph's `w14:paraId`; replies use `w15:paraIdParent`, and resolved state uses `w15:done`. Native import follows `document.xml.rels` instead of assuming fixed theme/settings/styles/numbering/comments/commentsExtended/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
 - The checked-in `package-comments.json` fixture creates an arbitrary-path Comments part through the public patch API, anchors one comment to a paragraph block and one to a table cell, then verifies both through native-preferred import and the real render gate.
 - The checked-in `package-numbering.json` fixture creates an arbitrary-path Numbering part, binds two ordinary paragraphs to declared multilevel numbering definitions, and verifies their format/start/level metadata through native-preferred import and the real render gate.
 - The checked-in `package-settings.json` fixture creates an arbitrary-path Settings part, preserves unrelated compatibility markup, enables revision/field/header/margin settings, applies comments-only editing restrictions, and verifies the agent-facing state through native-preferred import and the real render gate.

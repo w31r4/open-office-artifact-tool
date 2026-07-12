@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 
 import { DocumentFile, FileBlob } from "open-office-artifact-tool";
 import {
@@ -36,6 +37,7 @@ try {
   assert.match(inspect, /Theme fidelity/);
   assert.equal(imported.headers.find((item) => item.name === "opening-header")?.sectionIndex, 0);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/document\.xml/);
+  assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/commentsExtended\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
   const nativePreferred = await verifyDocumentFile(result.docxPath, { outputDir: path.join(outputDir, "native-preferred"), preferNative: true, nativeRender: "off" });
   assert.equal(nativePreferred.summary.verifyOk, true);
@@ -61,6 +63,15 @@ try {
   assert.equal(nativePreferredDocument.headers.find((item) => item.text === "Clean-room document workflow")?.sectionIndex, 1);
   assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.author, "QA Agent");
   assert.equal(nativePreferredDocument.comments.find((item) => item.text.includes("native render review"))?.date, "2026-07-11T00:20:00.000Z");
+  const nativeReviewRoot = nativePreferredDocument.comments.find((item) => item.text.includes("native render review"));
+  const nativeReviewReply = nativePreferredDocument.comments.find((item) => item.text.includes("wording is approved"));
+  assert.equal(nativeReviewRoot?.resolved, true);
+  assert.equal(nativeReviewReply?.parentId, nativeReviewRoot?.id);
+  assert.equal(nativeReviewReply?.targetId, nativeReviewRoot?.targetId);
+  const businessBriefZip = await JSZip.loadAsync(await fs.readFile(result.docxPath));
+  assert.ok(businessBriefZip.file("word/commentsExtended.xml"));
+  assert.match(await businessBriefZip.file("word/commentsExtended.xml").async("text"), /w15:paraIdParent=/);
+  assert.match(await businessBriefZip.file("word/_rels/document.xml.rels").async("text"), /relationships\/commentsExtended/);
   const nativeTableComment = nativePreferredDocument.comments.find((item) => item.text.includes("table comment anchor"));
   assert.equal(nativeTableComment?.author, "Maintainer");
   assert.equal(nativePreferredDocument.resolve(nativeTableComment?.targetId)?.kind, "table");
@@ -79,13 +90,19 @@ try {
   assert.equal(packageComments.qa.summary.packageOk, true);
   assert.equal(packageComments.qa.summary.verifyOk, true);
   assert.ok(packageComments.qa.packageInspect.parts.some((part) => part.path === "word/review/agent-comments.xml"));
+  assert.ok(packageComments.qa.packageInspect.parts.some((part) => part.path === "word/review/agent-comments-extended.xml"));
   const packageCommentDocument = packageComments.qa.document;
   const paragraphComment = packageCommentDocument.comments.find((comment) => comment.text === "Confirm the decision paragraph.");
   const tableComment = packageCommentDocument.comments.find((comment) => comment.text === "Confirm the table-cell anchor.");
   assert.equal(paragraphComment?.author, "QA Agent");
+  assert.equal(paragraphComment?.resolved, true);
+  assert.equal(paragraphComment?.paraId, "A0000015");
   assert.equal(packageCommentDocument.resolve(paragraphComment?.targetId)?.text, "Approve after native package review.");
   assert.equal(tableComment?.author, "Maintainer");
   assert.equal(packageCommentDocument.resolve(tableComment?.targetId)?.kind, "table");
+  const paragraphReply = packageCommentDocument.comments.find((comment) => comment.text === "The decision paragraph is approved.");
+  assert.equal(paragraphReply?.parentId, paragraphComment?.id);
+  assert.equal(paragraphReply?.targetId, paragraphComment?.targetId);
   assert.equal(packageComments.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
   const packageNumbering = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-numbering.json"), {
