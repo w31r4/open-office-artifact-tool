@@ -7,10 +7,9 @@ function wordprocessingId(tag = "") {
 }
 
 function removeCommentAnchors(xml) {
-  const matchesId = () => true;
   let next = String(xml).replace(/<(?:[A-Za-z_][\w.-]*:)?r\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?r>/g, (run) => {
     const references = [...run.matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentReference\b[^>]*\/?\s*>/g)];
-    if (!references.some((match) => matchesId(match[0]))) return run;
+    if (!references.length) return run;
     const withoutReferences = run.replace(/<(?:[A-Za-z_][\w.-]*:)?commentReference\b[^>]*\/?\s*>/g, "");
     const substantive = withoutReferences
       .replace(/^<(?:[A-Za-z_][\w.-]*:)?r\b[^>]*>|<\/(?:[A-Za-z_][\w.-]*:)?r>$/g, "")
