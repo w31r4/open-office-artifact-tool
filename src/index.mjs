@@ -21,6 +21,7 @@ import { parseStructuredReference, scanStructuredReferenceIntersections, scanStr
 import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, parsePresentationBackgroundXml, parsePresentationPlaceholderStyleXml, presentationBackgroundXml, presentationColorXml, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
+import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -1018,13 +1019,14 @@ export const HELP_CATALOG = [
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization." },
   { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable slide with optional name, layout identity, and speaker notes." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
+  { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups, native p:grpSp roundtrip, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
@@ -1038,12 +1040,12 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts." },
   { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' })." },
-  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing targets, and shape text-range monikers through p188 comment parts." },
+  { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, standard master Theme targets, notes, comments, charts, and images." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, and images." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1828,7 +1830,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     notes: { type: "string", description: "Initial speaker notes." },
   }, "slide", "Slide", "Appended editable slide."),
   "presentation.inspect": helpSchema({
-    kind: { type: "string", description: "Comma-separated deck/theme/layout/slide/textbox/textRange/shape/table/chart/image/connector/comment/notes kinds." },
+    kind: { type: "string", description: "Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/comment/notes kinds." },
     search: { type: "string", description: "Case-insensitive record filter." },
     target: { type: "string", description: "Stable target ID/anchor." },
     before: { type: "number", description: "Context records before matches." },
@@ -1869,6 +1871,15 @@ const PRESENTATION_HELP_SCHEMAS = {
     line: { type: "object", description: "Line color, width, dash, and arrow metadata." },
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
   }, "shape", "Shape", "Appended editable shape/textbox."),
+  "slide.groups.add": helpSchema({
+    name: { type: "string", description: "Inspectable group name." },
+    position: { type: "object", required: true, description: "Group frame in parent or slide pixel coordinates." },
+    childFrame: { type: "object", description: "Local child coordinate rectangle mapped through DrawingML chOff/chExt; defaults to the group width/height from 0,0." },
+    shapes: { type: "object[]", description: "Initial child shape/textbox definitions in local coordinates." },
+    connectors: { type: "object[]", description: "Initial child connector definitions in local coordinates." },
+    groups: { type: "object[]", description: "Initial nested group definitions." },
+    children: { type: "object[]", description: "Ordered mixed child definitions using kind shape, connector, or groupShape." },
+  }, "group", "GroupShape", "Appended editable grouped-shape facade with shapes, connectors, groups, resolve, inspect, layout, SVG, and PPTX output."),
   "slide.compose": helpSchema({
     node: { type: "object", required: true, description: "Compose tree rooted in row, column, grid, layers, box, paragraph, shape, table, chart, image, or rule." },
     frame: { type: "object", description: "Pixel materialization frame; defaults to an inset slide frame." },
@@ -1948,7 +1959,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     text: { type: "string", required: true, description: "Speaker notes text." },
   }, "notes", "object", "Mutable speaker-notes record."),
   "slide.comments.addThread": helpSchema({
-    target: { type: "string|object", required: true, description: "Stable element/text-range ID or facade; modern PPTX export binds supported drawing targets or shapeId/text ranges with native monikers and persistent creation IDs." },
+    target: { type: "string|object", required: true, description: "Stable element/text-range ID or facade; modern PPTX export binds drawing/group moniker paths or nested shapeId/text ranges with persistent creation IDs." },
     text: { type: "string", required: true, description: "Initial comment text." },
     author: { type: "string", description: "Comment author." },
     resolved: { type: "boolean", description: "Initial resolution state." },
@@ -7297,14 +7308,14 @@ export class Presentation {
 }
 
 class ShapeCollection {
-  constructor(slide) { this.slide = slide; this.items = []; }
-  add(config = {}) { const shape = new Shape(this.slide, config); this.items.push(shape); return shape; }
+  constructor(slide, owner) { this.slide = slide; this.owner = owner; this.items = []; }
+  add(config = {}) { const shape = new Shape(this.slide, config); shape.parentGroup = this.owner; this.items.push(shape); this.owner?._rememberChild?.(shape); return shape; }
   [Symbol.iterator]() { return this.items[Symbol.iterator](); }
 }
 
 class ElementCollection {
-  constructor(slide, ElementClass) { this.slide = slide; this.ElementClass = ElementClass; this.items = []; }
-  add(...args) { const element = new this.ElementClass(this.slide, ...args); this.items.push(element); return element; }
+  constructor(slide, ElementClass, owner) { this.slide = slide; this.ElementClass = ElementClass; this.owner = owner; this.items = []; }
+  add(...args) { const element = new this.ElementClass(this.slide, ...args); element.parentGroup = this.owner; this.items.push(element); this.owner?._rememberChild?.(element); return element; }
   getItemAt(index) { return this.items[index]; }
   [Symbol.iterator]() { return this.items[Symbol.iterator](); }
 }
@@ -7484,6 +7495,20 @@ class ConnectorElement {
   toPptxShape(index) { return pptxConnectorXml(index, this); }
 }
 
+const GroupShape = createPresentationGroupShapeClass({
+  createId: aid,
+  createShapeCollection: (slide, owner) => new ShapeCollection(slide, owner),
+  createConnectorCollection: (slide, owner) => new ElementCollection(slide, ConnectorElement, owner),
+  createGroupCollection: (slide, owner, GroupClass) => new ElementCollection(slide, GroupClass, owner),
+  isShape: (element) => element instanceof Shape,
+  isConnector: (element) => element instanceof ConnectorElement,
+  isGroup: (element) => element instanceof GroupShape,
+  createTextRange: (element, id) => createTextRange(element, id, { parentKind: "shape" }),
+  textRangeRecord,
+  elementLabel,
+  creationIdExtensionXml: presentationCreationIdExtensionXml,
+});
+export { GroupShape };
 function slideLayoutSlice(slide, layout, options = {}) {
   const targets = inspectTargetTokens(options);
   const search = String(options.search || options.searchTerm || "").trim().toLowerCase();
@@ -7516,6 +7541,7 @@ export class Slide {
     this.tables = new ElementCollection(this, TableElement);
     this.charts = new ElementCollection(this, ChartElement);
     this.connectors = new ElementCollection(this, ConnectorElement);
+    this.groups = new ElementCollection(this, GroupShape);
     this.comments = new SlideCommentCollection(this);
     this.layoutId = options.layoutId || options.layout?.id || (typeof options.layout === "string" ? options.layout : undefined);
     this.speakerNotes = { text: String(options.notes || options.speakerNotes?.text || "") };
@@ -7528,6 +7554,7 @@ export class Slide {
   addNotes(text) { this.speakerNotes.text = String(text ?? ""); return this.speakerNotes; }
   addComment(target, text, config = {}) { return this.comments.addThread(target, text, config); }
   addConnector(config = {}) { return this.connectors.add(config); }
+  addGroup(config = {}) { return this.groups.add(config); }
   applyLayout(layoutOrName) { const layout = typeof layoutOrName === "string" ? this.presentation.layouts.getItem(layoutOrName) : layoutOrName; if (!layout) throw new Error(`Unknown slide layout: ${layoutOrName}`); return layout.apply(this); }
   effectiveBackground() { const layout = this.presentation.layouts.getItem(this.layoutId); return this.background.fill ? this.background : layout?.effectiveBackground() || this.presentation.master.background; }
   effectiveTheme() { const layout = this.presentation.layouts.getItem(this.layoutId); return layout?.effectiveTheme() || this.presentation.master.effectiveTheme(); }
@@ -7535,7 +7562,7 @@ export class Slide {
   inspectRecords(kinds) {
     const records = [];
     if (kinds.has("layout")) { const layout = this.presentation.layouts.getItem(this.layoutId); records.push({ kind: "layout", layoutId: this.layoutId || `${this.id}/layout`, name: layout?.name || "Blank", type: layout?.type || "blank", masterId: layout?.masterId, themeId: this.effectiveTheme().id, placeholders: layout?.placeholders.length || 0 }); }
-    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, comments: this.comments.items.length, hasNotes: Boolean(this.speakerNotes.text) });
+    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, comments: this.comments.items.length, hasNotes: Boolean(this.speakerNotes.text) });
     for (const shape of this.shapes) {
       if (kinds.has("textbox") && shape.text.value) records.push(shape.inspectRecord("textbox"));
       else if (kinds.has("shape")) records.push(shape.inspectRecord("shape"));
@@ -7545,6 +7572,7 @@ export class Slide {
     if (kinds.has("chart")) records.push(...this.charts.items.map((chart) => chart.inspectRecord()));
     if (kinds.has("image")) records.push(...this.images.items.map((image) => image.inspectRecord()));
     if (kinds.has("connector")) records.push(...this.connectors.items.map((connector) => connector.inspectRecord()));
+    for (const group of this.groups) records.push(...group.inspectRecords(kinds));
     if (kinds.has("comment") || kinds.has("thread")) records.push(...this.comments.items.map((comment) => comment.inspectRecord()));
     if (kinds.has("notes")) records.push({ kind: "notes", id: `${this.id}/notes`, slide: this.index + 1, text: this.speakerNotes.text, textPreview: this.speakerNotes.text.slice(0, 300), textChars: this.speakerNotes.text.length });
     return records;
@@ -7557,13 +7585,19 @@ export class Slide {
       const shape = this.shapes.items.find((item) => item.id === parentId);
       if (shape) return createTextRange(shape, id, { parentKind: "shape" });
     }
-    return [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.comments.items].find((element) => element.id === id);
+    const direct = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.groups.items, ...this.comments.items].find((element) => element.id === id);
+    if (direct) return direct;
+    for (const group of this.groups) {
+      const nested = group.resolve(id);
+      if (nested) return nested;
+    }
+    return undefined;
   }
 
   validateLayout(options = {}) {
     const issues = [];
     const slideFrame = this.frame;
-    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items];
+    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.groups.items];
     const connectors = this.connectors.items;
     const minOverlapArea = options.minOverlapArea ?? 64;
     const padding = options.boundsPadding ?? 0;
@@ -7593,6 +7627,7 @@ export class Slide {
         issues.push({ kind: "layoutIssue", type: "connectorOffCanvas", severity: "error", slide: this.index + 1, id: connector.id, name: connector.name || undefined, start: connector.start, end: connector.end, message: `${elementLabel(connector)} connector endpoint extends outside the slide frame.` });
       }
     }
+    for (const group of this.groups) issues.push(...group.validateLayout());
     for (let leftIndex = 0; leftIndex < elements.length; leftIndex++) {
       for (let rightIndex = leftIndex + 1; rightIndex < elements.length; rightIndex++) {
         const left = elements[leftIndex];
@@ -7624,7 +7659,7 @@ export class Slide {
   }
 
   layoutJson(options = {}) {
-    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items].map((element) => {
+    const elements = [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.groups.items].map((element) => {
       const record = element.layoutJson();
       const comments = this.comments.items.filter((comment) => comment.targetId === element.id);
       return {
@@ -7645,11 +7680,11 @@ export class Slide {
 
   toSvg() {
     const { width, height } = this.presentation.slideSize;
-    const elements = [...this.connectors.items, ...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items].map((element) => element.toSvg()).join("");
+    const elements = [...this.connectors.items, ...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.groups.items].map((element) => element.toSvg()).join("");
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${xmlEscape(resolvePresentationBackgroundColor(this.effectiveBackground(), this.effectiveTheme()))}"/>${elements}</svg>`;
   }
 
-  toProto() { return { id: this.id, layoutId: this.layoutId, background: this.background.fill ? this.background : undefined, notes: this.speakerNotes.text || undefined, comments: this.comments.items.map((comment) => comment.toJSON()), elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items].map((element) => element.layoutJson()) }; }
+  toProto() { return { id: this.id, layoutId: this.layoutId, background: this.background.fill ? this.background : undefined, notes: this.speakerNotes.text || undefined, comments: this.comments.items.map((comment) => comment.toJSON()), elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items].map((element) => element.layoutJson()), groups: this.groups.items.map((group) => group.toProto()) }; }
 
   compose(composeNode, options = {}) {
     const frame = options.frame || { left: 72, top: 64, width: this.presentation.slideSize.width - 144, height: this.presentation.slideSize.height - 128 };
@@ -7744,6 +7779,7 @@ export class Shape {
     this.borderRadius = config.borderRadius;
     this.placeholder = config.placeholder;
     this._text = new TextFrame(config.text || "");
+    this._text.style = { ...(config.textStyle || config.style?.text || {}) };
   }
 
   get text() { return this._text; }
@@ -8181,6 +8217,12 @@ export class PresentationFile {
 function resolvePresentationModernCommentAnchor(slide, anchor) {
   if (!anchor) return undefined;
   const entries = presentationSlideElementEntries(slide);
+  const requestedPath = Array.isArray(anchor.monikers) && anchor.monikers.length ? anchor.monikers : [{ nativeId: anchor.nativeId, creationId: anchor.creationId, moniker: anchor.moniker }];
+  const byPath = entries.find((entry) => entry.monikerPath?.length === requestedPath.length && entry.monikerPath.every((candidate, index) => {
+    const requested = requestedPath[index];
+    return candidate.moniker === requested.moniker && (requested.creationId ? candidate.creationId === requested.creationId : candidate.nativeId === requested.nativeId);
+  }))?.element;
+  if (byPath) return anchor.type === "textRange" && anchor.moniker === "spMk" ? slide.resolve(`${byPath.id}/text`) : byPath;
   const sameType = entries.filter((entry) => entry.moniker === anchor.moniker);
   let element;
   if (anchor.creationId) {
@@ -8297,13 +8339,29 @@ function presentationXml(presentation, masterParts = []) {
 }
 
 function presentationSlideElementEntries(slide) {
-  return [
+  const direct = [
     ...slide.connectors.items.map((element) => ({ element, moniker: "cxnSpMk" })),
     ...slide.shapes.items.map((element) => ({ element, moniker: "spMk" })),
     ...slide.tables.items.map((element) => ({ element, moniker: "graphicFrameMk" })),
     ...slide.charts.items.map((element) => ({ element, moniker: "graphicFrameMk" })),
     ...slide.images.items.map((element) => ({ element, moniker: "picMk" })),
   ];
+  const nested = (group, ancestors = []) => {
+    const groupEntry = { element: group, moniker: "grpSpMk", ancestors };
+    const path = [...ancestors, { element: group, moniker: "grpSpMk" }];
+    return [
+      groupEntry,
+      ...group.children.flatMap((element) => element instanceof GroupShape
+        ? nested(element, path)
+        : [{ element, moniker: element instanceof ConnectorElement ? "cxnSpMk" : "spMk", ancestors: path }]),
+    ];
+  };
+  return [...direct, ...slide.groups.items.flatMap((group) => nested(group))].map((entry) => {
+    const monikerPath = [...(entry.ancestors || []), { element: entry.element, moniker: entry.moniker }].map((part) => ({ nativeId: part.element.nativeId, creationId: part.element.creationId, moniker: part.moniker }));
+    entry.element.moniker = entry.moniker;
+    entry.element.monikerPath = monikerPath;
+    return { ...entry, monikerPath };
+  });
 }
 
 function planPresentationNativeCommentAnchors(presentation) {
@@ -8511,7 +8569,7 @@ function pptxChartXml(chart) {
 function slideXml(slide, imageParts = [], chartParts = []) {
   const imageRelById = new Map(imageParts.map((part) => [part.image.id, part.slideRelId]));
   const chartRelById = new Map(chartParts.map((part) => [part.chart.id, part.slideRelId]));
-  const elements = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items];
+  const elements = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items];
   const shapes = elements.map((element, index) => element.toPptxShape(index, imageRelById.get(element.id) || chartRelById.get(element.id))).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld>${presentationBackgroundXml(slide.background.fill ? slide.background : undefined)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes}</p:spTree></p:cSld></p:sld>`;
 }
@@ -8604,9 +8662,9 @@ async function parsePptxPicture(slide, part, context) {
   return applyPresentationElementIdentity(slide.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target }), part, "picMk");
 }
 
-function parsePptxConnector(slide, part) {
-  const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-  const extAttrs = [...part.matchAll(/<p:ext\b([^>]*)>/g)].map((match) => match[1]).find((attrs) => attrs.includes("urn:open-office-artifact:connector"));
+function parsePptxConnector(owner, part) {
+  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
+  const extAttrs = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ext\b([^>]*)>/g)].map((match) => match[1]).find((attrs) => attrs.includes("urn:open-office-artifact:connector"));
   const attrs = extAttrs || "";
   const startX = Number(/\bstartX="([^"]+)"/.exec(attrs)?.[1]);
   const startY = Number(/\bstartY="([^"]+)"/.exec(attrs)?.[1]);
@@ -8617,38 +8675,46 @@ function parsePptxConnector(slide, part) {
   const end = Number.isFinite(endX) && Number.isFinite(endY) ? { x: endX, y: endY } : { x: frame.left + frame.width, y: frame.top + frame.height };
   const startTargetId = decodeXml(/\bstartTargetId="([^"]*)"/.exec(attrs)?.[1] || "") || undefined;
   const endTargetId = decodeXml(/\bendTargetId="([^"]*)"/.exec(attrs)?.[1] || "") || undefined;
-  return applyPresentationElementIdentity(slide.connectors.add({ name, start, end, startTargetId, endTargetId, line: { fill: "#334155", width: 2, endArrow: /<a:tailEnd/.test(part) ? "triangle" : undefined } }), part, "cxnSpMk");
+  return applyPresentationElementIdentity(owner.connectors.add({ name, start, end, startTargetId, endTargetId, line: { fill: "#334155", width: 2, endArrow: /<(?:[A-Za-z_][\w.-]*:)?tailEnd\b/.test(part) ? "triangle" : undefined } }), part, "cxnSpMk");
+}
+
+function parsePptxShape(owner, part, context = {}) {
+    const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
+    const text = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((m) => decodeXml(m[1])).join("");
+    const phAttrs = /<(?:[A-Za-z_][\w.-]*:)?ph\b([^>]*)\/?>(?:<\/(?:[A-Za-z_][\w.-]*:)?ph>)?/.exec(part)?.[1];
+    const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "body", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 1), name } : undefined;
+    const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.type === placeholder.type && candidate.idx === placeholder.idx) : undefined;
+    const spPr = /<(?:[A-Za-z_][\w.-]*:)?spPr\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?spPr>/.exec(part)?.[1] || "";
+    const fill = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(spPr)?.[1];
+    const lineBlock = /<(?:[A-Za-z_][\w.-]*:)?ln\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ln>/.exec(spPr);
+    const lineColor = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(lineBlock?.[2] || "")?.[1];
+    const lineWidth = Number(/\bw="(\d+)"/.exec(lineBlock?.[1] || "")?.[1] || 0) / 12700;
+    const geometry = /<(?:[A-Za-z_][\w.-]*:)?prstGeom[^>]*prst="([^"]+)"/.exec(spPr)?.[1] || "rect";
+    const rPr = /<(?:[A-Za-z_][\w.-]*:)?rPr\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?rPr>/.exec(part);
+    const localTextStyle = parsePresentationPlaceholderStyleXml(rPr?.[0] || "");
+    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
+    applyPresentationElementIdentity(shape, part, "spMk");
+    shape.text = text;
+    shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
+    return shape;
+}
+
+function parsePptxGroup(owner, part, context) {
+  return parsePresentationGroupTree(owner, part, context, { applyIdentity: applyPresentationElementIdentity, parseShape: parsePptxShape, parseConnector: parsePptxConnector });
 }
 
 async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined }) {
   slide.background = parsePresentationBackgroundXml(xml) || {};
-  for (const match of xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
-    const part = match[0];
-    const name = decodeXml(/<p:cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-    const text = [...part.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => decodeXml(m[1])).join("");
-    const phAttrs = /<p:ph\b([^>]*)\/?>(?:<\/p:ph>)?/.exec(part)?.[1];
-    const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "body", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 1), name } : undefined;
-    const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.type === placeholder.type && candidate.idx === placeholder.idx) : undefined;
-    const spPr = /<p:spPr>([\s\S]*?)<\/p:spPr>/.exec(part)?.[1] || "";
-    const fill = /<a:solidFill>[\s\S]*?<a:srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(spPr)?.[1];
-    const lineBlock = /<a:ln\b([^>]*)>([\s\S]*?)<\/a:ln>/.exec(spPr);
-    const lineColor = /<a:solidFill>[\s\S]*?<a:srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(lineBlock?.[2] || "")?.[1];
-    const lineWidth = Number(/\bw="(\d+)"/.exec(lineBlock?.[1] || "")?.[1] || 0) / 12700;
-    const geometry = /<a:prstGeom[^>]*prst="([^"]+)"/.exec(spPr)?.[1] || "rect";
-    const rPr = /<a:rPr\b([^>]*)>([\s\S]*?)<\/a:rPr>/.exec(part);
-    const localTextStyle = parsePresentationPlaceholderStyleXml(rPr?.[0] || "");
-    const shape = slide.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
-    applyPresentationElementIdentity(shape, part, "spMk");
-    shape.text = text;
-    shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
+  for (const child of directPresentationChildren(xml, "spTree")) {
+    const part = child.xml;
+    if (child.localName === "sp") parsePptxShape(slide, part, context);
+    else if (child.localName === "graphicFrame") {
+      if (part.includes("/drawingml/2006/table")) parsePptxTableGraphic(slide, part);
+      else if (part.includes("/drawingml/2006/chart")) await parsePptxChartGraphic(slide, part, context);
+    } else if (child.localName === "pic") await parsePptxPicture(slide, part, context);
+    else if (child.localName === "cxnSp") parsePptxConnector(slide, part);
+    else if (child.localName === "grpSp") parsePptxGroup(slide, part, context);
   }
-  for (const match of xml.matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g)) {
-    const part = match[0];
-    if (part.includes("/drawingml/2006/table")) parsePptxTableGraphic(slide, part);
-    else if (part.includes("/drawingml/2006/chart")) await parsePptxChartGraphic(slide, part, context);
-  }
-  for (const match of xml.matchAll(/<p:pic>[\s\S]*?<\/p:pic>/g)) await parsePptxPicture(slide, match[0], context);
-  for (const match of xml.matchAll(/<p:cxnSp>[\s\S]*?<\/p:cxnSp>/g)) parsePptxConnector(slide, match[0]);
 }
 
 class DocumentStyleCollection {

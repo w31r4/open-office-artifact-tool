@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 216);
+assert.equal(HELP_CATALOG.length, 217);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -46,10 +46,11 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /commentAuthors\.xml.*Office 2021.*typed drawing targets.*shape text-range monikers/);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /shapeId\/text ranges/);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /commentAuthors\.xml.*Office 2021.*drawing\/group paths.*nested shape text-range monikers/);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /nested shapeId\/text ranges/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.connectors.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.theme"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master"));
@@ -175,7 +176,7 @@ assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 30);
+assert.equal(presentationCatalog.length, 31);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");

@@ -945,7 +945,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
-| `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
 | `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
@@ -958,16 +958,17 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry. |
-| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, standard master Theme targets, notes, comments, charts, and images. |
+| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, and images. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output. |
-| `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing targets, and shape text-range monikers through p188 comment parts. |
+| `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
+| `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups, native p:grpSp roundtrip, and Office 2021 group-aware comment monikers. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
 | `slide.shapes.add` | api | Add a shape/textbox with geometry, position, fill, line, and text. |
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
@@ -1040,7 +1041,7 @@ Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or targe
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -1058,7 +1059,7 @@ Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, 
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/table/chart/image/connector/comment/notes kinds.
+- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/comment/notes kinds.
 - `search` (string) — Case-insensitive record filter.
 - `target` (string) — Stable target ID/anchor.
 - `before` (number) — Context records before matches.
@@ -1243,7 +1244,7 @@ Serialize native PPTX with every master/layout ownership chain, per-master Theme
 
 #### `PresentationFile.importPptx`
 
-Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, standard master Theme targets, notes, comments, charts, and images.
+Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, and images.
 
 **Schema parameters:**
 
@@ -1361,11 +1362,11 @@ Add an inspectable bar/line/pie chart facade with chartType, title, categories, 
 
 #### `slide.comments.addThread`
 
-Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing targets, and shape text-range monikers through p188 comment parts.
+Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts.
 
 **Schema parameters:**
 
-- `target` (string|object) required — Stable element/text-range ID or facade; modern PPTX export binds supported drawing targets or shapeId/text ranges with native monikers and persistent creation IDs.
+- `target` (string|object) required — Stable element/text-range ID or facade; modern PPTX export binds drawing/group moniker paths or nested shapeId/text ranges with persistent creation IDs.
 - `text` (string) required — Initial comment text.
 - `author` (string) — Comment author.
 - `resolved` (boolean) — Initial resolution state.
@@ -1405,6 +1406,24 @@ Add an inspectable connector line between points or element IDs with SVG preview
 **Schema returns:**
 
 - `connector` (ConnectorElement) — Appended editable connector.
+
+#### `slide.groups.add`
+
+Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups, native p:grpSp roundtrip, and Office 2021 group-aware comment monikers.
+
+**Schema parameters:**
+
+- `name` (string) — Inspectable group name.
+- `position` (object) required — Group frame in parent or slide pixel coordinates.
+- `childFrame` (object) — Local child coordinate rectangle mapped through DrawingML chOff/chExt; defaults to the group width/height from 0,0.
+- `shapes` (object[]) — Initial child shape/textbox definitions in local coordinates.
+- `connectors` (object[]) — Initial child connector definitions in local coordinates.
+- `groups` (object[]) — Initial nested group definitions.
+- `children` (object[]) — Ordered mixed child definitions using kind shape, connector, or groupShape.
+
+**Schema returns:**
+
+- `group` (GroupShape) — Appended editable grouped-shape facade with shapes, connectors, groups, resolve, inspect, layout, SVG, and PPTX output.
 
 #### `slide.images.add`
 

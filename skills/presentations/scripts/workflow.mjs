@@ -44,6 +44,7 @@ function addFixtureSlide(presentation, config = {}) {
   const byName = new Map();
   const remember = (item, name) => { if (name) byName.set(name, item); return item; };
   for (const shape of config.shapes || []) remember(addSlideShape(slide, shape), shape.name);
+  for (const group of config.groups || []) remember(slide.groups.add(group), group.name);
   for (const table of config.tables || []) remember(slide.tables.add(table), table.name);
   for (const chart of config.charts || []) remember(slide.charts.add(chart.chartType || chart.type || "bar", chart), chart.name);
   for (const image of config.images || []) remember(slide.images.add(image), image.name);

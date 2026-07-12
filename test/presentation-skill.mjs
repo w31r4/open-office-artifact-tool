@@ -143,9 +143,13 @@ try {
   const modernSkillSlideXml = await modernSkillZip.file("ppt/slides/slide1.xml").async("text");
   assert.match(modernSkillCommentsXml, /p188:replyLst/);
   assert.match(modernSkillCommentsXml, /oac:txMkLst>[\s\S]*?<pc:sldMkLst>[\s\S]*?<oac:spMk id="2" creationId="\{[0-9A-F-]+\}"\/><oac:txMk cp="0" len="44"\/>/);
+  assert.match(modernSkillCommentsXml, /oac:deMkLst>[\s\S]*?<oac:grpSpMk id="3" creationId="\{[0-9A-F-]+\}"\/>/);
+  assert.match(modernSkillSlideXml, /<p:grpSp>[\s\S]*?<p:cNvPr id="3" name="review-evidence-group">/);
   assert.match(modernSkillSlideXml, /a16:creationId[^>]*id="\{[0-9A-F-]+\}"/);
   const modernSkillThread = modernComments.qa.presentation.slides.items[0].comments.items[0];
   const modernSkillTarget = modernComments.qa.presentation.slides.items[0].shapes.items.find((shape) => shape.name === "review-title");
+  const modernSkillGroupThread = modernComments.qa.presentation.slides.items[0].comments.items[1];
+  const modernSkillGroup = modernComments.qa.presentation.slides.items[0].groups.items[0];
   assert.equal(modernSkillThread.nativeFormat, "modern");
   assert.equal(modernSkillThread.resolved, true);
   assert.equal(modernSkillThread.targetId, `${modernSkillTarget.id}/text`);
@@ -156,6 +160,10 @@ try {
   assert.equal(modernSkillThread.nativeAnchor.moniker, "spMk");
   assert.equal(modernSkillThread.nativeAnchor.nativeId, modernSkillTarget.nativeId);
   assert.equal(modernSkillThread.nativeAnchor.creationId, modernSkillTarget.creationId);
+  assert.equal(modernSkillGroupThread.targetId, modernSkillGroup.id);
+  assert.equal(modernSkillGroupThread.nativeAnchor.moniker, "grpSpMk");
+  assert.equal(modernSkillGroupThread.nativeAnchor.creationId, modernSkillGroup.creationId);
+  assert.equal(modernSkillGroup.shapes.items[0].text.value.includes("text and group anchors"), true);
   assert.deepEqual(modernSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.ok(modernSkillThread.comments.every((comment) => /^\{[0-9A-F-]+\}$/.test(comment.nativeId)));
   assert.equal(modernComments.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
