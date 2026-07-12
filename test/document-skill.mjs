@@ -49,6 +49,9 @@ try {
   assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink")?.url, "https://learn.microsoft.com/office/open-xml/open-xml-sdk");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
   assert.match(nativePreferredDocument.blocks.find((item) => item.kind === "citation")?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Preserve native numbering definitions.")?.numberFormat, "upperLetter");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.numberFormat, "lowerRoman");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.level, 1);
 
   const nativeStatus = nativeDocumentRenderStatus();
   const baselineWrite = await verifyDocumentFile(result.docxPath, {

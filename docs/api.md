@@ -16,7 +16,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addHyperlink` | api | Append an external hyperlink backed by a DOCX relationship and w:hyperlink element; native import restores its target and relationship ID. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
-| `document.addListItem` | api | Append a real numbered or bulleted list item backed by DOCX numbering definitions. |
+| `document.addListItem` | api | Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances. |
 | `document.addParagraph` | api | Append a styled paragraph block with optional run-level styles and return an inspectable/resolveable paragraph object. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
@@ -28,8 +28,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations, unknown styles, malformed tables, bad image dimensions/data URLs, section setup, dangling comments, visual layout overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata. |
-| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata. |
+| `DocumentFile.importDocx` | api | Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation and atomically reject dangling content types, relationships, or source XML relationship references. |
 | `DocumentModel.create` | api | Create a document with paragraph, list, table, header/footer, style, and comment blocks. |
@@ -193,13 +193,17 @@ Append a tracked insertion with author/date metadata and native DOCX w:ins expor
 
 #### `document.addListItem`
 
-Append a real numbered or bulleted list item backed by DOCX numbering definitions.
+Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances.
 
 **Schema parameters:**
 
 - `text` (string) required — List item text.
 - `listType` (string) — bullet or numbered.
 - `level` (number) — Zero-based list nesting level.
+- `numberFormat` (string) — OOXML numbering format such as bullet, decimal, upperLetter, lowerRoman, or ordinal.
+- `start` (number) — Positive starting value for this numbering level.
+- `levelText` (string) — OOXML level text template using placeholders such as %1 or %2.
+- `numberingId` (number|string) — Optional list-instance identity used to group levels during export and preserved by native import.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
@@ -390,7 +394,7 @@ Return QA issues for fake lists, invalid links/citations, unknown styles, malfor
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.xml, numbering.xml, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata.
+Export DocumentModel to a DOCX package with document.xml, relationship-driven styles, multi-level numbering definitions, comments, section-scoped header/footer parts, hyperlinks, fields, citations, and metadata.
 
 **Schema parameters:**
 
@@ -402,7 +406,7 @@ Export DocumentModel to a DOCX package with document.xml, styles.xml, comments.x
 
 #### `DocumentFile.importDocx`
 
-Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes.
+Import DOCX bytes into the clean-room document facade, restoring embedded metadata by default or relationship-driven native semantics with preferNative, including styles, abstract numbering/instances/level overrides, hyperlinks, fields, citation bookmarks, arbitrary comments/header/footer targets, comment author metadata, reference types, and section indexes.
 
 **Schema parameters:**
 

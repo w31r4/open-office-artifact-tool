@@ -35,7 +35,7 @@ document.applyDesignPreset("report");
 document.addParagraph("Decision brief", { styleId: "Title", name: "title" });
 document.addParagraph("Recommendation", { styleId: "Heading1", name: "recommendation-heading" });
 document.addParagraph("Proceed with the clean-room implementation.", { styleId: "Normal" });
-document.addListItem("Validate the exported DOCX", { listType: "bullet" });
+document.addListItem("Validate the exported DOCX", { listType: "number", numberFormat: "upperLetter", start: 1, levelText: "%1)" });
 document.addHeader("Decision brief", { referenceType: "first", sectionIndex: 0 });
 document.addFooter("Confidential", { referenceType: "even" });
 const decisionTable = document.addTable({
@@ -103,7 +103,7 @@ node skills/documents/scripts/verify-document.mjs \
 ## QA gates
 
 - `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing blocks, styles, classic comment author/initials/date metadata and block anchors, plus default/first/even header/footer references with zero-based section bindings survived roundtrip. Native import follows `document.xml.rels` targets rather than assuming fixed comments/header/footer filenames, restores external hyperlink URLs/relationship IDs, parses simple and complex fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
+- `document.inspect(...)` proves agent-facing blocks, multi-level list formats/start/level text, styles, classic comment metadata and block anchors, plus default/first/even header/footer references survived roundtrip. Native import follows `document.xml.rels` instead of assuming fixed styles/numbering/comments/header/footer filenames, resolves abstract numbering plus overrides, restores external hyperlinks, parses fields, and recognizes clean-room citation bookmarks. Omit header/footer `sectionIndex` to target the final section.
 - `document.verify({ visualQa: true })` checks structural and modeled layout issues.
 - Model SVG/Playwright preview catches facade-level layout regressions.
 - LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.

@@ -16,6 +16,8 @@
     { "kind": "paragraph", "name": "recommendation", "styleId": "Normal", "text": "Use semantic verification together with native page rendering before delivery." },
     { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "text": "Inspect stable document blocks and comments." },
     { "kind": "listItem", "name": "render-step", "styleId": "Normal", "listType": "bullet", "text": "Render the exported DOCX through LibreOffice and Poppler." },
+    { "kind": "listItem", "name": "lettered-step", "styleId": "Normal", "listType": "number", "numberFormat": "upperLetter", "start": 2, "levelText": "%1)", "numberingId": 77, "text": "Preserve native numbering definitions." },
+    { "kind": "listItem", "name": "roman-substep", "styleId": "Normal", "listType": "number", "level": 1, "numberFormat": "lowerRoman", "start": 3, "levelText": "%1.%2)", "numberingId": 77, "text": "Resolve nested numbering levels." },
     { "kind": "section", "name": "evidence-section", "breakType": "nextPage", "orientation": "portrait" },
     {
       "kind": "table",
@@ -44,6 +46,7 @@
   "expectInspect": [
     { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
     { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
+    { "kind": "listItem", "pattern": "nested numbering levels" },
     { "kind": "table", "pattern": "readiness-table" },
     { "kind": "comment", "pattern": "native render review" },
     { "kind": "header", "pattern": "Opening section evidence" },
