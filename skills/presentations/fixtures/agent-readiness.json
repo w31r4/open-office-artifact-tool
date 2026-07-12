@@ -25,7 +25,14 @@
     {
       "id": "master/verification",
       "name": "Verification Master",
-      "background": { "fill": "bg2", "mode": "reference", "index": 1002 },
+      "background": { "fill": "accent1", "mode": "reference", "index": 1001 },
+      "theme": {
+        "name": "Verification Theme",
+        "colors": { "accent1": "#EDE9FE", "accent2": "#7C3AED" },
+        "fonts": { "major": "Georgia" },
+        "textStyles": { "title": { "fontSize": 40, "color": "accent2" } },
+        "colorMap": { "accent1": "accent1", "accent2": "accent2" }
+      },
       "placeholders": [
         { "id": "master/verification/title", "type": "title", "idx": 1, "name": "Verification Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 40, "bold": true, "color": "accent2", "fontFamily": "+mj-lt" } }
       ]
@@ -33,13 +40,12 @@
   ],
   "layouts": [
     { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [] },
-    { "id": "layout/verification-grid", "name": "Verification Grid", "type": "blank", "masterId": "master/verification", "background": "#F8FAFC", "placeholders": [] }
+    { "id": "layout/verification-grid", "name": "Verification Grid", "type": "blank", "masterId": "master/verification", "placeholders": [] }
   ],
   "slides": [
     {
       "name": "Opening",
       "layoutId": "layout/verification-grid",
-      "background": "#FFFFFF",
       "notes": "Open by framing the deck as evidence that agent-facing PPTX work can be independently implemented and verified.",
       "shapes": [
         { "name": "cover-kicker", "position": { "left": 42, "top": 42, "width": 600, "height": 52 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "OPEN OFFICE ARTIFACT TOOL", "textStyle": { "fontSize": 24, "bold": true, "color": "#3D8DFF" } },

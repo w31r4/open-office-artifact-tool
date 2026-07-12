@@ -880,17 +880,18 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `Presentation.create` | api | Create a deck with a slide size, shared theme, one or more Slide Masters, and master-bound reusable layouts. |
+| `Presentation.create` | api | Create a deck with a slide size, default theme, one or more Slide Masters with optional theme overrides, and master-bound reusable layouts. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
-| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure its identity, background, and typed placeholder defaults. |
-| `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, and typed placeholder defaults for its bound layouts. |
+| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults. |
+| `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
+| `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, optional inherited theme override, and typed placeholder defaults for its bound layouts. |
 | `presentation.masters.getItem` | api | Resolve a Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
 | `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
-| `presentation.theme` | api | Configure inspectable complete theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Theme and Slide Master inheritance. |
+| `presentation.theme` | api | Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry. |
@@ -943,14 +944,14 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `Presentation.create`
 
-Create a deck with a slide size, shared theme, one or more Slide Masters, and master-bound reusable layouts.
+Create a deck with a slide size, default theme, one or more Slide Masters with optional theme overrides, and master-bound reusable layouts.
 
 **Schema parameters:**
 
 - `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
-- `theme` (object) — Theme name, colors, and major/minor fonts.
-- `master` (object) — Backward-compatible first Slide Master configuration used when masters is omitted.
-- `masters` (object[]) — One or more Slide Master definitions with stable IDs, names, backgrounds, and typed placeholder defaults.
+- `theme` (object) — Default deck theme name, colors, fonts, text styles, and color map.
+- `master` (object) — Backward-compatible first Slide Master configuration, including an optional partial theme override, used when masters is omitted.
+- `masters` (object[]) — One or more Slide Master definitions with stable IDs, names, backgrounds, optional partial theme overrides, and typed placeholder defaults.
 - `layouts` (object[]) — Reusable slide layouts bound to a masterId.
 
 **Schema returns:**
@@ -1028,28 +1029,42 @@ Create a reusable slide layout with an optional background and typed placeholder
 
 #### `presentation.master`
 
-Backward-compatible alias for the first Slide Master; configure its identity, background, and typed placeholder defaults.
+Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults.
 
 **Schema parameters:**
 
 - `id` (string) — Stable master identity used by layouts.
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
+- `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
 - `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, and text style.
 
 **Schema returns:**
 
 - `master` (PresentationSlideMaster) — Mutable first Slide Master facade.
 
+#### `presentation.master.setTheme`
+
+Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance.
+
+**Schema parameters:**
+
+- `theme` (object|null) required — Partial master theme override, or null to inherit presentation.theme.
+
+**Schema returns:**
+
+- `master` (PresentationSlideMaster) — The same Slide Master after updating its theme inheritance.
+
 #### `presentation.masters.add`
 
-Add a Slide Master with stable identity, native background, and typed placeholder defaults for its bound layouts.
+Add a Slide Master with stable identity, native background, optional inherited theme override, and typed placeholder defaults for its bound layouts.
 
 **Schema parameters:**
 
 - `id` (string) required — Stable unique master identity used by layouts.
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
+- `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
 - `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, and text style.
 
 **Schema returns:**
@@ -1108,7 +1123,7 @@ Inspect or resolve stable textRange anchors such as shapeId/text for editable sl
 
 #### `presentation.theme`
 
-Configure inspectable complete theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Theme and Slide Master inheritance.
+Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides.
 
 **Schema parameters:**
 

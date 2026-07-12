@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 212);
+assert.equal(HELP_CATALOG.length, 213);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -37,6 +37,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXl
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.getItem"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master.setTheme"));
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.summary || "", /drawing\/image\/chart\/pivot source references/);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.sourceReference?.description || "", /pivotCacheDefinition requires a unique cacheId/);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /pivots\/caches/);
@@ -167,7 +168,7 @@ assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 29);
+assert.equal(presentationCatalog.length, 30);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");

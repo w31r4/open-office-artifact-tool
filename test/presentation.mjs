@@ -16,10 +16,10 @@ assert.equal(masterOnlyLoaded.layouts.items.length, 1);
 assert.equal(masterOnlyLoaded.master.name, "Master Only");
 assert.deepEqual(masterOnlyLoaded.slides.items[0].effectiveBackground(), { fill: "#123456", mode: "solid" });
 const multiMasterPresentation = Presentation.create({
-  theme: { colors: { accent1: "#abcdef" } },
+  theme: { colors: { accent1: "#abcdef", accent6: "#123456" }, fonts: { minor: "Inter" } },
   masters: [
     { id: "master/brand", name: "Brand Master", background: "#112233", placeholders: [{ type: "title", idx: 1, name: "Brand Title", style: { bold: true, color: "accent1" } }] },
-    { id: "master/data", name: "Data Master", background: "#f1f5f9", placeholders: [{ type: "title", idx: 1, name: "Data Title", style: { bold: true, color: "accent2" } }] },
+    { id: "master/data", name: "Data Master", background: { fill: "accent1", mode: "reference", index: 1001 }, theme: { name: "Data Theme", colors: { accent1: "#ff0066", accent2: "#663399" }, fonts: { major: "Georgia" }, textStyles: { title: { fontSize: 44, color: "accent2" } }, colorMap: { accent1: "accent2" } }, placeholders: [{ type: "title", idx: 1, name: "Data Title", style: { bold: true, color: "accent2" } }] },
   ],
   layouts: [
     { id: "layout/brand", name: "Brand Layout", masterId: "master/brand", placeholders: [] },
@@ -31,7 +31,11 @@ multiMasterPresentation.slides.add({ layoutId: "layout/data" });
 assert.equal(multiMasterPresentation.master, multiMasterPresentation.masters.items[0]);
 assert.equal(multiMasterPresentation.masters.count, 2);
 assert.equal(multiMasterPresentation.layouts.getItem("layout/data").effectivePlaceholders()[0].name, "Data Title");
-assert.deepEqual(multiMasterPresentation.slides.items[1].effectiveBackground(), { fill: "#f1f5f9", mode: "solid" });
+assert.deepEqual(multiMasterPresentation.slides.items[1].effectiveBackground(), { fill: "accent1", mode: "reference", index: 1001 });
+assert.equal(multiMasterPresentation.slides.items[1].effectiveTheme().colors.accent1, "#ff0066");
+assert.equal(multiMasterPresentation.slides.items[1].effectiveTheme().colors.accent6, "#123456");
+assert.equal(multiMasterPresentation.slides.items[1].effectiveTheme().fonts.minor, "Inter");
+assert.match(multiMasterPresentation.slides.items[1].toSvg(), /fill="#663399"/);
 assert.match(multiMasterPresentation.inspect({ kind: "slideMaster" }).ndjson, /Brand Master/);
 assert.match(multiMasterPresentation.inspect({ kind: "slideMaster" }).ndjson, /Data Master/);
 assert.equal(multiMasterPresentation.resolve("master/data").name, "Data Master");
@@ -40,13 +44,18 @@ assert.equal((await PresentationFile.inspectPptx(multiMasterPptx)).ok, true);
 const multiMasterZip = await JSZip.loadAsync(new Uint8Array(await multiMasterPptx.arrayBuffer()));
 assert.ok(multiMasterZip.file("ppt/slideMasters/slideMaster1.xml"));
 assert.ok(multiMasterZip.file("ppt/slideMasters/slideMaster2.xml"));
+assert.ok(multiMasterZip.file("ppt/theme/theme2.xml"));
 assert.match(await multiMasterZip.file("ppt/presentation.xml").async("text"), /<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId4"\/><p:sldMasterId id="2147483649" r:id="rId5"\/><\/p:sldMasterIdLst>/);
 assert.match(await multiMasterZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /Brand Master/);
 assert.match(await multiMasterZip.file("ppt/slideMasters/slideMaster2.xml").async("text"), /Data Master/);
 assert.match(await multiMasterZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /slideMaster1\.xml/);
 assert.match(await multiMasterZip.file("ppt/slideLayouts/_rels/slideLayout2.xml.rels").async("text"), /slideMaster2\.xml/);
 assert.match(await multiMasterZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text"), /relationships\/theme" Target="\.\.\/theme\/theme1\.xml"/);
-assert.match(await multiMasterZip.file("ppt/slideMasters/_rels/slideMaster2.xml.rels").async("text"), /relationships\/theme" Target="\.\.\/theme\/theme1\.xml"/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/_rels/slideMaster2.xml.rels").async("text"), /relationships\/theme" Target="\.\.\/theme\/theme2\.xml"/);
+assert.match(await multiMasterZip.file("ppt/theme/theme2.xml").async("text"), /name="Data Theme"/);
+assert.match(await multiMasterZip.file("ppt/theme/theme2.xml").async("text"), /<a:accent1><a:srgbClr val="FF0066"\/>/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/slideMaster2.xml").async("text"), /<p:clrMap[^>]*accent1="accent2"/);
+assert.match(await multiMasterZip.file("ppt/slideMasters/slideMaster2.xml").async("text"), /<p:titleStyle>[\s\S]*?<a:defRPr sz="4400"/);
 assert.match(await multiMasterZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /slideLayout1\.xml/);
 assert.match(await multiMasterZip.file("ppt/slides/_rels/slide2.xml.rels").async("text"), /slideLayout2\.xml/);
 const multiMasterLoaded = await PresentationFile.importPptx(multiMasterPptx);
@@ -55,11 +64,19 @@ assert.equal(multiMasterLoaded.masters.items[0].name, "Brand Master");
 assert.equal(multiMasterLoaded.masters.items[1].name, "Data Master");
 assert.equal(multiMasterLoaded.layouts.items[0].masterId, multiMasterLoaded.masters.items[0].id);
 assert.equal(multiMasterLoaded.layouts.items[1].masterId, multiMasterLoaded.masters.items[1].id);
-assert.deepEqual(multiMasterLoaded.slides.items[1].effectiveBackground(), { fill: "#f1f5f9", mode: "solid" });
+assert.deepEqual(multiMasterLoaded.slides.items[1].effectiveBackground(), { fill: "accent1", mode: "reference", index: 1001 });
 assert.equal(multiMasterLoaded.theme.colors.accent1, "#abcdef");
+assert.equal(multiMasterLoaded.masters.items[1].theme?.name, "Data Theme");
+assert.equal(multiMasterLoaded.masters.items[1].effectiveTheme().colors.accent1, "#ff0066");
+assert.equal(multiMasterLoaded.masters.items[1].effectiveTheme().colors.accent6, "#123456");
+assert.equal(multiMasterLoaded.masters.items[1].effectiveTheme().fonts.major, "Georgia");
+assert.equal(multiMasterLoaded.masters.items[1].effectiveTheme().textStyles.title.fontSize, 44);
+assert.equal(multiMasterLoaded.masters.items[1].effectiveTheme().colorMap.accent1, "accent2");
+assert.match(multiMasterLoaded.slides.items[1].toSvg(), /fill="#663399"/);
 const multiMasterRoundtripZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(multiMasterLoaded)).arrayBuffer()));
 assert.ok(multiMasterRoundtripZip.file("ppt/slideMasters/slideMaster2.xml"));
 assert.match(await multiMasterRoundtripZip.file("ppt/slideLayouts/_rels/slideLayout2.xml.rels").async("text"), /slideMaster2\.xml/);
+assert.match(await multiMasterRoundtripZip.file("ppt/theme/theme2.xml").async("text"), /<a:accent1><a:srgbClr val="FF0066"\/>/);
 const masterThemeFallbackZip = await JSZip.loadAsync(new Uint8Array(await multiMasterPptx.arrayBuffer()));
 const multiMasterPresentationRels = await masterThemeFallbackZip.file("ppt/_rels/presentation.xml.rels").async("text");
 masterThemeFallbackZip.file("ppt/_rels/presentation.xml.rels", multiMasterPresentationRels.replace(/<Relationship\b(?=[^>]*Type="[^"]*\/theme")[^>]*\/>/, ""));
@@ -69,6 +86,11 @@ const masterThemeFallbackPptx = new FileBlob(await masterThemeFallbackZip.genera
 const masterThemeFallbackLoaded = await PresentationFile.importPptx(masterThemeFallbackPptx);
 assert.equal(masterThemeFallbackLoaded.theme.colors.accent1, "#abcdef");
 assert.equal(masterThemeFallbackLoaded.masters.count, 2);
+assert.equal(masterThemeFallbackLoaded.masters.items[1].effectiveTheme().colors.accent1, "#ff0066");
+assert.throws(() => multiMasterPresentation.masters.items[1].setTheme({ colors: { accent7: "#000000" } }), /Unsupported presentation theme color/);
+multiMasterPresentation.masters.items[1].setTheme(null);
+assert.equal(multiMasterPresentation.masters.items[1].theme, undefined);
+assert.equal(multiMasterPresentation.masters.items[1].effectiveTheme().colors.accent1, "#abcdef");
 const missingMasterPresentation = Presentation.create();
 missingMasterPresentation.layouts.add({ id: "layout/missing-master", masterId: "master/missing" });
 missingMasterPresentation.slides.add({ layoutId: "layout/missing-master" });

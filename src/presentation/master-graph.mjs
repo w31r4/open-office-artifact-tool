@@ -29,7 +29,7 @@ function allocateNativeId(preferred, used, next) {
   return value;
 }
 
-export function planPresentationMasterGraph(masters = [], layouts = []) {
+export function planPresentationMasterGraph(masters = [], layouts = [], defaultTheme) {
   if (!Array.isArray(masters) || !Array.isArray(layouts)) throw new TypeError("Presentation masters and layouts must be arrays.");
   if (masters.length > 64) throw new RangeError("Presentation masters exceed 64 entries.");
   if (layouts.length > 1024) throw new RangeError("Presentation layouts exceed 1024 entries.");
@@ -44,6 +44,18 @@ export function planPresentationMasterGraph(masters = [], layouts = []) {
   const nextLayoutId = { value: MIN_NATIVE_MASTER_ID + masters.length };
   const masterParts = [];
   const layoutParts = [];
+  const themeParts = [];
+  const themePartByTheme = new Map();
+  const themePart = (theme) => {
+    const resolved = theme || defaultTheme;
+    if (!themePartByTheme.has(resolved)) {
+      const part = { theme: resolved, themePartId: themeParts.length + 1 };
+      themeParts.push(part);
+      themePartByTheme.set(resolved, part);
+    }
+    return themePartByTheme.get(resolved);
+  };
+  if (defaultTheme) themePart(defaultTheme);
   for (const master of masters) {
     const ownedLayouts = layouts.filter((layout) => layout.masterId === master.id);
     if (!ownedLayouts.length) continue;
@@ -52,6 +64,7 @@ export function planPresentationMasterGraph(masters = [], layouts = []) {
       masterPartId: masterParts.length + 1,
       nativeMasterId: allocateNativeId(preferredNativeId(master.id, "pptx-master"), usedNativeIds, nextMasterId),
       layoutParts: [],
+      themePartId: themePart(master.theme).themePartId,
     };
     for (const layout of ownedLayouts) {
       const part = {
@@ -66,5 +79,5 @@ export function planPresentationMasterGraph(masters = [], layouts = []) {
     }
     masterParts.push(masterPart);
   }
-  return { masterParts, layoutParts };
+  return { masterParts, layoutParts, themeParts };
 }
