@@ -135,6 +135,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.activateVariant?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setSectionSettings")?.schema?.parameters?.differentFirstPage?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.endTarget?.type, "string|object");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.target?.description || "", /table\.getCell/);
 assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));

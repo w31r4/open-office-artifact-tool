@@ -7,7 +7,7 @@ import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supported
 import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
 import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxDefaultRunPropertiesXml, parseDocxRunPropertiesXml, parseDocxRunStyleId, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
 import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE, DOCX_COMMENTS_EXTENSIBLE_PATH, DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_CONTENT_TYPE, DOCX_COMMENTS_IDS_PATH, DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_PEOPLE_CONTENT_TYPE, DOCX_PEOPLE_PATH, DOCX_PEOPLE_RELATIONSHIP_TYPE, docxCommentsExtendedXml, docxCommentsExtensibleXml, docxCommentsIdsXml, docxCommentsXml, docxPeopleXml, parseDocxComments, planDocxComments, validateDocxCommentPackageSemantics } from "./ooxml/docx-comments.mjs";
-import { docxBookmarkEntriesForBlock, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
+import { docxBookmarkEntriesForBlock, docxBookmarkEntriesForTableCell, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, parseDocxTableBookmarkMarkers, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
 import { collectDocxHeaderFooterParts, normalizeDocxSectionSettings, parseDocxSectionDeclarations, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
@@ -1055,7 +1055,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state." },
-  { artifactKind: "document", kind: "api", name: "document.addBookmark", summary: "Create an inspectable, resolvable Word bookmark range over one or more paragraph-backed document blocks with persistent native identity." },
+  { artifactKind: "document", kind: "api", name: "document.addBookmark", summary: "Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity." },
   { artifactKind: "document", kind: "api", name: "document.addField", summary: "Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Append a citation block with visible text and structured metadata; native import recognizes the clean-room citation bookmark marker." },
   { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
@@ -1663,9 +1663,9 @@ const DOCUMENT_HELP_SCHEMAS = {
     styleId: { type: "string", description: "Named paragraph style ID." },
   }, "hyperlink", "DocumentHyperlinkBlock", "Appended external or internal hyperlink block."),
   "document.addBookmark": helpSchema({
-    target: { type: "string|object", required: true, description: "Paragraph-backed start block ID or facade." },
+    target: { type: "string|object", required: true, description: "Start block ID/facade or exact table.getCell(row, column) facade." },
     name: { type: "string", required: true, description: "Unique Word bookmark name with at most 40 characters." },
-    endTarget: { type: "string|object", description: "Optional inclusive end block ID/facade for a multi-block range; defaults to target." },
+    endTarget: { type: "string|object", description: "Optional inclusive end block or table-cell facade; defaults to target and must follow it in document order." },
     nativeId: { type: "number", description: "Optional preserved Word bookmark numeric identity." },
   }, "bookmark", "DocumentBookmark", "Inspectable and resolvable bookmark range."),
   "document.addField": helpSchema({
@@ -8789,9 +8789,17 @@ class DocumentStyleCollection {
 }
 
 class DocumentTableCell {
-  constructor(table, row, column) { this.table = table; this.row = row; this.column = column; }
+  constructor(table, row, column) {
+    this.table = table;
+    this.kind = "tableCell";
+    this.tableId = table.id;
+    this.row = Number(row);
+    this.column = Number(column);
+    this.id = `${table.id}/cell/${this.row}/${this.column}`;
+  }
   get value() { return this.table.values[this.row]?.[this.column] ?? ""; }
   set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
+  inspectRecord() { return { kind: this.kind, id: this.id, tableId: this.tableId, row: this.row, column: this.column, value: this.value }; }
 }
 
 function documentTableDefaultColumnWidths(columns, widthDxa) {
@@ -8926,20 +8934,52 @@ class DocumentHyperlinkBlock {
   toProto() { return { kind: "hyperlink", id: this.id, name: this.name, styleId: this.styleId, relationshipId: this.relationshipId, text: this.text, url: this.url || undefined, anchor: this.anchor, tooltip: this.tooltip, history: this.history }; }
 }
 
+function documentBookmarkEndpoint(value) {
+  if (!value) return undefined;
+  const raw = typeof value === "object" ? value : undefined;
+  const id = typeof value === "string" ? value : raw?.id;
+  const cellMatch = /^(.+)\/cell\/(\d+)\/(\d+)$/.exec(String(id || ""));
+  if (cellMatch || raw?.kind === "tableCell" || raw?.type === "tableCell" || raw?.tableId !== undefined) {
+    const tableId = String(raw?.tableId || raw?.table?.id || cellMatch?.[1] || "");
+    const row = Number(raw?.row ?? raw?.rowIndex ?? cellMatch?.[2]);
+    const column = Number(raw?.column ?? raw?.columnIndex ?? cellMatch?.[3]);
+    return { type: "tableCell", id: `${tableId}/cell/${row}/${column}`, tableId, row, column };
+  }
+  return { type: "block", id: String(id || raw?.blockId || value), blockId: String(raw?.blockId || id || value) };
+}
+
+function documentBookmarkEndpointBlockId(endpoint) {
+  return endpoint?.type === "tableCell" ? endpoint.tableId : endpoint?.blockId;
+}
+
+function documentBookmarkEndpointOrder(endpoint, blockIndexes) {
+  const blockIndex = blockIndexes.get(documentBookmarkEndpointBlockId(endpoint));
+  return endpoint?.type === "tableCell" ? [blockIndex, 1, endpoint.row, endpoint.column] : [blockIndex, 0, 0, 0];
+}
+
+function compareDocumentBookmarkEndpoints(left, right, blockIndexes) {
+  const a = documentBookmarkEndpointOrder(left, blockIndexes);
+  const b = documentBookmarkEndpointOrder(right, blockIndexes);
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return a[index] - b[index];
+  return 0;
+}
+
 class DocumentBookmark {
   constructor(document, target, name, config = {}) {
     this.document = document;
     this.kind = "bookmark";
     this.id = config.id || aid("dbm");
     this.name = String(name ?? config.name ?? "");
-    this.targetId = typeof target === "string" ? target : target?.id || config.targetId;
-    const endTarget = config.endTarget ?? config.end ?? config.endTargetId ?? target;
-    this.endTargetId = typeof endTarget === "string" ? endTarget : endTarget?.id || this.targetId;
+    this.target = documentBookmarkEndpoint(target ?? config.target ?? config.targetId);
+    const endTarget = config.endTarget ?? config.end ?? config.endTargetId ?? this.target;
+    this.endTarget = documentBookmarkEndpoint(endTarget);
+    this.targetId = this.target?.id;
+    this.endTargetId = this.endTarget?.id || this.targetId;
     this.nativeId = config.nativeId === undefined ? undefined : Number(config.nativeId);
   }
 
-  inspectRecord() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, nativeId: this.nativeId }; }
-  toProto() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, nativeId: this.nativeId }; }
+  inspectRecord() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, target: this.target, endTarget: this.endTarget, nativeId: this.nativeId }; }
+  toProto() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, target: this.target, endTarget: this.endTarget, nativeId: this.nativeId }; }
 }
 
 class DocumentFieldBlock {
@@ -9299,13 +9339,17 @@ export class DocumentModel {
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); if (!config._restore && block.referenceType === "even" && block.variantActive !== false) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true }); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); if (!config._restore && block.referenceType === "even" && block.variantActive !== false) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true }); return block; }
   addBookmark(target, name, config = {}) {
-    const targetId = typeof target === "string" ? target : target?.id;
+    const targetEndpoint = documentBookmarkEndpoint(target ?? config.target ?? config.targetId);
+    const targetId = targetEndpoint?.id;
     const bookmarkName = String(name || config.name || "");
     const existing = this.bookmarks.find((bookmark) => bookmark.name === bookmarkName);
     if (existing && existing.targetId === targetId) {
       if (config.nativeId !== undefined) existing.nativeId = Number(config.nativeId);
       const configuredEnd = config.endTarget ?? config.end ?? config.endTargetId;
-      if (configuredEnd) existing.endTargetId = typeof configuredEnd === "string" ? configuredEnd : configuredEnd.id;
+      if (configuredEnd) {
+        existing.endTarget = documentBookmarkEndpoint(configuredEnd);
+        existing.endTargetId = existing.endTarget?.id;
+      }
       return existing;
     }
     const bookmark = new DocumentBookmark(this, target, name, config);
@@ -9316,7 +9360,19 @@ export class DocumentModel {
   replyToComment(parent, text, config = {}) { const comment = typeof parent === "string" ? this.comments.find((item) => item.id === parent) : parent; if (!comment || !this.comments.includes(comment)) throw new Error(`Unknown parent document comment: ${typeof parent === "string" ? parent : parent?.id}`); return this.addComment(comment.targetId, text, { ...config, parentId: comment.id }); }
   setSettings(settings = {}) { this.settings = normalizeDocxSettings({ ...this.settings, ...settings }); return this; }
   setSectionSettings(sectionIndex, settings = {}) { this.sectionSettings = normalizeDocxSectionSettings([...this.sectionSettings.filter((entry) => entry.sectionIndex !== Number(sectionIndex)), { sectionIndex: Number(sectionIndex), ...settings }], this.blocks); return this; }
-  resolve(id) { return String(id || "").endsWith("/text") ? documentTextRange(this, id) : id === `${this.id}/settings` ? this.settings : id === `${this.id}/theme` ? this.theme : this.id === id ? this : this.blocks.find((block) => block.id === id) || this.headers.find((block) => block.id === id) || this.footers.find((block) => block.id === id) || this.bookmarks.find((bookmark) => bookmark.id === id || bookmark.name === id) || this.comments.find((comment) => comment.id === id) || this.styles.get(id); }
+  resolve(id) {
+    const token = String(id || "");
+    if (token.endsWith("/text")) return documentTextRange(this, token);
+    const cellMatch = /^(.+)\/cell\/(\d+)\/(\d+)$/.exec(token);
+    if (cellMatch) {
+      const table = this.blocks.find((block) => block.kind === "table" && block.id === cellMatch[1]);
+      const row = Number(cellMatch[2]);
+      const column = Number(cellMatch[3]);
+      if (table && row < table.rows && column < table.columns) return table.getCell(row, column);
+      return undefined;
+    }
+    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.comments.find((comment) => comment.id === token) || this.styles.get(token);
+  }
 
   toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
@@ -9328,6 +9384,7 @@ export class DocumentModel {
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(documentInspectRecord(this, block, index)); });
+    if (kinds.has("tableCell")) for (const table of this.blocks.filter((block) => block.kind === "table")) for (let row = 0; row < table.rows; row += 1) for (let column = 0; column < table.columns; column += 1) records.push(table.getCell(row, column).inspectRecord());
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("bookmark")) records.push(...this.bookmarks.map((bookmark) => bookmark.inspectRecord()));
@@ -9421,10 +9478,27 @@ export class DocumentModel {
     const blockIndexes = new Map(this.blocks.map((block, index) => [block.id, index]));
     const bookmarkNativeIds = new Set();
     for (const bookmark of this.bookmarks) {
-      if (!blockIds.has(bookmark.targetId)) issues.push(verificationIssue("document", "missingBookmarkTarget", `Bookmark ${bookmark.id} points at missing start block ${bookmark.targetId}.`, { id: bookmark.id, targetId: bookmark.targetId }));
-      if (!blockIds.has(bookmark.endTargetId)) issues.push(verificationIssue("document", "missingBookmarkEndTarget", `Bookmark ${bookmark.id} points at missing end block ${bookmark.endTargetId}.`, { id: bookmark.id, endTargetId: bookmark.endTargetId }));
-      if (blockIndexes.get(bookmark.targetId) > blockIndexes.get(bookmark.endTargetId)) issues.push(verificationIssue("document", "reversedBookmarkRange", `Bookmark ${bookmark.id} ends before it starts.`, { id: bookmark.id, targetId: bookmark.targetId, endTargetId: bookmark.endTargetId }));
-      if ([this.resolve(bookmark.targetId)?.kind, this.resolve(bookmark.endTargetId)?.kind].includes("table")) issues.push(verificationIssue("document", "unsupportedBookmarkTarget", `Bookmark ${bookmark.id} requires paragraph-backed targets.`, { id: bookmark.id, targetId: bookmark.targetId, endTargetId: bookmark.endTargetId }));
+      const validateEndpoint = (endpoint, end = false) => {
+        const blockId = documentBookmarkEndpointBlockId(endpoint);
+        const block = this.blocks.find((item) => item.id === blockId);
+        if (!block) {
+          issues.push(verificationIssue("document", end ? "missingBookmarkEndTarget" : "missingBookmarkTarget", `Bookmark ${bookmark.id} points at missing ${end ? "end" : "start"} block ${blockId}.`, { id: bookmark.id, targetId: endpoint?.id }));
+          return false;
+        }
+        if (endpoint?.type === "tableCell") {
+          if (block.kind !== "table" || !Number.isInteger(endpoint.row) || !Number.isInteger(endpoint.column) || endpoint.row < 0 || endpoint.column < 0 || endpoint.row >= block.rows || endpoint.column >= block.columns) {
+            issues.push(verificationIssue("document", "invalidBookmarkTableCell", `Bookmark ${bookmark.id} points at invalid table cell ${endpoint.id}.`, { id: bookmark.id, targetId: endpoint.id, tableId: endpoint.tableId, row: endpoint.row, column: endpoint.column }));
+            return false;
+          }
+        } else if (block.kind === "table") {
+          issues.push(verificationIssue("document", "unsupportedBookmarkTarget", `Bookmark ${bookmark.id} must target a specific table cell, not the table block.`, { id: bookmark.id, targetId: endpoint?.id }));
+          return false;
+        }
+        return true;
+      };
+      const startValid = validateEndpoint(bookmark.target, false);
+      const endValid = validateEndpoint(bookmark.endTarget, true);
+      if (startValid && endValid && compareDocumentBookmarkEndpoints(bookmark.target, bookmark.endTarget, blockIndexes) > 0) issues.push(verificationIssue("document", "reversedBookmarkRange", `Bookmark ${bookmark.id} ends before it starts.`, { id: bookmark.id, targetId: bookmark.targetId, endTargetId: bookmark.endTargetId }));
       if (bookmark.nativeId !== undefined) {
         if (!Number.isInteger(bookmark.nativeId) || bookmark.nativeId === -1) issues.push(verificationIssue("document", "invalidBookmarkNativeId", `Bookmark ${bookmark.id} has invalid native ID ${bookmark.nativeId}.`, { id: bookmark.id, nativeId: bookmark.nativeId }));
         else if (bookmarkNativeIds.has(bookmark.nativeId)) issues.push(verificationIssue("document", "duplicateBookmarkNativeId", `Bookmark ${bookmark.id} duplicates native ID ${bookmark.nativeId}.`, { id: bookmark.id, nativeId: bookmark.nativeId }));
@@ -9716,7 +9790,7 @@ function docxCitationXml(block, commentIndexes = []) {
   return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:t>${xmlEscape(label)}</w:t></w:r>${commentEnd}${refs}</w:p>`;
 }
 
-function docxTableXml(block, commentIndexes = []) {
+function docxTableXml(block, commentIndexes = [], bookmarkPlan = { entries: [] }) {
   const columns = Math.max(1, block.columns || 1);
   const widthDxa = Number.isFinite(block.widthDxa) && block.widthDxa > 0 ? Math.round(block.widthDxa) : 9360;
   const configuredWidths = Array.isArray(block.columnWidthsDxa) && block.columnWidthsDxa.length === columns && block.columnWidthsDxa.every((value) => Number.isFinite(value) && value > 0)
@@ -9732,7 +9806,9 @@ function docxTableXml(block, commentIndexes = []) {
     const commentStart = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
     const commentEnd = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
     const commentRefs = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-    return `<w:tc><w:tcPr><w:tcW w:w="${columnWidths[column]}" w:type="dxa"/>${headerProperties}</w:tcPr><w:p>${commentStart}<w:r>${runProperties}<w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r>${commentEnd}${commentRefs}</w:p></w:tc>`;
+    const paragraph = `<w:p>${commentStart}<w:r>${runProperties}<w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r>${commentEnd}${commentRefs}</w:p>`;
+    const bookmarkedParagraph = wrapDocxParagraphBookmarks(paragraph, docxBookmarkEntriesForTableCell(bookmarkPlan, block.id, rowIndex, column));
+    return `<w:tc><w:tcPr><w:tcW w:w="${columnWidths[column]}" w:type="dxa"/>${headerProperties}</w:tcPr>${bookmarkedParagraph}</w:tc>`;
   }).join("")}</w:tr>`).join("");
   return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="${widthDxa}" w:type="dxa"/><w:tblInd w:w="${Math.max(0, Math.round(block.indentDxa ?? 120))}" w:type="dxa"/><w:tblBorders>${border}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${Math.max(0, Math.round(margins.top ?? 80))}" w:type="dxa"/><w:start w:w="${Math.max(0, Math.round(margins.start ?? 120))}" w:type="dxa"/><w:bottom w:w="${Math.max(0, Math.round(margins.bottom ?? 80))}" w:type="dxa"/><w:end w:w="${Math.max(0, Math.round(margins.end ?? 120))}" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
 }
@@ -9745,7 +9821,7 @@ function docxDocumentXml(document, relIds = {}, bookmarkPlan = planDocxBookmarks
   const body = document.blocks.map((block) => {
     const indexes = document.comments.filter((comment) => comment.targetId === block.id && !comment.parentId).map((comment) => commentIndex.get(comment));
     let xml;
-    if (block.kind === "table") xml = docxTableXml(block, indexes);
+    if (block.kind === "table") xml = docxTableXml(block, indexes, bookmarkPlan);
     else if (block.kind === "hyperlink") xml = docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id), indexes);
     else if (block.kind === "field") xml = docxFieldXml(block, indexes);
     else if (block.kind === "citation") xml = docxCitationXml(block, indexes);
@@ -9937,7 +10013,7 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
 }
 
 function parseDocxTable(part) {
-  const values = [...part.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))));
+  const values = [...part.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))));
   const readDxa = (tag, fallback) => Number(new RegExp(`<w:${tag}\\b[^>]*w:w="(\\d+)"`).exec(part)?.[1] ?? fallback);
   const columns = Math.max(0, ...values.map((row) => row.length));
   const columnWidthsDxa = [...part.matchAll(/<w:gridCol\b[^>]*w:w="(\d+)"[^>]*\/?\s*>/g)].map((match) => Number(match[1]));
@@ -10625,8 +10701,12 @@ export class DocumentFile {
     const pendingBookmarkEnds = new Map();
     for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
       const part = match[0];
-      if (part.startsWith("<w:tbl")) blocks.push(parseDocxTable(part));
-      else {
+      if (part.startsWith("<w:tbl")) {
+        blocks.push(parseDocxTable(part));
+        const markers = parseDocxTableBookmarkMarkers(part);
+        for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
+        for (const end of markers.ends) if (!pendingBookmarkEnds.has(end.nativeId)) pendingBookmarkEnds.set(end.nativeId, { ...end, blockIndex: blocks.length - 1 });
+      } else {
         blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle }).block);
         const markers = parseDocxBookmarkMarkers(part);
         for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
@@ -10636,9 +10716,11 @@ export class DocumentFile {
     }
     const document = DocumentModel.create({ theme, defaultRunStyle, settings: importedSettings, sectionSettings: sectionDeclarations, styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
     for (const [nativeId, start] of pendingBookmarkStarts) {
-      const end = pendingBookmarkEnds.get(nativeId);
-      const target = document.blocks[start.blockIndex];
-      const endTarget = document.blocks[end?.blockIndex ?? start.blockIndex];
+      const end = pendingBookmarkEnds.get(nativeId) || start;
+      const startBlock = document.blocks[start.blockIndex];
+      const endBlock = document.blocks[end.blockIndex];
+      const target = start.row === undefined ? startBlock : startBlock?.kind === "table" ? startBlock.getCell(start.row, start.column) : undefined;
+      const endTarget = end.row === undefined ? endBlock : endBlock?.kind === "table" ? endBlock.getCell(end.row, end.column) : undefined;
       if (target && endTarget && start.name) document.addBookmark(target, start.name, { id: `docx-bookmark-${nativeId}`, nativeId, endTarget });
     }
     for (const reference of docxHeaderFooterReferences(xml, documentRelationships, sectionDeclarations)) {

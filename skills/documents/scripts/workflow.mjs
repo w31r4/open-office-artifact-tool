@@ -101,8 +101,10 @@ export function createDocumentFromFixture(fixture = {}) {
   for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
   for (const footer of fixture.footers || []) document.addFooter(footer.text || "", footer);
   for (const bookmark of fixture.bookmarks || []) {
-    const target = byName.get(bookmark.targetName) || bookmark.targetId;
-    const endTarget = byName.get(bookmark.endTargetName) || bookmark.endTargetId;
+    const targetBlock = byName.get(bookmark.targetName);
+    const endTargetBlock = byName.get(bookmark.endTargetName);
+    const target = bookmark.targetCell ? targetBlock?.getCell(...bookmark.targetCell) : targetBlock || bookmark.targetId;
+    const endTarget = bookmark.endTargetCell ? endTargetBlock?.getCell(...bookmark.endTargetCell) : endTargetBlock || bookmark.endTargetId;
     assert.ok(target, `Missing document fixture bookmark target ${bookmark.targetName || bookmark.targetId}`);
     if (bookmark.endTargetName || bookmark.endTargetId) assert.ok(endTarget, `Missing document fixture bookmark end target ${bookmark.endTargetName || bookmark.endTargetId}`);
     document.addBookmark(target, bookmark.name, { ...bookmark, endTarget });

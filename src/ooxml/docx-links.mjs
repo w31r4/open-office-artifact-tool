@@ -20,6 +20,43 @@ function validBookmarkNativeId(value) {
   return Number.isInteger(number) && (number >= 0 || number <= -2);
 }
 
+function tableCellEndpointId(tableId, row, column) {
+  return `${tableId}/cell/${row}/${column}`;
+}
+
+function normalizeBookmarkEndpoint(value, fallbackId, blockById, label) {
+  const raw = value && typeof value === "object" ? value : undefined;
+  const rawId = typeof value === "string" ? value : raw?.id || fallbackId;
+  const tableCellMatch = /^(.+)\/cell\/(\d+)\/(\d+)$/.exec(String(rawId || ""));
+  const hasCellCoordinates = raw?.kind === "tableCell" || raw?.type === "tableCell" || raw?.tableId !== undefined || raw?.row !== undefined || raw?.column !== undefined;
+  if (tableCellMatch || hasCellCoordinates) {
+    const tableId = String(raw?.tableId || raw?.table?.id || tableCellMatch?.[1] || fallbackId || "");
+    const row = Number(raw?.row ?? raw?.rowIndex ?? tableCellMatch?.[2]);
+    const column = Number(raw?.column ?? raw?.columnIndex ?? tableCellMatch?.[3]);
+    const table = blockById.get(tableId);
+    if (!table || table.kind !== "table") throw new Error(`${label} references missing table ${tableId}.`);
+    if (!Number.isInteger(row) || row < 0 || row >= table.rows) throw new RangeError(`${label} row ${row} is out of range for table ${tableId}.`);
+    if (!Number.isInteger(column) || column < 0 || column >= table.columns) throw new RangeError(`${label} column ${column} is out of range for table ${tableId}.`);
+    return { type: "tableCell", id: tableCellEndpointId(tableId, row, column), tableId, row, column };
+  }
+  const block = blockById.get(rawId);
+  if (!block) throw new Error(`${label} references missing block ${rawId}.`);
+  if (block.kind === "table") throw new Error(`${label} must identify a table cell with table.getCell(row, column).`);
+  return { type: "block", id: block.id, blockId: block.id };
+}
+
+function endpointOrder(endpoint, blockIndex) {
+  const index = blockIndex.get(endpoint.type === "tableCell" ? endpoint.tableId : endpoint.blockId);
+  return endpoint.type === "tableCell" ? [index, 1, endpoint.row, endpoint.column] : [index, 0, 0, 0];
+}
+
+function compareEndpointOrder(left, right, blockIndex) {
+  const a = endpointOrder(left, blockIndex);
+  const b = endpointOrder(right, blockIndex);
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return a[index] - b[index];
+  return 0;
+}
+
 export function planDocxBookmarks(bookmarks = [], blocks = []) {
   const blockById = new Map(blocks.map((block) => [block.id, block]));
   const names = new Set();
@@ -36,21 +73,18 @@ export function planDocxBookmarks(bookmarks = [], blocks = []) {
   }
   let nextNativeId = 0;
   const entries = bookmarks.map((bookmark) => {
-    const target = blockById.get(bookmark.targetId);
-    const endTarget = blockById.get(bookmark.endTargetId || bookmark.targetId);
-    if (!target) throw new Error(`DOCX bookmark ${bookmark.id} references missing start target ${bookmark.targetId}.`);
-    if (!endTarget) throw new Error(`DOCX bookmark ${bookmark.id} references missing end target ${bookmark.endTargetId}.`);
-    if (target.kind === "table" || endTarget.kind === "table") throw new Error(`DOCX bookmark ${bookmark.id} requires paragraph-backed start and end targets.`);
+    const target = normalizeBookmarkEndpoint(bookmark.target, bookmark.targetId, blockById, `DOCX bookmark ${bookmark.id} start target`);
+    const endTarget = normalizeBookmarkEndpoint(bookmark.endTarget, bookmark.endTargetId || bookmark.targetId, blockById, `DOCX bookmark ${bookmark.id} end target`);
     let nativeId = bookmark.nativeId === 0 || bookmark.nativeId ? Number(bookmark.nativeId) : undefined;
     if (nativeId === undefined) {
       while (usedNativeIds.has(nextNativeId)) nextNativeId += 1;
       nativeId = nextNativeId;
       usedNativeIds.add(nativeId);
     }
-    return { bookmark, id: bookmark.id, name: normalizeDocxBookmarkName(bookmark.name), nativeId, targetId: target.id, endTargetId: endTarget.id };
+    return { bookmark, id: bookmark.id, name: normalizeDocxBookmarkName(bookmark.name), nativeId, target, endTarget, targetId: target.id, endTargetId: endTarget.id };
   });
   const blockIndex = new Map(blocks.map((block, index) => [block.id, index]));
-  for (const entry of entries) if (blockIndex.get(entry.targetId) > blockIndex.get(entry.endTargetId)) throw new Error(`DOCX bookmark ${entry.id} end target precedes its start target.`);
+  for (const entry of entries) if (compareEndpointOrder(entry.target, entry.endTarget, blockIndex) > 0) throw new Error(`DOCX bookmark ${entry.id} end target precedes its start target.`);
   return { entries, byName: new Map(entries.map((entry) => [entry.name, entry])) };
 }
 
@@ -68,8 +102,17 @@ export function wrapDocxParagraphBookmarks(xml = "", entries = []) {
 
 export function docxBookmarkEntriesForBlock(plan, targetId) {
   return plan.entries.flatMap((entry) => {
-    const start = entry.targetId === targetId;
-    const end = entry.endTargetId === targetId;
+    const start = entry.target.type === "block" && entry.target.blockId === targetId;
+    const end = entry.endTarget.type === "block" && entry.endTarget.blockId === targetId;
+    return start || end ? [{ ...entry, start, end }] : [];
+  });
+}
+
+export function docxBookmarkEntriesForTableCell(plan, tableId, row, column) {
+  return plan.entries.flatMap((entry) => {
+    const matches = (endpoint) => endpoint.type === "tableCell" && endpoint.tableId === tableId && endpoint.row === row && endpoint.column === column;
+    const start = matches(entry.target);
+    const end = matches(entry.endTarget);
     return start || end ? [{ ...entry, start, end }] : [];
   });
 }
@@ -80,6 +123,21 @@ export function parseDocxBookmarkMarkers(xml = "") {
     name: decodeXml(localAttribute(match[0], "name") || ""),
   }));
   const ends = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?bookmarkEnd\b[^>]*\/?\s*>/g)].map((match) => ({ nativeId: Number(localAttribute(match[0], "id")) }));
+  return { starts, ends };
+}
+
+export function parseDocxTableBookmarkMarkers(xml = "") {
+  const starts = [];
+  const ends = [];
+  const rows = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?tr\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?tr>/g)];
+  rows.forEach((rowMatch, row) => {
+    const cells = [...rowMatch[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?tc\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?tc>/g)];
+    cells.forEach((cellMatch, column) => {
+      const markers = parseDocxBookmarkMarkers(cellMatch[0]);
+      starts.push(...markers.starts.map((marker) => ({ ...marker, row, column })));
+      ends.push(...markers.ends.map((marker) => ({ ...marker, row, column })));
+    });
+  });
   return { starts, ends };
 }
 
@@ -123,16 +181,21 @@ function validateDocumentLinks(xml = "", partPath) {
     const name = decodeXml(localAttribute(match[0], "name") || "");
     if (!validBookmarkNativeId(nativeId)) issues.push(issue("docxBookmarkIdInvalid", `DOCX bookmark in ${partPath} has invalid ID ${localAttribute(match[0], "id")}.`, { path: partPath, nativeId }));
     else if (startById.has(nativeId)) issues.push(issue("docxBookmarkIdDuplicate", `DOCX document part ${partPath} contains duplicate bookmark ID ${nativeId}.`, { path: partPath, nativeId }));
-    else startById.set(nativeId, name);
+    else startById.set(nativeId, { name, offset: match.index });
     if (!name || name.length > BOOKMARK_NAME_MAX) issues.push(issue("docxBookmarkNameInvalid", `DOCX bookmark ${nativeId} name must contain 1 to ${BOOKMARK_NAME_MAX} characters.`, { path: partPath, nativeId, name }));
     else if (names.has(name)) issues.push(issue("docxBookmarkNameDuplicate", `DOCX document part ${partPath} contains duplicate bookmark name ${name}.`, { path: partPath, nativeId, name }));
     else names.add(name);
   }
+  const endOffsets = new Map();
   for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?bookmarkEnd\b[^>]*\/?\s*>/g)) {
     const nativeId = Number(localAttribute(match[0], "id"));
     endCounts.set(nativeId, (endCounts.get(nativeId) || 0) + 1);
+    if (!endOffsets.has(nativeId)) endOffsets.set(nativeId, match.index);
   }
-  for (const [nativeId, name] of startById) if (endCounts.get(nativeId) !== 1) issues.push(issue("docxBookmarkEndMissing", `DOCX bookmark ${name || nativeId} requires exactly one matching bookmarkEnd.`, { path: partPath, nativeId, ends: endCounts.get(nativeId) || 0 }));
+  for (const [nativeId, start] of startById) {
+    if (endCounts.get(nativeId) !== 1) issues.push(issue("docxBookmarkEndMissing", `DOCX bookmark ${start.name || nativeId} requires exactly one matching bookmarkEnd.`, { path: partPath, nativeId, ends: endCounts.get(nativeId) || 0 }));
+    else if (endOffsets.get(nativeId) < start.offset) issues.push(issue("docxBookmarkRangeReversed", `DOCX bookmark ${start.name || nativeId} ends before it starts.`, { path: partPath, nativeId }));
+  }
   for (const [nativeId, count] of endCounts) if (!startById.has(nativeId)) issues.push(issue("docxBookmarkStartMissing", `DOCX bookmarkEnd ${nativeId} has no matching bookmarkStart.`, { path: partPath, nativeId, ends: count }));
   for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?hyperlink\b[^>]*>/g)) {
     const anchor = decodeXml(localAttribute(match[0], "anchor") || "");

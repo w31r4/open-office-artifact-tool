@@ -90,6 +90,7 @@ const table = document.addTable({
   values: [["Area", "Status"], ["DOCX styles", "partial"], ["Comments", "roundtrip"]],
 });
 table.getCell(2, 1).value = "anchored";
+const tableCellBookmark = document.addBookmark(table.getCell(1, 0), "EvidenceCells", { endTarget: table.getCell(2, 1), nativeId: 43 });
 const customListParent = document.addListItem("Lettered evidence group", { listType: "number", level: 0, numberFormat: "upperLetter", start: 2, levelText: "%1)", numberingId: 42, name: "lettered-evidence" });
 const customListChild = document.addListItem("Nested roman evidence", { listType: "number", level: 1, numberFormat: "lowerRoman", start: 3, levelText: "%1.%2)", numberingId: 42, name: "roman-evidence" });
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z", dateUtc: "2026-07-11T08:10:00+08:00", durableId: "0000A001", person: { providerId: "None", userId: "reviewer@example.test" }, resolved: true });
@@ -99,7 +100,7 @@ const commentReply = document.replyToComment(comment, "Heading language is now a
 assert.equal(commentReply.parentId, comment.id);
 assert.equal(commentReply.targetId, comment.targetId);
 
-const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,bookmark,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 32000 }).ndjson;
+const inspect = document.inspect({ kind: "document,theme,settings,paragraph,table,tableCell,bookmark,comment,style,listItem,header,footer,hyperlink,field,citation,image,section,change,layout", maxChars: 32000 }).ndjson;
 assert.match(inspect, /Research memo/);
 assert.match(inspect, /"kind":"document"/);
 assert.match(inspect, /"designPreset":"report"/);
@@ -182,6 +183,11 @@ assert.equal(document.resolve("FindingsSection"), findingsBookmark);
 assert.equal(findingsBookmark.targetId, heading.id);
 assert.equal(findingsBookmark.endTargetId, riskCallout.id);
 assert.equal(findingsBookmark.nativeId, 42);
+assert.equal(tableCellBookmark.targetId, `${table.id}/cell/1/0`);
+assert.equal(tableCellBookmark.endTargetId, `${table.id}/cell/2/1`);
+assert.equal(document.resolve(tableCellBookmark.targetId)?.value, "DOCX styles");
+assert.equal(document.resolve(tableCellBookmark.endTargetId)?.value, "anchored");
+assert.match(inspect, /"kind":"tableCell"/);
 assert.equal(document.resolve(field.id).instruction, "PAGE");
 assert.equal(document.resolve(citation.id).metadata.page, 2);
 assert.equal(document.resolve(logo.id).alt, "Memo logo");
@@ -324,7 +330,18 @@ const tableBookmarkDocument = DocumentModel.create({ blocks: [] });
 const bookmarkTable = tableBookmarkDocument.addTable({ values: [["Unsupported"]] });
 tableBookmarkDocument.addBookmark(bookmarkTable, "TableBookmark");
 assert.ok(tableBookmarkDocument.verify().issues.some((issue) => issue.type === "unsupportedBookmarkTarget"));
-await assert.rejects(() => DocumentFile.exportDocx(tableBookmarkDocument), /paragraph-backed start and end targets/);
+await assert.rejects(() => DocumentFile.exportDocx(tableBookmarkDocument), /must identify a table cell/);
+const validTableBookmarkDocument = DocumentModel.create({ blocks: [] });
+const validBookmarkTable = validTableBookmarkDocument.addTable({ values: [["A", "B"], ["C", "D"]] });
+validTableBookmarkDocument.addBookmark(validBookmarkTable.getCell(0, 1), "ValidTableCells", { endTarget: validBookmarkTable.getCell(1, 1) });
+assert.ok(!validTableBookmarkDocument.verify().issues.some((issue) => /Bookmark/.test(issue.message)));
+validTableBookmarkDocument.addBookmark(validBookmarkTable.getCell(1, 1), "ReversedTableCells", { endTarget: validBookmarkTable.getCell(0, 1) });
+assert.ok(validTableBookmarkDocument.verify().issues.some((issue) => issue.type === "reversedBookmarkRange"));
+const invalidCellBookmarkDocument = DocumentModel.create({ blocks: [] });
+const invalidCellTable = invalidCellBookmarkDocument.addTable({ values: [["Only"]] });
+invalidCellBookmarkDocument.addBookmark(invalidCellTable.getCell(4, 0), "InvalidTableCell");
+assert.ok(invalidCellBookmarkDocument.verify().issues.some((issue) => issue.type === "invalidBookmarkTableCell"));
+await assert.rejects(() => DocumentFile.exportDocx(invalidCellBookmarkDocument), /row 4 is out of range/);
 const invalidSectionDocument = DocumentModel.create({ paragraphs: ["Invalid section fixture"] });
 invalidSectionDocument.addHeader("Out of range", { sectionIndex: 1 });
 assert.ok(invalidSectionDocument.verify().issues.some((issue) => issue.type === "invalidHeaderFooterSection"));
@@ -503,6 +520,8 @@ assert.match(documentXml, /w:cstheme="majorBidi"/);
 assert.match(documentXml, /<w:b w:val="0"\/><w:bCs\/><w:i w:val="0"\/><w:iCs\/>/);
 assert.match(documentXml, /<w:bookmarkStart w:id="42" w:name="FindingsSection"\/>/);
 assert.match(documentXml, /<w:bookmarkEnd w:id="42"\/>/);
+assert.match(documentXml, /<w:bookmarkStart w:id="43" w:name="EvidenceCells"\/><w:r><w:t>DOCX styles<\/w:t>/);
+assert.match(documentXml, /<w:t>anchored<\/w:t><\/w:r><w:bookmarkEnd w:id="43"\/>/);
 assert.match(documentXml, /<w:hyperlink w:anchor="FindingsSection" w:history="0" w:tooltip="Open the findings section">/);
 assert.match(documentXml, /<a:blip r:embed="rIdImage1"\/>/);
 assert.match(documentXml, /<wp:docPr[^>]*name="memo-logo"[^>]*descr="Memo logo"/);
@@ -613,6 +632,14 @@ await assert.rejects(
 await assert.rejects(
   () => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: documentXml.replace('<w:bookmarkEnd w:id="42"/>', "") }]),
   /docxBookmarkEndMissing/,
+);
+const reversedBookmarkXml = documentXml
+  .replace('<w:bookmarkStart w:id="42" w:name="FindingsSection"/>', "__BOOKMARK_START__")
+  .replace('<w:bookmarkEnd w:id="42"/>', '<w:bookmarkStart w:id="42" w:name="FindingsSection"/>')
+  .replace("__BOOKMARK_START__", '<w:bookmarkEnd w:id="42"/>');
+await assert.rejects(
+  () => DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: reversedBookmarkXml }]),
+  /docxBookmarkRangeReversed/,
 );
 const duplicateBookmarkNameXml = documentXml.replace("</w:body>", '<w:p><w:bookmarkStart w:id="99" w:name="FindingsSection"/><w:r><w:t>Duplicate</w:t></w:r><w:bookmarkEnd w:id="99"/></w:p></w:body>');
 await assert.rejects(
@@ -863,6 +890,7 @@ assert.equal(nativeOnlyHyperlink?.url, "https://example.com/research");
 assert.ok(nativeOnlyHyperlink?.relationshipId);
 const nativeOnlyInternalHyperlink = nativeOnlyLoaded.blocks.find((item) => item.kind === "hyperlink" && item.anchor === "FindingsSection");
 const nativeOnlyBookmark = nativeOnlyLoaded.bookmarks.find((item) => item.name === "FindingsSection");
+const nativeOnlyTableCellBookmark = nativeOnlyLoaded.bookmarks.find((item) => item.name === "EvidenceCells");
 assert.equal(nativeOnlyInternalHyperlink?.text, "Jump to findings");
 assert.equal(nativeOnlyInternalHyperlink?.history, false);
 assert.equal(nativeOnlyInternalHyperlink?.tooltip, "Open the findings section");
@@ -870,6 +898,10 @@ assert.equal(nativeOnlyBookmark?.nativeId, 42);
 assert.equal(nativeOnlyLoaded.resolve(nativeOnlyBookmark?.targetId)?.text, "Findings");
 assert.equal(nativeOnlyLoaded.resolve(nativeOnlyBookmark?.endTargetId)?.text, "Risk callout inherits bold styling.");
 assert.equal(nativeOnlyLoaded.resolve("FindingsSection"), nativeOnlyBookmark);
+assert.equal(nativeOnlyTableCellBookmark?.nativeId, 43);
+assert.equal(nativeOnlyLoaded.resolve(nativeOnlyTableCellBookmark?.targetId)?.value, "DOCX styles");
+assert.equal(nativeOnlyLoaded.resolve(nativeOnlyTableCellBookmark?.endTargetId)?.value, "anchored");
+assert.equal(nativeOnlyTableCellBookmark?.target?.type, "tableCell");
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.kind === "field")?.display, "1");
 assert.equal(nativeOnlyLoaded.blocks.find((item) => item.text === "Lettered evidence group")?.numberFormat, "upperLetter");
@@ -943,6 +975,7 @@ const reexportedNativeThemeZip = await JSZip.loadAsync(new Uint8Array(await reex
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /w:cstheme="majorBidi"/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:hyperlink w:anchor="FindingsSection" w:history="0" w:tooltip="Open the findings section">/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:bookmarkStart w:id="42" w:name="FindingsSection"\/>/);
+assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:bookmarkStart w:id="43" w:name="EvidenceCells"\/>/);
 assert.match(await reexportedNativeThemeZip.file("word/document.xml").async("text"), /<w:rStyle w:val="CascadeCharacter"\/>/);
 assert.match(await reexportedNativeThemeZip.file("word/styles.xml").async("text"), /<w:docDefaults>/);
 assert.match(await reexportedNativeThemeZip.file("word/theme/theme1.xml").async("text"), /typeface="Noto Naskh Arabic"/);
