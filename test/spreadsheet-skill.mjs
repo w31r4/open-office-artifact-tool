@@ -62,7 +62,10 @@ try {
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.equal(summaryDrawings.pivotTables.items.length, 1);
   const summaryPivot = summaryDrawings.pivotTables.getItemOrNullObject("RevenuePivot");
-  assert.deepEqual(summaryPivot.computedValues(), [["Month", "Revenue total"], ["Jan", 100], ["Feb", 120], ["Mar", 150]]);
+  assert.deepEqual(summaryPivot.computedValues(), [["Month", "Revenue total"], ["Jan", 100], ["Mar", 150]]);
+  assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }]);
+  assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
+  assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
   assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);
   assert.match(workbook.help("workbook.structuredReferences").ndjson, /special-character headers/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("G10:G13").values, [[0], [43889], [5], [2]]);
@@ -75,6 +78,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"Quarter performance"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"Green status marker"/);
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"kind":"pivotTable"[\s\S]*"name":"RevenuePivot"/);
+  assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"filters":\[\{"field":"Month","include":\["Jan","Mar"\]/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 2);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);

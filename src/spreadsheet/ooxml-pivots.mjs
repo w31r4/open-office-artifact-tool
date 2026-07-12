@@ -1,3 +1,5 @@
+import { pivotItemVisible, pivotValueLabel } from "./pivots.mjs";
+
 function decodeXml(value) {
   return String(value ?? "")
     .replaceAll("&lt;", "<")
@@ -23,6 +25,38 @@ function relationshipId(attrs = {}) {
   return Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
 }
 
+function xmlEscape(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function attrEscape(value) {
+  return xmlEscape(value).replaceAll('"', "&quot;");
+}
+
+function booleanAttribute(value, fallback = false) {
+  if (value == null) return fallback;
+  return ["1", "true", "on"].includes(String(value).toLowerCase());
+}
+
+function elements(xml, localName) {
+  return [...String(xml || "").matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*(?:\\/\\s*>|>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>)`, "g"))].map((match) => ({ xml: match[0], opening: tag(match[0], localName), body: body(match[0], localName) }));
+}
+
+function parseSharedItem(itemXml) {
+  const opening = /^<[^>]+>/.exec(itemXml)?.[0] || itemXml;
+  const attrs = attributes(opening);
+  const localName = /^<(?:[A-Za-z_][\w.-]*:)?([A-Za-z]+)/.exec(opening)?.[1];
+  if (localName === "m") return null;
+  if (localName === "n") return Number(attrs.v);
+  if (localName === "b") return booleanAttribute(attrs.v);
+  return attrs.v == null ? "" : attrs.v;
+}
+
+function sharedItems(cacheFieldXml) {
+  const shared = body(cacheFieldXml, "sharedItems");
+  return [...shared.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:s|n|b|d|e|m)\b[^>]*\/?\s*>/g)].map((match) => parseSharedItem(match[0]));
+}
+
 export function parseWorkbookPivotCaches(xml = "") {
   const block = body(xml, "pivotCaches");
   return [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?pivotCache\b[^>]*\/?>/g)].map((match) => {
@@ -32,9 +66,11 @@ export function parseWorkbookPivotCaches(xml = "") {
 }
 
 export function parsePivotCacheDefinition(xml = "") {
+  const rootAttrs = attributes(tag(xml, "pivotCacheDefinition"));
   const sourceAttrs = attributes(tag(body(xml, "cacheSource"), "worksheetSource"));
   const cacheFields = body(xml, "cacheFields");
-  const fields = [...cacheFields.matchAll(/<(?:[A-Za-z_][\w.-]*:)?cacheField\b[^>]*>/g)].map((match, index) => attributes(match[0]).name || `Field${index + 1}`);
+  const fieldEntries = elements(cacheFields, "cacheField");
+  const fields = fieldEntries.map((entry, index) => attributes(entry.opening).name || `Field${index + 1}`);
   return {
     source: {
       sheet: sourceAttrs.sheet,
@@ -43,6 +79,16 @@ export function parsePivotCacheDefinition(xml = "") {
       relationshipId: relationshipId(sourceAttrs),
     },
     fields,
+    items: fieldEntries.map((entry) => sharedItems(entry.xml)),
+    refreshPolicy: {
+      refreshOnLoad: booleanAttribute(rootAttrs.refreshOnLoad, false),
+      saveData: booleanAttribute(rootAttrs.saveData, true),
+      enableRefresh: booleanAttribute(rootAttrs.enableRefresh, true),
+      invalid: booleanAttribute(rootAttrs.invalid, false),
+      missingItemsLimit: Number(rootAttrs.missingItemsLimit || 0),
+      refreshedBy: rootAttrs.refreshedBy,
+      refreshedDateIso: rootAttrs.refreshedDateIso,
+    },
   };
 }
 
@@ -68,6 +114,17 @@ export function parsePivotTableDefinition(xml = "", cache = {}) {
       summarizeBy: attrs.subtotal || "sum",
     };
   }).filter((field) => field.field);
+  const pivotFieldEntries = elements(body(xml, "pivotFields"), "pivotField");
+  const filters = pivotFieldEntries.flatMap((entry, fieldIndex) => {
+    const field = fields[fieldIndex];
+    if (!field) return [];
+    const hidden = elements(body(entry.xml, "items"), "item").flatMap((item) => {
+      const attrs = attributes(item.opening);
+      const index = Number(attrs.x);
+      return booleanAttribute(attrs.h, false) && Number.isInteger(index) && index >= 0 && index < (cache.items?.[fieldIndex]?.length || 0) ? [cache.items[fieldIndex][index]] : [];
+    });
+    return hidden.length ? [{ field, exclude: hidden }] : [];
+  });
   return {
     name: rootAttrs.name,
     cacheId: Number(rootAttrs.cacheId),
@@ -75,5 +132,102 @@ export function parsePivotTableDefinition(xml = "", cache = {}) {
     rowFields: indexedFields(xml, "rowFields", fields),
     columnFields: indexedFields(xml, "colFields", fields),
     valueFields,
+    filters,
   };
+}
+
+function uniqueValues(values = []) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const key = `${value === null ? "null" : typeof value}:${String(value)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function cacheItemXml(value) {
+  if (value == null || value === "") return "<m/>";
+  if (typeof value === "number" && Number.isFinite(value)) return `<n v="${value}"/>`;
+  if (typeof value === "boolean") return `<b v="${value ? 1 : 0}"/>`;
+  return `<s v="${attrEscape(value)}"/>`;
+}
+
+function pivotSourceHeaders(pivot) {
+  return pivot.sourceFields?.length ? [...pivot.sourceFields] : (pivot.sourceValues()[0] || []).map((value) => String(value ?? ""));
+}
+
+function pivotFieldValues(pivot, fieldIndex) {
+  return uniqueValues(pivot.sourceValues().slice(1).map((row) => row[fieldIndex]).filter((value) => value != null && value !== ""));
+}
+
+export function spreadsheetPivotCacheDefinitionXml(part) {
+  const { pivot } = part;
+  const sourceSheet = pivot.sourceRange.sheetName || pivot.worksheet.name;
+  const headers = pivotSourceHeaders(pivot);
+  const cacheFields = headers.map((header, index) => {
+    const values = pivotFieldValues(pivot, index);
+    const containsNumber = values.some((value) => typeof value === "number" && Number.isFinite(value));
+    const containsString = values.some((value) => typeof value !== "number" && typeof value !== "boolean");
+    const containsBlank = pivot.sourceValues().slice(1).some((row) => row[index] == null || row[index] === "");
+    const containsMixedTypes = [containsNumber, containsString, values.some((value) => typeof value === "boolean")].filter(Boolean).length > 1;
+    const flags = `${containsNumber ? ' containsNumber="1"' : ""}${containsString ? ' containsString="1"' : ""}${containsBlank ? ' containsBlank="1"' : ""}${containsMixedTypes ? ' containsMixedTypes="1"' : ""}`;
+    return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0"><sharedItems${flags} count="${values.length}">${values.map(cacheItemXml).join("")}</sharedItems></cacheField>`;
+  }).join("");
+  const policy = pivot.refreshPolicy || {};
+  const recordsRelationship = policy.saveData === false ? "" : ` r:id="${attrEscape(part.recordsRelId || "rId1")}"`;
+  const refreshedBy = policy.refreshedBy ? ` refreshedBy="${attrEscape(policy.refreshedBy)}"` : "";
+  const refreshedDateIso = policy.refreshedDateIso ? ` refreshedDateIso="${attrEscape(policy.refreshedDateIso)}"` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"${recordsRelationship} refreshOnLoad="${policy.refreshOnLoad === false ? 0 : 1}" saveData="${policy.saveData === false ? 0 : 1}" enableRefresh="${policy.enableRefresh === false ? 0 : 1}" invalid="${policy.invalid ? 1 : 0}" missingItemsLimit="${Number(policy.missingItemsLimit || 0)}"${refreshedBy}${refreshedDateIso} recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${headers.length}">${cacheFields}</cacheFields></pivotCacheDefinition>`;
+}
+
+function cacheRecordValueXml(value) {
+  return cacheItemXml(value);
+}
+
+export function spreadsheetPivotCacheRecordsXml(part) {
+  const rows = part.pivot.sourceValues().slice(1);
+  const records = rows.map((row) => `<r>${row.map(cacheRecordValueXml).join("")}</r>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${rows.length}">${records}</pivotCacheRecords>`;
+}
+
+function columnNumberToLabel(index) {
+  let value = index + 1;
+  let label = "";
+  while (value > 0) { label = String.fromCharCode(65 + ((value - 1) % 26)) + label; value = Math.floor((value - 1) / 26); }
+  return label;
+}
+
+function cellAddress(row, column) {
+  return `${columnNumberToLabel(column)}${row + 1}`;
+}
+
+function targetStart(address = "A1") {
+  const match = /(?:^|:)(?:\$?)([A-Za-z]+)(?:\$?)(\d+)/.exec(String(address));
+  if (!match) return { row: 0, column: 0 };
+  const column = [...match[1].toUpperCase()].reduce((sum, char) => sum * 26 + char.charCodeAt(0) - 64, 0) - 1;
+  return { row: Number(match[2]) - 1, column };
+}
+
+export function spreadsheetPivotTableDefinitionXml(part) {
+  const { pivot } = part;
+  const headers = pivotSourceHeaders(pivot);
+  const start = targetStart(pivot.targetRange.address);
+  const values = pivot.computedValues();
+  const targetEnd = cellAddress(start.row + Math.max(0, values.length - 1), start.column + Math.max(0, (values[0]?.length || 1) - 1));
+  const ref = `${cellAddress(start.row, start.column)}:${targetEnd}`;
+  const rowIndexes = pivot.rowFields.map((field) => headers.indexOf(String(field))).filter((index) => index >= 0);
+  const columnIndexes = pivot.columnFields.map((field) => headers.indexOf(String(field))).filter((index) => index >= 0);
+  const valueIndexes = pivot.valueFields.map((field) => headers.indexOf(String(field.field || field.name))).filter((index) => index >= 0);
+  const pivotFields = headers.map((header, index) => {
+    const fieldValues = pivotFieldValues(pivot, index);
+    const filter = pivot.filters.find((entry) => entry.field === header);
+    const items = fieldValues.map((value, itemIndex) => `<item x="${itemIndex}"${pivotItemVisible(pivot.filters, header, value) ? "" : ' h="1"'}/>`).join("") + '<item t="default"/>';
+    const axis = rowIndexes.includes(index) ? ' axis="axisRow"' : columnIndexes.includes(index) ? ' axis="axisCol"' : "";
+    return `<pivotField${axis}${valueIndexes.includes(index) ? ' dataField="1"' : ""}${filter ? ' multipleItemSelectionAllowed="1"' : ""} showAll="0"><items count="${fieldValues.length + 1}">${items}</items></pivotField>`;
+  }).join("");
+  const rowFields = rowIndexes.length ? `<rowFields count="${rowIndexes.length}">${rowIndexes.map((index) => `<field x="${index}"/>`).join("")}</rowFields>` : "";
+  const columnFields = columnIndexes.length ? `<colFields count="${columnIndexes.length}">${columnIndexes.map((index) => `<field x="${index}"/>`).join("")}</colFields>` : "";
+  const dataFields = pivot.valueFields.length ? `<dataFields count="${pivot.valueFields.length}">${pivot.valueFields.map((field) => `<dataField name="${attrEscape(pivotValueLabel(field))}" fld="${Math.max(0, headers.indexOf(String(field.field || field.name)))}" subtotal="${attrEscape(field.summarizeBy || "sum")}"/>`).join("")}</dataFields>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="${attrEscape(pivot.name)}" cacheId="${part.cacheId}" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3" multipleFieldFilters="1"><location ref="${attrEscape(ref)}" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="${headers.length}">${pivotFields}</pivotFields>${rowFields}${columnFields}${dataFields}</pivotTableDefinition>`;
 }

@@ -8,7 +8,8 @@ import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./oox
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
-import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches } from "./spreadsheet/ooxml-pivots.mjs";
+import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
+import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 import { parseStructuredReference, scanStructuredReferences } from "./spreadsheet/structured-references.mjs";
 import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
@@ -905,7 +906,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create threaded comments after comments.setSelf({ displayName }); resolve with wb.resolve('th/...')." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade over a source range with row/value fields, computed summary values, inspect/resolve/layout records, verification, and metadata roundtrip." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with row/column cross-tabs, item filters, refresh/save policy, computed summary values, inspect/resolve/layout records, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
@@ -2109,7 +2110,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     rowFields: { type: "string[]", description: "Row field names." },
     columnFields: { type: "string[]", description: "Column field names." },
     valueFields: { type: "object[]", description: "Value field and aggregation definitions." },
-    filters: { type: "object", description: "Pivot filter metadata." },
+    filters: { type: "object|object[]", description: "Axis item filters. Each field accepts exactly one non-empty include or exclude array." },
+    refreshPolicy: { type: "object", description: "OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso." },
   }, "pivot", "WorksheetPivotTable", "Editable clean-room pivot facade."),
   "sheet.charts.add": helpSchema({
     chartType: { type: "string", required: true, description: "Chart type such as bar, line, or pie." },
@@ -2776,22 +2778,6 @@ class WorksheetTableCollection {
   toJSON() { return this.items.map((table) => table.toJSON()); }
 }
 
-function pivotValueLabel(valueField = {}) {
-  const summarizeBy = valueField.summarizeBy || valueField.aggregation || "sum";
-  return valueField.name || `${summarizeBy} of ${valueField.field || valueField.name || "Value"}`;
-}
-
-function summarizePivotValues(values = [], summarizeBy = "sum") {
-  const nums = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
-  const mode = String(summarizeBy || "sum").toLowerCase();
-  if (mode === "count") return values.filter((value) => value != null && value !== "").length;
-  if (!nums.length) return 0;
-  if (mode === "average" || mode === "avg") return nums.reduce((sum, value) => sum + value, 0) / nums.length;
-  if (mode === "min") return Math.min(...nums);
-  if (mode === "max") return Math.max(...nums);
-  return nums.reduce((sum, value) => sum + value, 0);
-}
-
 class WorksheetPivotTable {
   constructor(worksheet, config = {}) {
     this.worksheet = worksheet;
@@ -2799,10 +2785,16 @@ class WorksheetPivotTable {
     this.name = config.name || `PivotTable${worksheet.pivotTables.items.length + 1}`;
     this.sourceRange = workbookRangeRef(config.sourceRange || config.source || config.range || "A1");
     this.targetRange = workbookRangeRef(config.targetRange || config.destination || config.target || "A6");
-    this.rowFields = [...(config.rowFields || config.rows || [])];
-    this.columnFields = [...(config.columnFields || config.columns || [])];
-    this.valueFields = (config.valueFields || config.values || []).map((field) => typeof field === "string" ? { field, summarizeBy: "sum" } : { ...field });
-    this.filters = config.filters || {};
+    const matrix = this.sourceValues();
+    const headers = config.sourceFields?.length ? config.sourceFields.map(String) : (matrix[0] || []).map((value) => String(value ?? ""));
+    this.sourceFields = [...headers];
+    const sourceValues = Object.fromEntries(headers.map((header, index) => [header, matrix.slice(1).map((row) => row[index])]));
+    const normalized = normalizePivotConfig({ ...config, sourceValues }, headers);
+    this.rowFields = normalized.rowFields;
+    this.columnFields = normalized.columnFields;
+    this.valueFields = normalized.valueFields;
+    this.filters = normalized.filters;
+    this.refreshPolicy = normalized.refreshPolicy;
   }
 
   sourceValues() {
@@ -2812,31 +2804,12 @@ class WorksheetPivotTable {
   }
 
   computedValues() {
-    const matrix = this.sourceValues();
-    if (!matrix.length) return [];
-    const headers = matrix[0].map((value) => String(value ?? ""));
-    let rowIndexes = this.rowFields.map((field) => headers.indexOf(String(field))).filter((index) => index >= 0);
-    if (this.rowFields.length && rowIndexes.length === 0 && headers.length) rowIndexes = [0];
-    const valueConfigs = this.valueFields.length ? this.valueFields : headers.slice(1, 2).map((field) => ({ field, summarizeBy: "sum" }));
-    const valueIndexes = valueConfigs.map((field) => headers.indexOf(String(field.field || field.name))).map((index, i) => ({ index, config: valueConfigs[i] })).filter((item) => item.index >= 0);
-    const groups = new Map();
-    for (const row of matrix.slice(1)) {
-      const keyValues = rowIndexes.length ? rowIndexes.map((index) => row[index]) : ["(all)"];
-      const key = JSON.stringify(keyValues);
-      if (!groups.has(key)) groups.set(key, { keyValues, rows: [] });
-      groups.get(key).rows.push(row);
-    }
-    const header = [...(this.rowFields.length ? this.rowFields : ["Group"]), ...valueIndexes.map((item) => pivotValueLabel(item.config))];
-    const rows = [...groups.values()].map((group) => [
-      ...group.keyValues,
-      ...valueIndexes.map((item) => summarizePivotValues(group.rows.map((row) => row[item.index]), item.config.summarizeBy)),
-    ]);
-    return [header, ...rows];
+    return computePivotValues(this.sourceValues(), this);
   }
 
   inspectRecord() {
     const values = this.computedValues();
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
   }
 
   layoutJson(bounds) {
@@ -2845,7 +2818,7 @@ class WorksheetPivotTable {
     const rowCount = Math.max(values.length, target.rowCount || 1);
     const colCount = Math.max(values[0]?.length || 0, target.colCount || 1);
     const frame = worksheetRangeFrame(this.worksheet, { top: target.top, left: target.left, bottom: target.top + rowCount - 1, right: target.left + colCount - 1, rowCount, colCount }, bounds);
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, valueFields: this.valueFields, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
   }
 
   toSvg(bounds) {
@@ -2864,7 +2837,7 @@ class WorksheetPivotTable {
     return `<rect x="${left}" y="${Math.max(0, top - 18)}" width="${Math.max(120, layout.bbox[2])}" height="18" fill="#cffafe" stroke="#06b6d4"/><text x="${left + 5}" y="${Math.max(12, top - 5)}" font-family="Arial" font-size="11" font-weight="700" fill="#155e75">${xmlEscape(this.name)}</text>${cells.join("")}`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters }; }
+  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, sourceFields: this.sourceFields, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, filters: this.filters, refreshPolicy: this.refreshPolicy }; }
 }
 
 class WorksheetPivotTableCollection {
@@ -5787,7 +5760,7 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
     sheet.charts.items = [];
     sheet.pivotTables.items = [];
     for (const pivotData of sheetData.pivots || sheetData.pivotTables || []) {
-      const pivot = sheet.pivotTables.add({ ...pivotData });
+      const pivot = sheet.pivotTables.add({ ...pivotData, validateSource: false });
       pivot.id = pivotData.id || pivot.id;
     }
     for (const chartData of sheetData.charts || []) {
@@ -5897,11 +5870,13 @@ export class SpreadsheetFile {
     });
     tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId)));
     pivotParts.forEach((part) => {
-      zip.file(`xl/pivotTables/pivotTable${part.pivotPartId}.xml`, pivotTableXml(part));
+      zip.file(`xl/pivotTables/pivotTable${part.pivotPartId}.xml`, spreadsheetPivotTableDefinitionXml(part));
       zip.file(`xl/pivotTables/_rels/pivotTable${part.pivotPartId}.xml.rels`, pivotTableDefinitionRelsXml(part));
-      zip.file(`xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml`, pivotCacheDefinitionXml(part));
-      zip.file(`xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml`, pivotCacheRecordsXml(part));
-      zip.file(`xl/pivotCache/_rels/pivotCacheDefinition${part.cachePartId}.xml.rels`, pivotCacheDefinitionRelsXml(part));
+      zip.file(`xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml`, spreadsheetPivotCacheDefinitionXml(part));
+      if (part.pivot.refreshPolicy.saveData !== false) {
+        zip.file(`xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml`, spreadsheetPivotCacheRecordsXml(part));
+        zip.file(`xl/pivotCache/_rels/pivotCacheDefinition${part.cachePartId}.xml.rels`, pivotCacheDefinitionRelsXml(part));
+      }
     });
     imageParts.forEach((part) => zip.file(`xl/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`xl/charts/chart${part.chartPartId}.xml`, xlsxChartXml(part.chart)));
@@ -6117,7 +6092,7 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
     ["svg", "image/svg+xml"],
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/xl/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
-  const pivots = pivotParts.map((part) => `<Override PartName="/xl/pivotTables/pivotTable${part.pivotPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/><Override PartName="/xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>`).join("");
+  const pivots = pivotParts.map((part) => `<Override PartName="/xl/pivotTables/pivotTable${part.pivotPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>${part.pivot.refreshPolicy.saveData === false ? "" : `<Override PartName="/xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>`}`).join("");
   const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>`).join("");
   const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="application/vnd.ms-excel.person+xml"/>` : "";
   const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
@@ -6330,56 +6305,12 @@ function xlsxChartXml(chart) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}<c:axId val="1"/><c:axId val="2"/></c:${chartElementName}><c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/><c:crossAx val="2"/></c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="l"/><c:crossAx val="1"/></c:valAx></c:plotArea><c:legend><c:legendPos val="r"/><c:layout/></c:legend><c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
 }
 
-function pivotSourceHeaders(pivot) {
-  return (pivot.sourceValues()[0] || []).map((value) => String(value ?? ""));
-}
-
-function pivotCacheDefinitionXml(part) {
-  const { pivot } = part;
-  const sourceSheet = pivot.sourceRange.sheetName || pivot.worksheet.name;
-  const headers = pivotSourceHeaders(pivot);
-  const cacheFields = headers.map((header, index) => {
-    const values = [...new Set(pivot.sourceValues().slice(1).map((row) => row[index]).filter((value) => value != null && value !== ""))];
-    const numeric = values.every((value) => Number.isFinite(Number(value)));
-    const shared = values.length ? `<sharedItems${numeric ? ` containsNumber="1"` : ` containsString="1"`} count="${values.length}">${values.map((value) => numeric ? `<n v="${Number(value)}"/>` : `<s v="${attrEscape(value)}"/>`).join("")}</sharedItems>` : `<sharedItems count="0"/>`;
-    return `<cacheField name="${attrEscape(header || `Field${index + 1}`)}" numFmtId="0">${shared}</cacheField>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${attrEscape(part.recordsRelId || "rId1")}" refreshOnLoad="1" recordCount="${Math.max(0, pivot.sourceValues().length - 1)}"><cacheSource type="worksheet"><worksheetSource ref="${attrEscape(pivot.sourceRange.address)}" sheet="${attrEscape(sourceSheet)}"/></cacheSource><cacheFields count="${headers.length}">${cacheFields}</cacheFields></pivotCacheDefinition>`;
-}
-
 function pivotCacheDefinitionRelsXml(part) {
   return relsXml([{ id: part.recordsRelId || "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords", target: `pivotCacheRecords${part.recordsPartId}.xml` }]);
 }
 
 function pivotTableDefinitionRelsXml(part) {
   return relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition", target: `../pivotCache/pivotCacheDefinition${part.cachePartId}.xml` }]);
-}
-
-function pivotCacheRecordValueXml(value) {
-  if (value == null || value === "") return "<m/>";
-  const numeric = Number.isFinite(Number(value)) && String(value).trim() !== "";
-  return numeric ? `<n v="${Number(value)}"/>` : `<s v="${attrEscape(value)}"/>`;
-}
-
-function pivotCacheRecordsXml(part) {
-  const rows = part.pivot.sourceValues().slice(1);
-  const records = rows.map((row) => `<r>${row.map(pivotCacheRecordValueXml).join("")}</r>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${rows.length}">${records}</pivotCacheRecords>`;
-}
-
-function pivotTableXml(part) {
-  const { pivot } = part;
-  const headers = pivotSourceHeaders(pivot);
-  const target = safeRangeBounds(pivot.targetRange.address) || { top: 0, left: 0, bottom: Math.max(0, pivot.computedValues().length - 1), right: Math.max(0, pivot.computedValues()[0]?.length - 1) };
-  const values = pivot.computedValues();
-  const targetEnd = makeCellAddress(target.top + Math.max(0, values.length - 1), target.left + Math.max(0, (values[0]?.length || 1) - 1));
-  const ref = `${makeCellAddress(target.top, target.left)}:${targetEnd}`;
-  const rowIndexes = pivot.rowFields.map((field) => headers.indexOf(String(field))).filter((index) => index >= 0);
-  const valueIndexes = pivot.valueFields.map((field) => headers.indexOf(String(field.field || field.name))).filter((index) => index >= 0);
-  const pivotFields = headers.map((header, index) => `<pivotField${rowIndexes.includes(index) ? ` axis="axisRow"` : ""}${valueIndexes.includes(index) ? ` dataField="1"` : ""} showAll="0"><items count="1"><item t="default"/></items></pivotField>`).join("");
-  const rowFields = rowIndexes.length ? `<rowFields count="${rowIndexes.length}">${rowIndexes.map((index) => `<field x="${index}"/>`).join("")}</rowFields>` : "";
-  const dataFields = pivot.valueFields.length ? `<dataFields count="${pivot.valueFields.length}">${pivot.valueFields.map((field) => `<dataField name="${attrEscape(pivotValueLabel(field))}" fld="${Math.max(0, headers.indexOf(String(field.field || field.name)))}" subtotal="${attrEscape(field.summarizeBy || "sum")}"/>`).join("")}</dataFields>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="${attrEscape(pivot.name)}" cacheId="${part.cacheId}" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3"><location ref="${attrEscape(ref)}" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="${headers.length}">${pivotFields}</pivotFields>${rowFields}${dataFields}</pivotTableDefinition>`;
 }
 
 function dataValidationsXml(sheet) {
@@ -6699,10 +6630,14 @@ async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches
     sheet.pivotTables.add({
       name: parsed.name,
       sourceRange: { sheetName: cache.source.sheet, address: cache.source.ref },
+      sourceFields: cache.fields,
       targetRange: { sheetName: sheet.name, address: parsed.targetRange },
       rowFields: parsed.rowFields,
       columnFields: parsed.columnFields,
       valueFields: parsed.valueFields,
+      filters: parsed.filters,
+      refreshPolicy: cache.refreshPolicy,
+      validateSource: false,
     });
   }
 }

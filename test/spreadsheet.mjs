@@ -221,6 +221,37 @@ const revenuePivot = sheet.pivotTables.add({
   values: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue sum" }],
 });
 assert.deepEqual(revenuePivot.computedValues(), [["Month", "Revenue sum"], ["Jan", 100], ["Feb", 120], ["Mar", 130]]);
+sheet.getRange("P1:S7").values = [
+  ["Region", "Quarter", "Product", "Revenue"],
+  ["East", "Q1", "Core", 10],
+  ["East", "Q2", "Core", 20],
+  ["West", "Q1", "Core", 30],
+  ["West", "Q2", "Legacy", 40],
+  ["East", "Q1", "Legacy", 5],
+  ["West", "Q1", "Legacy", 7],
+];
+const regionalPivot = sheet.pivotTables.add({
+  name: "RegionalPivot",
+  sourceRange: "P1:S7",
+  targetRange: "T1:V4",
+  rowFields: ["Region"],
+  columnFields: ["Quarter"],
+  valueFields: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue total" }],
+  filters: { Quarter: { include: ["Q1"] } },
+  refreshPolicy: { refreshOnLoad: false, saveData: true, enableRefresh: false, invalid: true, missingItemsLimit: 3, refreshedBy: "QA Agent", refreshedDateIso: "2026-07-12T00:00:00Z" },
+});
+assert.deepEqual(regionalPivot.computedValues(), [["Region", "Q1"], ["East", 15], ["West", 37]]);
+assert.deepEqual(regionalPivot.filters, [{ field: "Quarter", include: ["Q1"] }]);
+assert.equal(regionalPivot.refreshPolicy.saveData, true);
+assert.match(regionalPivot.inspectRecord().columnFields.join(","), /Quarter/);
+assert.match(JSON.stringify(regionalPivot.layoutJson()), /refreshPolicy/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Missing"] }), /not present in the source headers/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], columnFields: ["Region"] }), /both a row and column field/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], filters: { Quarter: ["Q1"] } }), /must also be a row or column field/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], filters: { Region: { include: ["East"], exclude: ["West"] } } }), /exactly one of include or exclude/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], filters: { Region: ["North"] } }), /unknown item North/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], refreshPolicy: { saveData: "yes" } }), /saveData must be a boolean/);
+assert.throws(() => sheet.pivotTables.add({ sourceRange: "P1:S7", targetRange: "T8", rowFields: ["Region"], refreshPolicy: { refreshedDateIso: "today" } }), /XML date-time string/);
 assert.equal(workbook.resolve(revenuePivot.id).name, "RevenuePivot");
 assert.match(workbook.help("sheet.pivotTables.add").ndjson, /pivot table facade/);
 const image = sheet.images.add({
@@ -991,13 +1022,17 @@ assert.match(tableXml, /displayName="TasksTable"/);
 assert.match(tableXml, /ref="A1:D4"/);
 assert.match(tableXml, /<tableColumns count="4">/);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
-assert.equal(pivotPartNames.length, 1);
+assert.equal(pivotPartNames.length, 2);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");
 assert.match(pivotTableXml, /<pivotTableDefinition/);
 assert.match(pivotTableXml, /name="RevenuePivot"/);
 assert.match(pivotTableXml, /cacheId="1"/);
 assert.match(pivotTableXml, /<rowFields count="1"><field x="0"\/><\/rowFields>/);
 assert.match(pivotTableXml, /<dataField name="Revenue sum" fld="1" subtotal="sum"\/>/);
+const regionalPivotTableXml = await zip.file(pivotPartNames[1]).async("text");
+assert.match(regionalPivotTableXml, /name="RegionalPivot"/);
+assert.match(regionalPivotTableXml, /<colFields count="1"><field x="1"\/><\/colFields>/);
+assert.match(regionalPivotTableXml, /<pivotField axis="axisCol" multipleItemSelectionAllowed="1" showAll="0"><items count="3"><item x="0"\/><item x="1" h="1"\/><item t="default"\/><\/items><\/pivotField>/);
 const pivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
 assert.match(pivotCacheXml, /<pivotCacheDefinition/);
 assert.match(pivotCacheXml, /r:id="rId1"/);
@@ -1011,6 +1046,8 @@ assert.match(pivotCacheRecordsXml, /<s v="Mar"\/><n v="130"\/>/);
 const pivotCacheDefinitionRelsXml = await zip.file("xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels").async("text");
 assert.match(pivotCacheDefinitionRelsXml, /relationships\/pivotCacheRecords/);
 assert.match(pivotCacheDefinitionRelsXml, /Target="pivotCacheRecords1\.xml"/);
+const regionalPivotCacheXml = await zip.file("xl/pivotCache/pivotCacheDefinition2.xml").async("text");
+assert.match(regionalPivotCacheXml, /refreshOnLoad="0" saveData="1" enableRefresh="0" invalid="1" missingItemsLimit="3" refreshedBy="QA Agent" refreshedDateIso="2026-07-12T00:00:00Z"/);
 const pivotTableDefinitionRelsXml = await zip.file("xl/pivotTables/_rels/pivotTable1.xml.rels").async("text");
 assert.match(pivotTableDefinitionRelsXml, /relationships\/pivotCacheDefinition/);
 assert.match(pivotTableDefinitionRelsXml, /Target="\.\.\/pivotCache\/pivotCacheDefinition1\.xml"/);
@@ -1034,7 +1071,7 @@ assert.doesNotMatch(workbookXml, /<workbookPr\b[^>]*date1904=/);
 assert.match(workbookXml, /<definedNames>/);
 assert.match(workbookXml, /name="RevenueData"/);
 assert.match(workbookXml, /Sheet1!G2:G4/);
-assert.match(workbookXml, /<pivotCaches><pivotCache cacheId="1" r:id="rId\d+"\/><\/pivotCaches>/);
+assert.match(workbookXml, /<pivotCaches><pivotCache cacheId="1" r:id="rId\d+"\/><pivotCache cacheId="2" r:id="rId\d+"\/><\/pivotCaches>/);
 const stylesXml = await zip.file("xl/styles.xml").async("text");
 assert.match(stylesXml, /<dxfs count="2">/);
 assert.match(stylesXml, /<fgColor rgb="FF22C55E"/);
@@ -1117,11 +1154,19 @@ const nativeOnlyWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(await n
 const nativeOnlySheet = nativeOnlyWorkbook.worksheets.getItem("Sheet1");
 assert.equal(nativeOnlySheet.images.items.length, 1);
 assert.equal(nativeOnlySheet.charts.items.length, 2);
-assert.equal(nativeOnlySheet.pivotTables.items.length, 1);
+assert.equal(nativeOnlySheet.pivotTables.items.length, 2);
 const nativeOnlyPivot = nativeOnlySheet.pivotTables.getItemOrNullObject("RevenuePivot");
 assert.deepEqual(nativeOnlyPivot.computedValues(), [["Month", "Revenue sum"], ["Jan", 100], ["Feb", 120], ["Mar", 130]]);
 assert.equal(nativeOnlyWorkbook.resolve("RevenuePivot"), nativeOnlyPivot);
 assert.match(nativeOnlyWorkbook.inspect({ kind: "pivotTable", target: "RevenuePivot", maxChars: 4000 }).ndjson, /Revenue sum/);
+const nativeOnlyRegionalPivot = nativeOnlySheet.pivotTables.getItemOrNullObject("RegionalPivot");
+assert.deepEqual(nativeOnlyRegionalPivot.computedValues(), [["Region", "Q1"], ["East", 15], ["West", 37]]);
+assert.deepEqual(nativeOnlyRegionalPivot.columnFields, ["Quarter"]);
+assert.deepEqual(nativeOnlyRegionalPivot.filters, [{ field: "Quarter", exclude: ["Q2"] }]);
+assert.deepEqual(nativeOnlyRegionalPivot.refreshPolicy, { refreshOnLoad: false, saveData: true, enableRefresh: false, invalid: true, missingItemsLimit: 3, refreshedBy: "QA Agent", refreshedDateIso: "2026-07-12T00:00:00Z" });
+const nativeOnlyRegionalRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(nativeOnlyWorkbook));
+assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").computedValues(), [["Region", "Q1"], ["East", 15], ["West", 37]]);
+assert.deepEqual(nativeOnlyRegionalRoundtrip.resolve("RegionalPivot").filters, [{ field: "Quarter", exclude: ["Q2"] }]);
 const nativeOnlyImage = nativeOnlySheet.images.getItemOrNullObject("LogoImage");
 assert.equal(nativeOnlyImage.alt, "Logo placeholder");
 assert.match(nativeOnlyImage.dataUrl, /^data:image\/png;base64,/);
@@ -1326,4 +1371,28 @@ assert.equal(loaded.worksheets.getItem("Sheet1").getRange("E3").values[0][0], 35
 const loadedThreadId = JSON.parse(roundtripMetadata.split("\n").find((line) => line.includes('"kind":"thread"'))).id;
 assert.equal(loaded.resolve(loadedThreadId).resolved, true);
 assert.deepEqual(loaded.trace("Sheet1!C3").tree.precedents.map((node) => node.address), ["A3", "B3"]);
+const refreshOnlyBook = Workbook.create();
+const refreshOnlySheet = refreshOnlyBook.worksheets.add("Source");
+refreshOnlySheet.getRange("A1:B3").values = [["Team", "Score"], ["Red", 4], ["Blue", 6]];
+refreshOnlySheet.pivotTables.add({
+  name: "RefreshOnlyPivot",
+  sourceRange: "A1:B3",
+  targetRange: "D1:E3",
+  rowFields: ["Team"],
+  valueFields: [{ field: "Score", summarizeBy: "sum" }],
+  refreshPolicy: { saveData: false, refreshOnLoad: true },
+});
+const refreshOnlyXlsx = await SpreadsheetFile.exportXlsx(refreshOnlyBook);
+assert.equal((await SpreadsheetFile.inspectXlsx(refreshOnlyXlsx)).ok, true);
+const refreshOnlyZip = await JSZip.loadAsync(new Uint8Array(await refreshOnlyXlsx.arrayBuffer()));
+assert.equal(refreshOnlyZip.file("xl/pivotCache/pivotCacheRecords1.xml"), null);
+assert.equal(refreshOnlyZip.file("xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels"), null);
+assert.doesNotMatch(await refreshOnlyZip.file("[Content_Types].xml").async("text"), /pivotCacheRecords/);
+assert.doesNotMatch(await refreshOnlyZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /r:id=/);
+assert.match(await refreshOnlyZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /refreshOnLoad="1" saveData="0"/);
+refreshOnlyZip.remove("customXml/open-office-artifact.json");
+const refreshOnlyNative = await SpreadsheetFile.importXlsx(new FileBlob(await refreshOnlyZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: refreshOnlyXlsx.type }));
+const importedRefreshOnlyPivot = refreshOnlyNative.resolve("RefreshOnlyPivot");
+assert.deepEqual(importedRefreshOnlyPivot.computedValues(), [["Team", "sum of Score"], ["Red", 4], ["Blue", 6]]);
+assert.equal(importedRefreshOnlyPivot.refreshPolicy.saveData, false);
 console.log("spreadsheet smoke ok");

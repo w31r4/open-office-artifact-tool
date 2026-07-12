@@ -158,6 +158,15 @@
           "sourceRange": "A1:D4",
           "targetRange": "I12:J16",
           "rowFields": ["Month"],
+          "filters": { "Month": { "include": ["Jan", "Mar"] } },
+          "refreshPolicy": {
+            "refreshOnLoad": false,
+            "saveData": true,
+            "enableRefresh": true,
+            "missingItemsLimit": 2,
+            "refreshedBy": "Spreadsheet skill",
+            "refreshedDateIso": "2026-07-12T00:00:00Z"
+          },
           "valueFields": [
             { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" }
           ]
