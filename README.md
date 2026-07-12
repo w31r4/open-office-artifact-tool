@@ -201,7 +201,7 @@ It extracts page size, positioned text items, text-line regions, heuristic table
 
 ## Safe OOXML package inspection and patching
 
-XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records validate safe paths, content types, internal relationships, duplicate IDs, and namespace-aware source XML references under part/byte budgets. Patch methods accept XML, JSON, text, binary, and remove operations; content types and relationships synchronize automatically, with IDs preserved long enough to clean source XML. Set `recipe.sourceReference` for DOCX settings, header/footer references, classic-comment anchors, and numbering assignments; XLSX worksheet/table lists, complete worksheet→drawing→image/chart chains, and workbook/cache/worksheet PivotTable chains; and PPTX slide/master/layout ID lists. Drawing recipes require explicit geometry, DOCX settings reject unknown/password fields, comment/numbering builders require declared IDs and explicit structural targets, pivot cache definitions require a unique `cacheId`, and PPTX master/layout recipes validate schema-bounded unsigned IDs, so the package layer never silently invents semantic identity. It owns namespace prefixes, non-visual IDs, source lists, add/remove cleanup, and final atomic validation. Use `validateResult: false` only for deliberate invalid-package fixtures.
+XLSX, PPTX, and DOCX expose the same bounded package workflow. Inspect records validate safe paths, content types, internal relationships, duplicate IDs, and namespace-aware source XML references under part/byte budgets. Patch methods accept XML, JSON, text, binary, and remove operations; content types and relationships synchronize automatically, with IDs preserved long enough to clean source XML. Set `recipe.sourceReference` for DOCX settings, header/footer references, classic-comment anchors, and numbering assignments; XLSX worksheet/table lists, complete worksheet→drawing→image/chart chains, and workbook/cache/worksheet PivotTable chains; and PPTX slide/master/layout ID lists plus slide image/chart DrawingML. Drawing recipes require explicit geometry, DOCX settings reject unknown/password fields, comment/numbering builders require declared IDs and explicit structural targets, pivot cache definitions require a unique `cacheId`, and PPTX builders validate schema-bounded IDs and non-visual object IDs, so the package layer never silently invents semantic identity. It owns namespace prefixes, non-visual IDs, source lists/shape trees, add/remove cleanup, and final atomic validation. Use `validateResult: false` only for deliberate invalid-package fixtures.
 
 ```js
 const report = await SpreadsheetFile.inspectXlsx(xlsx, {
@@ -225,7 +225,16 @@ const patched = await PresentationFile.patchPptx(pptx, [
   {
     path: "ppt/charts/review.xml",
     xml: "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart/></c:chartSpace>",
-    recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdReviewChart" },
+    recipe: {
+      kind: "chart",
+      source: "ppt/slides/slide1.xml",
+      id: "rIdReviewChart",
+      sourceReference: {
+        objectId: 12,
+        name: "Review chart",
+        position: { left: 180, top: 120, width: 640, height: 360 },
+      },
+    },
   },
 ]);
 ```

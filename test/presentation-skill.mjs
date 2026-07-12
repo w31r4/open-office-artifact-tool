@@ -60,6 +60,25 @@ try {
   }
   for (const slide of compared.modelRender.slides) assert.ok((await fs.stat(slide.path)).size > 100);
   if (nativeStatus.available) for (const slide of compared.nativeRender.pages) assert.ok((await fs.stat(slide.path)).size > 100);
+
+  const packageDrawing = await runPresentationFixture("skills/presentations/fixtures/package-drawing.json", {
+    outputDir: path.join(root, "package-drawing"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(packageDrawing.qa.summary.packageOk, true);
+  assert.equal(packageDrawing.qa.verify.ok, true);
+  assert.ok(packageDrawing.qa.packageInspect.parts.some((part) => part.path === "ppt/review/media/agent-status.png"));
+  assert.ok(packageDrawing.qa.packageInspect.parts.some((part) => part.path === "ppt/review/charts/agent-readiness.xml"));
+  const drawingSlide = packageDrawing.qa.presentation.slides.items[0];
+  assert.equal(drawingSlide.images.items.find((item) => item.name === "Agent status")?.alt, "Green package status");
+  assert.equal(drawingSlide.charts.items.find((item) => item.name === "Agent readiness chart")?.series[0].values[1], 100);
+  assert.match(packageDrawing.qa.inspect.ndjson, /Agent readiness chart/);
+  assert.match(packageDrawing.qa.inspect.ndjson, /Agent status/);
+  assert.equal(packageDrawing.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  const skillText = await fs.readFile("skills/presentations/SKILL.md", "utf8");
+  assert.match(skillText, /PresentationFile\.patchPptx/);
+  assert.match(skillText, /package-drawing\.json/);
+
   console.log("presentation skill smoke ok");
 } finally {
   await fs.rm(root, { recursive: true, force: true });

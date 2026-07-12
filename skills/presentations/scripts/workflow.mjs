@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import JSZip from "jszip";
 
 import {
   FileBlob,
@@ -67,6 +68,51 @@ export function createPresentationFromFixture(fixture = {}) {
     assert.match(presentation.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));
   }
   return presentation;
+}
+
+function packageImageBytes(image = {}) {
+  const match = /^data:[^;,]+;base64,([A-Za-z0-9+/=\s]+)$/.exec(String(image.dataUrl || ""));
+  if (!match) throw new Error("packageDrawing.image requires a base64 dataUrl.");
+  return Buffer.from(match[1].replace(/\s+/g, ""), "base64");
+}
+
+async function packageChartXml(chart = {}) {
+  const source = Presentation.create();
+  source.slides.add().charts.add(chart.chartType || chart.type || "bar", chart);
+  const zip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(source)).arrayBuffer()));
+  const xml = await zip.file("ppt/charts/chart1.xml")?.async("text");
+  if (!xml) throw new Error("Could not generate packageDrawing chart XML through the public presentation API.");
+  return xml;
+}
+
+async function applyFixturePackageDrawing(pptx, fixture = {}) {
+  const drawing = fixture.packageDrawing;
+  if (!drawing) return pptx;
+  const slideIndex = Number(drawing.slideIndex ?? 0);
+  if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex >= (fixture.slides || []).length) throw new RangeError("packageDrawing.slideIndex is out of range.");
+  const source = `ppt/slides/slide${slideIndex + 1}.xml`;
+  const patches = [];
+  if (drawing.image) patches.push({
+    path: drawing.image.partPath || `ppt/review/media/image-${slideIndex + 1}.png`,
+    bytes: packageImageBytes(drawing.image),
+    recipe: {
+      kind: "image",
+      source,
+      id: drawing.image.relationshipId,
+      sourceReference: { objectId: drawing.image.objectId, name: drawing.image.name, alt: drawing.image.alt, position: drawing.image.position },
+    },
+  });
+  if (drawing.chart) patches.push({
+    path: drawing.chart.partPath || `ppt/review/charts/chart-${slideIndex + 1}.xml`,
+    xml: await packageChartXml(drawing.chart),
+    recipe: {
+      kind: "chart",
+      source,
+      id: drawing.chart.relationshipId,
+      sourceReference: { objectId: drawing.chart.objectId, name: drawing.chart.name, alt: drawing.chart.alt, position: drawing.chart.position },
+    },
+  });
+  return patches.length ? PresentationFile.patchPptx(pptx, patches) : pptx;
 }
 
 function pdfPageCount(pdfPath) {
@@ -257,7 +303,9 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const presentation = createPresentationFromFixture(fixture);
   const pptxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "presentation"}.pptx`);
-  await (await PresentationFile.exportPptx(presentation)).save(pptxPath);
+  let pptx = await PresentationFile.exportPptx(presentation);
+  pptx = await applyFixturePackageDrawing(pptx, fixture);
+  await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {
     outputDir: path.join(outputDir, "qa"),
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",

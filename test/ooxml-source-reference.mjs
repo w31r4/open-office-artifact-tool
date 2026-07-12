@@ -327,6 +327,63 @@ assert.equal((await SpreadsheetFile.importXlsx(pivotRemoved)).worksheets.getItem
 const presentation = Presentation.create();
 presentation.slides.add().shapes.add({ text: "Source reference native check", position: { left: 40, top: 40, width: 400, height: 80 } });
 const basePptx = await PresentationFile.exportPptx(presentation);
+const pptxImagePartPath = "ppt/custom/media/agent-status.png";
+const pptxChartPartPath = "ppt/custom/charts/agent-chart.xml";
+const pptxImageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+const chartSourcePresentation = Presentation.create();
+chartSourcePresentation.slides.add().charts.add("bar", { name: "Agent source chart", title: "Agent source chart", categories: ["Package"], series: [{ name: "Readiness", values: [100] }], position: { left: 0, top: 0, width: 360, height: 220 } });
+const chartSourceZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(chartSourcePresentation)).arrayBuffer()));
+const pptxChartPartXml = await chartSourceZip.file("ppt/charts/chart1.xml").async("text");
+const drawingPptx = await PresentationFile.patchPptx(basePptx, [
+  {
+    path: pptxImagePartPath,
+    bytes: pptxImageBytes,
+    recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideImage", sourceReference: { objectId: 3, name: "Agent status", alt: "Green agent status", position: { left: 60, top: 160, width: 96, height: 64 } } },
+  },
+  {
+    path: pptxChartPartPath,
+    xml: pptxChartPartXml,
+    recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideChart", sourceReference: { objectId: 4, name: "Agent source chart", alt: "Readiness chart", position: { left: 200, top: 150, width: 360, height: 220 } } },
+  },
+]);
+assert.equal(drawingPptx.metadata.sourceReferencesUpdated, 2);
+assert.equal((await PresentationFile.inspectPptx(drawingPptx)).ok, true);
+const drawingPptxZip = await JSZip.loadAsync(new Uint8Array(await drawingPptx.arrayBuffer()));
+const drawingSlideXml = await drawingPptxZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(drawingSlideXml, /<p:pic>[\s\S]*?<p:cNvPr id="3" name="Agent status" descr="Green agent status"\/>[\s\S]*?<a:blip r:embed="rIdAgentSlideImage"\/>[\s\S]*?<a:off x="571500" y="1524000"\/><a:ext cx="914400" cy="609600"\/>[\s\S]*?<\/p:pic>/);
+assert.match(drawingSlideXml, /<p:graphicFrame>[\s\S]*?<p:cNvPr id="4" name="Agent source chart" descr="Readiness chart"\/>[\s\S]*?<a:off x="1905000" y="1428750"\/><a:ext cx="3429000" cy="2095500"\/>[\s\S]*?<c:chart r:id="rIdAgentSlideChart"\/>[\s\S]*?<\/p:graphicFrame>/);
+const drawingSlideRels = await drawingPptxZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+assert.match(drawingSlideRels, /Id="rIdAgentSlideImage"[^>]*relationships\/image[^>]*Target="\.\.\/custom\/media\/agent-status\.png"/);
+assert.match(drawingSlideRels, /Id="rIdAgentSlideChart"[^>]*relationships\/chart[^>]*Target="\.\.\/custom\/charts\/agent-chart\.xml"/);
+const importedDrawingPresentation = await PresentationFile.importPptx(drawingPptx);
+assert.equal(importedDrawingPresentation.slides.items[0].images.items.find((item) => item.name === "Agent status")?.alt, "Green agent status");
+assert.equal(importedDrawingPresentation.slides.items[0].images.items.find((item) => item.name === "Agent status")?.position.left, 60);
+assert.equal(importedDrawingPresentation.slides.items[0].charts.items.find((item) => item.name === "Agent source chart")?.title, "Agent source chart");
+assert.equal(importedDrawingPresentation.slides.items[0].charts.items.find((item) => item.name === "Agent source chart")?.series[0].values[0], 100);
+await assert.rejects(() => PresentationFile.patchPptx(drawingPptx, [{ path: "ppt/custom/media/duplicate.png", bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", sourceReference: { objectId: 3, position: { left: 0, top: 0, width: 10, height: 10 } } } }]), /objectId 3 already exists/);
+await assert.rejects(() => PresentationFile.patchPptx(basePptx, [{ path: "ppt/custom/media/missing-position.png", bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", sourceReference: true } }]), /requires an explicit position/);
+await assert.rejects(() => PresentationFile.patchPptx(basePptx, [{ path: "ppt/custom/charts/invalid-root.xml", xml: '<c:style xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>', recipe: { kind: "chart", source: "ppt/slides/slide1.xml", sourceReference: { position: { left: 0, top: 0, width: 100, height: 80 } } } }]), /must have a chartSpace root element/);
+const strictSlideXml = '<?xml version="1.0" encoding="UTF-8"?><px:sld xmlns:px="http://purl.oclc.org/ooxml/presentationml/main" xmlns:dx="http://purl.oclc.org/ooxml/drawingml/main" xmlns:rx="http://purl.oclc.org/ooxml/officeDocument/relationships"><px:cSld><px:spTree><px:nvGrpSpPr><px:cNvPr id="1" name=""/><px:cNvGrpSpPr/><px:nvPr/></px:nvGrpSpPr><px:grpSpPr/></px:spTree></px:cSld></px:sld>';
+const strictDrawingPptx = await PresentationFile.patchPptx(basePptx, [
+  { path: "ppt/slides/slide1.xml", xml: strictSlideXml },
+  { path: "ppt/custom/media/strict.png", bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdStrictImage", sourceReference: { objectId: 2, position: { left: 10, top: 20, width: 30, height: 40 } } } },
+]);
+assert.equal((await PresentationFile.inspectPptx(strictDrawingPptx)).ok, true);
+assert.match(await (await JSZip.loadAsync(new Uint8Array(await strictDrawingPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text"), /<px:pic>[\s\S]*?<dx:blip rx:embed="rIdStrictImage"\/>/);
+const replacedDrawingPptx = await PresentationFile.patchPptx(drawingPptx, [{ path: pptxImagePartPath, bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideImage", sourceReference: { objectId: 5, name: "Updated agent status", position: { left: 80, top: 180, width: 120, height: 80 } } } }]);
+const replacedDrawingSlideXml = await (await JSZip.loadAsync(new Uint8Array(await replacedDrawingPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text");
+assert.equal((replacedDrawingSlideXml.match(/rIdAgentSlideImage/g) || []).length, 1);
+assert.doesNotMatch(replacedDrawingSlideXml, /name="Agent status"/);
+assert.match(replacedDrawingSlideXml, /id="5" name="Updated agent status"/);
+const removedDrawingPptx = await PresentationFile.patchPptx(replacedDrawingPptx, [
+  { path: pptxImagePartPath, remove: true, recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideImage", sourceReference: true } },
+  { path: pptxChartPartPath, remove: true, recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideChart", sourceReference: true } },
+]);
+assert.equal((await PresentationFile.inspectPptx(removedDrawingPptx)).ok, true);
+const removedDrawingSlideXml = await (await JSZip.loadAsync(new Uint8Array(await removedDrawingPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text");
+assert.doesNotMatch(removedDrawingSlideXml, /rIdAgentSlideImage|rIdAgentSlideChart/);
+assert.equal((await PresentationFile.importPptx(removedDrawingPptx)).slides.items[0].images.items.length, 0);
+assert.equal((await PresentationFile.importPptx(removedDrawingPptx)).slides.items[0].charts.items.length, 0);
 const masterPartPath = "ppt/custom/masters/agent-master.xml";
 const layoutPartPath = "ppt/custom/layouts/agent-layout.xml";
 const unusedLayoutPartPath = "ppt/custom/layouts/unused-layout.xml";
@@ -397,7 +454,7 @@ const nativeAvailable = commandExists("soffice") && commandExists("pdftoppm");
 if (nativeAvailable) {
   const libreOffice = createLibreOfficeRenderer({ timeoutMs: 60_000 });
   const poppler = createPopplerRenderer({ dpi: 96, timeoutMs: 60_000 });
-  for (const [artifactKind, blob] of [["document", docx], ["document", numberingDocx], ["workbook", pivotXlsx], ["presentation", pptx]]) {
+  for (const [artifactKind, blob] of [["document", docx], ["document", numberingDocx], ["workbook", pivotXlsx], ["presentation", pptx], ["presentation", drawingPptx]]) {
     const pdf = await libreOffice({ input: blob, inputType: blob.type, outputType: "application/pdf", format: "pdf", artifactKind });
     assert.equal(pdf.type, "application/pdf");
     assert.ok(pdf.bytes.length > 100);

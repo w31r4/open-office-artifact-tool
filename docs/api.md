@@ -891,7 +891,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `PresentationFile.exportPptx` | api | Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist. |
 | `PresentationFile.importPptx` | api | Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
-| `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID-list mutations, and atomically reject dangling content types, relationships, or source XML relationship references. |
+| `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package or semantic references. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1146,7 +1146,7 @@ Inspect bounded PPTX parts, content types, relationships, and namespace-aware so
 
 #### `PresentationFile.patchPptx`
 
-Apply path-validated PPTX part patches, including safe slide/master/layout ID-list mutations, and atomically reject dangling content types, relationships, or source XML relationship references.
+Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package or semantic references.
 
 **Schema parameters:**
 
@@ -1158,7 +1158,8 @@ Apply path-validated PPTX part patches, including safe slide/master/layout ID-li
 - `syncRelationships` (boolean) — Remove relationships to deleted parts and apply relationship recipes; defaults to true.
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
-- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX slide, slideMaster, and slideLayout recipes safely mutate their owning ID lists and validate explicit or generated IDs.
+- `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX supports slide/master/layout ID lists plus image/chart objects in a slide shape tree.
+- `sourceReference` (boolean|object) — Opt-in semantic XML mutation. Image/chart objects require explicit pixel position { left, top, width, height }, validate generated or explicit non-visual objectId, and clean matching slide objects on deletion.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**

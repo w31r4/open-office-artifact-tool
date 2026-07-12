@@ -1002,7 +1002,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Attach threaded comments to slide elements; export preserves per-comment author identity through native comment parts plus commentAuthors.xml and verifies dangling targets." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID-list mutations, and atomically reject dangling content types, relationships, or source XML relationship references." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package or semantic references." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize a presentation facade to native OOXML PPTX bytes, including comment author registry relationships when comments exist." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX bytes through presentation/master/layout/slide relationships, including arbitrary master, layout, slide, notes, comments, comment-author, theme, chart, and image targets." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
@@ -1881,7 +1881,8 @@ const PRESENTATION_HELP_SCHEMAS = {
     syncRelationships: { type: "boolean", description: "Remove relationships to deleted parts and apply relationship recipes; defaults to true." },
     syncSourceReferences: { type: "boolean", description: "Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true." },
     validateResult: { type: "boolean", description: "Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures." },
-    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX slide, slideMaster, and slideLayout recipes safely mutate their owning ID lists and validate explicit or generated IDs." },
+    recipe: { type: "string|object", description: "Standard OOXML part recipe with optional source/id/target and sourceReference fields; PPTX supports slide/master/layout ID lists plus image/chart objects in a slide shape tree." },
+    sourceReference: { type: "boolean|object", description: "Opt-in semantic XML mutation. Image/chart objects require explicit pixel position { left, top, width, height }, validate generated or explicit non-visual objectId, and clean matching slide objects on deletion." },
     relationship: { type: "object", description: "Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array." },
   }, "blob", "FileBlob", "Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
@@ -9818,11 +9819,12 @@ async function syncOoxmlSourceReferences(zip, normalizedPatches, options, family
     const resolvedIds = new Set([...(relationship.resolvedIds || []), relationship.id].filter(Boolean));
     const addId = remove ? undefined : relationship.resolvedId || relationship.id;
     if (!remove && !addId) throw new Error(`${family} ${patch.recipeKind} sourceReference could not resolve a relationship Id.`);
-    if (!remove && family === "DOCX" && ["comments", "numbering", "settings"].includes(patch.recipeKind)) {
+    const validatesTarget = (family === "DOCX" && ["comments", "numbering", "settings"].includes(patch.recipeKind)) || (family === "PPTX" && patch.recipeKind === "chart");
+    if (!remove && validatesTarget) {
       const targetEntry = zip.file(partPath);
       if (!targetEntry) throw new Error(`${family} sourceReference target part not found: ${partPath}`);
       const targetXml = await targetEntry.async("text");
-      if (patch.recipeKind === "settings") {
+      if (family === "DOCX" && patch.recipeKind === "settings") {
         const nextTarget = mutateOoxmlSourceReferenceTarget({ family, recipeKind: patch.recipeKind, targetXml, config });
         if (nextTarget !== targetXml) { zip.file(partPath, nextTarget); updates += 1; }
         continue;

@@ -1,0 +1,54 @@
+{
+  "name": "package-drawing",
+  "outputName": "package-drawing.pptx",
+  "slideSize": { "width": 1280, "height": 720 },
+  "theme": {
+    "name": "Package Drawing",
+    "colors": { "accent1": "#2563eb", "accent2": "#16a34a", "tx1": "#0f172a", "bg1": "#ffffff" }
+  },
+  "slides": [
+    {
+      "name": "drawing-target",
+      "shapes": [
+        {
+          "name": "title",
+          "text": "Relationship-backed slide drawing",
+          "position": { "left": 60, "top": 40, "width": 860, "height": 70 },
+          "textStyle": { "fontSize": 36, "bold": true }
+        }
+      ]
+    }
+  ],
+  "packageDrawing": {
+    "slideIndex": 0,
+    "image": {
+      "partPath": "ppt/review/media/agent-status.png",
+      "relationshipId": "rIdAgentStatus",
+      "objectId": 3,
+      "name": "Agent status",
+      "alt": "Green package status",
+      "position": { "left": 70, "top": 160, "width": 180, "height": 120 },
+      "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    },
+    "chart": {
+      "partPath": "ppt/review/charts/agent-readiness.xml",
+      "relationshipId": "rIdAgentReadinessChart",
+      "objectId": 4,
+      "name": "Agent readiness chart",
+      "alt": "Package and native readiness",
+      "chartType": "bar",
+      "title": "Agent readiness chart",
+      "categories": ["Package", "Native"],
+      "series": [{ "name": "Readiness", "values": [100, 100], "color": "#2563eb" }],
+      "position": { "left": 320, "top": 150, "width": 700, "height": 420 }
+    }
+  },
+  "expectInspect": [
+    { "kind": "shape", "pattern": "Relationship-backed slide drawing" }
+  ],
+  "qa": {
+    "nativeRender": "auto",
+    "inspectKind": "deck,slide,shape,chart,image,layout",
+    "maxChars": 16000
+  }
+}
