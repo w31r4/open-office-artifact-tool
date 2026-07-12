@@ -3178,7 +3178,7 @@ Assign cell styles plus native column width, row height, pixel sizing, and hidde
 - `font` (object) — Font properties: bold, italic, underline, strike, color, size, and name.
 - `numberFormat` (string) — Excel number format code.
 - `alignment` (object) — horizontal, vertical, wrapText, textRotation, indent, shrinkToFit, and readingOrder options.
-- `border` (object) — Basic border style and color.
+- `border` (object) — A shared { style, color } border or per-edge left/right/top/bottom/diagonal border records with diagonalUp, diagonalDown, and outline flags.
 - `protection` (object) — Cell locked and hidden flags preserved through SpreadsheetML style records.
 - `columnWidth` (number) — Column width in Excel character units for every column intersecting the range.
 - `columnWidthPx` (number) — Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula.

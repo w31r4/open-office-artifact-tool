@@ -30,6 +30,18 @@ function normalizeBorder(style = {}) {
   const raw = style.border || style.borders;
   if (!raw) return undefined;
   const base = raw.outside || raw.all || raw;
+  const edgeNames = ["left", "right", "top", "bottom", "diagonal", "start", "end", "horizontal", "vertical"];
+  if (edgeNames.some((name) => base[name] != null)) {
+    const result = {};
+    for (const name of edgeNames) {
+      const edge = base[name];
+      if (edge == null || edge === false) continue;
+      if (typeof edge === "string") result[name] = { style: edge, color: "#CBD5E1" };
+      else if (edge.style || edge.lineStyle || edge.weight) result[name] = { style: edge.style || edge.lineStyle || edge.weight, color: edge.color || edge.fill || edge.borderColor || "#CBD5E1" };
+    }
+    for (const name of ["diagonalUp", "diagonalDown", "outline"]) if (base[name] != null) result[name] = Boolean(base[name]);
+    return Object.keys(result).length ? result : undefined;
+  }
   return { style: base.style || base.lineStyle || base.weight || "thin", color: base.color || base.fill || base.borderColor || "#CBD5E1" };
 }
 
@@ -94,9 +106,16 @@ function fillXml(style = {}) {
 function borderXml(style = {}) {
   const border = normalizeXlsxStyle(style).border;
   if (!border) return `<border/>`;
-  const color = normalizeXlsxColor(border.color, "CBD5E1"), lineStyle = attrEscape(border.style || "thin");
-  const edge = (name) => `<${name} style="${lineStyle}"><color rgb="FF${color}"/></${name}>`;
-  return `<border>${edge("left")}${edge("right")}${edge("top")}${edge("bottom")}<diagonal/></border>`;
+  const edgeXml = (name, edge) => edge?.style ? `<${name} style="${attrEscape(edge.style)}"><color rgb="FF${normalizeXlsxColor(edge.color, "CBD5E1")}"/></${name}>` : `<${name}/>`;
+  if (border.style) {
+    const edge = { style: border.style, color: border.color };
+    return `<border>${edgeXml("left", edge)}${edgeXml("right", edge)}${edgeXml("top", edge)}${edgeXml("bottom", edge)}<diagonal/></border>`;
+  }
+  const attrs = ["diagonalUp", "diagonalDown", "outline"].filter((name) => border[name] != null).map((name) => `${name}="${border[name] ? 1 : 0}"`).join(" ");
+  const perimeter = ["left", "right", "top", "bottom"].map((name) => edgeXml(name, border[name])).join("");
+  const diagonal = edgeXml("diagonal", border.diagonal);
+  const extras = ["start", "end", "horizontal", "vertical"].filter((name) => border[name]).map((name) => edgeXml(name, border[name])).join("");
+  return `<border${attrs ? ` ${attrs}` : ""}>${perimeter}${diagonal}${extras}</border>`;
 }
 
 function dxfXml(style = {}) {
@@ -141,34 +160,121 @@ function booleanElement(body, name) {
   return value == null || !["0", "false", "off"].includes(String(value).toLowerCase());
 }
 
-function rgbColor(body, elementName) {
-  const value = new RegExp(`<${elementName}[^>]*rgb="([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})"`).exec(body)?.[1];
-  return value ? `#${value.slice(-6)}` : undefined;
+const XLSX_INDEXED_COLORS = [
+  "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",
+  "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",
+  "800000", "008000", "000080", "808000", "800080", "008080", "C0C0C0", "808080",
+  "9999FF", "993366", "FFFFCC", "CCFFFF", "660066", "FF8080", "0066CC", "CCCCFF",
+  "000080", "FF00FF", "FFFF00", "00FFFF", "800080", "800000", "008080", "0000FF",
+  "00CCFF", "CCFFFF", "CCFFCC", "FFFF99", "99CCFF", "FF99CC", "CC99FF", "FFCC99",
+  "3366FF", "33CCCC", "99CC00", "FFCC00", "FF9900", "FF6600", "666699", "969696",
+  "003366", "339966", "003300", "333300", "993300", "993366", "333399", "333333",
+].map((value) => `#${value}`);
+
+function rgbToHsl(color) {
+  const value = normalizeXlsxColor(color, "000000");
+  const [red, green, blue] = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+  const maximum = Math.max(red, green, blue), minimum = Math.min(red, green, blue);
+  const lightness = (maximum + minimum) / 2;
+  if (maximum === minimum) return [0, 0, lightness];
+  const delta = maximum - minimum;
+  const saturation = lightness > 0.5 ? delta / (2 - maximum - minimum) : delta / (maximum + minimum);
+  const hue = maximum === red ? ((green - blue) / delta + (green < blue ? 6 : 0)) / 6 : maximum === green ? ((blue - red) / delta + 2) / 6 : ((red - green) / delta + 4) / 6;
+  return [hue, saturation, lightness];
 }
 
-function parseFont(body = "") {
+function hslToRgb(hue, saturation, lightness) {
+  if (saturation === 0) {
+    const value = Math.round(lightness * 255).toString(16).padStart(2, "0");
+    return `#${value}${value}${value}`.toUpperCase();
+  }
+  const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+  const p = 2 * lightness - q;
+  const channel = (offset) => {
+    let value = hue + offset;
+    if (value < 0) value += 1;
+    if (value > 1) value -= 1;
+    const result = value < 1 / 6 ? p + (q - p) * 6 * value : value < 1 / 2 ? q : value < 2 / 3 ? p + (q - p) * (2 / 3 - value) * 6 : p;
+    return Math.round(result * 255 + 1e-9).toString(16).padStart(2, "0");
+  };
+  return `#${channel(1 / 3)}${channel(0)}${channel(-1 / 3)}`.toUpperCase();
+}
+
+function tintedColor(color, tintValue) {
+  const tint = Number(tintValue);
+  if (!Number.isFinite(tint) || tint === 0) return color;
+  const [hue, saturation, lightness] = rgbToHsl(color);
+  const nextLightness = Math.max(0, Math.min(1, tint < 0 ? lightness * (1 + tint) : lightness * (1 - tint) + tint));
+  return hslToRgb(hue, saturation, nextLightness);
+}
+
+function parsedIndexedColors(stylesXml = "") {
+  const body = /<indexedColors\b[^>]*>([\s\S]*?)<\/indexedColors>/.exec(String(stylesXml))?.[1] || "";
+  const colors = [...body.matchAll(/<rgbColor\b([^>]*)\/?\s*>/g)].map((match) => {
+    const value = parseAttrs(match[1]).rgb;
+    return value ? `#${value.slice(-6)}` : undefined;
+  });
+  return colors.length ? colors : XLSX_INDEXED_COLORS;
+}
+
+function parsedColor(body, elementName, resources = {}) {
+  const match = new RegExp(`<${elementName}\\b([^>]*)\\/?\\s*>`).exec(body);
+  if (!match) return undefined;
+  const attrs = parseAttrs(match[1]);
+  let color;
+  if (attrs.rgb) color = `#${attrs.rgb.slice(-6)}`;
+  else if (attrs.theme != null) color = resources.themeColors?.[Number(attrs.theme)];
+  else if (attrs.indexed != null && Number(attrs.indexed) !== 64) color = resources.indexedColors?.[Number(attrs.indexed)];
+  else if (booleanAttribute(attrs, "auto")) color = resources.autoColor || "#000000";
+  return color ? tintedColor(color, attrs.tint) : undefined;
+}
+
+export function parseXlsxThemeColors(xml = "") {
+  const text = String(xml || "");
+  const scheme = /<(?:a:)?clrScheme\b[^>]*>([\s\S]*?)<\/(?:a:)?clrScheme>/.exec(text)?.[1] || "";
+  return ["dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"].map((name) => {
+    const body = new RegExp(`<(?:a:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:a:)?${name}>`).exec(scheme)?.[1] || "";
+    const srgb = /<(?:a:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/.exec(body)?.[1];
+    const system = /<(?:a:)?sysClr\b([^>]*)\/?\s*>/.exec(body);
+    const systemAttrs = parseAttrs(system?.[1] || "");
+    const value = srgb || systemAttrs.lastClr || systemAttrs.val;
+    return value && /^[0-9A-Fa-f]{6}$/.test(value) ? `#${value.toUpperCase()}` : undefined;
+  });
+}
+
+function parseFont(body = "", resources = {}) {
   const underlineMatch = /<u\b([^>]*)\/?>/.exec(body);
   return {
     bold: booleanElement(body, "b"),
     italic: booleanElement(body, "i"),
     underline: underlineMatch ? parseAttrs(underlineMatch[1]).val || "single" : undefined,
     strike: booleanElement(body, "strike"),
-    color: rgbColor(body, "color"),
+    color: parsedColor(body, "color", resources),
     size: Number(/<sz[^>]*val="([^"]+)"/.exec(body)?.[1] || 11),
     name: /<name[^>]*val="([^"]+)"/.exec(body)?.[1] || "Aptos",
   };
 }
 
-function parseFill(body = "") {
-  return rgbColor(body, "fgColor");
+function parseFill(body = "", resources = {}) {
+  return parsedColor(body, "fgColor", resources);
 }
 
-function parseBorder(body = "") {
-  const edge = /<(left|right|top|bottom)\b([^>]*)>([\s\S]*?)<\/\1>/.exec(body);
-  if (!edge) return undefined;
-  const attrs = parseAttrs(edge[2]);
-  const color = rgbColor(edge[3], "color");
-  return { style: attrs.style || "thin", ...(color ? { color } : {}) };
+function parseBorder(body = "", resources = {}, borderAttrs = {}) {
+  const edges = {};
+  for (const name of ["left", "right", "top", "bottom", "diagonal", "start", "end", "horizontal", "vertical"]) {
+    const match = new RegExp(`<${name}\\b([^>]*)(?:\\/>|>([\\s\\S]*?)<\\/${name}>)`).exec(body);
+    if (!match) continue;
+    const attrs = parseAttrs(match[1]);
+    if (!attrs.style) continue;
+    edges[name] = { style: attrs.style, color: parsedColor(match[2] || "", "color", resources) || resources.autoColor || "#000000" };
+  }
+  const flags = {};
+  for (const name of ["diagonalUp", "diagonalDown", "outline"]) if (borderAttrs[name] != null) flags[name] = booleanAttribute(borderAttrs, name);
+  const perimeter = ["left", "right", "top", "bottom"].map((name) => edges[name]);
+  const samePerimeter = perimeter.every(Boolean) && perimeter.every((edge) => edge.style === perimeter[0].style && edge.color === perimeter[0].color);
+  const hasExtras = ["diagonal", "start", "end", "horizontal", "vertical"].some((name) => edges[name]) || Object.keys(flags).length;
+  if (samePerimeter && !hasExtras) return { ...perimeter[0] };
+  return Object.keys(edges).length || Object.keys(flags).length ? { ...edges, ...flags } : undefined;
 }
 
 function parseAlignment(body = "") {
@@ -191,13 +297,13 @@ function parseProtection(body = "") {
   };
 }
 
-function parseDxf(body = "") {
+function parseDxf(body = "", resources = {}) {
   const style = {};
   const fontBody = /<font>([\s\S]*?)<\/font>/.exec(body)?.[1];
   const fillBody = /<fill>([\s\S]*?)<\/fill>/.exec(body)?.[1];
   const numFmt = /<numFmt\b([^>]*)\/?>(?:<\/numFmt>)?/.exec(body)?.[1];
-  if (fontBody != null) style.font = parseFont(fontBody);
-  const fill = fillBody != null ? parseFill(fillBody) : undefined;
+  if (fontBody != null) style.font = parseFont(fontBody, resources);
+  const fill = fillBody != null ? parseFill(fillBody, resources) : undefined;
   if (fill) style.fill = fill;
   if (numFmt) style.numberFormat = parseAttrs(numFmt).formatCode;
   return style;
@@ -257,21 +363,26 @@ function effectiveStyle(record, baseRecord, resources) {
   return style;
 }
 
-export function parseXlsxStylesXml(xml = "") {
+export function parseXlsxStylesXml(xml = "", options = {}) {
   const text = String(xml);
   const numberFormats = new Map(XLSX_BUILTIN_NUMBER_FORMATS);
   for (const match of text.matchAll(/<numFmt\b([^>]*)\/>/g)) { const attrs = parseAttrs(match[1]); numberFormats.set(Number(attrs.numFmtId), attrs.formatCode); }
+  const colorResources = {
+    themeColors: Array.isArray(options.themeColors) ? options.themeColors : [],
+    indexedColors: parsedIndexedColors(text),
+    autoColor: options.autoColor || "#000000",
+  };
   const fontsBody = /<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(text)?.[1] || "";
-  const fonts = [...fontsBody.matchAll(/<font>([\s\S]*?)<\/font>/g)].map((match) => parseFont(match[1]));
+  const fonts = [...fontsBody.matchAll(/<font>([\s\S]*?)<\/font>/g)].map((match) => parseFont(match[1], colorResources));
   const fillsBody = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(text)?.[1] || "";
-  const fills = [...fillsBody.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((match) => parseFill(match[1]));
+  const fills = [...fillsBody.matchAll(/<fill>([\s\S]*?)<\/fill>/g)].map((match) => parseFill(match[1], colorResources));
   const bordersBody = /<borders\b[^>]*>([\s\S]*?)<\/borders>/.exec(text)?.[1] || "";
-  const borders = [...bordersBody.matchAll(/<border\b[^>]*>([\s\S]*?)<\/border>/g)].map((match) => parseBorder(match[1]));
-  const resources = { fonts, fills, borders, numberFormats };
+  const borders = [...bordersBody.matchAll(/<border\b([^>]*)\/\s*>|<border\b([^>]*)>([\s\S]*?)<\/border>/g)].map((match) => parseBorder(match[3] || "", colorResources, parseAttrs(match[1] || match[2] || "")));
+  const resources = { ...colorResources, fonts, fills, borders, numberFormats };
   const styleXfs = xfRecords(/<cellStyleXfs\b[^>]*>([\s\S]*?)<\/cellStyleXfs>/.exec(text)?.[1] || "");
   const styles = xfRecords(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(text)?.[1] || "").map((record) => effectiveStyle(record, styleXfs[Number(record.attrs.xfId || 0)], resources));
   const dxfsBody = /<dxfs\b[^>]*>([\s\S]*?)<\/dxfs>/.exec(text)?.[1] || "";
-  styles.dxfs = [...dxfsBody.matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)].map((match) => parseDxf(match[1]));
+  styles.dxfs = [...dxfsBody.matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)].map((match) => parseDxf(match[1], resources));
   return styles;
 }
 

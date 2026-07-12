@@ -31,6 +31,12 @@ try {
   assert.ok(Math.abs(workbook.worksheets.getItem("Summary").getRange("B1:C4").format.columnWidthPx - 96) <= 1);
   assert.ok(workbook.worksheets.getItem("Summary").getRange("F1:F13").format.columnWidthPx > workbook.worksheets.getItem("Summary").getRange("G1:G13").format.columnWidthPx);
   assert.ok(Math.abs(workbook.worksheets.getItem("Summary").getRange("A1:D1").format.rowHeightPx - 28) < 0.01);
+  assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("A1").format.border, {
+    left: { style: "thin", color: "#334155" },
+    right: { style: "medium", color: "#475569" },
+    top: { style: "thin", color: "#64748B" },
+    bottom: { style: "double", color: "#38BDF8" },
+  });
   assert.deepEqual(workbook.worksheets.getItem("Summary").getRange("B2:D4").values, [
     [100, 60, 0.4],
     [120, 70, 0.4166666666666667],
@@ -77,6 +83,7 @@ try {
     assert.equal(displayCells.find((cell) => cell.address === "D2").displayValue, "40.0%");
     assert.equal(libreOfficeSummary.getRange("A15").format.fill, "#0F766E");
     assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
+    assert.equal(libreOfficeSummary.getRange("A1").format.border.bottom.style, "double");
   }
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);

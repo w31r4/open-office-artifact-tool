@@ -1078,6 +1078,27 @@ assert.match(styleFidelitySvg, /transform="rotate\(-30 /);
 const styleFidelityRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(styleFidelityBook));
 assert.deepEqual(styleFidelityRoundtrip.worksheets.getItem("Sheet1").getRange("C2").format.alignment, styleFidelitySheet.getRange("C2").format.alignment);
 assert.deepEqual(styleFidelityRoundtrip.worksheets.getItem("Sheet1").getRange("C2").format.protection, { locked: false, hidden: true });
+const themeStyleZip = await JSZip.loadAsync(xlsxBytes);
+themeStyleZip.remove("customXml/open-office-artifact.json");
+themeStyleZip.file("xl/worksheets/sheet1.xml", assignStyle(worksheetXml, "A2", 1));
+themeStyleZip.file("xl/_rels/workbook.xml.rels", workbookRelsXml.replace("</Relationships>", `<Relationship Id="rTheme99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="appearance/custom-theme.xml"/></Relationships>`));
+themeStyleZip.file("xl/appearance/custom-theme.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Clean room theme"><a:themeElements><a:clrScheme name="Clean room"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F497D"/></a:dk2><a:lt2><a:srgbClr val="EEECE1"/></a:lt2><a:accent1><a:srgbClr val="336699"/></a:accent1><a:accent2><a:srgbClr val="C0504D"/></a:accent2><a:accent3><a:srgbClr val="9BBB59"/></a:accent3><a:accent4><a:srgbClr val="8064A2"/></a:accent4><a:accent5><a:srgbClr val="4BACC6"/></a:accent5><a:accent6><a:srgbClr val="F79646"/></a:accent6><a:hlink><a:srgbClr val="0000FF"/></a:hlink><a:folHlink><a:srgbClr val="800080"/></a:folHlink></a:clrScheme></a:themeElements></a:theme>`);
+themeStyleZip.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><sz val="11"/><color theme="4" tint="0.5"/><name val="Aptos"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor indexed="0"/></patternFill></fill></fills><borders count="2"><border/><border diagonalUp="1"><left style="thin"><color theme="4" tint="-0.25"/></left><right style="medium"><color indexed="0"/></right><top/><bottom style="double"><color rgb="FF112233"/></bottom><diagonal style="dashed"><color auto="1"/></diagonal></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs><colors><indexedColors><rgbColor rgb="FFABCDEF"/></indexedColors></colors></styleSheet>`);
+const themeStyleBook = await SpreadsheetFile.importXlsx(new FileBlob(await themeStyleZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: xlsx.type }));
+const themeStyleRange = themeStyleBook.worksheets.getItem("Sheet1").getRange("A2");
+assert.equal(themeStyleRange.format.font.color, "#8CB3D9");
+assert.equal(themeStyleRange.format.fill, "#ABCDEF");
+assert.deepEqual(themeStyleRange.format.border, {
+  left: { style: "thin", color: "#264D73" },
+  right: { style: "medium", color: "#ABCDEF" },
+  bottom: { style: "double", color: "#112233" },
+  diagonal: { style: "dashed", color: "#000000" },
+  diagonalUp: true,
+});
+assert.match(themeStyleBook.worksheets.getItem("Sheet1").toSvg(), /fill="#ABCDEF"/);
+const themeStyleRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(themeStyleBook));
+assert.equal(themeStyleRoundtrip.worksheets.getItem("Sheet1").getRange("A2").format.font.color, "#8CB3D9");
+assert.deepEqual(themeStyleRoundtrip.worksheets.getItem("Sheet1").getRange("A2").format.border, themeStyleRange.format.border);
 const nativeColorScaleInspect = nativeOnlyWorkbook.inspect({ kind: "conditionalFormat,computedStyle", target: "Sheet1!G4", maxChars: 12000 }).ndjson;
 assert.match(nativeColorScaleInspect, /"ruleType":"colorScale"/);
 assert.match(nativeColorScaleInspect, /"fill":"#22c55e"/);

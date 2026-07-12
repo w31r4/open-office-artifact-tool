@@ -74,7 +74,7 @@ Use `range.fillDown()` or `range.fillRight()` to copy the leading row/column wit
 
 For scrollable reports, use `sheet.freezePanes.freezeRows(count)` and `freezeColumns(count)`; the two axes compose, and `unfreeze()` clears both. These methods write native SpreadsheetML `sheetViews/pane` state and are preserved when importing third-party XLSX files.
 
-`range.format` is live: assign `columnWidth`/`rowHeight` in Excel character/point units, or `columnWidthPx`/`rowHeightPx` in pixels. `columnHidden` and `rowHidden` preserve hidden axes. Use `autofitColumns()`/`autofitRows()` only on the smallest intended range, then cap unusually large results before delivery.
+`range.format` is live: assign `columnWidth`/`rowHeight` in Excel character/point units, or `columnWidthPx`/`rowHeightPx` in pixels. `columnHidden` and `rowHidden` preserve hidden axes. Borders accept either one `{ style, color }` record for all four sides or independent `left`/`right`/`top`/`bottom`/`diagonal` records. Imported SpreadsheetML theme, tint, indexed, and automatic colors are resolved to deterministic RGB values. Use `autofitColumns()`/`autofitRows()` only on the smallest intended range, then cap unusually large results before delivery.
 
 ## Verification commands
 

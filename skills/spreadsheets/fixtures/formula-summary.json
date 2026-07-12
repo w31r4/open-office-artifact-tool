@@ -62,7 +62,12 @@
             "fill": "#0F172A",
             "font": { "bold": true, "color": "#FFFFFF" },
             "alignment": { "horizontal": "center" },
-            "border": { "style": "thin", "color": "#334155" },
+            "border": {
+              "left": { "style": "thin", "color": "#334155" },
+              "right": { "style": "medium", "color": "#475569" },
+              "top": { "style": "thin", "color": "#64748B" },
+              "bottom": { "style": "double", "color": "#38BDF8" }
+            },
             "rowHeightPx": 28
           }
         },

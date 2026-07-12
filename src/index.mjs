@@ -3,7 +3,7 @@ import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { resolveColorToken } from "./shared/colors.mjs";
-import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
+import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, parseXlsxThemeColors, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -1160,7 +1160,7 @@ const HELP_DETAIL_OVERRIDES = {
         font: { type: "object", description: "Font properties: bold, italic, underline, strike, color, size, and name." },
         numberFormat: { type: "string", description: "Excel number format code." },
         alignment: { type: "object", description: "horizontal, vertical, wrapText, textRotation, indent, shrinkToFit, and readingOrder options." },
-        border: { type: "object", description: "Basic border style and color." },
+        border: { type: "object", description: "A shared { style, color } border or per-edge left/right/top/bottom/diagonal border records with diagonalUp, diagonalDown, and outline flags." },
         protection: { type: "object", description: "Cell locked and hidden flags preserved through SpreadsheetML style records." },
         columnWidth: { type: "number", description: "Column width in Excel character units for every column intersecting the range." },
         columnWidthPx: { type: "number", description: "Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula." },
@@ -5905,14 +5905,18 @@ export class SpreadsheetFile {
     const zip = await JSZip.loadAsync(bytes);
     const workbook = Workbook.create();
     const sharedStrings = parseSharedStringsXml(await zip.file("xl/sharedStrings.xml")?.async("text"));
-    const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"));
     const workbookText = await zip.file("xl/workbook.xml")?.async("text");
     const workbookProperties = /<(?:[A-Za-z_][\w.-]*:)?workbookPr\b[^>]*\/?>/.exec(String(workbookText || ""))?.[0];
     if (workbookProperties) {
       const date1904 = ooxmlXmlAttributes(workbookProperties).date1904;
       if (date1904 != null) workbook.setDateSystem(["1", "true", "on"].includes(String(date1904).trim().toLowerCase()) ? "1904" : "1900");
     }
-    const workbookRelationships = new Map(parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text")).map((relationship) => [relationship.id, relationship]));
+    const workbookRelationshipRecords = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
+    const workbookRelationships = new Map(workbookRelationshipRecords.map((relationship) => [relationship.id, relationship]));
+    const themeRelationship = workbookRelationshipRecords.find((relationship) => relationship.type.endsWith("/theme") && String(relationship.targetMode || "").toLowerCase() !== "external");
+    const themePath = themeRelationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", themeRelationship.target) : undefined;
+    const themeColors = parseXlsxThemeColors(themePath ? await zip.file(themePath)?.async("text") : "");
+    const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"), { themeColors });
     const sheetNames = [...String(workbookText || "").matchAll(/<sheet\b[^>]*\/?>/g)].map((match, position) => {
       const attrs = ooxmlXmlAttributes(match[0]);
       const relationshipId = Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
