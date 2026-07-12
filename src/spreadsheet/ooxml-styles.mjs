@@ -1,5 +1,7 @@
 // Clean-room SpreadsheetML style codec and deterministic display formatter.
 
+import { resolveColorToken } from "../shared/colors.mjs";
+
 function decodeXml(value) {
   return String(value ?? "")
     .replaceAll("&lt;", "<")
@@ -11,6 +13,120 @@ function decodeXml(value) {
 
 function parseAttrs(attrs = "") {
   return Object.fromEntries([...String(attrs).matchAll(/\b([A-Za-z_:][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
+}
+
+function attrEscape(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+export function normalizeXlsxColor(value, fallback = "000000") {
+  const raw = String(value || fallback).trim();
+  const hex = String(resolveColorToken(raw, raw) || fallback).replace(/^#/, "");
+  const rgb = /^[0-9a-fA-F]{8}$/.test(hex) ? hex.slice(2) : hex;
+  return rgb.slice(0, 6).padEnd(6, "0").toUpperCase();
+}
+
+function normalizeBorder(style = {}) {
+  const raw = style.border || style.borders;
+  if (!raw) return undefined;
+  const base = raw.outside || raw.all || raw;
+  return { style: base.style || base.lineStyle || base.weight || "thin", color: base.color || base.fill || base.borderColor || "#CBD5E1" };
+}
+
+function normalizeAlignment(style = {}) {
+  const raw = style.alignment || style.align || {};
+  const result = {};
+  const horizontal = raw.horizontal || style.horizontalAlignment || style.textAlign;
+  const vertical = raw.vertical || style.verticalAlignment;
+  if (horizontal) result.horizontal = horizontal;
+  if (vertical) result.vertical = vertical;
+  const fields = {
+    wrapText: raw.wrapText ?? style.wrapText,
+    textRotation: raw.textRotation ?? style.textRotation,
+    indent: raw.indent ?? style.indent,
+    shrinkToFit: raw.shrinkToFit ?? style.shrinkToFit,
+    readingOrder: raw.readingOrder ?? style.readingOrder,
+  };
+  if (fields.wrapText != null) result.wrapText = Boolean(fields.wrapText);
+  if (fields.shrinkToFit != null) result.shrinkToFit = Boolean(fields.shrinkToFit);
+  for (const name of ["textRotation", "indent", "readingOrder"]) if (fields[name] != null && Number.isFinite(Number(fields[name]))) result[name] = Number(fields[name]);
+  return Object.keys(result).length ? result : undefined;
+}
+
+export function normalizeXlsxStyle(style = {}) {
+  const font = style.font || {};
+  return {
+    font: {
+      bold: Boolean(style.bold ?? font.bold),
+      italic: Boolean(style.italic ?? font.italic),
+      underline: style.underline ?? font.underline ?? undefined,
+      strike: Boolean(style.strike ?? font.strike),
+      color: style.fontColor || font.color || style.color || undefined,
+      size: Number(style.fontSize || font.size || 11),
+      name: style.fontFamily || font.name || "Aptos",
+    },
+    fill: style.fill || style.backgroundColor || style.fillColor || undefined,
+    numberFormat: style.numberFormat || style.numFmt || undefined,
+    alignment: normalizeAlignment(style),
+    border: normalizeBorder(style),
+    protection: style.protection ? { locked: style.protection.locked == null ? undefined : Boolean(style.protection.locked), hidden: style.protection.hidden == null ? undefined : Boolean(style.protection.hidden) } : undefined,
+  };
+}
+
+export function xlsxStyleKey(style = {}) {
+  const normalized = normalizeXlsxStyle(style);
+  if (!normalized.font.bold && !normalized.font.italic && !normalized.font.underline && !normalized.font.strike && !normalized.font.color && normalized.font.size === 11 && normalized.font.name === "Aptos" && !normalized.fill && !normalized.numberFormat && !normalized.alignment && !normalized.border && !normalized.protection) return "";
+  return JSON.stringify(normalized);
+}
+
+function fontXml(style = {}) {
+  const font = normalizeXlsxStyle(style).font;
+  const underline = font.underline ? `<u${typeof font.underline === "string" && font.underline !== "single" ? ` val="${attrEscape(font.underline)}"` : ""}/>` : "";
+  return `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}<sz val="${Number(font.size) || 11}"/><color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/><name val="${attrEscape(font.name || "Aptos")}"/></font>`;
+}
+
+function fillXml(style = {}) {
+  const fill = normalizeXlsxStyle(style).fill;
+  if (!fill) return `<fill><patternFill patternType="none"/></fill>`;
+  return `<fill><patternFill patternType="solid"><fgColor rgb="FF${normalizeXlsxColor(fill, "FFFFFF")}"/><bgColor indexed="64"/></patternFill></fill>`;
+}
+
+function borderXml(style = {}) {
+  const border = normalizeXlsxStyle(style).border;
+  if (!border) return `<border/>`;
+  const color = normalizeXlsxColor(border.color, "CBD5E1"), lineStyle = attrEscape(border.style || "thin");
+  const edge = (name) => `<${name} style="${lineStyle}"><color rgb="FF${color}"/></${name}>`;
+  return `<border>${edge("left")}${edge("right")}${edge("top")}${edge("bottom")}<diagonal/></border>`;
+}
+
+function dxfXml(style = {}) {
+  const normalized = normalizeXlsxStyle(style), font = normalized.font || {};
+  const underline = font.underline ? `<u${typeof font.underline === "string" && font.underline !== "single" ? ` val="${attrEscape(font.underline)}"` : ""}/>` : "";
+  const fontOutput = (font.bold || font.italic || font.underline || font.strike || font.color || font.size || font.name)
+    ? `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}${font.size ? `<sz val="${Number(font.size) || 11}"/>` : ""}${font.color ? `<color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/>` : ""}${font.name ? `<name val="${attrEscape(font.name)}"/>` : ""}</font>`
+    : "";
+  return `<dxf>${fontOutput}${normalized.fill ? fillXml(normalized) : ""}${normalized.numberFormat ? `<numFmt numFmtId="0" formatCode="${attrEscape(normalized.numberFormat)}"/>` : ""}</dxf>`;
+}
+
+export function xlsxStylesXml(styleTable = {}) {
+  const styles = styleTable.styles || [{}], dxfs = styleTable.dxfs || [];
+  const customFormats = new Map();
+  styles.forEach((style) => { if (style.numberFormat && !customFormats.has(style.numberFormat)) customFormats.set(style.numberFormat, 164 + customFormats.size); });
+  const numFmts = customFormats.size ? `<numFmts count="${customFormats.size}">${[...customFormats.entries()].map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${attrEscape(code)}"/>`).join("")}</numFmts>` : "";
+  const fonts = styles.map((style, index) => index === 0 ? `<font><sz val="11"/><name val="Aptos"/></font>` : fontXml(style)).join("");
+  const fills = [`<fill><patternFill patternType="none"/></fill>`, `<fill><patternFill patternType="gray125"/></fill>`, ...styles.slice(1).map(fillXml)].join("");
+  const borders = [`<border/>`, ...styles.slice(1).map(borderXml)].join("");
+  const xfs = styles.map((style, index) => {
+    if (index === 0) return `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`;
+    const normalized = normalizeXlsxStyle(style), numFmtId = normalized.numberFormat ? customFormats.get(normalized.numberFormat) : 0;
+    const fillId = normalized.fill ? index + 1 : 0, borderId = normalized.border ? index : 0;
+    const alignment = normalized.alignment;
+    const alignmentXml = alignment ? `<alignment${alignment.horizontal ? ` horizontal="${attrEscape(alignment.horizontal)}"` : ""}${alignment.vertical ? ` vertical="${attrEscape(alignment.vertical)}"` : ""}${alignment.wrapText != null ? ` wrapText="${alignment.wrapText ? 1 : 0}"` : ""}${alignment.textRotation != null ? ` textRotation="${alignment.textRotation}"` : ""}${alignment.indent != null ? ` indent="${alignment.indent}"` : ""}${alignment.shrinkToFit != null ? ` shrinkToFit="${alignment.shrinkToFit ? 1 : 0}"` : ""}${alignment.readingOrder != null ? ` readingOrder="${alignment.readingOrder}"` : ""}/>` : "";
+    const protectionXml = normalized.protection ? `<protection${normalized.protection.locked != null ? ` locked="${normalized.protection.locked ? 1 : 0}"` : ""}${normalized.protection.hidden != null ? ` hidden="${normalized.protection.hidden ? 1 : 0}"` : ""}/>` : "";
+    const attrs = `numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="${borderId}" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}${borderId ? ` applyBorder="1"` : ""}${alignment ? ` applyAlignment="1"` : ""}${normalized.protection ? ` applyProtection="1"` : ""}`;
+    return alignmentXml || protectionXml ? `<xf ${attrs}>${alignmentXml}${protectionXml}</xf>` : `<xf ${attrs}/>`;
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="${styles.length}">${borders}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs><dxfs count="${dxfs.length}">${dxfs.map(dxfXml).join("")}</dxfs></styleSheet>`;
 }
 
 function booleanAttribute(attrs, name) {
@@ -25,6 +141,11 @@ function booleanElement(body, name) {
   return value == null || !["0", "false", "off"].includes(String(value).toLowerCase());
 }
 
+function rgbColor(body, elementName) {
+  const value = new RegExp(`<${elementName}[^>]*rgb="([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})"`).exec(body)?.[1];
+  return value ? `#${value.slice(-6)}` : undefined;
+}
+
 function parseFont(body = "") {
   const underlineMatch = /<u\b([^>]*)\/?>/.exec(body);
   return {
@@ -32,23 +153,22 @@ function parseFont(body = "") {
     italic: booleanElement(body, "i"),
     underline: underlineMatch ? parseAttrs(underlineMatch[1]).val || "single" : undefined,
     strike: booleanElement(body, "strike"),
-    color: /<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1] ? `#${/<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1]}` : undefined,
+    color: rgbColor(body, "color"),
     size: Number(/<sz[^>]*val="([^"]+)"/.exec(body)?.[1] || 11),
     name: /<name[^>]*val="([^"]+)"/.exec(body)?.[1] || "Aptos",
   };
 }
 
 function parseFill(body = "") {
-  const color = /<fgColor[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1];
-  return color ? `#${color}` : undefined;
+  return rgbColor(body, "fgColor");
 }
 
 function parseBorder(body = "") {
   const edge = /<(left|right|top|bottom)\b([^>]*)>([\s\S]*?)<\/\1>/.exec(body);
   if (!edge) return undefined;
   const attrs = parseAttrs(edge[2]);
-  const color = /<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(edge[3])?.[1];
-  return { style: attrs.style || "thin", ...(color ? { color: `#${color}` } : {}) };
+  const color = rgbColor(edge[3], "color");
+  return { style: attrs.style || "thin", ...(color ? { color } : {}) };
 }
 
 function parseAlignment(body = "") {
@@ -85,10 +205,13 @@ function parseDxf(body = "") {
 
 export const XLSX_BUILTIN_NUMBER_FORMATS = new Map([
   [0, "General"], [1, "0"], [2, "0.00"], [3, "#,##0"], [4, "#,##0.00"],
+  [5, "$#,##0_);($#,##0)"], [6, "$#,##0_);[Red]($#,##0)"], [7, "$#,##0.00_);($#,##0.00)"], [8, "$#,##0.00_);[Red]($#,##0.00)"],
   [9, "0%"], [10, "0.00%"], [11, "0.00E+00"], [12, "# ?/?"], [13, "# ??/??"],
   [14, "mm-dd-yy"], [15, "d-mmm-yy"], [16, "d-mmm"], [17, "mmm-yy"],
   [18, "h:mm AM/PM"], [19, "h:mm:ss AM/PM"], [20, "h:mm"], [21, "h:mm:ss"], [22, "m/d/yy h:mm"],
   [37, "#,##0;(#,##0)"], [38, "#,##0;[Red](#,##0)"], [39, "#,##0.00;(#,##0.00)"], [40, "#,##0.00;[Red](#,##0.00)"],
+  [41, "_(* #,##0_);_(* \\(#,##0\\);_(* \"-\"_);_(@_)"], [42, "_(\"$\"* #,##0_);_(\"$\"* \\(#,##0\\);_(\"$\"* \"-\"_);_(@_)"],
+  [43, "_(* #,##0.00_);_(* \\(#,##0.00\\);_(* \"-\"??_);_(@_)"], [44, "_(\"$\"* #,##0.00_);_(\"$\"* \\(#,##0.00\\);_(\"$\"* \"-\"??_);_(@_)"],
   [45, "mm:ss"], [46, "[h]:mm:ss"], [47, "mmss.0"], [48, "##0.0E+0"], [49, "@"],
 ]);
 
@@ -102,7 +225,7 @@ function xfComponents(record, resources) {
     font: resources.fonts[Number(record.attrs.fontId || 0)] || {},
     fill: resources.fills[Number(record.attrs.fillId || 0)],
     border: resources.borders[Number(record.attrs.borderId || 0)],
-    numberFormat: resources.numberFormats.get(numberFormatId),
+    numberFormat: numberFormatId === 0 ? undefined : resources.numberFormats.get(numberFormatId),
     alignment: parseAlignment(record.body),
     protection: parseProtection(record.body),
     ids: { font: Number(record.attrs.fontId || 0), fill: Number(record.attrs.fillId || 0), border: Number(record.attrs.borderId || 0), numberFormat: numberFormatId },

@@ -5,6 +5,7 @@ import path from "node:path";
 import sharp from "sharp";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
+import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -65,6 +66,18 @@ try {
   assert.equal(secondQa.summary.sheetName, "Inputs");
 
   const nativeStatus = nativeSpreadsheetRenderStatus();
+  if (nativeStatus.commands.soffice) {
+    const libreOffice = createLibreOfficeRenderer();
+    const ods = await libreOffice({ input: await FileBlob.load(result.workbookPath), inputType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", outputType: "application/vnd.oasis.opendocument.spreadsheet", format: "ods", artifactKind: "workbook" });
+    const libreOfficeXlsx = await libreOffice({ input: ods, inputType: "application/vnd.oasis.opendocument.spreadsheet", outputType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", format: "xlsx", artifactKind: "workbook", libreOffice: { inputExtension: "ods" } });
+    const libreOfficeWorkbook = await SpreadsheetFile.importXlsx(libreOfficeXlsx);
+    const libreOfficeSummary = libreOfficeWorkbook.worksheets.getItem("Summary");
+    const displayCells = libreOfficeSummary.layoutJson({ range: "B2:D4" }).cells;
+    assert.equal(displayCells.find((cell) => cell.address === "B2").displayValue, "$100");
+    assert.equal(displayCells.find((cell) => cell.address === "D2").displayValue, "40.0%");
+    assert.equal(libreOfficeSummary.getRange("A15").format.fill, "#0F766E");
+    assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
+  }
   const csvPath = path.join(outputDir, "summary.csv");
   await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Summary", range: "A1:G15" })).save(csvPath);
   const csvQa = await verifyWorkbookFile(csvPath, {

@@ -107,6 +107,8 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.schema?.r
 assert.ok(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.colors);
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.columnWidthPx?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.rowHidden?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.protection?.type, "object");
+assert.match(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.alignment?.description || "", /textRotation/);
 assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.patches);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");

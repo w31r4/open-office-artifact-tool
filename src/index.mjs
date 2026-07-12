@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
-import { formatSpreadsheetDisplayValue, parseXlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
+import { resolveColorToken } from "./shared/colors.mjs";
+import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, parseXlsxStylesXml, xlsxStyleKey, xlsxStylesXml } from "./spreadsheet/ooxml-styles.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -1156,10 +1157,11 @@ const HELP_DETAIL_OVERRIDES = {
     schema: {
       parameters: {
         fill: { type: "string", description: "Cell background color token or hex color." },
-        font: { type: "object", description: "Font properties: bold, italic, color, size, name." },
+        font: { type: "object", description: "Font properties: bold, italic, underline, strike, color, size, and name." },
         numberFormat: { type: "string", description: "Excel number format code." },
-        alignment: { type: "object", description: "horizontal, vertical, and wrapText alignment options." },
+        alignment: { type: "object", description: "horizontal, vertical, wrapText, textRotation, indent, shrinkToFit, and readingOrder options." },
         border: { type: "object", description: "Basic border style and color." },
+        protection: { type: "object", description: "Cell locked and hidden flags preserved through SpreadsheetML style records." },
         columnWidth: { type: "number", description: "Column width in Excel character units for every column intersecting the range." },
         columnWidthPx: { type: "number", description: "Column width in CSS pixels, converted with the public SpreadsheetML maximum-digit-width formula." },
         rowHeight: { type: "number", description: "Row height in points for every row intersecting the range." },
@@ -2221,36 +2223,6 @@ function innerFrame(frame, padding) {
     width: Math.max(0, frame.width - padding.left - padding.right),
     height: Math.max(0, frame.height - padding.top - padding.bottom),
   };
-}
-
-function resolveColorToken(value, fallback = "transparent") {
-  if (!value) return fallback;
-  const raw = String(value);
-  const base = raw.split("/")[0];
-  const tokens = {
-    white: "#ffffff",
-    black: "#000000",
-    transparent: "transparent",
-    "slate-50": "#f8fafc",
-    "slate-100": "#f1f5f9",
-    "slate-200": "#e2e8f0",
-    "slate-300": "#cbd5e1",
-    "slate-500": "#64748b",
-    "slate-600": "#475569",
-    "slate-700": "#334155",
-    "slate-900": "#0f172a",
-    "slate-950": "#020617",
-    "sky-50": "#f0f9ff",
-    "sky-100": "#e0f2fe",
-    "sky-500": "#0ea5e9",
-    "sky-600": "#0284c7",
-    green: "#22c55e",
-    red: "#ef4444",
-    accent1: "#156082",
-    tx1: "#1f1f1f",
-    bg1: "#ffffff",
-  };
-  return tokens[base] || raw;
 }
 
 function parseTextStyle(props = {}) {
@@ -3525,10 +3497,10 @@ export class Workbook {
       if (kinds.has("drawing") || kinds.has("chart")) records.push(...sheet.charts.inspectRecords());
       if (kinds.has("drawing") || kinds.has("image")) records.push(...sheet.images.inspectRecords());
       if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
+      if (kinds.has("merge") || kinds.has("mergedCell")) records.push(...sheet.mergeRecords());
+      if (kinds.has("dimension") || kinds.has("column") || kinds.has("row")) records.push(...sheet.dimensionRecords(kinds));
       if (kinds.has("formula")) records.push(...sheet.formulaRecords({ ...options, graph }));
       if (kinds.has("style") || kinds.has("computedStyle")) records.push(...sheet.styleRecords(options));
-      if (kinds.has("dimension") || kinds.has("column") || kinds.has("row")) records.push(...sheet.dimensionRecords(kinds));
-      if (kinds.has("merge") || kinds.has("mergedCell")) records.push(...sheet.mergeRecords());
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
       if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
@@ -6079,71 +6051,6 @@ function parseSharedStringsXml(xml = "") {
   return [...String(xml || "").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) => decodeXml([...match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((text) => text[1]).join("")));
 }
 
-function normalizeXlsxColor(value, fallback = "000000") {
-  const raw = String(value || fallback).trim();
-  const token = resolveColorToken(raw, raw);
-  const hex = String(token || fallback).replace(/^#/, "");
-  const rgb = /^[0-9a-fA-F]{8}$/.test(hex) ? hex.slice(2) : hex;
-  return rgb.slice(0, 6).padEnd(6, "0").toUpperCase();
-}
-
-function normalizeXlsxBorder(style = {}) {
-  const raw = style.border || style.borders;
-  if (!raw) return undefined;
-  const base = raw.outside || raw.all || raw;
-  const borderStyle = base.style || base.lineStyle || base.weight || "thin";
-  const color = base.color || base.fill || base.borderColor || "#CBD5E1";
-  return { style: borderStyle, color };
-}
-
-function normalizeXlsxAlignment(style = {}) {
-  const raw = style.alignment || style.align || {};
-  const horizontal = raw.horizontal || style.horizontalAlignment || style.textAlign;
-  const vertical = raw.vertical || style.verticalAlignment;
-  const wrapText = raw.wrapText ?? style.wrapText;
-  const textRotation = raw.textRotation ?? style.textRotation;
-  const indent = raw.indent ?? style.indent;
-  const shrinkToFit = raw.shrinkToFit ?? style.shrinkToFit;
-  const readingOrder = raw.readingOrder ?? style.readingOrder;
-  const result = {};
-  if (horizontal) result.horizontal = horizontal;
-  if (vertical) result.vertical = vertical;
-  if (wrapText != null) result.wrapText = Boolean(wrapText);
-  if (textRotation != null && Number.isFinite(Number(textRotation))) result.textRotation = Number(textRotation);
-  if (indent != null && Number.isFinite(Number(indent))) result.indent = Number(indent);
-  if (shrinkToFit != null) result.shrinkToFit = Boolean(shrinkToFit);
-  if (readingOrder != null && Number.isFinite(Number(readingOrder))) result.readingOrder = Number(readingOrder);
-  return Object.keys(result).length ? result : undefined;
-}
-
-function normalizeXlsxStyle(style = {}) {
-  const font = style.font || {};
-  const alignment = normalizeXlsxAlignment(style);
-  const border = normalizeXlsxBorder(style);
-  return {
-    font: {
-      bold: Boolean(style.bold ?? font.bold),
-      italic: Boolean(style.italic ?? font.italic),
-      underline: style.underline ?? font.underline ?? undefined,
-      strike: Boolean(style.strike ?? font.strike),
-      color: style.fontColor || font.color || style.color || undefined,
-      size: Number(style.fontSize || font.size || 11),
-      name: style.fontFamily || font.name || "Aptos",
-    },
-    fill: style.fill || style.backgroundColor || style.fillColor || undefined,
-    numberFormat: style.numberFormat || style.numFmt || undefined,
-    alignment,
-    border,
-    protection: style.protection ? { locked: style.protection.locked == null ? undefined : Boolean(style.protection.locked), hidden: style.protection.hidden == null ? undefined : Boolean(style.protection.hidden) } : undefined,
-  };
-}
-
-function xlsxStyleKey(style = {}) {
-  const normalized = normalizeXlsxStyle(style);
-  if (!normalized.font.bold && !normalized.font.italic && !normalized.font.underline && !normalized.font.strike && !normalized.font.color && normalized.font.size === 11 && normalized.font.name === "Aptos" && !normalized.fill && !normalized.numberFormat && !normalized.alignment && !normalized.border && !normalized.protection) return "";
-  return JSON.stringify(normalized);
-}
-
 function collectWorkbookStyles(workbook) {
   const styles = [{}];
   const indexByKey = new Map([["", 0]]);
@@ -6171,63 +6078,6 @@ function collectWorkbookStyles(workbook) {
 
 function xlsxStyleIndex(cell, styleTable) {
   return styleTable.indexByKey.get(xlsxStyleKey(cell.style || {})) || 0;
-}
-
-function xlsxFontXml(style = {}) {
-  const font = normalizeXlsxStyle(style).font;
-  const underline = font.underline ? `<u${typeof font.underline === "string" && font.underline !== "single" ? ` val="${attrEscape(font.underline)}"` : ""}/>` : "";
-  return `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}<sz val="${Number(font.size) || 11}"/><color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/><name val="${attrEscape(font.name || "Aptos")}"/></font>`;
-}
-
-function xlsxFillXml(style = {}) {
-  const fill = normalizeXlsxStyle(style).fill;
-  if (!fill) return `<fill><patternFill patternType="none"/></fill>`;
-  const color = normalizeXlsxColor(fill, "FFFFFF");
-  return `<fill><patternFill patternType="solid"><fgColor rgb="FF${color}"/><bgColor indexed="64"/></patternFill></fill>`;
-}
-
-function xlsxBorderXml(style = {}) {
-  const border = normalizeXlsxStyle(style).border;
-  if (!border) return `<border/>`;
-  const color = normalizeXlsxColor(border.color, "CBD5E1");
-  const lineStyle = attrEscape(border.style || "thin");
-  const edge = (name) => `<${name} style="${lineStyle}"><color rgb="FF${color}"/></${name}>`;
-  return `<border>${edge("left")}${edge("right")}${edge("top")}${edge("bottom")}<diagonal/></border>`;
-}
-
-function xlsxDxfXml(style = {}) {
-  const normalized = normalizeXlsxStyle(style || {});
-  const font = normalized.font || {};
-  const fontXml = (font.bold || font.italic || font.color || font.size || font.name)
-    ? `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${font.size ? `<sz val="${Number(font.size) || 11}"/>` : ""}${font.color ? `<color rgb="FF${normalizeXlsxColor(font.color, "000000")}"/>` : ""}${font.name ? `<name val="${attrEscape(font.name)}"/>` : ""}</font>`
-    : "";
-  const fillXml = normalized.fill ? xlsxFillXml(normalized) : "";
-  const numFmtXml = normalized.numberFormat ? `<numFmt numFmtId="0" formatCode="${attrEscape(normalized.numberFormat)}"/>` : "";
-  return `<dxf>${fontXml}${fillXml}${numFmtXml}</dxf>`;
-}
-
-function xlsxStylesXml(styleTable) {
-  const styles = styleTable.styles || [{}];
-  const dxfs = styleTable.dxfs || [];
-  const customFormats = new Map();
-  styles.forEach((style) => { if (style.numberFormat && !customFormats.has(style.numberFormat)) customFormats.set(style.numberFormat, 164 + customFormats.size); });
-  const numFmts = customFormats.size ? `<numFmts count="${customFormats.size}">${[...customFormats.entries()].map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${attrEscape(code)}"/>`).join("")}</numFmts>` : "";
-  const fonts = styles.map((style, index) => index === 0 ? `<font><sz val="11"/><name val="Aptos"/></font>` : xlsxFontXml(style)).join("");
-  const fills = [`<fill><patternFill patternType="none"/></fill>`, `<fill><patternFill patternType="gray125"/></fill>`, ...styles.slice(1).map(xlsxFillXml)].join("");
-  const borders = [`<border/>`, ...styles.slice(1).map(xlsxBorderXml)].join("");
-  const xfs = styles.map((style, index) => {
-    if (index === 0) return `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`;
-    const normalized = normalizeXlsxStyle(style);
-    const numFmtId = normalized.numberFormat ? customFormats.get(normalized.numberFormat) : 0;
-    const fillId = normalized.fill ? index + 1 : 0;
-    const borderId = normalized.border ? index : 0;
-    const alignmentXml = normalized.alignment ? `<alignment${normalized.alignment.horizontal ? ` horizontal="${attrEscape(normalized.alignment.horizontal)}"` : ""}${normalized.alignment.vertical ? ` vertical="${attrEscape(normalized.alignment.vertical)}"` : ""}${normalized.alignment.wrapText != null ? ` wrapText="${normalized.alignment.wrapText ? 1 : 0}"` : ""}${normalized.alignment.textRotation != null ? ` textRotation="${normalized.alignment.textRotation}"` : ""}${normalized.alignment.indent != null ? ` indent="${normalized.alignment.indent}"` : ""}${normalized.alignment.shrinkToFit != null ? ` shrinkToFit="${normalized.alignment.shrinkToFit ? 1 : 0}"` : ""}${normalized.alignment.readingOrder != null ? ` readingOrder="${normalized.alignment.readingOrder}"` : ""}/>` : "";
-    const protectionXml = normalized.protection ? `<protection${normalized.protection.locked != null ? ` locked="${normalized.protection.locked ? 1 : 0}"` : ""}${normalized.protection.hidden != null ? ` hidden="${normalized.protection.hidden ? 1 : 0}"` : ""}/>` : "";
-    const attrs = `numFmtId="${numFmtId}" fontId="${index}" fillId="${fillId}" borderId="${borderId}" xfId="0"${numFmtId ? ` applyNumberFormat="1"` : ""} applyFont="1"${fillId ? ` applyFill="1"` : ""}${borderId ? ` applyBorder="1"` : ""}${normalized.alignment ? ` applyAlignment="1"` : ""}`;
-    return alignmentXml || protectionXml ? `<xf ${attrs}${normalized.protection ? ` applyProtection="1"` : ""}>${alignmentXml}${protectionXml}</xf>` : `<xf ${attrs}/>`;
-  }).join("");
-  const dxfXml = `<dxfs count="${dxfs.length}">${dxfs.map(xlsxDxfXml).join("")}</dxfs>`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts}<fonts count="${styles.length}">${fonts}</fonts><fills count="${styles.length + 1}">${fills}</fills><borders count="${styles.length}">${borders}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs>${dxfXml}</styleSheet>`;
 }
 
 function parseAttrs(attrs = "") {

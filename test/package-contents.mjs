@@ -15,6 +15,8 @@ const maxUnpackedBytes = 1_225_000;
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
   "src/index.mjs",
+  "src/shared/colors.mjs",
+  "src/spreadsheet/ooxml-styles.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
   "native/OfficeBridge/tests/BridgeProtocolTests.cs",
   "skills/spreadsheets/SKILL.md",

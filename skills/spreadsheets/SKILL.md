@@ -13,6 +13,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 - Prefer one writable `.mjs` builder that can be rerun after focused edits.
 - Write rectangular value/formula matrices in blocks and keep derived values as formulas.
 - Preserve the style and formulas of an imported workbook unless the user asks for a redesign.
+- Inspect `displayValue` in layout evidence when number/date formats matter; raw `value` remains the calculation value while model/native previews should show the formatted text.
 - Keep inspect output bounded and save large QA evidence to files instead of printing it.
 - A workbook is deliverable only after durable XLSX export/import, semantic verification, and visual review pass.
 
