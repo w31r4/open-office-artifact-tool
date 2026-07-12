@@ -2588,6 +2588,95 @@ class WorksheetRuleCollection {
   toJSON() { return this.items.map((item) => ({ ...item })); }
 }
 
+const XLSX_MAX_COLUMN_WIDTH = 255;
+const XLSX_MAX_ROW_HEIGHT = 409.5;
+const XLSX_DEFAULT_COLUMN_WIDTH = 8.43;
+const XLSX_DEFAULT_ROW_HEIGHT = 15;
+const XLSX_MAX_DIGIT_WIDTH_PX = 7;
+
+function xlsxBoolean(value) {
+  return ["1", "true", "on"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+function xlsxColumnCharactersToWidth(value) {
+  const characters = Number(value);
+  if (!Number.isFinite(characters) || characters <= 0 || characters > XLSX_MAX_COLUMN_WIDTH) throw new Error(`Worksheet column width must be greater than 0 and at most ${XLSX_MAX_COLUMN_WIDTH}.`);
+  return Math.min(XLSX_MAX_COLUMN_WIDTH, Math.trunc(((characters * XLSX_MAX_DIGIT_WIDTH_PX + 5) / XLSX_MAX_DIGIT_WIDTH_PX) * 256) / 256);
+}
+
+function xlsxColumnWidthToPixels(width) {
+  return Math.trunc(((256 * Number(width) + Math.trunc(128 / XLSX_MAX_DIGIT_WIDTH_PX)) / 256) * XLSX_MAX_DIGIT_WIDTH_PX);
+}
+
+function xlsxColumnPixelsToWidth(pixelsValue) {
+  const pixels = Number(pixelsValue);
+  if (!Number.isFinite(pixels) || pixels <= 0 || pixels > 1_790) throw new Error("Worksheet column pixel width must be greater than 0 and at most 1790.");
+  const characters = Math.trunc((((pixels - 5) / XLSX_MAX_DIGIT_WIDTH_PX) * 100 + 0.5)) / 100;
+  return xlsxColumnCharactersToWidth(Math.max(0.01, characters));
+}
+
+function xlsxColumnWidthToCharacters(width) {
+  const pixels = xlsxColumnWidthToPixels(width);
+  return Math.max(0, Math.trunc((((pixels - 5) / XLSX_MAX_DIGIT_WIDTH_PX) * 100 + 0.5)) / 100);
+}
+
+function xlsxRowHeight(value) {
+  const height = Number(value);
+  if (!Number.isFinite(height) || height <= 0 || height > XLSX_MAX_ROW_HEIGHT) throw new Error(`Worksheet row height must be greater than 0 and at most ${XLSX_MAX_ROW_HEIGHT}.`);
+  return Math.round(height * 100) / 100;
+}
+
+function worksheetColumnDimension(sheet, column) {
+  return sheet.columnDimensions?.get(column) || {};
+}
+
+function worksheetRowDimension(sheet, row) {
+  return sheet.rowDimensions?.get(row) || {};
+}
+
+function worksheetColumnWidthPx(sheet, column, fallback = undefined) {
+  const dimension = worksheetColumnDimension(sheet, column);
+  if (dimension.hidden) return 0;
+  if (dimension.width != null) return xlsxColumnWidthToPixels(dimension.width);
+  return Number(fallback ?? xlsxColumnWidthToPixels(xlsxColumnCharactersToWidth(XLSX_DEFAULT_COLUMN_WIDTH)));
+}
+
+function worksheetRowHeightPx(sheet, row, fallback = undefined) {
+  const dimension = worksheetRowDimension(sheet, row);
+  if (dimension.hidden) return 0;
+  if (dimension.height != null) return dimension.height * 96 / 72;
+  return Number(fallback ?? XLSX_DEFAULT_ROW_HEIGHT * 96 / 72);
+}
+
+function worksheetAxisOffset(sheet, axis, index, start = 0, fallback = undefined) {
+  let offset = 0;
+  for (let current = start; current < index; current += 1) offset += axis === "column" ? worksheetColumnWidthPx(sheet, current, fallback) : worksheetRowHeightPx(sheet, current, fallback);
+  return offset;
+}
+
+function worksheetCellAtPixel(sheet, axis, pixelValue) {
+  let remaining = Math.max(0, Number(pixelValue) - 40);
+  const maximum = axis === "column" ? XLSX_MAX_FREEZE_COLUMNS : XLSX_MAX_FREEZE_ROWS;
+  for (let index = 0; index <= maximum; index += 1) {
+    const size = axis === "column" ? worksheetColumnWidthPx(sheet, index) : worksheetRowHeightPx(sheet, index);
+    if (size > 0 && remaining < size) return { index, offset: remaining };
+    if (size > 0) remaining -= size;
+  }
+  return { index: maximum, offset: 0 };
+}
+
+function worksheetRangeFrame(sheet, rangeBounds, viewportBounds = { top: 0, left: 0 }, options = {}) {
+  const defaultColumnWidth = options.cellWidthPx ?? options.cellW;
+  const defaultRowHeight = options.cellHeightPx ?? options.cellH;
+  const left = 40 + worksheetAxisOffset(sheet, "column", rangeBounds.left, viewportBounds.left, defaultColumnWidth);
+  const top = 40 + worksheetAxisOffset(sheet, "row", rangeBounds.top, viewportBounds.top, defaultRowHeight);
+  let width = 0;
+  let height = 0;
+  for (let column = rangeBounds.left; column <= rangeBounds.right; column += 1) width += worksheetColumnWidthPx(sheet, column, defaultColumnWidth);
+  for (let row = rangeBounds.top; row <= rangeBounds.bottom; row += 1) height += worksheetRowHeightPx(sheet, row, defaultRowHeight);
+  return { left, top, width, height };
+}
+
 class WorksheetTableRowsFacade {
   constructor(table) { this.table = table; }
   add(index, rows) {
@@ -2641,10 +2730,8 @@ class WorksheetTable {
 
   toSvg(bounds) {
     const tableBounds = parseRangeAddress(this.range);
-    const left = 40 + (tableBounds.left - bounds.left) * 96;
-    const top = 40 + (tableBounds.top - bounds.top) * 28;
-    const width = Math.max(96, this.columnCount * 96);
-    const height = Math.max(28, this.rowCount * 28);
+    const frame = worksheetRangeFrame(this.worksheet, tableBounds, bounds);
+    const { left, top, width, height } = frame;
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
@@ -2726,7 +2813,9 @@ class WorksheetPivotTable {
   layoutJson(bounds) {
     const values = this.computedValues();
     const target = safeRangeBounds(this.targetRange.address) || { top: 0, left: 0, rowCount: Math.max(1, values.length), colCount: Math.max(1, values[0]?.length || 1) };
-    const frame = { left: 40 + (target.left - bounds.left) * 96, top: 40 + (target.top - bounds.top) * 28, width: Math.max(96, (values[0]?.length || target.colCount || 1) * 96), height: Math.max(28, Math.max(values.length, target.rowCount || 1) * 28) };
+    const rowCount = Math.max(values.length, target.rowCount || 1);
+    const colCount = Math.max(values[0]?.length || 0, target.colCount || 1);
+    const frame = worksheetRangeFrame(this.worksheet, { top: target.top, left: target.left, bottom: target.top + rowCount - 1, right: target.left + colCount - 1, rowCount, colCount }, bounds);
     return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, valueFields: this.valueFields, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
   }
 
@@ -2801,7 +2890,8 @@ class WorksheetChart {
   setPosition(topLeft, bottomRight) {
     const start = parseCellAddress(String(topLeft).replace(/^.*!/, ""));
     const end = parseCellAddress(String(bottomRight).replace(/^.*!/, ""));
-    this.position = { left: 40 + start.col * 96, top: 40 + start.row * 28, width: Math.max(120, (end.col - start.col + 1) * 96), height: Math.max(80, (end.row - start.row + 1) * 28) };
+    const frame = worksheetRangeFrame(this.worksheet, { top: start.row, left: start.col, bottom: end.row, right: end.col, rowCount: end.row - start.row + 1, colCount: end.col - start.col + 1 });
+    this.position = { left: frame.left, top: frame.top, width: Math.max(120, frame.width), height: Math.max(80, frame.height) };
     return this;
   }
 
@@ -2833,12 +2923,12 @@ class WorksheetChartCollection {
   toJSON() { return this.items.map((chart) => chart.toJSON()); }
 }
 
-function worksheetAnchorFrame(anchor = {}) {
+function worksheetAnchorFrame(worksheet, anchor = {}) {
   const from = anchor.from || { row: 0, col: 0 };
   const extent = anchor.extent || {};
   return {
-    left: 40 + Number(from.col || 0) * 96 + Number(anchor.colOffsetPx || from.colOffsetPx || 0),
-    top: 40 + Number(from.row || 0) * 28 + Number(anchor.rowOffsetPx || from.rowOffsetPx || 0),
+    left: 40 + worksheetAxisOffset(worksheet, "column", Number(from.col || 0)) + Number(anchor.colOffsetPx || from.colOffsetPx || 0),
+    top: 40 + worksheetAxisOffset(worksheet, "row", Number(from.row || 0)) + Number(anchor.rowOffsetPx || from.rowOffsetPx || 0),
     width: Number(extent.widthPx || anchor.widthPx || 160),
     height: Number(extent.heightPx || anchor.heightPx || 120),
   };
@@ -2857,7 +2947,7 @@ class WorksheetImage {
     this.fit = config.fit || "contain";
   }
 
-  get position() { return worksheetAnchorFrame(this.anchor); }
+  get position() { return worksheetAnchorFrame(this.worksheet, this.anchor); }
   inspectRecord() { const p = this.position; return { kind: "drawing", drawingType: "image", id: this.id, sheet: this.worksheet.name, name: this.name, alt: this.alt, prompt: this.prompt, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" }; }
   replace(config = {}) { Object.assign(this, config); return this; }
   toSvg() { const p = this.position; const image = this.dataUrl ? `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#fef3c7" stroke="#f59e0b"/>`; return `${image}<text x="${p.left + 8}" y="${p.top + 20}" font-family="Arial" font-size="12" fill="#92400e">${xmlEscape(this.alt || this.prompt || this.name)}</text>`; }
@@ -2893,7 +2983,7 @@ class SparklineGroup {
   delete() { this.worksheet.sparklineGroups.items = this.worksheet.sparklineGroups.items.filter((group) => group !== this); }
   inspectRecord() { return { kind: "sparkline", id: this.id, sheet: this.worksheet.name, type: this.type, targetRange: this.targetRange.address, sourceData: this.sourceData.address, dateAxisRange: this.dateAxisRange?.address, seriesColor: this.seriesColor }; }
   values() { const sourceSheet = this.sourceData.sheetName ? this.worksheet.workbook.worksheets.getItem(this.sourceData.sheetName) : this.worksheet; if (!sourceSheet) return []; return sourceSheet.getRange(this.sourceData.address).values.flat().map((value) => Number(value)).filter((value) => Number.isFinite(value)); }
-  targetFrame(bounds) { const target = parseRangeAddress(this.targetRange.address); return { left: 40 + (target.left - bounds.left) * 96, top: 40 + (target.top - bounds.top) * 28, width: Math.max(96, target.colCount * 96), height: Math.max(28, target.rowCount * 28) }; }
+  targetFrame(bounds) { const target = parseRangeAddress(this.targetRange.address); return worksheetRangeFrame(this.worksheet, target, bounds); }
   toSvg(bounds) { const p = this.targetFrame(bounds); const values = this.values(); if (!values.length) return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="none" stroke="#38bdf8" stroke-dasharray="3 2"/>`; const min = Math.min(...values); const max = Math.max(...values); const span = Math.max(1, max - min); const points = values.map((value, index) => `${p.left + (values.length === 1 ? p.width / 2 : index * p.width / (values.length - 1))},${p.top + p.height - ((value - min) / span) * p.height}`).join(" "); if (this.type === "column") { const barW = p.width / values.length * 0.7; return values.map((value, index) => { const h = ((value - Math.min(0, min)) / Math.max(1, max - Math.min(0, min))) * p.height; return `<rect x="${p.left + index * (p.width / values.length) + barW * 0.15}" y="${p.top + p.height - h}" width="${barW}" height="${h}" fill="${xmlEscape(this.seriesColor)}"/>`; }).join(""); } return `<polyline points="${points}" fill="none" stroke="${xmlEscape(this.seriesColor)}" stroke-width="${this.lineWeight}"/>`; }
   toJSON() { return { id: this.id, type: this.type, targetRange: this.targetRange, sourceData: this.sourceData, dateAxisRange: this.dateAxisRange, seriesColor: this.seriesColor, negativeColor: this.negativeColor, markers: this.markers, axis: this.axis, lineWeight: this.lineWeight, displayHidden: this.displayHidden, displayEmptyCellsAs: this.displayEmptyCellsAs }; }
 }
@@ -3398,7 +3488,7 @@ export class Workbook {
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
     if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904" });
     for (const sheet of this.worksheets) {
-      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON() });
+      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
@@ -3407,6 +3497,7 @@ export class Workbook {
       if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
       if (kinds.has("formula")) records.push(...sheet.formulaRecords({ ...options, graph }));
       if (kinds.has("style") || kinds.has("computedStyle")) records.push(...sheet.styleRecords(options));
+      if (kinds.has("dimension") || kinds.has("column") || kinds.has("row")) records.push(...sheet.dimensionRecords(kinds));
       if (kinds.has("match")) records.push(...sheet.matchRecords(options));
       if (kinds.has("dataValidation")) records.push(...sheet.dataValidations.inspectRecords());
       if (kinds.has("conditionalFormat")) records.push(...sheet.conditionalFormattings.inspectRecords());
@@ -3433,6 +3524,14 @@ export class Workbook {
       const frozenColumns = Number(sheet.freezePanes?.columns ?? 0);
       if (!Number.isInteger(frozenRows) || frozenRows < 0 || frozenRows > XLSX_MAX_FREEZE_ROWS) issues.push(verificationIssue("workbook", "invalidFrozenRows", `Worksheet ${sheet.name} has invalid frozen row count ${sheet.freezePanes?.rows}.`, { sheet: sheet.name, rows: sheet.freezePanes?.rows }));
       if (!Number.isInteger(frozenColumns) || frozenColumns < 0 || frozenColumns > XLSX_MAX_FREEZE_COLUMNS) issues.push(verificationIssue("workbook", "invalidFrozenColumns", `Worksheet ${sheet.name} has invalid frozen column count ${sheet.freezePanes?.columns}.`, { sheet: sheet.name, columns: sheet.freezePanes?.columns }));
+      for (const [column, dimension] of sheet.columnDimensions) {
+        if (!Number.isInteger(column) || column < 0 || column > XLSX_MAX_FREEZE_COLUMNS) issues.push(verificationIssue("workbook", "invalidColumnDimensionIndex", `Worksheet ${sheet.name} has an invalid column dimension index ${column}.`, { sheet: sheet.name, column }));
+        if (dimension.width != null && (!Number.isFinite(dimension.width) || dimension.width <= 0 || dimension.width > XLSX_MAX_COLUMN_WIDTH)) issues.push(verificationIssue("workbook", "invalidColumnWidth", `Worksheet ${sheet.name} column ${column + 1} has invalid width ${dimension.width}.`, { sheet: sheet.name, column, width: dimension.width }));
+      }
+      for (const [row, dimension] of sheet.rowDimensions) {
+        if (!Number.isInteger(row) || row < 0 || row > XLSX_MAX_FREEZE_ROWS) issues.push(verificationIssue("workbook", "invalidRowDimensionIndex", `Worksheet ${sheet.name} has an invalid row dimension index ${row}.`, { sheet: sheet.name, row }));
+        if (dimension.height != null && (!Number.isFinite(dimension.height) || dimension.height <= 0 || dimension.height > XLSX_MAX_ROW_HEIGHT)) issues.push(verificationIssue("workbook", "invalidRowHeight", `Worksheet ${sheet.name} row ${row + 1} has invalid height ${dimension.height}.`, { sheet: sheet.name, row, height: dimension.height }));
+      }
       if (entries.length === 0) issues.push(verificationIssue("workbook", "emptySheet", `Worksheet ${sheet.name} has no populated cells.`, { severity: "warning", sheet: sheet.name }));
       for (const [address, cell] of entries) {
         const value = String(cell.value ?? "");
@@ -3704,6 +3803,8 @@ export class Worksheet {
     this.id = aid("ws");
     this.name = name;
     this.store = new CellStore();
+    this.columnDimensions = new Map();
+    this.rowDimensions = new Map();
     this.charts = new WorksheetChartCollection(this);
     this.shapes = [];
     this.images = new WorksheetImageCollection(this);
@@ -3812,6 +3913,15 @@ export class Worksheet {
     return records;
   }
 
+  dimensionRecords(kinds = new Set(["dimension"])) {
+    const includeColumns = kinds.has("dimension") || kinds.has("column");
+    const includeRows = kinds.has("dimension") || kinds.has("row");
+    return [
+      ...(includeColumns ? [...this.columnDimensions.entries()].sort((a, b) => a[0] - b[0]).map(([column, dimension]) => ({ kind: "column", sheet: this.name, index: column, column: columnName(column), width: dimension.width == null ? undefined : xlsxColumnWidthToCharacters(dimension.width), widthPx: worksheetColumnWidthPx(this, column), hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })) : []),
+      ...(includeRows ? [...this.rowDimensions.entries()].sort((a, b) => a[0] - b[0]).map(([row, dimension]) => ({ kind: "row", sheet: this.name, index: row, row: row + 1, height: dimension.height, heightPx: worksheetRowHeightPx(this, row), hidden: Boolean(dimension.hidden) })) : []),
+    ];
+  }
+
   matchRecords(options = {}) {
     const term = options.searchTerm || options.search || "";
     if (!term) return [];
@@ -3828,14 +3938,9 @@ export class Worksheet {
   layoutJson(options = {}) {
     this.recalculate();
     const bounds = options.range ? parseRangeAddress(options.range) : this.usedBounds();
-    const cellW = Number(options.cellWidthPx || options.cellW || 96);
-    const cellH = Number(options.cellHeightPx || options.cellH || 28);
-    const frameForBounds = (rangeBounds) => ({
-      left: 40 + (rangeBounds.left - bounds.left) * cellW,
-      top: 40 + (rangeBounds.top - bounds.top) * cellH,
-      width: Math.max(cellW, rangeBounds.colCount * cellW),
-      height: Math.max(cellH, rangeBounds.rowCount * cellH),
-    });
+    const cellW = Number(options.cellWidthPx || options.cellW || xlsxColumnWidthToPixels(xlsxColumnCharactersToWidth(XLSX_DEFAULT_COLUMN_WIDTH)));
+    const cellH = Number(options.cellHeightPx || options.cellH || XLSX_DEFAULT_ROW_HEIGHT * 96 / 72);
+    const frameForBounds = (rangeBounds) => worksheetRangeFrame(this, rangeBounds, bounds, { cellWidthPx: cellW, cellHeightPx: cellH });
     const frameForRange = (range) => {
       try { return frameForBounds(parseRangeAddress(range)); } catch { return undefined; }
     };
@@ -3845,13 +3950,15 @@ export class Worksheet {
         const address = makeCellAddress(r, c);
         const cell = this.store.get(address);
         const computed = worksheetComputedCellStyle(this, address, cell.style);
+        const frame = frameForBounds({ top: r, bottom: r, left: c, right: c, rowCount: 1, colCount: 1 });
         cells.push({
           kind: "cell",
           sheet: this.name,
           address,
           row: r,
           col: c,
-          bbox: [40 + (c - bounds.left) * cellW, 40 + (r - bounds.top) * cellH, cellW, cellH],
+          bbox: [frame.left, frame.top, frame.width, frame.height],
+          hidden: Boolean(worksheetColumnDimension(this, c).hidden || worksheetRowDimension(this, r).hidden),
           value: cell.value,
           formula: cell.formula || undefined,
           spillParent: cell.spillParent,
@@ -3869,8 +3976,9 @@ export class Worksheet {
     const sparklines = this.sparklineGroups.items.map((group) => { const p = group.targetFrame(bounds); return { kind: "sparkline", id: group.id, sheet: this.name, type: group.type, targetRange: group.targetRange.address, sourceData: group.sourceData.address, bbox: [p.left, p.top, p.width, p.height], values: group.values() }; });
     const rules = [...this.dataValidations.items, ...this.conditionalFormattings.items].map((rule) => ({ kind: rule.kind, id: rule.id, sheet: this.name, range: rule.range, bbox: Object.values(frameForRange(rule.range) || {}), ruleType: rule.ruleType, rule: rule.rule }));
     const drawingFrames = [...charts.map((item) => item.bbox), ...images.map((item) => item.bbox), ...sparklines.map((item) => item.bbox), ...tables.map((item) => item.bbox), ...pivots.map((item) => item.bbox)].filter((bbox) => bbox.length === 4);
-    const width = Math.max(320, bounds.colCount * cellW + 80, ...drawingFrames.map((bbox) => bbox[0] + bbox[2] + 40));
-    const height = Math.max(180, bounds.rowCount * cellH + 80, ...drawingFrames.map((bbox) => bbox[1] + bbox[3] + 40));
+    const usedFrame = frameForBounds(bounds);
+    const width = Math.max(320, usedFrame.width + 80, ...drawingFrames.map((bbox) => bbox[0] + bbox[2] + 40));
+    const height = Math.max(180, usedFrame.height + 80, ...drawingFrames.map((bbox) => bbox[1] + bbox[3] + 40));
     const layout = {
       kind: "worksheetLayout",
       id: this.id,
@@ -3880,6 +3988,7 @@ export class Worksheet {
       unit: "px",
       origin: { left: 40, top: 40 },
       cell: { width: cellW, height: cellH },
+      dimensions: this.dimensionRecords(new Set(["dimension"])),
       view: { showGridLines: this.showGridLines, freezePanes: this.freezePanes.toJSON() },
       width,
       height,
@@ -3897,13 +4006,14 @@ export class Worksheet {
   toSvg() {
     this.recalculate();
     const bounds = this.usedBounds();
-    const cellW = 96;
-    const cellH = 28;
+    const cellW = xlsxColumnWidthToPixels(xlsxColumnCharactersToWidth(XLSX_DEFAULT_COLUMN_WIDTH));
+    const cellH = XLSX_DEFAULT_ROW_HEIGHT * 96 / 72;
     const imageFrames = this.images.items.map((image) => image.position);
     const sparklineFrames = this.sparklineGroups.items.map((group) => group.targetFrame(bounds));
     const pivotFrames = this.pivotTables.items.map((pivot) => { const bbox = pivot.layoutJson(bounds).bbox; return { left: bbox[0], top: bbox[1], width: bbox[2], height: bbox[3] }; });
-    const width = Math.max(320, bounds.colCount * cellW + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40), ...imageFrames.map((frame) => frame.left + frame.width + 40), ...sparklineFrames.map((frame) => frame.left + frame.width + 40), ...pivotFrames.map((frame) => frame.left + frame.width + 40));
-    const height = Math.max(180, bounds.rowCount * cellH + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40), ...imageFrames.map((frame) => frame.top + frame.height + 40), ...sparklineFrames.map((frame) => frame.top + frame.height + 40), ...pivotFrames.map((frame) => frame.top + frame.height + 40));
+    const usedFrame = worksheetRangeFrame(this, bounds, bounds, { cellWidthPx: cellW, cellHeightPx: cellH });
+    const width = Math.max(320, usedFrame.width + 80, ...this.charts.items.map((chart) => chart.position.left + chart.position.width + 40), ...imageFrames.map((frame) => frame.left + frame.width + 40), ...sparklineFrames.map((frame) => frame.left + frame.width + 40), ...pivotFrames.map((frame) => frame.left + frame.width + 40));
+    const height = Math.max(180, usedFrame.height + 80, ...this.charts.items.map((chart) => chart.position.top + chart.position.height + 40), ...imageFrames.map((frame) => frame.top + frame.height + 40), ...sparklineFrames.map((frame) => frame.top + frame.height + 40), ...pivotFrames.map((frame) => frame.top + frame.height + 40));
     const rows = [];
     for (let r = bounds.top; r <= bounds.bottom; r++) {
       for (let c = bounds.left; c <= bounds.right; c++) {
@@ -3911,13 +4021,15 @@ export class Worksheet {
         const cell = this.store.get(address);
         const value = cell.value ?? "";
         const computed = worksheetComputedCellStyle(this, address, cell.style);
-        const x = 40 + (c - bounds.left) * cellW;
-        const y = 40 + (r - bounds.top) * cellH;
+        const frame = worksheetRangeFrame(this, { top: r, bottom: r, left: c, right: c, rowCount: 1, colCount: 1 }, bounds, { cellWidthPx: cellW, cellHeightPx: cellH });
+        const x = frame.left;
+        const y = frame.top;
+        if (frame.width <= 0 || frame.height <= 0) continue;
         const fill = resolveColorToken(computed.style?.fill || "white", "white");
         const font = computed.style?.font || {};
         const fontWeight = font.bold || computed.style?.bold ? "700" : "400";
         const fontFill = resolveColorToken(font.color || computed.style?.color || "#24292f", "#24292f");
-        rows.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${xmlEscape(fill)}" stroke="#d0d7de"/>`);
+        rows.push(`<rect x="${x}" y="${y}" width="${frame.width}" height="${frame.height}" fill="${xmlEscape(fill)}" stroke="#d0d7de"/>`);
         rows.push(`<text x="${x + 6}" y="${y + 18}" font-family="${xmlEscape(font.name || "Arial")}" font-size="13" font-weight="${fontWeight}" fill="${xmlEscape(fontFill)}">${xmlEscape(value)}</text>`);
       }
     }
@@ -3928,6 +4040,106 @@ export class Worksheet {
     const sparklineOverlays = this.sparklineGroups.items.map((group) => group.toSvg(bounds)).join("");
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f6f8fa"/>${rows.join("")}${tableOverlays}${pivotOverlays}${chartOverlays}${imageOverlays}${sparklineOverlays}</svg>`;
   }
+}
+
+const RANGE_DIMENSION_FORMAT_KEYS = new Set(["columnWidth", "columnWidthPx", "rowHeight", "rowHeightPx", "columnHidden", "rowHidden"]);
+
+function rangeFirstCellStyle(range) {
+  return range.worksheet.store.get(makeCellAddress(range.bounds.top, range.bounds.left)).style || {};
+}
+
+function setWorksheetDimension(map, index, patch = {}) {
+  const next = { ...(map.get(index) || {}), ...patch };
+  for (const key of Object.keys(next)) if (next[key] == null || next[key] === false) delete next[key];
+  if (Object.keys(next).length) map.set(index, next);
+  else map.delete(index);
+}
+
+class RangeFormatFacade {
+  constructor(range) { this.range = range; }
+
+  get columnWidth() {
+    const dimension = worksheetColumnDimension(this.range.worksheet, this.range.bounds.left);
+    return dimension.width == null ? XLSX_DEFAULT_COLUMN_WIDTH : xlsxColumnWidthToCharacters(dimension.width);
+  }
+  set columnWidth(value) {
+    const width = xlsxColumnCharactersToWidth(value);
+    for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) setWorksheetDimension(this.range.worksheet.columnDimensions, column, { width, bestFit: false });
+  }
+  get columnWidthPx() { return worksheetColumnWidthPx(this.range.worksheet, this.range.bounds.left); }
+  set columnWidthPx(value) {
+    const width = xlsxColumnPixelsToWidth(value);
+    for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) setWorksheetDimension(this.range.worksheet.columnDimensions, column, { width, bestFit: false });
+  }
+  get rowHeight() { return worksheetRowDimension(this.range.worksheet, this.range.bounds.top).height ?? XLSX_DEFAULT_ROW_HEIGHT; }
+  set rowHeight(value) {
+    const height = xlsxRowHeight(value);
+    for (let row = this.range.bounds.top; row <= this.range.bounds.bottom; row += 1) setWorksheetDimension(this.range.worksheet.rowDimensions, row, { height });
+  }
+  get rowHeightPx() { return worksheetRowHeightPx(this.range.worksheet, this.range.bounds.top); }
+  set rowHeightPx(value) { this.rowHeight = Number(value) * 72 / 96; }
+  get columnHidden() { return Boolean(worksheetColumnDimension(this.range.worksheet, this.range.bounds.left).hidden); }
+  set columnHidden(value) {
+    for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) setWorksheetDimension(this.range.worksheet.columnDimensions, column, { hidden: Boolean(value) });
+  }
+  get rowHidden() { return Boolean(worksheetRowDimension(this.range.worksheet, this.range.bounds.top).hidden); }
+  set rowHidden(value) {
+    for (let row = this.range.bounds.top; row <= this.range.bounds.bottom; row += 1) setWorksheetDimension(this.range.worksheet.rowDimensions, row, { hidden: Boolean(value) });
+  }
+
+  autofitColumns() {
+    for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) {
+      let pixels = 20;
+      for (let row = this.range.bounds.top; row <= this.range.bounds.bottom; row += 1) {
+        const value = this.range.worksheet.store.get(makeCellAddress(row, column)).value;
+        const longest = String(value ?? "").split(/\r?\n/).reduce((max, line) => Math.max(max, [...line].length), 0);
+        pixels = Math.max(pixels, Math.min(1_790, longest * XLSX_MAX_DIGIT_WIDTH_PX + 12));
+      }
+      setWorksheetDimension(this.range.worksheet.columnDimensions, column, { width: xlsxColumnPixelsToWidth(pixels), bestFit: true });
+    }
+    return this.range;
+  }
+
+  autofitRows() {
+    for (let row = this.range.bounds.top; row <= this.range.bounds.bottom; row += 1) {
+      let pixels = 20;
+      for (let column = this.range.bounds.left; column <= this.range.bounds.right; column += 1) {
+        const cell = this.range.worksheet.store.get(makeCellAddress(row, column));
+        const text = String(cell.value ?? "");
+        const explicitLines = Math.max(1, text.split(/\r?\n/).length);
+        const columnPixels = Math.max(1, worksheetColumnWidthPx(this.range.worksheet, column));
+        const wrappedLines = cell.style?.alignment?.wrapText ? Math.max(explicitLines, Math.ceil((text.length * XLSX_MAX_DIGIT_WIDTH_PX + 8) / columnPixels)) : explicitLines;
+        const fontPoints = Number(cell.style?.font?.size || cell.style?.fontSize || 11);
+        pixels = Math.max(pixels, wrappedLines * fontPoints * 1.6);
+      }
+      setWorksheetDimension(this.range.worksheet.rowDimensions, row, { height: xlsxRowHeight(Math.min(XLSX_MAX_ROW_HEIGHT, pixels * 72 / 96)) });
+    }
+    return this.range;
+  }
+
+  toJSON() {
+    return { ...rangeFirstCellStyle(this.range), columnWidth: this.columnWidth, columnWidthPx: this.columnWidthPx, rowHeight: this.rowHeight, rowHeightPx: this.rowHeightPx, columnHidden: this.columnHidden, rowHidden: this.rowHidden };
+  }
+}
+
+function rangeFormatFacade(range) {
+  const target = new RangeFormatFacade(range);
+  return new Proxy(target, {
+    get(current, property, receiver) {
+      if (Reflect.has(current, property)) {
+        const value = Reflect.get(current, property, receiver);
+        return typeof value === "function" ? value.bind(current) : value;
+      }
+      return rangeFirstCellStyle(range)[property];
+    },
+    set(current, property, value, receiver) {
+      if (Reflect.has(current, property)) return Reflect.set(current, property, value, receiver);
+      range.writeStyle({ [property]: value });
+      return true;
+    },
+    ownKeys() { return [...new Set([...Object.keys(rangeFirstCellStyle(range)), ...RANGE_DIMENSION_FORMAT_KEYS])]; },
+    getOwnPropertyDescriptor() { return { enumerable: true, configurable: true }; },
+  });
 }
 
 export class Range {
@@ -3965,8 +4177,7 @@ export class Range {
   }
 
   get format() {
-    const first = this.worksheet.store.get(makeCellAddress(this.bounds.top, this.bounds.left));
-    return { ...(first.style || {}) };
+    return rangeFormatFacade(this);
   }
 
   set format(style) {
@@ -3978,12 +4189,22 @@ export class Range {
   setFormat(style = {}) { this.writeStyle(style); return this; }
 
   writeStyle(style = {}) {
+    const cellStyle = { ...(style || {}) };
+    const dimensions = {};
+    for (const key of RANGE_DIMENSION_FORMAT_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(cellStyle, key)) {
+        dimensions[key] = cellStyle[key];
+        delete cellStyle[key];
+      }
+    }
     for (let r = this.bounds.top; r <= this.bounds.bottom; r++) {
       for (let c = this.bounds.left; c <= this.bounds.right; c++) {
         const cell = this.worksheet.store.get(makeCellAddress(r, c));
-        cell.style = { ...(cell.style || {}), ...(style || {}) };
+        cell.style = { ...(cell.style || {}), ...cellStyle };
       }
     }
+    const facade = rangeFormatFacade(this);
+    for (const [key, value] of Object.entries(dimensions)) facade[key] = value;
   }
 
   writeMatrix(matrix, field) {
@@ -6023,10 +6244,12 @@ function drawingXml(imageParts, chartParts = []) {
   }).join("");
   const chartAnchors = chartParts.map((part, index) => {
     const p = part.chart.position;
-    const col = Math.max(0, Math.floor((p.left - 40) / 96));
-    const row = Math.max(0, Math.floor((p.top - 40) / 28));
-    const colOff = Math.max(0, Math.round((p.left - 40 - col * 96) * 9525));
-    const rowOff = Math.max(0, Math.round((p.top - 40 - row * 28) * 9525));
+    const columnAnchor = worksheetCellAtPixel(part.sheet, "column", p.left);
+    const rowAnchor = worksheetCellAtPixel(part.sheet, "row", p.top);
+    const col = columnAnchor.index;
+    const row = rowAnchor.index;
+    const colOff = Math.max(0, Math.round(columnAnchor.offset * 9525));
+    const rowOff = Math.max(0, Math.round(rowAnchor.offset * 9525));
     const cx = Math.round(p.width * 9525);
     const cy = Math.round(p.height * 9525);
     const id = imageParts.length + index + 2;
@@ -6168,6 +6391,27 @@ function worksheetViewXml(sheet) {
   return `<sheetViews><sheetView workbookViewId="0"${showGridLines ? "" : ' showGridLines="0"'}>${pane}</sheetView></sheetViews>`;
 }
 
+function worksheetColumnsXml(sheet) {
+  const entries = [...(sheet.columnDimensions || new Map()).entries()]
+    .filter(([column]) => Number.isInteger(column) && column >= 0 && column <= XLSX_MAX_FREEZE_COLUMNS)
+    .sort((left, right) => left[0] - right[0]);
+  if (!entries.length) return "";
+  const groups = [];
+  for (const [column, dimension] of entries) {
+    const key = JSON.stringify({ width: dimension.width, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) });
+    const previous = groups.at(-1);
+    if (previous && previous.max === column - 1 && previous.key === key) previous.max = column;
+    else groups.push({ min: column, max: column, key, dimension });
+  }
+  const columns = groups.map(({ min, max, dimension }) => {
+    const width = dimension.width != null ? ` width="${Number(dimension.width)}" customWidth="1"` : "";
+    const hidden = dimension.hidden ? ' hidden="1"' : "";
+    const bestFit = dimension.bestFit ? ' bestFit="1"' : "";
+    return `<col min="${min + 1}" max="${max + 1}"${width}${hidden}${bestFit}/>`;
+  }).join("");
+  return `<cols>${columns}</cols>`;
+}
+
 function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
   const rows = new Map();
   for (const [address, cell] of sheet.store.entries()) {
@@ -6175,11 +6419,18 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
     if (!rows.has(row)) rows.set(row, []);
     rows.get(row).push({ address, col, cell });
   }
-  const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => `<row r="${row + 1}">${cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell, sharedStrings, styleTable)).join("")}</row>`).join("");
+  for (const row of sheet.rowDimensions?.keys() || []) if (!rows.has(row)) rows.set(row, []);
+  const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => {
+    const dimension = worksheetRowDimension(sheet, row);
+    const height = dimension.height != null ? ` ht="${Number(dimension.height)}" customHeight="1"` : "";
+    const hidden = dimension.hidden ? ' hidden="1"' : "";
+    const content = cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell, sharedStrings, styleTable)).join("");
+    return content ? `<row r="${row + 1}"${height}${hidden}>${content}</row>` : `<row r="${row + 1}"${height}${hidden}/>`;
+  }).join("");
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
   const sparklineXml = sparklineGroupExtXml(sheet);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}<sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
 function cellFormulaXml(address, cell) {
@@ -6284,6 +6535,7 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
 
 function parseWorksheetXml(sheet, xml, options = {}) {
   parseWorksheetViewXml(sheet, xml);
+  parseWorksheetDimensionsXml(sheet, xml);
   const cellMatches = [...String(xml || "").matchAll(/<c\s+([^>]*)>([\s\S]*?)<\/c>/g)].map((match) => {
     const attrs = match[1];
     const body = match[2];
@@ -6329,6 +6581,36 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   parseDataValidationsXml(sheet, xml);
   parseConditionalFormattingXml(sheet, xml, options.styles || []);
   parseSparklineGroupsXml(sheet, xml);
+}
+
+function parseWorksheetDimensionsXml(sheet, xml = "") {
+  sheet.columnDimensions.clear();
+  sheet.rowDimensions.clear();
+  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?col\b[^>]*\/?>/g)) {
+    const attrs = ooxmlXmlAttributes(match[0]);
+    const min = Math.max(1, Math.trunc(Number(attrs.min || 0)));
+    const max = Math.min(16_384, Math.trunc(Number(attrs.max || attrs.min || 0)));
+    if (max < min) continue;
+    const width = Number(attrs.width);
+    const dimension = {
+      ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+      ...(xlsxBoolean(attrs.hidden) ? { hidden: true } : {}),
+      ...(xlsxBoolean(attrs.bestFit) ? { bestFit: true } : {}),
+    };
+    if (!Object.keys(dimension).length) continue;
+    for (let column = min - 1; column < max; column += 1) sheet.columnDimensions.set(column, { ...dimension });
+  }
+  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?row\b[^>]*>/g)) {
+    const attrs = ooxmlXmlAttributes(match[0]);
+    const row = Math.trunc(Number(attrs.r || 0)) - 1;
+    if (row < 0 || row > XLSX_MAX_FREEZE_ROWS) continue;
+    const height = Number(attrs.ht);
+    const dimension = {
+      ...(Number.isFinite(height) && height > 0 ? { height } : {}),
+      ...(xlsxBoolean(attrs.hidden) ? { hidden: true } : {}),
+    };
+    if (Object.keys(dimension).length) sheet.rowDimensions.set(row, dimension);
+  }
 }
 
 function parseWorksheetViewXml(sheet, xml = "") {
