@@ -61,6 +61,7 @@ try {
   const fixtureThirdSlideXml = await fixtureZip.file("ppt/slides/slide3.xml").async("text");
   const fixturePresentationXml = await fixtureZip.file("ppt/presentation.xml").async("text");
   const fixtureChartXml = await fixtureZip.file("ppt/charts/chart1.xml").async("text");
+  const fixtureChartRelsXml = await fixtureZip.file("ppt/charts/_rels/chart1.xml.rels").async("text");
   assert.match(fixtureThemeXml, /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
   assert.match(fixtureSecondThemeXml, /name="Verification Theme"/);
   assert.match(fixtureSecondThemeXml, /<a:accent1><a:srgbClr val="EDE9FE"\/><\/a:accent1>/);
@@ -95,7 +96,10 @@ try {
   assert.match(fixtureChartXml, /<c:dLblPos val="r"\/>[\s\S]*?<c:showVal val="1"\/>/);
   assert.match(fixtureChartXml, /<c:name>Native evidence trend<\/c:name>[\s\S]*?<c:trendlineType val="linear"\/>[\s\S]*?<c:dispRSqr val="0"\/>/);
   assert.match(fixtureChartXml, /<a:srgbClr val="7C3AED"\/>[\s\S]*?<a:prstDash val="dashDot"\/>/);
-  assert.match(fixtureChartXml, /<c:errBars><c:errDir val="y"\/><c:errBarType val="both"\/><c:errValType val="percentage"\/>[\s\S]*?<c:val val="10"\/>[\s\S]*?<a:srgbClr val="DC2626"\/>/);
+  assert.match(fixtureChartXml, /<c:errBars><c:errDir val="y"\/><c:errBarType val="both"\/><c:errValType val="cust"\/>[\s\S]*?<c:plus><c:numRef><c:f>Sheet1!\$D\$2:\$D\$4<\/c:f><c:numCache>[\s\S]*?<c:minus><c:numRef><c:f>Sheet1!\$E\$2:\$E\$4<\/c:f>[\s\S]*?<a:srgbClr val="DC2626"\/>/);
+  assert.match(fixtureChartXml, /<c:externalData r:id="rId1"><c:autoUpdate val="0"\/><\/c:externalData>/);
+  assert.match(fixtureChartRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/package" Target="\.\.\/embeddings\/Microsoft_Excel_Worksheet1\.xlsx"/);
+  assert.ok(fixtureZip.file("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx"));
   assert.match(fixtureChartXml, /<a:ln w="19050">[\s\S]*?<a:prstDash val="dash"\/>/);
   assert.match(fixtureChartXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="FACC15"\/>[\s\S]*?<a:prstDash val="dot"\/>/);
   assert.match(fixtureThirdSlideXml, /<a:buBlip><a:blip r:embed="rId\d+"\/><\/a:buBlip>/);
@@ -106,6 +110,8 @@ try {
   assert.deepEqual(fixtureChart.series.map((series) => series.chartType), ["bar", "line", "line"]);
   assert.deepEqual(fixtureChart.series.map((series) => series.axisGroup || "primary"), ["primary", "primary", "secondary"]);
   assert.equal(fixtureChart.axes.secondary.value.title, "Native records");
+  assert.equal(fixtureChart.externalData.bytes.byteLength > 0, true);
+  assert.equal(fixtureChart.externalData.autoUpdate, false);
   assert.deepEqual(fixtureChart.barOptions, { direction: "column", grouping: "clustered", gapWidth: 80, overlap: 0 });
   assert.deepEqual(fixtureChart.lineOptions, { grouping: "standard", marker: { symbol: "diamond", size: 8 }, smooth: false });
   assert.deepEqual(fixtureChart.series.map((series) => series.dataLabels), [
@@ -120,7 +126,7 @@ try {
     displayRSquared: false,
     line: { fill: "#7C3AED", width: 1.5, style: "dashDot" },
   }]);
-  assert.deepEqual(fixtureChart.series[2].errorBars, { direction: "y", type: "both", valueType: "percentage", value: 10, noEndCap: false, line: { fill: "#DC2626", width: 1, style: "dot" } });
+  assert.deepEqual(fixtureChart.series[2].errorBars, { direction: "y", type: "both", valueType: "cust", plusValues: [0.5, 0.8, 0.6], plusFormula: "Sheet1!$D$2:$D$4", plusFormatCode: "0.00", minusValues: [0.25, 0.4, 0.3], minusFormula: "Sheet1!$E$2:$E$4", minusFormatCode: "0.00", noEndCap: false, line: { fill: "#DC2626", width: 1, style: "dot" } });
   assert.deepEqual(fixtureChart.series[0].line, { fill: "#0369A1", width: 1.5, style: "dash" });
   assert.deepEqual(fixtureChart.series[2].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
   const fixturePictureBullet = first.qa.presentation.slides.items[2].shapes.items.find((shape) => shape.name === "package-callout").text.paragraphs[1].bulletImage;

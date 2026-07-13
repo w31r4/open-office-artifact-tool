@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
-import { box, column, FileBlob, paragraph, Presentation, PresentationFile, row, run, rule, shape as composeShape } from "../src/index.mjs";
+import { box, column, FileBlob, paragraph, Presentation, PresentationFile, row, run, rule, shape as composeShape, SpreadsheetFile, Workbook } from "../src/index.mjs";
 
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const aliasedThemePresentation = Presentation.create({ theme: { colors: { dk1: "#112233", lt1: "#fefefe" } } });
@@ -255,6 +255,15 @@ const pieChart = pieSlide.charts.add("pie", {
   legend: { visible: true, position: "r" },
   series: [{ name: "Share", values: [45, 35, 20], points: [{ idx: 1, fill: "#facc15" }] }],
 });
+const errorBarWorkbook = Workbook.create();
+const errorBarSheet = errorBarWorkbook.worksheets.add("Sheet1");
+errorBarSheet.getRange("A1:E4").values = [
+  ["Category", "Model", "Native", "Plus", "Minus"],
+  ["Plan", 4, 3, 0.5, 0.25],
+  ["Build", 7, 6, 1, 0.5],
+  ["Verify", 9, 10, 1.5, 0.75],
+];
+const errorBarWorkbookFile = await SpreadsheetFile.exportXlsx(errorBarWorkbook);
 const lineChart = pieSlide.charts.add("line", {
   name: "trend-line",
   title: "Quality Trend",
@@ -262,10 +271,11 @@ const lineChart = pieSlide.charts.add("line", {
   categories: ["Plan", "Build", "Verify"],
   styleId: 13,
   axes: { value: { title: "Model quality" }, secondary: { value: { title: "Native quality" } } },
+  externalData: { workbook: errorBarWorkbookFile, autoUpdate: false },
   lineOptions: { grouping: "stacked", smooth: true, marker: { symbol: "diamond", size: 9 } },
   series: [
     { name: "Model", values: [4, 7, 9], color: "#22c55e", line: { fill: "#15803d", width: 3, style: "dashDot" }, points: [{ idx: 1, fill: "#eab308" }] },
-    { axisGroup: "secondary", name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false, errorBars: { valueType: "custom", plusValues: [0.5, 1, 1.5], minusValues: [0.25, 0.5, 0.75], noEndCap: true, line: { fill: "#ea580c", width: 1.5, style: "dash" } } },
+    { axisGroup: "secondary", name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false, errorBars: { valueType: "custom", plusFormula: "Sheet1!$D$2:$D$4", plusValues: [0.5, 1, 1.5], plusFormatCode: "0.00", minusFormula: "Sheet1!$E$2:$E$4", minusValues: [0.25, 0.5, 0.75], minusFormatCode: "0.00", noEndCap: true, line: { fill: "#ea580c", width: 1.5, style: "dash" } } },
   ],
 });
 const comboChart = pieSlide.charts.add("combo", {
@@ -296,6 +306,12 @@ assert.throws(() => pieSlide.charts.add("pie", { series: [{ values: [1], errorBa
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1], errorBars: { valueType: "range" } }] }), /error-bar valueType must be one of/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1], errorBars: { valueType: "custom" } }] }), /plusValues must be a non-empty numeric array/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2], errorBars: { valueType: "custom", plusValues: [1], minusValues: [1, 1] } }] }), /plusValues must contain exactly 2 values/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1], errorBars: { valueType: "custom", type: "plus", plusFormula: " " } }] }), /plusFormula must be non-empty/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1], errorBars: { valueType: "custom", type: "plus", plusFormula: `Sheet1!${"A".repeat(8_193)}` } }] }), /plusFormula must contain at most 8192 characters/);
+assert.throws(() => pieSlide.charts.add("line", { externalData: errorBarWorkbookFile, series: [{ values: [1], errorBars: { valueType: "custom", type: "plus", plusFormula: "=Sheet1!$A$1", plusValues: [1] } }] }), /omit the leading equals sign/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1], errorBars: { valueType: "custom", type: "plus", plusFormula: "Sheet1!$A$1", plusValues: [1] } }] }), /formula references require externalData/);
+assert.throws(() => pieSlide.charts.add("line", { externalData: errorBarWorkbookFile, series: [{ values: [1], errorBars: { valueType: "custom", type: "plus", plusFormula: "Sheet1!$A$1", plusFormatCode: "0.00" } }] }), /plusFormatCode requires cached plusValues/);
+assert.throws(() => pieSlide.charts.add("line", { externalData: Uint8Array.of(1, 2, 3, 4), series: [{ values: [1] }] }), /OOXML ZIP package/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2], errorBars: { valueType: "standardError", value: 1 } }] }), /do not accept a value/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], trendline: { type: "linear", order: 2 } }] }), /order is supported only for polynomial/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], trendline: { type: "polynomial", order: 7 } }] }), /order must be an integer from 2 to 6/);
@@ -308,6 +324,7 @@ const axisContractSlide = Presentation.create().slides.add();
 assert.deepEqual(axisContractSlide.charts.add("combo", { series: [{ chartType: "bar", values: [1] }, { chartType: "bar", axisGroup: "secondary", values: [2] }, { chartType: "line", values: [1] }] }).series.map((series) => series.axisGroup || "primary"), ["primary", "secondary", "primary"]);
 assert.equal(axisContractSlide.charts.add("combo", { series: [{ chartType: "bar", values: [100] }, { chartType: "line", axis: "y2", values: [10] }] }).series[1].axisGroup, "secondary");
 assert.equal(axisContractSlide.charts.add("combo", { series: [{ chartType: "bar", values: [100] }, { chartType: "line", secondaryAxis: true, values: [10] }] }).series[1].axisGroup, "secondary");
+assert.deepEqual(axisContractSlide.charts.add("line", { externalData: errorBarWorkbookFile, series: [{ values: [1, 2], errorBars: { valueType: "custom", type: "plus", plusReference: "Sheet1!$B$1:$B$2" } }] }).series[0].errorBars, { direction: "y", type: "plus", valueType: "cust", plusFormula: "Sheet1!$B$1:$B$2", noEndCap: false });
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
 assert.match(presentation.inspect({ kind: "chart", target: pieChart.id, maxChars: 8000 }).ndjson, /Market Share/);
 slide.addNotes("Speaker note: call out pipeline risk.");
@@ -485,6 +502,31 @@ assert.match(montageSvg, /Slide 1/);
 assert.match(montageSvg, /Revenue plan/);
 assert.equal(montage.metadata.format, "montage");
 assert.match(presentation.help("presentation.export").ndjson, /montage/);
+
+const invalidEmbeddedWorkbookPresentation = Presentation.create();
+invalidEmbeddedWorkbookPresentation.slides.add().charts.add("line", {
+  categories: ["Only"],
+  externalData: Uint8Array.of(0x50, 0x4b, 0x03, 0x04),
+  series: [{ values: [1], errorBars: { valueType: "custom", type: "plus", plusFormula: "Sheet1!$A$1", plusValues: [0.5] } }],
+});
+await assert.rejects(() => PresentationFile.exportPptx(invalidEmbeddedWorkbookPresentation), /externalData workbook is not a valid XLSX package/);
+
+const linkedWorkbookPresentation = Presentation.create();
+linkedWorkbookPresentation.slides.add().charts.add("line", {
+  categories: ["Plan", "Build"],
+  externalData: { uri: "https://example.com/error-bars.xlsx", autoUpdate: true },
+  series: [{ values: [4, 7], errorBars: { valueType: "custom", type: "plus", plusFormula: "Sheet1!$D$2:$D$3", plusValues: [0.5, 1] } }],
+});
+const linkedWorkbookPptx = await PresentationFile.exportPptx(linkedWorkbookPresentation);
+assert.equal((await PresentationFile.inspectPptx(linkedWorkbookPptx)).ok, true);
+const linkedWorkbookZip = await JSZip.loadAsync(new Uint8Array(await linkedWorkbookPptx.arrayBuffer()));
+assert.match(await linkedWorkbookZip.file("ppt/charts/chart1.xml").async("text"), /<c:externalData r:id="rId1"><c:autoUpdate val="1"\/><\/c:externalData>/);
+assert.match(await linkedWorkbookZip.file("ppt/charts/_rels/chart1.xml.rels").async("text"), /Target="https:\/\/example\.com\/error-bars\.xlsx" TargetMode="External"/);
+assert.equal(linkedWorkbookZip.folder("ppt/embeddings").filter(() => true).length, 0);
+const linkedWorkbookLoaded = await PresentationFile.importPptx(linkedWorkbookPptx);
+assert.deepEqual(linkedWorkbookLoaded.slides.items[0].charts.items[0].externalData, { uri: "https://example.com/error-bars.xlsx", autoUpdate: true });
+const linkedWorkbookSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(linkedWorkbookLoaded)).arrayBuffer()));
+assert.match(await linkedWorkbookSecondZip.file("ppt/charts/_rels/chart1.xml.rels").async("text"), /Target="https:\/\/example\.com\/error-bars\.xlsx" TargetMode="External"/);
 
 const pptx = await PresentationFile.exportPptx(presentation);
 const splitBarPresentation = Presentation.create({ master: { name: "Split Axis Master" } });
@@ -742,6 +784,8 @@ assert.match(pieChartXml, /Product A/);
 assert.match(pieChartXml, /<c:v>45<\/c:v>/);
 assert.match(pieChartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbClr val="FACC15"\/><\/a:solidFill><\/c:spPr><\/c:dPt>/);
 const lineChartXml = await zip.file("ppt/charts/chart3.xml").async("text");
+const lineChartRelsXml = await zip.file("ppt/charts/_rels/chart3.xml.rels").async("text");
+const embeddedErrorBarWorkbook = await zip.file("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx").async("uint8array");
 assert.match(lineChartXml, /<c:style val="13"\/>/);
 assert.match(lineChartXml, /<c:lineChart><c:grouping val="stacked"\/>/);
 assert.equal((lineChartXml.match(/<c:lineChart>/g) || []).length, 2);
@@ -758,7 +802,27 @@ assert.equal((lineChartXml.match(/<c:smooth val="1"\/>/g) || []).length, 1);
 assert.equal((lineChartXml.match(/<c:smooth val="0"\/>/g) || []).length, 1);
 assert.match(lineChartXml, /<a:ln w="38100"><a:solidFill><a:srgbClr val="15803D"\/><\/a:solidFill><a:prstDash val="dashDot"\/><\/a:ln>/);
 assert.match(lineChartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbClr val="EAB308"\/><\/a:solidFill><\/c:spPr><\/c:dPt>/);
-assert.match(lineChartXml, /<c:errBars><c:errDir val="y"\/><c:errBarType val="both"\/><c:errValType val="cust"\/><c:noEndCap val="1"\/><c:plus><c:numLit><c:formatCode>General<\/c:formatCode><c:ptCount val="3"\/>[\s\S]*?<c:v>1\.5<\/c:v>[\s\S]*?<\/c:plus><c:minus>[\s\S]*?<c:v>0\.75<\/c:v>[\s\S]*?<\/c:minus>[\s\S]*?<a:srgbClr val="EA580C"\/>/);
+assert.match(lineChartXml, /<c:errBars><c:errDir val="y"\/><c:errBarType val="both"\/><c:errValType val="cust"\/><c:noEndCap val="1"\/><c:plus><c:numRef><c:f>Sheet1!\$D\$2:\$D\$4<\/c:f><c:numCache><c:formatCode>0\.00<\/c:formatCode><c:ptCount val="3"\/>[\s\S]*?<c:v>1\.5<\/c:v>[\s\S]*?<\/c:numCache><\/c:numRef><\/c:plus><c:minus><c:numRef><c:f>Sheet1!\$E\$2:\$E\$4<\/c:f>[\s\S]*?<c:v>0\.75<\/c:v>[\s\S]*?<\/c:minus>[\s\S]*?<a:srgbClr val="EA580C"\/>/);
+assert.match(lineChartXml, /<c:externalData r:id="rId1"><c:autoUpdate val="0"\/><\/c:externalData>/);
+assert.match(lineChartRelsXml, /Id="rId1" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/package" Target="\.\.\/embeddings\/Microsoft_Excel_Worksheet1\.xlsx"/);
+assert.deepEqual([...embeddedErrorBarWorkbook], [...errorBarWorkbookFile.bytes]);
+const missingExternalDataZip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+missingExternalDataZip.file("ppt/charts/chart3.xml", lineChartXml.replace(/<c:externalData\b[\s\S]*?<\/c:externalData>/, ""));
+const missingExternalDataInspect = await PresentationFile.inspectPptx(await missingExternalDataZip.generateAsync({ type: "uint8array" }));
+assert.equal(missingExternalDataInspect.ok, false);
+assert.ok(missingExternalDataInspect.issues.some((issue) => issue.type === "pptxChartFormulaExternalDataMissing"));
+assert.ok(missingExternalDataInspect.issues.some((issue) => issue.type === "pptxChartExternalDataRelationshipOrphaned"));
+const wrongExternalDataRelationshipZip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+wrongExternalDataRelationshipZip.file("ppt/charts/_rels/chart3.xml.rels", lineChartRelsXml.replace("/relationships/package\"", "/relationships/image\""));
+const wrongExternalDataRelationshipInspect = await PresentationFile.inspectPptx(await wrongExternalDataRelationshipZip.generateAsync({ type: "uint8array" }));
+assert.equal(wrongExternalDataRelationshipInspect.ok, false);
+assert.ok(wrongExternalDataRelationshipInspect.issues.some((issue) => issue.type === "pptxChartExternalDataRelationshipTypeInvalid"));
+const wrongExternalDataContentTypeZip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
+const presentationContentTypesXml = await wrongExternalDataContentTypeZip.file("[Content_Types].xml").async("text");
+wrongExternalDataContentTypeZip.file("[Content_Types].xml", presentationContentTypesXml.replace("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream"));
+const wrongExternalDataContentTypeInspect = await PresentationFile.inspectPptx(await wrongExternalDataContentTypeZip.generateAsync({ type: "uint8array" }));
+assert.equal(wrongExternalDataContentTypeInspect.ok, false);
+assert.ok(wrongExternalDataContentTypeInspect.issues.some((issue) => issue.type === "pptxChartExternalDataContentTypeInvalid"));
 const comboChartXml = await zip.file("ppt/charts/chart4.xml").async("text");
 assert.match(comboChartXml, /<c:style val="8"\/>/);
 assert.match(comboChartXml, /<c:barChart><c:barDir val="col"\/><c:grouping val="clustered"\/>/);
@@ -851,6 +915,8 @@ assert.equal(loadedLineChart.styleId, 13);
 assert.equal(loadedLineChart.lineOptions.grouping, "stacked");
 assert.deepEqual(loadedLineChart.series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
 assert.equal(loadedLineChart.axes.secondary.value.title, "Native quality");
+assert.deepEqual({ embedded: Boolean(loadedLineChart.externalData.bytes), autoUpdate: loadedLineChart.externalData.autoUpdate }, { embedded: true, autoUpdate: false });
+assert.deepEqual([...loadedLineChart.externalData.bytes], [...errorBarWorkbookFile.bytes]);
 assert.deepEqual(loadedLineChart.series.map((series) => series.marker), [{ symbol: "diamond", size: 9 }, { symbol: "triangle", size: 8 }]);
 assert.deepEqual(loadedLineChart.series.map((series) => series.smooth), [true, false]);
 assert.deepEqual(loadedLineChart.series[0].line, { fill: "#15803D", width: 3, style: "dashDot" });
@@ -860,7 +926,11 @@ assert.deepEqual(loadedLineChart.series[1].errorBars, {
   type: "both",
   valueType: "cust",
   plusValues: [0.5, 1, 1.5],
+  plusFormula: "Sheet1!$D$2:$D$4",
+  plusFormatCode: "0.00",
   minusValues: [0.25, 0.5, 0.75],
+  minusFormula: "Sheet1!$E$2:$E$4",
+  minusFormatCode: "0.00",
   noEndCap: true,
   line: { fill: "#EA580C", width: 1.5, style: "dash" },
 });
@@ -903,6 +973,7 @@ assert.deepEqual(alternateLineChart.series.map((series) => series.axisGroup || "
 assert.equal(alternateLineChart.axes.secondary.value.title, "Native quality");
 assert.deepEqual(alternateLineChart.series[0].marker, { symbol: "diamond", size: 9 });
 assert.deepEqual(alternateLineChart.series[1].errorBars.plusValues, [0.5, 1, 1.5]);
+assert.equal(alternateLineChart.series[1].errorBars.plusFormula, "Sheet1!$D$2:$D$4");
 assert.equal(alternateLineChart.series[1].axisGroup, "secondary");
 assert.equal(alternateLineChart.axes.secondary.value.title, "Native quality");
 const alternateChartSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(alternateChartPrefixLoaded)).arrayBuffer()));
@@ -912,7 +983,17 @@ assert.equal((alternateChartSecondXml.match(/<c:lineChart>/g) || []).length, 2);
 assert.match(alternateChartSecondXml, /<c:lineChart>[\s\S]*?<c:v>Native<\/c:v>[\s\S]*?<c:axId val="3"\/><c:axId val="4"\/><\/c:lineChart>/);
 assert.match(alternateChartSecondXml, /<a:prstDash val="dashDot"\/>/);
 assert.match(alternateChartSecondXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="EAB308"\/>/);
-assert.match(alternateChartSecondXml, /<c:errValType val="cust"\/>[\s\S]*?<c:plus>[\s\S]*?<c:minus>/);
+assert.match(alternateChartSecondXml, /<c:errValType val="cust"\/>[\s\S]*?<c:plus><c:numRef><c:f>Sheet1!\$D\$2:\$D\$4<\/c:f>[\s\S]*?<c:minus><c:numRef><c:f>Sheet1!\$E\$2:\$E\$4<\/c:f>/);
+assert.match(alternateChartSecondXml, /<c:externalData r:id="rId1">/);
+assert.ok(alternateChartSecondZip.file("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx"));
+const formulaOnlyChartXml = lineChartXml.replace(/(<c:plus><c:numRef><c:f>[^<]+<\/c:f>)<c:numCache>[\s\S]*?<\/c:numCache>/, "$1");
+const formulaOnlyPptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/charts/chart3.xml", xml: formulaOnlyChartXml }]);
+const formulaOnlyLoaded = await PresentationFile.importPptx(formulaOnlyPptx);
+const formulaOnlyErrorBars = formulaOnlyLoaded.slides.items[1].charts.items.find((chart) => chart.name === "trend-line").series[1].errorBars;
+assert.equal(formulaOnlyErrorBars.plusFormula, "Sheet1!$D$2:$D$4");
+assert.equal("plusValues" in formulaOnlyErrorBars, false);
+const formulaOnlySecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(formulaOnlyLoaded)).arrayBuffer()));
+assert.match(await formulaOnlySecondZip.file("ppt/charts/chart3.xml").async("text"), /<c:plus><c:numRef><c:f>Sheet1!\$D\$2:\$D\$4<\/c:f><\/c:numRef><\/c:plus>/);
 const alternateComboPrefixXml = comboChartXml
   .replaceAll("xmlns:c=", "xmlns:cx=").replaceAll("<c:", "<cx:").replaceAll("</c:", "</cx:")
   .replaceAll("xmlns:a=", "xmlns:ax=").replaceAll("<a:", "<ax:").replaceAll("</a:", "</ax:");

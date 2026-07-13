@@ -248,6 +248,35 @@ function normalizePresentationErrorBarValues(values, valueCount, name) {
   return values.map((value) => boundedNumber(value, { name, min: 0, max: Number.MAX_SAFE_INTEGER }));
 }
 
+function normalizePresentationErrorBarText(value, name, maxLength) {
+  if (value == null) return undefined;
+  if (typeof value !== "string") throw new TypeError(`${name} must be a string.`);
+  const normalized = value.trim();
+  if (!normalized) throw new TypeError(`${name} must be non-empty.`);
+  if (normalized.length > maxLength) throw new RangeError(`${name} must contain at most ${maxLength} characters.`);
+  if (name.endsWith("Formula") && normalized.startsWith("=")) throw new TypeError(`${name} must omit the leading equals sign.`);
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(normalized)) throw new TypeError(`${name} contains unsupported control characters.`);
+  return normalized;
+}
+
+function normalizePresentationErrorBarSide(value, side, valueCount, required) {
+  if (!required) return {};
+  const source = value[side];
+  const objectSource = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+  const formula = normalizePresentationErrorBarText(value[`${side}Formula`] ?? value[`${side}Reference`] ?? objectSource.formula ?? objectSource.reference, `chart error-bar ${side}Formula`, 8_192);
+  const rawValues = value[`${side}Values`] ?? (Array.isArray(source) ? source : objectSource.values ?? objectSource.cache);
+  const values = rawValues == null
+    ? formula ? undefined : normalizePresentationErrorBarValues(rawValues, valueCount, `chart error-bar ${side}Values`)
+    : normalizePresentationErrorBarValues(rawValues, valueCount, `chart error-bar ${side}Values`);
+  const formatCode = normalizePresentationErrorBarText(value[`${side}FormatCode`] ?? objectSource.formatCode, `chart error-bar ${side}FormatCode`, 255);
+  if (formatCode && !values) throw new TypeError(`chart error-bar ${side}FormatCode requires cached ${side}Values.`);
+  return {
+    ...(values ? { [`${side}Values`]: values } : {}),
+    ...(formula ? { [`${side}Formula`]: formula } : {}),
+    ...(formatCode ? { [`${side}FormatCode`]: formatCode } : {}),
+  };
+}
+
 export function normalizePresentationChartErrorBars(value, chartType, valueCount) {
   if (value == null || value === false) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("chart errorBars must be an object.");
@@ -261,16 +290,16 @@ export function normalizePresentationChartErrorBars(value, chartType, valueCount
   if (!ERROR_BAR_VALUE_TYPES.has(valueType)) throw new TypeError(`chart error-bar valueType must be one of: ${[...ERROR_BAR_VALUE_TYPES].join(", ")}.`);
   const amount = ["cust", "stdErr"].includes(valueType) ? undefined : boundedNumber(value.value ?? value.amount, { name: "chart error-bar value", min: 0, max: Number.MAX_SAFE_INTEGER, fallback: valueType === "percentage" ? 5 : 1 });
   if (valueType === "stdErr" && (value.value ?? value.amount) != null) throw new TypeError("standard-error chart error bars do not accept a value.");
-  const plusValues = valueType === "cust" && type !== "minus" ? normalizePresentationErrorBarValues(value.plusValues ?? value.plus, valueCount, "chart error-bar plusValues") : undefined;
-  const minusValues = valueType === "cust" && type !== "plus" ? normalizePresentationErrorBarValues(value.minusValues ?? value.minus, valueCount, "chart error-bar minusValues") : undefined;
+  const plus = valueType === "cust" ? normalizePresentationErrorBarSide(value, "plus", valueCount, type !== "minus") : {};
+  const minus = valueType === "cust" ? normalizePresentationErrorBarSide(value, "minus", valueCount, type !== "plus") : {};
   const line = normalizePresentationChartLine(value.line ?? value.stroke);
   return {
     direction,
     type,
     valueType,
     ...(amount == null ? {} : { value: amount }),
-    ...(plusValues ? { plusValues } : {}),
-    ...(minusValues ? { minusValues } : {}),
+    ...plus,
+    ...minus,
     noEndCap: Boolean(value.noEndCap ?? value.endStyle === "none"),
     ...(line ? { line } : {}),
   };
@@ -322,17 +351,20 @@ function presentationTrendlineXml(trendline) {
 
 function presentationErrorBarsXml(errorBars) {
   if (!errorBars) return "";
-  const valuesXml = (name, values) => values?.length
-    ? `<c:${name}><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="${values.length}"/>${values.map((value, index) => `<c:pt idx="${index}"><c:v>${value}</c:v></c:pt>`).join("")}</c:numLit></c:${name}>`
+  const cacheXml = (tag, values, formatCode) => values?.length
+    ? `<c:${tag}><c:formatCode>${xmlEscape(formatCode || "General")}</c:formatCode><c:ptCount val="${values.length}"/>${values.map((value, index) => `<c:pt idx="${index}"><c:v>${value}</c:v></c:pt>`).join("")}</c:${tag}>`
     : "";
-  const plusXml = valuesXml("plus", errorBars.plusValues);
-  const minusXml = valuesXml("minus", errorBars.minusValues);
+  const valuesXml = (name, values, formula, formatCode) => formula
+    ? `<c:${name}><c:numRef><c:f>${xmlEscape(formula)}</c:f>${cacheXml("numCache", values, formatCode)}</c:numRef></c:${name}>`
+    : values?.length ? `<c:${name}>${cacheXml("numLit", values, formatCode)}</c:${name}>` : "";
+  const plusXml = valuesXml("plus", errorBars.plusValues, errorBars.plusFormula, errorBars.plusFormatCode);
+  const minusXml = valuesXml("minus", errorBars.minusValues, errorBars.minusFormula, errorBars.minusFormatCode);
   const valueXml = errorBars.value == null ? "" : `<c:val val="${errorBars.value}"/>`;
   const lineXml = errorBars.line ? chartShapePropertiesXml(undefined, errorBars.line) : "";
   return `<c:errBars><c:errDir val="${errorBars.direction}"/><c:errBarType val="${errorBars.type}"/><c:errValType val="${errorBars.valueType}"/><c:noEndCap val="${errorBars.noEndCap ? 1 : 0}"/>${plusXml}${minusXml}${valueXml}${lineXml}</c:errBars>`;
 }
 
-export function presentationChartXml(chart) {
+export function presentationChartXml(chart, options = {}) {
   const type = chart.chartType === "combo" ? "combo" : chart.chartType === "line" ? "line" : chart.chartType === "pie" ? "pie" : "bar";
   const style = normalizePresentationChartStyle(type, chart);
   const dataLabelsXml = presentationDataLabelsXml(chart.dataLabels || {});
@@ -386,7 +418,8 @@ export function presentationChartXml(chart) {
     plotXml = `${plotsForType(type, chartSeries.map((series, index) => ({ series, index })))}${primaryAxisXml}${hasSecondary ? secondaryAxisXml : ""}`;
   }
   const styleXml = style.styleId ? `<c:style val="${style.styleId}"/>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${styleXml}<c:chart>${chartTextTitleXml(chart.title || chart.chartType)}<c:plotArea><c:layout/>${plotXml}</c:plotArea>${legendXml}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
+  const externalDataXml = options.externalDataRelationshipId ? `<c:externalData r:id="${attrEscape(options.externalDataRelationshipId)}"><c:autoUpdate val="${chart.externalData?.autoUpdate ? 1 : 0}"/></c:externalData>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${styleXml}<c:chart>${chartTextTitleXml(chart.title || chart.chartType)}<c:plotArea><c:layout/>${plotXml}</c:plotArea>${legendXml}<c:plotVisOnly val="1"/></c:chart>${externalDataXml}</c:chartSpace>`;
 }
 
 function parseChartTitle(xml, ownerName) {
@@ -464,14 +497,26 @@ function parseErrorBars(xml, chartType, valueCount) {
   const block = tagBlock(xml, "errBars");
   if (!block) return undefined;
   const shape = parseChartShapeProperties(block);
-  const valuesFrom = (name) => [...tagBlock(block, name).matchAll(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "gi"))].map((item) => Number(decodeXml(item[1])) || 0);
+  const sourceFrom = (name) => {
+    const sourceBlock = tagBlock(block, name);
+    const referenceBlock = tagBlock(sourceBlock, "numRef");
+    const valuesBlock = referenceBlock ? tagBlock(referenceBlock, "numCache") : tagBlock(sourceBlock, "numLit");
+    const values = [...valuesBlock.matchAll(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "gi"))].map((item) => Number(decodeXml(item[1])) || 0);
+    const formula = referenceBlock ? decodeXml(tagBlock(referenceBlock, "f")).trim() : undefined;
+    const formatCode = referenceBlock ? decodeXml(tagBlock(valuesBlock, "formatCode")).trim() : undefined;
+    return {
+      ...(values.length ? { [`${name}Values`]: values } : {}),
+      ...(formula ? { [`${name}Formula`]: formula } : {}),
+      ...(formula && formatCode ? { [`${name}FormatCode`]: formatCode } : {}),
+    };
+  };
   return normalizePresentationChartErrorBars({
     direction: tagValue(block, "errDir") || "y",
     type: tagValue(block, "errBarType") || "both",
     valueType: tagValue(block, "errValType") || "fixedVal",
     value: tagValue(block, "val"),
-    plusValues: valuesFrom("plus"),
-    minusValues: valuesFrom("minus"),
+    ...sourceFrom("plus"),
+    ...sourceFrom("minus"),
     noEndCap: Boolean(booleanTag(block, "noEndCap")),
     line: shape.line,
   }, chartType, valueCount);

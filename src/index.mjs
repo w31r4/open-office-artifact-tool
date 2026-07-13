@@ -25,6 +25,7 @@ import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
 import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
+import { normalizePresentationChartExternalData, parsePresentationChartExternalData, planPresentationChartExternalDataParts, presentationChartExternalDataContentTypesXml, presentationChartExternalDataRelationship, presentationChartUsesFormulaReferences, validatePresentationChartExternalDataWorkbooks } from "./presentation/ooxml-chart-data.mjs";
 import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
@@ -1045,7 +1046,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets." },
@@ -1940,7 +1941,8 @@ const PRESENTATION_HELP_SCHEMAS = {
     chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line, while bar/line series may bind to primary or secondary axes." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, custom plusFormula/minusFormula references with optional cached plusValues/minusValues and format codes, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups." },
+    externalData: { type: "object|FileBlob|ArrayBuffer|Uint8Array|string", description: "Embedded XLSX workbook bytes/data URL or an absolute external workbook URI plus autoUpdate. Required when custom error bars use plusFormula/minusFormula; import and second export preserve embedded workbook bytes and chart relationships." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     axes: { type: "object", description: "Primary category/value axis titles plus optional secondary.category/secondary.value titles when any bar or line series uses axisGroup secondary." },
     legend: { type: "object", description: "Legend options." },
@@ -8231,6 +8233,8 @@ export class ChartElement {
     this.title = config.title || "";
     this.categories = config.categories || [];
     this.series = normalizeChartSeries(config.series || [], this.chartType);
+    this.externalData = normalizePresentationChartExternalData(config.externalData ?? config.sourceWorkbook);
+    if (presentationChartUsesFormulaReferences(this) && !this.externalData) throw new TypeError("Presentation chart formula references require externalData with an embedded workbook or external workbook URI.");
     if (this.chartType === "combo" && (!this.series.some((series) => series.chartType === "bar") || !this.series.some((series) => series.chartType === "line"))) throw new TypeError("Presentation combo chart requires at least one bar series and one line series.");
     const hasSecondary = this.series.some((series) => series.axisGroup === "secondary");
     const hasConfiguredSecondaryAxes = Boolean(config.axes?.secondary || config.axes?.secondaryCategory || config.axes?.secondaryValue || config.axes?.y2 || config.secondaryAxisTitles || config.secondaryCategoryAxisTitle || config.secondaryValueAxisTitle || config.secondaryXAxisTitle || config.secondaryYAxisTitle);
@@ -8245,10 +8249,10 @@ export class ChartElement {
 
   inspectRecord() {
     const p = this.position;
-    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, chartType: this.chartType, title: this.title, categories: this.categories, series: this.series.length, seriesDetails: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
+    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, chartType: this.chartType, title: this.title, categories: this.categories, series: this.series.length, seriesDetails: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, externalData: this.externalData ? { embedded: Boolean(this.externalData.bytes), uri: this.externalData.uri, autoUpdate: this.externalData.autoUpdate, bytes: this.externalData.bytes?.byteLength } : undefined, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
   }
 
-  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined }; }
+  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, externalData: this.externalData ? { embedded: Boolean(this.externalData.bytes), uri: this.externalData.uri, autoUpdate: this.externalData.autoUpdate, bytes: this.externalData.bytes?.byteLength } : undefined, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined }; }
 
   toSvg() {
     const p = this.position;
@@ -8441,6 +8445,8 @@ export class PresentationFile {
     const { masterParts, layoutParts, themeParts } = collectPresentationMasterGraph(presentation);
     const imageParts = collectPresentationImageParts(presentation);
     const chartParts = collectPresentationChartParts(presentation, imageParts);
+    const chartExternalDataParts = planPresentationChartExternalDataParts(chartParts);
+    await validatePresentationChartExternalDataWorkbooks(chartExternalDataParts, (bytes) => SpreadsheetFile.inspectXlsx(bytes));
     const pictureBulletPlan = planPresentationPictureBulletParts(presentation, { masterParts, layoutParts }, imageParts, chartParts);
     const allImageParts = [...imageParts, ...pictureBulletPlan.mediaParts];
     const reservedPresentationPaths = new Set([
@@ -8448,6 +8454,7 @@ export class PresentationFile {
       ...presentation.slides.items.map((_, index) => `ppt/slides/slide${index + 1}.xml`),
       ...allImageParts.map((part) => `ppt/media/image${part.imagePartId}.${part.extension}`),
       ...chartParts.map((part) => `ppt/charts/chart${part.chartPartId}.xml`),
+      ...chartExternalDataParts.flatMap((part) => [part.outputPath, `ppt/charts/_rels/chart${part.chartPart.chartPartId}.xml.rels`]).filter(Boolean),
       ...themeParts.map((part) => `ppt/theme/theme${part.themePartId}.xml`),
       ...masterParts.map((part) => `ppt/slideMasters/slideMaster${part.masterPartId}.xml`),
       ...layoutParts.map((part) => `ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`),
@@ -8461,7 +8468,7 @@ export class PresentationFile {
     const useModernComments = presentation.commentFormat === "modern" || presentation.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"));
     const commentAuthors = useModernComments ? { entries: [], byName: new Map() } : collectPptxCommentAuthors(presentation);
     const modernComments = useModernComments ? planPresentationModernComments(presentation.slides.items) : { authors: [], parts: [] };
-    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, allImageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts, modernComments, nativeObjectPlan.contentTypeOverrides));
+    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, allImageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts, modernComments, nativeObjectPlan.contentTypeOverrides, chartExternalDataParts));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "ppt/presentation.xml" }]));
     zip.file("ppt/presentation.xml", presentationXml(presentation, masterParts));
     zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, masterParts, commentAuthors.entries.length > 0, modernComments.authors.length > 0));
@@ -8499,7 +8506,12 @@ export class PresentationFile {
     if (commentAuthors.entries.length) zip.file("ppt/commentAuthors.xml", pptxCommentAuthorsXml(commentAuthors));
     if (modernComments.authors.length) zip.file("ppt/authors.xml", presentationModernAuthorsXml(modernComments));
     allImageParts.forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
-    chartParts.forEach((part) => zip.file(`ppt/charts/chart${part.chartPartId}.xml`, presentationChartXml(part.chart)));
+    chartParts.forEach((part) => {
+      const externalDataPart = chartExternalDataParts.find((candidate) => candidate.chartPart === part);
+      zip.file(`ppt/charts/chart${part.chartPartId}.xml`, presentationChartXml(part.chart, { externalDataRelationshipId: externalDataPart?.relationshipId }));
+      if (externalDataPart) zip.file(`ppt/charts/_rels/chart${part.chartPartId}.xml.rels`, relsXml([presentationChartExternalDataRelationship(externalDataPart)]));
+    });
+    chartExternalDataParts.filter((part) => part.outputPath).forEach((part) => zip.file(part.outputPath, part.externalData.bytes));
     nativeObjectPlan.parts.forEach((part) => {
       zip.file(part.outputPath, part.bytes);
       if (part.relationshipsXml) zip.file(ooxmlRelationshipPartPath(part.outputPath, "PPTX"), part.relationshipsXml);
@@ -8717,7 +8729,7 @@ function collectPresentationMasterGraph(presentation) {
   return planPresentationMasterGraph(presentation.masters.items, layouts, presentation.theme);
 }
 
-function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, masterParts = [], layoutParts = [], commentAuthors = [], themeParts = [], modernComments = { authors: [], parts: [] }, nativeContentTypes = []) {
+function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, masterParts = [], layoutParts = [], commentAuthors = [], themeParts = [], modernComments = { authors: [], parts: [] }, nativeContentTypes = [], chartExternalDataParts = []) {
   const slides = Array.from({ length: slideCount }, (_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
   const charts = chartParts.map((part) => `<Override PartName="/ppt/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
   const notes = presentation?.slides.items.map((slide, i) => slide.speakerNotes.text ? `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>` : "").join("") || "";
@@ -8735,7 +8747,7 @@ function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presenta
     ["gif", "image/gif"],
     ["svg", "image/svg+xml"],
   ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${theme}${master}${layouts}${notes}${comments}${authors}${modernAuthors}${presentationOpaqueContentTypeXml(nativeContentTypes)}</Types>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${presentationChartExternalDataContentTypesXml(chartExternalDataParts)}${theme}${master}${layouts}${notes}${comments}${authors}${modernAuthors}${presentationOpaqueContentTypeXml(nativeContentTypes)}</Types>`;
 }
 
 function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
@@ -9105,8 +9117,16 @@ async function parsePptxChartGraphic(owner, part, context) {
   const target = pptxRelationshipTarget(context.rels, relId);
   const chartXml = target ? await context.zip.file(target)?.async("text") : "";
   const parsed = parsePresentationChartXml(chartXml);
+  const chartRelationships = target ? parseRelsXml(await context.zip.file(ooxmlRelationshipPartPath(target, "PPTX"))?.async("text")) : [];
+  const externalData = target ? await parsePresentationChartExternalData({
+    chartXml,
+    chartPath: target,
+    relationships: chartRelationships,
+    resolveTarget: (source, rawTarget) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(source, rawTarget), "PPTX"),
+    readPart: (partPath) => context.zip.file(partPath)?.async("uint8array"),
+  }) : undefined;
   const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || parsed.title || "chart");
-  return applyPresentationElementIdentity(owner.charts.add(parsed.chartType, { ...parsed, name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }) }), part, "graphicFrameMk");
+  return applyPresentationElementIdentity(owner.charts.add(parsed.chartType, { ...parsed, externalData, name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }) }), part, "graphicFrameMk");
 }
 
 async function parsePptxPicture(owner, part, context) {

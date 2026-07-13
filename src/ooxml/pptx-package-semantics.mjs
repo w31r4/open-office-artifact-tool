@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { attributes, decodeXml, rootTag } from "./source-reference-xml.mjs";
 import { validatePresentationModernCommentPackageSemantics } from "../presentation/ooxml-modern-comments.mjs";
+import { validatePresentationChartExternalDataPackageSemantics } from "../presentation/ooxml-chart-data.mjs";
 
 const PRESENTATION_NAMESPACES = new Set([
   "http://schemas.openxmlformats.org/presentationml/2006/main",
@@ -209,6 +210,7 @@ export function validatePptxPackageSemantics({ bytesByPath, contentTypes }) {
     ...validatePartReachability(entries, bytesByPath, contentTypes),
     ...validateComments(entries, bytesByPath, contentTypes),
     ...validateNotes(bytesByPath, contentTypes),
+    ...validatePresentationChartExternalDataPackageSemantics({ bytesByPath, contentTypes }),
     ...validatePresentationModernCommentPackageSemantics({ bytesByPath, contentTypes }),
   ];
 }

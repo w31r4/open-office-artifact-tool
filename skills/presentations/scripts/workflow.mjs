@@ -8,6 +8,8 @@ import {
   FileBlob,
   Presentation,
   PresentationFile,
+  SpreadsheetFile,
+  Workbook,
   verifyArtifact,
   visualQaArtifact,
 } from "open-office-artifact-tool";
@@ -38,7 +40,19 @@ function addSlideShape(slide, config = {}) {
   return shape;
 }
 
-function addFixtureSlide(presentation, config = {}) {
+async function presentationFixtureChartConfig(config = {}) {
+  const workbookConfig = config.externalData?.workbook;
+  if (!workbookConfig?.sheets) return config;
+  const workbook = Workbook.create({ dateSystem: workbookConfig.dateSystem });
+  for (const sheetConfig of workbookConfig.sheets) {
+    const sheet = workbook.worksheets.add(sheetConfig.name);
+    if (sheetConfig.values) sheet.getRange(sheetConfig.range || "A1").values = sheetConfig.values;
+  }
+  const workbookFile = await SpreadsheetFile.exportXlsx(workbook);
+  return { ...config, externalData: { ...config.externalData, workbook: workbookFile } };
+}
+
+async function addFixtureSlide(presentation, config = {}) {
   const slide = presentation.slides.add({ name: config.name, layoutId: config.layoutId, notes: config.notes });
   if (config.background) slide.background.fill = config.background;
   const byName = new Map();
@@ -54,7 +68,10 @@ function addFixtureSlide(presentation, config = {}) {
     for (const element of created.allElements()) remember(element, element.name);
   }
   for (const table of config.tables || []) remember(slide.tables.add(table), table.name);
-  for (const chart of config.charts || []) remember(slide.charts.add(chart.chartType || chart.type || "bar", chart), chart.name);
+  for (const chart of config.charts || []) {
+    const resolvedChart = await presentationFixtureChartConfig(chart);
+    remember(slide.charts.add(resolvedChart.chartType || resolvedChart.type || "bar", resolvedChart), chart.name);
+  }
   for (const image of config.images || []) remember(slide.images.add(image), image.name);
   for (const connector of config.connectors || []) {
     const from = byName.get(connector.fromName) || connector.from || connector.start;
@@ -75,14 +92,14 @@ function addFixtureSlide(presentation, config = {}) {
   return slide;
 }
 
-export function createPresentationFromFixture(fixture = {}) {
+export async function createPresentationFromFixture(fixture = {}) {
   const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {}, master: fixture.master || {}, masters: fixture.masters, commentFormat: fixture.commentFormat });
   if (fixture.theme?.colors) presentation.theme.setColors(fixture.theme.colors);
   if (fixture.theme?.fonts) presentation.theme.setFonts(fixture.theme.fonts);
   if (fixture.theme?.textStyles) presentation.theme.setTextStyles(fixture.theme.textStyles);
   if (fixture.theme?.colorMap) presentation.theme.setColorMap(fixture.theme.colorMap);
   for (const layout of fixture.layouts || []) presentation.layouts.add(layout);
-  for (const slide of fixture.slides || []) addFixtureSlide(presentation, slide);
+  for (const slide of fixture.slides || []) await addFixtureSlide(presentation, slide);
   const inspectKind = fixture.qa?.inspectKind || "deck,theme,slideMaster,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange";
   for (const expected of fixture.expectInspect || []) {
     assert.match(presentation.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));
@@ -98,7 +115,8 @@ function packageImageBytes(image = {}) {
 
 async function packageChartXml(chart = {}) {
   const source = Presentation.create();
-  source.slides.add().charts.add(chart.chartType || chart.type || "bar", chart);
+  const resolvedChart = await presentationFixtureChartConfig(chart);
+  source.slides.add().charts.add(resolvedChart.chartType || resolvedChart.type || "bar", resolvedChart);
   const zip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(source)).arrayBuffer()));
   const xml = await zip.file("ppt/charts/chart1.xml")?.async("text");
   if (!xml) throw new Error("Could not generate packageDrawing chart XML through the public presentation API.");
@@ -295,7 +313,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   const fixture = JSON.parse(await fs.readFile(absoluteFixture, "utf8"));
   const outputDir = path.resolve(options.outputDir || path.join("tmp", "presentation-skill", fixture.name || "fixture"));
   await fs.mkdir(outputDir, { recursive: true });
-  const presentation = createPresentationFromFixture(fixture);
+  const presentation = await createPresentationFromFixture(fixture);
   const pptxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "presentation"}.pptx`);
   let pptx = await PresentationFile.exportPptx(presentation);
   pptx = await applyFixturePackageDrawing(pptx, fixture);
