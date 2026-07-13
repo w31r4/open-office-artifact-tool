@@ -24,7 +24,7 @@ import { mergePresentationPlaceholders, normalizePresentationBackground, parsePr
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
-import { normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
+import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
 import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
@@ -1045,7 +1045,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or primary/secondary-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets." },
@@ -1937,12 +1937,12 @@ const PRESENTATION_HELP_SCHEMAS = {
     style: { type: "object", description: "Table/cell fill, margins, borders, and text style." },
   }, "table", "TableElement", "Appended editable table facade."),
   "slide.charts.add": helpSchema({
-    chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line and share the primary axes." },
+    chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line and may bind one plot type to the secondary axes." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, and errorBars. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line, and one whole plot type may use axisGroup secondary." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
-    axes: { type: "object", description: "Axis titles/options." },
+    axes: { type: "object", description: "Primary category/value axis titles plus optional secondary.category/secondary.value titles when one combo plot type uses axisGroup secondary." },
     legend: { type: "object", description: "Legend options." },
     dataLabels: { type: "boolean|object", description: "Chart-level showValue/showCategoryName and position options. Positions accept bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, top, or their OOXML short names; each series may override or disable them." },
     styleId: { type: "number", description: "Standard DrawingML chart style ID from 1 through 48." },
@@ -8082,6 +8082,9 @@ function normalizeChartSeries(seriesItems = [], chartType = "bar") {
     const style = normalizePresentationChartSeriesStyle(series, values.length);
     const seriesChartType = chartType === "combo" ? String(series.chartType || series.type || "").toLowerCase() : undefined;
     if (chartType === "combo" && !new Set(["bar", "line"]).has(seriesChartType)) throw new TypeError("Presentation combo chart series chartType must be bar or line.");
+    const rawAxisGroup = series.axisGroup ?? series.axis ?? (series.secondaryAxis === true ? "secondary" : "primary");
+    const axisGroup = normalizePresentationChartAxisGroup(rawAxisGroup === "y2" ? "secondary" : rawAxisGroup === "y1" ? "primary" : String(rawAxisGroup).toLowerCase(), seriesChartType || chartType);
+    if (axisGroup === "secondary" && chartType !== "combo") throw new TypeError("Presentation secondary-axis series are supported only for combo charts.");
     return {
       name: series.name || `Series ${index + 1}`,
       values,
@@ -8095,16 +8098,25 @@ function normalizeChartSeries(seriesItems = [], chartType = "bar") {
       ...((series.trendlines ?? series.trendline) == null ? {} : { trendlines: normalizePresentationChartTrendlines(series.trendlines ?? series.trendline, values.length, seriesChartType || chartType) }),
       ...(series.errorBars == null ? {} : { errorBars: normalizePresentationChartErrorBars(series.errorBars, seriesChartType || chartType, values.length) }),
       ...(seriesChartType ? { chartType: seriesChartType } : {}),
+      ...(axisGroup === "secondary" ? { axisGroup } : {}),
     };
   });
 }
 
-function normalizeChartAxes(config = {}) {
+function normalizeChartAxes(config = {}, hasSecondary = false) {
   const axes = config.axes || {};
   const axisTitles = config.axisTitles || {};
+  const secondary = axes.secondary || {};
+  const secondaryAxisTitles = axisTitles.secondary || config.secondaryAxisTitles || {};
   return {
     category: { ...(axes.category || axes.x || {}), title: axes.category?.title || axes.x?.title || axisTitles.category || axisTitles.x || config.categoryAxisTitle || config.xAxisTitle || "" },
     value: { ...(axes.value || axes.y || {}), title: axes.value?.title || axes.y?.title || axisTitles.value || axisTitles.y || config.valueAxisTitle || config.yAxisTitle || "" },
+    ...(hasSecondary ? {
+      secondary: {
+        category: { ...(secondary.category || secondary.x || axes.secondaryCategory || {}), title: secondary.category?.title || secondary.x?.title || axes.secondaryCategory?.title || secondaryAxisTitles.category || secondaryAxisTitles.x || config.secondaryCategoryAxisTitle || config.secondaryXAxisTitle || "" },
+        value: { ...(secondary.value || secondary.y || axes.secondaryValue || axes.y2 || {}), title: secondary.value?.title || secondary.y?.title || axes.secondaryValue?.title || axes.y2?.title || secondaryAxisTitles.value || secondaryAxisTitles.y || config.secondaryValueAxisTitle || config.secondaryYAxisTitle || "" },
+      },
+    } : {}),
   };
 }
 
@@ -8221,7 +8233,17 @@ export class ChartElement {
     this.categories = config.categories || [];
     this.series = normalizeChartSeries(config.series || [], this.chartType);
     if (this.chartType === "combo" && (!this.series.some((series) => series.chartType === "bar") || !this.series.some((series) => series.chartType === "line"))) throw new TypeError("Presentation combo chart requires at least one bar series and one line series.");
-    this.axes = normalizeChartAxes(config);
+    const hasSecondary = this.series.some((series) => series.axisGroup === "secondary");
+    const hasConfiguredSecondaryAxes = Boolean(config.axes?.secondary || config.axes?.secondaryCategory || config.axes?.secondaryValue || config.axes?.y2 || config.secondaryAxisTitles || config.secondaryCategoryAxisTitle || config.secondaryValueAxisTitle || config.secondaryXAxisTitle || config.secondaryYAxisTitle);
+    if (hasConfiguredSecondaryAxes && !hasSecondary) throw new TypeError("Presentation secondary axes require at least one combo-chart series with axisGroup secondary.");
+    if (hasSecondary && !this.series.some((series) => series.axisGroup !== "secondary")) throw new TypeError("Presentation secondary-axis combo charts require at least one primary-axis series.");
+    if (hasSecondary) {
+      for (const seriesType of ["bar", "line"]) {
+        const groups = new Set(this.series.filter((series) => series.chartType === seriesType).map((series) => series.axisGroup || "primary"));
+        if (groups.size > 1) throw new TypeError(`Presentation combo ${seriesType} series cannot be split across primary and secondary axes.`);
+      }
+    }
+    this.axes = normalizeChartAxes(config, hasSecondary);
     this.legend = normalizeChartLegend(config, this.series.length);
     this.hasLegend = this.legend.visible;
     this.dataLabels = normalizeChartDataLabels(config);
@@ -8247,14 +8269,19 @@ export class ChartElement {
     const groupMax = (series, stacked, stackedValues, percentStacked) => percentStacked
       ? 1
       : Math.max(0, ...(stacked ? stackedValues : series.flatMap((item) => item.values || []).map((value) => Math.max(0, Number(value) || 0))));
-    const max = Math.max(
+    const barMax = groupMax(barSeries, stackedBars, barStackedMax, this.barOptions?.grouping === "percentStacked");
+    const lineMax = groupMax(lineSeries, stackedLines, lineStackedMax, this.lineOptions?.grouping === "percentStacked");
+    const maxForAxisGroup = (axisGroup) => Math.max(
       1,
-      groupMax(barSeries, stackedBars, barStackedMax, this.barOptions?.grouping === "percentStacked"),
-      groupMax(lineSeries, stackedLines, lineStackedMax, this.lineOptions?.grouping === "percentStacked"),
+      barSeries.some((series) => (series.axisGroup || "primary") === axisGroup) ? barMax : 0,
+      lineSeries.some((series) => (series.axisGroup || "primary") === axisGroup) ? lineMax : 0,
     );
+    const primaryMax = maxForAxisGroup("primary");
+    const secondaryMax = maxForAxisGroup("secondary");
+    const hasSecondary = this.series.some((series) => series.axisGroup === "secondary");
     const plot = { left: p.left + 42, top: p.top + 42, width: Math.max(0, p.width - 72), height: Math.max(0, p.height - 82) };
     const title = `<text x="${p.left + 12}" y="${p.top + 24}" font-family="Arial" font-size="16" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.chartType)}</text>`;
-    const axes = `<line x1="${plot.left}" y1="${plot.top + plot.height}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#94a3b8"/><line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.top + plot.height}" stroke="#94a3b8"/>${this.axes.category.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${p.top + p.height - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.category.title)}</text>` : ""}${this.axes.value.title ? `<text x="${p.left + 8}" y="${plot.top + 10}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.value.title)}</text>` : ""}`;
+    const axes = `<line x1="${plot.left}" y1="${plot.top + plot.height}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#94a3b8"/><line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.top + plot.height}" stroke="#94a3b8"/>${hasSecondary ? `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left + plot.width}" y2="${plot.top}" stroke="#64748b"/><line x1="${plot.left + plot.width}" y1="${plot.top}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#64748b"/>` : ""}${this.axes.category.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${p.top + p.height - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.category.title)}</text>` : ""}${this.axes.value.title ? `<text x="${p.left + 8}" y="${plot.top + 10}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.value.title)}</text>` : ""}${this.axes.secondary?.category?.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${plot.top - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.secondary.category.title)}</text>` : ""}${this.axes.secondary?.value?.title ? `<text x="${plot.left + plot.width - 2}" y="${plot.top + 10}" text-anchor="end" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.secondary.value.title)}</text>` : ""}`;
     const legend = this.legend.visible ? this.series.map((series, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(resolveColorToken(series.color, series.color))}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(series.name)}</text>`).join("") : "";
     if (/^pie$/i.test(this.chartType)) {
       const series = this.series[0] || { values: [] };
@@ -8279,11 +8306,12 @@ export class ChartElement {
       return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${slices}${this.legend.visible ? categoryLegend : ""}`;
     }
     const lineBody = lineSeries.map((series, seriesIndex) => {
+        const seriesMax = series.axisGroup === "secondary" ? secondaryMax : primaryMax;
         const points = (series.values || []).map((value, index) => {
           const stackedValue = stackedLines ? lineSeries.slice(0, seriesIndex + 1).reduce((sum, item) => sum + Math.max(0, Number(item.values?.[index]) || 0), 0) : Number(value) || 0;
           const plottedValue = this.lineOptions.grouping === "percentStacked" ? stackedValue / (lineStackedMax[index] || 1) : stackedValue;
           const x = plot.left + (categories.length <= 1 ? plot.width / 2 : (index / Math.max(1, categories.length - 1)) * plot.width);
-          const y = plot.top + plot.height - (plottedValue / max) * plot.height;
+          const y = plot.top + plot.height - (plottedValue / seriesMax) * plot.height;
           return { x, y, index };
         });
         const color = resolveColorToken(series.line?.fill || series.color, series.color);
@@ -8298,7 +8326,7 @@ export class ChartElement {
           const label = presentationChartDataLabelText(effectiveLabels, categories[index], series.values?.[index]);
           return label ? `<text x="${point.x + 4}" y="${point.y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(label)}</text>` : "";
         }).join("");
-        return `${line}${presentationChartErrorBarsSvg(series, points, plot, max)}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}${labels}`;
+        return `${line}${presentationChartErrorBarsSvg(series, points, plot, seriesMax)}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}${labels}`;
       }).join("");
     const horizontal = barSeries.length > 0 && this.barOptions.direction === "bar";
     const barBody = (() => {
@@ -8307,9 +8335,10 @@ export class ChartElement {
       const barExtent = stackedBars ? groupExtent * gapRatio : groupExtent * gapRatio / Math.max(1, barSeries.length);
       const offsets = categories.map(() => 0);
       return barSeries.flatMap((series, seriesIndex) => (series.values || []).map((rawValue, categoryIndex) => {
+        const seriesMax = series.axisGroup === "secondary" ? secondaryMax : primaryMax;
         const total = barStackedMax[categoryIndex] || 1;
         const value = Math.max(0, Number(rawValue) || 0);
-        const ratio = this.barOptions.grouping === "percentStacked" ? value / total : value / max;
+        const ratio = this.barOptions.grouping === "percentStacked" ? value / total : value / seriesMax;
         const offset = offsets[categoryIndex];
         offsets[categoryIndex] += ratio;
         const point = series.points?.find((item) => item.idx === categoryIndex);
@@ -8321,18 +8350,18 @@ export class ChartElement {
           const x = plot.left + (stackedBars ? plot.width * offset : 0);
           const y = plot.top + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * barSeries.length) / 2 + seriesIndex * barExtent);
           const label = labelText ? `<text x="${x + width + 3}" y="${y + barExtent - 2}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
-          const errorBars = presentationChartErrorBarsSvg(series, [{ x: x + width, y: y + Math.max(1, barExtent - 2) / 2, index: categoryIndex }], plot, max);
+          const errorBars = presentationChartErrorBarsSvg(series, [{ x: x + width, y: y + Math.max(1, barExtent - 2) / 2, index: categoryIndex }], plot, seriesMax);
           return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"${stroke}/>${errorBars}${label}`;
         }
         const height = plot.height * ratio;
         const x = plot.left + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * barSeries.length) / 2 + seriesIndex * barExtent);
         const y = plot.top + plot.height - height - (stackedBars ? plot.height * offset : 0);
         const label = labelText ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
-        const errorBars = presentationChartErrorBarsSvg(series, [{ x: x + Math.max(1, barExtent - 2) / 2, y, index: categoryIndex }], plot, max);
+        const errorBars = presentationChartErrorBarsSvg(series, [{ x: x + Math.max(1, barExtent - 2) / 2, y, index: categoryIndex }], plot, seriesMax);
         return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"${stroke}/>${errorBars}${label}`;
       })).join("");
     })();
-    const trendlineBody = [...barSeries, ...lineSeries].map((series) => presentationLinearTrendlineSvg(series, plot, max, categories.length, horizontal)).join("");
+    const trendlineBody = [...barSeries, ...lineSeries].map((series) => presentationLinearTrendlineSvg(series, plot, series.axisGroup === "secondary" ? secondaryMax : primaryMax, categories.length, horizontal)).join("");
     const body = `${barBody}${lineBody}${trendlineBody}`;
     const labels = this.chartType === "bar" && horizontal
       ? categories.map((category, index) => `<text x="${plot.left - 4}" y="${plot.top + (index + 0.6) * (plot.height / Math.max(1, categories.length))}" text-anchor="end" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("")

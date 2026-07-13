@@ -85,8 +85,10 @@ try {
   assert.match(fixtureChartXml, /<c:lineChart><c:grouping val="standard"\/>/);
   assert.match(fixtureChartXml, /<c:gapWidth val="80"\/>/);
   assert.match(fixtureChartXml, /<c:overlap val="0"\/>/);
-  assert.equal((fixtureChartXml.match(/<c:catAx>/g) || []).length, 1);
-  assert.equal((fixtureChartXml.match(/<c:valAx>/g) || []).length, 1);
+  assert.equal((fixtureChartXml.match(/<c:catAx>/g) || []).length, 2);
+  assert.equal((fixtureChartXml.match(/<c:valAx>/g) || []).length, 2);
+  assert.match(fixtureChartXml, /<c:lineChart>[\s\S]*?<c:axId val="3"\/><c:axId val="4"\/><\/c:lineChart>/);
+  assert.match(fixtureChartXml, /<c:valAx><c:axId val="4"\/>[\s\S]*?<c:axPos val="r"\/>[\s\S]*?<a:t>Native records<\/a:t>/);
   assert.match(fixtureChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="8"\/><\/c:marker>/);
   assert.match(fixtureChartXml, /<c:dLblPos val="inEnd"\/>[\s\S]*?<c:showCatName val="1"\/>/);
   assert.match(fixtureChartXml, /<c:dLblPos val="r"\/>[\s\S]*?<c:showVal val="1"\/>/);
@@ -101,6 +103,8 @@ try {
   assert.equal(fixtureChart.styleId, 10);
   assert.equal(fixtureChart.chartType, "combo");
   assert.deepEqual(fixtureChart.series.map((series) => series.chartType), ["bar", "line"]);
+  assert.deepEqual(fixtureChart.series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
+  assert.equal(fixtureChart.axes.secondary.value.title, "Native records");
   assert.deepEqual(fixtureChart.barOptions, { direction: "column", grouping: "clustered", gapWidth: 80, overlap: 0 });
   assert.deepEqual(fixtureChart.lineOptions, { grouping: "standard", marker: { symbol: "diamond", size: 8 }, smooth: false });
   assert.deepEqual(fixtureChart.series.map((series) => series.dataLabels), [
