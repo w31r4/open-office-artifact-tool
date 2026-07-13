@@ -123,7 +123,7 @@
           "dataLabels": { "showValue": true },
           "series": [
             { "chartType": "bar", "name": "Modeled", "values": [8, 2, 3], "color": "#6DCBF4", "line": { "fill": "#0369A1", "width": 1.5, "style": "dash" }, "dataLabels": { "showValue": true, "showCategoryName": true, "position": "insideEnd" } },
-            { "chartType": "line", "name": "Modeled trend", "values": [7, 3, 4], "color": "#16A34A", "line": { "fill": "#16A34A", "width": 2, "style": "dash" }, "dataLabels": false },
+            { "chartType": "line", "name": "Modeled trend", "values": [7, 3, 4], "color": "#16A34A", "line": { "fill": "#16A34A", "width": 2, "style": "dash" }, "dataLabels": false, "trendline": { "type": "polynomial", "order": 2, "name": "Modeled curve", "line": { "fill": "#F97316", "width": 1.5, "style": "longDash" } } },
             { "chartType": "line", "axisGroup": "secondary", "name": "Native", "values": [2, 9, 6], "color": "#3D8DFF", "line": { "fill": "#3D8DFF", "width": 2, "style": "solid" }, "points": [{ "idx": 1, "fill": "#FACC15", "line": { "fill": "#DC2626", "width": 2, "style": "dot" } }], "dataLabels": { "showValue": true, "position": "right" }, "trendline": { "type": "linear", "name": "Native evidence trend", "line": { "fill": "#7C3AED", "width": 1.5, "style": "dashDot" } }, "errorBars": { "direction": "y", "type": "both", "valueType": "custom", "plusFormula": "Sheet1!$D$2:$D$4", "plusValues": [0.5, 0.8, 0.6], "plusFormatCode": "0.00", "minusFormula": "Sheet1!$E$2:$E$4", "minusValues": [0.25, 0.4, 0.3], "minusFormatCode": "0.00", "line": { "fill": "#DC2626", "width": 1, "style": "dot" } } }
           ]
         }

@@ -26,6 +26,7 @@ import { createPresentationGroupShapeClass, directPresentationChildren, parsePre
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
 import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
 import { normalizePresentationChartExternalData, parsePresentationChartExternalData, planPresentationChartExternalDataParts, presentationChartExternalDataContentTypesXml, presentationChartExternalDataRelationship, presentationChartUsesFormulaReferences, validatePresentationChartExternalDataWorkbooks } from "./presentation/ooxml-chart-data.mjs";
+import { presentationChartLineSvgAttributes, presentationChartTrendlinesSvg } from "./presentation/chart-trendline-svg.mjs";
 import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
@@ -1046,7 +1047,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, six standard native and model-previewed trendline types, error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets." },
@@ -1941,7 +1942,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line, while bar/line series may bind to primary or secondary axes." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, custom plusFormula/minusFormula references with optional cached plusValues/minusValues and format codes, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Linear, exponential, logarithmic, moving-average, polynomial, and power trendlines feed native OOXML plus bounded deterministic SVG curve previews; invalid logarithmic/exponential/power domains are omitted from model preview without changing native data. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, custom plusFormula/minusFormula references with optional cached plusValues/minusValues and format codes, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups." },
     externalData: { type: "object|FileBlob|ArrayBuffer|Uint8Array|string", description: "Embedded XLSX workbook bytes/data URL or an absolute external workbook URI plus autoUpdate. Required when custom error bars use plusFormula/minusFormula; import and second export preserve embedded workbook bytes and chart relationships." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     axes: { type: "object", description: "Primary category/value axis titles plus optional secondary.category/secondary.value titles when any bar or line series uses axisGroup secondary." },
@@ -8161,36 +8162,10 @@ function presentationChartMarkerSvg(marker, x, y, color) {
   return `<circle cx="${x}" cy="${y}" r="${marker.symbol === "dot" ? Math.max(1, radius / 2) : radius}" fill="${stroke}"/>`;
 }
 
-function presentationChartLineSvgAttributes(line) {
-  if (!line) return "";
-  const dash = { dot: "1 3", dash: "6 4", longDash: "10 4", dashDot: "6 3 1 3", longDashDot: "10 4 1 4", longDashDotDot: "10 3 1 3 1 3", systemDash: "4 3", systemDot: "1 2", systemDashDot: "4 2 1 2", systemDashDotDot: "4 2 1 2 1 2" }[line.style];
-  return ` stroke="${xmlEscape(resolveColorToken(line.fill, line.fill || "#0f172a"))}" stroke-width="${line.width}"${dash ? ` stroke-dasharray="${dash}"` : ""}`;
-}
-
 function presentationChartDataLabelText(dataLabels, category, value) {
   if (!dataLabels?.showValue && !dataLabels?.showCategoryName) return "";
   if (dataLabels.showValue && dataLabels.showCategoryName) return `${category}: ${value}`;
   return dataLabels.showCategoryName ? String(category ?? "") : String(value ?? "");
-}
-
-function presentationLinearTrendlineSvg(series, plot, max, categoryCount, horizontal = false) {
-  if (horizontal || categoryCount < 2) return "";
-  const values = (series.values || []).map((value) => Number(value)).filter(Number.isFinite);
-  if (values.length < 2) return "";
-  const count = values.length;
-  const meanX = (count - 1) / 2;
-  const meanY = values.reduce((sum, value) => sum + value, 0) / count;
-  const denominator = values.reduce((sum, _value, index) => sum + (index - meanX) ** 2, 0);
-  if (!denominator) return "";
-  const slope = values.reduce((sum, value, index) => sum + (index - meanX) * (value - meanY), 0) / denominator;
-  return (series.trendlines || []).filter((trendline) => trendline.type === "linear").map((trendline) => {
-    const intercept = trendline.intercept ?? meanY - slope * meanX;
-    const yFor = (index) => plot.top + plot.height - ((intercept + slope * index) / max) * plot.height;
-    const line = trendline.line || { fill: series.color || "#475569", width: 1.5, style: "dash" };
-    const startX = plot.left;
-    const endX = plot.left + plot.width;
-    return `<line x1="${startX}" y1="${yFor(0)}" x2="${endX}" y2="${yFor(count - 1)}" fill="none"${presentationChartLineSvgAttributes(line)}/>`;
-  }).join("");
 }
 
 function presentationChartErrorBarsSvg(series, points, plot, max) {
@@ -8370,7 +8345,7 @@ export class ChartElement {
         return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"${stroke}/>${errorBars}${label}`;
       })).join("");
     })();
-    const trendlineBody = [...barSeries, ...lineSeries].map((series) => presentationLinearTrendlineSvg(series, plot, series.axisGroup === "secondary" ? secondaryMax : primaryMax, categories.length, horizontal)).join("");
+    const trendlineBody = `${barSeries.map((series) => presentationChartTrendlinesSvg(series, plot, series.axisGroup === "secondary" ? secondaryMax : primaryMax, categories.length, { horizontal, centered: true })).join("")}${lineSeries.map((series) => presentationChartTrendlinesSvg(series, plot, series.axisGroup === "secondary" ? secondaryMax : primaryMax, categories.length)).join("")}`;
     const body = `${barBody}${lineBody}${trendlineBody}`;
     const labels = this.chartType === "bar" && horizontal
       ? categories.map((category, index) => `<text x="${plot.left - 4}" y="${plot.top + (index + 0.6) * (plot.height / Math.max(1, categories.length))}" text-anchor="end" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("")

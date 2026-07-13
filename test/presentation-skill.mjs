@@ -95,6 +95,7 @@ try {
   assert.match(fixtureChartXml, /<c:dLblPos val="inEnd"\/>[\s\S]*?<c:showCatName val="1"\/>/);
   assert.match(fixtureChartXml, /<c:dLblPos val="r"\/>[\s\S]*?<c:showVal val="1"\/>/);
   assert.match(fixtureChartXml, /<c:name>Native evidence trend<\/c:name>[\s\S]*?<c:trendlineType val="linear"\/>[\s\S]*?<c:dispRSqr val="0"\/>/);
+  assert.match(fixtureChartXml, /<c:name>Modeled curve<\/c:name>[\s\S]*?<c:trendlineType val="poly"\/><c:order val="2"\/>/);
   assert.match(fixtureChartXml, /<a:srgbClr val="7C3AED"\/>[\s\S]*?<a:prstDash val="dashDot"\/>/);
   assert.match(fixtureChartXml, /<c:errBars><c:errDir val="y"\/><c:errBarType val="both"\/><c:errValType val="cust"\/>[\s\S]*?<c:plus><c:numRef><c:f>Sheet1!\$D\$2:\$D\$4<\/c:f><c:numCache>[\s\S]*?<c:minus><c:numRef><c:f>Sheet1!\$E\$2:\$E\$4<\/c:f>[\s\S]*?<a:srgbClr val="DC2626"\/>/);
   assert.match(fixtureChartXml, /<c:externalData r:id="rId1"><c:autoUpdate val="0"\/><\/c:externalData>/);
@@ -126,6 +127,15 @@ try {
     displayRSquared: false,
     line: { fill: "#7C3AED", width: 1.5, style: "dashDot" },
   }]);
+  assert.deepEqual(fixtureChart.series[1].trendlines, [{
+    type: "poly",
+    name: "Modeled curve",
+    order: 2,
+    displayEquation: false,
+    displayRSquared: false,
+    line: { fill: "#F97316", width: 1.5, style: "longDash" },
+  }]);
+  assert.match(fixtureChart.toSvg(), /data-trendline-type="poly"[^>]*stroke="#F97316"[^>]*stroke-dasharray="10 4"/i);
   assert.deepEqual(fixtureChart.series[2].errorBars, { direction: "y", type: "both", valueType: "cust", plusValues: [0.5, 0.8, 0.6], plusFormula: "Sheet1!$D$2:$D$4", plusFormatCode: "0.00", minusValues: [0.25, 0.4, 0.3], minusFormula: "Sheet1!$E$2:$E$4", minusFormatCode: "0.00", noEndCap: false, line: { fill: "#DC2626", width: 1, style: "dot" } });
   assert.deepEqual(fixtureChart.series[0].line, { fill: "#0369A1", width: 1.5, style: "dash" });
   assert.deepEqual(fixtureChart.series[2].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);

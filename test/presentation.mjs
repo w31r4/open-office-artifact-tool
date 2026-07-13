@@ -381,6 +381,14 @@ const trendlineCatalog = Presentation.create().slides.add().charts.add("line", {
   }],
 });
 assert.deepEqual(trendlineCatalog.series[0].trendlines.map((trendline) => trendline.type), ["exp", "linear", "log", "movingAvg", "poly", "power"]);
+const trendlineCatalogSvg = trendlineCatalog.toSvg();
+assert.deepEqual([...trendlineCatalogSvg.matchAll(/data-trendline-type="([^"]+)"/g)].map((match) => match[1]), ["exp", "linear", "log", "movingAvg", "poly", "power"]);
+assert.doesNotMatch(trendlineCatalogSvg, /NaN|Infinity/);
+assert.match(trendlineCatalogSvg, /data-trendline-type="exp" points="42,162\.75 [^"]+ 330,42"/);
+assert.match(trendlineCatalogSvg, /data-trendline-type="movingAvg" points="138,154\.125 234,128\.25 330,76\.5"/);
+assert.match(trendlineCatalogSvg, /data-trendline-type="poly" points="42,162\.75 [^"]+ 330,42"/);
+assert.doesNotMatch(Presentation.create().slides.add().charts.add("line", { categories: ["A", "B", "C"], series: [{ values: [0, -1, 2], trendlines: [{ type: "exponential" }, { type: "power" }] }] }).toSvg(), /data-trendline-type/);
+assert.match(Presentation.create().slides.add().charts.add("bar", { categories: ["A", "B", "C"], barOptions: { direction: "bar" }, series: [{ values: [1, 2, 4], trendline: { type: "exponential" } }] }).toSvg(), /data-trendline-type="exp" points="114,65 [^"]+ 330,157"/);
 const errorBarCatalog = Presentation.create().slides.add().charts.add("line", {
   categories: ["A", "B", "C"],
   series: [
@@ -398,7 +406,7 @@ assert.match(comboChartSvg, />6<\/text>/);
 assert.match(comboChartSvg, />Q2: 14<\/text>/);
 assert.doesNotMatch(comboChartSvg, />16<\/text>/);
 assert.match(comboChartSvg, /stroke="#9333ea"[^>]*stroke-dasharray="1 3"/);
-assert.match(comboChartSvg, /<line [^>]*stroke="#111827"[^>]*stroke-width="1\.25"[^>]*stroke-dasharray="6 3 1 3"/i);
+assert.match(comboChartSvg, /<polyline data-trendline-type="linear" [^>]*stroke="#111827"[^>]*stroke-width="1\.25"[^>]*stroke-dasharray="6 3 1 3"/i);
 assert.match(comboChartSvg, /points="162,514 546,466 930,442"/);
 assert.match(comboChartSvg, />Margin %<\/text>/);
 assert.ok(comboChartSvg.indexOf('fill="#3d8dff"') < comboChartSvg.indexOf("<polyline"));
