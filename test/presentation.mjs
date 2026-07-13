@@ -1358,9 +1358,9 @@ const followOnlyShape = followOnlyDeck.slides.add().shapes.add({ text: { text: "
 assert.deepEqual(followOnlyShape.text.paragraphs[0], { runs: [{ text: "Follow marker", style: {} }], level: 0, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, style: {} });
 assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "relative/path" } }]]), /uri must be absolute/);
 assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "javascript:alert(1)" } }]]), /forbidden scheme/);
-assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", slideId: "slide/2" } }]]), /exactly one of uri, slideId, or action/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", slideId: "slide/2" } }]]), /exactly one of uri, slideId, action, or customShow/);
 assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", tooltip: "x".repeat(1025) } }]]), /tooltip exceeds 1024/);
-assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { targetPart: "ppt/slides/slide2.xml" } }]]), /exactly one of uri, slideId, or action/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { targetPart: "ppt/slides/slide2.xml" } }]]), /exactly one of uri, slideId, action, or customShow/);
 assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", history: "false" } }]]), /history must be a boolean/);
 assert.throws(() => Presentation.create({ master: { textParagraphStyles: { body: { 9: { bulletCharacter: "•" } } } } }), /level must be an integer from 0 through 8/);
 richTextShape.text.set([
@@ -1511,6 +1511,8 @@ const hyperlinkPresentation = Presentation.create({
         { run: "Master reference", link: { uri: "https://example.com/master", tooltip: "Master evidence" } },
         " or ",
         { run: "end the show", link: { action: "endShow", tooltip: "Exit presentation" } },
+        " or ",
+        { run: "open evidence path", link: { customShow: "Evidence Path" } },
       ] }],
     }],
   },
@@ -1525,6 +1527,7 @@ const hyperlinkPresentation = Presentation.create({
 const hyperlinkSlide = hyperlinkPresentation.slides.add({ layoutId: "layout/links" });
 const hyperlinkTargetSlide = hyperlinkPresentation.slides.add({ layoutId: "layout/links" });
 hyperlinkTargetSlide.shapes.add({ name: "Hyperlink target", text: "Destination slide" });
+const evidenceCustomShow = hyperlinkPresentation.customShows.add({ name: "Evidence Path", slides: [hyperlinkTargetSlide, hyperlinkSlide] });
 hyperlinkPresentation.layouts.getItem("layout/links").placeholders[0].text = [{ runs: [
   { run: "Jump from layout", link: { slideId: hyperlinkTargetSlide.id, tooltip: "Next slide" } },
   " or ",
@@ -1542,6 +1545,8 @@ const hyperlinkShape = hyperlinkSlide.shapes.add({
     { run: "restart", link: { action: "first" } },
     ", or ",
     { run: "finish", link: { jump: "lastSlide", history: true } },
+    ", or ",
+    { run: "tour the evidence", link: { customShow: evidenceCustomShow, returnToSlide: true, tooltip: "Return after the tour" } },
   ] }],
 });
 const hyperlinkGroup = hyperlinkSlide.groups.add({ name: "Hyperlink group", position: { left: 40, top: 280, width: 400, height: 100 }, childFrame: { left: 0, top: 0, width: 400, height: 100 } });
@@ -1556,13 +1561,21 @@ assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[0].link, { uri: "https:/
 assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[2].link, { slideId: hyperlinkTargetSlide.id });
 assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[4].link, { action: "firstSlide" });
 assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[6].link, { action: "lastSlide", history: true });
+assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[8].link, { customShow: "Evidence Path", returnToSlide: true, tooltip: "Return after the tour" });
 assert.match(hyperlinkShape.toSvg(), /data-hyperlink="https:\/\/example\.com\/guide\?x=1&amp;y=2"/);
 assert.match(hyperlinkShape.toSvg(), /text-decoration="underline" fill="#2563eb"/);
 assert.match(hyperlinkShape.toSvg(), new RegExp(`data-hyperlink="${hyperlinkTargetSlide.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
 assert.match(groupedHyperlinkShape.toSvg(), /data-hyperlink="https:\/\/example\.com\/guide/);
 assert.match(groupedHyperlinkShape.toSvg(), /data-hyperlink="action:nextSlide"/);
+assert.match(hyperlinkShape.toSvg(), /data-hyperlink="custom-show:Evidence Path"/);
+assert.equal(hyperlinkPresentation.customShows.count, 1);
+assert.equal(hyperlinkPresentation.customShows.getItem("Evidence Path"), evidenceCustomShow);
+assert.equal(hyperlinkPresentation.resolve(evidenceCustomShow.id), evidenceCustomShow);
+assert.match(hyperlinkPresentation.inspect({ kind: "customShow" }).ndjson, /"name":"Evidence Path"/);
+assert.throws(() => hyperlinkPresentation.customShows.add({ name: "evidence path", slides: [hyperlinkSlide] }), /already exists/);
+assert.throws(() => hyperlinkPresentation.customShows.add({ name: "Missing", slides: ["slide/missing"] }), /references missing slide/);
 assert.throws(() => hyperlinkSlide.shapes.add({ text: [{ runs: [{ run: "Bad", link: { action: "customShow" } }] }] }), /Unsupported Presentation run hyperlink action customShow/);
-assert.throws(() => hyperlinkSlide.shapes.add({ text: [{ runs: [{ run: "Ambiguous", link: { action: "next", uri: "https:\/\/example.com" } }] }] }), /exactly one of uri, slideId, or action/);
+assert.throws(() => hyperlinkSlide.shapes.add({ text: [{ runs: [{ run: "Ambiguous", link: { action: "next", uri: "https:\/\/example.com" } }] }] }), /exactly one of uri, slideId, action, or customShow/);
 const missingHyperlinkTargetDeck = Presentation.create();
 missingHyperlinkTargetDeck.slides.add().shapes.add({ text: [{ runs: [{ run: "Missing", link: { slideId: "slide/missing" } }] }] });
 await assert.rejects(() => PresentationFile.exportPptx(missingHyperlinkTargetDeck), /references missing slide slide\/missing/);
@@ -1570,6 +1583,7 @@ await assert.rejects(() => PresentationFile.exportPptx(missingHyperlinkTargetDec
 const hyperlinkPptx = await PresentationFile.exportPptx(hyperlinkPresentation);
 assert.equal((await PresentationFile.inspectPptx(hyperlinkPptx)).ok, true);
 const hyperlinkZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+const hyperlinkPresentationXml = await hyperlinkZip.file("ppt/presentation.xml").async("text");
 const hyperlinkSlideXml = await hyperlinkZip.file("ppt/slides/slide1.xml").async("text");
 const hyperlinkSlideRelsXml = await hyperlinkZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
 const hyperlinkMasterXml = await hyperlinkZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
@@ -1581,12 +1595,15 @@ assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="rId\d+" action="ppaction:\/
 assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=firstslide"\/>/);
 assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=lastslide" history="1"\/>/);
 assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=nextslide" highlightClick="0"\/>/);
+assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="" action="ppaction:\/\/customshow\?id=0&amp;return=true" tooltip="Return after the tour"\/>/);
+assert.match(hyperlinkPresentationXml, /<p:custShowLst><p:custShow name="Evidence Path" id="0"><p:sldLst><p:sld r:id="rId2"\/><p:sld r:id="rId1"\/><\/p:sldLst><\/p:custShow><\/p:custShowLst>/);
 assert.equal((hyperlinkSlideRelsXml.match(/relationships\/hyperlink/g) || []).length, 2);
 assert.equal((hyperlinkSlideRelsXml.match(/Target="https:\/\/example\.com\/guide\?x=1&amp;y=2"/g) || []).length, 1, "same external target should share one slide relationship");
 assert.match(hyperlinkSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/hyperlink" Target="https:\/\/example\.com\/guide\?x=1&amp;y=2" TargetMode="External"/);
 assert.match(hyperlinkSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/slide" Target="slide2\.xml"/);
 assert.match(hyperlinkMasterXml, /name="Master hyperlink"[\s\S]*?<a:hlinkClick r:id="rId3" tooltip="Master evidence"\/>/);
 assert.match(hyperlinkMasterXml, /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=endshow" tooltip="Exit presentation"\/>/);
+assert.match(hyperlinkMasterXml, /<a:hlinkClick r:id="" action="ppaction:\/\/customshow\?id=0"\/>/);
 assert.match(hyperlinkMasterRelsXml, /Id="rId3" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/hyperlink" Target="https:\/\/example\.com\/master" TargetMode="External"/);
 assert.match(hyperlinkLayoutXml, /name="Layout hyperlink"[\s\S]*?<a:hlinkClick r:id="rId2" action="ppaction:\/\/hlinksldjump" tooltip="Next slide"\/>/);
 assert.match(hyperlinkLayoutXml, /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=previousslide" tooltip="Previous slide"\/>/);
@@ -1599,17 +1616,25 @@ assert.deepEqual(hyperlinkLoadedShape.text.paragraphs[0].runs[0].link, { uri: "h
 assert.equal(hyperlinkLoadedShape.text.paragraphs[0].runs[2].link.slideId, hyperlinkLoaded.slides.items[1].id);
 assert.deepEqual(hyperlinkLoadedShape.text.paragraphs[0].runs[4].link, { action: "firstSlide" });
 assert.deepEqual(hyperlinkLoadedShape.text.paragraphs[0].runs[6].link, { action: "lastSlide", history: true });
+assert.deepEqual(hyperlinkLoadedShape.text.paragraphs[0].runs[8].link, { customShow: "Evidence Path", returnToSlide: true, tooltip: "Return after the tour" });
 assert.equal(hyperlinkLoadedGroupShape.text.paragraphs[0].runs[0].link.uri, "https://example.com/guide?x=1&y=2");
 assert.deepEqual(hyperlinkLoadedGroupShape.text.paragraphs[0].runs[2].link, { action: "nextSlide", highlightClick: false });
 assert.equal(hyperlinkLoaded.master.placeholders[0].text[0].runs[0].link.uri, "https://example.com/master");
 assert.deepEqual(hyperlinkLoaded.master.placeholders[0].text[0].runs[2].link, { action: "endShow", tooltip: "Exit presentation" });
+assert.deepEqual(hyperlinkLoaded.master.placeholders[0].text[0].runs[4].link, { customShow: "Evidence Path" });
 assert.equal(hyperlinkLoaded.layouts.getItem("Hyperlink Layout").placeholders[0].text[0].runs[0].link.slideId, hyperlinkLoaded.slides.items[1].id);
 assert.deepEqual(hyperlinkLoaded.layouts.getItem("Hyperlink Layout").placeholders[0].text[0].runs[2].link, { action: "previousSlide", tooltip: "Previous slide" });
+assert.equal(hyperlinkLoaded.customShows.count, 1);
+assert.equal(hyperlinkLoaded.customShows.items[0].nativeId, 0);
+assert.equal(hyperlinkLoaded.customShows.items[0].name, "Evidence Path");
+assert.deepEqual(hyperlinkLoaded.customShows.items[0].slideIds, [hyperlinkLoaded.slides.items[1].id, hyperlinkLoaded.slides.items[0].id]);
 const hyperlinkSecondPptx = await PresentationFile.exportPptx(hyperlinkLoaded);
 assert.equal((await PresentationFile.inspectPptx(hyperlinkSecondPptx)).ok, true);
 const hyperlinkSecondZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkSecondPptx.arrayBuffer()));
 assert.match(await hyperlinkSecondZip.file("ppt/slides/slide1.xml").async("text"), /<a:hlinkClick r:id="rId\d+" action="ppaction:\/\/hlinksldjump"\/>/);
 assert.match(await hyperlinkSecondZip.file("ppt/slides/slide1.xml").async("text"), /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=nextslide" highlightClick="0"\/>/);
+assert.match(await hyperlinkSecondZip.file("ppt/slides/slide1.xml").async("text"), /ppaction:\/\/customshow\?id=0&amp;return=true/);
+assert.match(await hyperlinkSecondZip.file("ppt/presentation.xml").async("text"), /<p:custShow name="Evidence Path" id="0">/);
 assert.match(await hyperlinkSecondZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /Target="\.\.\/slides\/slide2\.xml"/);
 
 const missingHyperlinkRelationshipZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
@@ -1629,6 +1654,7 @@ missingHyperlinkSlideZip.file("ppt/slides/_rels/slide1.xml.rels", hyperlinkSlide
 const missingHyperlinkSlidePptx = new FileBlob(await missingHyperlinkSlideZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type });
 await assert.rejects(() => PresentationFile.importPptx(missingHyperlinkSlidePptx), /targets missing slide part ppt\/slides\/slide99\.xml/);
 const alternatePrefixHyperlinkZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+alternatePrefixHyperlinkZip.file("ppt/presentation.xml", hyperlinkPresentationXml.replaceAll("<p:", "<deck:").replaceAll("</p:", "</deck:").replace("xmlns:p=", "xmlns:deck=").replaceAll("r:", "rel:").replace("xmlns:r=", "xmlns:rel="));
 for (const file of ["ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml", "ppt/slides/slide1.xml"]) {
   const xml = await alternatePrefixHyperlinkZip.file(file).async("text");
   alternatePrefixHyperlinkZip.file(file, xml.replaceAll("<a:", "<draw:").replaceAll("</a:", "</draw:").replace("xmlns:a=", "xmlns:draw=").replaceAll("r:", "rel:").replace("xmlns:r=", "xmlns:rel="));
@@ -1641,6 +1667,25 @@ const alternatePrefixHyperlinkLoaded = await PresentationFile.importPptx(new Fil
 assert.equal(alternatePrefixHyperlinkLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Structured hyperlinks").text.paragraphs[0].runs[0].link.uri, "https://example.com/guide?x=1&y=2");
 assert.equal(alternatePrefixHyperlinkLoaded.layouts.getItem("Hyperlink Layout").placeholders[0].text[0].runs[0].link.slideId, alternatePrefixHyperlinkLoaded.slides.items[1].id);
 assert.equal(alternatePrefixHyperlinkLoaded.slides.items[0].groups.items[0].shapes.items[0].text.paragraphs[0].runs[2].link.action, "nextSlide");
+assert.equal(alternatePrefixHyperlinkLoaded.customShows.items[0].name, "Evidence Path");
+assert.equal(alternatePrefixHyperlinkLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Structured hyperlinks").text.paragraphs[0].runs[8].link.customShow, "Evidence Path");
+
+const missingCustomShowRelationshipZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+missingCustomShowRelationshipZip.file("ppt/presentation.xml", hyperlinkPresentationXml.replace('<p:sld r:id="rId2"/>', '<p:sld r:id="rIdMissing"/>'));
+await assert.rejects(
+  async () => PresentationFile.importPptx(new FileBlob(await missingCustomShowRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type })),
+  /custom show Evidence Path references missing relationship rIdMissing/,
+);
+const missingCustomShowDefinitionZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+missingCustomShowDefinitionZip.file("ppt/presentation.xml", hyperlinkPresentationXml.replace(/<p:custShowLst>[\s\S]*<\/p:custShowLst>/, ""));
+await assert.rejects(
+  async () => PresentationFile.importPptx(new FileBlob(await missingCustomShowDefinitionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type })),
+  /references missing custom show ID 0/,
+);
+
+const danglingCustomShowDeck = Presentation.create();
+danglingCustomShowDeck.slides.add().shapes.add({ text: [{ runs: [{ run: "Missing show", link: { customShow: "Not defined" } }] }] });
+await assert.rejects(() => PresentationFile.exportPptx(danglingCustomShowDeck), /references missing custom show Not defined/);
 
 const unknownHyperlinkActionZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
 unknownHyperlinkActionZip.file("ppt/slides/slide1.xml", hyperlinkSlideXml.replace("ppaction://hlinkshowjump?jump=firstslide", "ppaction://customshow?id=demo"));

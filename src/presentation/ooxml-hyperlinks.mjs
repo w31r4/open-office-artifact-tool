@@ -62,15 +62,18 @@ export function normalizePresentationRunLink(value, options = {}) {
   const uriValue = input.uri ?? input.url ?? input.href;
   const slideIdValue = input.slideId ?? input.targetSlideId ?? input.targetId;
   const actionValue = input.action ?? input.jump;
+  const customShowValue = input.customShow ?? input.show;
   const targetPartValue = options.allowTargetPart ? input.targetPart : undefined;
-  const targets = [uriValue, slideIdValue, actionValue, targetPartValue].filter((item) => item != null && String(item).trim());
-  if (targets.length !== 1) throw new Error("Presentation run hyperlink requires exactly one of uri, slideId, or action.");
+  const targets = [uriValue, slideIdValue, actionValue, customShowValue, targetPartValue].filter((item) => item != null && String(item?.name ?? item).trim());
+  if (targets.length !== 1) throw new Error("Presentation run hyperlink requires exactly one of uri, slideId, action, or customShow.");
   const tooltip = input.tooltip == null ? undefined : String(input.tooltip);
   if (tooltip != null && tooltip.length > 1024) throw new RangeError("Presentation run hyperlink tooltip exceeds 1024 characters.");
   const targetFrame = input.targetFrame ?? input.tgtFrame;
   if (targetFrame != null && (!String(targetFrame).trim() || String(targetFrame).length > 255)) throw new RangeError("Presentation run hyperlink targetFrame must contain 1 through 255 characters.");
   const history = optionalBoolean(input.history, "history");
   const highlightClick = optionalBoolean(input.highlightClick, "highlightClick");
+  const returnToSlide = optionalBoolean(input.returnToSlide ?? input.return, "returnToSlide");
+  if (returnToSlide != null && customShowValue == null) throw new Error("Presentation run hyperlink returnToSlide requires customShow.");
   const common = {
     ...(tooltip == null ? {} : { tooltip }),
     ...(targetFrame == null ? {} : { targetFrame: String(targetFrame) }),
@@ -84,6 +87,11 @@ export function normalizePresentationRunLink(value, options = {}) {
     return { slideId, ...common };
   }
   if (actionValue != null) return { action: normalizePresentationRunAction(actionValue), ...common };
+  if (customShowValue != null) {
+    const customShow = String(customShowValue?.name ?? customShowValue).trim();
+    if (!customShow || customShow.length > 255) throw new RangeError("Presentation run hyperlink customShow must contain 1 through 255 characters.");
+    return { customShow, ...(returnToSlide ? { returnToSlide: true } : {}), ...common };
+  }
   const targetPart = String(targetPartValue || "").trim();
   if (!targetPart || targetPart.length > 1024) throw new RangeError("Imported Presentation run hyperlink target part is invalid.");
   return { targetPart, ...common };
@@ -92,6 +100,7 @@ export function normalizePresentationRunLink(value, options = {}) {
 export function presentationRunHyperlinkKey(link, slidePartById = new Map()) {
   if (!link) return undefined;
   if (link.action) return undefined;
+  if (link.customShow) return `customShow:${link.customShow}:${link.returnToSlide ? "return" : "finish"}`;
   if (link.uri) return `external:${link.uri}`;
   const targetPart = link.targetPart || slidePartById.get(link.slideId);
   return targetPart ? `slide:${targetPart}` : undefined;
@@ -108,10 +117,17 @@ export function planPresentationRunHyperlinks(options = {}) {
     let nextRelationshipIndex = Number(owner.startRelationshipIndex || 1);
     if (!Number.isInteger(nextRelationshipIndex) || nextRelationshipIndex < 1) throw new RangeError("Presentation hyperlink relationship index must be a positive integer.");
     const relationshipIds = new Map();
+    const customShowIds = new Map();
     const relationships = [];
     for (const link of owner.references || []) {
       if (link.action) continue;
       const key = presentationRunHyperlinkKey(link, slidePartById);
+      if (link.customShow) {
+        const customShowId = options.customShowIdByName?.get(link.customShow);
+        if (customShowId == null) throw new Error(`Presentation run hyperlink references missing custom show ${link.customShow}.`);
+        customShowIds.set(key, customShowId);
+        continue;
+      }
       if (!key) throw new Error(`Presentation run hyperlink references missing slide ${link.slideId || "(unknown)"}.`);
       if (relationshipIds.has(key)) continue;
       const id = `rId${nextRelationshipIndex++}`;
@@ -124,7 +140,7 @@ export function planPresentationRunHyperlinks(options = {}) {
         relationships.push({ id, type: PRESENTATION_SLIDE_RELATIONSHIP_TYPE, target });
       }
     }
-    byOwner.set(owner.key, { relationshipIds, relationships, nextRelationshipIndex, slidePartById });
+    byOwner.set(owner.key, { relationshipIds, customShowIds, relationships, nextRelationshipIndex, slidePartById });
   }
   return { byOwner, slidePartById };
 }
@@ -135,6 +151,21 @@ export function parsePresentationRunLinkXml(runXml = "", context = {}) {
   const linkAttributes = attributes(opening);
   const relationshipId = relationshipAttribute(linkAttributes, "id");
   const actionUri = linkAttributes.action == null ? undefined : decodeXml(linkAttributes.action);
+  const customShowMatch = /^ppaction:\/\/customshow\?id=(\d+)(?:&return=(true|false))?$/i.exec(actionUri || "");
+  if (customShowMatch) {
+    if (relationshipId) throw new Error(`Presentation custom-show hyperlink must not reference relationship ${relationshipId}.`);
+    const nativeId = Number(customShowMatch[1]);
+    const customShow = context.customShowNameById?.get(nativeId);
+    if (!customShow) throw new Error(`Presentation run hyperlink references missing custom show ID ${nativeId}.`);
+    return normalizePresentationRunLink({
+      customShow,
+      ...(customShowMatch[2]?.toLowerCase() === "true" ? { returnToSlide: true } : {}),
+      ...(linkAttributes.tooltip == null ? {} : { tooltip: decodeXml(linkAttributes.tooltip) }),
+      ...(linkAttributes.tgtFrame == null ? {} : { targetFrame: decodeXml(linkAttributes.tgtFrame) }),
+      ...(linkAttributes.history == null ? {} : { history: ["1", "true", "on"].includes(String(linkAttributes.history).toLowerCase()) }),
+      ...(linkAttributes.highlightClick == null ? {} : { highlightClick: ["1", "true", "on"].includes(String(linkAttributes.highlightClick).toLowerCase()) }),
+    });
+  }
   const action = PRESENTATION_RUN_ACTIONS_BY_URI.get(actionUri);
   if (action) {
     if (relationshipId) throw new Error(`Presentation run action ${action} must not reference relationship ${relationshipId}.`);
@@ -174,8 +205,14 @@ export function parsePresentationRunLinkXml(runXml = "", context = {}) {
   }, { allowTargetPart: true });
 }
 
-export function presentationRunHyperlinkXml(link, relationshipId) {
+export function presentationRunHyperlinkXml(link, relationshipId, customShowId) {
   if (!link) return "";
+  if (link.customShow) {
+    if (!Number.isInteger(customShowId) || customShowId < 0) throw new Error(`Presentation run hyperlink references missing custom show ${link.customShow}.`);
+    const actionUri = `ppaction://customshow?id=${customShowId}${link.returnToSlide ? "&return=true" : ""}`;
+    const attributesXml = `${link.tooltip == null ? "" : ` tooltip="${attrEscape(link.tooltip)}"`}${link.targetFrame == null ? "" : ` tgtFrame="${attrEscape(link.targetFrame)}"`}${link.history == null ? "" : ` history="${link.history ? 1 : 0}"`}${link.highlightClick == null ? "" : ` highlightClick="${link.highlightClick ? 1 : 0}"`}`;
+    return `<a:hlinkClick r:id="" action="${attrEscape(actionUri)}"${attributesXml}/>`;
+  }
   if (link.action) {
     const actionUri = PRESENTATION_RUN_ACTION_URIS.get(link.action);
     if (!actionUri) throw new RangeError(`Unsupported Presentation run hyperlink action ${link.action}.`);

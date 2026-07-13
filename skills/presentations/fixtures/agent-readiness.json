@@ -49,6 +49,9 @@
     { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [{ "type": "body", "idx": 2, "name": "Inherited Package Evidence", "position": { "left": 42, "top": 604, "width": 760, "height": 70 }, "text": [{ "level": 2, "runs": ["Master-owned picture bullet survives template inheritance"] }] }] },
     { "id": "layout/verification-grid", "name": "Verification Grid", "type": "blank", "masterId": "master/verification", "placeholders": [] }
   ],
+  "customShows": [
+    { "name": "QA Evidence", "slideIndexes": [2, 3] }
+  ],
   "slides": [
     {
       "name": "Opening",
@@ -57,7 +60,8 @@
       "shapes": [
         { "name": "cover-kicker", "position": { "left": 42, "top": 42, "width": 600, "height": 52 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "OPEN OFFICE ARTIFACT TOOL", "textStyle": { "fontSize": 24, "bold": true, "color": "#3D8DFF" } },
         { "name": "cover-title", "position": { "left": 42, "top": 184, "width": 1196, "height": 220 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "PPTX workflows now close the QA loop", "textStyle": { "fontSize": 54, "bold": true, "color": "#000000" } },
-        { "name": "cover-subtitle", "position": { "left": 42, "top": 500, "width": 1000, "height": 92 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Create, inspect, roundtrip, render, and verify through public clean-room APIs.", "textStyle": { "fontSize": 26, "color": "#000000" } }
+        { "name": "cover-subtitle", "position": { "left": 42, "top": 500, "width": 1000, "height": 92 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Create, inspect, roundtrip, render, and verify through public clean-room APIs.", "textStyle": { "fontSize": 26, "color": "#000000" } },
+        { "name": "cover-custom-show", "position": { "left": 42, "top": 628, "width": 280, "height": 44 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": [{ "runs": [{ "run": "Run the QA evidence →", "link": { "customShow": "QA Evidence", "returnToSlide": true, "tooltip": "Return to the cover" } }] }], "textStyle": { "fontSize": 18, "bold": true, "color": "#334155" } }
       ],
       "images": [
         { "name": "verified-mark", "alt": "Verified clean-room workflow", "position": { "left": 1130, "top": 42, "width": 72, "height": 72 }, "fit": "contain", "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKkoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC" }
@@ -137,6 +141,7 @@
     }
   ],
   "expectInspect": [
+    { "kind": "customShow", "pattern": "QA Evidence" },
     { "kind": "slideMaster", "pattern": "Verification Master" },
     { "kind": "slide,textbox", "pattern": "PPTX workflows now close the QA loop" },
     { "kind": "table", "pattern": "evidence-table" },

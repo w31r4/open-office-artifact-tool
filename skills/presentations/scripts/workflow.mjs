@@ -100,6 +100,12 @@ export async function createPresentationFromFixture(fixture = {}) {
   if (fixture.theme?.colorMap) presentation.theme.setColorMap(fixture.theme.colorMap);
   for (const layout of fixture.layouts || []) presentation.layouts.add(layout);
   for (const slide of fixture.slides || []) await addFixtureSlide(presentation, slide);
+  for (const customShow of fixture.customShows || []) {
+    const indexes = customShow.slideIndexes || [];
+    const slides = indexes.map((index) => presentation.slides.getItem(Number(index) - 1));
+    assert.ok(slides.length > 0 && slides.every(Boolean), `Invalid presentation fixture custom show slideIndexes for ${customShow.name}`);
+    presentation.customShows.add({ name: customShow.name, nativeId: customShow.nativeId, slides });
+  }
   const inspectKind = fixture.qa?.inspectKind || "deck,theme,slideMaster,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange";
   for (const expected of fixture.expectInspect || []) {
     assert.match(presentation.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));

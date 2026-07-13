@@ -57,6 +57,7 @@ try {
   const fixtureMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
   const fixtureSecondMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster2.xml").async("text");
   const fixtureMasterRelsXml = await fixtureZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
+  const fixtureFirstSlideXml = await fixtureZip.file("ppt/slides/slide1.xml").async("text");
   const fixtureSecondSlideXml = await fixtureZip.file("ppt/slides/slide2.xml").async("text");
   const fixtureSecondSlideRelsXml = await fixtureZip.file("ppt/slides/_rels/slide2.xml.rels").async("text");
   const fixtureThirdSlideXml = await fixtureZip.file("ppt/slides/slide3.xml").async("text");
@@ -78,6 +79,8 @@ try {
   assert.match(fixtureSecondSlideXml, /<a:hlinkClick r:id="" action="ppaction:\/\/hlinkshowjump\?jump=nextslide" tooltip="Continue to visual QA"\/>/);
   assert.equal((fixtureSecondSlideRelsXml.match(/relationships\/hyperlink/g) || []).length, 1, "action-only navigation must not allocate a relationship");
   assert.match(fixtureSecondSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/hyperlink" Target="https:\/\/learn\.microsoft\.com\/en-us\/office\/open-xml\/open-xml-sdk" TargetMode="External"/);
+  assert.match(fixturePresentationXml, /<p:custShow name="QA Evidence" id="0"><p:sldLst><p:sld r:id="rId2"\/><p:sld r:id="rId3"\/>/);
+  assert.match(fixtureFirstSlideXml, /<a:hlinkClick r:id="" action="ppaction:\/\/customshow\?id=0&amp;return=true" tooltip="Return to the cover"\/>/);
   assert.match(fixtureThirdSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="125000"\/><a:buFont typeface="Georgia"\/><a:buChar char="◆"\/>/);
   assert.match(fixtureMasterXml, /<p:cSld name="Agent Readiness Master"><p:bg><p:bgRef idx="1001">/);
   assert.match(fixtureMasterXml, /<p:ph type="title" idx="1"\/>/);
@@ -155,6 +158,11 @@ try {
   const fixtureActionShape = first.qa.presentation.slides.items[1].shapes.items.find((shape) => shape.name === "structure-footer");
   assert.deepEqual(fixtureActionShape.text.paragraphs[0].runs[0].link, { action: "nextSlide", tooltip: "Continue to visual QA" });
   assert.match(fixtureActionShape.toSvg(), /data-hyperlink="action:nextSlide"/);
+  const fixtureCustomShow = first.qa.presentation.customShows.getItem("QA Evidence");
+  assert.deepEqual(fixtureCustomShow.slideIds, [first.qa.presentation.slides.items[1].id, first.qa.presentation.slides.items[2].id]);
+  const fixtureCustomShowShape = first.qa.presentation.slides.items[0].shapes.items.find((shape) => shape.name === "cover-custom-show");
+  assert.deepEqual(fixtureCustomShowShape.text.paragraphs[0].runs[0].link, { customShow: "QA Evidence", returnToSlide: true, tooltip: "Return to the cover" });
+  assert.match(fixtureCustomShowShape.toSvg(), /data-hyperlink="custom-show:QA Evidence"/);
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);

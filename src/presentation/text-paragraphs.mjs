@@ -422,7 +422,8 @@ export function presentationParagraphsXml(paragraphs = [], defaultStyle = {}, op
       const style = { ...defaultStyle, ...(paragraph.style || {}), ...(run.style || {}) };
       const preserve = /^\s|\s$/.test(run.text) ? ' xml:space="preserve"' : "";
       const relationshipId = run.link ? options.hyperlinkRelationshipId?.(run.link) : undefined;
-      const hyperlinkXml = presentationRunHyperlinkXml(run.link, relationshipId);
+      const customShowId = run.link?.customShow ? options.hyperlinkCustomShowId?.(run.link) : undefined;
+      const hyperlinkXml = presentationRunHyperlinkXml(run.link, relationshipId, customShowId);
       return `<a:r>${runPropertiesXml(style, "a:rPr", hyperlinkXml)}<a:t${preserve}>${xmlEscape(run.text)}</a:t></a:r>`;
     }).join("");
     const endStyle = { ...defaultStyle, ...(paragraph.style || {}) };
@@ -502,7 +503,7 @@ export function presentationParagraphsSvg(paragraphs, frame, defaultStyle = {}, 
     const runsXml = paragraph.runs.map((run) => {
       const style = { ...paragraphStyle, ...(run.style || {}) };
       const width = run.text.length * (style.fontSize || fontSize) * 0.55;
-      const hyperlink = run.link?.uri || run.link?.slideId || (run.link?.action ? `action:${run.link.action}` : undefined);
+      const hyperlink = run.link?.uri || run.link?.slideId || (run.link?.action ? `action:${run.link.action}` : run.link?.customShow ? `custom-show:${run.link.customShow}` : undefined);
       const result = `<text x="${x}" y="${y + fontSize}" font-family="${attrEscape(style.fontFamily || "Arial")}" font-size="${style.fontSize || fontSize}" font-weight="${style.bold ? 700 : 400}" font-style="${style.italic ? "italic" : "normal"}"${style.underline || run.link ? ' text-decoration="underline"' : ""} fill="${attrEscape(style.color || (run.link ? "#2563eb" : paragraphStyle.color || "#0f172a"))}"${hyperlink ? ` data-hyperlink="${attrEscape(hyperlink)}"` : ""}>${escape(run.text)}</text>`;
       x += width;
       return result;

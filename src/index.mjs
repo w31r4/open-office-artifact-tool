@@ -28,6 +28,7 @@ import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabe
 import { normalizePresentationChartExternalData, parsePresentationChartExternalData, planPresentationChartExternalDataParts, presentationChartExternalDataContentTypesXml, presentationChartExternalDataRelationship, presentationChartUsesFormulaReferences, validatePresentationChartExternalDataWorkbooks } from "./presentation/ooxml-chart-data.mjs";
 import { presentationChartLineSvgAttributes, presentationChartTrendlinesSvg } from "./presentation/chart-trendline-svg.mjs";
 import { planPresentationRunHyperlinks, presentationRunHyperlinkKey, presentationRunHyperlinkReferencesFromParagraphs, resolvePresentationRunHyperlinkTargets } from "./presentation/ooxml-hyperlinks.mjs";
+import { parsePresentationCustomShowsXml, planPresentationCustomShows, PresentationCustomShowCollection, presentationCustomShowsXml } from "./presentation/ooxml-custom-shows.mjs";
 import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
@@ -1034,16 +1035,18 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.FLOOR", category: "math-trig", summary: "Round a number down to the nearest significance.", examples: ["=FLOOR(A1,5)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
-  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization." },
+  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization." },
   { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable slide with optional name, layout identity, and speaker notes." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.customShows.add", summary: "Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.customShows.getItem", summary: "Resolve a custom slide show by zero-based index, stable facade ID, or exact name." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects, including custom shows." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, or relationship-free slide-show action hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
+  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, relative action, or custom-show hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -1063,7 +1066,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1904,8 +1907,16 @@ const PRESENTATION_HELP_SCHEMAS = {
     line: { type: "object", description: "Line color, width, dash, and arrow metadata." },
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
   }, "shape", "Shape", "Appended editable shape/textbox."),
+  "presentation.customShows.add": helpSchema({
+    name: { type: "string", required: true, description: "Unique custom-show name, compared case-insensitively." },
+    slides: { type: "PresentationSlide[]|string[]", required: true, description: "Ordered non-empty list of slide facades or stable slide IDs from this presentation." },
+    nativeId: { type: "number", description: "Optional preserved unsigned 32-bit p:custShow ID; new IDs are allocated collision-free." },
+  }, "customShow", "PresentationCustomShow", "Appended custom-show facade with stable ID, name, nativeId, and ordered slideIds."),
+  "presentation.customShows.getItem": helpSchema({
+    idOrNameOrIndex: { type: "string|number", required: true, description: "Stable custom-show ID, exact name, or zero-based collection index." },
+  }, "customShow", "PresentationCustomShow|undefined", "Matching custom-show facade or undefined."),
   "shape.text.set": helpSchema({
-    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, or relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow) plus optional tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI." },
+    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI." },
   }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
@@ -7344,6 +7355,7 @@ export class Presentation {
     this.layouts = new SlideLayoutCollection(this);
     for (const layout of options.layouts || []) this.layouts.add(layout);
     this.slides = new SlideCollection(this);
+    this.customShows = new PresentationCustomShowCollection(this);
   }
 
   static create(options = {}) { return new Presentation(options); }
@@ -7359,10 +7371,11 @@ export class Presentation {
   inspect(options = {}) {
     const kinds = normalizeKinds(options.kind, ["deck", "slide", "textbox", "shape", "nativeObject", "layout"]);
     const records = [];
-    if (kinds.has("deck")) records.push({ kind: "deck", id: this.id, slides: this.slides.count });
+    if (kinds.has("deck")) records.push({ kind: "deck", id: this.id, slides: this.slides.count, customShows: this.customShows.count });
     if (kinds.has("theme")) records.push(this.theme.inspectRecord());
     if (kinds.has("slideMaster") || kinds.has("master")) records.push(...this.masters.items.map((master) => master.inspectRecord()));
     if (kinds.has("layout") || kinds.has("layoutTemplate")) records.push(...this.layouts.inspectRecords());
+    if (kinds.has("customShow")) records.push(...this.customShows.items.map((show) => show.inspectRecord()));
     for (const slide of this.slides) records.push(...slide.inspectRecords(kinds));
     return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
@@ -7375,6 +7388,8 @@ export class Presentation {
   verify(options = {}) {
     const issues = [];
     if (this.slides.items.length === 0) issues.push(verificationIssue("presentation", "noSlides", "Presentation has no slides."));
+    try { planPresentationCustomShows(this); }
+    catch (error) { issues.push(verificationIssue("presentation", "invalidCustomShow", error.message)); }
     if (this.commentFormat === "modern" || this.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"))) {
       try { planPresentationModernComments(this.slides.items); }
       catch (error) { issues.push(verificationIssue("presentation", "invalidModernCommentMetadata", error.message)); }
@@ -7437,6 +7452,8 @@ export class Presentation {
     if (master) return master;
     const layout = this.layouts.getItem(id);
     if (layout) return layout;
+    const customShow = this.customShows.getItem(id);
+    if (customShow) return customShow;
     for (const slide of this.slides) {
       if (slide.id === id) return slide;
       const found = slide.resolve(id);
@@ -8017,7 +8034,7 @@ export class Shape {
   }
 
   toPptxShape(index, relationshipContext = {}) {
-    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, pictureBulletRelIds: relationshipContext.pictureBulletRelIds, hyperlinkRelIds: relationshipContext.hyperlinkRelIds, hyperlinkSlideParts: relationshipContext.hyperlinkSlideParts, nativeId: this.nativeId, creationId: this.creationId });
+    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, pictureBulletRelIds: relationshipContext.pictureBulletRelIds, hyperlinkRelIds: relationshipContext.hyperlinkRelIds, hyperlinkCustomShowIds: relationshipContext.hyperlinkCustomShowIds, hyperlinkSlideParts: relationshipContext.hyperlinkSlideParts, nativeId: this.nativeId, creationId: this.creationId });
   }
 }
 
@@ -8441,26 +8458,27 @@ export class PresentationFile {
       startRelationshipIndex: (_slide, slideIndex) => pictureBulletPlan.byOwner.get(`slide:${slideIndex}`).nextRelationshipIndex,
       slidePath: (_slide, slideIndex) => `ppt/slides/slide${slideIndex + 1}.xml`,
     });
-    const hyperlinkPlan = planPresentationHyperlinkParts(presentation, { masterParts, layoutParts }, pictureBulletPlan, nativeObjectPlan);
+    const customShowPlan = planPresentationCustomShows(presentation);
+    const hyperlinkPlan = planPresentationHyperlinkParts(presentation, { masterParts, layoutParts }, pictureBulletPlan, nativeObjectPlan, customShowPlan);
     const useModernComments = presentation.commentFormat === "modern" || presentation.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"));
     const commentAuthors = useModernComments ? { entries: [], byName: new Map() } : collectPptxCommentAuthors(presentation);
     const modernComments = useModernComments ? planPresentationModernComments(presentation.slides.items) : { authors: [], parts: [] };
     zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, allImageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts, modernComments, nativeObjectPlan.contentTypeOverrides, chartExternalDataParts));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "ppt/presentation.xml" }]));
-    zip.file("ppt/presentation.xml", presentationXml(presentation, masterParts));
+    zip.file("ppt/presentation.xml", presentationXml(presentation, masterParts, customShowPlan));
     zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, masterParts, commentAuthors.entries.length > 0, modernComments.authors.length > 0));
     for (const themePart of themeParts) zip.file(`ppt/theme/theme${themePart.themePartId}.xml`, presentationThemeXml(themePart.theme));
     for (const masterPart of masterParts) {
       const masterPictureBulletPlan = pictureBulletPlan.byOwner.get(`master:${masterPart.masterPartId}`);
       const masterHyperlinkPlan = hyperlinkPlan.byOwner.get(`master:${masterPart.masterPartId}`);
       const masterPictureBulletRelIds = masterPictureBulletPlan.relationshipIds;
-      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
+      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkCustomShowIds: masterHyperlinkPlan.customShowIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
       zip.file(`ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`, presentationSlideMasterXml(masterPart.layoutParts, masterPart.master.effectiveTheme(), { name: masterPart.master.name, backgroundXml: presentationBackgroundXml(masterPart.master.background), placeholdersXml: masterPlaceholders, textParagraphStyles: masterPart.master.textParagraphStyles, pictureBulletRelationshipId: (bulletImage) => masterPictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) }));
       zip.file(`ppt/slideMasters/_rels/slideMaster${masterPart.masterPartId}.xml.rels`, pptxSlideMasterRelsXml(masterPart.layoutParts, masterPart.themePartId, masterPictureBulletPlan.relationships, masterHyperlinkPlan.relationships));
       for (const part of masterPart.layoutParts) {
         const layoutPictureBulletPlan = pictureBulletPlan.byOwner.get(`layout:${part.layoutPartId}`);
         const layoutHyperlinkPlan = hyperlinkPlan.byOwner.get(`layout:${part.layoutPartId}`);
-        zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout, layoutPictureBulletPlan.relationshipIds, layoutHyperlinkPlan.relationshipIds, hyperlinkPlan.slidePartById));
+        zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout, layoutPictureBulletPlan.relationshipIds, layoutHyperlinkPlan.relationshipIds, layoutHyperlinkPlan.customShowIds, hyperlinkPlan.slidePartById));
         zip.file(`ppt/slideLayouts/_rels/slideLayout${part.layoutPartId}.xml.rels`, pptxSlideLayoutRelsXml(masterPart.masterPartId, layoutPictureBulletPlan.relationships, layoutHyperlinkPlan.relationships));
       }
     }
@@ -8478,7 +8496,7 @@ export class PresentationFile {
       const notesRelId = slide.speakerNotes.text ? `rId${nextRelIndex + (layoutRelId ? 1 : 0)}` : undefined;
       const commentsRelId = slide.comments.items.length ? `rId${nextRelIndex + (layoutRelId ? 1 : 0) + (notesRelId ? 1 : 0)}` : undefined;
       const modernCommentPart = modernComments.parts.find((part) => part.slideIndex === i);
-      zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, slideImageParts, slideChartParts, slideNativePlan.entries, slidePictureBulletPlan.relationshipIds, slideHyperlinkPlan.relationshipIds, hyperlinkPlan.slidePartById));
+      zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, slideImageParts, slideChartParts, slideNativePlan.entries, slidePictureBulletPlan.relationshipIds, slideHyperlinkPlan.relationshipIds, slideHyperlinkPlan.customShowIds, hyperlinkPlan.slidePartById));
       if (slideImageParts.length || slideChartParts.length || slidePictureBulletPlan.relationships.length || slideNativePlan.relationships.length || slideHyperlinkPlan.relationships.length || layoutRelId || notesRelId || commentsRelId) zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, pptxSlideRelsXml(slideImageParts, slideChartParts, { slideIndex: i, pictureBulletRelationships: slidePictureBulletPlan.relationships, nativeRelationships: slideNativePlan.relationships, hyperlinkRelationships: slideHyperlinkPlan.relationships, layoutRelId, layoutPartId: slideLayoutPart?.layoutPartId, notesRelId, commentsRelId, modernComments: Boolean(modernCommentPart) }));
       if (notesRelId) zip.file(`ppt/notesSlides/notesSlide${i + 1}.xml`, pptxNotesSlideXml(slide));
       if (commentsRelId) zip.file(`ppt/comments/comment${i + 1}.xml`, modernCommentPart ? presentationModernCommentsXml(modernCommentPart) : pptxCommentsXml(slide, commentAuthors));
@@ -8537,6 +8555,14 @@ export class PresentationFile {
       return { slideEntry, slide };
     });
     const slideIdByPart = new Map(importedSlides.map(({ slideEntry, slide }) => [slideEntry.file, slide.id]));
+    const importedCustomShows = parsePresentationCustomShowsXml(presentationXml, {
+      relationships: presentationRels,
+      partPath: "ppt/presentation.xml",
+      slideIdByPart,
+      resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "PPTX"),
+    });
+    for (const customShow of importedCustomShows) presentation.customShows.add(customShow);
+    const customShowNameById = new Map(presentation.customShows.items.map((show) => [show.nativeId, show.name]));
     const referencedMasters = [...String(presentationXml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldMasterId\b[^>]*\/?\s*>/g)].map((match) => {
       const relationship = relationshipsById.get(ooxmlTagRelationshipId(match[0]));
       if (!relationship?.type.endsWith("/slideMaster") || relationship.targetMode?.toLowerCase() === "external") return undefined;
@@ -8559,7 +8585,7 @@ export class PresentationFile {
         masterThemeXml ? parsePresentationThemeXml(masterThemeXml) : presentation.theme,
       );
       const masterId = master.masterId || `imported-master-${masterIndex + 1}`;
-      const masterRelationshipContext = { rels: masterRels, zip, partPath: masterFile, slideIdByPart };
+      const masterRelationshipContext = { rels: masterRels, zip, partPath: masterFile, slideIdByPart, customShowNameById };
       const masterConfig = {
         id: masterId,
         name: decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cSld\b[^>]*\bname="([^"]*)"/.exec(masterXml)?.[1] || `Imported Master ${masterIndex + 1}`),
@@ -8588,7 +8614,7 @@ export class PresentationFile {
         const layoutTarget = ooxmlSafePartPath(ooxmlResolveRelationshipTarget(masterFile, relationship.target), "PPTX");
         if (layoutByTarget.has(layoutTarget)) continue;
         const layoutRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(layoutTarget, "PPTX"))?.async("text"));
-        const layout = await parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), layoutEntry.layoutId || `imported-layout-${masterIndex + 1}-${layoutIndex + 1}`, masterId, { rels: layoutRels, zip, partPath: layoutTarget, slideIdByPart });
+        const layout = await parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), layoutEntry.layoutId || `imported-layout-${masterIndex + 1}-${layoutIndex + 1}`, masterId, { rels: layoutRels, zip, partPath: layoutTarget, slideIdByPart, customShowNameById });
         if (layout) layoutByTarget.set(layoutTarget, layout);
       }
     }
@@ -8602,13 +8628,13 @@ export class PresentationFile {
         let layout = layoutByTarget.get(layoutTarget);
         if (!layout) {
           const layoutRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(layoutTarget, "PPTX"))?.async("text"));
-          layout = await parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), `imported-layout-${layoutByTarget.size + 1}`, presentation.master.id, { rels: layoutRels, zip, partPath: layoutTarget, slideIdByPart });
+          layout = await parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), `imported-layout-${layoutByTarget.size + 1}`, presentation.master.id, { rels: layoutRels, zip, partPath: layoutTarget, slideIdByPart, customShowNameById });
           layoutByTarget.set(layoutTarget, layout);
         }
         slide.layoutId = layout?.id;
       }
       const importedSlideXml = await zip.file(file).async("text");
-      await parseSlideXml(slide, importedSlideXml, { rels, zip, slidePath: file, slideXml: importedSlideXml, contentTypesXml, layout: layoutTarget ? layoutByTarget.get(layoutTarget) : undefined, slideIdByPart });
+      await parseSlideXml(slide, importedSlideXml, { rels, zip, slidePath: file, slideXml: importedSlideXml, contentTypesXml, layout: layoutTarget ? layoutByTarget.get(layoutTarget) : undefined, slideIdByPart, customShowNameById });
       const notesRel = rels.find((rel) => rel.type.endsWith("/notesSlide"));
       const modernCommentsRel = rels.find((rel) => rel.type === PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE && rel.targetMode?.toLowerCase() !== "external");
       const commentsRel = modernCommentsRel || rels.find((rel) => rel.type.endsWith("/comments") && rel.targetMode?.toLowerCase() !== "external");
@@ -8698,7 +8724,7 @@ function presentationPlaceholderHyperlinkReferences(placeholder) {
   return presentationRunHyperlinkReferencesFromParagraphs(normalizePresentationParagraphs(placeholder.text ?? ""));
 }
 
-function planPresentationHyperlinkParts(presentation, graph, pictureBulletPlan, nativeObjectPlan) {
+function planPresentationHyperlinkParts(presentation, graph, pictureBulletPlan, nativeObjectPlan, customShowPlan) {
   const slidePartById = new Map(presentation.slides.items.map((slide, slideIndex) => [slide.id, `ppt/slides/slide${slideIndex + 1}.xml`]));
   const owners = presentation.slides.items.map((slide, slideIndex) => ({
     key: `slide:${slideIndex}`,
@@ -8718,7 +8744,7 @@ function planPresentationHyperlinkParts(presentation, graph, pictureBulletPlan, 
     startRelationshipIndex: pictureBulletPlan.byOwner.get(`layout:${layoutPart.layoutPartId}`).nextRelationshipIndex,
     references: layoutPart.layout.placeholders.flatMap(presentationPlaceholderHyperlinkReferences),
   });
-  return planPresentationRunHyperlinks({ owners, slidePartById });
+  return planPresentationRunHyperlinks({ owners, slidePartById, customShowIdByName: customShowPlan.idByName });
 }
 
 function resolveImportedPresentationHyperlinks(presentation, slideIdByPart) {
@@ -8817,15 +8843,16 @@ function pptxSlideLayoutRelsXml(masterPartId, pictureBulletRelationships = [], h
   ]);
 }
 
-function pptxSlideLayoutXml(layout, pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkSlideParts = new Map()) {
-  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkSlideParts })).join("");
+function pptxSlideLayoutXml(layout, pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkCustomShowIds = new Map(), hyperlinkSlideParts = new Map()) {
+  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" type="${attrEscape(layout.type)}" preserve="1"><p:cSld name="${attrEscape(layout.name)}">${presentationBackgroundXml(layout.background)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${placeholders}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
 }
 
-function presentationXml(presentation, masterParts = []) {
+function presentationXml(presentation, masterParts = [], customShowPlan = { entries: [] }) {
   const masterIds = masterParts.length ? `<p:sldMasterIdLst>${masterParts.map((part, index) => `<p:sldMasterId id="${part.nativeMasterId}" r:id="rId${presentation.slides.items.length + 2 + index}"/>`).join("")}</p:sldMasterIdLst>` : "";
   const ids = presentation.slides.items.map((slide, i) => `<p:sldId id="${slide.nativeSlideId || 256 + i}" r:id="rId${i + 1}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`;
+  const relationshipIdBySlideId = new Map(presentation.slides.items.map((slide, index) => [slide.id, `rId${index + 1}`]));
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/>${presentationCustomShowsXml(customShowPlan, relationshipIdBySlideId)}</p:presentation>`;
 }
 
 function presentationElementKind(element) {
@@ -8931,10 +8958,12 @@ function pptxTextShapeXml(index, name, geometry, position, text = "", placeholde
   const paragraphModels = options.paragraphs || normalizePresentationParagraphs(text);
   const pictureBulletRelIds = options.pictureBulletRelIds || new Map();
   const hyperlinkRelIds = options.hyperlinkRelIds || new Map();
+  const hyperlinkCustomShowIds = options.hyperlinkCustomShowIds || new Map();
   const hyperlinkSlideParts = options.hyperlinkSlideParts || new Map();
   const paragraphs = presentationParagraphsXml(paragraphModels, textStyle, {
     pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri),
     hyperlinkRelationshipId: (link) => hyperlinkRelIds.get(presentationRunHyperlinkKey(link, hyperlinkSlideParts)),
+    hyperlinkCustomShowId: (link) => hyperlinkCustomShowIds.get(presentationRunHyperlinkKey(link, hyperlinkSlideParts)),
   });
   const listStyle = presentationListStyleXml(options.paragraphStyles || options.inheritedParagraphStyles || {}, { pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) });
   const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx || 1)}"/>` : "";
@@ -9064,10 +9093,10 @@ function pptxChartFrameXml(index, name, position, relId, identity = {}) {
   return `<p:graphicFrame><p:nvGraphicFramePr>${pptxNonVisualPropertiesXml(index, name, "", identity)}<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="${relId}"/></a:graphicData></a:graphic></p:graphicFrame>`;
 }
 
-function slideXml(slide, imageParts = [], chartParts = [], nativeObjectEntries = new Map(), pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkSlideParts = new Map()) {
+function slideXml(slide, imageParts = [], chartParts = [], nativeObjectEntries = new Map(), pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkCustomShowIds = new Map(), hyperlinkSlideParts = new Map()) {
   const imageRelById = new Map(imageParts.filter((part) => part.image).map((part) => [part.image.id, part.slideRelId]));
   const chartRelById = new Map(chartParts.map((part) => [part.chart.id, part.slideRelId]));
-  const pictureBulletRelByOwner = new Map(presentationSlideElements(slide).filter((element) => element instanceof Shape).map((shape) => [shape.id, { pictureBulletRelIds, hyperlinkRelIds, hyperlinkSlideParts }]));
+  const pictureBulletRelByOwner = new Map(presentationSlideElements(slide).filter((element) => element instanceof Shape).map((shape) => [shape.id, { pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts }]));
   const relationshipById = new Map([...imageRelById, ...chartRelById, ...pictureBulletRelByOwner, ...nativeObjectEntries]);
   const elements = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items, ...slide.nativeObjects.items];
   const shapes = elements.map((element, index) => element.toPptxShape(index, element instanceof GroupShape ? relationshipById : relationshipById.get(element.id))).join("");
@@ -9113,6 +9142,7 @@ function presentationPictureBulletImportContext(context = {}) {
     relationships: context.rels || [],
     partPath: context.partPath || context.slidePath || "ppt/slides/slide1.xml",
     slideIdByPart: context.slideIdByPart,
+    customShowNameById: context.customShowNameById,
     resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "PPTX"),
     readPart: (target) => context.zip?.file(target)?.async("uint8array"),
   };

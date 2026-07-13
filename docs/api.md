@@ -967,25 +967,27 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization. |
+| `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
+| `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
+| `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
-| `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts. |
 | `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
 | `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts. |
 | `presentation.masters.getItem` | api | Resolve a Slide Master by stable ID or name. |
-| `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
+| `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects, including custom shows. |
 | `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts. |
-| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
+| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
-| `shape.text.set` | api | Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, or relationship-free slide-show action hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip. |
+| `shape.text.set` | api | Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, relative action, or custom-show hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1033,7 +1035,7 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `Presentation.create`
 
-Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization.
+Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization.
 
 **Schema parameters:**
 
@@ -1047,6 +1049,32 @@ Create a deck with slide/theme/master/layout configuration and select legacy or 
 **Schema returns:**
 
 - `presentation` (Presentation) — Editable presentation facade.
+
+#### `presentation.customShows.add`
+
+Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships.
+
+**Schema parameters:**
+
+- `name` (string) required — Unique custom-show name, compared case-insensitively.
+- `slides` (PresentationSlide[]|string[]) required — Ordered non-empty list of slide facades or stable slide IDs from this presentation.
+- `nativeId` (number) — Optional preserved unsigned 32-bit p:custShow ID; new IDs are allocated collision-free.
+
+**Schema returns:**
+
+- `customShow` (PresentationCustomShow) — Appended custom-show facade with stable ID, name, nativeId, and ordered slideIds.
+
+#### `presentation.customShows.getItem`
+
+Resolve a custom slide show by zero-based index, stable facade ID, or exact name.
+
+**Schema parameters:**
+
+- `idOrNameOrIndex` (string|number) required — Stable custom-show ID, exact name, or zero-based collection index.
+
+**Schema returns:**
+
+- `customShow` (PresentationCustomShow|undefined) — Matching custom-show facade or undefined.
 
 #### `presentation.export`
 
@@ -1066,7 +1094,7 @@ Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or targe
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -1177,7 +1205,7 @@ Resolve a Slide Master by stable ID or name.
 
 #### `presentation.resolve`
 
-Map stable inspect anchor IDs back to editable facade objects.
+Map stable inspect anchor IDs back to editable facade objects, including custom shows.
 
 **Schema parameters:**
 
@@ -1271,7 +1299,7 @@ Serialize native PPTX with every master/layout ownership chain, per-master Theme
 
 #### `PresentationFile.importPptx`
 
-Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs.
+Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs.
 
 **Schema parameters:**
 
@@ -1327,11 +1355,11 @@ Apply path-validated PPTX part patches, including safe slide/master/layout ID li
 
 #### `shape.text.set`
 
-Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, or relationship-free slide-show action hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip.
+Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, relative action, or custom-show hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip.
 
 **Schema parameters:**
 
-- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, or relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow) plus optional tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
+- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
 
 **Schema returns:**
 

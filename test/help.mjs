@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 226);
+assert.equal(HELP_CATALOG.length, 228);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -46,7 +46,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
-assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /relationship-free slide-show action hyperlinks/);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /relative action, or custom-show hyperlinks/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /nextSlide.*previousSlide.*firstSlide.*lastSlide.*endShow/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
@@ -125,6 +125,9 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.exportPptx
 assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.importPptx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.patchPptx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.slides.add"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.add"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.getItem"));
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow.*returnToSlide/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
@@ -190,7 +193,7 @@ assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 32);
+assert.equal(presentationCatalog.length, 34);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
