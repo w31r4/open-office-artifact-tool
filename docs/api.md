@@ -985,6 +985,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
+| `shape.text.set` | api | Set plain or structured Presentation text with ordered paragraphs, styled runs, bullets, auto-numbering, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1322,6 +1323,18 @@ Apply path-validated PPTX part patches, including safe slide/master/layout ID li
 
 - `blob` (FileBlob) — Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata.
 
+#### `shape.text.set`
+
+Set plain or structured Presentation text with ordered paragraphs, styled runs, bullets, auto-numbering, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip.
+
+**Schema parameters:**
+
+- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/autoNumber/bulletNone, marginLeft, indent, spacing, alignment, and run styles.
+
+**Schema returns:**
+
+- `textFrame` (TextFrame) — The same live text frame with normalized paragraphs and a backward-compatible flattened value.
+
 #### `slide.addNotes`
 
 Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }).
@@ -1478,7 +1491,7 @@ Add a shape/textbox with geometry, position, fill, line, and text.
 - `name` (string) — Inspectable shape name.
 - `geometry` (string) — Shape geometry such as rect or ellipse.
 - `position` (object) — Pixel left/top/width/height frame.
-- `text` (string) — Shape text.
+- `text` (string|string[]|object|object[]) — Plain text or structured paragraphs/runs accepted by shape.text.set.
 - `fill` (string|object) — Shape fill.
 - `line` (object) — Line color, width, dash, and arrow metadata.
 - `placeholder` (object) — Optional layout placeholder metadata.
