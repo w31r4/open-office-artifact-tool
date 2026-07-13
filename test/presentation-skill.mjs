@@ -56,6 +56,7 @@ try {
   const fixtureSecondThemeXml = await fixtureZip.file("ppt/theme/theme2.xml").async("text");
   const fixtureMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
   const fixtureSecondMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster2.xml").async("text");
+  const fixtureThirdSlideXml = await fixtureZip.file("ppt/slides/slide3.xml").async("text");
   const fixturePresentationXml = await fixtureZip.file("ppt/presentation.xml").async("text");
   assert.match(fixtureThemeXml, /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
   assert.match(fixtureSecondThemeXml, /name="Verification Theme"/);
@@ -64,6 +65,8 @@ try {
   assert.match(fixtureMasterXml, /<p:clrMap[^>]*accent1="accent2"/);
   assert.match(fixtureMasterXml, /<p:titleStyle>[\s\S]*?<a:defRPr sz="4200"/);
   assert.match(fixtureMasterXml, /<p:bodyStyle>[\s\S]*?<a:buChar char="•"\/>[\s\S]*?<a:buChar char="–"\/>/);
+  assert.match(fixtureMasterXml, /<p:bodyStyle>[\s\S]*?<a:buClr><a:schemeClr val="accent1"\/><\/a:buClr><a:buSzPct val="110000"\/><a:buFont typeface="Arial"\/>/);
+  assert.match(fixtureThirdSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="125000"\/><a:buFont typeface="Georgia"\/><a:buChar char="◆"\/>/);
   assert.match(fixtureMasterXml, /<p:cSld name="Agent Readiness Master"><p:bg><p:bgRef idx="1001">/);
   assert.match(fixtureMasterXml, /<p:ph type="title" idx="1"\/>/);
   assert.match(fixtureSecondMasterXml, /<p:cSld name="Verification Master"><p:bg><p:bgRef idx="1001">/);

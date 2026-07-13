@@ -869,8 +869,8 @@ const paragraphPresentation = Presentation.create({
     name: "List Master",
     textParagraphStyles: {
       body: {
-        0: { bulletCharacter: "○", marginLeft: 30, indent: -15, style: { fontSize: 22, color: "tx1" } },
-        1: { bulletCharacter: "–", marginLeft: 52, indent: -20, spaceBeforePercent: 0.2, style: { fontSize: 18, color: "tx2" } },
+        0: { bulletCharacter: "○", bulletFont: "Arial", bulletColor: "accent2", bulletSizePercent: 1.1, marginLeft: 30, indent: -15, style: { fontSize: 22, color: "tx1" } },
+        1: { bulletCharacter: "–", bulletFont: "Arial", bulletColor: "tx2", bulletSize: 18, marginLeft: 52, indent: -20, spaceBeforePercent: 0.2, style: { fontSize: 18, color: "tx2" } },
       },
     },
     placeholders: [{
@@ -885,12 +885,12 @@ const paragraphPresentation = Presentation.create({
 });
 const paragraphSlide = paragraphPresentation.slides.add({ layoutId: "layout/lists" });
 const [inheritedListShape] = paragraphPresentation.layouts.getItem("layout/lists").apply(paragraphSlide);
-inheritedListShape.text.set([{ runs: ["Inherited one"] }, { level: 1, runs: ["Inherited two"] }]);
+inheritedListShape.text.set([{ runs: ["Inherited one"] }, { level: 1, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, runs: ["Inherited two"] }]);
 const richTextShape = paragraphSlide.shapes.add({ name: "rich-list", position: { left: 820, top: 80, width: 380, height: 420 }, text: "" });
 richTextShape.text.set([
   [{ run: "Status", textStyle: { bold: true, color: "#0f172a" } }, " review"],
-  { bulletCharacter: "•", marginLeft: 24, indent: -12, spaceAfter: 5, runs: [{ run: "Quality:", textStyle: { bold: true } }, " defects down"] },
-  { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
+  { bulletCharacter: "•", bulletFont: "Georgia", bulletColor: "#dc2626", bulletSizePercent: 1.5, marginLeft: 24, indent: -12, spaceAfter: 5, runs: [{ run: "Quality:", textStyle: { bold: true } }, " defects down"] },
+  { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
 ]);
 richTextShape.text.style = { fontFamily: "Arial", fontSize: 20, color: "#334155", lineSpacing: 1.15 };
 assert.equal(richTextShape.text.value, "Status review\nQuality: defects down\nShip");
@@ -898,18 +898,29 @@ assert.equal(richTextShape.text.paragraphs[1].bulletCharacter, "•");
 assert.deepEqual(richTextShape.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
 assert.match(richTextShape.toSvg(), />•<\/text>/);
 assert.match(richTextShape.toSvg(), />3\.<\/text>/);
+assert.match(richTextShape.toSvg(), /font-family="Georgia" font-size="30" fill="#dc2626">•<\/text>/);
 assert.throws(() => richTextShape.text.set([{ bulletCharacter: "xx", runs: ["bad"] }]), /exactly one Unicode character/);
 assert.throws(() => richTextShape.text.set([{ autoNumber: { type: "unsupported" }, runs: ["bad"] }]), /Unsupported Presentation auto-number type/);
 assert.throws(() => richTextShape.text.set([{ spaceBefore: 4, spaceBeforePercent: 0.2, runs: ["bad"] }]), /either spaceBefore or spaceBeforePercent/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletFont: "Arial", bulletFontFollowText: true, runs: ["bad"] }]), /cannot combine bulletFont/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletSizePercent: 0.2, runs: ["bad"] }]), /bulletSizePercent must be between 0.25 and 4/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletSize: 1, runs: ["bad"] }]), /bulletSize must be between 1.333 and 1024/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletSize: 20, bulletSizePercent: 1.2, runs: ["bad"] }]), /exactly one of bulletSize/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletColor: "not-a-color", runs: ["bad"] }]), /scheme color.*RGB color.*color token/);
+const followOnlyDeck = Presentation.create();
+const followOnlyShape = followOnlyDeck.slides.add().shapes.add({ text: { text: "Follow marker", bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true } });
+assert.deepEqual(followOnlyShape.text.paragraphs[0], { runs: [{ text: "Follow marker", style: {} }], level: 0, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, style: {} });
 assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", isExternal: true } }]]), /structured-run links are not supported yet/);
 assert.throws(() => Presentation.create({ master: { textParagraphStyles: { body: { 9: { bulletCharacter: "•" } } } } }), /level must be an integer from 0 through 8/);
 richTextShape.text.set([
   [{ run: "Status", textStyle: { bold: true, color: "#0f172a" } }, " review"],
-  { bulletCharacter: "•", marginLeft: 24, indent: -12, spaceAfter: 5, runs: [{ run: "Quality:", textStyle: { bold: true } }, " defects down"] },
-  { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
+  { bulletCharacter: "•", bulletFont: "Georgia", bulletColor: "#dc2626", bulletSizePercent: 1.5, marginLeft: 24, indent: -12, spaceAfter: 5, runs: [{ run: "Quality:", textStyle: { bold: true } }, " defects down"] },
+  { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
 ]);
 const paragraphInspect = paragraphPresentation.inspect({ kind: "textbox", target: richTextShape.id, maxChars: 20_000 });
 assert.match(paragraphInspect.ndjson, /"bulletCharacter":"•"/);
+assert.match(paragraphInspect.ndjson, /"bulletFont":"Georgia","bulletColor":"#dc2626"/);
+assert.match(paragraphInspect.ndjson, /"bulletSizePercent":1.5/);
 assert.match(paragraphInspect.ndjson, /"type":"arabicPeriod","startAt":3/);
 assert.match(paragraphPresentation.help("shape.text.set").ndjson, /structured paragraphs/);
 const paragraphPptx = await PresentationFile.exportPptx(paragraphPresentation);
@@ -919,13 +930,16 @@ const paragraphSlideXml = await paragraphZip.file("ppt/slides/slide1.xml").async
 const paragraphMasterXml = await paragraphZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
 assert.match(paragraphSlideXml, /<a:buChar char="•"\/>/);
 assert.match(paragraphSlideXml, /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
+assert.match(paragraphSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="150000"\/><a:buFont typeface="Georgia"\/><a:buChar char="•"\/>/);
+assert.match(paragraphSlideXml, /<a:buClrTx\/><a:buSzTx\/><a:buFontTx\/><a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
 assert.match(paragraphSlideXml, /<a:rPr[^>]*b="1"/);
 assert.match(paragraphSlideXml, /<a:rPr[^>]*i="1"[^>]*u="sng"/);
 assert.match(paragraphMasterXml, /<a:lstStyle><a:lvl1pPr[^>]*marL="266700"[^>]*indent="-133350"/);
 assert.match(paragraphMasterXml, /<a:buChar char="•"\/>/);
 assert.match(paragraphMasterXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr[^>]*marL="495300"[^>]*indent="-190500"[\s\S]*?<a:spcPct val="20000"\/>[\s\S]*?<a:buChar char="–"\/>/);
+assert.match(paragraphMasterXml, /<p:bodyStyle>[\s\S]*?<a:buClr><a:schemeClr val="accent2"\/><\/a:buClr><a:buSzPct val="110000"\/><a:buFont typeface="Arial"\/><a:buChar char="○"\/>/);
 const inheritedListShapeXml = /<p:sp>[\s\S]*?<p:cNvPr[^>]*name="Inherited List"[\s\S]*?<\/p:sp>/.exec(paragraphSlideXml)[0];
-paragraphZip.file("ppt/slides/slide1.xml", paragraphSlideXml.replace(inheritedListShapeXml, inheritedListShapeXml.replaceAll(/<a:buChar char="[^"]+"\/>/g, "").replaceAll(/ marL="-?\d+" indent="-?\d+"/g, "").replaceAll(/<a:spcBef>[\s\S]*?<\/a:spcBef>/g, "")));
+paragraphZip.file("ppt/slides/slide1.xml", paragraphSlideXml.replace(inheritedListShapeXml, inheritedListShapeXml.replaceAll(/<a:buChar char="[^"]+"\/>/g, "").replaceAll(/<a:buClr>[\s\S]*?<\/a:buClr>/g, "").replaceAll(/<a:buSz(?:Pct|Pts)\b[^>]*\/>/g, "").replaceAll(/<a:buFont\b[^>]*\/>/g, "").replaceAll(/ marL="-?\d+" indent="-?\d+"/g, "").replaceAll(/<a:spcBef>[\s\S]*?<\/a:spcBef>/g, "")));
 const inheritedParagraphPptx = new FileBlob(await paragraphZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
 const paragraphLoaded = await PresentationFile.importPptx(inheritedParagraphPptx);
 const paragraphLoadedInherited = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List");
@@ -937,9 +951,24 @@ assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].style.color,
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].marginLeft, 52);
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].indent, -20);
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].spaceBeforePercent, 0.2);
-assert.equal(paragraphLoadedRich.text.paragraphs[0].runs[0].style.bold, true);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].bulletFont, "Arial");
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].bulletColor, "accent2");
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].bulletSizePercent, 1.1);
+assert.equal(paragraphLoaded.master.textParagraphStyles.body[1].bulletSize, 18);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletFont, undefined);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletColor, undefined);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletSize, undefined);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletFontFollowText, true);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletColorFollowText, true);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletSizeFollowText, true);
 assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletCharacter, "•");
+assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletFont, "Georgia");
+assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletColor, "#dc2626");
+assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletSizePercent, 1.5);
 assert.deepEqual(paragraphLoadedRich.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
+assert.equal(paragraphLoadedRich.text.paragraphs[2].bulletFontFollowText, true);
+assert.equal(paragraphLoadedRich.text.paragraphs[2].bulletColorFollowText, true);
+assert.equal(paragraphLoadedRich.text.paragraphs[2].bulletSizeFollowText, true);
 assert.equal(paragraphLoadedRich.text.paragraphs[2].runs[0].style.italic, true);
 assert.equal(paragraphLoadedRich.text.paragraphs[2].runs[0].style.underline, "sng");
 const paragraphSecondPptx = await PresentationFile.exportPptx(paragraphLoaded);

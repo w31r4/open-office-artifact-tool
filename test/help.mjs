@@ -193,6 +193,7 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /bulletFont.*bulletColor.*bulletSizePercent.*FollowText/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
 assert.equal(workbookCatalog.length, 134);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));

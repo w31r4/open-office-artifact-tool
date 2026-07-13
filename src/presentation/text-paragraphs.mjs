@@ -94,19 +94,34 @@ function normalizeParagraph(value, defaults = {}) {
   const autoNumber = normalizeAutoNumber(input.autoNumber || input.numbering || defaults.autoNumber);
   const bulletNone = Boolean(input.bulletNone ?? (input.bullet === false ? true : defaults.bulletNone));
   if ([bulletCharacter != null, Boolean(autoNumber), bulletNone].filter(Boolean).length > 1) throw new Error("Presentation paragraph can use exactly one of bulletCharacter, autoNumber, or bulletNone.");
-  const numberFields = ["marginLeft", "indent", "spaceBefore", "spaceAfter", "spaceBeforePercent", "spaceAfterPercent", "lineSpacing"];
+  const bulletFont = input.bulletFont ?? input.bullet?.fontFamily ?? defaults.bulletFont;
+  const bulletColor = input.bulletColor ?? input.bullet?.color ?? defaults.bulletColor;
+  const bulletFontFollowText = Boolean(input.bulletFontFollowText ?? input.bullet?.fontFollowText ?? defaults.bulletFontFollowText);
+  const bulletColorFollowText = Boolean(input.bulletColorFollowText ?? input.bullet?.colorFollowText ?? defaults.bulletColorFollowText);
+  const bulletSizeFollowText = Boolean(input.bulletSizeFollowText ?? input.bullet?.sizeFollowText ?? defaults.bulletSizeFollowText);
+  if (bulletFont != null && !String(bulletFont).trim()) throw new TypeError("Presentation bulletFont must not be empty.");
+  if (bulletFont != null && String(bulletFont).length > 255) throw new RangeError("Presentation bulletFont exceeds 255 characters.");
+  if (bulletColor != null && (typeof bulletColor !== "string" || !bulletColor.trim())) throw new TypeError("Presentation bulletColor must be a non-empty color string.");
+  if (bulletColor != null) presentationColorXml(bulletColor);
+  if (bulletFont != null && bulletFontFollowText) throw new Error("Presentation paragraph cannot combine bulletFont with bulletFontFollowText.");
+  if (bulletColor != null && bulletColorFollowText) throw new Error("Presentation paragraph cannot combine bulletColor with bulletColorFollowText.");
+  const numberFields = ["marginLeft", "indent", "spaceBefore", "spaceAfter", "spaceBeforePercent", "spaceAfterPercent", "lineSpacing", "bulletSize", "bulletSizePercent"];
   const numeric = Object.fromEntries(numberFields.flatMap((field) => {
-    const raw = input[field] ?? input.paragraphStyle?.[field] ?? defaults[field];
+    const bulletAlias = field === "bulletSize" ? input.bullet?.size : field === "bulletSizePercent" ? input.bullet?.sizePercent : undefined;
+    const raw = input[field] ?? bulletAlias ?? input.paragraphStyle?.[field] ?? defaults[field];
     if (raw == null) return [];
     const number = finiteNumber(raw);
     if (!Number.isFinite(number)) throw new TypeError(`Presentation paragraph ${field} must be finite.`);
     if (["marginLeft", "spaceBefore", "spaceAfter", "spaceBeforePercent", "spaceAfterPercent"].includes(field) && number < 0) throw new RangeError(`Presentation paragraph ${field} must be non-negative.`);
     if (field === "lineSpacing" && number <= 0) throw new RangeError("Presentation paragraph lineSpacing must be positive.");
+    if (field === "bulletSize" && !(number >= 4 / 3 && number <= 1024)) throw new RangeError("Presentation paragraph bulletSize must be between 1.333 and 1024 pixels.");
+    if (field === "bulletSizePercent" && !(number >= 0.25 && number <= 4)) throw new RangeError("Presentation paragraph bulletSizePercent must be between 0.25 and 4.");
     if (Math.abs(number) > 1_000_000) throw new RangeError(`Presentation paragraph ${field} exceeds the supported coordinate range.`);
     return [[field, number]];
   }));
   if (numeric.spaceBefore != null && numeric.spaceBeforePercent != null) throw new Error("Presentation paragraph must use either spaceBefore or spaceBeforePercent, not both.");
   if (numeric.spaceAfter != null && numeric.spaceAfterPercent != null) throw new Error("Presentation paragraph must use either spaceAfter or spaceAfterPercent, not both.");
+  if ([numeric.bulletSize != null, numeric.bulletSizePercent != null, bulletSizeFollowText].filter(Boolean).length > 1) throw new Error("Presentation paragraph must use exactly one of bulletSize, bulletSizePercent, or bulletSizeFollowText.");
   return {
     runs,
     level,
@@ -114,13 +129,18 @@ function normalizeParagraph(value, defaults = {}) {
     ...(bulletCharacter != null ? { bulletCharacter: String(bulletCharacter) } : {}),
     ...(autoNumber ? { autoNumber } : {}),
     ...(bulletNone ? { bulletNone: true } : {}),
+    ...(bulletFont != null ? { bulletFont: String(bulletFont).trim() } : {}),
+    ...(bulletColor != null ? { bulletColor } : {}),
+    ...(bulletFontFollowText ? { bulletFontFollowText: true } : {}),
+    ...(bulletColorFollowText ? { bulletColorFollowText: true } : {}),
+    ...(bulletSizeFollowText ? { bulletSizeFollowText: true } : {}),
     ...numeric,
     style: normalizeRunStyle(input.style || input.textStyle || input.paragraphStyle?.textStyle || {}),
   };
 }
 
 function isStructuredParagraph(value) {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && ("runs" in value || "bulletCharacter" in value || "autoNumber" in value || "numbering" in value || "paragraphStyle" in value || "level" in value));
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && ("runs" in value || "text" in value || "bullet" in value || "bulletCharacter" in value || "autoNumber" in value || "numbering" in value || "paragraphStyle" in value || "level" in value || "bulletFont" in value || "bulletColor" in value || "bulletSize" in value || "bulletSizePercent" in value || "bulletFontFollowText" in value || "bulletColorFollowText" in value || "bulletSizeFollowText" in value));
 }
 
 export function normalizePresentationParagraphs(value, options = {}) {
@@ -158,7 +178,7 @@ export function presentationParagraphsText(paragraphs = []) {
 }
 
 export function presentationParagraphsNeedSerialization(paragraphs = []) {
-  return paragraphs.length > 1 || paragraphs.some((paragraph) => paragraph.level || paragraph.alignment || paragraph.bulletCharacter != null || paragraph.autoNumber || paragraph.bulletNone || paragraph.marginLeft != null || paragraph.indent != null || paragraph.spaceBefore != null || paragraph.spaceAfter != null || paragraph.spaceBeforePercent != null || paragraph.spaceAfterPercent != null || paragraph.lineSpacing != null || Object.keys(paragraph.style || {}).length || paragraph.runs.length !== 1 || paragraph.runs.some((run) => Object.keys(run.style || {}).length));
+  return paragraphs.length > 1 || paragraphs.some((paragraph) => paragraph.level || paragraph.alignment || paragraph.bulletCharacter != null || paragraph.autoNumber || paragraph.bulletNone || paragraph.bulletFont != null || paragraph.bulletColor != null || paragraph.bulletSize != null || paragraph.bulletSizePercent != null || paragraph.bulletFontFollowText || paragraph.bulletColorFollowText || paragraph.bulletSizeFollowText || paragraph.marginLeft != null || paragraph.indent != null || paragraph.spaceBefore != null || paragraph.spaceAfter != null || paragraph.spaceBeforePercent != null || paragraph.spaceAfterPercent != null || paragraph.lineSpacing != null || Object.keys(paragraph.style || {}).length || paragraph.runs.length !== 1 || paragraph.runs.some((run) => Object.keys(run.style || {}).length));
 }
 
 export function inheritPresentationParagraphs(paragraphs = [], inheritedByLevel = {}) {
@@ -172,6 +192,21 @@ export function inheritPresentationParagraphs(paragraphs = [], inheritedByLevel 
       if (paragraph.bulletCharacter != null) merged.bulletCharacter = paragraph.bulletCharacter;
       else if (paragraph.autoNumber) merged.autoNumber = paragraph.autoNumber;
       else merged.bulletNone = true;
+    }
+    for (const [fixed, follow] of [["bulletFont", "bulletFontFollowText"], ["bulletColor", "bulletColorFollowText"]]) {
+      if (paragraph[fixed] == null && !paragraph[follow]) continue;
+      delete merged[fixed];
+      delete merged[follow];
+      if (paragraph[fixed] != null) merged[fixed] = paragraph[fixed];
+      else merged[follow] = true;
+    }
+    if (paragraph.bulletSize != null || paragraph.bulletSizePercent != null || paragraph.bulletSizeFollowText) {
+      delete merged.bulletSize;
+      delete merged.bulletSizePercent;
+      delete merged.bulletSizeFollowText;
+      if (paragraph.bulletSize != null) merged.bulletSize = paragraph.bulletSize;
+      else if (paragraph.bulletSizePercent != null) merged.bulletSizePercent = paragraph.bulletSizePercent;
+      else merged.bulletSizeFollowText = true;
     }
     return normalizeParagraph(merged);
   });
@@ -192,7 +227,9 @@ function parseColor(xml = "") {
   const scheme = attributes(localElementOpening(xml, "schemeClr")).val;
   if (scheme) return scheme;
   const rgb = attributes(localElementOpening(xml, "srgbClr")).val;
-  return rgb ? `#${String(rgb).toLowerCase()}` : undefined;
+  if (rgb) return `#${String(rgb).toLowerCase()}`;
+  const system = attributes(localElementOpening(xml, "sysClr")).lastClr;
+  return system ? `#${String(system).toLowerCase()}` : undefined;
 }
 
 function parseRunStyle(xml = "") {
@@ -223,6 +260,13 @@ function parseParagraphProperties(xml = "", inherited = {}) {
   const bullet = attributes(localElementOpening(xml, "buChar")).char;
   const autoNumberAttrs = attributes(localElementOpening(xml, "buAutoNum"));
   const hasBulletNone = Boolean(localElementOpening(xml, "buNone"));
+  const bulletFont = decodeXml(attributes(localElementOpening(xml, "buFont")).typeface || "") || undefined;
+  const bulletColor = parseColor(localElementBlock(xml, "buClr"));
+  const bulletSizePoints = attributes(localElementOpening(xml, "buSzPts")).val;
+  const bulletSizePercent = attributes(localElementOpening(xml, "buSzPct")).val;
+  const bulletFontFollowText = Boolean(localElementOpening(xml, "buFontTx"));
+  const bulletColorFollowText = Boolean(localElementOpening(xml, "buClrTx"));
+  const bulletSizeFollowText = Boolean(localElementOpening(xml, "buSzTx"));
   const level = normalizeLevel(attrs.lvl ?? inherited.level ?? 0);
   const alignment = { l: "left", ctr: "center", r: "right", just: "justify" }[attrs.algn] || inherited.alignment;
   return {
@@ -234,6 +278,13 @@ function parseParagraphProperties(xml = "", inherited = {}) {
     ...(bullet != null ? { bulletCharacter: decodeXml(bullet), autoNumber: undefined, bulletNone: undefined } : {}),
     ...(autoNumberAttrs.type ? { autoNumber: { type: autoNumberAttrs.type, ...(autoNumberAttrs.startAt == null ? {} : { startAt: Number(autoNumberAttrs.startAt) }) }, bulletCharacter: undefined, bulletNone: undefined } : {}),
     ...(hasBulletNone ? { bulletNone: true, bulletCharacter: undefined, autoNumber: undefined } : {}),
+    ...(bulletFont ? { bulletFont, bulletFontFollowText: undefined } : {}),
+    ...(bulletFontFollowText ? { bulletFontFollowText: true, bulletFont: undefined } : {}),
+    ...(bulletColor ? { bulletColor, bulletColorFollowText: undefined } : {}),
+    ...(bulletColorFollowText ? { bulletColorFollowText: true, bulletColor: undefined } : {}),
+    ...(bulletSizePoints != null ? { bulletSize: Number(bulletSizePoints) / HUNDREDTH_POINTS_PER_PIXEL, bulletSizePercent: undefined, bulletSizeFollowText: undefined } : {}),
+    ...(bulletSizePercent != null ? { bulletSizePercent: Number(bulletSizePercent) / 100000, bulletSize: undefined, bulletSizeFollowText: undefined } : {}),
+    ...(bulletSizeFollowText ? { bulletSizeFollowText: true, bulletSize: undefined, bulletSizePercent: undefined } : {}),
     ...(parseSpacing(xml, "spcBef")?.points != null ? { spaceBefore: parseSpacing(xml, "spcBef").points } : {}),
     ...(parseSpacing(xml, "spcBef")?.percent != null ? { spaceBeforePercent: parseSpacing(xml, "spcBef").percent } : {}),
     ...(parseSpacing(xml, "spcAft")?.points != null ? { spaceAfter: parseSpacing(xml, "spcAft").points } : {}),
@@ -306,13 +357,20 @@ function spacingXml(localName, value, percent = false) {
   return percent ? `<a:${localName}><a:spcPct val="${Math.round(value * 100000)}"/></a:${localName}>` : `<a:${localName}><a:spcPts val="${Math.round(value * HUNDREDTH_POINTS_PER_PIXEL)}"/></a:${localName}>`;
 }
 
+function bulletColorXml(value) {
+  return presentationColorXml(value).replace(/^<a:solidFill>/, "").replace(/<\/a:solidFill>$/, "");
+}
+
 function paragraphPropertiesXml(paragraph) {
   const alignment = { left: "l", center: "ctr", right: "r", justify: "just" }[paragraph.alignment];
   const attrs = `${paragraph.level ? ` lvl="${paragraph.level}"` : ""}${alignment ? ` algn="${alignment}"` : ""}${paragraph.marginLeft != null ? ` marL="${Math.round(paragraph.marginLeft * EMU_PER_PIXEL)}"` : ""}${paragraph.indent != null ? ` indent="${Math.round(paragraph.indent * EMU_PER_PIXEL)}"` : ""}`;
   const bullet = paragraph.bulletCharacter != null ? `<a:buChar char="${attrEscape(paragraph.bulletCharacter)}"/>` : paragraph.autoNumber ? `<a:buAutoNum type="${attrEscape(paragraph.autoNumber.type)}"${paragraph.autoNumber.startAt == null ? "" : ` startAt="${paragraph.autoNumber.startAt}"`}/>` : paragraph.bulletNone ? "<a:buNone/>" : "";
+  const bulletColor = paragraph.bulletColorFollowText ? "<a:buClrTx/>" : paragraph.bulletColor != null ? `<a:buClr>${bulletColorXml(paragraph.bulletColor)}</a:buClr>` : "";
+  const bulletSize = paragraph.bulletSizeFollowText ? "<a:buSzTx/>" : paragraph.bulletSizePercent != null ? `<a:buSzPct val="${Math.round(paragraph.bulletSizePercent * 100000)}"/>` : paragraph.bulletSize != null ? `<a:buSzPts val="${Math.round(paragraph.bulletSize * HUNDREDTH_POINTS_PER_PIXEL)}"/>` : "";
+  const bulletFont = paragraph.bulletFontFollowText ? "<a:buFontTx/>" : paragraph.bulletFont != null ? `<a:buFont typeface="${attrEscape(paragraph.bulletFont)}"/>` : "";
   const spacing = `${spacingXml("lnSpc", paragraph.lineSpacing, paragraph.lineSpacing == null || paragraph.lineSpacing <= 10)}${spacingXml("spcBef", paragraph.spaceBefore)}${spacingXml("spcBef", paragraph.spaceBeforePercent, true)}${spacingXml("spcAft", paragraph.spaceAfter)}${spacingXml("spcAft", paragraph.spaceAfterPercent, true)}`;
   const defaultRun = Object.keys(paragraph.style || {}).length ? runPropertiesXml(paragraph.style, "a:defRPr") : "";
-  return `<a:pPr${attrs}>${spacing}${bullet}${defaultRun}</a:pPr>`;
+  return `<a:pPr${attrs}>${spacing}${bulletColor}${bulletSize}${bulletFont}${bullet}${defaultRun}</a:pPr>`;
 }
 
 export function presentationParagraphsXml(paragraphs = [], defaultStyle = {}) {
@@ -386,7 +444,10 @@ export function presentationParagraphsSvg(paragraphs, frame, defaultStyle = {}, 
       const label = autoNumberLabel(paragraph.autoNumber, index);
       marker = /ParenBoth$/.test(paragraph.autoNumber.type) ? `(${label})` : /ParenR$/.test(paragraph.autoNumber.type) ? `${label})` : /Period$/.test(paragraph.autoNumber.type) ? `${label}.` : label;
     }
-    const markerXml = marker ? `<text x="${textX + (paragraph.indent ?? -12)}" y="${y + fontSize}" font-family="${attrEscape(paragraphStyle.fontFamily || "Arial")}" font-size="${fontSize}" fill="${attrEscape(paragraphStyle.color || "#0f172a")}">${escape(marker)}</text>` : "";
+    const markerFontSize = paragraph.bulletSize ?? fontSize * (paragraph.bulletSizePercent ?? 1);
+    const markerFontFamily = paragraph.bulletFontFollowText ? paragraphStyle.fontFamily : paragraph.bulletFont || paragraphStyle.fontFamily;
+    const markerColor = paragraph.bulletColorFollowText ? paragraphStyle.color : paragraph.bulletColor || paragraphStyle.color;
+    const markerXml = marker ? `<text x="${textX + (paragraph.indent ?? -12)}" y="${y + fontSize}" font-family="${attrEscape(markerFontFamily || "Arial")}" font-size="${markerFontSize}" fill="${attrEscape(markerColor || "#0f172a")}">${escape(marker)}</text>` : "";
     let x = textX;
     const runsXml = paragraph.runs.map((run) => {
       const style = { ...paragraphStyle, ...(run.style || {}) };

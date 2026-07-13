@@ -1038,7 +1038,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, bullets, auto-numbering, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
+  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -1900,7 +1900,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
   }, "shape", "Shape", "Appended editable shape/textbox."),
   "shape.text.set": helpSchema({
-    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/autoNumber/bulletNone, marginLeft, indent, spacing, alignment, and run styles." },
+    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles." },
   }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
