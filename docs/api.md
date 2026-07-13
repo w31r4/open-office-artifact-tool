@@ -989,7 +989,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
-| `slide.charts.add` | api | Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines, axes, legend, layout JSON, SVG preview, and native PPTX chart output. |
+| `slide.charts.add` | api | Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output. |
 | `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
@@ -1382,14 +1382,14 @@ Place existing shapes inside a frame using horizontal or vertical flow, gap, pad
 
 #### `slide.charts.add`
 
-Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines, axes, legend, layout JSON, SVG preview, and native PPTX chart output.
+Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output.
 
 **Schema parameters:**
 
 - `chartType` (string) — bar, line, pie, or combo; combo series each require chartType bar or line and share the primary axes.
 - `title` (string) — Chart title.
 - `categories` (string[]) required — Category labels.
-- `series` (object[]) required — Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, and trendline/trendlines. Trendline types are exp/exponential, linear, log/logarithmic, movingAvg/movingAverage, poly/polynomial, and power, with bounded order/period/extensions/intercept, equation/R-squared flags, name, and line style; combo series require chartType bar or line.
+- `series` (object[]) required — Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, and errorBars. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line.
 - `position` (object) — Pixel left/top/width/height frame.
 - `axes` (object) — Axis titles/options.
 - `legend` (object) — Legend options.
