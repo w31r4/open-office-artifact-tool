@@ -21,7 +21,7 @@ Use this project skill for standalone `.pptx` artifact work. It is the clean-roo
 ## Authoring workflow
 
 1. Create a `Presentation` or import an existing PPTX with `PresentationFile.importPptx`.
-2. Define the communication job and select a coherent theme/master/layout system before adding slides. Use `presentation.master` for the first-master compatibility path or `presentation.masters.add(...)` for multiple Slide Masters, then bind every layout with `masterId`; layout backgrounds/placeholders override only their owning master. Use `presentation.theme.setColors(...)`, `.setFonts(...)`, `.setTextStyles(...)`, and `.setColorMap(...)` for deck defaults. Pass `theme` when adding a master or call `master.setTheme(...)` only when that master needs its own inherited native Theme; pass `null` to resume deck-theme inheritance. Keep individual slide/shape styles for deliberate exceptions.
+2. Define the communication job and select a coherent theme/master/layout system before adding slides. Use `presentation.master` for the first-master compatibility path or `presentation.masters.add(...)` for multiple Slide Masters, then bind every layout with `masterId`; layout backgrounds/placeholders override only their owning master. Use `presentation.theme.setColors(...)`, `.setFonts(...)`, `.setTextStyles(...)`, and `.setColorMap(...)` for deck defaults. Put reusable title/body/other list levels in a master's `textParagraphStyles`; placeholder `paragraphStyles`, layout styles, and direct slide paragraphs override that cascade. Keep individual slide/shape styles for deliberate exceptions.
 3. Inspect the relevant slides, text ranges, tables, charts, images, notes, and comments before editing.
    Imported unsupported native objects appear in `presentation.inspect({ kind: "nativeObject" })` and resolve by ID. `contentPart`, OLE, SmartArt/diagram, and generic graphic-frame facades are deliberately `editable:false`: preserve them through ordinary modeled edits and second export, but do not claim semantic editing or replace their raw XML/part graph.
 4. Apply focused changes through public APIs and keep stable names on important objects.
@@ -55,6 +55,14 @@ const title = slide.shapes.add({
   text: "Native PPTX parts preserve structure",
 });
 title.text.style = { fontFamily: "Arial", fontSize: 42, bold: true, color: "#000000" };
+const evidenceList = slide.shapes.add({
+  name: "evidence-list",
+  position: { left: 42, top: 112, width: 1196, height: 58 },
+  fill: "transparent",
+  line: { fill: "transparent", width: 0 },
+  text: [{ bulletCharacter: "•", marginLeft: 24, indent: -12, runs: [{ run: "Inspectable", textStyle: { bold: true } }, " structured text"] }],
+});
+evidenceList.text.style = { fontFamily: "Arial", fontSize: 18, color: "#334155" };
 slide.tables.add({
   name: "evidence-table",
   position: { left: 42, top: 180, width: 1196, height: 360 },
@@ -124,6 +132,7 @@ node skills/presentations/scripts/run-fixture.mjs \
 - `presentation.inspect(...)` proves agent-facing objects, master/layout identity, and review metadata survived roundtrip.
 - Package evidence must include the presentation master list, master/layout parts, and the master↔layout plus slide→layout relationship chain when layouts are used.
 - Theme evidence must include all 12 DrawingML color slots, major/minor Latin plus optional East-Asian/complex-script fonts, non-empty fill/line/effect/background format lists, a Slide Master `clrMap`, and title/body/other text styles. Every master must relate to its effective Theme part; inherited masters may share the deck Theme, while distinct overrides require distinct parts. Re-import and model/native rendering must restore the same effective values.
+- Paragraph evidence must retain ordered runs, levels 0–8, bullets or auto-numbering, margins/indents, point or percentage spacing, and the master → placeholder → layout → slide cascade. Inspect the effective `paragraphs`, re-export, and visually confirm marker choice and indentation; structured-run hyperlinks are not yet supported and must not be silently flattened.
 - Master/layout evidence must restore native `p:bg` solid or scheme references and merge placeholders by `type` plus `idx`; slide backgrounds override layout backgrounds, which override the linked master. Inspect and render must report the same effective background.
 - The checked-in `package-drawing.json` fixture generates a chart part through the public facade, attaches it and an arbitrary-path image to an existing slide through `patchPptx`, restores both as editable agent-facing objects, and passes the real render gate.
 - The checked-in `package-notes-comments.json` fixture relocates notes, comments, and the singleton author registry to arbitrary valid paths, proves semantic validation reports zero issues, restores author identity and note text, and passes LibreOffice/Poppler rendering.

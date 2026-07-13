@@ -863,6 +863,100 @@ assert.equal((await PresentationFile.inspectPptx(legacyGroupedPptx)).ok, true);
 const legacyGroupedLoaded = await PresentationFile.importPptx(legacyGroupedPptx);
 assert.equal(legacyGroupedLoaded.slides.items[0].resolve(legacyGroupedLoaded.slides.items[0].comments.items[0].targetId)?.name, "legacy-image");
 
+const paragraphPresentation = Presentation.create({
+  master: {
+    id: "master/lists",
+    name: "List Master",
+    textParagraphStyles: {
+      body: {
+        0: { bulletCharacter: "○", marginLeft: 30, indent: -15, style: { fontSize: 22, color: "tx1" } },
+        1: { bulletCharacter: "–", marginLeft: 52, indent: -20, spaceBeforePercent: 0.2, style: { fontSize: 18, color: "tx2" } },
+      },
+    },
+    placeholders: [{
+      type: "body",
+      idx: 1,
+      name: "Inherited List",
+      position: { left: 80, top: 80, width: 720, height: 360 },
+      paragraphStyles: { 0: { bulletCharacter: "•", marginLeft: 28, indent: -14, spaceAfter: 6, style: { fontSize: 20, color: "accent1" } } },
+    }],
+  },
+  layouts: [{ id: "layout/lists", name: "List Layout", type: "obj", masterId: "master/lists", placeholders: [{ type: "body", idx: 1, name: "Inherited List" }] }],
+});
+const paragraphSlide = paragraphPresentation.slides.add({ layoutId: "layout/lists" });
+const [inheritedListShape] = paragraphPresentation.layouts.getItem("layout/lists").apply(paragraphSlide);
+inheritedListShape.text.set([{ runs: ["Inherited one"] }, { level: 1, runs: ["Inherited two"] }]);
+const richTextShape = paragraphSlide.shapes.add({ name: "rich-list", position: { left: 820, top: 80, width: 380, height: 420 }, text: "" });
+richTextShape.text.set([
+  [{ run: "Status", textStyle: { bold: true, color: "#0f172a" } }, " review"],
+  { bulletCharacter: "•", marginLeft: 24, indent: -12, spaceAfter: 5, runs: [{ run: "Quality:", textStyle: { bold: true } }, " defects down"] },
+  { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
+]);
+richTextShape.text.style = { fontFamily: "Arial", fontSize: 20, color: "#334155", lineSpacing: 1.15 };
+assert.equal(richTextShape.text.value, "Status review\nQuality: defects down\nShip");
+assert.equal(richTextShape.text.paragraphs[1].bulletCharacter, "•");
+assert.deepEqual(richTextShape.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
+assert.match(richTextShape.toSvg(), />•<\/text>/);
+assert.match(richTextShape.toSvg(), />3\.<\/text>/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "xx", runs: ["bad"] }]), /exactly one Unicode character/);
+assert.throws(() => richTextShape.text.set([{ autoNumber: { type: "unsupported" }, runs: ["bad"] }]), /Unsupported Presentation auto-number type/);
+assert.throws(() => richTextShape.text.set([{ spaceBefore: 4, spaceBeforePercent: 0.2, runs: ["bad"] }]), /either spaceBefore or spaceBeforePercent/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", isExternal: true } }]]), /structured-run links are not supported yet/);
+assert.throws(() => Presentation.create({ master: { textParagraphStyles: { body: { 9: { bulletCharacter: "•" } } } } }), /level must be an integer from 0 through 8/);
+richTextShape.text.set([
+  [{ run: "Status", textStyle: { bold: true, color: "#0f172a" } }, " review"],
+  { bulletCharacter: "•", marginLeft: 24, indent: -12, spaceAfter: 5, runs: [{ run: "Quality:", textStyle: { bold: true } }, " defects down"] },
+  { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
+]);
+const paragraphInspect = paragraphPresentation.inspect({ kind: "textbox", target: richTextShape.id, maxChars: 20_000 });
+assert.match(paragraphInspect.ndjson, /"bulletCharacter":"•"/);
+assert.match(paragraphInspect.ndjson, /"type":"arabicPeriod","startAt":3/);
+assert.match(paragraphPresentation.help("shape.text.set").ndjson, /structured paragraphs/);
+const paragraphPptx = await PresentationFile.exportPptx(paragraphPresentation);
+assert.equal((await PresentationFile.inspectPptx(paragraphPptx)).ok, true);
+const paragraphZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+const paragraphSlideXml = await paragraphZip.file("ppt/slides/slide1.xml").async("text");
+const paragraphMasterXml = await paragraphZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+assert.match(paragraphSlideXml, /<a:buChar char="•"\/>/);
+assert.match(paragraphSlideXml, /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
+assert.match(paragraphSlideXml, /<a:rPr[^>]*b="1"/);
+assert.match(paragraphSlideXml, /<a:rPr[^>]*i="1"[^>]*u="sng"/);
+assert.match(paragraphMasterXml, /<a:lstStyle><a:lvl1pPr[^>]*marL="266700"[^>]*indent="-133350"/);
+assert.match(paragraphMasterXml, /<a:buChar char="•"\/>/);
+assert.match(paragraphMasterXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr[^>]*marL="495300"[^>]*indent="-190500"[\s\S]*?<a:spcPct val="20000"\/>[\s\S]*?<a:buChar char="–"\/>/);
+const inheritedListShapeXml = /<p:sp>[\s\S]*?<p:cNvPr[^>]*name="Inherited List"[\s\S]*?<\/p:sp>/.exec(paragraphSlideXml)[0];
+paragraphZip.file("ppt/slides/slide1.xml", paragraphSlideXml.replace(inheritedListShapeXml, inheritedListShapeXml.replaceAll(/<a:buChar char="[^"]+"\/>/g, "").replaceAll(/ marL="-?\d+" indent="-?\d+"/g, "").replaceAll(/<a:spcBef>[\s\S]*?<\/a:spcBef>/g, "")));
+const inheritedParagraphPptx = new FileBlob(await paragraphZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+const paragraphLoaded = await PresentationFile.importPptx(inheritedParagraphPptx);
+const paragraphLoadedInherited = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List");
+const paragraphLoadedRich = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "rich-list");
+assert.deepEqual(paragraphLoadedInherited.text.effectiveParagraphs().map((paragraph) => paragraph.bulletCharacter), ["•", "–"]);
+assert.deepEqual(paragraphLoadedInherited.position, { left: 80, top: 80, width: 720, height: 360 });
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].marginLeft, 28);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].style.color, "accent1");
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].marginLeft, 52);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].indent, -20);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].spaceBeforePercent, 0.2);
+assert.equal(paragraphLoadedRich.text.paragraphs[0].runs[0].style.bold, true);
+assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletCharacter, "•");
+assert.deepEqual(paragraphLoadedRich.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
+assert.equal(paragraphLoadedRich.text.paragraphs[2].runs[0].style.italic, true);
+assert.equal(paragraphLoadedRich.text.paragraphs[2].runs[0].style.underline, "sng");
+const paragraphSecondPptx = await PresentationFile.exportPptx(paragraphLoaded);
+assert.equal((await PresentationFile.inspectPptx(paragraphSecondPptx)).ok, true);
+const paragraphSecondZip = await JSZip.loadAsync(new Uint8Array(await paragraphSecondPptx.arrayBuffer()));
+assert.match(await paragraphSecondZip.file("ppt/slides/slide1.xml").async("text"), /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
+assert.match(await paragraphSecondZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:bodyStyle>[\s\S]*?<a:buChar char="–"\/>/);
+const alternatePrefixParagraphZip = await JSZip.loadAsync(new Uint8Array(await inheritedParagraphPptx.arrayBuffer()));
+for (const file of ["ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml", "ppt/slides/slide1.xml"]) {
+  const xml = await alternatePrefixParagraphZip.file(file).async("text");
+  alternatePrefixParagraphZip.file(file, xml.replaceAll("<p:", "<deck:").replaceAll("</p:", "</deck:").replace("xmlns:p=", "xmlns:deck=").replaceAll("<a:", "<draw:").replaceAll("</a:", "</draw:").replace("xmlns:a=", "xmlns:draw="));
+}
+const alternatePrefixParagraphPptx = new FileBlob(await alternatePrefixParagraphZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+const alternatePrefixParagraphLoaded = await PresentationFile.importPptx(alternatePrefixParagraphPptx);
+assert.equal(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List").text.effectiveParagraphs()[0].bulletCharacter, "•");
+assert.deepEqual(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "rich-list").text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
+
 // Unsupported native drawing objects remain agent-visible and preserve their complete OPC relationship graph.
 const nativeObjectSource = Presentation.create();
 const nativeObjectSourceSlide = nativeObjectSource.slides.add();

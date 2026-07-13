@@ -18,6 +18,12 @@
       "id": "master/agent-readiness",
       "name": "Agent Readiness Master",
       "background": { "fill": "bg1", "mode": "reference", "index": 1001 },
+      "textParagraphStyles": {
+        "body": {
+          "0": { "bulletCharacter": "•", "marginLeft": 28, "indent": -14, "spaceAfter": 4, "style": { "fontSize": 20, "color": "tx2" } },
+          "1": { "bulletCharacter": "–", "marginLeft": 52, "indent": -18, "spaceBeforePercent": 0.2, "style": { "fontSize": 18, "color": "tx2" } }
+        }
+      },
       "placeholders": [
         { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "Agent Readiness Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
       ]
@@ -80,7 +86,7 @@
       "notes": "Close by showing that semantic, package, and visual gates are cumulative rather than interchangeable.",
       "shapes": [
         { "name": "qa-title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Three gates turn a PPTX into evidence", "textStyle": { "fontSize": 42, "bold": true, "color": "#000000" } },
-        { "name": "semantic-callout", "position": { "left": 680, "top": 160, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": "Semantic gate catches broken structure", "textStyle": { "fontSize": 24, "bold": true, "color": "#000000" } },
+        { "name": "semantic-callout", "position": { "left": 680, "top": 160, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": [{ "runs": [{ "run": "Semantic gate", "textStyle": { "bold": true } }] }, { "bulletCharacter": "•", "marginLeft": 24, "indent": -12, "runs": ["catches broken structure"] }], "textStyle": { "fontSize": 24, "color": "#000000" } },
         { "name": "package-callout", "position": { "left": 680, "top": 330, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": "Package gate proves native parts exist", "textStyle": { "fontSize": 24, "bold": true, "color": "#000000" } },
         { "name": "visual-callout", "position": { "left": 680, "top": 500, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": "Visual gate catches what XML cannot", "textStyle": { "fontSize": 24, "bold": true, "color": "#000000" } },
         { "name": "qa-footer", "position": { "left": 1160, "top": 648, "width": 78, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "03", "textStyle": { "fontSize": 16, "color": "#64748B" } }

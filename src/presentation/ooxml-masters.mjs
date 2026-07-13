@@ -90,7 +90,13 @@ function placeholderKey(placeholder) {
 }
 
 export function mergePresentationPlaceholders(masterPlaceholders = [], layoutPlaceholders = []) {
-  const merged = new Map(masterPlaceholders.map((placeholder) => [placeholderKey(placeholder), { ...placeholder, position: placeholder.position && { ...placeholder.position }, style: { ...(placeholder.style || {}) } }]));
+  const cloneParagraphStyles = (styles = {}) => Object.fromEntries(Object.entries(styles).map(([level, style]) => [level, { ...style, style: { ...(style.style || {}) } }]));
+  const mergeParagraphStyles = (base = {}, overrides = {}) => {
+    const result = cloneParagraphStyles(base);
+    for (const [level, style] of Object.entries(overrides)) result[level] = { ...(result[level] || {}), ...style, style: { ...(result[level]?.style || {}), ...(style.style || {}) } };
+    return result;
+  };
+  const merged = new Map(masterPlaceholders.map((placeholder) => [placeholderKey(placeholder), { ...placeholder, position: placeholder.position && { ...placeholder.position }, style: { ...(placeholder.style || {}) }, paragraphStyles: cloneParagraphStyles(placeholder.paragraphStyles) }]));
   for (const placeholder of layoutPlaceholders) {
     const key = placeholderKey(placeholder);
     const inherited = merged.get(key) || {};
@@ -99,6 +105,7 @@ export function mergePresentationPlaceholders(masterPlaceholders = [], layoutPla
       ...placeholder,
       position: { ...(inherited.position || {}), ...(placeholder.position || {}) },
       style: { ...(inherited.style || {}), ...(placeholder.style || {}) },
+      paragraphStyles: mergeParagraphStyles(inherited.paragraphStyles, placeholder.paragraphStyles),
     });
   }
   return [...merged.values()];

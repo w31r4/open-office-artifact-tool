@@ -24,6 +24,7 @@ import { mergePresentationPlaceholders, normalizePresentationBackground, parsePr
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
+import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./spreadsheet/formula-coercion.mjs";
@@ -1037,6 +1038,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
+  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, bullets, auto-numbering, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -1892,11 +1894,14 @@ const PRESENTATION_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable shape name." },
     geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
-    text: { type: "string", description: "Shape text." },
+    text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs/runs accepted by shape.text.set." },
     fill: { type: "string|object", description: "Shape fill." },
     line: { type: "object", description: "Line color, width, dash, and arrow metadata." },
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
   }, "shape", "Shape", "Appended editable shape/textbox."),
+  "shape.text.set": helpSchema({
+    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/autoNumber/bulletNone, marginLeft, indent, spacing, alignment, and run styles." },
+  }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
     position: { type: "object", required: true, description: "Group frame in parent or slide pixel coordinates." },
@@ -7131,7 +7136,7 @@ function presentationThemeSemantics(theme) {
   return JSON.stringify({ name: normalized.name, colors: normalized.colors, fonts: normalized.fonts, textStyles: normalized.textStyles, colorMap: normalized.colorMap });
 }
 
-function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder") {
+function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder", options = {}) {
   if (!Array.isArray(value)) throw new TypeError("Presentation placeholders must be an array.");
   if (value.length > 128) throw new RangeError("Presentation placeholders exceed 128 entries.");
   const placeholders = value.map((placeholder, index) => ({
@@ -7139,14 +7144,36 @@ function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder")
     type: placeholder.type || "body",
     idx: Number(placeholder.idx ?? index + 1),
     name: placeholder.name || `${placeholder.type || "body"} placeholder`,
-    position: normalizeFrame(placeholder, { left: 80, top: 80 + index * 80, width: 640, height: 64 }),
-    text: placeholder.text || "",
+    position: options.allowMissingPosition && !placeholder.position && !placeholder.frame && !["left", "top", "width", "height"].some((key) => placeholder[key] != null) ? undefined : normalizeFrame(placeholder, { left: 80, top: 80 + index * 80, width: 640, height: 64 }),
+    text: placeholder.text ?? "",
     required: Boolean(placeholder.required),
     style: { ...(placeholder.style || {}) },
+    paragraphStyles: normalizePresentationParagraphStyles(placeholder.paragraphStyles || placeholder.listStyles || {}),
   }));
   if (placeholders.some((placeholder) => !Number.isInteger(placeholder.idx) || placeholder.idx < 1 || placeholder.idx > 4_294_967_295)) throw new RangeError("Presentation placeholder idx must be an unsigned positive 32-bit integer.");
   if (new Set(placeholders.map((placeholder) => `${placeholder.type}:${placeholder.idx}`)).size !== placeholders.length) throw new Error("Presentation placeholder type/idx pairs must be unique.");
   return placeholders;
+}
+
+function clonePresentationParagraphStyles(styles = {}) {
+  return Object.fromEntries(Object.entries(styles).map(([level, style]) => [Number(level), { ...style, style: { ...(style.style || {}) } }]));
+}
+
+function mergePresentationParagraphStyles(base = {}, overrides = {}) {
+  const result = clonePresentationParagraphStyles(base);
+  for (const [level, style] of Object.entries(overrides || {})) result[Number(level)] = { ...(result[Number(level)] || {}), ...style, style: { ...(result[Number(level)]?.style || {}), ...(style.style || {}) } };
+  return result;
+}
+
+function normalizePresentationMasterParagraphStyles(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Presentation master textParagraphStyles must be an object.");
+  return Object.fromEntries(["title", "body", "other"].map((kind) => [kind, normalizePresentationParagraphStyles(value[kind] || {})]));
+}
+
+function presentationPlaceholderTextStyleKind(type = "body") {
+  if (["title", "ctrTitle"].includes(type)) return "title";
+  if (["body", "subTitle", "obj", "chart", "tbl", "clipArt", "dgm", "media", "pic"].includes(type)) return "body";
+  return "other";
 }
 
 class PresentationSlideMaster {
@@ -7158,6 +7185,7 @@ class PresentationSlideMaster {
     this.theme = config.theme ? new PresentationTheme(presentation, { ...config.theme, id: config.theme.id || `${this.id}/theme` }, presentation.theme) : undefined;
     this.background = normalizePresentationBackground(config.background, presentation.theme.colors.bg1);
     this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`);
+    this.textParagraphStyles = normalizePresentationMasterParagraphStyles(config.textParagraphStyles || {});
   }
 
   update(config = {}) {
@@ -7169,14 +7197,16 @@ class PresentationSlideMaster {
     if (Object.hasOwn(config, "theme")) this.theme = config.theme ? new PresentationTheme(this.presentation, { ...config.theme, id: config.theme.id || `${this.id}/theme` }, this.presentation.theme) : undefined;
     if (config.background) this.background = normalizePresentationBackground(config.background, this.background);
     if (config.placeholders) this.placeholders = normalizePresentationPlaceholders(config.placeholders, `${this.id}/ph`);
+    if (config.textParagraphStyles) this.textParagraphStyles = normalizePresentationMasterParagraphStyles(config.textParagraphStyles);
     return this;
   }
 
   setBackground(background) { this.configured = true; this.background = normalizePresentationBackground(background, this.background); return this; }
   setTheme(theme) { this.configured = true; this.theme = theme ? new PresentationTheme(this.presentation, { ...theme, id: theme.id || `${this.id}/theme` }, this.presentation.theme) : undefined; return this; }
   effectiveTheme() { return this.theme || this.presentation.theme; }
-  inspectRecord() { const theme = this.effectiveTheme(); return { kind: "slideMaster", id: this.id, name: this.name, background: this.background, placeholders: this.placeholders.length, placeholderTypes: this.placeholders.map((placeholder) => placeholder.type), hasThemeOverride: Boolean(this.theme), themeId: theme.id, themeName: theme.name }; }
-  toJSON() { return { id: this.id, name: this.name, background: this.background, theme: this.theme?.toJSON(), placeholders: this.placeholders.map((placeholder) => ({ ...placeholder })) }; }
+  paragraphStylesForPlaceholder(type) { return this.textParagraphStyles[presentationPlaceholderTextStyleKind(type)] || {}; }
+  inspectRecord() { const theme = this.effectiveTheme(); return { kind: "slideMaster", id: this.id, name: this.name, background: this.background, placeholders: this.placeholders.length, placeholderTypes: this.placeholders.map((placeholder) => placeholder.type), textParagraphStyleLevels: Object.fromEntries(Object.entries(this.textParagraphStyles).map(([kind, styles]) => [kind, Object.keys(styles).length])), hasThemeOverride: Boolean(this.theme), themeId: theme.id, themeName: theme.name }; }
+  toJSON() { return { id: this.id, name: this.name, background: this.background, theme: this.theme?.toJSON(), placeholders: this.placeholders.map((placeholder) => ({ ...placeholder })), textParagraphStyles: normalizePresentationMasterParagraphStyles(this.textParagraphStyles) }; }
 }
 
 class PresentationSlideMasterCollection {
@@ -7203,12 +7233,18 @@ class SlideLayoutTemplate {
     this.type = config.type || "blank";
     this.masterId = config.masterId || presentation.master.id;
     this.background = config.background ? normalizePresentationBackground(config.background) : undefined;
-    this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`);
+    this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`, { allowMissingPosition: true });
   }
 
   effectiveMaster() { return this.presentation.masters.getItem(this.masterId); }
   effectiveTheme() { return this.effectiveMaster()?.effectiveTheme() || this.presentation.theme; }
-  effectivePlaceholders() { return mergePresentationPlaceholders(this.effectiveMaster()?.placeholders || [], this.placeholders); }
+  effectivePlaceholders() {
+    const master = this.effectiveMaster();
+    return mergePresentationPlaceholders(master?.placeholders || [], this.placeholders).map((placeholder) => ({
+      ...placeholder,
+      paragraphStyles: mergePresentationParagraphStyles(master?.paragraphStylesForPlaceholder(placeholder.type), placeholder.paragraphStyles),
+    }));
+  }
   effectiveBackground() { return this.background || this.effectiveMaster()?.background; }
 
   apply(slide) {
@@ -7226,6 +7262,7 @@ class SlideLayoutTemplate {
         placeholder: { layoutId: this.id, type: placeholder.type, name: placeholder.name, required: placeholder.required, idx: placeholder.idx },
       });
       shape.text.style = { ...placeholder.style };
+      shape.text.inheritedParagraphStyles = Object.fromEntries(Object.entries(placeholder.paragraphStyles || {}).map(([level, style]) => [level, { ...style, style: { ...(style.style || {}) } }]));
       return shape;
     });
   }
@@ -7447,12 +7484,16 @@ function overlapArea(a, b) {
 function textOverflowIssue(slide, element, frame) {
   const text = element.text?.value || "";
   if (!text) return undefined;
-  const fontSize = element.text.style.fontSize || 24;
-  const lineSpacing = element.text.style.lineSpacing || 1.2;
-  const availableWidth = Math.max(1, frame.width - 18);
-  const charsPerLine = Math.max(1, Math.floor(availableWidth / (fontSize * 0.55)));
-  const requiredLines = String(text).split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
-  const requiredHeight = requiredLines * fontSize * lineSpacing + 12;
+  const paragraphs = typeof element.text.effectiveParagraphs === "function" ? element.text.effectiveParagraphs() : normalizePresentationParagraphs(text);
+  const requiredHeight = paragraphs.reduce((height, paragraph) => {
+    const paragraphFontSize = Math.max(element.text.style.fontSize || 24, ...paragraph.runs.map((run) => run.style?.fontSize || 0));
+    const availableWidth = Math.max(1, frame.width - 18 - Math.max(0, paragraph.marginLeft || paragraph.level * 24));
+    const charsPerLine = Math.max(1, Math.floor(availableWidth / (paragraphFontSize * 0.55)));
+    const requiredLines = Math.max(1, Math.ceil(presentationParagraphsText([paragraph]).length / charsPerLine));
+    const spacing = paragraph.lineSpacing || element.text.style.lineSpacing || 1.2;
+    const lineHeight = spacing > 10 ? spacing : paragraphFontSize * spacing;
+    return height + (paragraph.spaceBefore ?? paragraphFontSize * (paragraph.spaceBeforePercent || 0)) + requiredLines * lineHeight + (paragraph.spaceAfter ?? paragraphFontSize * (paragraph.spaceAfterPercent || 0));
+  }, 12);
   if (requiredHeight <= frame.height) return undefined;
   return {
     kind: "layoutIssue",
@@ -7898,9 +7939,14 @@ function textRangeRecord(parent, options = {}) {
 }
 
 class TextFrame {
-  constructor(text = "") { this.value = text; this.style = {}; }
-  set(text) { this.value = String(text ?? ""); }
-  replace(search, replacement) { this.value = this.value.replace(search, replacement); }
+  constructor(text = "") { this._paragraphs = normalizePresentationParagraphs(text); this.style = {}; this.inheritedParagraphStyles = {}; }
+  get value() { return presentationParagraphsText(this._paragraphs); }
+  set value(text) { this._paragraphs = normalizePresentationParagraphs(text); }
+  get paragraphs() { return normalizePresentationParagraphs(this._paragraphs); }
+  set paragraphs(value) { this._paragraphs = normalizePresentationParagraphs(value); }
+  effectiveParagraphs() { return inheritPresentationParagraphs(this._paragraphs, this.inheritedParagraphStyles); }
+  set(text) { this._paragraphs = normalizePresentationParagraphs(text); return this; }
+  replace(search, replacement) { replacePresentationParagraphText(this._paragraphs, search, replacement); return this; }
   toString() { return this.value; }
 }
 
@@ -7917,7 +7963,7 @@ export class Shape {
     this.line = config.line || { fill: "#334155", width: 1 };
     this.borderRadius = config.borderRadius;
     this.placeholder = config.placeholder;
-    this._text = new TextFrame(config.text || "");
+    this._text = new TextFrame(config.text ?? "");
     this._text.style = { ...(config.textStyle || config.style?.text || {}) };
   }
 
@@ -7926,10 +7972,11 @@ export class Shape {
 
   inspectRecord(kind = "shape") {
     const p = this.position;
-    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split(/\r?\n/).length : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", placeholder: this.placeholder || undefined };
+    const paragraphs = this.text.effectiveParagraphs();
+    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? paragraphs.length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", placeholder: this.placeholder || undefined };
   }
 
-  layoutJson() { return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, text: this.text.value, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }
+  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }
 
   toSvg() {
     const p = this.position;
@@ -7939,12 +7986,12 @@ export class Shape {
     const rect = this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`
       : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`;
-    const text = this.text.value ? `<text x="${p.left + 12}" y="${p.top + 36}" font-family="Arial" font-size="${this.text.style.fontSize || 24}" font-weight="${this.text.style.bold ? "700" : "400"}" fill="${xmlEscape(this.text.style.color || "#0f172a")}">${xmlEscape(this.text.value)}</text>` : "";
+    const text = this.text.value ? presentationParagraphsSvg(this.text.effectiveParagraphs(), p, this.text.style, { escape: xmlEscape }) : "";
     return rect + text;
   }
 
   toPptxShape(index) {
-    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, nativeId: this.nativeId, creationId: this.creationId });
+    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, nativeId: this.nativeId, creationId: this.creationId });
   }
 }
 
@@ -8217,8 +8264,8 @@ export class PresentationFile {
     zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, masterParts, commentAuthors.entries.length > 0, modernComments.authors.length > 0));
     for (const themePart of themeParts) zip.file(`ppt/theme/theme${themePart.themePartId}.xml`, presentationThemeXml(themePart.theme));
     for (const masterPart of masterParts) {
-      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text || "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style })).join("");
-      zip.file(`ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`, presentationSlideMasterXml(masterPart.layoutParts, masterPart.master.effectiveTheme(), { name: masterPart.master.name, backgroundXml: presentationBackgroundXml(masterPart.master.background), placeholdersXml: masterPlaceholders }));
+      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles })).join("");
+      zip.file(`ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`, presentationSlideMasterXml(masterPart.layoutParts, masterPart.master.effectiveTheme(), { name: masterPart.master.name, backgroundXml: presentationBackgroundXml(masterPart.master.background), placeholdersXml: masterPlaceholders, textParagraphStyles: masterPart.master.textParagraphStyles }));
       zip.file(`ppt/slideMasters/_rels/slideMaster${masterPart.masterPartId}.xml.rels`, pptxSlideMasterRelsXml(masterPart.layoutParts, masterPart.themePartId));
       for (const part of masterPart.layoutParts) {
         zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout));
@@ -8307,6 +8354,7 @@ export class PresentationFile {
         name: decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cSld\b[^>]*\bname="([^"]*)"/.exec(masterXml)?.[1] || `Imported Master ${masterIndex + 1}`),
         background: parsePresentationBackgroundXml(masterXml) || presentation.theme.colors.bg1,
         placeholders: parsePptxPlaceholderShapes(masterXml, { fallbackPositions: true }),
+        textParagraphStyles: parsePresentationMasterListStylesXml(masterXml),
       };
       if (masterIndex === 0) {
         presentation.theme.update(parsePresentationSlideMasterThemeXml(masterXml));
@@ -8490,7 +8538,7 @@ function pptxSlideMasterRelsXml(layoutParts = [], themePartId = 1) {
 }
 
 function pptxSlideLayoutXml(layout) {
-  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text || "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style })).join("");
+  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" type="${attrEscape(layout.type)}" preserve="1"><p:cSld name="${attrEscape(layout.name)}">${presentationBackgroundXml(layout.background)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${placeholders}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
 }
 
@@ -8598,11 +8646,14 @@ function pptxNonVisualPropertiesXml(index, name, extraAttributes = "", identity 
 
 function pptxTextShapeXml(index, name, geometry, position, text = "", placeholder, options = {}) {
   const p = position;
-  const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
+  const transform = p ? `<a:xfrm><a:off x="${Math.round(p.left * 9525)}" y="${Math.round(p.top * 9525)}"/><a:ext cx="${Math.round(p.width * 9525)}" cy="${Math.round(p.height * 9525)}"/></a:xfrm>` : "";
   const textStyle = options.textStyle || {};
-  const paragraphs = String(text || "").split(/\r?\n/).map((line) => `<a:p><a:pPr algn="${attrEscape(textStyle.alignment === "center" ? "ctr" : textStyle.alignment === "right" ? "r" : "l")}"/><a:r>${pptxTextRunPropertiesXml(textStyle)}<a:t>${xmlEscape(line)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${Math.round(Math.max(1, Number(textStyle.fontSize || 24)) * 75)}"/></a:p>`).join("");
+  const paragraphModels = options.paragraphs || normalizePresentationParagraphs(text);
+  const paragraphs = presentationParagraphsXml(paragraphModels, textStyle);
+  const listStyle = presentationListStyleXml(options.paragraphStyles || options.inheritedParagraphStyles || {});
   const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx || 1)}"/>` : "";
-  return `<p:sp><p:nvSpPr>${pptxNonVisualPropertiesXml(index, name, "", options)}<p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
+  const shapeProperties = transform ? `<p:spPr>${transform}<a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr>` : "<p:spPr/>";
+  return `<p:sp><p:nvSpPr>${pptxNonVisualPropertiesXml(index, name, "", options)}<p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr>${shapeProperties}<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/>${listStyle}${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
 }
 
 function pptxPictureXml(index, name, alt, position, relId, identity = {}) {
@@ -8777,9 +8828,11 @@ function parsePptxPlaceholderShapes(xml = "", options = {}) {
     const type = ph.type || "body";
     const idx = Number(ph.idx || index + 1);
     const name = decodeXml(ooxmlXmlAttributes(/<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*\/?\s*>/.exec(part)?.[0]).name || `${type} placeholder`);
-    const text = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => decodeXml(item[1])).join("");
+    const paragraphStyles = parsePresentationListStyleXml(part);
+    const parsedParagraphs = parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles });
+    const textValue = presentationParagraphsNeedSerialization(parsedParagraphs) ? parsedParagraphs : presentationParagraphsText(parsedParagraphs);
     const hasPosition = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(part);
-    return [{ type, idx, name, text, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, style: parsePresentationPlaceholderStyleXml(part) }];
+    return [{ type, idx, name, text: textValue, paragraphStyles, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, style: parsePresentationPlaceholderStyleXml(part) }];
   });
 }
 
@@ -8887,7 +8940,6 @@ function parsePptxConnector(owner, part) {
 
 function parsePptxShape(owner, part, context = {}) {
     const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-    const text = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((m) => decodeXml(m[1])).join("");
     const phAttrs = /<(?:[A-Za-z_][\w.-]*:)?ph\b([^>]*)\/?>(?:<\/(?:[A-Za-z_][\w.-]*:)?ph>)?/.exec(part)?.[1];
     const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "body", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 1), name } : undefined;
     const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.type === placeholder.type && candidate.idx === placeholder.idx) : undefined;
@@ -8899,10 +8951,12 @@ function parsePptxShape(owner, part, context = {}) {
     const geometry = /<(?:[A-Za-z_][\w.-]*:)?prstGeom[^>]*prst="([^"]+)"/.exec(spPr)?.[1] || "rect";
     const rPr = /<(?:[A-Za-z_][\w.-]*:)?rPr\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?rPr>/.exec(part);
     const localTextStyle = parsePresentationPlaceholderStyleXml(rPr?.[0] || "");
-    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
+    const paragraphStyles = inherited?.paragraphStyles || {};
+    const paragraphs = parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles });
+    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), text: paragraphs, placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
     applyPresentationElementIdentity(shape, part, "spMk");
-    shape.text = text;
     shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
+    shape.text.inheritedParagraphStyles = paragraphStyles;
     return shape;
 }
 
