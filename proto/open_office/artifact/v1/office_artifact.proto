@@ -19,6 +19,8 @@ enum CodecOperation {
   CODEC_OPERATION_EXPORT_XLSX = 2;
   CODEC_OPERATION_IMPORT_DOCX = 3;
   CODEC_OPERATION_EXPORT_DOCX = 4;
+  CODEC_OPERATION_IMPORT_PPTX = 5;
+  CODEC_OPERATION_EXPORT_PPTX = 6;
 }
 
 enum DiagnosticSeverity {
@@ -179,8 +181,70 @@ message RowDimension {
   bool hidden = 3;
 }
 
-// Presentation remains a reserved semantic root until the PPTX slice lands.
-message PresentationArtifact {}
+message PresentationArtifact {
+  string id = 1;
+  string name = 2;
+  int64 slide_width_emu = 3;
+  int64 slide_height_emu = 4;
+  repeated PresentationSlide slides = 5;
+}
+
+message PresentationSlide {
+  string id = 1;
+  string name = 2;
+  repeated PresentationElement elements = 3;
+  PresentationSlideSourceBinding source = 4;
+}
+
+message PresentationSlideSourceBinding {
+  uint32 slide_index = 1;
+  string part_path = 2;
+  string relationship_id = 3;
+  string slide_xml_sha256 = 4;
+}
+
+message PresentationElement {
+  string id = 1;
+  string name = 2;
+  PresentationElementSourceBinding source = 3;
+
+  oneof content {
+    PresentationShape shape = 10;
+    PresentationOpaqueElement opaque = 11;
+  }
+}
+
+// Shape-tree indexes refer to top-level children after the required group
+// non-visual and group transform records. They bind semantic objects to the
+// exact source element without exposing a private implementation contract.
+message PresentationElementSourceBinding {
+  uint32 shape_tree_index = 1;
+  string element_sha256 = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
+}
+
+message PresentationShape {
+  string geometry = 1;
+  int64 left_emu = 2;
+  int64 top_emu = 3;
+  int64 width_emu = 4;
+  int64 height_emu = 5;
+  string text = 6;
+  string fill_rgb = 7;
+  string line_rgb = 8;
+  int64 line_width_emu = 9;
+}
+
+message PresentationOpaqueElement {
+  string element_name = 1;
+  string text = 2;
+  string raw_xml = 3;
+  int64 left_emu = 4;
+  int64 top_emu = 5;
+  int64 width_emu = 6;
+  int64 height_emu = 7;
+}
 
 message DocumentArtifact {
   string id = 1;

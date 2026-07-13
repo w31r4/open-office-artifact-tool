@@ -51,6 +51,20 @@ public static class CodecProtocol
                     response.Diagnostics.Add(result.Diagnostics);
                     break;
                 }
+                case CodecOperation.ImportPptx:
+                {
+                    var result = PptxCodec.Import(request.File.ToByteArray(), limits);
+                    response.Artifact = result.Artifact;
+                    response.Diagnostics.Add(result.Diagnostics);
+                    break;
+                }
+                case CodecOperation.ExportPptx:
+                {
+                    var result = PptxCodec.Export(request.Artifact, limits, request.AllowLossy);
+                    response.File = ByteString.CopyFrom(result.File);
+                    response.Diagnostics.Add(result.Diagnostics);
+                    break;
+                }
                 default:
                     throw new CodecException("unsupported_operation", $"Codec operation {request.Operation} is not implemented.");
             }
@@ -79,13 +93,14 @@ public static class CodecProtocol
         {
             CodecOperation.ImportXlsx or CodecOperation.ExportXlsx => ArtifactFamily.Workbook,
             CodecOperation.ImportDocx or CodecOperation.ExportDocx => ArtifactFamily.Document,
+            CodecOperation.ImportPptx or CodecOperation.ExportPptx => ArtifactFamily.Presentation,
             _ => throw new CodecException("unsupported_operation", $"Codec operation {request.Operation} is not implemented."),
         };
         if (request.Family != expectedFamily)
             throw new CodecException("artifact_family_mismatch", $"Codec operation {request.Operation} requires artifact family {expectedFamily}, not {request.Family}.");
-        if (request.Operation is CodecOperation.ImportXlsx or CodecOperation.ImportDocx && request.File.IsEmpty)
+        if (request.Operation is CodecOperation.ImportXlsx or CodecOperation.ImportDocx or CodecOperation.ImportPptx && request.File.IsEmpty)
             throw new CodecException("empty_input", $"{expectedFamily} import requires non-empty file bytes.");
-        if (request.Operation is CodecOperation.ExportXlsx or CodecOperation.ExportDocx && request.Artifact is null)
+        if (request.Operation is CodecOperation.ExportXlsx or CodecOperation.ExportDocx or CodecOperation.ExportPptx && request.Artifact is null)
             throw new CodecException("missing_artifact", $"{expectedFamily} export requires an artifact envelope.");
     }
 

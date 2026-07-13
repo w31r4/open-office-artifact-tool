@@ -77,6 +77,22 @@ internal sealed class OpcPackageProfile
                    relationship.Target.TrimStart('/').Equals("word/document.xml", StringComparison.OrdinalIgnoreCase);
         });
 
+    internal static OpcPackageProfile Pptx { get; } = new(
+        "PPTX",
+        path => CommonOwnedPaths.Contains(path) ||
+                path.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase) ||
+                IsNumberedXml(path, "ppt/slides/slide"),
+        relationship =>
+        {
+            if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) return false;
+            if (relationship.SourcePath.Length == 0)
+                return relationship.Type.EndsWith("/officeDocument", StringComparison.Ordinal) &&
+                       relationship.Target.TrimStart('/').Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase);
+            return relationship.SourcePath.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) &&
+                   relationship.Type.EndsWith("/slide", StringComparison.Ordinal);
+        });
+
     private static bool IsNumberedXml(string path, string prefix)
     {
         const string suffix = ".xml";
