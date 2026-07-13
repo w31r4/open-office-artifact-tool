@@ -17,6 +17,8 @@ enum CodecOperation {
   CODEC_OPERATION_UNSPECIFIED = 0;
   CODEC_OPERATION_IMPORT_XLSX = 1;
   CODEC_OPERATION_EXPORT_XLSX = 2;
+  CODEC_OPERATION_IMPORT_DOCX = 3;
+  CODEC_OPERATION_EXPORT_DOCX = 4;
 }
 
 enum DiagnosticSeverity {
@@ -177,7 +179,60 @@ message RowDimension {
   bool hidden = 3;
 }
 
-// Reserved semantic roots keep the envelope evolution path explicit while the
-// first implemented codec slice is XLSX.
+// Presentation remains a reserved semantic root until the PPTX slice lands.
 message PresentationArtifact {}
-message DocumentArtifact {}
+
+message DocumentArtifact {
+  string id = 1;
+  string name = 2;
+  repeated DocumentBlock blocks = 3;
+}
+
+message DocumentBlock {
+  string id = 1;
+  string name = 2;
+  string style_id = 3;
+  DocumentSourceBinding source = 4;
+
+  oneof content {
+    DocumentParagraph paragraph = 10;
+    DocumentTable table = 11;
+    DocumentOpaqueBlock opaque = 12;
+  }
+}
+
+// The source binding makes partial semantic coverage loss-aware. Unchanged
+// advanced WordprocessingML can stay in the validated source package, while an
+// attempted edit to a block that is not yet modeled fails closed.
+message DocumentSourceBinding {
+  uint32 body_index = 1;
+  string element_sha256 = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
+}
+
+message DocumentParagraph {
+  string text = 1;
+  repeated DocumentRun runs = 2;
+}
+
+message DocumentRun {
+  string text = 1;
+  string style_id = 2;
+  bool bold = 3;
+  bool italic = 4;
+  bool underline = 5;
+}
+
+message DocumentTable {
+  repeated DocumentTableRow rows = 1;
+}
+
+message DocumentTableRow {
+  repeated string cells = 1;
+}
+
+message DocumentOpaqueBlock {
+  string element_name = 1;
+  string text = 2;
+}

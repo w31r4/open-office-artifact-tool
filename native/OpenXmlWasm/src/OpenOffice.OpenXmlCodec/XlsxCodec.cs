@@ -66,7 +66,7 @@ internal static class XlsxCodec
 
     internal static XlsxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
     {
-        var opaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits);
+        var opaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Xlsx);
         var diagnostics = new List<Diagnostic>();
         var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
         if (opaqueCount > 0)
@@ -115,7 +115,7 @@ internal static class XlsxCodec
 
     private static XlsxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
     {
-        var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits);
+        var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -147,7 +147,7 @@ internal static class XlsxCodec
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
             throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
         ValidateOffice2021(bytes);
-        var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, includeSourcePackage: false);
+        var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Xlsx, includeSourcePackage: false);
         PackageGuards.AssertOpaqueGraphMatches(envelope.OpaqueOpc, outputOpaque, "opaque_content_not_preserved");
         return new XlsxExportResult(bytes,
         [

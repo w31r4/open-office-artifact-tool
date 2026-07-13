@@ -23,45 +23,101 @@ internal sealed record EffectiveCodecLimits(
         limits?.MaxCompressionRatio > 0 ? limits.MaxCompressionRatio : 200);
 }
 
-internal static class PackageGuards
+internal sealed class OpcPackageProfile
 {
-    private static readonly HashSet<string> OwnedPaths = new(StringComparer.OrdinalIgnoreCase)
+    private readonly Func<string, bool> _ownsPath;
+    private readonly Func<OpaqueOpcRelationship, bool> _ownsRelationship;
+
+    private OpcPackageProfile(
+        string format,
+        Func<string, bool> ownsPath,
+        Func<OpaqueOpcRelationship, bool> ownsRelationship)
+    {
+        Format = format;
+        _ownsPath = ownsPath;
+        _ownsRelationship = ownsRelationship;
+    }
+
+    internal string Format { get; }
+    internal bool OwnsPath(string path) => _ownsPath(path);
+    internal bool OwnsRelationship(OpaqueOpcRelationship relationship) => _ownsRelationship(relationship);
+
+    private static readonly HashSet<string> CommonOwnedPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "[Content_Types].xml",
         "_rels/.rels",
-        "xl/workbook.xml",
-        "xl/_rels/workbook.xml.rels",
     };
 
-    internal static OpaqueOpcGraph ValidateAndCollectOpaque(byte[] bytes, EffectiveCodecLimits limits, bool includeSourcePackage = true)
+    internal static OpcPackageProfile Xlsx { get; } = new(
+        "XLSX",
+        path => CommonOwnedPaths.Contains(path) ||
+                path.Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("xl/_rels/workbook.xml.rels", StringComparison.OrdinalIgnoreCase) ||
+                IsNumberedXml(path, "xl/worksheets/sheet"),
+        relationship =>
+        {
+            if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) return false;
+            if (relationship.SourcePath.Length == 0)
+                return relationship.Type.EndsWith("/officeDocument", StringComparison.Ordinal) &&
+                       relationship.Target.TrimStart('/').Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase);
+            return relationship.SourcePath.Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase) &&
+                   relationship.Type.EndsWith("/worksheet", StringComparison.Ordinal);
+        });
+
+    internal static OpcPackageProfile Docx { get; } = new(
+        "DOCX",
+        path => CommonOwnedPaths.Contains(path) ||
+                path.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("word/_rels/document.xml.rels", StringComparison.OrdinalIgnoreCase),
+        relationship =>
+        {
+            if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) return false;
+            return relationship.SourcePath.Length == 0 &&
+                   relationship.Type.EndsWith("/officeDocument", StringComparison.Ordinal) &&
+                   relationship.Target.TrimStart('/').Equals("word/document.xml", StringComparison.OrdinalIgnoreCase);
+        });
+
+    private static bool IsNumberedXml(string path, string prefix)
+    {
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+}
+
+internal static class PackageGuards
+{
+    internal static OpaqueOpcGraph ValidateAndCollectOpaque(byte[] bytes, EffectiveCodecLimits limits, OpcPackageProfile profile, bool includeSourcePackage = true)
     {
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
-            throw new CodecException("input_budget_exceeded", $"XLSX input has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
+            throw new CodecException("input_budget_exceeded", $"{profile.Format} input has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
 
         try
         {
             using var stream = new MemoryStream(bytes, writable: false);
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
             if ((uint)archive.Entries.Count > limits.MaxParts)
-                throw new CodecException("part_budget_exceeded", $"XLSX package has {archive.Entries.Count} parts and exceeds max_parts ({limits.MaxParts}).");
+                throw new CodecException("part_budget_exceeded", $"{profile.Format} package has {archive.Entries.Count} parts and exceeds max_parts ({limits.MaxParts}).");
 
             ulong totalUncompressed = 0;
             var opaque = new OpaqueOpcGraph();
             var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in archive.Entries)
             {
-                ValidateEntryPath(entry.FullName);
+                ValidateEntryPath(entry.FullName, profile);
                 if (!paths.Add(entry.FullName))
-                    throw new CodecException("duplicate_part_path", $"XLSX package contains duplicate part path {entry.FullName}.", entry.FullName);
+                    throw new CodecException("duplicate_part_path", $"{profile.Format} package contains duplicate part path {entry.FullName}.", entry.FullName);
                 totalUncompressed = checked(totalUncompressed + (ulong)entry.Length);
                 if (totalUncompressed > limits.MaxUncompressedBytes)
-                    throw new CodecException("decompression_budget_exceeded", $"XLSX package expands to more than max_uncompressed_bytes ({limits.MaxUncompressedBytes}).", entry.FullName);
+                    throw new CodecException("decompression_budget_exceeded", $"{profile.Format} package expands to more than max_uncompressed_bytes ({limits.MaxUncompressedBytes}).", entry.FullName);
                 if (entry.Length > 0)
                 {
                     var compressed = Math.Max(1L, entry.CompressedLength);
                     var ratio = (ulong)entry.Length / (ulong)compressed;
                     if (ratio > limits.MaxCompressionRatio)
-                        throw new CodecException("compression_ratio_exceeded", $"XLSX part {entry.FullName} has compression ratio {ratio}, above max_compression_ratio ({limits.MaxCompressionRatio}).", entry.FullName);
+                        throw new CodecException("compression_ratio_exceeded", $"{profile.Format} part {entry.FullName} has compression ratio {ratio}, above max_compression_ratio ({limits.MaxCompressionRatio}).", entry.FullName);
                 }
 
                 if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;
@@ -70,8 +126,8 @@ internal static class PackageGuards
                 partStream.CopyTo(copy);
                 var data = copy.ToArray();
                 if (entry.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase))
-                    CollectOpaqueRelationships(entry.FullName, data, opaque);
-                if (IsOwned(entry.FullName)) continue;
+                    CollectOpaqueRelationships(entry.FullName, data, opaque, profile);
+                if (profile.OwnsPath(entry.FullName)) continue;
                 opaque.Parts.Add(new OpaqueOpcPart
                 {
                     Path = entry.FullName,
@@ -95,11 +151,11 @@ internal static class PackageGuards
         }
         catch (InvalidDataException exception)
         {
-            throw new CodecException("invalid_opc_package", "XLSX input is not a readable OPC ZIP package.", innerException: exception);
+            throw new CodecException("invalid_opc_package", $"{profile.Format} input is not a readable OPC ZIP package.", innerException: exception);
         }
     }
 
-    internal static byte[] ValidateSourcePackage(OpaqueOpcGraph opaque, SourceIdentity? source, EffectiveCodecLimits limits)
+    internal static byte[] ValidateSourcePackage(OpaqueOpcGraph opaque, SourceIdentity? source, EffectiveCodecLimits limits, OpcPackageProfile profile)
     {
         if (opaque.SourcePackage is null || opaque.SourcePackage.Data.IsEmpty)
             throw new CodecException("missing_source_package", "Opaque OPC content cannot be preserved because its source package snapshot is missing.");
@@ -110,7 +166,7 @@ internal static class PackageGuards
         if (!string.IsNullOrWhiteSpace(source?.PackageSha256) && !hash.Equals(source.PackageSha256, StringComparison.OrdinalIgnoreCase))
             throw new CodecException("source_identity_mismatch", "Source package bytes do not match source.package_sha256.");
 
-        var actual = ValidateAndCollectOpaque(bytes, limits, includeSourcePackage: false);
+        var actual = ValidateAndCollectOpaque(bytes, limits, profile, includeSourcePackage: false);
         AssertOpaqueGraphMatches(opaque, actual, "source_package_graph_mismatch");
         return bytes;
     }
@@ -166,17 +222,7 @@ internal static class PackageGuards
     private static string RelationshipSignature(OpaqueOpcRelationship relationship) =>
         $"{relationship.SourcePath}\0{relationship.Id}\0{relationship.Type}\0{relationship.Target}\0{relationship.TargetMode}";
 
-    private static bool IsOwned(string path) => OwnedPaths.Contains(path) || IsWorksheetXml(path);
-
-    private static bool IsWorksheetXml(string path)
-    {
-        const string prefix = "xl/worksheets/sheet";
-        const string suffix = ".xml";
-        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return false;
-        return path[(prefix.Length)..^suffix.Length].All(char.IsAsciiDigit);
-    }
-
-    private static void CollectOpaqueRelationships(string relationshipPath, byte[] data, OpaqueOpcGraph opaque)
+    private static void CollectOpaqueRelationships(string relationshipPath, byte[] data, OpaqueOpcGraph opaque, OpcPackageProfile profile)
     {
         try
         {
@@ -196,7 +242,7 @@ internal static class PackageGuards
                 };
                 if (string.IsNullOrWhiteSpace(relationship.Id) || string.IsNullOrWhiteSpace(relationship.Type) || string.IsNullOrWhiteSpace(relationship.Target))
                     throw new CodecException("invalid_relationship", $"Relationship part {relationshipPath} contains an incomplete relationship.", relationshipPath);
-                if (!IsOwnedRelationship(relationship)) opaque.PackageRelationships.Add(relationship);
+                if (!profile.OwnsRelationship(relationship)) opaque.PackageRelationships.Add(relationship);
             }
         }
         catch (CodecException)
@@ -207,14 +253,6 @@ internal static class PackageGuards
         {
             throw new CodecException("invalid_relationship_xml", $"Relationship part {relationshipPath} is not valid XML.", relationshipPath, exception);
         }
-    }
-
-    private static bool IsOwnedRelationship(OpaqueOpcRelationship relationship)
-    {
-        if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) return false;
-        if (relationship.SourcePath.Length == 0)
-            return relationship.Type.EndsWith("/officeDocument", StringComparison.Ordinal) && relationship.Target.TrimStart('/').Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase);
-        return relationship.SourcePath.Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase) && relationship.Type.EndsWith("/worksheet", StringComparison.Ordinal);
     }
 
     private static string RelationshipSourcePath(string relationshipPath)
@@ -228,12 +266,12 @@ internal static class PackageGuards
         return directory.Length == 0 ? fileName : $"{directory}/{fileName}";
     }
 
-    private static void ValidateEntryPath(string path)
+    private static void ValidateEntryPath(string path, OpcPackageProfile profile)
     {
         if (string.IsNullOrWhiteSpace(path) || path.StartsWith("/", StringComparison.Ordinal) || path.Contains('\\'))
-            throw new CodecException("unsafe_part_path", $"XLSX package contains unsafe part path {path}.", path);
+            throw new CodecException("unsafe_part_path", $"{profile.Format} package contains unsafe part path {path}.", path);
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Any(segment => segment is "." or ".."))
-            throw new CodecException("unsafe_part_path", $"XLSX package contains unsafe part path {path}.", path);
+            throw new CodecException("unsafe_part_path", $"{profile.Format} package contains unsafe part path {path}.", path);
     }
 }
