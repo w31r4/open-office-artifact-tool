@@ -3,6 +3,11 @@ import { resolveColorToken } from "../shared/colors.mjs";
 const BAR_GROUPINGS = new Set(["clustered", "stacked", "percentStacked"]);
 const LINE_GROUPINGS = new Set(["standard", "stacked", "percentStacked"]);
 const MARKER_SYMBOLS = new Set(["auto", "circle", "dash", "diamond", "dot", "none", "plus", "square", "star", "triangle", "x"]);
+const DATA_LABEL_POSITIONS = new Set(["bestFit", "b", "ctr", "inBase", "inEnd", "l", "outEnd", "r", "t"]);
+const DATA_LABEL_POSITION_ALIASES = new Map([
+  ["bottom", "b"], ["center", "ctr"], ["insideBase", "inBase"], ["insideEnd", "inEnd"],
+  ["left", "l"], ["outsideEnd", "outEnd"], ["right", "r"], ["top", "t"],
+]);
 const LINE_DASH_TO_OOXML = new Map([
   ["solid", "solid"], ["dot", "dot"], ["dash", "dash"], ["longDash", "lgDash"],
   ["dashDot", "dashDot"], ["longDashDot", "lgDashDot"], ["longDashDotDot", "lgDashDotDot"],
@@ -148,6 +153,20 @@ export function normalizePresentationChartSeriesStyle(series = {}, valueCount) {
   };
 }
 
+export function normalizePresentationChartDataLabels(value) {
+  if (value === true) return { showValue: true, showCategoryName: false, position: "bestFit" };
+  if (value === false || value == null) return { showValue: false, showCategoryName: false, position: "bestFit" };
+  if (typeof value !== "object") throw new TypeError("chart dataLabels must be a boolean or object.");
+  const rawPosition = value.position || "bestFit";
+  const position = DATA_LABEL_POSITION_ALIASES.get(rawPosition) || rawPosition;
+  if (!DATA_LABEL_POSITIONS.has(position)) throw new TypeError(`chart data-label position must be one of: ${[...DATA_LABEL_POSITIONS].join(", ")}.`);
+  return {
+    showValue: Boolean(value.showValue),
+    showCategoryName: Boolean(value.showCategoryName ?? value.showCategory),
+    position,
+  };
+}
+
 function chartTextTitleXml(text = "") {
   return `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(text)}</a:t></a:r></a:p></c:rich></c:tx></c:title>`;
 }
@@ -174,13 +193,17 @@ function chartPointXml(point) {
   return `<c:dPt><c:idx val="${point.idx}"/>${chartShapePropertiesXml(point.fill, point.line)}</c:dPt>`;
 }
 
+function presentationDataLabelsXml(dataLabels, force = false) {
+  const normalized = normalizePresentationChartDataLabels(dataLabels);
+  if (!force && !normalized.showValue && !normalized.showCategoryName) return "";
+  const positionXml = normalized.position === "bestFit" ? "" : `<c:dLblPos val="${normalized.position}"/>`;
+  return `<c:dLbls>${positionXml}<c:showLegendKey val="0"/><c:showVal val="${normalized.showValue ? 1 : 0}"/><c:showCatName val="${normalized.showCategoryName ? 1 : 0}"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>`;
+}
+
 export function presentationChartXml(chart) {
   const type = chart.chartType === "combo" ? "combo" : chart.chartType === "line" ? "line" : chart.chartType === "pie" ? "pie" : "bar";
   const style = normalizePresentationChartStyle(type, chart);
-  const dataLabels = chart.dataLabels || {};
-  const dataLabelsXml = dataLabels.showValue || dataLabels.showCategoryName
-    ? `<c:dLbls><c:showLegendKey val="0"/><c:showVal val="${dataLabels.showValue ? 1 : 0}"/><c:showCatName val="${dataLabels.showCategoryName ? 1 : 0}"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>`
-    : "";
+  const dataLabelsXml = presentationDataLabelsXml(chart.dataLabels || {});
   const chartSeries = chart.series?.length ? chart.series : [{ name: chart.title || "Series", values: [] }];
   const seriesXml = (series, index, seriesType) => {
     const values = series.values || [];
@@ -193,7 +216,8 @@ export function presentationChartXml(chart) {
     const effectiveSmooth = seriesStyle.smooth ?? style.lineOptions.smooth;
     const seriesLine = seriesStyle.line || (seriesType === "line" ? { fill: color, width: 2, style: "solid" } : undefined);
     const pointsXml = seriesStyle.points.map(chartPointXml).join("");
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${seriesType === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${seriesType === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
+    const seriesDataLabelsXml = series.dataLabels == null ? "" : presentationDataLabelsXml(series.dataLabels, true);
+    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${seriesType === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}${seriesDataLabelsXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${seriesType === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
   };
   const categoryAxisTitle = chart.axes?.category?.title ? chartTextTitleXml(chart.axes.category.title) : "";
   const valueAxisTitle = chart.axes?.value?.title ? chartTextTitleXml(chart.axes.value.title) : "";
@@ -259,6 +283,16 @@ function parseChartPoints(xml) {
   });
 }
 
+function parseDataLabels(xml) {
+  const block = tagBlock(xml, "dLbls");
+  if (!block) return undefined;
+  return normalizePresentationChartDataLabels({
+    showValue: Boolean(booleanTag(block, "showVal")),
+    showCategoryName: Boolean(booleanTag(block, "showCatName")),
+    position: tagValue(block, "dLblPos") || "bestFit",
+  });
+}
+
 function parseSeries(chartBlock, chartType) {
   const pattern = new RegExp(`<${localTag("ser")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ser")}>`, "gi");
   return [...String(chartBlock || "").matchAll(pattern)].map((match, index) => {
@@ -272,6 +306,7 @@ function parseSeries(chartBlock, chartType) {
     const markerSymbol = tagValue(markerBlock, "symbol");
     const markerSize = tagValue(markerBlock, "size");
     const marker = markerSymbol ? normalizePresentationChartMarker({ symbol: markerSymbol, size: markerSize == null ? undefined : Number(markerSize) }) : undefined;
+    const dataLabels = parseDataLabels(xml);
     return {
       ...(chartType ? { chartType } : {}),
       order: Number(tagValue(xml, "order") ?? index),
@@ -283,6 +318,7 @@ function parseSeries(chartBlock, chartType) {
       points: parseChartPoints(xml),
       marker,
       smooth: booleanTag(xml, "smooth"),
+      ...(dataLabels ? { dataLabels } : {}),
     };
   });
 }
@@ -301,7 +337,8 @@ export function parsePresentationChartXml(xml = "") {
     : parseSeries(chartBlock)).map(({ order: _order, ...item }) => item);
   const legendBlock = tagBlock(text, "legend");
   const hasLegend = new RegExp(`<${localTag("legend")}\\b`, "i").test(text);
-  const labelsBlock = tagBlock(chartBlock || barBlock, "dLbls") || tagBlock(lineBlock, "dLbls");
+  const withoutSeries = (block) => String(block || "").replace(new RegExp(`<${localTag("ser")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ser")}>`, "gi"), "");
+  const labelsBlock = tagBlock(withoutSeries(chartBlock || barBlock), "dLbls") || tagBlock(withoutSeries(lineBlock), "dLbls");
   const styleId = tagValue(text.slice(0, text.search(new RegExp(`<${localTag("chart")}\\b`, "i"))), "style");
   const parsed = {
     chartType,

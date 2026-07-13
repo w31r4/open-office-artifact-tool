@@ -24,7 +24,7 @@ import { mergePresentationPlaceholders, normalizePresentationBackground, parsePr
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
-import { normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
+import { normalizePresentationChartDataLabels, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
 import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
@@ -8091,6 +8091,7 @@ function normalizeChartSeries(seriesItems = [], chartType = "bar") {
       ...(style.points.length ? { points: style.points } : {}),
       ...(style.marker ? { marker: style.marker } : {}),
       ...(style.smooth == null ? {} : { smooth: style.smooth }),
+      ...(series.dataLabels === undefined ? {} : { dataLabels: normalizePresentationChartDataLabels(series.dataLabels) }),
       ...(seriesChartType ? { chartType: seriesChartType } : {}),
     };
   });
@@ -8113,10 +8114,13 @@ function normalizeChartLegend(config = {}, seriesLength = 0) {
 }
 
 function normalizeChartDataLabels(config = {}) {
-  const raw = config.dataLabels || config.labels || {};
-  if (raw === true) return { showValue: true, showCategoryName: false, position: "bestFit" };
-  if (raw === false) return { showValue: false, showCategoryName: false, position: "bestFit" };
-  return { showValue: Boolean(raw.showValue ?? config.showValues), showCategoryName: Boolean(raw.showCategoryName ?? raw.showCategory ?? config.showCategoryLabels), position: raw.position || "bestFit" };
+  const raw = config.dataLabels ?? config.labels ?? {};
+  if (raw === true || raw === false) return normalizePresentationChartDataLabels(raw);
+  return normalizePresentationChartDataLabels({
+    ...raw,
+    showValue: raw.showValue ?? config.showValues,
+    showCategoryName: raw.showCategoryName ?? raw.showCategory ?? config.showCategoryLabels,
+  });
 }
 
 function pieSlicePath(cx, cy, radius, startAngle, endAngle) {
@@ -8146,6 +8150,12 @@ function presentationChartLineSvgAttributes(line) {
   if (!line) return "";
   const dash = { dot: "1 3", dash: "6 4", longDash: "10 4", dashDot: "6 3 1 3", longDashDot: "10 4 1 4", longDashDotDot: "10 3 1 3 1 3", systemDash: "4 3", systemDot: "1 2", systemDashDot: "4 2 1 2", systemDashDotDot: "4 2 1 2 1 2" }[line.style];
   return ` stroke="${xmlEscape(resolveColorToken(line.fill, line.fill || "#0f172a"))}" stroke-width="${line.width}"${dash ? ` stroke-dasharray="${dash}"` : ""}`;
+}
+
+function presentationChartDataLabelText(dataLabels, category, value) {
+  if (!dataLabels?.showValue && !dataLabels?.showCategoryName) return "";
+  if (dataLabels.showValue && dataLabels.showCategoryName) return `${category}: ${value}`;
+  return dataLabels.showCategoryName ? String(category ?? "") : String(value ?? "");
 }
 
 export class ChartElement {
@@ -8208,7 +8218,9 @@ export class ChartElement {
         const next = angle + (value / total) * Math.PI * 2;
         const point = series.points?.find((item) => item.idx === index);
         const color = resolveColorToken(point?.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9");
-        const label = this.dataLabels.showValue ? `<text x="${cx + (radius + 8) * Math.cos((angle + next) / 2)}" y="${cy + (radius + 8) * Math.sin((angle + next) / 2)}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(categories[index] ?? value)}</text>` : "";
+        const effectiveLabels = series.dataLabels || this.dataLabels;
+        const labelText = presentationChartDataLabelText(effectiveLabels, categories[index], value);
+        const label = labelText ? `<text x="${cx + (radius + 8) * Math.cos((angle + next) / 2)}" y="${cy + (radius + 8) * Math.sin((angle + next) / 2)}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
         const path = `<path d="${pieSlicePath(cx, cy, radius, angle, next)}" fill="${xmlEscape(color)}"${presentationChartLineSvgAttributes(point?.line || series.line) || ' stroke="#ffffff"'}/>${label}`;
         angle = next;
         return path;
@@ -8231,7 +8243,11 @@ export class ChartElement {
           ? `<path d="M ${points[0].x} ${points[0].y} ${points.slice(1, -1).map((point, index) => { const next = points[index + 2]; return `Q ${point.x} ${point.y} ${(point.x + next.x) / 2} ${(point.y + next.y) / 2}`; }).join(" ")} T ${points.at(-1).x} ${points.at(-1).y}" fill="none"${strokeAttributes}/>`
           : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${strokeAttributes}/>`;
         const marker = series.marker || this.lineOptions.marker;
-        const labels = this.dataLabels.showValue ? points.map((point, index) => `<text x="${point.x + 4}" y="${point.y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(series.values?.[index])}</text>`).join("") : "";
+        const effectiveLabels = series.dataLabels || this.dataLabels;
+        const labels = points.map((point, index) => {
+          const label = presentationChartDataLabelText(effectiveLabels, categories[index], series.values?.[index]);
+          return label ? `<text x="${point.x + 4}" y="${point.y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(label)}</text>` : "";
+        }).join("");
         return `${line}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}${labels}`;
       }).join("");
     const horizontal = barSeries.length > 0 && this.barOptions.direction === "bar";
@@ -8249,17 +8265,18 @@ export class ChartElement {
         const point = series.points?.find((item) => item.idx === categoryIndex);
         const color = xmlEscape(resolveColorToken(point?.fill || series.color, series.color));
         const stroke = presentationChartLineSvgAttributes(point?.line || series.line);
+        const labelText = presentationChartDataLabelText(series.dataLabels || this.dataLabels, categories[categoryIndex], rawValue);
         if (horizontal) {
           const width = plot.width * ratio;
           const x = plot.left + (stackedBars ? plot.width * offset : 0);
           const y = plot.top + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * barSeries.length) / 2 + seriesIndex * barExtent);
-          const label = this.dataLabels.showValue ? `<text x="${x + width + 3}" y="${y + barExtent - 2}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(rawValue)}</text>` : "";
+          const label = labelText ? `<text x="${x + width + 3}" y="${y + barExtent - 2}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
           return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"${stroke}/>${label}`;
         }
         const height = plot.height * ratio;
         const x = plot.left + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * barSeries.length) / 2 + seriesIndex * barExtent);
         const y = plot.top + plot.height - height - (stackedBars ? plot.height * offset : 0);
-        const label = this.dataLabels.showValue ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(rawValue)}</text>` : "";
+        const label = labelText ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
         return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"${stroke}/>${label}`;
       })).join("");
     })();

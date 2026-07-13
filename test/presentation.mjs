@@ -277,16 +277,17 @@ const comboChart = pieSlide.charts.add("combo", {
   lineOptions: { grouping: "standard", marker: { symbol: "circle", size: 7 }, smooth: false },
   axes: { category: { title: "Quarter" }, value: { title: "Amount" } },
   legend: { visible: true, position: "b" },
-  dataLabels: { showValue: true },
+  dataLabels: { showValue: true, position: "outsideEnd" },
   series: [
-    { chartType: "bar", name: "Revenue", values: [10, 14, 18], color: "#3d8dff" },
-    { chartType: "line", name: "Margin", values: [4, 6, 7], color: "#dc2626", line: { fill: "#dc2626", width: 2, style: "dash" }, marker: { symbol: "diamond", size: 8 } },
-    { chartType: "bar", name: "Forecast", values: [12, 16, 20], color: "#6dcbf4" },
+    { chartType: "bar", name: "Revenue", values: [10, 14, 18], color: "#3d8dff", dataLabels: { showValue: true, showCategoryName: true, position: "insideEnd" } },
+    { chartType: "line", name: "Margin", values: [4, 6, 7], color: "#dc2626", line: { fill: "#dc2626", width: 2, style: "dash" }, marker: { symbol: "diamond", size: 8 }, dataLabels: { showValue: true, position: "top" } },
+    { chartType: "bar", name: "Forecast", values: [12, 16, 20], color: "#6dcbf4", dataLabels: false },
   ],
 });
 assert.throws(() => pieSlide.charts.add("bar", { styleId: 49 }), /styleId must be an integer from 1 to 48/);
 assert.throws(() => pieSlide.charts.add("bar", { barOptions: { grouping: "standard" } }), /chart bar grouping must be one of/);
 assert.throws(() => pieSlide.charts.add("line", { lineOptions: { marker: { symbol: "hexagon" } } }), /chart marker symbol must be one of/);
+assert.throws(() => pieSlide.charts.add("bar", { series: [{ values: [1], dataLabels: { position: "floating" } }] }), /data-label position must be one of/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ name: "Missing type", values: [1] }] }), /series chartType must be bar or line/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", name: "Only bars", values: [1] }] }), /requires at least one bar series and one line series/);
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
@@ -314,10 +315,17 @@ assert.deepEqual(presentation.resolve(lineChart.id).lineOptions, { grouping: "st
 assert.deepEqual(presentation.resolve(comboChart.id).series.map((series) => series.chartType), ["bar", "line", "bar"]);
 assert.deepEqual(presentation.resolve(comboChart.id).barOptions, { direction: "column", grouping: "clustered", gapWidth: 90, overlap: 0 });
 assert.deepEqual(presentation.resolve(comboChart.id).lineOptions, { grouping: "standard", marker: { symbol: "circle", size: 7 }, smooth: false });
+assert.deepEqual(presentation.resolve(comboChart.id).series.map((series) => series.dataLabels), [
+  { showValue: true, showCategoryName: true, position: "inEnd" },
+  { showValue: true, showCategoryName: false, position: "t" },
+  { showValue: false, showCategoryName: false, position: "bestFit" },
+]);
 const comboChartSvg = comboChart.toSvg();
 assert.match(comboChartSvg, /<rect [^>]*fill="#3d8dff"/i);
 assert.match(comboChartSvg, /<polyline [^>]*stroke="#dc2626"/i);
 assert.match(comboChartSvg, />6<\/text>/);
+assert.match(comboChartSvg, />Q2: 14<\/text>/);
+assert.doesNotMatch(comboChartSvg, />16<\/text>/);
 assert.ok(comboChartSvg.indexOf('fill="#3d8dff"') < comboChartSvg.indexOf("<polyline"));
 const lineChartSvg = lineChart.toSvg();
 assert.match(lineChartSvg, /<path d="M/);
