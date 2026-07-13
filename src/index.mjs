@@ -8231,7 +8231,8 @@ export class ChartElement {
           ? `<path d="M ${points[0].x} ${points[0].y} ${points.slice(1, -1).map((point, index) => { const next = points[index + 2]; return `Q ${point.x} ${point.y} ${(point.x + next.x) / 2} ${(point.y + next.y) / 2}`; }).join(" ")} T ${points.at(-1).x} ${points.at(-1).y}" fill="none"${strokeAttributes}/>`
           : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${strokeAttributes}/>`;
         const marker = series.marker || this.lineOptions.marker;
-        return `${line}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}`;
+        const labels = this.dataLabels.showValue ? points.map((point, index) => `<text x="${point.x + 4}" y="${point.y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(series.values?.[index])}</text>`).join("") : "";
+        return `${line}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}${labels}`;
       }).join("");
     const horizontal = barSeries.length > 0 && this.barOptions.direction === "bar";
     const barBody = (() => {

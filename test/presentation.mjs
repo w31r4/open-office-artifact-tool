@@ -317,6 +317,7 @@ assert.deepEqual(presentation.resolve(comboChart.id).lineOptions, { grouping: "s
 const comboChartSvg = comboChart.toSvg();
 assert.match(comboChartSvg, /<rect [^>]*fill="#3d8dff"/i);
 assert.match(comboChartSvg, /<polyline [^>]*stroke="#dc2626"/i);
+assert.match(comboChartSvg, />6<\/text>/);
 assert.ok(comboChartSvg.indexOf('fill="#3d8dff"') < comboChartSvg.indexOf("<polyline"));
 const lineChartSvg = lineChart.toSvg();
 assert.match(lineChartSvg, /<path d="M/);
