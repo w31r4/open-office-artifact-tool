@@ -1020,8 +1020,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, character/auto/none list markers, direct marker styles, and external/internal/relative-action run links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
-| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology basic text, direct list markers/styles and bounded run links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none list markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
+| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles and bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
@@ -1042,7 +1042,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
-| `shape.text.set` | api | Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, relative action, or custom-show hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip. |
+| `shape.text.set` | api | Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1090,11 +1090,11 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenXmlWasm`
 
-Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, character/auto/none list markers, direct marker styles, and external/internal/relative-action run links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
+Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none list markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the top-level rect/ellipse plus basic paragraph/run, character/auto/none marker, direct marker-style, and external/internal/relative-action run-link boundary, or carrying validated fixed-topology source bindings from the WASM importer.
+- `presentation` (Presentation) required — Presentation facade within the top-level rect/ellipse; ordered text/field/line-break inline; paragraph tab-stop; character/auto/none marker; direct marker-style; and external/internal/relative-action link boundary, or carrying validated fixed-topology source bindings from the WASM importer.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -1104,7 +1104,7 @@ Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text
 
 #### `importPptxWithOpenXmlWasm`
 
-Experimentally import PPTX bytes with editable fixed-topology basic text, direct list markers/styles and bounded run links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles and bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 
@@ -1113,7 +1113,7 @@ Experimentally import PPTX bytes with editable fixed-topology basic text, direct
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable basic paragraph/run text, direct list markers/styles, and bounded run links plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export.
+- `presentation` (Presentation) — Imported presentation facade with editable ordered text/field/line-break inlines, paragraph tab stops, direct list markers/styles, and bounded links plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export.
 
 #### `Presentation.create`
 
@@ -1437,11 +1437,11 @@ Apply path-validated PPTX part patches, including safe slide/master/layout ID li
 
 #### `shape.text.set`
 
-Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, relative action, or custom-show hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip.
+Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip.
 
 **Schema parameters:**
 
-- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
+- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, inline arrays, or paragraph objects. Ordered inlines are ordinary text, { break: true } with optional style, or { field: { id?, type, text } } with optional style; fields receive a brace-wrapped UUID when id is omitted. Paragraph tabStops use strictly increasing pixel positions and left, center, right, or decimal alignment. Paragraphs also accept level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and styles. An inline link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
 
 **Schema returns:**
 
@@ -1609,7 +1609,7 @@ Add a shape/textbox with geometry, position, fill, line, and text.
 - `name` (string) — Inspectable shape name.
 - `geometry` (string) — Shape geometry such as rect or ellipse.
 - `position` (object) — Pixel left/top/width/height frame.
-- `text` (string|string[]|object|object[]) — Plain text or structured paragraphs/runs accepted by shape.text.set, including relationship-backed run hyperlinks.
+- `text` (string|string[]|object|object[]) — Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks.
 - `fill` (string|object) — Shape fill.
 - `line` (object) — Line color, width, dash, and arrow metadata.
 - `placeholder` (object) — Optional layout placeholder metadata.

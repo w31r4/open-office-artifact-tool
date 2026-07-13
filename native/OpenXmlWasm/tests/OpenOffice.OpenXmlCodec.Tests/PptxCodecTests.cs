@@ -221,6 +221,139 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void FieldsBreaksAndTabStopsRoundTripEditAndPreserveResidualProperties()
+    {
+        var request = RichTextExportRequest();
+        var shape = request.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        shape.TextBody.Paragraphs.Clear();
+        var paragraph = new PresentationTextParagraph();
+        paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 1_143_000, Alignment = "left" });
+        paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 2_476_500, Alignment = "decimal" });
+        paragraph.Runs.Add(new PresentationTextRun { Text = "Slide\t" });
+        paragraph.Runs.Add(new PresentationTextRun
+        {
+            Field = new PresentationTextField
+            {
+                Id = "{11111111-2222-4333-8444-555555555555}",
+                Type = "slidenum",
+                Text = "1",
+            },
+            Bold = true,
+            ColorRgb = "2563EB",
+        });
+        paragraph.Runs.Add(new PresentationTextRun { LineBreak = true, FontSizePoints = 13.5 });
+        paragraph.Runs.Add(new PresentationTextRun { Text = "Revenue\t42.5" });
+        shape.TextBody.Paragraphs.Add(paragraph);
+        shape.Text = PptxTextCodec.Flatten(shape.TextBody);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var nativeParagraph = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First();
+            Assert.Equal(new[] { "r", "fld", "br", "r" }, nativeParagraph.ChildElements.Where(child => child is A.Run or A.Field or A.Break).Select(child => child.LocalName));
+            Assert.Equal("slidenum", nativeParagraph.Elements<A.Field>().Single().Type!.Value);
+            Assert.Equal(1350, nativeParagraph.Elements<A.Break>().Single().RunProperties!.FontSize!.Value);
+            Assert.Equal(new[] { 1_143_000, 2_476_500 }, nativeParagraph.ParagraphProperties!.GetFirstChild<A.TabStopList>()!.Elements<A.TabStop>().Select(tab => tab.Position!.Value));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var source = AddUnmodeledInlineProperties(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedShape = imported.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        var importedParagraph = importedShape.TextBody.Paragraphs[0];
+        Assert.Equal("Slide\t1\nRevenue\t42.5", importedShape.Text);
+        Assert.False(importedParagraph.HasNoTabStops);
+        Assert.Equal("decimal", importedParagraph.TabStops[1].Alignment);
+        Assert.Equal(PresentationTextRun.ContentOneofCase.Text, importedParagraph.Runs[0].ContentCase);
+        Assert.Equal(PresentationTextRun.ContentOneofCase.Field, importedParagraph.Runs[1].ContentCase);
+        Assert.Equal(PresentationTextRun.ContentOneofCase.LineBreak, importedParagraph.Runs[2].ContentCase);
+        Assert.Equal("{11111111-2222-4333-8444-555555555555}", importedParagraph.Runs[1].Field.Id);
+
+        importedParagraph.Runs[1].Field.Text = "2";
+        importedParagraph.Runs[2].Italic = true;
+        importedParagraph.TabStops[1].PositionEmu = 2_667_000;
+        importedShape.Text = PptxTextCodec.Flatten(importedShape.TextBody);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using (var stream = new MemoryStream(preserved.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var nativeParagraph = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First();
+            var field = nativeParagraph.Elements<A.Field>().Single();
+            Assert.Equal("2", field.Text!.Text);
+            Assert.Equal(A.TextAlignmentTypeValues.Right, field.ParagraphProperties!.Alignment!.Value);
+            var lineBreak = nativeParagraph.Elements<A.Break>().Single();
+            Assert.True(lineBreak.RunProperties!.Italic!.Value);
+            Assert.Equal(A.TextUnderlineValues.Single, lineBreak.RunProperties.Underline!.Value);
+            Assert.Equal(2_667_000, nativeParagraph.ParagraphProperties!.GetFirstChild<A.TabStopList>()!.Elements<A.TabStop>().Last().Position!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var reimported = Import(preserved.File.ToByteArray());
+        var reimportedParagraph = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal("2", reimportedParagraph.Runs[1].Field.Text);
+        Assert.Equal(2_667_000, reimportedParagraph.TabStops[1].PositionEmu);
+        reimportedParagraph.TabStops.Clear();
+        reimportedParagraph.NoTabStops = true;
+        var deletedTabs = Export(reimported.Artifact);
+        Assert.True(deletedTabs.Ok, Diagnostics(deletedTabs));
+        using (var stream = new MemoryStream(deletedTabs.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+            Assert.Null(package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!.GetFirstChild<A.TabStopList>());
+
+        var changedKind = Import(source);
+        var changedShape = changedKind.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        changedShape.TextBody.Paragraphs[0].Runs[1].Text = "not a field";
+        changedShape.Text = PptxTextCodec.Flatten(changedShape.TextBody);
+        var rejected = Export(changedKind.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_text_topology_changed", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void InvalidFieldsBreaksAndTabStopsFailClosed()
+    {
+        var request = RichTextExportRequest();
+        var run = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0];
+        run.Field = new PresentationTextField { Id = "not-a-guid", Type = "slidenum", Text = "1" };
+        var invalidId = Invoke(request);
+        Assert.False(invalidId.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidId.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        run = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0];
+        run.Field = new PresentationTextField { Id = "{11111111-2222-4333-8444-555555555555}", Type = "\u0001", Text = "1" };
+        var invalidType = Invoke(request);
+        Assert.False(invalidType.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidType.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        run = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0];
+        run.LineBreak = false;
+        var invalidBreak = Invoke(request);
+        Assert.False(invalidBreak.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidBreak.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        var paragraph = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        paragraph.NoTabStops = false;
+        var invalidDeletion = Invoke(request);
+        Assert.False(invalidDeletion.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidDeletion.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        paragraph = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 200, Alignment = "left" });
+        paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 100, Alignment = "decimal" });
+        var unsortedTabs = Invoke(request);
+        Assert.False(unsortedTabs.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(unsortedTabs.Diagnostics).Code);
+    }
+
+    [Fact]
     public void RunHyperlinksRoundTripAndEditOwnedSlideRelationships()
     {
         var authored = Invoke(HyperlinkExportRequest());
@@ -641,6 +774,22 @@ public sealed class PptxCodecTests
             var properties = paragraph.Elements<A.Run>().First().RunProperties!;
             properties.Underline = A.TextUnderlineValues.Single;
             properties.Append(new A.EastAsianFont { Typeface = "Noto Sans CJK SC" });
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnmodeledInlineProperties(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var paragraph = presentation.PresentationPart!.SlideParts.First().Slide!.Descendants<A.Paragraph>().First();
+            var field = paragraph.Elements<A.Field>().Single();
+            field.InsertBefore(new A.ParagraphProperties { Alignment = A.TextAlignmentTypeValues.Right }, field.Text);
+            var lineBreak = paragraph.Elements<A.Break>().Single();
+            lineBreak.RunProperties!.Underline = A.TextUnderlineValues.Single;
         }
         return stream.ToArray();
     }

@@ -32,8 +32,8 @@
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
-      "bytes": 5713689,
-      "sha256": "960dda5f5e6796503e0696c2c23288052f75060add4b3e506639402664aa9205"
+      "bytes": 5714201,
+      "sha256": "46de20e26fb33540f2b652916782e0fbcb5bb4de8a1d4898e116d34558599af3"
     },
     {
       "path": "_framework/Google.Protobuf.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenOffice.OpenXmlCodec.wasm",
-      "bytes": 268565,
-      "sha256": "dffdba2e645642a0a997da20031d6af968e1e86caeef9c742e7a10ba7904019e"
+      "bytes": 281877,
+      "sha256": "1e0bcd2d5bfc8b0bfbbcfa8fe10b6fd30d0e3bad36fde71001e7c9ca1eb4f3f2"
     },
     {
       "path": "_framework/OpenOffice.OpenXmlWasm.wasm",
       "bytes": 6421,
-      "sha256": "af3cada560512930b85d5b0863cc0f95b089626d4b1fbcb1c6dad9e23ff8065a"
+      "sha256": "dc5d2eba132b730b2a15532e720605ade7a8a620ac503f8e870940843c4e646a"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -117,8 +117,8 @@
     },
     {
       "path": "_framework/System.Private.CoreLib.wasm",
-      "bytes": 1947925,
-      "sha256": "a1c3a23fd3b3b6ff4505a322a15c1dfc4b09f4bd281bf5e89b10062888699747"
+      "bytes": 1948437,
+      "sha256": "63c4a76d4c06b24afeddc3e27c9a5539f0b5ef9168e639028cdefcbe2dc40e15"
     },
     {
       "path": "_framework/System.Private.Uri.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3149,
-      "sha256": "88d8e43ec4ef89eed08df2b4894e9416104dd8caaa7190a344742c24a780504f"
+      "sha256": "301a3612b5f917673612463a9f8c397340cf048d47b42926c5d6229cdfcc1b35"
     },
     {
       "path": "_framework/dotnet.js",
@@ -173,7 +173,7 @@
     {
       "path": "_framework/dotnet.native.wasm",
       "bytes": 1417190,
-      "sha256": "dcd87bce11cbc98fafae33278aff7c8fcc2d4551e685c622fe0b45577501d277"
+      "sha256": "78f7187c537df888f811a06682ebdb4b7886103ae5cbc0ee6595c8fb44b6cf63"
     },
     {
       "path": "_framework/dotnet.runtime.js",
@@ -201,5 +201,5 @@
       "sha256": "7ae7e50d45200aa9644c03ee5a50359bdb4a8dfc3c408a5f28b95add0a08096c"
     }
   ],
-  "totalBytes": 12666055
+  "totalBytes": 12680391
 }

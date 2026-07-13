@@ -16,11 +16,19 @@
       "shapes": [
         {
           "name": "wasm-title",
-          "position": { "left": 48, "top": 20, "width": 1184, "height": 150 },
+          "position": { "left": 48, "top": 20, "width": 1184, "height": 180 },
           "fill": "#FFFFFF",
           "line": { "fill": "#334155", "width": 1 },
           "text": [
-            { "runs": [{ "text": "Before OpenXML WASM", "style": { "fontSize": 28, "bold": true, "color": "#0F172A" }, "link": { "uri": "https://example.com/before", "tooltip": "Original evidence", "history": false } }] },
+            {
+              "tabStops": [{ "position": 760, "alignment": "left" }],
+              "runs": [
+                { "text": "Before OpenXML WASM\t", "style": { "fontSize": 28, "bold": true, "color": "#0F172A" }, "link": { "uri": "https://example.com/before", "tooltip": "Original evidence", "history": false } },
+                { "field": { "id": "{11111111-2222-4333-8444-555555555555}", "type": "slidenum", "text": "1" }, "style": { "fontSize": 22, "bold": true, "color": "#2563EB" } },
+                { "break": true, "style": { "fontSize": 18 } },
+                { "text": "Field and line-break evidence", "style": { "fontSize": 18, "color": "#475569" } }
+              ]
+            },
             { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
             { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "uri": "https://example.com/remove" } }] },
             { "bulletCharacter": "–", "bulletSize": 24, "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }] }
@@ -39,7 +47,7 @@
         {
           "name": "preserved-status",
           "alt": "Green preservation status",
-          "position": { "left": 70, "top": 210, "width": 210, "height": 210 },
+          "position": { "left": 70, "top": 230, "width": 210, "height": 210 },
           "fit": "contain",
           "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKkoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC"
         }
@@ -49,7 +57,7 @@
           "chartType": "bar",
           "name": "preserved-chart",
           "title": "Opaque graph evidence",
-          "position": { "left": 350, "top": 190, "width": 820, "height": 370 },
+          "position": { "left": 350, "top": 220, "width": 820, "height": 340 },
           "categories": ["Semantic", "Package", "Visual"],
           "series": [
             { "name": "Checks", "values": [8, 16, 4], "color": "#2563EB" }
@@ -66,12 +74,16 @@
       "shapeName": "wasm-title",
       "text": [
         {
+          "tabStops": [{ "position": 780, "alignment": "right" }],
           "runs": [
             {
-              "text": "After OpenXML WASM",
+              "text": "After OpenXML WASM\t",
               "style": { "fontSize": 28, "bold": true, "color": "#0F172A" },
               "link": { "uri": "https://example.com/after", "targetFrame": "_blank", "highlightClick": true }
-            }
+            },
+            { "field": { "id": "{11111111-2222-4333-8444-555555555555}", "type": "slidenum", "text": "2" }, "style": { "fontSize": 22, "bold": true, "color": "#2563EB" } },
+            { "break": true, "style": { "fontSize": 18, "italic": true } },
+            { "text": "Field and line-break evidence", "style": { "fontSize": 18, "color": "#475569" } }
           ]
         },
         {

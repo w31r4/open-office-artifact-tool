@@ -1289,6 +1289,48 @@ assert.equal((await PresentationFile.inspectPptx(legacyGroupedPptx)).ok, true);
 const legacyGroupedLoaded = await PresentationFile.importPptx(legacyGroupedPptx);
 assert.equal(legacyGroupedLoaded.slides.items[0].resolve(legacyGroupedLoaded.slides.items[0].comments.items[0].targetId)?.name, "legacy-image");
 
+const inlinePresentation = Presentation.create();
+const inlineShape = inlinePresentation.slides.add().shapes.add({
+  name: "field-break-tabs",
+  position: { left: 40, top: 40, width: 720, height: 180 },
+  text: [{
+    tabStops: [{ position: 120, alignment: "left" }, { position: 260, alignment: "decimal" }],
+    runs: [
+      "Slide\t",
+      { field: { type: "slidenum", text: "1" }, textStyle: { bold: true, color: "#2563eb" } },
+      { break: true, textStyle: { fontSize: 18 } },
+      "Revenue\t42.5",
+    ],
+  }],
+});
+const inlineFieldId = inlineShape.text.paragraphs[0].runs[1].field.id;
+assert.match(inlineFieldId, /^\{[0-9A-F-]{36}\}$/);
+assert.equal(inlineShape.text.value, "Slide\t1\nRevenue\t42.5");
+assert.equal(inlineShape.inspectRecord().textLines, 2);
+assert.match(inlineShape.toSvg(), new RegExp(`data-field-type="slidenum" data-field-id="\\${inlineFieldId}"`));
+assert.throws(() => inlineShape.text.set([{ runs: [{ break: true, text: "invalid" }] }]), /line break cannot also carry text/);
+assert.throws(() => inlineShape.text.set([{ runs: [{ field: { id: "not-a-guid", type: "slidenum", text: "1" } }] }]), /field id must be a UUID/);
+assert.throws(() => inlineShape.text.set([{ runs: [{ field: { type: "", text: "1" } }] }]), /field type must contain/);
+assert.throws(() => inlineShape.text.set([{ tabStops: [{ position: 20 }, { position: 10 }], runs: ["bad"] }]), /strictly increasing/);
+assert.throws(() => inlineShape.text.set([{ tabStops: [{ position: 20, alignment: "justify" }], runs: ["bad"] }]), /alignment must be left, center, right, or decimal/);
+inlineShape.text.set([{ tabStops: [{ position: 120, alignment: "left" }, { position: 260, alignment: "decimal" }], runs: ["Slide\t", { field: { id: inlineFieldId, type: "slidenum", text: "1" }, textStyle: { bold: true, color: "#2563eb" } }, { break: true, textStyle: { fontSize: 18 } }, "Revenue\t42.5"] }]);
+const inlinePptx = await PresentationFile.exportPptx(inlinePresentation);
+assert.equal((await PresentationFile.inspectPptx(inlinePptx)).ok, true);
+const inlineZip = await JSZip.loadAsync(new Uint8Array(await inlinePptx.arrayBuffer()));
+const inlineSlideXml = await inlineZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(inlineSlideXml, /<a:tabLst><a:tab pos="1143000" algn="l"\/><a:tab pos="2476500" algn="dec"\/><\/a:tabLst>/);
+assert.match(inlineSlideXml, new RegExp(`<a:fld id="\\${inlineFieldId}" type="slidenum">[\\s\\S]*?<a:t>1<\\/a:t><\\/a:fld>`));
+assert.match(inlineSlideXml, /<a:br><a:rPr[^>]*sz="1350"[^>]*><\/a:rPr><\/a:br>/);
+const inlineLoaded = await PresentationFile.importPptx(inlinePptx);
+const inlineLoadedShape = inlineLoaded.slides.items[0].shapes.items[0];
+assert.equal(inlineLoadedShape.text.value, "Slide\t1\nRevenue\t42.5");
+assert.deepEqual(inlineLoadedShape.text.paragraphs[0].tabStops, [{ position: 120, alignment: "left" }, { position: 260, alignment: "decimal" }]);
+assert.deepEqual(inlineLoadedShape.text.paragraphs[0].runs[1].field, { id: inlineFieldId, type: "slidenum", text: "1" });
+inlineLoadedShape.text.paragraphs = [{ ...inlineLoadedShape.text.paragraphs[0], runs: inlineLoadedShape.text.paragraphs[0].runs.map((run) => run.field ? { ...run, field: { ...run.field, text: "2" } } : run) }];
+const inlineSecondPptx = await PresentationFile.exportPptx(inlineLoaded);
+const inlineSecondLoaded = await PresentationFile.importPptx(inlineSecondPptx);
+assert.equal(inlineSecondLoaded.slides.items[0].shapes.items[0].text.value, "Slide\t2\nRevenue\t42.5");
+
 const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=";
 const paragraphPresentation = Presentation.create({
   master: {

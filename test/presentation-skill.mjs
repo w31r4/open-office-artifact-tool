@@ -216,11 +216,15 @@ try {
   assert.equal(wasmPreservation.qa.verify.ok, true);
   const wasmSlide = wasmPreservation.qa.presentation.slides.items[0];
   const wasmTitle = wasmSlide.shapes.items.find((item) => item.name === "wasm-title");
-  assert.equal(wasmTitle?.text.value, "After OpenXML WASM\nCharacter marker\nAutomatic marker\nMarker removal");
+  assert.equal(wasmTitle?.text.value, "After OpenXML WASM\t2\nField and line-break evidence\nCharacter marker\nAutomatic marker\nMarker removal");
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.bold, true);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");
   assert.deepEqual(wasmTitle?.text.paragraphs[0].runs[0].link, { uri: "https://example.com/after", targetFrame: "_blank", highlightClick: true });
+  assert.deepEqual(wasmTitle?.text.paragraphs[0].tabStops, [{ position: 780, alignment: "right" }]);
+  assert.deepEqual(wasmTitle?.text.paragraphs[0].runs[1].field, { id: "{11111111-2222-4333-8444-555555555555}", type: "slidenum", text: "2" });
+  assert.equal(wasmTitle?.text.paragraphs[0].runs[2].break, true);
+  assert.equal(wasmTitle?.text.paragraphs[0].runs[2].style.italic, true);
   assert.equal(wasmTitle?.text.paragraphs[1].bulletCharacter, "◆");
   assert.equal(wasmTitle?.text.paragraphs[1].bulletFontFollowText, true);
   assert.equal(wasmTitle?.text.paragraphs[1].bulletColor, "#2563eb");
@@ -241,6 +245,10 @@ try {
   assert.ok(wasmZip.file("ppt/media/image1.png"));
   assert.ok(wasmZip.file("ppt/notesSlides/notesSlide1.xml"));
   assert.ok(wasmZip.file("ppt/slideMasters/slideMaster1.xml"));
+  const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
+  assert.match(wasmSlideXml, /<a:tabLst><a:tab pos="7429500" algn="r"\s*\/><\/a:tabLst>/);
+  assert.match(wasmSlideXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
+  assert.match(wasmSlideXml, /<a:br><a:rPr[^>]*i="1"/);
   const wasmSlideRelationships = await wasmZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
   assert.match(wasmSlideRelationships, /relationships\/(?:chart|image|notesSlide|slideLayout)/);
   assert.match(wasmSlideRelationships, /relationships\/hyperlink[^>]*Target="https:\/\/example\.com\/after"[^>]*TargetMode="External"/);

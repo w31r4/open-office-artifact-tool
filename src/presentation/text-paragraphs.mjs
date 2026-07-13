@@ -7,7 +7,7 @@ const HUNDREDTH_POINTS_PER_PIXEL = 75;
 const MAX_PARAGRAPHS = 4096;
 const MAX_RUNS = 16384;
 const MAX_TAB_POSITION = 2147483647 / EMU_PER_PIXEL;
-const FIELD_ID_PATTERN = /^\{?([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\}?$/i;
+const FIELD_ID_PATTERN = /^\{?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}?$/i;
 const TAB_ALIGNMENTS = new Set(["left", "center", "right", "decimal"]);
 let nextPresentationFieldId = 1;
 const AUTO_NUMBER_TYPES = new Set([
@@ -487,20 +487,27 @@ function paragraphPropertiesXml(paragraph, options = {}) {
   const bulletColor = paragraph.bulletColorFollowText ? "<a:buClrTx/>" : paragraph.bulletColor != null ? `<a:buClr>${bulletColorXml(paragraph.bulletColor)}</a:buClr>` : "";
   const bulletSize = paragraph.bulletSizeFollowText ? "<a:buSzTx/>" : paragraph.bulletSizePercent != null ? `<a:buSzPct val="${Math.round(paragraph.bulletSizePercent * 100000)}"/>` : paragraph.bulletSize != null ? `<a:buSzPts val="${Math.round(paragraph.bulletSize * HUNDREDTH_POINTS_PER_PIXEL)}"/>` : "";
   const bulletFont = paragraph.bulletFontFollowText ? "<a:buFontTx/>" : paragraph.bulletFont != null ? `<a:buFont typeface="${attrEscape(paragraph.bulletFont)}"/>` : "";
+  const tabStops = paragraph.tabStops?.length ? `<a:tabLst>${paragraph.tabStops.map((tab) => `<a:tab pos="${Math.round(tab.position * EMU_PER_PIXEL)}" algn="${({ left: "l", center: "ctr", right: "r", decimal: "dec" })[tab.alignment]}"/>`).join("")}</a:tabLst>` : "";
   const spacing = `${spacingXml("lnSpc", paragraph.lineSpacing, paragraph.lineSpacing == null || paragraph.lineSpacing <= 10)}${spacingXml("spcBef", paragraph.spaceBefore)}${spacingXml("spcBef", paragraph.spaceBeforePercent, true)}${spacingXml("spcAft", paragraph.spaceAfter)}${spacingXml("spcAft", paragraph.spaceAfterPercent, true)}`;
   const defaultRun = Object.keys(paragraph.style || {}).length ? runPropertiesXml(paragraph.style, "a:defRPr") : "";
-  return `<a:pPr${attrs}>${spacing}${bulletColor}${bulletSize}${bulletFont}${bullet}${defaultRun}</a:pPr>`;
+  return `<a:pPr${attrs}>${spacing}${bulletColor}${bulletSize}${bulletFont}${bullet}${tabStops}${defaultRun}</a:pPr>`;
 }
 
 export function presentationParagraphsXml(paragraphs = [], defaultStyle = {}, options = {}) {
   return paragraphs.map((paragraph) => {
     const runs = paragraph.runs.map((run) => {
       const style = { ...defaultStyle, ...(paragraph.style || {}), ...(run.style || {}) };
-      const preserve = /^\s|\s$/.test(run.text) ? ' xml:space="preserve"' : "";
       const relationshipId = run.link ? options.hyperlinkRelationshipId?.(run.link) : undefined;
       const customShowId = run.link?.customShow ? options.hyperlinkCustomShowId?.(run.link) : undefined;
       const hyperlinkXml = presentationRunHyperlinkXml(run.link, relationshipId, customShowId);
-      return `<a:r>${runPropertiesXml(style, "a:rPr", hyperlinkXml)}<a:t${preserve}>${xmlEscape(run.text)}</a:t></a:r>`;
+      const properties = runPropertiesXml(style, "a:rPr", hyperlinkXml);
+      if (run.break) return `<a:br>${properties}</a:br>`;
+      if (run.field) {
+        const preserve = /^\s|\s$/.test(run.field.text) ? ' xml:space="preserve"' : "";
+        return `<a:fld id="${attrEscape(run.field.id)}" type="${attrEscape(run.field.type)}">${properties}<a:t${preserve}>${xmlEscape(run.field.text)}</a:t></a:fld>`;
+      }
+      const preserve = /^\s|\s$/.test(run.text) ? ' xml:space="preserve"' : "";
+      return `<a:r>${properties}<a:t${preserve}>${xmlEscape(run.text)}</a:t></a:r>`;
     }).join("");
     const endStyle = { ...defaultStyle, ...(paragraph.style || {}) };
     return `<a:p>${paragraphPropertiesXml(paragraph, options)}${runs}<a:endParaRPr lang="en-US"${endStyle.fontSize ? ` sz="${Math.round(endStyle.fontSize * HUNDREDTH_POINTS_PER_PIXEL)}"` : ""}/></a:p>`;
@@ -576,15 +583,37 @@ export function presentationParagraphsSvg(paragraphs, frame, defaultStyle = {}, 
         : `<rect x="${markerX}" y="${y + fontSize - markerFontSize}" width="${markerFontSize}" height="${markerFontSize}" rx="2" fill="#cbd5e1" data-picture-bullet="external"/>`
       : marker ? `<text x="${markerX}" y="${y + fontSize}" font-family="${attrEscape(markerFontFamily || "Arial")}" font-size="${markerFontSize}" fill="${attrEscape(markerColor || "#0f172a")}">${escape(marker)}</text>` : "";
     let x = textX;
+    let lineIndex = 0;
+    const tabX = (text, style) => {
+      const relative = Math.max(0, x - textX);
+      const stop = (paragraph.tabStops || []).find((candidate) => candidate.position > relative);
+      const fallback = { position: (Math.floor(relative / 48) + 1) * 48, alignment: "left" };
+      const target = stop || fallback;
+      const size = style.fontSize || fontSize;
+      const width = text.length * size * 0.55;
+      if (target.alignment === "center") return textX + target.position - width / 2;
+      if (target.alignment === "right") return textX + target.position - width;
+      if (target.alignment === "decimal") return textX + target.position - Math.max(0, text.split(/[.,]/, 1)[0].length * size * 0.55);
+      return textX + target.position;
+    };
     const runsXml = paragraph.runs.map((run) => {
+      if (run.break) {
+        lineIndex += 1;
+        x = textX;
+        return "";
+      }
       const style = { ...paragraphStyle, ...(run.style || {}) };
-      const width = run.text.length * (style.fontSize || fontSize) * 0.55;
+      const text = run.field?.text ?? run.text ?? "";
       const hyperlink = run.link?.uri || run.link?.slideId || (run.link?.action ? `action:${run.link.action}` : run.link?.customShow ? `custom-show:${run.link.customShow}` : undefined);
-      const result = `<text x="${x}" y="${y + fontSize}" font-family="${attrEscape(style.fontFamily || "Arial")}" font-size="${style.fontSize || fontSize}" font-weight="${style.bold ? 700 : 400}" font-style="${style.italic ? "italic" : "normal"}"${style.underline || run.link ? ' text-decoration="underline"' : ""} fill="${attrEscape(style.color || (run.link ? "#2563eb" : paragraphStyle.color || "#0f172a"))}"${hyperlink ? ` data-hyperlink="${attrEscape(hyperlink)}"` : ""}>${escape(run.text)}</text>`;
-      x += width;
-      return result;
+      return text.split("\t").map((segment, segmentIndex) => {
+        if (segmentIndex) x = tabX(segment, style);
+        const width = segment.length * (style.fontSize || fontSize) * 0.55;
+        const result = segment ? `<text x="${x}" y="${y + fontSize + lineIndex * lineHeight}" font-family="${attrEscape(style.fontFamily || "Arial")}" font-size="${style.fontSize || fontSize}" font-weight="${style.bold ? 700 : 400}" font-style="${style.italic ? "italic" : "normal"}"${style.underline || run.link ? ' text-decoration="underline"' : ""} fill="${attrEscape(style.color || (run.link ? "#2563eb" : paragraphStyle.color || "#0f172a"))}"${hyperlink ? ` data-hyperlink="${attrEscape(hyperlink)}"` : ""}${run.field ? ` data-field-type="${attrEscape(run.field.type)}" data-field-id="${attrEscape(run.field.id)}"` : ""}>${escape(segment)}</text>` : "";
+        x += width;
+        return result;
+      }).join("");
     }).join("");
-    y += lineHeight + (paragraph.spaceAfter ?? fontSize * (paragraph.spaceAfterPercent || 0));
+    y += lineHeight * (lineIndex + 1) + (paragraph.spaceAfter ?? fontSize * (paragraph.spaceAfterPercent || 0));
     return markerXml + runsXml;
   }).join("");
 }

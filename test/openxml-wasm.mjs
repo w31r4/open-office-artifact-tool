@@ -241,6 +241,58 @@ assert.equal(richRoundTripShape.text.paragraphs[1].bulletSizePercent, 1.25);
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
 
+const inlinePresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const inlineShape = inlinePresentation.slides.add({ name: "Inline text" }).shapes.add({
+  name: "Fields, breaks, and tabs",
+  geometry: "rect",
+  position: { left: 60, top: 40, width: 920, height: 180 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: [{
+    tabStops: [{ position: 120, alignment: "left" }, { position: 260, alignment: "decimal" }],
+    runs: [
+      "Slide\t",
+      { field: { id: "{11111111-2222-4333-8444-555555555555}", type: "slidenum", text: "1" }, style: { bold: true, color: "#2563EB" } },
+      { break: true, style: { fontSize: 18 } },
+      "Revenue\t42.5",
+    ],
+  }],
+});
+const inlinePptx = await exportPptxWithOpenXmlWasm(inlinePresentation);
+const inlineZip = await JSZip.loadAsync(inlinePptx.bytes);
+const inlineXml = await inlineZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(inlineXml, /<a:tabLst><a:tab pos="1143000" algn="l"\s*\/><a:tab pos="2476500" algn="dec"\s*\/><\/a:tabLst>/);
+assert.match(inlineXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
+assert.match(inlineXml, /<a:br><a:rPr[^>]*sz="1350"/);
+const inlineImported = await importPptxWithOpenXmlWasm(inlinePptx);
+const inlineImportedShape = inlineImported.slides.getItem(0).shapes.items[0];
+assert.equal(inlineImportedShape.text.value, "Slide\t1\nRevenue\t42.5");
+assert.deepEqual(inlineImportedShape.text.paragraphs[0].tabStops, [{ position: 120, alignment: "left" }, { position: 260, alignment: "decimal" }]);
+assert.deepEqual(inlineImportedShape.text.paragraphs[0].runs[1].field, { id: "{11111111-2222-4333-8444-555555555555}", type: "slidenum", text: "1" });
+assert.equal(inlineImportedShape.text.paragraphs[0].runs[2].break, true);
+inlineImportedShape.text.paragraphs = inlineImportedShape.text.paragraphs.map((paragraph) => ({
+  ...paragraph,
+  tabStops: paragraph.tabStops.map((tab, index) => index === 1 ? { ...tab, position: 280 } : tab),
+  runs: paragraph.runs.map((run) => run.field ? { ...run, field: { ...run.field, text: "2" } } : run.break ? { ...run, style: { ...run.style, italic: true } } : run),
+}));
+const inlineEdited = await exportPptxWithOpenXmlWasm(inlineImported);
+const inlineRoundTrip = await importPptxWithOpenXmlWasm(inlineEdited);
+const inlineRoundTripParagraph = inlineRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0];
+assert.equal(inlineRoundTrip.slides.getItem(0).shapes.items[0].text.value, "Slide\t2\nRevenue\t42.5");
+assert.equal(inlineRoundTripParagraph.tabStops[1].position, 280);
+assert.equal(inlineRoundTripParagraph.runs[2].style.italic, true);
+inlineRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs = [{ ...inlineRoundTripParagraph, tabStops: [] }];
+const inlineTabsDeleted = await exportPptxWithOpenXmlWasm(inlineRoundTrip);
+const inlineTabsDeletedZip = await JSZip.loadAsync(inlineTabsDeleted.bytes);
+assert.doesNotMatch(await inlineTabsDeletedZip.file("ppt/slides/slide1.xml").async("text"), /<a:tabLst>/);
+const inlineKindChanged = await importPptxWithOpenXmlWasm(inlinePptx);
+const inlineKindChangedShape = inlineKindChanged.slides.getItem(0).shapes.items[0];
+inlineKindChangedShape.text.paragraphs = inlineKindChangedShape.text.paragraphs.map((paragraph) => ({ ...paragraph, runs: paragraph.runs.map((run) => run.field ? { text: "not a field", style: run.style } : run) }));
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(inlineKindChanged),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "presentation_text_topology_changed",
+);
+
 const hyperlinkPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const hyperlinkSlide = hyperlinkPresentation.slides.add({ name: "Links" });
 const hyperlinkTarget = hyperlinkPresentation.slides.add({ name: "Details" });

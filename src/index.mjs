@@ -1053,7 +1053,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, relative action, or custom-show hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
+  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -1074,8 +1074,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs." },
-  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenXmlWasm", summary: "Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, character/auto/none list markers, direct marker styles, and external/internal/relative-action run links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenXmlWasm", summary: "Experimentally import PPTX bytes with editable fixed-topology basic text, direct list markers/styles and bounded run links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenXmlWasm", summary: "Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none list markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenXmlWasm", summary: "Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles and bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1939,7 +1939,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable shape name." },
     geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
-    text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs/runs accepted by shape.text.set, including relationship-backed run hyperlinks." },
+    text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks." },
     fill: { type: "string|object", description: "Shape fill." },
     line: { type: "object", description: "Line color, width, dash, and arrow metadata." },
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
@@ -1953,7 +1953,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     idOrNameOrIndex: { type: "string|number", required: true, description: "Stable custom-show ID, exact name, or zero-based collection index." },
   }, "customShow", "PresentationCustomShow|undefined", "Matching custom-show facade or undefined."),
   "shape.text.set": helpSchema({
-    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI." },
+    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, inline arrays, or paragraph objects. Ordered inlines are ordinary text, { break: true } with optional style, or { field: { id?, type, text } } with optional style; fields receive a brace-wrapped UUID when id is omitted. Paragraph tabStops use strictly increasing pixel positions and left, center, right, or decimal alignment. Paragraphs also accept level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and styles. An inline link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI." },
   }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
@@ -2103,14 +2103,14 @@ const PRESENTATION_HELP_SCHEMAS = {
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
   }, "presentation", "Presentation", "Imported editable presentation facade."),
   "exportPptxWithOpenXmlWasm": helpSchema({
-    presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse plus basic paragraph/run, character/auto/none marker, direct marker-style, and external/internal/relative-action run-link boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
+    presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse; ordered text/field/line-break inline; paragraph tab-stop; character/auto/none marker; direct marker-style; and external/internal/relative-action link boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
   "importPptxWithOpenXmlWasm": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable basic paragraph/run text, direct list markers/styles, and bounded run links plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable ordered text/field/line-break inlines, paragraph tab stops, direct list markers/styles, and bounded links plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
 };
 
 const WORKBOOK_HELP_SCHEMAS = {
@@ -7593,7 +7593,7 @@ function textOverflowIssue(slide, element, frame) {
     const paragraphFontSize = Math.max(element.text.style.fontSize || 24, ...paragraph.runs.map((run) => run.style?.fontSize || 0));
     const availableWidth = Math.max(1, frame.width - 18 - Math.max(0, paragraph.marginLeft || paragraph.level * 24));
     const charsPerLine = Math.max(1, Math.floor(availableWidth / (paragraphFontSize * 0.55)));
-    const requiredLines = Math.max(1, Math.ceil(presentationParagraphsText([paragraph]).length / charsPerLine));
+    const requiredLines = presentationParagraphsText([paragraph]).split("\n").reduce((lines, line) => lines + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
     const spacing = paragraph.lineSpacing || element.text.style.lineSpacing || 1.2;
     const lineHeight = spacing > 10 ? spacing : paragraphFontSize * spacing;
     return height + (paragraph.spaceBefore ?? paragraphFontSize * (paragraph.spaceBeforePercent || 0)) + requiredLines * lineHeight + (paragraph.spaceAfter ?? paragraphFontSize * (paragraph.spaceAfterPercent || 0));
@@ -8077,7 +8077,7 @@ export class Shape {
   inspectRecord(kind = "shape") {
     const p = this.position;
     const paragraphs = this.text.effectiveParagraphs();
-    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? paragraphs.length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", placeholder: this.placeholder || undefined };
+    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", placeholder: this.placeholder || undefined };
   }
 
   layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }

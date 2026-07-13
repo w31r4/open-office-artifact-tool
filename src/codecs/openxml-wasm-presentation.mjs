@@ -13,7 +13,7 @@ const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "col
 const PARAGRAPH_KEYS = new Set([
   "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletNone",
   "bulletFont", "bulletFontFollowText", "bulletColor", "bulletColorFollowText",
-  "bulletSize", "bulletSizePercent", "bulletSizeFollowText",
+  "bulletSize", "bulletSizePercent", "bulletSizeFollowText", "tabStops",
 ]);
 
 function emuFromPixels(value, name) {
@@ -84,7 +84,11 @@ function wireRun(run, inheritedStyle, shapeId, original) {
   }
   const hyperlink = wireHyperlink(run.link, original, shapeId);
   return {
-    text: String(run.text ?? ""),
+    content: run.break
+      ? { case: "lineBreak", value: true }
+      : run.field
+        ? { case: "field", value: { id: run.field.id, type: run.field.type, text: run.field.text } }
+        : { case: "text", value: String(run.text ?? "") },
     ...(style.bold == null ? {} : { bold: Boolean(style.bold) }),
     ...(style.italic == null ? {} : { italic: Boolean(style.italic) }),
     ...(fontSize === undefined ? {} : { fontSizePoints: fontSize * POINTS_PER_PIXEL }),
@@ -171,6 +175,14 @@ function wireBulletSize(paragraph, original, shapeId) {
   return undefined;
 }
 
+function wireTabStops(paragraph, original, shapeId) {
+  if (paragraph.tabStops?.length) {
+    return { tabStops: paragraph.tabStops.map((tab) => ({ positionEmu: emuFromPixels(tab.position, `${shapeId}.text.tabStops.position`), alignment: tab.alignment })) };
+  }
+  if (original?.tabStops?.length || original?.noTabStops === true) return { noTabStops: true };
+  return {};
+}
+
 function wireParagraph(paragraph, textStyle, original, shapeId) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -189,6 +201,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId) {
   const bulletFont = wireBulletFont(paragraph, original, shapeId);
   const bulletColor = wireBulletColor(paragraph, original, shapeId);
   const bulletSize = wireBulletSize(paragraph, original, shapeId);
+  const tabs = wireTabStops(paragraph, original, shapeId);
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
@@ -197,7 +210,14 @@ function wireParagraph(paragraph, textStyle, original, shapeId) {
     ...(bulletFont ? { bulletFont } : {}),
     ...(bulletColor ? { bulletColor } : {}),
     ...(bulletSize ? { bulletSize } : {}),
+    ...tabs,
   };
+}
+
+function modelRunCase(run) {
+  if (run.break) return "lineBreak";
+  if (run.field) return "field";
+  return "text";
 }
 
 function presentationTextBody(shape, original) {
@@ -207,8 +227,8 @@ function presentationTextBody(shape, original) {
   const textStyleUnsupported = unsupportedStyleFields(shape.text?.style);
   if (textStyleUnsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} uses unsupported text-frame style fields: ${textStyleUnsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const paragraphs = shape.text?.paragraphs || [];
-  if (original?.textBody && (original.textBody.paragraphs.length !== paragraphs.length || original.textBody.paragraphs.some((paragraph, index) => paragraph.runs.length !== (paragraphs[index]?.runs || []).length))) {
-    throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} changed its source-bound paragraph/run topology.`, [], { code: "presentation_text_topology_changed" });
+  if (original?.textBody && (original.textBody.paragraphs.length !== paragraphs.length || original.textBody.paragraphs.some((paragraph, index) => paragraph.runs.length !== (paragraphs[index]?.runs || []).length || paragraph.runs.some((run, runIndex) => run.content?.case !== modelRunCase(paragraphs[index].runs[runIndex]))))) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} changed its source-bound paragraph/inline topology.`, [], { code: "presentation_text_topology_changed" });
   }
   return {
     paragraphs: paragraphs.map((paragraph, index) => wireParagraph(paragraph, shape.text?.style || {}, original?.textBody?.paragraphs?.[index], shape.id)),
@@ -347,8 +367,13 @@ function presentationNativeKind(elementName) {
 
 function modelRun(run) {
   const hyperlink = run.hyperlink?.case === "runHyperlink" ? modelHyperlink(run.hyperlink.value) : undefined;
+  const content = run.content?.case === "lineBreak"
+    ? { break: true }
+    : run.content?.case === "field"
+      ? { field: { id: run.content.value.id, type: run.content.value.type, text: run.content.value.text } }
+      : { text: run.content?.case === "text" ? run.content.value : "" };
   return {
-    text: run.text,
+    ...content,
     style: {
       ...(run.bold === undefined ? {} : { bold: run.bold }),
       ...(run.italic === undefined ? {} : { italic: run.italic }),
@@ -404,6 +429,7 @@ function modelText(shape) {
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     ...modelBullet(paragraph.bullet),
     ...modelBulletStyle(paragraph),
+    ...(paragraph.tabStops?.length ? { tabStops: paragraph.tabStops.map((tab) => ({ position: Number(tab.positionEmu) / EMU_PER_PIXEL, alignment: tab.alignment })) } : {}),
     style: {},
   }));
 }

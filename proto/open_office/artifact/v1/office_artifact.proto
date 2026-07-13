@@ -274,7 +274,10 @@ message PresentationTextParagraph {
     double bullet_size_percent = 12;
     bool bullet_size_follow_text = 13;
   }
+  // Field 14 remains the original repeated-message wire shape. An empty list
+  // preserves an unmodeled source list; no_tab_stops explicitly removes it.
   repeated PresentationTabStop tab_stops = 14;
+  optional bool no_tab_stops = 15;
 }
 
 message PresentationAutoNumberBullet {
