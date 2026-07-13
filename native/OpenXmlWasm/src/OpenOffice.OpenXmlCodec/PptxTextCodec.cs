@@ -13,7 +13,7 @@ internal static class PptxTextCodec
     private const int MaxRuns = 16_384;
     private const double MaxFontSizePoints = 768;
 
-    internal static PresentationTextBody Read(P.TextBody? source)
+    internal static PresentationTextBody Read(P.TextBody? source, PptxHyperlinkContext? hyperlinkContext = null)
     {
         var body = new PresentationTextBody();
         if (source is null) return body;
@@ -35,7 +35,7 @@ internal static class PptxTextCodec
                 runCount++;
                 if (runCount > MaxRuns)
                     throw new CodecException("presentation_text_budget_exceeded", $"Presentation shape exceeds the {MaxRuns}-run text budget.");
-                paragraph.Runs.Add(ReadRun(sourceRun));
+                paragraph.Runs.Add(ReadRun(sourceRun, hyperlinkContext));
             }
             body.Paragraphs.Add(paragraph);
         }
@@ -49,6 +49,12 @@ internal static class PptxTextCodec
     {
         var body = CanonicalBody(shape);
         shape.TextBody = body.Clone();
+        foreach (var run in shape.TextBody.Paragraphs.SelectMany(paragraph => paragraph.Runs))
+        {
+            // no_hyperlink is edit intent; native absence reimports as an unset
+            // choice, so canonical semantic hashes collapse both forms.
+            if (run.HyperlinkCase == PresentationTextRun.HyperlinkOneofCase.NoHyperlink) run.ClearHyperlink();
+        }
         shape.Text = Flatten(body);
     }
 
@@ -93,21 +99,22 @@ internal static class PptxTextCodec
                 if (run.HasFontFamily && (string.IsNullOrWhiteSpace(run.FontFamily) || run.FontFamily.Length > 255))
                     throw new CodecException("invalid_presentation_text", "Presentation run font family must contain 1 through 255 characters.");
                 if (run.HasColorRgb) PptxColor.Normalize(run.ColorRgb);
+                PptxHyperlinkCodec.Validate(run);
             }
         }
         _ = CanonicalBody(shape);
     }
 
-    internal static P.TextBody Build(PresentationShape shape)
+    internal static P.TextBody Build(PresentationShape shape, PptxHyperlinkContext? hyperlinkContext = null)
     {
         var body = new P.TextBody(new A.BodyProperties(), new A.ListStyle());
         var semantic = CanonicalBody(shape);
-        foreach (var paragraph in semantic.Paragraphs) body.Append(BuildParagraph(paragraph));
+        foreach (var paragraph in semantic.Paragraphs) body.Append(BuildParagraph(paragraph, hyperlinkContext));
         if (semantic.Paragraphs.Count == 0) body.Append(new A.Paragraph(new A.EndParagraphRunProperties { Language = "en-US" }));
         return body;
     }
 
-    internal static void Apply(P.Shape shape, PresentationShape requested)
+    internal static void Apply(P.Shape shape, PresentationShape requested, PptxHyperlinkContext hyperlinkContext)
     {
         var semantic = CanonicalBody(requested);
         if (shape.TextBody is null)
@@ -126,11 +133,11 @@ internal static class PptxTextCodec
             if (runs.Length != requestedParagraph.Runs.Count)
                 throw new CodecException("presentation_text_topology_changed", $"Source-preserving PPTX export requires paragraph {paragraphIndex + 1}'s original run topology.");
             ApplyParagraphProperties(sourceParagraph, requestedParagraph);
-            for (var runIndex = 0; runIndex < runs.Length; runIndex++) ApplyRun(runs[runIndex], requestedParagraph.Runs[runIndex]);
+            for (var runIndex = 0; runIndex < runs.Length; runIndex++) ApplyRun(runs[runIndex], requestedParagraph.Runs[runIndex], hyperlinkContext);
         }
     }
 
-    internal static void ScrubModeledContent(P.TextBody? body)
+    internal static void ScrubModeledContent(P.TextBody? body, PptxHyperlinkContext? hyperlinkContext = null)
     {
         if (body is null) return;
         foreach (var paragraph in body.Elements<A.Paragraph>())
@@ -146,7 +153,7 @@ internal static class PptxTextCodec
             foreach (var run in paragraph.Elements<A.Run>())
             {
                 if (run.GetFirstChild<A.Text>() is { } text) text.Text = string.Empty;
-                ScrubRunProperties(run.RunProperties);
+                ScrubRunProperties(run.RunProperties, hyperlinkContext);
             }
         }
     }
@@ -171,7 +178,7 @@ internal static class PptxTextCodec
         return body;
     }
 
-    private static PresentationTextRun ReadRun(A.Run source)
+    private static PresentationTextRun ReadRun(A.Run source, PptxHyperlinkContext? hyperlinkContext)
     {
         var run = new PresentationTextRun { Text = source.GetFirstChild<A.Text>()?.Text ?? string.Empty };
         var properties = source.RunProperties;
@@ -180,10 +187,11 @@ internal static class PptxTextCodec
         if (properties?.FontSize is not null) run.FontSizePoints = properties.FontSize.Value / 100d;
         if (properties?.GetFirstChild<A.LatinFont>()?.Typeface?.Value is { Length: > 0 } typeface) run.FontFamily = typeface;
         if (PptxColor.SolidRgb(properties?.GetFirstChild<A.SolidFill>()) is { Length: > 0 } rgb) run.ColorRgb = rgb;
+        PptxHyperlinkCodec.Read(run, properties, hyperlinkContext);
         return run;
     }
 
-    private static A.Paragraph BuildParagraph(PresentationTextParagraph source)
+    private static A.Paragraph BuildParagraph(PresentationTextParagraph source, PptxHyperlinkContext? hyperlinkContext)
     {
         var paragraph = new A.Paragraph();
         if (source.HasLevel || source.HasAlignment || PptxBulletCodec.HasModeledBullet(source) || PptxBulletStyleCodec.HasModeledStyle(source))
@@ -195,15 +203,16 @@ internal static class PptxTextCodec
             PptxBulletCodec.Append(properties, source);
             paragraph.Append(properties);
         }
-        foreach (var run in source.Runs) paragraph.Append(BuildRun(run));
+        foreach (var run in source.Runs) paragraph.Append(BuildRun(run, hyperlinkContext));
         paragraph.Append(new A.EndParagraphRunProperties { Language = "en-US" });
         return paragraph;
     }
 
-    private static A.Run BuildRun(PresentationTextRun source)
+    private static A.Run BuildRun(PresentationTextRun source, PptxHyperlinkContext? hyperlinkContext)
     {
         var properties = new A.RunProperties { Language = "en-US" };
         ApplyRunProperties(properties, source);
+        PptxHyperlinkCodec.Append(properties, source, hyperlinkContext);
         return new A.Run(properties, new A.Text(source.Text));
     }
 
@@ -223,15 +232,19 @@ internal static class PptxTextCodec
         PptxBulletCodec.Apply(properties, requested);
     }
 
-    private static void ApplyRun(A.Run source, PresentationTextRun requested)
+    private static void ApplyRun(A.Run source, PresentationTextRun requested, PptxHyperlinkContext hyperlinkContext)
     {
         var properties = source.RunProperties;
-        if (properties is null && HasStyle(requested))
+        if (properties is null && (HasStyle(requested) || PptxHyperlinkCodec.HasModeledChoice(requested)))
         {
             properties = new A.RunProperties { Language = "en-US" };
             source.PrependChild(properties);
         }
-        if (properties is not null) ApplyRunProperties(properties, requested);
+        if (properties is not null)
+        {
+            ApplyRunProperties(properties, requested);
+            PptxHyperlinkCodec.Apply(properties, requested, hyperlinkContext);
+        }
         source.GetFirstChild<A.Text>()!.Text = requested.Text;
     }
 
@@ -263,7 +276,7 @@ internal static class PptxTextCodec
         else if (PptxColor.SolidRgb(fill).Length > 0) fill!.Remove();
     }
 
-    private static void ScrubRunProperties(A.RunProperties? properties)
+    private static void ScrubRunProperties(A.RunProperties? properties, PptxHyperlinkContext? hyperlinkContext)
     {
         if (properties is null) return;
         properties.Bold = null;
@@ -272,6 +285,7 @@ internal static class PptxTextCodec
         properties.GetFirstChild<A.LatinFont>()?.Remove();
         var fill = properties.GetFirstChild<A.SolidFill>();
         if (PptxColor.SolidRgb(fill).Length > 0) fill!.Remove();
+        PptxHyperlinkCodec.Scrub(properties, hyperlinkContext);
     }
 
     private static string AlignmentName(A.TextAlignmentTypeValues value) =>

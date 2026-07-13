@@ -1,5 +1,6 @@
 import { Presentation } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { isPresentationAutoNumberType } from "../presentation/text-paragraphs.mjs";
 import { OpenXmlWasmCodecError } from "./openxml-wasm-error.mjs";
 
@@ -33,8 +34,39 @@ function unsupportedStyleFields(style = {}) {
   return Object.keys(style).filter((key) => !RUN_STYLE_KEYS.has(key));
 }
 
-function wireRun(run, inheritedStyle, shapeId) {
-  if (run.link) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a run hyperlink outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
+function wireHyperlink(value, original, shapeId) {
+  if (value == null) {
+    if (new Set(["runHyperlink", "noHyperlink"]).has(original?.hyperlink?.case)) return { case: "noHyperlink", value: true };
+    return undefined;
+  }
+  let link;
+  try {
+    link = normalizePresentationRunLink(value);
+  } catch (error) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an invalid run hyperlink: ${error.message}`, [], { code: "invalid_presentation_hyperlink" });
+  }
+  if (link.customShow) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a custom-show hyperlink outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
+  const target = link.uri
+    ? { case: "uri", value: link.uri }
+    : link.slideId
+      ? { case: "slideId", value: link.slideId }
+      : link.action
+        ? { case: "action", value: link.action }
+        : undefined;
+  if (!target) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an unsupported run hyperlink target.`, [], { code: "unsupported_presentation_features" });
+  return {
+    case: "runHyperlink",
+    value: {
+      target,
+      ...(link.tooltip == null ? {} : { tooltip: link.tooltip }),
+      ...(link.targetFrame == null ? {} : { targetFrame: link.targetFrame }),
+      ...(link.history == null ? {} : { history: link.history }),
+      ...(link.highlightClick == null ? {} : { highlightClick: link.highlightClick }),
+    },
+  };
+}
+
+function wireRun(run, inheritedStyle, shapeId, original) {
   const unsupported = unsupportedStyleFields(run.style);
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported run style fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const style = { ...inheritedStyle, ...(run.style || {}) };
@@ -50,6 +82,7 @@ function wireRun(run, inheritedStyle, shapeId) {
   if (colorRgb === "") {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a transparent run color outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
   }
+  const hyperlink = wireHyperlink(run.link, original, shapeId);
   return {
     text: String(run.text ?? ""),
     ...(style.bold == null ? {} : { bold: Boolean(style.bold) }),
@@ -57,6 +90,7 @@ function wireRun(run, inheritedStyle, shapeId) {
     ...(fontSize === undefined ? {} : { fontSizePoints: fontSize * POINTS_PER_PIXEL }),
     ...(fontFamily === undefined ? {} : { fontFamily }),
     ...(colorRgb === undefined ? {} : { colorRgb }),
+    ...(hyperlink ? { hyperlink } : {}),
   };
 }
 
@@ -158,7 +192,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId) {
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
-    runs: (paragraph.runs || []).map((run) => wireRun(run, { ...textStyle, ...(paragraph.style || {}) }, shapeId)),
+    runs: (paragraph.runs || []).map((run, index) => wireRun(run, { ...textStyle, ...(paragraph.style || {}) }, shapeId, original?.runs?.[index])),
     ...(bullet ? { bullet } : {}),
     ...(bulletFont ? { bulletFont } : {}),
     ...(bulletColor ? { bulletColor } : {}),
@@ -312,6 +346,7 @@ function presentationNativeKind(elementName) {
 }
 
 function modelRun(run) {
+  const hyperlink = run.hyperlink?.case === "runHyperlink" ? modelHyperlink(run.hyperlink.value) : undefined;
   return {
     text: run.text,
     style: {
@@ -321,6 +356,24 @@ function modelRun(run) {
       ...(run.fontFamily === undefined ? {} : { fontFamily: run.fontFamily }),
       ...(run.colorRgb === undefined ? {} : { color: `#${run.colorRgb}` }),
     },
+    ...(hyperlink ? { link: hyperlink } : {}),
+  };
+}
+
+function modelHyperlink(link) {
+  const target = link.target?.case === "uri"
+    ? { uri: link.target.value }
+    : link.target?.case === "slideId"
+      ? { slideId: link.target.value }
+      : link.target?.case === "action"
+        ? { action: link.target.value }
+        : {};
+  return {
+    ...target,
+    ...(link.tooltip === undefined ? {} : { tooltip: link.tooltip }),
+    ...(link.targetFrame === undefined ? {} : { targetFrame: link.targetFrame }),
+    ...(link.history === undefined ? {} : { history: link.history }),
+    ...(link.highlightClick === undefined ? {} : { highlightClick: link.highlightClick }),
   };
 }
 

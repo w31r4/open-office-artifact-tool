@@ -240,10 +240,10 @@ message PresentationShape {
   PresentationTextBody text_body = 10;
 }
 
-// The public PresentationML text slice models agent-facing paragraph/run and
-// basic list-marker and direct marker-style semantics. Picture bullets,
-// non-RGB marker colors, hyperlinks, fields, tabs, breaks, body properties,
-// and list styles stay source-bound.
+// The public PresentationML text slice models agent-facing paragraph/run,
+// basic list-marker/direct marker-style semantics, and bounded click links.
+// Picture bullets, non-RGB marker colors, custom-show/mouse-over links, fields,
+// tabs, breaks, body properties, and list styles stay source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
 }
@@ -289,6 +289,24 @@ message PresentationTextRun {
   optional double font_size_points = 4;
   optional string font_family = 5;
   optional string color_rgb = 6;
+  // Unset preserves an unmodeled source click action. Explicit no_hyperlink
+  // removes a previously modeled click action during a source-bound edit.
+  oneof hyperlink {
+    bool no_hyperlink = 7;
+    PresentationRunHyperlink run_hyperlink = 8;
+  }
+}
+
+message PresentationRunHyperlink {
+  oneof target {
+    string uri = 1;
+    string slide_id = 2;
+    string action = 3;
+  }
+  optional string tooltip = 4;
+  optional string target_frame = 5;
+  optional bool history = 6;
+  optional bool highlight_click = 7;
 }
 
 message PresentationOpaqueElement {

@@ -221,6 +221,115 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void RunHyperlinksRoundTripAndEditOwnedSlideRelationships()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slidePart = OrderedSlides(package)[0];
+            var links = slidePart.Slide!.Descendants<A.HyperlinkOnClick>().ToArray();
+            Assert.Equal(4, links.Length);
+            Assert.Equal("https://example.com/guide?x=1&y=2", Assert.Single(slidePart.HyperlinkRelationships).Uri.OriginalString);
+            Assert.Equal("ppaction://hlinksldjump", links[1].Action!.Value);
+            Assert.IsType<SlidePart>(slidePart.GetPartById(links[1].Id!.Value!));
+            Assert.Equal("ppaction://hlinkshowjump?jump=nextslide", links[2].Action!.Value);
+            Assert.Equal(string.Empty, links[2].Id!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var runs = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs;
+        Assert.Equal("https://example.com/guide?x=1&y=2", runs[0].RunHyperlink.Uri);
+        Assert.Equal("Read the guide", runs[0].RunHyperlink.Tooltip);
+        Assert.True(runs[0].RunHyperlink.HasHistory);
+        Assert.False(runs[0].RunHyperlink.History);
+        Assert.True(runs[0].RunHyperlink.HighlightClick);
+        Assert.Equal("presentation/slide/2", runs[1].RunHyperlink.SlideId);
+        Assert.Equal("nextSlide", runs[2].RunHyperlink.Action);
+
+        runs[0].RunHyperlink = new PresentationRunHyperlink { Uri = "https://example.com/updated", TargetFrame = "_blank" };
+        runs[1].RunHyperlink = new PresentationRunHyperlink { SlideId = "presentation/slide/3", Tooltip = "Third slide" };
+        runs[2].RunHyperlink = new PresentationRunHyperlink { Action = "lastSlide", HighlightClick = false };
+        runs[3].NoHyperlink = true;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using (var stream = new MemoryStream(preserved.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            var links = slides[0].Slide!.Descendants<A.HyperlinkOnClick>().ToArray();
+            Assert.Equal(3, links.Length);
+            Assert.Equal("https://example.com/updated", slides[0].HyperlinkRelationships.Single(link => link.Id == links[0].Id).Uri.OriginalString);
+            Assert.Same(slides[2], slides[0].GetPartById(links[1].Id!.Value!));
+            Assert.Equal("ppaction://hlinkshowjump?jump=lastslide", links[2].Action!.Value);
+            Assert.False(links[2].HighlightClick!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var reimported = Import(preserved.File.ToByteArray());
+        var reimportedRuns = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs;
+        Assert.Equal("https://example.com/updated", reimportedRuns[0].RunHyperlink.Uri);
+        Assert.Equal("presentation/slide/3", reimportedRuns[1].RunHyperlink.SlideId);
+        Assert.Equal("lastSlide", reimportedRuns[2].RunHyperlink.Action);
+        Assert.Equal(PresentationTextRun.HyperlinkOneofCase.None, reimportedRuns[3].HyperlinkCase);
+    }
+
+    [Fact]
+    public void UnknownRunClickActionsArePreservedAndCannotBeReplaced()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        var source = AddUnknownRunClick(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var run = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0];
+        Assert.Equal(PresentationTextRun.HyperlinkOneofCase.None, run.HyperlinkCase);
+        run.Text = "Edited text";
+        imported.Artifact.Presentation.Slides[0].Elements[0].Shape.Text = PptxTextCodec.Flatten(imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using (var stream = new MemoryStream(preserved.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+            Assert.Equal("ppaction://customshow?id=99", OrderedSlides(package)[0].Slide!.Descendants<A.HyperlinkOnClick>().First().Action!.Value);
+
+        imported = Import(source);
+        run = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0];
+        run.RunHyperlink = new PresentationRunHyperlink { Uri = "https://example.com/replacement" };
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void InvalidRunHyperlinksFailClosed()
+    {
+        var request = HyperlinkExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0].NoHyperlink = false;
+        var invalidNone = Invoke(request);
+        Assert.False(invalidNone.Ok);
+        Assert.Equal("invalid_presentation_hyperlink", Assert.Single(invalidNone.Diagnostics).Code);
+
+        request = HyperlinkExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink { Uri = "javascript:alert(1)" };
+        var forbiddenUri = Invoke(request);
+        Assert.False(forbiddenUri.Ok);
+        Assert.Equal("invalid_presentation_hyperlink", Assert.Single(forbiddenUri.Diagnostics).Code);
+
+        request = HyperlinkExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink { Action = "customShow" };
+        var invalidAction = Invoke(request);
+        Assert.False(invalidAction.Ok);
+        Assert.Equal("invalid_presentation_hyperlink", Assert.Single(invalidAction.Diagnostics).Code);
+
+        request = HyperlinkExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink { SlideId = "presentation/slide/missing" };
+        var missingSlide = Invoke(request);
+        Assert.False(missingSlide.Ok);
+        Assert.Equal("invalid_presentation_hyperlink", Assert.Single(missingSlide.Diagnostics).Code);
+    }
+
+    [Fact]
     public void InvalidListMarkersAndStylesFailClosed()
     {
         var request = RichTextExportRequest();
@@ -406,6 +515,103 @@ public sealed class PptxCodecTests
                 Presentation = presentation,
             },
         };
+    }
+
+    private static CodecRequest HyperlinkExportRequest()
+    {
+        var paragraph = new PresentationTextParagraph();
+        paragraph.Runs.Add(new PresentationTextRun
+        {
+            Text = "Guide ",
+            RunHyperlink = new PresentationRunHyperlink
+            {
+                Uri = "https://example.com/guide?x=1&y=2",
+                Tooltip = "Read the guide",
+                TargetFrame = "_blank",
+                History = false,
+                HighlightClick = true,
+            },
+        });
+        paragraph.Runs.Add(new PresentationTextRun
+        {
+            Text = "Details ",
+            RunHyperlink = new PresentationRunHyperlink { SlideId = "presentation/slide/2" },
+        });
+        paragraph.Runs.Add(new PresentationTextRun
+        {
+            Text = "Next ",
+            RunHyperlink = new PresentationRunHyperlink { Action = "nextSlide" },
+        });
+        paragraph.Runs.Add(new PresentationTextRun
+        {
+            Text = "End",
+            RunHyperlink = new PresentationRunHyperlink { Action = "endShow" },
+        });
+        var body = new PresentationTextBody();
+        body.Paragraphs.Add(paragraph);
+        var first = new PresentationSlide { Id = "presentation/slide/1", Name = "Links" };
+        first.Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/links",
+            Name = "Links",
+            Shape = new PresentationShape
+            {
+                Geometry = "rect",
+                LeftEmu = 571_500,
+                TopEmu = 381_000,
+                WidthEmu = 8_191_500,
+                HeightEmu = 666_750,
+                Text = PptxTextCodec.Flatten(body),
+                TextBody = body,
+                FillRgb = "FFFFFF",
+                LineRgb = "334155",
+                LineWidthEmu = 9_525,
+            },
+        });
+        var presentation = new PresentationArtifact
+        {
+            Id = "presentation/hyperlinks",
+            Name = "Hyperlinks",
+            SlideWidthEmu = 12_192_000,
+            SlideHeightEmu = 6_858_000,
+        };
+        presentation.Slides.Add(first);
+        presentation.Slides.Add(new PresentationSlide { Id = "presentation/slide/2", Name = "Details" });
+        presentation.Slides.Add(new PresentationSlide { Id = "presentation/slide/3", Name = "Appendix" });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportPptx,
+            Family = ArtifactFamily.Presentation,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Presentation,
+                Presentation = presentation,
+            },
+        };
+    }
+
+    private static SlidePart[] OrderedSlides(PresentationDocument package)
+    {
+        var presentationPart = package.PresentationPart!;
+        return presentationPart.Presentation!.SlideIdList!.Elements<P.SlideId>()
+            .Select(slideId => (SlidePart)presentationPart.GetPartById(slideId.RelationshipId!.Value!))
+            .ToArray();
+    }
+
+    private static byte[] AddUnknownRunClick(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var click = OrderedSlides(package)[0].Slide!.Descendants<A.HyperlinkOnClick>().First();
+            click.Id = string.Empty;
+            click.Action = "ppaction://customshow?id=99";
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddUnmodeledTextProperties(byte[] bytes)
