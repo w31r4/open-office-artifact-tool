@@ -1026,6 +1026,135 @@ public sealed class PptxCodecTests
         Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
     }
 
+    [Fact]
+    public void TextBodyPropertiesAuthorImportEditDeleteAndPreserveUnknownProperties()
+    {
+        var request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties
+        {
+            LeftInsetEmu = 76_200,
+            TopInsetEmu = 38_100,
+            RightInsetEmu = 114_300,
+            BottomInsetEmu = 57_150,
+            VerticalAnchor = "center",
+            Wrap = "none",
+            AutoFitMode = "shrinkText",
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BodyProperties>().Single();
+            Assert.Equal(76_200, properties.LeftInset!.Value);
+            Assert.Equal(38_100, properties.TopInset!.Value);
+            Assert.Equal(114_300, properties.RightInset!.Value);
+            Assert.Equal(57_150, properties.BottomInset!.Value);
+            Assert.Equal(A.TextAnchoringTypeValues.Center, properties.Anchor!.Value);
+            Assert.Equal(A.TextWrappingValues.None, properties.Wrap!.Value);
+            Assert.NotNull(properties.GetFirstChild<A.NormalAutoFit>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var source = AddUnmodeledBodyProperties(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var shape = imported.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        var bodyProperties = shape.TextBody.BodyProperties;
+        Assert.Equal(76_200, bodyProperties.LeftInsetEmu);
+        Assert.Equal(38_100, bodyProperties.TopInsetEmu);
+        Assert.Equal(114_300, bodyProperties.RightInsetEmu);
+        Assert.Equal(57_150, bodyProperties.BottomInsetEmu);
+        Assert.Equal("center", bodyProperties.VerticalAnchor);
+        Assert.Equal("none", bodyProperties.Wrap);
+        Assert.Equal("shrinkText", bodyProperties.AutoFitMode);
+
+        bodyProperties.LeftInsetEmu = 152_400;
+        bodyProperties.TopInsetEmu = 95_250;
+        bodyProperties.NoRightInset = true;
+        bodyProperties.BottomInsetEmu = 66_675;
+        bodyProperties.VerticalAnchor = "bottom";
+        bodyProperties.Wrap = "square";
+        bodyProperties.AutoFitMode = "resizeShape";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BodyProperties>().Single();
+            Assert.Equal(152_400, properties.LeftInset!.Value);
+            Assert.Equal(95_250, properties.TopInset!.Value);
+            Assert.Null(properties.RightInset);
+            Assert.Equal(66_675, properties.BottomInset!.Value);
+            Assert.Equal(A.TextAnchoringTypeValues.Bottom, properties.Anchor!.Value);
+            Assert.Equal(A.TextWrappingValues.Square, properties.Wrap!.Value);
+            Assert.NotNull(properties.GetFirstChild<A.ShapeAutoFit>());
+            Assert.Equal(600_000, properties.Rotation!.Value);
+            Assert.True(properties.UpRight!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        bodyProperties = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties;
+        bodyProperties.NoLeftInset = true;
+        bodyProperties.NoTopInset = true;
+        bodyProperties.NoBottomInset = true;
+        bodyProperties.NoVerticalAnchor = true;
+        bodyProperties.NoWrap = true;
+        bodyProperties.NoAutoFitMode = true;
+        var deleted = Export(reimported.Artifact);
+        Assert.True(deleted.Ok, Diagnostics(deleted));
+        using (var stream = new MemoryStream(deleted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BodyProperties>().Single();
+            Assert.Null(properties.LeftInset);
+            Assert.Null(properties.TopInset);
+            Assert.Null(properties.RightInset);
+            Assert.Null(properties.BottomInset);
+            Assert.Null(properties.Anchor);
+            Assert.Null(properties.Wrap);
+            Assert.DoesNotContain(properties.ChildElements, child => child is A.NoAutoFit or A.NormalAutoFit or A.ShapeAutoFit);
+            Assert.Equal(600_000, properties.Rotation!.Value);
+            Assert.True(properties.UpRight!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var attributedSource = AddAttributedNormalAutoFit(authored.File.ToByteArray());
+        var attributedImport = Import(attributedSource);
+        Assert.True(attributedImport.Ok, Diagnostics(attributedImport));
+        bodyProperties = attributedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties;
+        Assert.Equal(PresentationTextBodyProperties.AutoFitOneofCase.None, bodyProperties.AutoFitCase);
+        bodyProperties.VerticalAnchor = "top";
+        var attributedPreserved = Export(attributedImport.Artifact);
+        Assert.True(attributedPreserved.Ok, Diagnostics(attributedPreserved));
+        using (var stream = new MemoryStream(attributedPreserved.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var normal = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.NormalAutoFit>().Single();
+            Assert.Equal(90_000, normal.FontScale!.Value);
+            Assert.Equal(10_000, normal.LineSpaceReduction!.Value);
+        }
+        bodyProperties.AutoFitMode = "resizeShape";
+        var attributedRejected = Export(attributedImport.Artifact);
+        Assert.False(attributedRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(attributedRejected.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { LeftInsetEmu = -1 };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { NoLeftInset = false };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { VerticalAnchor = "middle" };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { AutoFitMode = "stretchText" };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
@@ -1357,6 +1486,34 @@ public sealed class PptxCodecTests
         {
             var list = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.ListStyle>().Single();
             list.GetFirstChild<A.Level1ParagraphProperties>()!.RightMargin = 381_000;
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnmodeledBodyProperties(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var properties = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BodyProperties>().Single();
+            properties.Rotation = 600_000;
+            properties.UpRight = true;
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddAttributedNormalAutoFit(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var normal = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.NormalAutoFit>().Single();
+            normal.FontScale = 90_000;
+            normal.LineSpaceReduction = 10_000;
         }
         return stream.ToArray();
     }

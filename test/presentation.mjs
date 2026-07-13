@@ -16,6 +16,25 @@ const masterOnlyLoaded = await PresentationFile.importPptx(await PresentationFil
 assert.equal(masterOnlyLoaded.layouts.items.length, 1);
 assert.equal(masterOnlyLoaded.master.name, "Master Only");
 assert.deepEqual(masterOnlyLoaded.slides.items[0].effectiveBackground(), { fill: "#123456", mode: "solid" });
+const textBodyLayoutPresentation = Presentation.create();
+const textBodyLayoutShape = textBodyLayoutPresentation.slides.add().shapes.add({
+  name: "Body layout",
+  text: "Layout-aware text",
+  textBodyProperties: { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" },
+});
+assert.deepEqual(textBodyLayoutShape.inspectRecord().bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" });
+const textBodyLayoutPptx = await PresentationFile.exportPptx(textBodyLayoutPresentation);
+const textBodyLayoutZip = await JSZip.loadAsync(new Uint8Array(await textBodyLayoutPptx.arrayBuffer()));
+assert.match(await textBodyLayoutZip.file("ppt/slides/slide1.xml").async("text"), /<a:bodyPr wrap="none" lIns="76200" tIns="38100" rIns="114300" bIns="57150" anchor="ctr"><a:normAutofit\/><\/a:bodyPr>/);
+const textBodyLayoutLoaded = await PresentationFile.importPptx(textBodyLayoutPptx);
+assert.deepEqual(textBodyLayoutLoaded.slides.items[0].shapes.items[0].text.bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" });
+textBodyLayoutLoaded.slides.items[0].shapes.items[0].text.bodyProperties = { insets: { left: 16 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape" };
+const textBodyLayoutSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(textBodyLayoutLoaded)).arrayBuffer()));
+const textBodyLayoutSecondXml = await textBodyLayoutSecondZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(textBodyLayoutSecondXml, /<a:bodyPr wrap="square" lIns="152400" anchor="b"><a:spAutoFit\/><\/a:bodyPr>/);
+assert.doesNotMatch(textBodyLayoutSecondXml, /<a:bodyPr[^>]*\brIns=/);
+textBodyLayoutShape.text.bodyProperties = { anchor: "middle" };
+await assert.rejects(() => PresentationFile.exportPptx(textBodyLayoutPresentation), /Unsupported Presentation text body anchor/);
 const multiMasterPresentation = Presentation.create({
   theme: { colors: { accent1: "#abcdef", accent6: "#123456" }, fonts: { minor: "Inter" } },
   masters: [

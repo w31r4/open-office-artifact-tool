@@ -18,6 +18,7 @@ internal static class PptxTextCodec
     {
         var body = new PresentationTextBody();
         if (source is null) return body;
+        PptxBodyPropertiesCodec.Read(body, source);
         PptxListStyleCodec.Read(body, source, slideContext);
         var paragraphs = source.Elements<A.Paragraph>().ToArray();
         if (paragraphs.Length > MaxParagraphs)
@@ -55,6 +56,7 @@ internal static class PptxTextCodec
         }
         foreach (var paragraph in shape.TextBody.Paragraphs) NormalizeParagraphEditIntent(paragraph);
         foreach (var style in shape.TextBody.ListStyles) NormalizeParagraphEditIntent(style);
+        NormalizeBodyPropertiesEditIntent(shape.TextBody);
         for (var index = shape.TextBody.ListStyles.Count - 1; index >= 0; index--)
             if (!PptxParagraphPropertiesCodec.HasModeledProperties(shape.TextBody.ListStyles[index])) shape.TextBody.ListStyles.RemoveAt(index);
         var sortedListStyles = shape.TextBody.ListStyles.OrderBy(style => style.Level).ToArray();
@@ -67,6 +69,7 @@ internal static class PptxTextCodec
     internal static bool SupportsEditing(P.TextBody? body)
     {
         if (body is null) return true;
+        if (!PptxBodyPropertiesCodec.Supports(body)) return false;
         if (!PptxListStyleCodec.Supports(body)) return false;
         var paragraphs = body.Elements<A.Paragraph>().ToArray();
         if (paragraphs.Length > MaxParagraphs) return false;
@@ -90,6 +93,7 @@ internal static class PptxTextCodec
         if (shape.TextBody.Paragraphs.Count > MaxParagraphs)
             throw new CodecException("presentation_text_budget_exceeded", $"Presentation shape exceeds the {MaxParagraphs}-paragraph text budget.");
         var inlineCount = 0;
+        PptxBodyPropertiesCodec.Validate(shape.TextBody);
         PptxListStyleCodec.Validate(shape.TextBody);
         foreach (var paragraph in shape.TextBody.Paragraphs)
         {
@@ -113,8 +117,10 @@ internal static class PptxTextCodec
 
     internal static P.TextBody Build(PresentationShape shape, PptxSlideContext? slideContext = null)
     {
-        var body = new P.TextBody(new A.BodyProperties(), new A.ListStyle());
         var semantic = CanonicalBody(shape);
+        var bodyProperties = new A.BodyProperties();
+        PptxBodyPropertiesCodec.Build(bodyProperties, semantic);
+        var body = new P.TextBody(bodyProperties, new A.ListStyle());
         PptxListStyleCodec.Build(body.GetFirstChild<A.ListStyle>()!, semantic, slideContext);
         foreach (var paragraph in semantic.Paragraphs) body.Append(BuildParagraph(paragraph, slideContext));
         if (semantic.Paragraphs.Count == 0) body.Append(new A.Paragraph(new A.EndParagraphRunProperties { Language = "en-US" }));
@@ -126,9 +132,10 @@ internal static class PptxTextCodec
         var semantic = CanonicalBody(requested);
         if (shape.TextBody is null)
         {
-            if (semantic.ListStyles.Count == 0 && (semantic.Paragraphs.Count == 0 || (semantic.Paragraphs.Count == 1 && semantic.Paragraphs[0].Runs.Count == 0))) return;
+            if (!PptxBodyPropertiesCodec.HasModeledProperties(semantic.BodyProperties) && semantic.ListStyles.Count == 0 && (semantic.Paragraphs.Count == 0 || (semantic.Paragraphs.Count == 1 && semantic.Paragraphs[0].Runs.Count == 0))) return;
             throw new CodecException("presentation_text_topology_changed", "Source-preserving PPTX export cannot add a text body to an imported shape.");
         }
+        PptxBodyPropertiesCodec.Apply(shape.TextBody, semantic);
         PptxListStyleCodec.Apply(shape.TextBody, semantic, slideContext);
         var paragraphs = shape.TextBody.Elements<A.Paragraph>().ToArray();
         if (paragraphs.Length != semantic.Paragraphs.Count)
@@ -148,6 +155,7 @@ internal static class PptxTextCodec
     internal static void ScrubModeledContent(P.TextBody? body, PptxSlideContext? slideContext = null)
     {
         if (body is null) return;
+        PptxBodyPropertiesCodec.Scrub(body);
         PptxListStyleCodec.Scrub(body, slideContext);
         foreach (var paragraph in body.Elements<A.Paragraph>())
         {
@@ -197,6 +205,19 @@ internal static class PptxTextCodec
         if (paragraph.SpaceBeforeCase == PresentationTextParagraph.SpaceBeforeOneofCase.NoSpaceBefore) paragraph.ClearSpaceBefore();
         if (paragraph.SpaceAfterCase == PresentationTextParagraph.SpaceAfterOneofCase.NoSpaceAfter) paragraph.ClearSpaceAfter();
         if (paragraph.DefaultRunStyleCase == PresentationTextParagraph.DefaultRunStyleOneofCase.NoDefaultRunProperties) paragraph.ClearDefaultRunStyle();
+    }
+
+    private static void NormalizeBodyPropertiesEditIntent(PresentationTextBody body)
+    {
+        if (body.BodyProperties is not { } properties) return;
+        if (properties.LeftInsetCase == PresentationTextBodyProperties.LeftInsetOneofCase.NoLeftInset) properties.ClearLeftInset();
+        if (properties.TopInsetCase == PresentationTextBodyProperties.TopInsetOneofCase.NoTopInset) properties.ClearTopInset();
+        if (properties.RightInsetCase == PresentationTextBodyProperties.RightInsetOneofCase.NoRightInset) properties.ClearRightInset();
+        if (properties.BottomInsetCase == PresentationTextBodyProperties.BottomInsetOneofCase.NoBottomInset) properties.ClearBottomInset();
+        if (properties.AnchorCase == PresentationTextBodyProperties.AnchorOneofCase.NoVerticalAnchor) properties.ClearAnchor();
+        if (properties.WrappingCase == PresentationTextBodyProperties.WrappingOneofCase.NoWrap) properties.ClearWrapping();
+        if (properties.AutoFitCase == PresentationTextBodyProperties.AutoFitOneofCase.NoAutoFitMode) properties.ClearAutoFit();
+        if (!PptxBodyPropertiesCodec.HasModeledProperties(properties)) body.BodyProperties = null;
     }
 
     private static PresentationTextRun ReadInline(OpenXmlElement source, PptxSlideContext? slideContext)

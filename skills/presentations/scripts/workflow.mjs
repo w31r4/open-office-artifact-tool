@@ -336,6 +336,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
       assert.ok(shape, `Missing OpenXML WASM editable shape ${edit.shapeName || edit.shapeId}`);
       shape.text.set(edit.text ?? shape.text.value);
+      if (edit.textBodyProperties) shape.text.bodyProperties = edit.textBodyProperties;
       if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;
     }
     pptx = await exportPptxWithOpenXmlWasm(imported);
