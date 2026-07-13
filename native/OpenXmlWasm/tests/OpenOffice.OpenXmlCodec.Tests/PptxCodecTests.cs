@@ -548,7 +548,7 @@ public sealed class PptxCodecTests
 
         request = PictureBulletExportRequest();
         request.Artifact.Assets.Clear();
-        var unsafeSvg = System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>");
+        var unsafeSvg = System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\"><style>@import url(https://example.com/style.css)</style></svg>");
         var unsafeId = AddPictureAsset(request.Artifact, unsafeSvg, "image/svg+xml");
         request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].PictureBullet =
             new PresentationPictureBullet { AssetId = unsafeId };

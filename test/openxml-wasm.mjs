@@ -301,6 +301,7 @@ assert.equal(pictureBulletRoundTrip.slides.getItem(1).shapes.items[0].text.parag
 for (const bulletImage of [
   { dataUrl: "data:image/png;base64,YWJj" },
   { dataUrl: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString("base64")}` },
+  { dataUrl: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(https://example.com/style.css)</style></svg>').toString("base64")}` },
   { uri: "file:///tmp/marker.png" },
 ]) {
   const invalidPictureBullet = Presentation.create();
