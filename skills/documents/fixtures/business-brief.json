@@ -16,7 +16,10 @@
     "BriefParagraphBase": { "name": "Brief Paragraph Base", "basedOn": "Normal", "fontSize": 26, "bold": true },
     "BriefParagraph": { "name": "Brief Paragraph", "basedOn": "BriefParagraphBase", "themeColor": "accent1" },
     "BriefCharacterBase": { "name": "Brief Character Base", "type": "character", "italic": true, "themeColor": "accent2" },
-    "BriefCharacter": { "name": "Brief Character", "type": "character", "basedOn": "BriefCharacterBase", "bold": false, "fontTheme": "majorHAnsi" }
+    "BriefCharacter": { "name": "Brief Character", "type": "character", "basedOn": "BriefCharacterBase", "bold": false, "fontTheme": "majorHAnsi" },
+    "BriefNumberedListBase": { "name": "Brief Numbered List Base", "type": "paragraph", "basedOn": "Normal", "numberingId": 77 },
+    "BriefNumberedListNested": { "name": "Brief Numbered List Nested", "type": "paragraph", "basedOn": "BriefNumberedListBase" },
+    "BriefNumbering": { "name": "Brief Numbering", "type": "numbering", "numberingId": 77 }
   },
   "headers": [
     { "name": "inherited-header", "text": "Clean-room document workflow", "sectionIndex": 0 }
@@ -43,8 +46,8 @@
     { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "text": "Inspect stable document blocks and comments." },
     { "kind": "listItem", "name": "render-step", "styleId": "Normal", "listType": "bullet", "text": "Render the exported DOCX through LibreOffice and Poppler." },
     { "kind": "listItem", "name": "picture-bullet-step", "styleId": "Normal", "pictureBullet": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=", "widthPt": 11, "heightPt": 11, "alt": "Green readiness marker" }, "text": "Retain native picture bullet relationships." },
-    { "kind": "listItem", "name": "lettered-step", "styleId": "Normal", "listType": "number", "numberFormat": "upperLetter", "start": 2, "levelText": "%1)", "numberingId": 77, "text": "Preserve native numbering definitions." },
-    { "kind": "listItem", "name": "roman-substep", "styleId": "Normal", "listType": "number", "level": 1, "numberFormat": "lowerRoman", "start": 3, "levelText": "%1.%2)", "numberingId": 77, "text": "Resolve nested numbering levels." },
+    { "kind": "listItem", "name": "lettered-step", "styleId": "BriefNumberedListBase", "listType": "number", "numberFormat": "upperLetter", "start": 2, "levelText": "%1)", "numberingId": 77, "numberingStyleId": "BriefNumbering", "text": "Preserve native numbering definitions." },
+    { "kind": "listItem", "name": "roman-substep", "styleId": "BriefNumberedListNested", "listType": "number", "level": 1, "numberFormat": "lowerRoman", "start": 3, "levelText": "%1.%2)", "numberingId": 77, "numberingStyleId": "BriefNumbering", "text": "Resolve nested numbering levels." },
     { "kind": "section", "name": "evidence-section", "breakType": "nextPage", "orientation": "portrait" },
     {
       "kind": "table",

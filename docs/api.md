@@ -255,6 +255,7 @@ Append a real numbered, character-bulleted, or relationship-backed picture-bulle
 - `start` (number) — Positive starting value for this numbering level.
 - `levelText` (string) — OOXML level text template using placeholders such as %1 or %2.
 - `numberingId` (number|string) — Optional list-instance identity used to group levels during export and preserved by native import.
+- `numberingStyleId` (string) — Optional Word numbering-style identity resolved through styleLink/numStyleLink and flattened safely on second export.
 - `pictureBullet` (string|object) — Embedded PNG/JPEG/GIF base64 data URL, absolute non-fetched http(s) URI, or { dataUrl|uri, widthPt?, heightPt?, alt? } picture marker owned by the Numbering part.
 - `styleId` (string) — Named paragraph style ID.
 
@@ -568,7 +569,7 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 - `designPreset` (string) — Initial design preset name.
 - `theme` (object) — Word theme name, 12 scheme colors, and major/minor Latin, East-Asian, and complex-script fonts.
 - `defaultRunStyle` (object) — Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles.
-- `styles` (object) — Named paragraph or character style definitions with optional basedOn inheritance.
+- `styles` (object) — Named paragraph, character, table, or numbering style definitions with optional basedOn inheritance and numberingId/numberingLevel native list linkage.
 - `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
 - `blocks` (object[]) — Ordered paragraph/list/table/link/field/citation/image/section/change block models.
 - `bibliography` (object) — Word bibliography style metadata such as selectedStyle, styleName, and URI.

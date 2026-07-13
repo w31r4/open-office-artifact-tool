@@ -161,6 +161,8 @@ try {
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Preserve native numbering definitions.")?.numberFormat, "upperLetter");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.numberFormat, "lowerRoman");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.level, 1);
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.styleId, "BriefNumberedListNested");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.numberingStyleId, "BriefNumbering");
   const nativePictureBullet = nativePreferredDocument.blocks.find((item) => item.text === "Retain native picture bullet relationships.")?.pictureBullet;
   assert.match(nativePictureBullet?.dataUrl || "", /^data:image\/png;base64,/);
   assert.equal(nativePictureBullet?.alt, "Green readiness marker");
@@ -168,6 +170,9 @@ try {
   const businessBriefNumberingRels = await businessBriefZip.file("word/_rels/numbering.xml.rels").async("text");
   assert.match(businessBriefNumberingXml, /<w:numPicBullet w:numPicBulletId="0">/);
   assert.match(businessBriefNumberingXml, /<w:lvlPicBulletId w:val="0"\/>/);
+  assert.match(businessBriefNumberingXml, /<w:styleLink w:val="BriefNumbering"\/>/);
+  assert.match(businessBriefNumberingXml, /<w:lvl w:ilvl="0">[\s\S]*?<w:pStyle w:val="BriefNumberedListBase"\/>/);
+  assert.match(businessBriefNumberingXml, /<w:lvl w:ilvl="1">[\s\S]*?<w:pStyle w:val="BriefNumberedListNested"\/>/);
   assert.match(businessBriefNumberingRels, /Target="media\/image2\.png"/);
   assert.ok(businessBriefZip.file("word/media/image2.png"));
 

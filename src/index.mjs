@@ -10,7 +10,7 @@ import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_
 import { docxBookmarkEntriesForBlock, docxBookmarkEntriesForTableCell, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, parseDocxTableBookmarkMarkers, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
 import { DOCX_BIBLIOGRAPHY_PATH, DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE, docxBibliographyXml, docxCitationInstruction, normalizeDocxBibliographySource, parseDocxBibliography, parseDocxCitationInstruction, planDocxBibliography, validateDocxBibliographyPackageSemantics } from "./ooxml/docx-bibliography.mjs";
 import { collectDocxHeaderFooterParts, normalizeDocxSectionSettings, parseDocxSectionDeclarations, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
-import { collectDocxNumbering, docxNumberingXml, normalizeDocumentPictureBullet, parseDocxNumberingXml } from "./ooxml/docx-numbering.mjs";
+import { collectDocxNumbering, docxNumberingXml, normalizeDocumentPictureBullet, parseDocxNumberingXml, parseDocxStyleNumberingPropertiesXml, resolveDocxParagraphNumbering } from "./ooxml/docx-numbering.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
@@ -1637,7 +1637,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     designPreset: { type: "string", description: "Initial design preset name." },
     theme: { type: "object", description: "Word theme name, 12 scheme colors, and major/minor Latin, East-Asian, and complex-script fonts." },
     defaultRunStyle: { type: "object", description: "Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles." },
-    styles: { type: "object", description: "Named paragraph or character style definitions with optional basedOn inheritance." },
+    styles: { type: "object", description: "Named paragraph, character, table, or numbering style definitions with optional basedOn inheritance and numberingId/numberingLevel native list linkage." },
     paragraphs: { type: "string[]", description: "Convenience paragraph list; the first paragraph uses Title style." },
     blocks: { type: "object[]", description: "Ordered paragraph/list/table/link/field/citation/image/section/change block models." },
     bibliography: { type: "object", description: "Word bibliography style metadata such as selectedStyle, styleName, and URI." },
@@ -1662,6 +1662,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     start: { type: "number", description: "Positive starting value for this numbering level." },
     levelText: { type: "string", description: "OOXML level text template using placeholders such as %1 or %2." },
     numberingId: { type: "number|string", description: "Optional list-instance identity used to group levels during export and preserved by native import." },
+    numberingStyleId: { type: "string", description: "Optional Word numbering-style identity resolved through styleLink/numStyleLink and flattened safely on second export." },
     pictureBullet: { type: "string|object", description: "Embedded PNG/JPEG/GIF base64 data URL, absolute non-fetched http(s) URI, or { dataUrl|uri, widthPt?, heightPt?, alt? } picture marker owned by the Numbering part." },
     styleId: { type: "string", description: "Named paragraph style ID." },
   }, "listItem", "DocumentListItemBlock", "Appended native-numbering list item, including normalized pictureBullet metadata when configured."),
@@ -9430,12 +9431,13 @@ class DocumentListItemBlock {
     if (this.pictureBullet && (this.listType !== "bullet" || this.numberFormat !== "bullet")) throw new TypeError("DOCX picture bullet requires listType and numberFormat to be bullet.");
     this.numberingId = config.numberingId ?? config.numId;
     this.abstractNumberingId = config.abstractNumberingId ?? config.abstractNumId;
+    this.numberingStyleId = config.numberingStyleId ?? config.numStyleId;
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
   }
 
-  inspectRecord(index) { return { kind: "listItem", id: this.id, index, name: this.name || undefined, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, pictureBullet: this.pictureBullet, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: "listItem", id: this.id, name: this.name, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, pictureBullet: this.pictureBullet, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, text: this.text }; }
+  inspectRecord(index) { return { kind: "listItem", id: this.id, index, name: this.name || undefined, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, pictureBullet: this.pictureBullet, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, numberingStyleId: this.numberingStyleId, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: "listItem", id: this.id, name: this.name, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, pictureBullet: this.pictureBullet, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, numberingStyleId: this.numberingStyleId, text: this.text }; }
 }
 
 class DocumentHyperlinkBlock {
@@ -10231,14 +10233,16 @@ function docxContentTypes({ hasComments, hasCommentsExtended, headerParts = [], 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasCommentsExtended ? `<Override PartName="/${DOCX_COMMENTS_EXTENDED_PATH}" ContentType="${DOCX_COMMENTS_EXTENDED_CONTENT_TYPE}"/><Override PartName="/${DOCX_COMMENTS_IDS_PATH}" ContentType="${DOCX_COMMENTS_IDS_CONTENT_TYPE}"/><Override PartName="/${DOCX_COMMENTS_EXTENSIBLE_PATH}" ContentType="${DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE}"/><Override PartName="/${DOCX_PEOPLE_PATH}" ContentType="${DOCX_PEOPLE_CONTENT_TYPE}"/>` : ""}${hasSettings ? `<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` : ""}${headers}${footers}</Types>`;
 }
 
-function docxStylesXml(document) {
+function docxStylesXml(document, numbering) {
   const defaultRunProperties = docxRunPropertiesXml(document.defaultRunStyle, document.theme);
   const docDefaults = defaultRunProperties ? `<w:docDefaults><w:rPrDefault>${defaultRunProperties}</w:rPrDefault></w:docDefaults>` : "";
   const styles = document.styles.values().map((style) => {
     const type = style.type || "paragraph";
     const basedOn = style.basedOn || style.parent || style.extends;
+    const outputNumberingId = String(style.numberingId) === "0" ? 0 : style.numberingId === undefined || style.numberingId === null ? undefined : numbering?.numIdBySource?.get(String(style.numberingId));
+    const numberingProperties = outputNumberingId === undefined ? "" : `<w:pPr><w:numPr>${Number.isInteger(Number(style.numberingLevel)) ? `<w:ilvl w:val="${Math.max(0, Math.min(8, Number(style.numberingLevel)))}"/>` : ""}<w:numId w:val="${outputNumberingId}"/></w:numPr></w:pPr>`;
     const runProperties = docxRunPropertiesXml(style, document.theme);
-    return `<w:style w:type="${attrEscape(type)}" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/>${basedOn ? `<w:basedOn w:val="${attrEscape(basedOn)}"/>` : ""}${runProperties}</w:style>`;
+    return `<w:style w:type="${attrEscape(type)}" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/>${basedOn ? `<w:basedOn w:val="${attrEscape(basedOn)}"/>` : ""}${numberingProperties}${runProperties}</w:style>`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docDefaults}${styles}</w:styles>`;
 }
@@ -10418,8 +10422,9 @@ function parseDocxStylesXml(xml = "", theme = {}) {
     const type = docxXmlAttribute(opening, "type") || "paragraph";
     const name = decodeXml(docxXmlAttribute(docxElementOpening(body, "name"), "val") || id);
     const basedOn = decodeXml(docxXmlAttribute(docxElementOpening(body, "basedOn"), "val") || "") || undefined;
+    const numberingProperties = parseDocxStyleNumberingPropertiesXml(match[0]);
     const runProperties = parseDocxRunPropertiesXml(docxElementBlock(body, "rPr"), theme);
-    styles[id] = { id, name, type, ...(basedOn ? { basedOn } : {}), ...runProperties };
+    styles[id] = { id, name, type, ...(basedOn ? { basedOn } : {}), ...numberingProperties, ...runProperties };
   }
   return { styles, defaultRunStyle: parseDocxDefaultRunPropertiesXml(xml, theme) };
 }
@@ -10447,7 +10452,8 @@ function parseDocxRuns(part = "", context = {}) {
 
 function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = new Map(), numberingById = new Map(), context = {}) {
   const { theme = {} } = context;
-  const styleId = /<w:pStyle[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "Normal";
+  const paragraphProperties = docxElementBlock(part, "pPr");
+  const styleId = decodeXml(docxXmlAttribute(docxElementOpening(paragraphProperties, "pStyle"), "val") || "Normal");
   const commentIds = docxCommentIds(part);
   const sectionXml = docxElementBlock(part, "sectPr");
   if (sectionXml) {
@@ -10513,15 +10519,15 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
   }
   const runs = parseDocxRuns(part, { ...context, paragraphStyleId: styleId });
   const text = runs.length ? runs.map((run) => run.text).join("") : decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
-  const numIdTag = /<w:numId\b[^>]*\/?\s*>/.exec(part)?.[0];
-  const numId = numIdTag ? ooxmlXmlAttributes(numIdTag)["w:val"] : undefined;
-  const levelTag = /<w:ilvl\b[^>]*\/?\s*>/.exec(part)?.[0];
-  const level = Number(levelTag ? ooxmlXmlAttributes(levelTag)["w:val"] || 0 : 0);
-  if (numId !== undefined) {
-    const numbering = numberingById.get(String(numId));
+  const numberingProperties = docxElementBlock(paragraphProperties, "numPr");
+  const directNumberingId = numberingProperties ? docxXmlAttribute(docxElementOpening(numberingProperties, "numId"), "val") : undefined;
+  const directLevel = numberingProperties ? docxXmlAttribute(docxElementOpening(numberingProperties, "ilvl"), "val") : undefined;
+  const resolvedNumbering = resolveDocxParagraphNumbering({ styleId, directNumberingId, directLevel, styles: context.styles, numberingById });
+  if (resolvedNumbering) {
+    const { numbering, numberingId, level } = resolvedNumbering;
     const levelDefinition = numbering?.levels.get(level) || numbering?.levels.get(0);
-    const numberFormat = levelDefinition?.numberFormat || (numId === "2" ? "decimal" : "bullet");
-    return { block: { kind: "listItem", text, styleId, level, listType: levelDefinition?.listType || (numberFormat === "bullet" ? "bullet" : "number"), numberFormat, start: levelDefinition?.start || 1, levelText: levelDefinition?.levelText || (numberFormat === "bullet" ? "•" : `%${level + 1}.`), pictureBullet: levelDefinition?.pictureBullet, numberingId: numbering?.numberingId ?? (Number.isFinite(Number(numId)) ? Number(numId) : numId), abstractNumberingId: numbering?.abstractNumberingId }, commentIds };
+    const numberFormat = levelDefinition?.numberFormat || (String(numberingId) === "2" ? "decimal" : "bullet");
+    return { block: { kind: "listItem", text, styleId, level, listType: levelDefinition?.listType || (numberFormat === "bullet" ? "bullet" : "number"), numberFormat, start: levelDefinition?.start || 1, levelText: levelDefinition?.levelText || (numberFormat === "bullet" ? "•" : `%${level + 1}.`), pictureBullet: levelDefinition?.pictureBullet, numberingId: numbering?.numberingId ?? numberingId, abstractNumberingId: numbering?.abstractNumberingId, numberingStyleId: numbering?.numberingStyleId }, commentIds };
   }
   return { block: { kind: "paragraph", text, styleId, runs: runs.length ? runs : undefined }, commentIds };
 }
@@ -11139,7 +11145,7 @@ export class DocumentFile {
       docRels.push({ id: part.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `media/image${part.imagePartId}.${part.extension}` });
     }
     zip.file("word/_rels/document.xml.rels", relsXml(docRels));
-    zip.file("word/styles.xml", docxStylesXml(document));
+    zip.file("word/styles.xml", docxStylesXml(document, numbering));
     zip.file("word/theme/theme1.xml", docxThemeXml(document.theme));
     if (hasNumbering) {
       zip.file("word/numbering.xml", docxNumberingXml(numbering));
@@ -11201,6 +11207,7 @@ export class DocumentFile {
       relationships: numberingRelationships,
       resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "DOCX"),
       readPart: (target) => zip.file(target)?.async("uint8array"),
+      styles: importedStyles,
     });
     const importedSettings = parseDocxSettings(settingsText);
     const sectionDeclarations = parseDocxSectionDeclarations(xml);

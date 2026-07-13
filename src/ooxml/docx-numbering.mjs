@@ -23,6 +23,11 @@ function childValue(xml, name) {
   return attributeByLocalName(localOpening(xml, name), "val");
 }
 
+function nativeIdentifier(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  return Number.isFinite(Number(value)) ? Number(value) : String(value);
+}
+
 function pictureBulletSource(picture) {
   return picture?.dataUrl || picture?.uri;
 }
@@ -78,6 +83,18 @@ export function normalizeDocumentPictureBullet(value) {
   return { dataUrl: dataUrl ? String(dataUrl) : undefined, uri: uri ? String(uri) : undefined, widthPt, heightPt, alt };
 }
 
+export function parseDocxStyleNumberingPropertiesXml(xml = "") {
+  const paragraphProperties = localBlock(xml, "pPr");
+  const numberingProperties = localBlock(paragraphProperties, "numPr");
+  if (!numberingProperties) return {};
+  const numberingId = nativeIdentifier(childValue(numberingProperties, "numId"));
+  const numberingLevel = nativeIdentifier(childValue(numberingProperties, "ilvl"));
+  return {
+    ...(numberingId === undefined ? {} : { numberingId }),
+    ...(Number.isInteger(numberingLevel) && numberingLevel >= 0 && numberingLevel <= 8 ? { numberingLevel } : {}),
+  };
+}
+
 function sameLevel(left, right) {
   return left.listType === right.listType
     && left.numberFormat === right.numberFormat
@@ -93,13 +110,21 @@ export function collectDocxNumbering(document, options = {}) {
     if (!Number.isInteger(block.start) || block.start < 1) throw new RangeError(`DOCX list item ${block.id} start must be a positive integer.`);
     if (!String(block.numberFormat || "").trim()) throw new TypeError(`DOCX list item ${block.id} numberFormat must be non-empty.`);
     const pictureBullet = normalizeDocumentPictureBullet(block.pictureBullet);
-    const key = block.numberingId === undefined || block.numberingId === null
+    const effectiveStyle = document.styles?.effective?.(block.styleId);
+    const sourceNumberingId = block.numberingId ?? effectiveStyle?.numberingId;
+    const key = sourceNumberingId === undefined || sourceNumberingId === null
       ? `default:${block.listType}:${pictureBulletKey(pictureBullet) || "text"}`
-      : `native:${block.numberingId}`;
-    if (!groups.has(key)) groups.set(key, { key, blocks: [], levels: new Map() });
+      : `native:${sourceNumberingId}`;
+    if (!groups.has(key)) groups.set(key, { key, blocks: [], levels: new Map(), sourceNumberingIds: new Set(), numberingStyleIds: new Set(), paragraphStyleIdsByLevel: new Map() });
     const group = groups.get(key);
     group.blocks.push(block);
     const level = block.level;
+    if (sourceNumberingId !== undefined && sourceNumberingId !== null) group.sourceNumberingIds.add(String(sourceNumberingId));
+    if (block.numberingStyleId) group.numberingStyleIds.add(String(block.numberingStyleId));
+    if (sourceNumberingId !== undefined && sourceNumberingId !== null && String(effectiveStyle?.numberingId) === String(sourceNumberingId) && block.styleId) {
+      if (!group.paragraphStyleIdsByLevel.has(level)) group.paragraphStyleIdsByLevel.set(level, new Set());
+      group.paragraphStyleIdsByLevel.get(level).add(String(block.styleId));
+    }
     const config = {
       listType: block.listType,
       numberFormat: block.numberFormat || (block.listType === "number" ? "decimal" : "bullet"),
@@ -113,17 +138,30 @@ export function collectDocxNumbering(document, options = {}) {
   }
 
   const numIdByBlock = new Map();
-  const definitions = [...groups.values()].map((group, index) => {
+  const numIdBySource = new Map();
+  const groupValues = [...groups.values()];
+  const allSourceNumberingIds = new Set(groupValues.flatMap((group) => [...group.sourceNumberingIds]));
+  const definitions = groupValues.map((group, index) => {
     const numId = index + 1;
     const abstractNumId = index + 1;
     const maxLevel = Math.max(0, ...group.levels.keys());
     const fallback = group.levels.get(0) || group.levels.values().next().value || { listType: "bullet", numberFormat: "bullet", start: 1, levelText: "•" };
     const levels = Array.from({ length: maxLevel + 1 }, (_, level) => {
       const config = group.levels.get(level) || { ...fallback, levelText: fallback.listType === "number" ? `%${level + 1}.` : "•" };
-      return { level, ...config };
+      const paragraphStyleIds = group.paragraphStyleIdsByLevel.get(level);
+      return { level, ...config, ...(paragraphStyleIds?.size === 1 ? { paragraphStyleId: [...paragraphStyleIds][0] } : {}) };
     });
     for (const block of group.blocks) numIdByBlock.set(block.id, numId);
-    return { numId, abstractNumId, levels };
+    for (const sourceNumberingId of group.sourceNumberingIds) numIdBySource.set(sourceNumberingId, numId);
+    if (group.numberingStyleIds.size > 1) throw new Error(`DOCX numbering ${group.key} references conflicting numbering styles.`);
+    const candidateStyleLink = [...group.numberingStyleIds][0];
+    const styleNumberingId = candidateStyleLink ? document.styles?.get?.(candidateStyleLink)?.numberingId : undefined;
+    const ownsStyleDefinition = styleNumberingId === undefined || styleNumberingId === null || group.sourceNumberingIds.has(String(styleNumberingId)) || !allSourceNumberingIds.has(String(styleNumberingId));
+    const styleLink = ownsStyleDefinition ? candidateStyleLink : undefined;
+    if (styleLink) {
+      if (styleNumberingId !== undefined && styleNumberingId !== null) numIdBySource.set(String(styleNumberingId), numId);
+    }
+    return { numId, abstractNumId, levels, styleLink };
   });
 
   const pictureBullets = [];
@@ -157,7 +195,7 @@ export function collectDocxNumbering(document, options = {}) {
     }
     level.pictureBulletId = planned.pictureBulletId;
   }
-  return { definitions, numIdByBlock, pictureBullets, mediaParts, relationships };
+  return { definitions, numIdByBlock, numIdBySource, pictureBullets, mediaParts, relationships };
 }
 
 function pictureBulletXml(entry) {
@@ -169,7 +207,7 @@ function pictureBulletXml(entry) {
 
 export function docxNumberingXml(numbering) {
   const pictures = numbering.pictureBullets.map(pictureBulletXml).join("");
-  const abstracts = numbering.definitions.map((definition) => `<w:abstractNum w:abstractNumId="${definition.abstractNumId}"><w:multiLevelType w:val="multilevel"/>${definition.levels.map((level) => `<w:lvl w:ilvl="${level.level}"><w:start w:val="${level.start}"/><w:numFmt w:val="${attrEscape(level.numberFormat)}"/><w:lvlText w:val="${attrEscape(level.levelText)}"/>${level.pictureBulletId == null ? "" : `<w:lvlPicBulletId w:val="${level.pictureBulletId}"/>`}<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${(level.level + 1) * 720}" w:hanging="360"/></w:pPr>${level.numberFormat === "bullet" && level.pictureBulletId == null ? '<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' : ""}</w:lvl>`).join("")}</w:abstractNum>`).join("");
+  const abstracts = numbering.definitions.map((definition) => `<w:abstractNum w:abstractNumId="${definition.abstractNumId}"><w:multiLevelType w:val="multilevel"/>${definition.styleLink ? `<w:styleLink w:val="${attrEscape(definition.styleLink)}"/>` : ""}${definition.levels.map((level) => `<w:lvl w:ilvl="${level.level}"><w:start w:val="${level.start}"/><w:numFmt w:val="${attrEscape(level.numberFormat)}"/>${level.paragraphStyleId ? `<w:pStyle w:val="${attrEscape(level.paragraphStyleId)}"/>` : ""}<w:lvlText w:val="${attrEscape(level.levelText)}"/>${level.pictureBulletId == null ? "" : `<w:lvlPicBulletId w:val="${level.pictureBulletId}"/>`}<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${(level.level + 1) * 720}" w:hanging="360"/></w:pPr>${level.numberFormat === "bullet" && level.pictureBulletId == null ? '<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' : ""}</w:lvl>`).join("")}</w:abstractNum>`).join("");
   const instances = numbering.definitions.map((definition) => `<w:num w:numId="${definition.numId}"><w:abstractNumId w:val="${definition.abstractNumId}"/></w:num>`).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">${pictures}${abstracts}${instances}</w:numbering>`;
 }
@@ -187,6 +225,7 @@ function parseNumberingLevel(xml, pictureById, fallbackLevel = 0) {
     numberFormat,
     start: Math.max(1, Number(childValue(xml, "start") || 1)),
     levelText: childValue(xml, "lvlText") || (numberFormat === "bullet" ? "•" : `%${(Number.isInteger(level) ? level : fallbackLevel) + 1}.`),
+    paragraphStyleId: decodeXml(childValue(xml, "pStyle") || "") || undefined,
     pictureBullet,
   };
 }
@@ -247,33 +286,95 @@ export async function parseDocxNumberingXml(xml = "", context = {}) {
   for (const match of String(xml || "").matchAll(abstractPattern)) {
     const abstractNumId = attributeByLocalName(localOpening(match[0], "abstractNum"), "abstractNumId");
     if (abstractNumId === undefined) continue;
+    if (abstracts.has(String(abstractNumId))) throw new Error(`DOCX abstract numbering ID ${abstractNumId} is duplicated.`);
     const levels = new Map();
     const levelPattern = /<(?:[A-Za-z_][\w.-]*:)?lvl\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?lvl>/g;
     for (const levelMatch of match[0].matchAll(levelPattern)) {
       const level = parseNumberingLevel(levelMatch[0], pictureById);
+      if (levels.has(level.level)) throw new Error(`DOCX abstract numbering ${abstractNumId} level ${level.level} is duplicated.`);
       levels.set(level.level, level);
     }
-    abstracts.set(String(abstractNumId), levels);
+    const styleLink = decodeXml(childValue(match[0], "styleLink") || "") || undefined;
+    const numberingStyleLink = decodeXml(childValue(match[0], "numStyleLink") || "") || undefined;
+    if ((styleLink?.length || 0) > 253 || (numberingStyleLink?.length || 0) > 253) throw new RangeError(`DOCX abstract numbering ${abstractNumId} style link exceeds 253 characters.`);
+    abstracts.set(String(abstractNumId), { levels, styleLink, numberingStyleLink });
   }
 
-  const instances = new Map();
+  const rawInstances = new Map();
   const instancePattern = /<(?:[A-Za-z_][\w.-]*:)?num\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?num>/g;
   for (const match of String(xml || "").matchAll(instancePattern)) {
     const numId = attributeByLocalName(localOpening(match[0], "num"), "numId");
     const abstractNumId = childValue(match[0], "abstractNumId");
     if (numId === undefined || abstractNumId === undefined) continue;
-    const levels = new Map([...(abstracts.get(String(abstractNumId)) || new Map()).entries()].map(([level, config]) => [level, { ...config }]));
+    if (rawInstances.has(String(numId))) throw new Error(`DOCX numbering instance ID ${numId} is duplicated.`);
+    const overrides = new Map();
     const overridePattern = /<(?:[A-Za-z_][\w.-]*:)?lvlOverride\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?lvlOverride>/g;
     for (const overrideMatch of match[0].matchAll(overridePattern)) {
       const overrideLevel = Number(attributeByLocalName(localOpening(overrideMatch[0], "lvlOverride"), "ilvl") ?? 0);
+      if (!Number.isInteger(overrideLevel) || overrideLevel < 0 || overrideLevel > 8) throw new RangeError(`DOCX numbering ${numId} override level must be from 0 through 8.`);
+      if (overrides.has(overrideLevel)) throw new Error(`DOCX numbering ${numId} override level ${overrideLevel} is duplicated.`);
       const nestedLevelXml = localBlock(overrideMatch[0], "lvl");
-      if (nestedLevelXml) levels.set(overrideLevel, parseNumberingLevel(nestedLevelXml, pictureById, overrideLevel));
+      if (nestedLevelXml) overrides.set(overrideLevel, { level: parseNumberingLevel(nestedLevelXml, pictureById, overrideLevel) });
       else if (childValue(overrideMatch[0], "startOverride") !== undefined) {
-        const current = levels.get(overrideLevel) || { level: overrideLevel, listType: "number", numberFormat: "decimal", start: 1, levelText: `%${overrideLevel + 1}.` };
-        levels.set(overrideLevel, { ...current, start: Math.max(1, Number(childValue(overrideMatch[0], "startOverride") || 1)) });
+        overrides.set(overrideLevel, { start: Math.max(1, Number(childValue(overrideMatch[0], "startOverride") || 1)) });
+      } else overrides.set(overrideLevel, {});
+    }
+    rawInstances.set(String(numId), { numberingId: nativeIdentifier(numId), abstractNumberingId: nativeIdentifier(abstractNumId), overrides });
+  }
+
+  const styleById = (id) => context.styles?.get?.(id) || context.styles?.[id];
+  const instances = new Map();
+  const resolveInstance = (numId, trail = []) => {
+    const key = String(numId);
+    if (instances.has(key)) return instances.get(key);
+    if (trail.includes(key)) throw new Error(`DOCX numbering style link cycle: ${[...trail, key].join(" -> ")}.`);
+    const raw = rawInstances.get(key);
+    if (!raw) throw new Error(`DOCX numbering style references missing numbering instance ${key}.`);
+    const abstract = abstracts.get(String(raw.abstractNumberingId));
+    let levels = new Map();
+    let numberingStyleId = abstract?.styleLink;
+    if (abstract?.numberingStyleLink) {
+      const linkedStyle = styleById(abstract.numberingStyleLink);
+      if (!linkedStyle || linkedStyle.type !== "numbering") throw new Error(`DOCX abstract numbering ${raw.abstractNumberingId} references missing numbering style ${abstract.numberingStyleLink}.`);
+      if (linkedStyle.numberingId === undefined || linkedStyle.numberingId === null) throw new Error(`DOCX numbering style ${abstract.numberingStyleLink} is missing numPr/numId.`);
+      const linked = resolveInstance(linkedStyle.numberingId, [...trail, key]);
+      levels = new Map([...linked.levels].map(([level, config]) => [level, { ...config }]));
+      numberingStyleId = abstract.numberingStyleLink;
+    } else if (abstract) levels = new Map([...abstract.levels].map(([level, config]) => [level, { ...config }]));
+    for (const [level, override] of raw.overrides) {
+      if (override.level) levels.set(level, { ...override.level, level });
+      else if (override.start !== undefined) {
+        const current = levels.get(level) || { level, listType: "number", numberFormat: "decimal", start: 1, levelText: `%${level + 1}.` };
+        levels.set(level, { ...current, start: override.start });
       }
     }
-    instances.set(String(numId), { numberingId: Number.isFinite(Number(numId)) ? Number(numId) : numId, abstractNumberingId: Number.isFinite(Number(abstractNumId)) ? Number(abstractNumId) : abstractNumId, levels });
-  }
+    const resolved = { numberingId: raw.numberingId, abstractNumberingId: raw.abstractNumberingId, levels, numberingStyleId };
+    instances.set(key, resolved);
+    return resolved;
+  };
+  for (const numId of rawInstances.keys()) resolveInstance(numId);
   return instances;
+}
+
+export function resolveDocxParagraphNumbering({ styleId = "Normal", directNumberingId, directLevel, styles, numberingById = new Map() } = {}) {
+  const cascade = styles?.cascade?.(styleId) || [];
+  const direct = directNumberingId !== undefined && directNumberingId !== null;
+  const styleWithNumbering = direct ? undefined : [...cascade].reverse().find((style) => style.numberingId !== undefined && style.numberingId !== null);
+  const numberingId = direct ? nativeIdentifier(directNumberingId) : nativeIdentifier(styleWithNumbering?.numberingId);
+  if (numberingId === undefined || String(numberingId) === "0") return undefined;
+  const numbering = numberingById.get(String(numberingId));
+  let level = direct && Number.isInteger(Number(directLevel)) ? Number(directLevel) : 0;
+  let paragraphStyleId;
+  if (!direct && numbering) {
+    for (const candidate of [...cascade].reverse()) {
+      const linkedLevel = [...numbering.levels.values()].find((entry) => entry.paragraphStyleId === candidate.id);
+      if (linkedLevel) {
+        level = linkedLevel.level;
+        paragraphStyleId = candidate.id;
+        break;
+      }
+    }
+  }
+  if (!Number.isInteger(level) || level < 0 || level > 8) level = 0;
+  return { numberingId, level, numbering, inheritedFromStyle: !direct, paragraphStyleId };
 }

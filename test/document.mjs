@@ -690,6 +690,64 @@ conflictingPictureBulletPresentationDocument.addListItem("Small", { numberingId:
 conflictingPictureBulletPresentationDocument.addListItem("Large", { numberingId: 100, pictureBullet: { dataUrl: pictureBulletPng, widthPt: 16 } });
 await assert.rejects(() => DocumentFile.exportDocx(conflictingPictureBulletPresentationDocument), /numbering 100 level 0 has conflicting definitions/);
 
+const styleLinkedNumberingZip = await JSZip.loadAsync(docxBytes);
+const styleLinkedStylesXml = (await styleLinkedNumberingZip.file("word/styles.xml").async("text")).replace(
+  "</w:styles>",
+  '<w:style w:type="paragraph" w:styleId="AgentListBase"><w:name w:val="Agent List Base"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:numId w:val="6"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="AgentListDerived"><w:name w:val="Agent List Derived"/><w:basedOn w:val="AgentListBase"/></w:style><w:style w:type="paragraph" w:styleId="AgentListCancelled"><w:name w:val="Agent List Cancelled"/><w:basedOn w:val="AgentListBase"/><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style><w:style w:type="numbering" w:styleId="AgentNumbering"><w:name w:val="Agent Numbering"/><w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr></w:style></w:styles>',
+);
+const styleLinkedNumberingXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="multilevel"/><w:numStyleLink w:val="AgentNumbering"/></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="multilevel"/><w:styleLink w:val="AgentNumbering"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:pStyle w:val="AgentListBase"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl><w:lvl w:ilvl="2"><w:start w:val="3"/><w:numFmt w:val="upperRoman"/><w:pStyle w:val="AgentListDerived"/><w:lvlText w:val="%1.%2.%3"/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="4"><w:abstractNumId w:val="2"/></w:num><w:num w:numId="6"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="2"><w:startOverride w:val="9"/></w:lvlOverride></w:num></w:numbering>';
+const styleLinkedDocumentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="AgentListDerived"/></w:pPr><w:r><w:t>Style-linked numbering evidence</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="AgentListCancelled"/></w:pPr><w:r><w:t>Cancelled inherited numbering</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>';
+styleLinkedNumberingZip.file("word/styles.xml", styleLinkedStylesXml);
+styleLinkedNumberingZip.file("word/numbering.xml", styleLinkedNumberingXml);
+styleLinkedNumberingZip.file("word/document.xml", styleLinkedDocumentXml);
+const styleLinkedNumberingDocx = new FileBlob(await styleLinkedNumberingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type });
+const styleLinkedNumberingDocument = await DocumentFile.importDocx(styleLinkedNumberingDocx, { preferNative: true });
+const styleLinkedItem = styleLinkedNumberingDocument.blocks.find((item) => item.text === "Style-linked numbering evidence");
+assert.equal(styleLinkedItem.kind, "listItem");
+assert.equal(styleLinkedItem.styleId, "AgentListDerived");
+assert.equal(styleLinkedItem.level, 2);
+assert.equal(styleLinkedItem.numberFormat, "upperRoman");
+assert.equal(styleLinkedItem.start, 9);
+assert.equal(styleLinkedItem.levelText, "%1.%2.%3");
+assert.equal(styleLinkedItem.numberingId, 6);
+assert.equal(styleLinkedItem.abstractNumberingId, 0);
+assert.equal(styleLinkedItem.numberingStyleId, "AgentNumbering");
+assert.equal(styleLinkedNumberingDocument.styles.get("AgentListBase").numberingId, 6);
+assert.equal(styleLinkedNumberingDocument.styles.get("AgentListDerived").basedOn, "AgentListBase");
+assert.equal(styleLinkedNumberingDocument.styles.get("AgentNumbering").type, "numbering");
+assert.equal(styleLinkedNumberingDocument.blocks.find((item) => item.text === "Cancelled inherited numbering")?.kind, "paragraph");
+const styleLinkedRoundTripDocx = await DocumentFile.exportDocx(styleLinkedNumberingDocument);
+const styleLinkedRoundTripZip = await JSZip.loadAsync(new Uint8Array(await styleLinkedRoundTripDocx.arrayBuffer()));
+const styleLinkedRoundTripStyles = await styleLinkedRoundTripZip.file("word/styles.xml").async("text");
+const styleLinkedRoundTripNumbering = await styleLinkedRoundTripZip.file("word/numbering.xml").async("text");
+assert.match(styleLinkedRoundTripStyles, /w:styleId="AgentListBase"[\s\S]*?<w:numId w:val="1"\/>/);
+assert.match(styleLinkedRoundTripStyles, /w:styleId="AgentListCancelled"[\s\S]*?<w:numId w:val="0"\/>/);
+assert.match(styleLinkedRoundTripStyles, /w:styleId="AgentNumbering"[\s\S]*?<w:numId w:val="1"\/>/);
+assert.match(styleLinkedRoundTripNumbering, /<w:styleLink w:val="AgentNumbering"\/>/);
+assert.match(styleLinkedRoundTripNumbering, /<w:lvl w:ilvl="2">[\s\S]*?<w:pStyle w:val="AgentListDerived"\/>[\s\S]*?<w:numFmt w:val="upperRoman"\/>|<w:lvl w:ilvl="2">[\s\S]*?<w:numFmt w:val="upperRoman"\/>[\s\S]*?<w:pStyle w:val="AgentListDerived"\/>/);
+const styleLinkedSecondImport = await DocumentFile.importDocx(styleLinkedRoundTripDocx, { preferNative: true });
+assert.equal(styleLinkedSecondImport.blocks.find((item) => item.text === "Style-linked numbering evidence")?.numberingStyleId, "AgentNumbering");
+assert.equal(styleLinkedSecondImport.blocks.find((item) => item.text === "Cancelled inherited numbering")?.kind, "paragraph");
+
+const alternateStyleLinkedPrefixZip = await JSZip.loadAsync(new Uint8Array(await styleLinkedNumberingDocx.arrayBuffer()));
+alternateStyleLinkedPrefixZip.file("word/styles.xml", styleLinkedStylesXml.replace(/\bw:/g, "word:"));
+alternateStyleLinkedPrefixZip.file("word/numbering.xml", styleLinkedNumberingXml.replace(/\bw:/g, "word:"));
+const alternateStyleLinkedDocument = await DocumentFile.importDocx(new FileBlob(await alternateStyleLinkedPrefixZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true });
+assert.equal(alternateStyleLinkedDocument.blocks.find((item) => item.text === "Style-linked numbering evidence")?.level, 2);
+
+const missingNumberingStyleZip = await JSZip.loadAsync(new Uint8Array(await styleLinkedNumberingDocx.arrayBuffer()));
+missingNumberingStyleZip.file("word/styles.xml", styleLinkedStylesXml.replace(/<w:style w:type="numbering" w:styleId="AgentNumbering">[\s\S]*?<\/w:style>/, ""));
+await assert.rejects(
+  async () => DocumentFile.importDocx(new FileBlob(await missingNumberingStyleZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true }),
+  /references missing numbering style AgentNumbering/,
+);
+const cyclicNumberingStyleZip = await JSZip.loadAsync(new Uint8Array(await styleLinkedNumberingDocx.arrayBuffer()));
+cyclicNumberingStyleZip.file("word/styles.xml", styleLinkedStylesXml.replace(/(<w:style w:type="numbering" w:styleId="AgentNumbering">[\s\S]*?<w:numId w:val=")4("\/>[\s\S]*?<\/w:style>)/, "$16$2"));
+await assert.rejects(
+  async () => DocumentFile.importDocx(new FileBlob(await cyclicNumberingStyleZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true }),
+  /numbering style link cycle: 6 -> 6/,
+);
+
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/theme" Target="theme\/theme1\.xml"/);
 assert.match(documentRelsXml, /Id="rIdImage1"/);
