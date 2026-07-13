@@ -243,11 +243,25 @@ message PresentationShape {
 // The public PresentationML text slice models agent-facing paragraph/inlines,
 // list-marker/direct marker-style semantics, content-addressed or external
 // picture bullets, tab stops, direct left-margin/hanging-indent layout,
-// direct paragraph spacing, and bounded click links. Transformed or
-// non-sRGB/non-theme marker colors, custom-show/mouse-over links, field
-// paragraph properties, body properties, and list styles stay source-bound.
+// direct paragraph spacing/default-run styles, and bounded click links.
+// Transformed or non-sRGB/non-theme marker colors, custom-show/mouse-over
+// links, field paragraph properties, body properties, and list styles stay
+// source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
+}
+
+message PresentationTextStyle {
+  optional bool bold = 1;
+  optional bool italic = 2;
+  optional double font_size_points = 3;
+  optional string font_family = 4;
+  oneof color {
+    string color_rgb = 5;
+    // One of the 16 public DrawingML theme tokens. Color transforms remain
+    // source-bound rather than being flattened.
+    string color_scheme = 6;
+  }
 }
 
 message PresentationTextParagraph {
@@ -311,6 +325,13 @@ message PresentationTextParagraph {
     double space_after_points = 28;
     double space_after_multiplier = 29;
     bool no_space_after = 30;
+  }
+  // Direct a:defRPr semantics. Unset preserves source state; the explicit
+  // no_* choice removes only modeled fields and retains unknown native
+  // properties such as underline, script fonts, or color transforms.
+  oneof default_run_style {
+    PresentationTextStyle default_run_properties = 31;
+    bool no_default_run_properties = 32;
   }
 }
 

@@ -234,6 +234,7 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[1].lineSpacing, 18);
   assert.equal(wasmTitle?.text.paragraphs[1].spaceBeforePercent, 0.25);
   assert.equal(wasmTitle?.text.paragraphs[1].spaceAfter, 6);
+  assert.deepEqual(wasmTitle?.text.paragraphs[1].style, { bold: true, fontSize: 20, color: "#0ea5e9" });
   assert.deepEqual(wasmTitle?.text.paragraphs[1].runs[0].link, { action: "lastSlide", highlightClick: false });
   assert.deepEqual(wasmTitle?.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 5 });
   assert.equal(wasmTitle?.text.paragraphs[2].bulletFont, "Aptos");
@@ -258,6 +259,7 @@ try {
   assert.match(wasmSlideXml, /<a:lnSpc><a:spcPts val="1350"\s*\/><\/a:lnSpc>/);
   assert.match(wasmSlideXml, /<a:spcBef><a:spcPct val="25000"\s*\/><\/a:spcBef>/);
   assert.match(wasmSlideXml, /<a:spcAft><a:spcPts val="450"\s*\/><\/a:spcAft>/);
+  assert.match(wasmSlideXml, /<a:defRPr[^>]*sz="1500"[^>]*b="1">[\s\S]*?<a:srgbClr val="0EA5E9"\s*\/>[\s\S]*?<\/a:defRPr>/);
   assert.match(wasmSlideXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
   assert.match(wasmSlideXml, /<a:br><a:rPr[^>]*i="1"/);
   assert.match(wasmSlideXml, /<a:buBlip><a:blip r:embed="[^"]+"[^>]*\/><\/a:buBlip>/);

@@ -52,6 +52,44 @@ function unsupportedStyleFields(style = {}) {
   return Object.keys(style).filter((key) => !RUN_STYLE_KEYS.has(key));
 }
 
+function wireTextStyle(style = {}, shapeId) {
+  const unsupported = unsupportedStyleFields(style);
+  if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph text style fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
+  const fontSize = style.fontSize == null ? undefined : Number(style.fontSize);
+  if (fontSize !== undefined && (!Number.isFinite(fontSize) || fontSize <= 0 || fontSize > MAX_FONT_SIZE_PIXELS)) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a paragraph font size outside the supported 0-${MAX_FONT_SIZE_PIXELS} pixel range.`, [], { code: "invalid_presentation_text" });
+  }
+  const fontFamily = style.fontFamily == null ? undefined : String(style.fontFamily);
+  if (fontFamily !== undefined && (!fontFamily.trim() || fontFamily.length > 255)) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an invalid paragraph font family.`, [], { code: "invalid_presentation_text" });
+  }
+  let color;
+  if (style.color != null) {
+    const token = String(style.color).trim();
+    color = PRESENTATION_SCHEME_COLORS.has(token)
+      ? { case: "colorScheme", value: token }
+      : { case: "colorRgb", value: presentationRgb(style.color, `${shapeId}.text.paragraphStyle.color`) };
+    if (!color.value) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a transparent paragraph color outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
+  }
+  return {
+    ...(style.bold == null ? {} : { bold: Boolean(style.bold) }),
+    ...(style.italic == null ? {} : { italic: Boolean(style.italic) }),
+    ...(fontSize === undefined ? {} : { fontSizePoints: fontSize * POINTS_PER_PIXEL }),
+    ...(fontFamily === undefined ? {} : { fontFamily }),
+    ...(color ? { color } : {}),
+  };
+}
+
+function wireDefaultRunStyle(paragraph, original, shapeId) {
+  if (Object.keys(paragraph.style || {}).length) {
+    return { case: "defaultRunProperties", value: wireTextStyle(paragraph.style, shapeId) };
+  }
+  if (new Set(["defaultRunProperties", "noDefaultRunProperties"]).has(original?.defaultRunStyle?.case)) {
+    return { case: "noDefaultRunProperties", value: true };
+  }
+  return undefined;
+}
+
 function wireHyperlink(value, original, shapeId) {
   if (value == null) {
     if (new Set(["runHyperlink", "noHyperlink"]).has(original?.hyperlink?.case)) return { case: "noHyperlink", value: true };
@@ -305,10 +343,12 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
   const tabs = wireTabStops(paragraph, original, shapeId);
   const layout = wireParagraphLayout(paragraph, original, shapeId);
   const spacing = wireParagraphSpacing(paragraph, original, shapeId);
+  const defaultRunStyle = wireDefaultRunStyle(paragraph, original, shapeId);
+  const directInheritedStyle = Object.fromEntries(Object.entries(textStyle).filter(([key]) => !Object.hasOwn(paragraph.style || {}, key)));
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
-    runs: (paragraph.runs || []).map((run, index) => wireRun(run, { ...textStyle, ...(paragraph.style || {}) }, shapeId, original?.runs?.[index])),
+    runs: (paragraph.runs || []).map((run, index) => wireRun(run, directInheritedStyle, shapeId, original?.runs?.[index])),
     ...(bullet ? { bullet } : {}),
     ...(bulletFont ? { bulletFont } : {}),
     ...(bulletColor ? { bulletColor } : {}),
@@ -316,6 +356,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
     ...tabs,
     ...layout,
     ...spacing,
+    ...(defaultRunStyle ? { defaultRunStyle } : {}),
   };
 }
 
@@ -552,6 +593,19 @@ function modelParagraphSpacing(paragraph) {
   };
 }
 
+function modelDefaultRunStyle(paragraph) {
+  if (paragraph.defaultRunStyle?.case !== "defaultRunProperties") return {};
+  const style = paragraph.defaultRunStyle.value;
+  return {
+    ...(style.bold === undefined ? {} : { bold: style.bold }),
+    ...(style.italic === undefined ? {} : { italic: style.italic }),
+    ...(style.fontSizePoints === undefined ? {} : { fontSize: style.fontSizePoints / POINTS_PER_PIXEL }),
+    ...(style.fontFamily === undefined ? {} : { fontFamily: style.fontFamily }),
+    ...(style.color?.case === "colorRgb" ? { color: `#${style.color.value}` } : {}),
+    ...(style.color?.case === "colorScheme" ? { color: style.color.value } : {}),
+  };
+}
+
 function modelText(shape, assetCatalog) {
   if (!shape.textBody) return shape.text;
   return shape.textBody.paragraphs.map((paragraph) => ({
@@ -563,7 +617,7 @@ function modelText(shape, assetCatalog) {
     ...modelParagraphLayout(paragraph),
     ...modelParagraphSpacing(paragraph),
     ...(paragraph.tabStops?.length ? { tabStops: paragraph.tabStops.map((tab) => ({ position: Number(tab.positionEmu) / EMU_PER_PIXEL, alignment: tab.alignment })) } : {}),
-    style: {},
+    style: modelDefaultRunStyle(paragraph),
   }));
 }
 

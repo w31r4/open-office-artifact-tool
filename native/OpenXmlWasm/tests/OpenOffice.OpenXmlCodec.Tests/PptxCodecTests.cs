@@ -363,6 +363,97 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ParagraphDefaultRunPropertiesAuthorImportEditAndDeleteWhilePreservingUnknownStyle()
+    {
+        var request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].DefaultRunProperties = new PresentationTextStyle
+        {
+            Bold = true,
+            Italic = false,
+            FontSizePoints = 21,
+            FontFamily = "Aptos",
+            ColorScheme = "accent1",
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!;
+            var style = properties.GetFirstChild<A.DefaultRunProperties>()!;
+            Assert.True(style.Bold!.Value);
+            Assert.False(style.Italic!.Value);
+            Assert.Equal(2_100, style.FontSize!.Value);
+            Assert.Equal("Aptos", style.GetFirstChild<A.LatinFont>()!.Typeface!.Value);
+            Assert.Equal(A.SchemeColorValues.Accent1, style.GetFirstChild<A.SolidFill>()!.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var source = AddUnmodeledDefaultRunProperties(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var paragraph = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(PresentationTextParagraph.DefaultRunStyleOneofCase.DefaultRunProperties, paragraph.DefaultRunStyleCase);
+        Assert.True(paragraph.DefaultRunProperties.Bold);
+        Assert.False(paragraph.DefaultRunProperties.Italic);
+        Assert.Equal(21, paragraph.DefaultRunProperties.FontSizePoints);
+        Assert.Equal("Aptos", paragraph.DefaultRunProperties.FontFamily);
+        Assert.Equal("accent1", paragraph.DefaultRunProperties.ColorScheme);
+
+        paragraph.DefaultRunProperties = new PresentationTextStyle
+        {
+            Bold = false,
+            Italic = true,
+            FontSizePoints = 24,
+            FontFamily = "Georgia",
+            ColorRgb = "2563EB",
+        };
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var style = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!.GetFirstChild<A.DefaultRunProperties>()!;
+            Assert.False(style.Bold!.Value);
+            Assert.True(style.Italic!.Value);
+            Assert.Equal(2_400, style.FontSize!.Value);
+            Assert.Equal("Georgia", style.GetFirstChild<A.LatinFont>()!.Typeface!.Value);
+            Assert.Equal("2563EB", style.GetFirstChild<A.SolidFill>()!.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value);
+            Assert.Equal(A.TextUnderlineValues.Single, style.Underline!.Value);
+            Assert.Equal("Noto Sans CJK SC", style.GetFirstChild<A.EastAsianFont>()!.Typeface!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var reimported = Import(edited.File.ToByteArray());
+        paragraph = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        paragraph.NoDefaultRunProperties = true;
+        var deleted = Export(reimported.Artifact);
+        Assert.True(deleted.Ok, Diagnostics(deleted));
+        using (var stream = new MemoryStream(deleted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var style = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!.GetFirstChild<A.DefaultRunProperties>()!;
+            Assert.Null(style.Bold);
+            Assert.Null(style.Italic);
+            Assert.Null(style.FontSize);
+            Assert.Null(style.GetFirstChild<A.LatinFont>());
+            Assert.Null(style.GetFirstChild<A.SolidFill>());
+            Assert.Equal(A.TextUnderlineValues.Single, style.Underline!.Value);
+            Assert.Equal("Noto Sans CJK SC", style.GetFirstChild<A.EastAsianFont>()!.Typeface!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var transformed = Import(AddTransformedDefaultRunColor(authored.File.ToByteArray()));
+        Assert.True(transformed.Ok, Diagnostics(transformed));
+        paragraph = transformed.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(PresentationTextStyle.ColorOneofCase.None, paragraph.DefaultRunProperties.ColorCase);
+        paragraph.DefaultRunProperties.ColorRgb = "FF0000";
+        var rejected = Export(transformed.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void FieldsBreaksAndTabStopsRoundTripEditAndPreserveResidualProperties()
     {
         var request = RichTextExportRequest();
@@ -780,6 +871,30 @@ public sealed class PptxCodecTests
         var invalidSpacingDeletion = Invoke(request);
         Assert.False(invalidSpacingDeletion.Ok);
         Assert.Equal("invalid_presentation_text", Assert.Single(invalidSpacingDeletion.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].DefaultRunProperties = new PresentationTextStyle();
+        var emptyDefaultStyle = Invoke(request);
+        Assert.False(emptyDefaultStyle.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(emptyDefaultStyle.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].DefaultRunProperties = new PresentationTextStyle { FontSizePoints = 769 };
+        var invalidDefaultSize = Invoke(request);
+        Assert.False(invalidDefaultSize.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidDefaultSize.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].DefaultRunProperties = new PresentationTextStyle { ColorScheme = "phClr" };
+        var invalidDefaultColor = Invoke(request);
+        Assert.False(invalidDefaultColor.Ok);
+        Assert.Equal("invalid_presentation_color", Assert.Single(invalidDefaultColor.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].NoDefaultRunProperties = false;
+        var invalidDefaultDeletion = Invoke(request);
+        Assert.False(invalidDefaultDeletion.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidDefaultDeletion.Diagnostics).Code);
     }
 
     private static CodecResponse Invoke(CodecRequest request) =>
@@ -1071,6 +1186,35 @@ public sealed class PptxCodecTests
             var click = OrderedSlides(package)[0].Slide!.Descendants<A.HyperlinkOnClick>().First();
             click.Id = string.Empty;
             click.Action = "ppaction://customshow?id=99";
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnmodeledDefaultRunProperties(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var style = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First()
+                .ParagraphProperties!.GetFirstChild<A.DefaultRunProperties>()!;
+            style.Underline = A.TextUnderlineValues.Single;
+            style.AddChild(new A.EastAsianFont { Typeface = "Noto Sans CJK SC" }, true);
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddTransformedDefaultRunColor(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var scheme = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First()
+                .ParagraphProperties!.GetFirstChild<A.DefaultRunProperties>()!.GetFirstChild<A.SolidFill>()!.GetFirstChild<A.SchemeColor>()!;
+            scheme.Append(new A.Tint { Val = 50_000 });
         }
         return stream.ToArray();
     }
