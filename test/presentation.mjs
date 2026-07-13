@@ -267,9 +267,28 @@ const lineChart = pieSlide.charts.add("line", {
     { name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false },
   ],
 });
+const comboChart = pieSlide.charts.add("combo", {
+  name: "revenue-margin-combo",
+  title: "Revenue and Margin",
+  position: { left: 120, top: 400, width: 840, height: 250 },
+  categories: ["Q1", "Q2", "Q3"],
+  styleId: 8,
+  barOptions: { direction: "column", grouping: "clustered", gapWidth: 90, overlap: 0 },
+  lineOptions: { grouping: "standard", marker: { symbol: "circle", size: 7 }, smooth: false },
+  axes: { category: { title: "Quarter" }, value: { title: "Amount" } },
+  legend: { visible: true, position: "b" },
+  dataLabels: { showValue: true },
+  series: [
+    { chartType: "bar", name: "Revenue", values: [10, 14, 18], color: "#3d8dff" },
+    { chartType: "line", name: "Margin", values: [4, 6, 7], color: "#dc2626", line: { fill: "#dc2626", width: 2, style: "dash" }, marker: { symbol: "diamond", size: 8 } },
+    { chartType: "bar", name: "Forecast", values: [12, 16, 20], color: "#6dcbf4" },
+  ],
+});
 assert.throws(() => pieSlide.charts.add("bar", { styleId: 49 }), /styleId must be an integer from 1 to 48/);
 assert.throws(() => pieSlide.charts.add("bar", { barOptions: { grouping: "standard" } }), /chart bar grouping must be one of/);
 assert.throws(() => pieSlide.charts.add("line", { lineOptions: { marker: { symbol: "hexagon" } } }), /chart marker symbol must be one of/);
+assert.throws(() => pieSlide.charts.add("combo", { series: [{ name: "Missing type", values: [1] }] }), /series chartType must be bar or line/);
+assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", name: "Only bars", values: [1] }] }), /requires at least one bar series and one line series/);
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
 assert.match(presentation.inspect({ kind: "chart", target: pieChart.id, maxChars: 8000 }).ndjson, /Market Share/);
 slide.addNotes("Speaker note: call out pipeline risk.");
@@ -292,6 +311,13 @@ assert.equal(presentation.resolve(nativeChart.id).dataLabels.showValue, true);
 assert.equal(presentation.resolve(nativeChart.id).styleId, 10);
 assert.deepEqual(presentation.resolve(nativeChart.id).barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
 assert.deepEqual(presentation.resolve(lineChart.id).lineOptions, { grouping: "stacked", marker: { symbol: "diamond", size: 9 }, smooth: true });
+assert.deepEqual(presentation.resolve(comboChart.id).series.map((series) => series.chartType), ["bar", "line", "bar"]);
+assert.deepEqual(presentation.resolve(comboChart.id).barOptions, { direction: "column", grouping: "clustered", gapWidth: 90, overlap: 0 });
+assert.deepEqual(presentation.resolve(comboChart.id).lineOptions, { grouping: "standard", marker: { symbol: "circle", size: 7 }, smooth: false });
+const comboChartSvg = comboChart.toSvg();
+assert.match(comboChartSvg, /<rect [^>]*fill="#3d8dff"/i);
+assert.match(comboChartSvg, /<polyline [^>]*stroke="#dc2626"/i);
+assert.ok(comboChartSvg.indexOf('fill="#3d8dff"') < comboChartSvg.indexOf("<polyline"));
 const lineChartSvg = lineChart.toSvg();
 assert.match(lineChartSvg, /<path d="M/);
 assert.match(lineChartSvg, /930,162/);
@@ -305,7 +331,7 @@ assert.throws(() => slide.charts.add("line", { series: [{ values: [1], line: { s
 assert.equal(Presentation.create().slides.add().charts.add("bar", { styleIndex: 12 }).styleId, 12);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /"axes"/);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /Forecast/);
-assert.match(presentation.help("slide.charts.add").ndjson, /bar\/line\/pie/);
+assert.match(presentation.help("slide.charts.add").ndjson, /bar\/line\/pie.*combo/);
 assert.match(presentation.help("slide.charts.add").ndjson, /axes/);
 assert.equal(presentation.resolve(nativeImage.id).alt, "Native import logo");
 const targetedPresentationInspect = presentation.inspect({ kind: "table,chart,image,connector,comment", target: nativeImage.id, maxChars: 4000 }).ndjson;
@@ -625,6 +651,20 @@ assert.equal((lineChartXml.match(/<c:smooth val="1"\/>/g) || []).length, 1);
 assert.equal((lineChartXml.match(/<c:smooth val="0"\/>/g) || []).length, 1);
 assert.match(lineChartXml, /<a:ln w="38100"><a:solidFill><a:srgbClr val="15803D"\/><\/a:solidFill><a:prstDash val="dashDot"\/><\/a:ln>/);
 assert.match(lineChartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbClr val="EAB308"\/><\/a:solidFill><\/c:spPr><\/c:dPt>/);
+const comboChartXml = await zip.file("ppt/charts/chart4.xml").async("text");
+assert.match(comboChartXml, /<c:style val="8"\/>/);
+assert.match(comboChartXml, /<c:barChart><c:barDir val="col"\/><c:grouping val="clustered"\/>/);
+assert.match(comboChartXml, /<c:lineChart><c:grouping val="standard"\/>/);
+assert.match(comboChartXml, /<c:gapWidth val="90"\/><c:overlap val="0"\/>/);
+assert.match(comboChartXml, /<c:idx val="0"\/><c:order val="0"\/>[\s\S]*?<c:v>Revenue<\/c:v>/);
+assert.match(comboChartXml, /<c:idx val="1"\/><c:order val="1"\/>[\s\S]*?<c:v>Margin<\/c:v>/);
+assert.match(comboChartXml, /<c:idx val="2"\/><c:order val="2"\/>[\s\S]*?<c:v>Forecast<\/c:v>/);
+assert.equal((comboChartXml.match(/<c:catAx>/g) || []).length, 1);
+assert.equal((comboChartXml.match(/<c:valAx>/g) || []).length, 1);
+assert.equal((comboChartXml.match(/<c:axId val="1"\/>/g) || []).length, 3);
+assert.equal((comboChartXml.match(/<c:axId val="2"\/>/g) || []).length, 3);
+assert.match(comboChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="8"\/><\/c:marker>/);
+assert.match(comboChartXml, /<a:ln w="25400"><a:solidFill><a:srgbClr val="DC2626"\/><\/a:solidFill><a:prstDash val="dash"\/><\/a:ln>/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
@@ -670,6 +710,7 @@ assert.match(loadedAll, /Product A/);
 assert.match(loadedAll, /Quarter/);
 assert.match(loadedAll, /Forecast/);
 assert.match(loadedAll, /Quality Trend/);
+assert.match(loadedAll, /Revenue and Margin/);
 assert.match(loadedAll, /native-import-image/);
 assert.match(loadedAll, /Native import logo/);
 assert.match(loadedAll, /Speaker note/);
@@ -689,6 +730,13 @@ assert.deepEqual(loadedLineChart.series.map((series) => series.marker), [{ symbo
 assert.deepEqual(loadedLineChart.series.map((series) => series.smooth), [true, false]);
 assert.deepEqual(loadedLineChart.series[0].line, { fill: "#15803D", width: 3, style: "dashDot" });
 assert.deepEqual(loadedLineChart.series[0].points, [{ idx: 1, fill: "#EAB308" }]);
+const loadedComboChart = loaded.slides.items[1].charts.items.find((chart) => chart.name === "revenue-margin-combo");
+assert.equal(loadedComboChart.chartType, "combo");
+assert.deepEqual(loadedComboChart.series.map((series) => series.name), ["Revenue", "Margin", "Forecast"]);
+assert.deepEqual(loadedComboChart.series.map((series) => series.chartType), ["bar", "line", "bar"]);
+assert.deepEqual(loadedComboChart.barOptions, { direction: "column", grouping: "clustered", gapWidth: 90, overlap: 0 });
+assert.deepEqual(loadedComboChart.lineOptions, { grouping: "standard", marker: { symbol: "diamond", size: 8 }, smooth: false });
+assert.deepEqual(loadedComboChart.series[1].line, { fill: "#DC2626", width: 2, style: "dash" });
 const alternateChartPrefixXml = lineChartXml.replace('<c:smooth val="1"/>', "<c:smooth/>")
   .replaceAll("xmlns:c=", "xmlns:cx=").replaceAll("<c:", "<cx:").replaceAll("</c:", "</cx:")
   .replaceAll("xmlns:a=", "xmlns:ax=").replaceAll("<a:", "<ax:").replaceAll("</a:", "</ax:");
@@ -703,6 +751,19 @@ const alternateChartSecondXml = await alternateChartSecondZip.file("ppt/charts/c
 assert.match(alternateChartSecondXml, /<c:style val="13"\/>/);
 assert.match(alternateChartSecondXml, /<a:prstDash val="dashDot"\/>/);
 assert.match(alternateChartSecondXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="EAB308"\/>/);
+const alternateComboPrefixXml = comboChartXml
+  .replaceAll("xmlns:c=", "xmlns:cx=").replaceAll("<c:", "<cx:").replaceAll("</c:", "</cx:")
+  .replaceAll("xmlns:a=", "xmlns:ax=").replaceAll("<a:", "<ax:").replaceAll("</a:", "</ax:");
+const alternateComboPrefixPptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/charts/chart4.xml", xml: alternateComboPrefixXml }]);
+const alternateComboPrefixLoaded = await PresentationFile.importPptx(alternateComboPrefixPptx);
+const alternateComboChart = alternateComboPrefixLoaded.slides.items[1].charts.items.find((chart) => chart.name === "revenue-margin-combo");
+assert.equal(alternateComboChart.chartType, "combo");
+assert.deepEqual(alternateComboChart.series.map((series) => `${series.chartType}:${series.name}`), ["bar:Revenue", "line:Margin", "bar:Forecast"]);
+const alternateComboSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(alternateComboPrefixLoaded)).arrayBuffer()));
+const alternateComboSecondXml = await alternateComboSecondZip.file("ppt/charts/chart4.xml").async("text");
+assert.match(alternateComboSecondXml, /<c:barChart>[\s\S]*?<c:lineChart>/);
+assert.equal((alternateComboSecondXml.match(/<c:catAx>/g) || []).length, 1);
+assert.deepEqual([...alternateComboSecondXml.matchAll(/<c:order val="(\d+)"\/>/g)].map((match) => Number(match[1])).sort((left, right) => left - right), [0, 1, 2]);
 assert.match(loadedAll, /"colorMap"/);
 const loadedComment = loaded.slides.items[0].comments.items[0];
 assert.ok(loaded.slides.items[0].resolve(loadedComment.targetId));
