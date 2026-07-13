@@ -60,7 +60,7 @@ export function normalizePivotConfig(config = {}, headers = []) {
   const duplicateAxisField = rowFields.find((field) => columnFields.includes(field));
   if (duplicateAxisField) throw new Error(`PivotTable field ${duplicateAxisField} cannot be both a row and column field.`);
   const groupFields = normalizePivotGroupFields(config.groupFields || config.groups, headers.map(String), config.allowUnsupportedGroupFields === true, config.sourceValues || {});
-  const normalizedCalculatedFields = normalizeCalculatedFields(config.calculatedFields, headers.map(String), config.allowUnsupportedCalculatedFields === true);
+  const normalizedCalculatedFields = normalizeCalculatedFields(config.calculatedFields, headers.map(String), config.allowUnsupportedCalculatedFields === true, { dateSystem: config.dateSystem });
   const groupNames = new Set(groupFields.map((field) => field.name));
   const calculatedGroupCollision = normalizedCalculatedFields.find((field) => groupNames.has(field.name));
   if (calculatedGroupCollision) throw new Error(`PivotTable calculated field name ${calculatedGroupCollision.name} must not replace a group field.`);
@@ -141,7 +141,7 @@ export function computePivotValues(matrix = [], config = {}) {
       if (!calculatedField) return summarize(groupedRows.map((row) => row[index]), field.summarizeBy);
       if (calculatedField.supported === false) return "#NAME?";
       const aggregates = Object.fromEntries(sourceHeaders.map((header, fieldIndex) => [header, summarize(groupedRows.map((row) => row[fieldIndex]), "sum")]));
-      return evaluatePivotFormula(calculatedField.formula, aggregates, sourceHeaders);
+      return evaluatePivotFormula(calculatedField.formula, aggregates, sourceHeaders, { dateSystem: config.dateSystem });
     })),
   ]);
   return [header, ...outputRows];

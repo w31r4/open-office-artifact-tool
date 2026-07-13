@@ -2,11 +2,36 @@ function padded(value, width = 2) {
   return String(value).padStart(width, "0");
 }
 
+const MAX_DATE_SERIAL = { "1900": 2_958_465, "1904": 2_957_003 };
+
+function dateAtUtc(year, month, day) {
+  const value = new Date(0);
+  value.setUTCFullYear(year, month - 1, day);
+  value.setUTCHours(0, 0, 0, 0);
+  return value;
+}
+
 function validCalendarDate(year, month, day) {
-  const calendar = new Date(0);
-  calendar.setUTCFullYear(year, month - 1, day);
-  calendar.setUTCHours(0, 0, 0, 0);
+  const calendar = dateAtUtc(year, month, day);
   return calendar.getUTCFullYear() === year && calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+}
+
+export function pivotDateSerial(yearValue, monthValue, dayValue = 1, dateSystem = "1900") {
+  let year = Math.trunc(Number(yearValue));
+  const month = Math.trunc(Number(monthValue));
+  const day = Math.trunc(Number(dayValue));
+  if (![year, month, day].every(Number.isFinite) || year < 0 || year >= 10_000) return undefined;
+  if (year <= 1_899) year += 1_900;
+  const normalized = dateAtUtc(year, month, 1);
+  if (normalized.getUTCFullYear() < 1_900 || normalized.getUTCFullYear() >= 10_000) return undefined;
+  const epoch = dateSystem === "1904" ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 31);
+  let serial = Math.floor((normalized.getTime() - epoch) / 86_400_000) + day - 1;
+  if (dateSystem !== "1904" && normalized.getTime() >= Date.UTC(1900, 2, 1)) serial += 1;
+  return serial < 0 || serial > MAX_DATE_SERIAL[dateSystem === "1904" ? "1904" : "1900"] ? undefined : serial;
+}
+
+export function pivotMaxDateSerial(dateSystem = "1900") {
+  return MAX_DATE_SERIAL[dateSystem === "1904" ? "1904" : "1900"];
 }
 
 function textDateParts(value) {

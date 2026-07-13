@@ -1,3 +1,5 @@
+import { pivotDateParts, pivotDateSerial, pivotMaxDateSerial } from "./pivot-dates.mjs";
+
 const PIVOT_FUNCTIONS = new Map([
   ["ABS", { minArgs: 1, maxArgs: 1 }],
   ["SUM", { minArgs: 1, maxArgs: 32 }],
@@ -28,6 +30,10 @@ const PIVOT_FUNCTIONS = new Map([
   ["LOWER", { minArgs: 1, maxArgs: 1 }],
   ["UPPER", { minArgs: 1, maxArgs: 1 }],
   ["TRIM", { minArgs: 1, maxArgs: 1 }],
+  ["DATE", { minArgs: 3, maxArgs: 3 }],
+  ["YEAR", { minArgs: 1, maxArgs: 1 }],
+  ["MONTH", { minArgs: 1, maxArgs: 1 }],
+  ["DAY", { minArgs: 1, maxArgs: 1 }],
 ]);
 
 const COMPARISON_OPERATORS = new Set(["=", "<>", "<", "<=", ">", ">="]);
@@ -210,7 +216,7 @@ export function pivotFormulaToOoxml(formula, fields) {
   return renderPivotFormula(parsedPivotFormula(formula, fields).tokens);
 }
 
-export function normalizeCalculatedFields(value, sourceFields, allowUnsupported = false) {
+export function normalizeCalculatedFields(value, sourceFields, allowUnsupported = false, options = {}) {
   if (value == null) return [];
   if (!Array.isArray(value)) throw new TypeError("PivotTable calculatedFields must be an array.");
   if (value.length > 128) throw new RangeError("PivotTable calculatedFields exceeds 128 fields.");
@@ -225,7 +231,7 @@ export function normalizeCalculatedFields(value, sourceFields, allowUnsupported 
     if (!Number.isInteger(numFmtId) || numFmtId < 0) throw new TypeError(`PivotTable calculatedFields[${index}] numFmtId must be a non-negative integer.`);
     try {
       const parsed = parsedPivotFormula(formula, sourceFields);
-      evaluatePivotFormula(formula, Object.fromEntries(sourceFields.map((field) => [field, 0])), sourceFields);
+      evaluatePivotFormula(formula, Object.fromEntries(sourceFields.map((field) => [field, 0])), sourceFields, options);
       return { name, formula: `=${renderPivotFormula(parsed.tokens)}`, numFmtId, references: uniqueReferences(parsed.tokens) };
     } catch (error) {
       if (!allowUnsupported || error instanceof RangeError) throw error;
@@ -317,7 +323,7 @@ function pivotTextCount(value, fallback) {
   return Math.trunc(count);
 }
 
-function formulaFunction(name, args) {
+function formulaFunction(name, args, options) {
   if (name === "ISERROR") return formulaError(args[0]);
   if (name === "ISNUMBER") return typeof args[0] === "number" && Number.isFinite(args[0]);
   if (name === "ISTEXT") return textFormulaValue(args[0]);
@@ -352,6 +358,19 @@ function formulaFunction(name, args) {
     if (formulaError(text)) return text;
     if (name === "TRIM") return formulaText(text.replace(/ +/g, " ").replace(/^ | $/g, ""));
     return formulaText(name === "LOWER" ? text.toLowerCase() : text.toUpperCase());
+  }
+  if (name === "DATE") {
+    const values = args.map(numericValue);
+    const valueError = values.find(formulaError);
+    if (valueError) return valueError;
+    return pivotDateSerial(values[0], values[1], values[2], options.dateSystem) ?? "#NUM!";
+  }
+  if (name === "YEAR" || name === "MONTH" || name === "DAY") {
+    const serial = numericValue(args[0]);
+    if (formulaError(serial)) return serial;
+    if (serial < 0 || serial > pivotMaxDateSerial(options.dateSystem)) return "#NUM!";
+    const parts = pivotDateParts(serial, options.dateSystem);
+    return parts ? parts[name.toLowerCase()] : "#NUM!";
   }
   if (name === "ABS") return formulaUnary(args[0], Math.abs);
   if (name === "SQRT") {
@@ -420,7 +439,7 @@ function formulaCondition(value) {
   return "#VALUE!";
 }
 
-function evaluatePivotAst(node, aggregates) {
+function evaluatePivotAst(node, aggregates, options) {
   if (node.kind === "literal") return typeof node.value === "string" ? formulaText(node.value) : node.value;
   if (node.kind === "field") {
     const value = Object.hasOwn(aggregates, node.name) ? aggregates[node.name] : 0;
@@ -428,28 +447,30 @@ function evaluatePivotAst(node, aggregates) {
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
   }
-  if (node.kind === "unary") return formulaUnary(evaluatePivotAst(node.value, aggregates), (value) => node.operator === "-" ? -value : value);
-  if (node.kind === "percent") return formulaUnary(evaluatePivotAst(node.value, aggregates), (value) => value / 100);
-  if (node.kind === "binary") return formulaBinary(evaluatePivotAst(node.left, aggregates), node.operator, evaluatePivotAst(node.right, aggregates));
+  if (node.kind === "unary") return formulaUnary(evaluatePivotAst(node.value, aggregates, options), (value) => node.operator === "-" ? -value : value);
+  if (node.kind === "percent") return formulaUnary(evaluatePivotAst(node.value, aggregates, options), (value) => value / 100);
+  if (node.kind === "binary") return formulaBinary(evaluatePivotAst(node.left, aggregates, options), node.operator, evaluatePivotAst(node.right, aggregates, options));
   if (node.name === "IF") {
-    const condition = formulaCondition(evaluatePivotAst(node.args[0], aggregates));
+    const condition = formulaCondition(evaluatePivotAst(node.args[0], aggregates, options));
     if (formulaError(condition)) return condition;
-    if (condition) return evaluatePivotAst(node.args[1], aggregates);
-    return node.args[2] ? evaluatePivotAst(node.args[2], aggregates) : false;
+    if (condition) return evaluatePivotAst(node.args[1], aggregates, options);
+    return node.args[2] ? evaluatePivotAst(node.args[2], aggregates, options) : false;
   }
   if (node.name === "IFERROR") {
-    const value = evaluatePivotAst(node.args[0], aggregates);
-    return formulaError(value) ? evaluatePivotAst(node.args[1], aggregates) : value;
+    const value = evaluatePivotAst(node.args[0], aggregates, options);
+    return formulaError(value) ? evaluatePivotAst(node.args[1], aggregates, options) : value;
   }
   if (node.name === "IFNA") {
-    const value = evaluatePivotAst(node.args[0], aggregates);
-    return value === "#N/A" ? evaluatePivotAst(node.args[1], aggregates) : value;
+    const value = evaluatePivotAst(node.args[0], aggregates, options);
+    return value === "#N/A" ? evaluatePivotAst(node.args[1], aggregates, options) : value;
   }
-  return formulaFunction(node.name, node.args.map((arg) => evaluatePivotAst(arg, aggregates)));
+  return formulaFunction(node.name, node.args.map((arg) => evaluatePivotAst(arg, aggregates, options)), options);
 }
 
-export function evaluatePivotFormula(formula, aggregates = {}, fields = Object.keys(aggregates)) {
-  const result = evaluatePivotAst(parsedPivotFormula(formula, fields).ast, aggregates);
+export function evaluatePivotFormula(formula, aggregates = {}, fields = Object.keys(aggregates), options = {}) {
+  const dateSystem = options.dateSystem == null ? "1900" : String(options.dateSystem);
+  if (dateSystem !== "1900" && dateSystem !== "1904") throw new TypeError("PivotTable calculated field dateSystem must be 1900 or 1904.");
+  const result = evaluatePivotAst(parsedPivotFormula(formula, fields).ast, aggregates, { ...options, dateSystem });
   if (textFormulaValue(result)) return result.value;
   if (formulaError(result) || typeof result === "string" || typeof result === "boolean") return result;
   return Number.isFinite(result) ? result : "#NUM!";

@@ -592,6 +592,20 @@ assert.equal(evaluatePivotFormula('RIGHT("abc",0)'), "");
 assert.equal(evaluatePivotFormula('MID("abc",0,1)'), "#VALUE!");
 assert.equal(evaluatePivotFormula('MID("abc",5,2)'), "");
 assert.throws(() => evaluatePivotFormula('MID("abc",1)'), /requires exactly 3 arguments/);
+assert.equal(evaluatePivotFormula("DATE(1904,1,1)"), 1462);
+assert.equal(evaluatePivotFormula("DATE(1904,1,1)", {}, [], { dateSystem: "1904" }), 0);
+assert.equal(evaluatePivotFormula("DATE(1900,2,29)"), 60);
+assert.equal(evaluatePivotFormula("DATE(1900,2,29)", {}, [], { dateSystem: "1904" }), "#NUM!");
+assert.equal(evaluatePivotFormula("YEAR(60)"), 1900);
+assert.equal(evaluatePivotFormula("MONTH(60)"), 2);
+assert.equal(evaluatePivotFormula("DAY(60)"), 29);
+assert.equal(evaluatePivotFormula("YEAR(DATE(2026,3,31))"), 2026);
+assert.equal(evaluatePivotFormula("MONTH(DATE(2026,3,31))"), 3);
+assert.equal(evaluatePivotFormula("DAY(DATE(2026,3,31))"), 31);
+assert.equal(evaluatePivotFormula("DATE(10000,1,1)"), "#NUM!");
+assert.equal(evaluatePivotFormula("YEAR(-1)"), "#NUM!");
+assert.throws(() => evaluatePivotFormula("DATE(2026,1)", {}, [], { dateSystem: "1900" }), /requires exactly 3 arguments/);
+assert.throws(() => evaluatePivotFormula("DATE(2026,1,1)", {}, [], { dateSystem: "unix" }), /dateSystem must be 1900 or 1904/);
 const functionPivot = functionSheet.pivotTables.add({
   name: "FunctionPivot",
   sourceRange: "A1:C4",
