@@ -10,7 +10,8 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
-const maxUnpackedBytes = 2_000_000;
+const maxPackedBytes = 500_000;
+const maxUnpackedBytes = 2_100_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
@@ -20,6 +21,7 @@ for (const required of [
   "src/presentation/ooxml-chart-data.mjs",
   "src/presentation/ooxml-charts.mjs",
   "src/presentation/ooxml-picture-bullets.mjs",
+  "src/presentation/ooxml-hyperlinks.mjs",
   "src/ooxml/docx-links.mjs",
   "src/ooxml/docx-sections.mjs",
   "src/pdf/table-grid.mjs",
@@ -77,6 +79,7 @@ for (const required of [
 }
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
+assert.ok(report.size < maxPackedBytes, `npm package archive unexpectedly large: ${report.size} (limit ${maxPackedBytes})`);
 assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);
 
 console.log("package contents smoke ok");

@@ -1356,7 +1356,12 @@ assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletColo
 const followOnlyDeck = Presentation.create();
 const followOnlyShape = followOnlyDeck.slides.add().shapes.add({ text: { text: "Follow marker", bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true } });
 assert.deepEqual(followOnlyShape.text.paragraphs[0], { runs: [{ text: "Follow marker", style: {} }], level: 0, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, style: {} });
-assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", isExternal: true } }]]), /structured-run links are not supported yet/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "relative/path" } }]]), /uri must be absolute/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "javascript:alert(1)" } }]]), /forbidden scheme/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", slideId: "slide/2" } }]]), /exactly one of uri or slideId/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", tooltip: "x".repeat(1025) } }]]), /tooltip exceeds 1024/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { targetPart: "ppt/slides/slide2.xml" } }]]), /exactly one of uri or slideId/);
+assert.throws(() => richTextShape.text.set([[{ run: "linked", link: { uri: "https:\/\/example.com", history: "false" } }]]), /history must be a boolean/);
 assert.throws(() => Presentation.create({ master: { textParagraphStyles: { body: { 9: { bulletCharacter: "•" } } } } }), /level must be an integer from 0 through 8/);
 richTextShape.text.set([
   [{ run: "Status", textStyle: { bold: true, color: "#0f172a" } }, " review"],
@@ -1491,6 +1496,118 @@ assert.equal(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((s
 assert.equal(alternatePrefixParagraphLoaded.master.textParagraphStyles.body[2].bulletImage.dataUrl, pictureBulletPng);
 assert.deepEqual(alternatePrefixParagraphLoaded.master.textParagraphStyles.other[0].bulletImage, { uri: "https://example.com/master-status.png", relationshipMode: "link" });
 assert.equal(alternatePrefixParagraphLoaded.layouts.getItem("List Layout").placeholders[0].paragraphStyles[1].bulletImage.dataUrl, pictureBulletPng);
+
+// Structured run hyperlinks own relationships in the slide, group, master, or layout part that emits a:hlinkClick.
+const hyperlinkPresentation = Presentation.create({
+  master: {
+    id: "master/links",
+    name: "Hyperlink Master",
+    placeholders: [{
+      type: "title",
+      idx: 1,
+      name: "Master hyperlink",
+      position: { left: 40, top: 32, width: 800, height: 56 },
+      text: [{ runs: [{ run: "Master reference", link: { uri: "https://example.com/master", tooltip: "Master evidence" } }] }],
+    }],
+  },
+  layouts: [{
+    id: "layout/links",
+    name: "Hyperlink Layout",
+    type: "obj",
+    masterId: "master/links",
+    placeholders: [{ type: "body", idx: 2, name: "Layout hyperlink", position: { left: 40, top: 96, width: 800, height: 56 }, text: "Layout target" }],
+  }],
+});
+const hyperlinkSlide = hyperlinkPresentation.slides.add({ layoutId: "layout/links" });
+const hyperlinkTargetSlide = hyperlinkPresentation.slides.add({ layoutId: "layout/links" });
+hyperlinkTargetSlide.shapes.add({ name: "Hyperlink target", text: "Destination slide" });
+hyperlinkPresentation.layouts.getItem("layout/links").placeholders[0].text = [{ runs: [{ run: "Jump from layout", link: { slideId: hyperlinkTargetSlide.id, tooltip: "Next slide" } }] }];
+const [hyperlinkMasterPlaceholder, hyperlinkLayoutPlaceholder] = hyperlinkPresentation.layouts.getItem("layout/links").apply(hyperlinkSlide);
+const hyperlinkShape = hyperlinkSlide.shapes.add({
+  name: "Structured hyperlinks",
+  position: { left: 40, top: 180, width: 800, height: 80 },
+  text: [{ runs: [
+    { run: "Open the guide", textStyle: { bold: true }, link: { uri: "https://example.com/guide?x=1&y=2", tooltip: "Read the guide", targetFrame: "_blank", history: false, highlightClick: true } },
+    " or ",
+    { run: "jump to evidence", link: { slideId: hyperlinkTargetSlide.id } },
+  ] }],
+});
+const hyperlinkGroup = hyperlinkSlide.groups.add({ name: "Hyperlink group", position: { left: 40, top: 280, width: 400, height: 100 }, childFrame: { left: 0, top: 0, width: 400, height: 100 } });
+const groupedHyperlinkShape = hyperlinkGroup.shapes.add({ name: "Grouped hyperlink", position: { left: 0, top: 0, width: 400, height: 80 }, text: [{ runs: [{ run: "Open the same guide", link: { href: "https://example.com/guide?x=1&y=2" } }] }] });
+assert.equal(hyperlinkMasterPlaceholder.name, "Master hyperlink");
+assert.equal(hyperlinkLayoutPlaceholder.name, "Layout hyperlink");
+assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[0].link, { uri: "https://example.com/guide?x=1&y=2", tooltip: "Read the guide", targetFrame: "_blank", history: false, highlightClick: true });
+assert.deepEqual(hyperlinkShape.text.paragraphs[0].runs[2].link, { slideId: hyperlinkTargetSlide.id });
+assert.match(hyperlinkShape.toSvg(), /data-hyperlink="https:\/\/example\.com\/guide\?x=1&amp;y=2"/);
+assert.match(hyperlinkShape.toSvg(), /text-decoration="underline" fill="#2563eb"/);
+assert.match(hyperlinkShape.toSvg(), new RegExp(`data-hyperlink="${hyperlinkTargetSlide.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+assert.match(groupedHyperlinkShape.toSvg(), /data-hyperlink="https:\/\/example\.com\/guide/);
+const missingHyperlinkTargetDeck = Presentation.create();
+missingHyperlinkTargetDeck.slides.add().shapes.add({ text: [{ runs: [{ run: "Missing", link: { slideId: "slide/missing" } }] }] });
+await assert.rejects(() => PresentationFile.exportPptx(missingHyperlinkTargetDeck), /references missing slide slide\/missing/);
+
+const hyperlinkPptx = await PresentationFile.exportPptx(hyperlinkPresentation);
+assert.equal((await PresentationFile.inspectPptx(hyperlinkPptx)).ok, true);
+const hyperlinkZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+const hyperlinkSlideXml = await hyperlinkZip.file("ppt/slides/slide1.xml").async("text");
+const hyperlinkSlideRelsXml = await hyperlinkZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const hyperlinkMasterXml = await hyperlinkZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+const hyperlinkMasterRelsXml = await hyperlinkZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
+const hyperlinkLayoutXml = await hyperlinkZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
+const hyperlinkLayoutRelsXml = await hyperlinkZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text");
+assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="rId\d+" tooltip="Read the guide" tgtFrame="_blank" history="0" highlightClick="1"\/>/);
+assert.match(hyperlinkSlideXml, /<a:hlinkClick r:id="rId\d+" action="ppaction:\/\/hlinksldjump"\/>/);
+assert.equal((hyperlinkSlideRelsXml.match(/relationships\/hyperlink/g) || []).length, 2);
+assert.equal((hyperlinkSlideRelsXml.match(/Target="https:\/\/example\.com\/guide\?x=1&amp;y=2"/g) || []).length, 1, "same external target should share one slide relationship");
+assert.match(hyperlinkSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/hyperlink" Target="https:\/\/example\.com\/guide\?x=1&amp;y=2" TargetMode="External"/);
+assert.match(hyperlinkSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/slide" Target="slide2\.xml"/);
+assert.match(hyperlinkMasterXml, /name="Master hyperlink"[\s\S]*?<a:hlinkClick r:id="rId3" tooltip="Master evidence"\/>/);
+assert.match(hyperlinkMasterRelsXml, /Id="rId3" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/hyperlink" Target="https:\/\/example\.com\/master" TargetMode="External"/);
+assert.match(hyperlinkLayoutXml, /name="Layout hyperlink"[\s\S]*?<a:hlinkClick r:id="rId2" action="ppaction:\/\/hlinksldjump" tooltip="Next slide"\/>/);
+assert.match(hyperlinkLayoutRelsXml, /Id="rId2" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/slide" Target="\.\.\/slides\/slide2\.xml"/);
+
+const hyperlinkLoaded = await PresentationFile.importPptx(hyperlinkPptx);
+const hyperlinkLoadedShape = hyperlinkLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Structured hyperlinks");
+const hyperlinkLoadedGroupShape = hyperlinkLoaded.slides.items[0].groups.items.find((group) => group.name === "Hyperlink group").shapes.items[0];
+assert.deepEqual(hyperlinkLoadedShape.text.paragraphs[0].runs[0].link, { uri: "https://example.com/guide?x=1&y=2", tooltip: "Read the guide", targetFrame: "_blank", history: false, highlightClick: true });
+assert.equal(hyperlinkLoadedShape.text.paragraphs[0].runs[2].link.slideId, hyperlinkLoaded.slides.items[1].id);
+assert.equal(hyperlinkLoadedGroupShape.text.paragraphs[0].runs[0].link.uri, "https://example.com/guide?x=1&y=2");
+assert.equal(hyperlinkLoaded.master.placeholders[0].text[0].runs[0].link.uri, "https://example.com/master");
+assert.equal(hyperlinkLoaded.layouts.getItem("Hyperlink Layout").placeholders[0].text[0].runs[0].link.slideId, hyperlinkLoaded.slides.items[1].id);
+const hyperlinkSecondPptx = await PresentationFile.exportPptx(hyperlinkLoaded);
+assert.equal((await PresentationFile.inspectPptx(hyperlinkSecondPptx)).ok, true);
+const hyperlinkSecondZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkSecondPptx.arrayBuffer()));
+assert.match(await hyperlinkSecondZip.file("ppt/slides/slide1.xml").async("text"), /<a:hlinkClick r:id="rId\d+" action="ppaction:\/\/hlinksldjump"\/>/);
+assert.match(await hyperlinkSecondZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /Target="\.\.\/slides\/slide2\.xml"/);
+
+const missingHyperlinkRelationshipZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+missingHyperlinkRelationshipZip.file("ppt/slides/_rels/slide1.xml.rels", hyperlinkSlideRelsXml.replace(/<Relationship[^>]*relationships\/hyperlink[^>]*\/>/, ""));
+const missingHyperlinkRelationshipPptx = new FileBlob(await missingHyperlinkRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(missingHyperlinkRelationshipPptx), /hyperlink references missing relationship/);
+const wrongHyperlinkModeZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+wrongHyperlinkModeZip.file("ppt/slides/_rels/slide1.xml.rels", hyperlinkSlideRelsXml.replace(/ TargetMode="External"/, ""));
+const wrongHyperlinkModePptx = new FileBlob(await wrongHyperlinkModeZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(wrongHyperlinkModePptx), /hyperlink relationship rId\d+ must be external/);
+const wrongHyperlinkTypeZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+wrongHyperlinkTypeZip.file("ppt/slides/_rels/slide1.xml.rels", hyperlinkSlideRelsXml.replace(/relationships\/hyperlink/, "relationships/image"));
+const wrongHyperlinkTypePptx = new FileBlob(await wrongHyperlinkTypeZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(wrongHyperlinkTypePptx), /hyperlink relationship rId\d+ has unsupported type/);
+const missingHyperlinkSlideZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+missingHyperlinkSlideZip.file("ppt/slides/_rels/slide1.xml.rels", hyperlinkSlideRelsXml.replace('Target="slide2.xml"', 'Target="slide99.xml"'));
+const missingHyperlinkSlidePptx = new FileBlob(await missingHyperlinkSlideZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(missingHyperlinkSlidePptx), /targets missing slide part ppt\/slides\/slide99\.xml/);
+const alternatePrefixHyperlinkZip = await JSZip.loadAsync(new Uint8Array(await hyperlinkPptx.arrayBuffer()));
+for (const file of ["ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml", "ppt/slides/slide1.xml"]) {
+  const xml = await alternatePrefixHyperlinkZip.file(file).async("text");
+  alternatePrefixHyperlinkZip.file(file, xml.replaceAll("<a:", "<draw:").replaceAll("</a:", "</draw:").replace("xmlns:a=", "xmlns:draw=").replaceAll("r:", "rel:").replace("xmlns:r=", "xmlns:rel="));
+}
+for (const file of ["ppt/slideMasters/_rels/slideMaster1.xml.rels", "ppt/slideLayouts/_rels/slideLayout1.xml.rels", "ppt/slides/_rels/slide1.xml.rels"]) {
+  const xml = await alternatePrefixHyperlinkZip.file(file).async("text");
+  alternatePrefixHyperlinkZip.file(file, xml.replaceAll("http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", "http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink").replaceAll("http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", "http://purl.oclc.org/ooxml/officeDocument/relationships/slide"));
+}
+const alternatePrefixHyperlinkLoaded = await PresentationFile.importPptx(new FileBlob(await alternatePrefixHyperlinkZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: hyperlinkPptx.type }));
+assert.equal(alternatePrefixHyperlinkLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Structured hyperlinks").text.paragraphs[0].runs[0].link.uri, "https://example.com/guide?x=1&y=2");
+assert.equal(alternatePrefixHyperlinkLoaded.layouts.getItem("Hyperlink Layout").placeholders[0].text[0].runs[0].link.slideId, alternatePrefixHyperlinkLoaded.slides.items[1].id);
 
 // Unsupported native drawing objects remain agent-visible and preserve their complete OPC relationship graph.
 const nativeObjectSource = Presentation.create();

@@ -1,5 +1,6 @@
 import { attributes, attrEscape, decodeXml } from "../ooxml/source-reference-xml.mjs";
 import { presentationColorXml } from "./ooxml-masters.mjs";
+import { normalizePresentationRunLink, parsePresentationRunLinkXml, presentationRunHyperlinkXml } from "./ooxml-hyperlinks.mjs";
 
 const EMU_PER_PIXEL = 9525;
 const HUNDREDTH_POINTS_PER_PIXEL = 75;
@@ -56,13 +57,13 @@ function normalizeRunStyle(style = {}) {
   };
 }
 
-function normalizeRun(value) {
+function normalizeRun(value, options = {}) {
   if (value == null) return { text: "", style: {} };
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return { text: String(value), style: {} };
   if (typeof value !== "object" || Array.isArray(value)) throw new TypeError("Presentation paragraph runs must be strings, numbers, booleans, or run objects.");
   const text = String(value.run ?? value.text ?? value.value ?? "");
-  if (value.link) throw new Error("Presentation structured-run links are not supported yet; use an unlinked run instead of silently losing the relationship.");
-  return { text, style: normalizeRunStyle(value.textStyle || value.style || {}) };
+  const link = normalizePresentationRunLink(value.link ?? value.hyperlink, { allowTargetPart: options.allowTargetPart === true });
+  return { text, style: normalizeRunStyle(value.textStyle || value.style || {}), ...(link ? { link } : {}) };
 }
 
 function paragraphInput(value) {
@@ -106,10 +107,10 @@ function normalizeBulletImage(value) {
   };
 }
 
-function normalizeParagraph(value, defaults = {}) {
+function normalizeParagraph(value, defaults = {}, options = {}) {
   const input = paragraphInput(value);
   const runsInput = input.runs ?? input.children ?? (input.text == null ? [] : [input.text]);
-  const runs = (Array.isArray(runsInput) ? runsInput : [runsInput]).map(normalizeRun);
+  const runs = (Array.isArray(runsInput) ? runsInput : [runsInput]).map((run) => normalizeRun(run, options));
   const level = normalizeLevel(input.level ?? input.depth ?? defaults.level ?? 0);
   const alignment = input.alignment || input.paragraphStyle?.alignment || defaults.alignment;
   if (alignment && !new Set(["left", "center", "right", "justify"]).has(alignment)) throw new RangeError("Presentation paragraph alignment must be left, center, right, or justify.");
@@ -204,7 +205,7 @@ export function presentationParagraphsText(paragraphs = []) {
 }
 
 export function presentationParagraphsNeedSerialization(paragraphs = []) {
-  return paragraphs.length > 1 || paragraphs.some((paragraph) => paragraph.level || paragraph.alignment || paragraph.bulletCharacter != null || paragraph.bulletImage || paragraph.autoNumber || paragraph.bulletNone || paragraph.bulletFont != null || paragraph.bulletColor != null || paragraph.bulletSize != null || paragraph.bulletSizePercent != null || paragraph.bulletFontFollowText || paragraph.bulletColorFollowText || paragraph.bulletSizeFollowText || paragraph.marginLeft != null || paragraph.indent != null || paragraph.spaceBefore != null || paragraph.spaceAfter != null || paragraph.spaceBeforePercent != null || paragraph.spaceAfterPercent != null || paragraph.lineSpacing != null || Object.keys(paragraph.style || {}).length || paragraph.runs.length !== 1 || paragraph.runs.some((run) => Object.keys(run.style || {}).length));
+  return paragraphs.length > 1 || paragraphs.some((paragraph) => paragraph.level || paragraph.alignment || paragraph.bulletCharacter != null || paragraph.bulletImage || paragraph.autoNumber || paragraph.bulletNone || paragraph.bulletFont != null || paragraph.bulletColor != null || paragraph.bulletSize != null || paragraph.bulletSizePercent != null || paragraph.bulletFontFollowText || paragraph.bulletColorFollowText || paragraph.bulletSizeFollowText || paragraph.marginLeft != null || paragraph.indent != null || paragraph.spaceBefore != null || paragraph.spaceAfter != null || paragraph.spaceBeforePercent != null || paragraph.spaceAfterPercent != null || paragraph.lineSpacing != null || Object.keys(paragraph.style || {}).length || paragraph.runs.length !== 1 || paragraph.runs.some((run) => run.link || Object.keys(run.style || {}).length));
 }
 
 export function inheritPresentationParagraphs(paragraphs = [], inheritedByLevel = {}) {
@@ -364,13 +365,14 @@ export function parsePresentationParagraphsXml(xml = "", options = {}) {
     const runs = [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:r|fld)\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?(?:r|fld)>/g)].map((match) => {
       const runXml = match[0];
       const text = decodeXml([...runXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => item[1]).join(""));
-      return { text, style: parseRunStyle(runXml) };
+      const link = parsePresentationRunLinkXml(runXml, options.relationshipContext);
+      return { text, style: parseRunStyle(runXml), ...(link ? { link } : {}) };
     });
     if (!runs.length) {
       const text = decodeXml([...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => item[1]).join(""));
       if (text) runs.push({ text, style: {} });
     }
-    return normalizeParagraph({ ...properties, runs });
+    return normalizeParagraph({ ...properties, runs }, {}, { allowTargetPart: true });
   });
 }
 
@@ -378,11 +380,11 @@ function colorXml(style) {
   return style.color ? presentationColorXml(style.color) : "";
 }
 
-function runPropertiesXml(style = {}, tag = "a:rPr") {
+function runPropertiesXml(style = {}, tag = "a:rPr", hyperlinkXml = "") {
   const attrs = `${style.fontSize ? ` sz="${Math.round(style.fontSize * HUNDREDTH_POINTS_PER_PIXEL)}"` : ""}${style.bold != null ? ` b="${style.bold ? 1 : 0}"` : ""}${style.italic != null ? ` i="${style.italic ? 1 : 0}"` : ""}${style.underline ? ` u="${attrEscape(style.underline)}"` : ""}`;
   const typeface = style.fontFamily ? attrEscape(style.fontFamily) : "";
   const scriptFonts = typeface ? `<a:latin typeface="${typeface}"/>${typeface.endsWith("-lt") ? `<a:ea typeface="${typeface.slice(0, -2)}ea"/><a:cs typeface="${typeface.slice(0, -2)}cs"/>` : ""}` : "";
-  return `<${tag} lang="en-US"${attrs}>${colorXml(style)}${scriptFonts}</${tag}>`;
+  return `<${tag} lang="en-US"${attrs}>${colorXml(style)}${scriptFonts}${hyperlinkXml}</${tag}>`;
 }
 
 function spacingXml(localName, value, percent = false) {
@@ -419,7 +421,9 @@ export function presentationParagraphsXml(paragraphs = [], defaultStyle = {}, op
     const runs = paragraph.runs.map((run) => {
       const style = { ...defaultStyle, ...(paragraph.style || {}), ...(run.style || {}) };
       const preserve = /^\s|\s$/.test(run.text) ? ' xml:space="preserve"' : "";
-      return `<a:r>${runPropertiesXml(style)}<a:t${preserve}>${xmlEscape(run.text)}</a:t></a:r>`;
+      const relationshipId = run.link ? options.hyperlinkRelationshipId?.(run.link) : undefined;
+      const hyperlinkXml = presentationRunHyperlinkXml(run.link, relationshipId);
+      return `<a:r>${runPropertiesXml(style, "a:rPr", hyperlinkXml)}<a:t${preserve}>${xmlEscape(run.text)}</a:t></a:r>`;
     }).join("");
     const endStyle = { ...defaultStyle, ...(paragraph.style || {}) };
     return `<a:p>${paragraphPropertiesXml(paragraph, options)}${runs}<a:endParaRPr lang="en-US"${endStyle.fontSize ? ` sz="${Math.round(endStyle.fontSize * HUNDREDTH_POINTS_PER_PIXEL)}"` : ""}/></a:p>`;
@@ -498,7 +502,8 @@ export function presentationParagraphsSvg(paragraphs, frame, defaultStyle = {}, 
     const runsXml = paragraph.runs.map((run) => {
       const style = { ...paragraphStyle, ...(run.style || {}) };
       const width = run.text.length * (style.fontSize || fontSize) * 0.55;
-      const result = `<text x="${x}" y="${y + fontSize}" font-family="${attrEscape(style.fontFamily || "Arial")}" font-size="${style.fontSize || fontSize}" font-weight="${style.bold ? 700 : 400}" font-style="${style.italic ? "italic" : "normal"}"${style.underline ? ' text-decoration="underline"' : ""} fill="${attrEscape(style.color || paragraphStyle.color || "#0f172a")}">${escape(run.text)}</text>`;
+      const hyperlink = run.link?.uri || run.link?.slideId;
+      const result = `<text x="${x}" y="${y + fontSize}" font-family="${attrEscape(style.fontFamily || "Arial")}" font-size="${style.fontSize || fontSize}" font-weight="${style.bold ? 700 : 400}" font-style="${style.italic ? "italic" : "normal"}"${style.underline || run.link ? ' text-decoration="underline"' : ""} fill="${attrEscape(style.color || (run.link ? "#2563eb" : paragraphStyle.color || "#0f172a"))}"${hyperlink ? ` data-hyperlink="${attrEscape(hyperlink)}"` : ""}>${escape(run.text)}</text>`;
       x += width;
       return result;
     }).join("");

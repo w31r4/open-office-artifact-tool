@@ -58,6 +58,7 @@ try {
   const fixtureSecondMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster2.xml").async("text");
   const fixtureMasterRelsXml = await fixtureZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
   const fixtureSecondSlideXml = await fixtureZip.file("ppt/slides/slide2.xml").async("text");
+  const fixtureSecondSlideRelsXml = await fixtureZip.file("ppt/slides/_rels/slide2.xml.rels").async("text");
   const fixtureThirdSlideXml = await fixtureZip.file("ppt/slides/slide3.xml").async("text");
   const fixturePresentationXml = await fixtureZip.file("ppt/presentation.xml").async("text");
   const fixtureChartXml = await fixtureZip.file("ppt/charts/chart1.xml").async("text");
@@ -73,6 +74,8 @@ try {
   assert.match(fixtureMasterXml, /<p:bodyStyle>[\s\S]*?<a:lvl3pPr[\s\S]*?<a:buBlip><a:blip r:embed="rId3"\/><\/a:buBlip>/);
   assert.match(fixtureMasterRelsXml, /Id="rId3" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="\.\.\/media\/image2\.png"/);
   assert.match(fixtureSecondSlideXml, /name="Inherited Package Evidence"[\s\S]*?<a:buBlip><a:blip r:embed="rId1"\/><\/a:buBlip>/);
+  assert.match(fixtureSecondSlideXml, /<a:hlinkClick r:id="rId\d+" tooltip="Open XML SDK guidance"\/>/);
+  assert.match(fixtureSecondSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/hyperlink" Target="https:\/\/learn\.microsoft\.com\/en-us\/office\/open-xml\/open-xml-sdk" TargetMode="External"/);
   assert.match(fixtureThirdSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="125000"\/><a:buFont typeface="Georgia"\/><a:buChar char="◆"\/>/);
   assert.match(fixtureMasterXml, /<p:cSld name="Agent Readiness Master"><p:bg><p:bgRef idx="1001">/);
   assert.match(fixtureMasterXml, /<p:ph type="title" idx="1"\/>/);
@@ -144,6 +147,9 @@ try {
   const fixtureInheritedPictureBullet = first.qa.presentation.slides.items[1].shapes.items.find((shape) => shape.name === "Inherited Package Evidence").text.effectiveParagraphs()[0].bulletImage;
   assert.match(fixtureInheritedPictureBullet.dataUrl, /^data:image\/png;base64,/);
   assert.equal(first.qa.presentation.master.textParagraphStyles.body[2].bulletImage.dataUrl, fixtureInheritedPictureBullet.dataUrl);
+  const fixtureHyperlinkShape = first.qa.presentation.slides.items[1].shapes.items.find((shape) => shape.name === "structure-lead");
+  assert.deepEqual(fixtureHyperlinkShape.text.paragraphs[0].runs[1].link, { uri: "https://learn.microsoft.com/en-us/office/open-xml/open-xml-sdk", tooltip: "Open XML SDK guidance" });
+  assert.match(fixtureHyperlinkShape.toSvg(), /data-hyperlink="https:\/\/learn\.microsoft\.com\/en-us\/office\/open-xml\/open-xml-sdk"/);
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);
