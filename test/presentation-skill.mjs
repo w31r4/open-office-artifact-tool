@@ -83,6 +83,7 @@ try {
   assert.match(fixtureChartXml, /<c:style val="10"\/>/);
   assert.match(fixtureChartXml, /<c:barChart><c:barDir val="col"\/><c:grouping val="clustered"\/>/);
   assert.match(fixtureChartXml, /<c:lineChart><c:grouping val="standard"\/>/);
+  assert.equal((fixtureChartXml.match(/<c:lineChart>/g) || []).length, 2);
   assert.match(fixtureChartXml, /<c:gapWidth val="80"\/>/);
   assert.match(fixtureChartXml, /<c:overlap val="0"\/>/);
   assert.equal((fixtureChartXml.match(/<c:catAx>/g) || []).length, 2);
@@ -102,25 +103,26 @@ try {
   const fixtureChart = first.qa.presentation.slides.items[2].charts.items[0];
   assert.equal(fixtureChart.styleId, 10);
   assert.equal(fixtureChart.chartType, "combo");
-  assert.deepEqual(fixtureChart.series.map((series) => series.chartType), ["bar", "line"]);
-  assert.deepEqual(fixtureChart.series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
+  assert.deepEqual(fixtureChart.series.map((series) => series.chartType), ["bar", "line", "line"]);
+  assert.deepEqual(fixtureChart.series.map((series) => series.axisGroup || "primary"), ["primary", "primary", "secondary"]);
   assert.equal(fixtureChart.axes.secondary.value.title, "Native records");
   assert.deepEqual(fixtureChart.barOptions, { direction: "column", grouping: "clustered", gapWidth: 80, overlap: 0 });
   assert.deepEqual(fixtureChart.lineOptions, { grouping: "standard", marker: { symbol: "diamond", size: 8 }, smooth: false });
   assert.deepEqual(fixtureChart.series.map((series) => series.dataLabels), [
     { showValue: true, showCategoryName: true, position: "inEnd" },
+    { showValue: false, showCategoryName: false, position: "bestFit" },
     { showValue: true, showCategoryName: false, position: "r" },
   ]);
-  assert.deepEqual(fixtureChart.series[1].trendlines, [{
+  assert.deepEqual(fixtureChart.series[2].trendlines, [{
     type: "linear",
     name: "Native evidence trend",
     displayEquation: false,
     displayRSquared: false,
     line: { fill: "#7C3AED", width: 1.5, style: "dashDot" },
   }]);
-  assert.deepEqual(fixtureChart.series[1].errorBars, { direction: "y", type: "both", valueType: "percentage", value: 10, noEndCap: false, line: { fill: "#DC2626", width: 1, style: "dot" } });
+  assert.deepEqual(fixtureChart.series[2].errorBars, { direction: "y", type: "both", valueType: "percentage", value: 10, noEndCap: false, line: { fill: "#DC2626", width: 1, style: "dot" } });
   assert.deepEqual(fixtureChart.series[0].line, { fill: "#0369A1", width: 1.5, style: "dash" });
-  assert.deepEqual(fixtureChart.series[1].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
+  assert.deepEqual(fixtureChart.series[2].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
   const fixturePictureBullet = first.qa.presentation.slides.items[2].shapes.items.find((shape) => shape.name === "package-callout").text.paragraphs[1].bulletImage;
   assert.match(fixturePictureBullet.dataUrl, /^data:image\/png;base64,/);
   const fixtureInheritedPictureBullet = first.qa.presentation.slides.items[1].shapes.items.find((shape) => shape.name === "Inherited Package Evidence").text.effectiveParagraphs()[0].bulletImage;

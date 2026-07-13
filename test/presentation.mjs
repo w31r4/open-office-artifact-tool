@@ -261,10 +261,11 @@ const lineChart = pieSlide.charts.add("line", {
   position: { left: 540, top: 120, width: 420, height: 240 },
   categories: ["Plan", "Build", "Verify"],
   styleId: 13,
+  axes: { value: { title: "Model quality" }, secondary: { value: { title: "Native quality" } } },
   lineOptions: { grouping: "stacked", smooth: true, marker: { symbol: "diamond", size: 9 } },
   series: [
     { name: "Model", values: [4, 7, 9], color: "#22c55e", line: { fill: "#15803d", width: 3, style: "dashDot" }, points: [{ idx: 1, fill: "#eab308" }] },
-    { name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false, errorBars: { valueType: "custom", plusValues: [0.5, 1, 1.5], minusValues: [0.25, 0.5, 0.75], noEndCap: true, line: { fill: "#ea580c", width: 1.5, style: "dash" } } },
+    { axisGroup: "secondary", name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false, errorBars: { valueType: "custom", plusValues: [0.5, 1, 1.5], minusValues: [0.25, 0.5, 0.75], noEndCap: true, line: { fill: "#ea580c", width: 1.5, style: "dash" } } },
   ],
 });
 const comboChart = pieSlide.charts.add("combo", {
@@ -301,11 +302,12 @@ assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], 
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ name: "Missing type", values: [1] }] }), /series chartType must be bar or line/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", name: "Only bars", values: [1] }] }), /requires at least one bar series and one line series/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", values: [1] }, { chartType: "line", axisGroup: "tertiary", values: [1] }] }), /axisGroup must be (?:one of: )?primary(?:,| or) secondary/);
-assert.throws(() => pieSlide.charts.add("line", { series: [{ secondaryAxis: true, values: [1] }] }), /supported only for combo charts/);
+assert.throws(() => pieSlide.charts.add("pie", { series: [{ secondaryAxis: true, values: [1] }] }), /supported only for bar and line series/);
 assert.throws(() => pieSlide.charts.add("combo", { axes: { secondary: { value: { title: "Right" } } }, series: [{ chartType: "bar", values: [1] }, { chartType: "line", values: [1] }] }), /secondary axes require at least one/);
-assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", values: [1] }, { chartType: "bar", axisGroup: "secondary", values: [2] }, { chartType: "line", values: [1] }] }), /bar series cannot be split/);
-assert.equal(pieSlide.charts.add("combo", { series: [{ chartType: "bar", values: [100] }, { chartType: "line", axis: "y2", values: [10] }] }).series[1].axisGroup, "secondary");
-assert.equal(pieSlide.charts.add("combo", { series: [{ chartType: "bar", values: [100] }, { chartType: "line", secondaryAxis: true, values: [10] }] }).series[1].axisGroup, "secondary");
+const axisContractSlide = Presentation.create().slides.add();
+assert.deepEqual(axisContractSlide.charts.add("combo", { series: [{ chartType: "bar", values: [1] }, { chartType: "bar", axisGroup: "secondary", values: [2] }, { chartType: "line", values: [1] }] }).series.map((series) => series.axisGroup || "primary"), ["primary", "secondary", "primary"]);
+assert.equal(axisContractSlide.charts.add("combo", { series: [{ chartType: "bar", values: [100] }, { chartType: "line", axis: "y2", values: [10] }] }).series[1].axisGroup, "secondary");
+assert.equal(axisContractSlide.charts.add("combo", { series: [{ chartType: "bar", values: [100] }, { chartType: "line", secondaryAxis: true, values: [10] }] }).series[1].axisGroup, "secondary");
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
 assert.match(presentation.inspect({ kind: "chart", target: pieChart.id, maxChars: 8000 }).ndjson, /Market Share/);
 slide.addNotes("Speaker note: call out pipeline risk.");
@@ -328,6 +330,8 @@ assert.equal(presentation.resolve(nativeChart.id).dataLabels.showValue, true);
 assert.equal(presentation.resolve(nativeChart.id).styleId, 10);
 assert.deepEqual(presentation.resolve(nativeChart.id).barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
 assert.deepEqual(presentation.resolve(lineChart.id).lineOptions, { grouping: "stacked", marker: { symbol: "diamond", size: 9 }, smooth: true });
+assert.deepEqual(presentation.resolve(lineChart.id).series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
+assert.equal(presentation.resolve(lineChart.id).axes.secondary.value.title, "Native quality");
 assert.deepEqual(presentation.resolve(comboChart.id).series.map((series) => series.chartType), ["bar", "line", "bar"]);
 assert.deepEqual(presentation.resolve(comboChart.id).series.map((series) => series.axisGroup || "primary"), ["primary", "secondary", "primary"]);
 assert.deepEqual(presentation.resolve(comboChart.id).axes.secondary, { category: { title: "" }, value: { title: "Margin %" } });
@@ -483,6 +487,37 @@ assert.equal(montage.metadata.format, "montage");
 assert.match(presentation.help("presentation.export").ndjson, /montage/);
 
 const pptx = await PresentationFile.exportPptx(presentation);
+const splitBarPresentation = Presentation.create({ master: { name: "Split Axis Master" } });
+const splitBarChart = splitBarPresentation.slides.add().charts.add("bar", {
+  name: "split-axis-bars",
+  title: "Primary and secondary bars",
+  categories: ["Plan", "Build", "Verify"],
+  axes: { value: { title: "Primary volume" }, secondary: { value: { title: "Secondary rate" } } },
+  series: [
+    { name: "Volume", values: [100, 150, 200], color: "#2563EB" },
+    { name: "Rate", axisGroup: "secondary", values: [1, 2, 3], color: "#DC2626" },
+  ],
+});
+const splitBarSvg = splitBarChart.toSvg();
+assert.match(splitBarSvg, />Primary volume<\/text>/);
+assert.match(splitBarSvg, />Secondary rate<\/text>/);
+const splitBarPptx = await PresentationFile.exportPptx(splitBarPresentation);
+assert.equal((await PresentationFile.inspectPptx(splitBarPptx)).ok, true);
+const splitBarZip = await JSZip.loadAsync(new Uint8Array(await splitBarPptx.arrayBuffer()));
+const splitBarXml = await splitBarZip.file("ppt/charts/chart1.xml").async("text");
+const splitBarPlotBlocks = [...splitBarXml.matchAll(/<c:barChart>[\s\S]*?<\/c:barChart>/g)].map((match) => match[0]);
+assert.equal(splitBarPlotBlocks.length, 2);
+assert.match(splitBarPlotBlocks[0], /<c:v>Volume<\/c:v>[\s\S]*?<c:axId val="1"\/><c:axId val="2"\/>/);
+assert.match(splitBarPlotBlocks[1], /<c:v>Rate<\/c:v>[\s\S]*?<c:axId val="3"\/><c:axId val="4"\/>/);
+assert.deepEqual([...splitBarXml.matchAll(/<c:order val="(\d+)"\/>/g)].map((match) => Number(match[1])), [0, 1]);
+const splitBarLoaded = await PresentationFile.importPptx(splitBarPptx);
+const splitBarLoadedChart = splitBarLoaded.slides.items[0].charts.items[0];
+assert.deepEqual(splitBarLoadedChart.series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
+assert.equal(splitBarLoadedChart.axes.secondary.value.title, "Secondary rate");
+const splitBarSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(splitBarLoaded)).arrayBuffer()));
+const splitBarSecondXml = await splitBarSecondZip.file("ppt/charts/chart1.xml").async("text");
+assert.equal((splitBarSecondXml.match(/<c:barChart>/g) || []).length, 2);
+assert.match(splitBarSecondXml, /<c:barChart>[\s\S]*?<c:v>Rate<\/c:v>[\s\S]*?<c:axId val="3"\/><c:axId val="4"\/><\/c:barChart>/);
 const packageInspect = await PresentationFile.inspectPptx(pptx, { includeText: true, maxChars: 16000 });
 assert.equal(packageInspect.records[0].kind, "pptxPackage");
 assert.equal(packageInspect.records[0].slides, 2);
@@ -709,6 +744,14 @@ assert.match(pieChartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbC
 const lineChartXml = await zip.file("ppt/charts/chart3.xml").async("text");
 assert.match(lineChartXml, /<c:style val="13"\/>/);
 assert.match(lineChartXml, /<c:lineChart><c:grouping val="stacked"\/>/);
+assert.equal((lineChartXml.match(/<c:lineChart>/g) || []).length, 2);
+assert.equal((lineChartXml.match(/<c:catAx>/g) || []).length, 2);
+assert.equal((lineChartXml.match(/<c:valAx>/g) || []).length, 2);
+assert.deepEqual([...lineChartXml.matchAll(/<c:order val="(\d+)"\/>/g)].map((match) => Number(match[1])), [0, 1]);
+const linePlotBlocks = [...lineChartXml.matchAll(/<c:lineChart>[\s\S]*?<\/c:lineChart>/g)].map((match) => match[0]);
+assert.match(linePlotBlocks[0], /<c:v>Model<\/c:v>[\s\S]*?<c:axId val="1"\/><c:axId val="2"\/>/);
+assert.match(linePlotBlocks[1], /<c:v>Native<\/c:v>[\s\S]*?<c:axId val="3"\/><c:axId val="4"\/>/);
+assert.match(lineChartXml, /<c:valAx><c:axId val="4"\/>[\s\S]*?<a:t>Native quality<\/a:t>/);
 assert.match(lineChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="9"\/><\/c:marker>/);
 assert.match(lineChartXml, /<c:marker><c:symbol val="triangle"\/><c:size val="8"\/><\/c:marker>/);
 assert.equal((lineChartXml.match(/<c:smooth val="1"\/>/g) || []).length, 1);
@@ -806,6 +849,8 @@ assert.equal(loadedBarChart.series[1].color, "accent1");
 const loadedLineChart = loaded.slides.items[1].charts.items.find((chart) => chart.name === "trend-line");
 assert.equal(loadedLineChart.styleId, 13);
 assert.equal(loadedLineChart.lineOptions.grouping, "stacked");
+assert.deepEqual(loadedLineChart.series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
+assert.equal(loadedLineChart.axes.secondary.value.title, "Native quality");
 assert.deepEqual(loadedLineChart.series.map((series) => series.marker), [{ symbol: "diamond", size: 9 }, { symbol: "triangle", size: 8 }]);
 assert.deepEqual(loadedLineChart.series.map((series) => series.smooth), [true, false]);
 assert.deepEqual(loadedLineChart.series[0].line, { fill: "#15803D", width: 3, style: "dashDot" });
@@ -854,11 +899,17 @@ const alternateChartPrefixLoaded = await PresentationFile.importPptx(alternateCh
 const alternateLineChart = alternateChartPrefixLoaded.slides.items[1].charts.items.find((chart) => chart.name === "trend-line");
 assert.equal(alternateLineChart.styleId, 13);
 assert.equal(alternateLineChart.title, "Quality Trend");
+assert.deepEqual(alternateLineChart.series.map((series) => series.axisGroup || "primary"), ["primary", "secondary"]);
+assert.equal(alternateLineChart.axes.secondary.value.title, "Native quality");
 assert.deepEqual(alternateLineChart.series[0].marker, { symbol: "diamond", size: 9 });
 assert.deepEqual(alternateLineChart.series[1].errorBars.plusValues, [0.5, 1, 1.5]);
+assert.equal(alternateLineChart.series[1].axisGroup, "secondary");
+assert.equal(alternateLineChart.axes.secondary.value.title, "Native quality");
 const alternateChartSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(alternateChartPrefixLoaded)).arrayBuffer()));
 const alternateChartSecondXml = await alternateChartSecondZip.file("ppt/charts/chart3.xml").async("text");
 assert.match(alternateChartSecondXml, /<c:style val="13"\/>/);
+assert.equal((alternateChartSecondXml.match(/<c:lineChart>/g) || []).length, 2);
+assert.match(alternateChartSecondXml, /<c:lineChart>[\s\S]*?<c:v>Native<\/c:v>[\s\S]*?<c:axId val="3"\/><c:axId val="4"\/><\/c:lineChart>/);
 assert.match(alternateChartSecondXml, /<a:prstDash val="dashDot"\/>/);
 assert.match(alternateChartSecondXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="EAB308"\/>/);
 assert.match(alternateChartSecondXml, /<c:errValType val="cust"\/>[\s\S]*?<c:plus>[\s\S]*?<c:minus>/);

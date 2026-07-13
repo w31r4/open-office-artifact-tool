@@ -1045,7 +1045,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or primary/secondary-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets." },
@@ -1937,12 +1937,12 @@ const PRESENTATION_HELP_SCHEMAS = {
     style: { type: "object", description: "Table/cell fill, margins, borders, and text style." },
   }, "table", "TableElement", "Appended editable table facade."),
   "slide.charts.add": helpSchema({
-    chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line and may bind one plot type to the secondary axes." },
+    chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line, while bar/line series may bind to primary or secondary axes." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line, and one whole plot type may use axisGroup secondary." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
-    axes: { type: "object", description: "Primary category/value axis titles plus optional secondary.category/secondary.value titles when one combo plot type uses axisGroup secondary." },
+    axes: { type: "object", description: "Primary category/value axis titles plus optional secondary.category/secondary.value titles when any bar or line series uses axisGroup secondary." },
     legend: { type: "object", description: "Legend options." },
     dataLabels: { type: "boolean|object", description: "Chart-level showValue/showCategoryName and position options. Positions accept bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, top, or their OOXML short names; each series may override or disable them." },
     styleId: { type: "number", description: "Standard DrawingML chart style ID from 1 through 48." },
@@ -8084,7 +8084,6 @@ function normalizeChartSeries(seriesItems = [], chartType = "bar") {
     if (chartType === "combo" && !new Set(["bar", "line"]).has(seriesChartType)) throw new TypeError("Presentation combo chart series chartType must be bar or line.");
     const rawAxisGroup = series.axisGroup ?? series.axis ?? (series.secondaryAxis === true ? "secondary" : "primary");
     const axisGroup = normalizePresentationChartAxisGroup(rawAxisGroup === "y2" ? "secondary" : rawAxisGroup === "y1" ? "primary" : String(rawAxisGroup).toLowerCase(), seriesChartType || chartType);
-    if (axisGroup === "secondary" && chartType !== "combo") throw new TypeError("Presentation secondary-axis series are supported only for combo charts.");
     return {
       name: series.name || `Series ${index + 1}`,
       values,
@@ -8235,14 +8234,8 @@ export class ChartElement {
     if (this.chartType === "combo" && (!this.series.some((series) => series.chartType === "bar") || !this.series.some((series) => series.chartType === "line"))) throw new TypeError("Presentation combo chart requires at least one bar series and one line series.");
     const hasSecondary = this.series.some((series) => series.axisGroup === "secondary");
     const hasConfiguredSecondaryAxes = Boolean(config.axes?.secondary || config.axes?.secondaryCategory || config.axes?.secondaryValue || config.axes?.y2 || config.secondaryAxisTitles || config.secondaryCategoryAxisTitle || config.secondaryValueAxisTitle || config.secondaryXAxisTitle || config.secondaryYAxisTitle);
-    if (hasConfiguredSecondaryAxes && !hasSecondary) throw new TypeError("Presentation secondary axes require at least one combo-chart series with axisGroup secondary.");
-    if (hasSecondary && !this.series.some((series) => series.axisGroup !== "secondary")) throw new TypeError("Presentation secondary-axis combo charts require at least one primary-axis series.");
-    if (hasSecondary) {
-      for (const seriesType of ["bar", "line"]) {
-        const groups = new Set(this.series.filter((series) => series.chartType === seriesType).map((series) => series.axisGroup || "primary"));
-        if (groups.size > 1) throw new TypeError(`Presentation combo ${seriesType} series cannot be split across primary and secondary axes.`);
-      }
-    }
+    if (hasConfiguredSecondaryAxes && !hasSecondary) throw new TypeError("Presentation secondary axes require at least one chart series with axisGroup secondary.");
+    if (hasSecondary && !this.series.some((series) => series.axisGroup !== "secondary")) throw new TypeError("Presentation secondary-axis charts require at least one primary-axis series.");
     this.axes = normalizeChartAxes(config, hasSecondary);
     this.legend = normalizeChartLegend(config, this.series.length);
     this.hasLegend = this.legend.visible;
@@ -8264,17 +8257,27 @@ export class ChartElement {
     const lineSeries = this.chartType === "combo" ? this.series.filter((series) => series.chartType === "line") : this.chartType === "line" ? this.series : [];
     const stackedBars = barSeries.length > 0 && this.barOptions.grouping !== "clustered";
     const stackedLines = lineSeries.length > 0 && this.lineOptions.grouping !== "standard";
-    const barStackedMax = categories.map((_, categoryIndex) => barSeries.reduce((sum, series) => sum + Math.max(0, Number(series.values?.[categoryIndex]) || 0), 0));
-    const lineStackedMax = categories.map((_, categoryIndex) => lineSeries.reduce((sum, series) => sum + Math.max(0, Number(series.values?.[categoryIndex]) || 0), 0));
+    const forAxisGroup = (series, axisGroup) => series.filter((item) => (item.axisGroup || "primary") === axisGroup);
+    const stackedTotals = (series) => categories.map((_, categoryIndex) => series.reduce((sum, item) => sum + Math.max(0, Number(item.values?.[categoryIndex]) || 0), 0));
+    const barByAxis = { primary: forAxisGroup(barSeries, "primary"), secondary: forAxisGroup(barSeries, "secondary") };
+    const lineByAxis = { primary: forAxisGroup(lineSeries, "primary"), secondary: forAxisGroup(lineSeries, "secondary") };
+    const barStackedMax = { primary: stackedTotals(barByAxis.primary), secondary: stackedTotals(barByAxis.secondary) };
+    const lineStackedMax = { primary: stackedTotals(lineByAxis.primary), secondary: stackedTotals(lineByAxis.secondary) };
     const groupMax = (series, stacked, stackedValues, percentStacked) => percentStacked
       ? 1
       : Math.max(0, ...(stacked ? stackedValues : series.flatMap((item) => item.values || []).map((value) => Math.max(0, Number(value) || 0))));
-    const barMax = groupMax(barSeries, stackedBars, barStackedMax, this.barOptions?.grouping === "percentStacked");
-    const lineMax = groupMax(lineSeries, stackedLines, lineStackedMax, this.lineOptions?.grouping === "percentStacked");
+    const barMax = {
+      primary: groupMax(barByAxis.primary, stackedBars, barStackedMax.primary, this.barOptions?.grouping === "percentStacked"),
+      secondary: groupMax(barByAxis.secondary, stackedBars, barStackedMax.secondary, this.barOptions?.grouping === "percentStacked"),
+    };
+    const lineMax = {
+      primary: groupMax(lineByAxis.primary, stackedLines, lineStackedMax.primary, this.lineOptions?.grouping === "percentStacked"),
+      secondary: groupMax(lineByAxis.secondary, stackedLines, lineStackedMax.secondary, this.lineOptions?.grouping === "percentStacked"),
+    };
     const maxForAxisGroup = (axisGroup) => Math.max(
       1,
-      barSeries.some((series) => (series.axisGroup || "primary") === axisGroup) ? barMax : 0,
-      lineSeries.some((series) => (series.axisGroup || "primary") === axisGroup) ? lineMax : 0,
+      barMax[axisGroup],
+      lineMax[axisGroup],
     );
     const primaryMax = maxForAxisGroup("primary");
     const secondaryMax = maxForAxisGroup("secondary");
@@ -8306,10 +8309,11 @@ export class ChartElement {
       return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${slices}${this.legend.visible ? categoryLegend : ""}`;
     }
     const lineBody = lineSeries.map((series, seriesIndex) => {
-        const seriesMax = series.axisGroup === "secondary" ? secondaryMax : primaryMax;
+        const axisGroup = series.axisGroup || "primary";
+        const seriesMax = axisGroup === "secondary" ? secondaryMax : primaryMax;
         const points = (series.values || []).map((value, index) => {
-          const stackedValue = stackedLines ? lineSeries.slice(0, seriesIndex + 1).reduce((sum, item) => sum + Math.max(0, Number(item.values?.[index]) || 0), 0) : Number(value) || 0;
-          const plottedValue = this.lineOptions.grouping === "percentStacked" ? stackedValue / (lineStackedMax[index] || 1) : stackedValue;
+          const stackedValue = stackedLines ? lineSeries.slice(0, seriesIndex + 1).filter((item) => (item.axisGroup || "primary") === axisGroup).reduce((sum, item) => sum + Math.max(0, Number(item.values?.[index]) || 0), 0) : Number(value) || 0;
+          const plottedValue = this.lineOptions.grouping === "percentStacked" ? stackedValue / (lineStackedMax[axisGroup][index] || 1) : stackedValue;
           const x = plot.left + (categories.length <= 1 ? plot.width / 2 : (index / Math.max(1, categories.length - 1)) * plot.width);
           const y = plot.top + plot.height - (plottedValue / seriesMax) * plot.height;
           return { x, y, index };
@@ -8333,14 +8337,15 @@ export class ChartElement {
       const groupExtent = categories.length ? (horizontal ? plot.height : plot.width) / categories.length : 0;
       const gapRatio = Math.max(0.12, 100 / (100 + this.barOptions.gapWidth));
       const barExtent = stackedBars ? groupExtent * gapRatio : groupExtent * gapRatio / Math.max(1, barSeries.length);
-      const offsets = categories.map(() => 0);
+      const offsets = { primary: categories.map(() => 0), secondary: categories.map(() => 0) };
       return barSeries.flatMap((series, seriesIndex) => (series.values || []).map((rawValue, categoryIndex) => {
-        const seriesMax = series.axisGroup === "secondary" ? secondaryMax : primaryMax;
-        const total = barStackedMax[categoryIndex] || 1;
+        const axisGroup = series.axisGroup || "primary";
+        const seriesMax = axisGroup === "secondary" ? secondaryMax : primaryMax;
+        const total = barStackedMax[axisGroup][categoryIndex] || 1;
         const value = Math.max(0, Number(rawValue) || 0);
         const ratio = this.barOptions.grouping === "percentStacked" ? value / total : value / seriesMax;
-        const offset = offsets[categoryIndex];
-        offsets[categoryIndex] += ratio;
+        const offset = offsets[axisGroup][categoryIndex];
+        offsets[axisGroup][categoryIndex] += ratio;
         const point = series.points?.find((item) => item.idx === categoryIndex);
         const color = xmlEscape(resolveColorToken(point?.fill || series.color, series.color));
         const stroke = presentationChartLineSvgAttributes(point?.line || series.line);

@@ -989,7 +989,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
-| `slide.charts.add` | api | Add an inspectable bar/line/pie or primary/secondary-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output. |
+| `slide.charts.add` | api | Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output. |
 | `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
@@ -1382,16 +1382,16 @@ Place existing shapes inside a frame using horizontal or vertical flow, gap, pad
 
 #### `slide.charts.add`
 
-Add an inspectable bar/line/pie or primary/secondary-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output.
+Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output.
 
 **Schema parameters:**
 
-- `chartType` (string) — bar, line, pie, or combo; combo series each require chartType bar or line and may bind one plot type to the secondary axes.
+- `chartType` (string) — bar, line, pie, or combo; combo series each require chartType bar or line, while bar/line series may bind to primary or secondary axes.
 - `title` (string) — Chart title.
 - `categories` (string[]) required — Category labels.
-- `series` (object[]) required — Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line, and one whole plot type may use axisGroup secondary.
+- `series` (object[]) required — Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups.
 - `position` (object) — Pixel left/top/width/height frame.
-- `axes` (object) — Primary category/value axis titles plus optional secondary.category/secondary.value titles when one combo plot type uses axisGroup secondary.
+- `axes` (object) — Primary category/value axis titles plus optional secondary.category/secondary.value titles when any bar or line series uses axisGroup secondary.
 - `legend` (object) — Legend options.
 - `dataLabels` (boolean|object) — Chart-level showValue/showCategoryName and position options. Positions accept bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, top, or their OOXML short names; each series may override or disable them.
 - `styleId` (number) — Standard DrawingML chart style ID from 1 through 48.

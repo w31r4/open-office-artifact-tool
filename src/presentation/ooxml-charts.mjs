@@ -369,15 +369,21 @@ export function presentationChartXml(chart) {
     if (plotType === "line") return `<c:lineChart><c:grouping val="${style.lineOptions.grouping}"/>${varyColorsXml}${content}${dataLabelsXml}<c:axId val="${categoryAxisId}"/><c:axId val="${valueAxisId}"/></c:lineChart>`;
     return `<c:barChart><c:barDir val="${style.barOptions.direction === "bar" ? "bar" : "col"}"/><c:grouping val="${style.barOptions.grouping}"/>${varyColorsXml}${content}${dataLabelsXml}<c:gapWidth val="${style.barOptions.gapWidth}"/><c:overlap val="${style.barOptions.overlap}"/><c:axId val="${categoryAxisId}"/><c:axId val="${valueAxisId}"/></c:barChart>`;
   };
+  const plotsForType = (plotType, entries) => ["primary", "secondary"]
+    .map((axisGroup) => entries.filter(({ series }) => (series.axisGroup || "primary") === axisGroup))
+    .filter((groupEntries) => groupEntries.length > 0)
+    .map((groupEntries) => plotForType(plotType, groupEntries))
+    .join("");
   let plotXml;
   if (type === "pie") {
     plotXml = `<c:pieChart>${varyColorsXml}${chartSeries.map((series, index) => seriesXml(series, index, "pie")).join("")}${dataLabelsXml}</c:pieChart>`;
   } else if (type === "combo") {
     const entries = chartSeries.map((series, index) => ({ series, index }));
     const hasSecondary = chartSeries.some((series) => series.axisGroup === "secondary");
-    plotXml = `${plotForType("bar", entries.filter(({ series }) => series.chartType === "bar"))}${plotForType("line", entries.filter(({ series }) => series.chartType === "line"))}${primaryAxisXml}${hasSecondary ? secondaryAxisXml : ""}`;
+    plotXml = `${plotsForType("bar", entries.filter(({ series }) => series.chartType === "bar"))}${plotsForType("line", entries.filter(({ series }) => series.chartType === "line"))}${primaryAxisXml}${hasSecondary ? secondaryAxisXml : ""}`;
   } else {
-    plotXml = `${plotForType(type, chartSeries.map((series, index) => ({ series, index })))}${primaryAxisXml}`;
+    const hasSecondary = chartSeries.some((series) => series.axisGroup === "secondary");
+    plotXml = `${plotsForType(type, chartSeries.map((series, index) => ({ series, index })))}${primaryAxisXml}${hasSecondary ? secondaryAxisXml : ""}`;
   }
   const styleXml = style.styleId ? `<c:style val="${style.styleId}"/>` : "";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${styleXml}<c:chart>${chartTextTitleXml(chart.title || chart.chartType)}<c:plotArea><c:layout/>${plotXml}</c:plotArea>${legendXml}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
@@ -517,8 +523,10 @@ export function parsePresentationChartXml(xml = "") {
   const hasBar = new RegExp(`<${localTag("barChart")}\\b`, "i").test(text);
   const chartType = hasBar && hasLine ? "combo" : hasPie ? "pie" : hasLine ? "line" : "bar";
   const chartBlock = chartType === "combo" ? "" : tagBlock(text, `${chartType}Chart`);
-  const barBlock = hasBar ? tagBlock(text, "barChart") : "";
-  const lineBlock = hasLine ? tagBlock(text, "lineChart") : "";
+  const barBlocks = hasBar ? tagBlocks(text, "barChart") : [];
+  const lineBlocks = hasLine ? tagBlocks(text, "lineChart") : [];
+  const barBlock = barBlocks[0] || "";
+  const lineBlock = lineBlocks[0] || "";
   const withoutSeries = (block) => String(block || "").replace(new RegExp(`<${localTag("ser")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ser")}>`, "gi"), "");
   const axisRecords = [
     ...tagBlocks(text, "catAx").map((block) => ({ kind: "category", id: tagValue(block, "axId"), position: tagValue(block, "axPos"), block })),
@@ -529,12 +537,19 @@ export function parsePresentationChartXml(xml = "") {
     const axes = tagValues(withoutSeries(block), "axId").map((id) => axisById.get(id)).filter(Boolean);
     return axes.some((axis) => axis.position === "r" || axis.position === "t") ? "secondary" : "primary";
   };
+  const plotBlocks = chartType === "combo" ? [...barBlocks, ...lineBlocks] : chartType === "bar" ? barBlocks : chartType === "line" ? lineBlocks : [chartBlock];
   const series = (chartType === "combo"
-    ? [...parseSeries(barBlock, "bar", blockAxisGroup(barBlock)), ...parseSeries(lineBlock, "line", blockAxisGroup(lineBlock))].sort((left, right) => left.order - right.order)
-    : parseSeries(chartBlock)).map(({ order: _order, ...item }) => item);
+    ? [
+        ...barBlocks.flatMap((block) => parseSeries(block, "bar", blockAxisGroup(block))),
+        ...lineBlocks.flatMap((block) => parseSeries(block, "line", blockAxisGroup(block))),
+      ].sort((left, right) => left.order - right.order)
+    : chartType === "pie"
+      ? parseSeries(chartBlock)
+      : plotBlocks.flatMap((block) => parseSeries(block, undefined, blockAxisGroup(block))).sort((left, right) => left.order - right.order)
+  ).map(({ order: _order, ...item }) => item);
   const legendBlock = tagBlock(text, "legend");
   const hasLegend = new RegExp(`<${localTag("legend")}\\b`, "i").test(text);
-  const labelsBlock = tagBlock(withoutSeries(chartBlock || barBlock), "dLbls") || tagBlock(withoutSeries(lineBlock), "dLbls");
+  const labelsBlock = plotBlocks.map((block) => tagBlock(withoutSeries(block), "dLbls")).find(Boolean) || "";
   const styleId = tagValue(text.slice(0, text.search(new RegExp(`<${localTag("chart")}\\b`, "i"))), "style");
   const parsed = {
     chartType,
