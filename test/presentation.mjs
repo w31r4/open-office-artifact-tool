@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { box, column, FileBlob, paragraph, Presentation, PresentationFile, row, run, rule, shape as composeShape, SpreadsheetFile, Workbook } from "../src/index.mjs";
+import { samplePresentationChartTrendline } from "../src/presentation/chart-trendline-svg.mjs";
 
 const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const aliasedThemePresentation = Presentation.create({ theme: { colors: { dk1: "#112233", lt1: "#fefefe" } } });
@@ -389,6 +390,27 @@ assert.match(trendlineCatalogSvg, /data-trendline-type="movingAvg" points="138,1
 assert.match(trendlineCatalogSvg, /data-trendline-type="poly" points="42,162\.75 [^"]+ 330,42"/);
 assert.doesNotMatch(Presentation.create().slides.add().charts.add("line", { categories: ["A", "B", "C"], series: [{ values: [0, -1, 2], trendlines: [{ type: "exponential" }, { type: "power" }] }] }).toSvg(), /data-trendline-type/);
 assert.match(Presentation.create().slides.add().charts.add("bar", { categories: ["A", "B", "C"], barOptions: { direction: "bar" }, series: [{ values: [1, 2, 4], trendline: { type: "exponential" } }] }).toSvg(), /data-trendline-type="exp" points="114,65 [^"]+ 330,157"/);
+const closeTo = (actual, expected, epsilon = 1e-8) => assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} is not within ${epsilon} of ${expected}`);
+const sampledEndpoints = (values, trendline) => {
+  const segment = samplePresentationChartTrendline(values, trendline, { sampleCount: 2 })[0];
+  assert.ok(segment);
+  return [segment.points[0], segment.points.at(-1)];
+};
+for (const [actual, expected] of [
+  [sampledEndpoints([3, 5, 7], { type: "linear", intercept: 1 }), [{ x: 1, y: 3 }, { x: 3, y: 7 }]],
+  [sampledEndpoints([2 * Math.exp(0.5), 2 * Math.exp(1), 2 * Math.exp(1.5)], { type: "exp", intercept: 2 }), [{ x: 1, y: 2 * Math.exp(0.5) }, { x: 3, y: 2 * Math.exp(1.5) }]],
+  [sampledEndpoints([3, 3 + 2 * Math.log(2), 3 + 2 * Math.log(3)], { type: "log", intercept: 3 }), [{ x: 1, y: 3 }, { x: 3, y: 3 + 2 * Math.log(3) }]],
+  [sampledEndpoints([4, 9, 16], { type: "poly", order: 2, intercept: 1 }), [{ x: 1, y: 4 }, { x: 3, y: 16 }]],
+  [sampledEndpoints([3, 12, 27], { type: "power", intercept: 3 }), [{ x: 1, y: 3 }, { x: 3, y: 27 }]],
+]) {
+  for (let index = 0; index < expected.length; index++) {
+    closeTo(actual[index].x, expected[index].x);
+    closeTo(actual[index].y, expected[index].y);
+  }
+}
+assert.deepEqual(samplePresentationChartTrendline([1, 2, 4, 8], { type: "movingAvg", period: 2 })[0].points, [{ x: 2, y: 1.5 }, { x: 3, y: 3 }, { x: 4, y: 6 }]);
+assert.deepEqual(samplePresentationChartTrendline([1, 2, 3], { type: "linear", backward: 0.5, forward: 0.5 }, { sampleCount: 2 })[0].domain, { start: 0.5, end: 3.5 });
+assert.deepEqual(samplePresentationChartTrendline([0, 1, 2], { type: "exp" }), []);
 const errorBarCatalog = Presentation.create().slides.add().charts.add("line", {
   categories: ["A", "B", "C"],
   series: [
