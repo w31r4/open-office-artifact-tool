@@ -1804,6 +1804,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.COUNTIF` | formula | Count values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcard semantics. |
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges of the same size match case-insensitive comparison or wildcard criteria. |
 | `fx.DATE` | formula | Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility. |
+| `fx.DATEVALUE` | formula | Convert deterministic ISO or English month-name date text to a serial in the workbook's 1900 or 1904 date system; ambiguous locale-numeric dates return #VALUE!. |
 | `fx.DAY` | formula | Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60. |
 | `fx.DAYS` | formula | Return the whole-day difference between two Excel date serials. |
 | `fx.DROP` | formula | Drop rows and optional columns from the start or end of an array and spill the remainder. |
@@ -1813,6 +1814,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
+| `fx.HOUR` | formula | Return the 0 through 23 hour component from a nonnegative serial or supported time text. |
 | `fx.HSTACK` | formula | Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
 | `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
@@ -1834,6 +1836,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.MEDIAN` | formula | Return the middle numeric value, or the average of the two middle values, across arguments and ranges. |
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
+| `fx.MINUTE` | formula | Return the 0 through 59 minute component from a nonnegative serial or supported time text. |
 | `fx.MODE.SNGL` | formula | Return the most frequently occurring numeric value, or #N/A when no value repeats. |
 | `fx.MONTH` | formula | Return the month component of a serial in the workbook's 1900 or 1904 date system. |
 | `fx.NA` | formula | Return the #N/A error value to mark unavailable data explicitly. |
@@ -1847,6 +1850,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.ROUND` | formula | Round a numeric value to decimal places or, with negative digits, positions left of the decimal point. |
 | `fx.ROUNDDOWN` | formula | Round a numeric value toward zero at the requested positive or negative digit position. |
 | `fx.ROUNDUP` | formula | Round a numeric value away from zero at the requested positive or negative digit position. |
+| `fx.SECOND` | formula | Return the 0 through 59 second component from a nonnegative serial or supported time text. |
 | `fx.SEQUENCE` | formula | Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine. |
 | `fx.SMALL` | formula | Return the k-th smallest numeric value in an array or range. |
 | `fx.SORT` | formula | Sort a range by a 1-based column index and spill the sorted rows. |
@@ -1856,12 +1860,15 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
 | `fx.TAKE` | formula | Take rows and optional columns from the start or end of an array and spill the result. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
+| `fx.TIME` | formula | Return a time fraction from hour, minute, and second values from 0 through 32767, carrying overflow and wrapping at 24 hours. |
+| `fx.TIMEVALUE` | formula | Convert deterministic 12-hour or 24-hour time text, optionally following date text, to a fraction of one day. |
 | `fx.TOCOL` | formula | Flatten an array into one spilled column, optionally ignoring blanks or errors and scanning by column. |
 | `fx.TOROW` | formula | Flatten an array into one spilled row, optionally ignoring blanks or errors and scanning by column. |
 | `fx.TRANSPOSE` | formula | Transpose a source range into a spilled dynamic array with spillRange/spillValues inspect metadata. |
 | `fx.TRIM` | formula | Trim leading/trailing whitespace and collapse internal whitespace. |
 | `fx.UNIQUE` | formula | Return unique rows from a range as a spilled dynamic array. |
 | `fx.UPPER` | formula | Convert text to uppercase. |
+| `fx.VALUE` | formula | Convert deterministic ASCII numeric text with optional grouping, scientific notation, accounting parentheses, or percent suffix to a number. |
 | `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
 | `fx.VSTACK` | formula | Append arrays vertically, padding narrower arrays with #N/A to the maximum column count. |
 | `fx.WEEKDAY` | formula | Return a weekday number for Excel return types 1, 2, 3, and 11 through 17. |
@@ -2142,6 +2149,23 @@ Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.DATEVALUE`
+
+Convert deterministic ISO or English month-name date text to a serial in the workbook's 1900 or 1904 date system; ambiguous locale-numeric dates return #VALUE!.
+
+**Examples:**
+
+- =DATEVALUE("2026-07-13")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DATEVALUE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.DAY`
 
 Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60.
@@ -2294,6 +2318,23 @@ Look up a value in the first row of a table range and return a value from anothe
 **Schema returns:**
 
 - `value` (unknown) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.HOUR`
+
+Return the 0 through 23 hour component from a nonnegative serial or supported time text.
+
+**Examples:**
+
+- =HOUR(TIMEVALUE("6:45 PM"))
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =HOUR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.HSTACK`
 
@@ -2652,6 +2693,23 @@ Return the minimum numeric value across arguments and ranges.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.MINUTE`
+
+Return the 0 through 59 minute component from a nonnegative serial or supported time text.
+
+**Examples:**
+
+- =MINUTE(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MINUTE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.MODE.SNGL`
 
 Return the most frequently occurring numeric value, or #N/A when no value repeats.
@@ -2878,6 +2936,23 @@ Round a numeric value away from zero at the requested positive or negative digit
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.SECOND`
+
+Return the 0 through 59 second component from a nonnegative serial or supported time text.
+
+**Examples:**
+
+- =SECOND(A1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SECOND(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.SEQUENCE`
 
 Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine.
@@ -3031,6 +3106,40 @@ Join text values with a delimiter and optional empty-value skipping.
 
 - `value` (string) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.TIME`
+
+Return a time fraction from hour, minute, and second values from 0 through 32767, carrying overflow and wrapping at 24 hours.
+
+**Examples:**
+
+- =TIME(16,48,10)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TIME(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.TIMEVALUE`
+
+Convert deterministic 12-hour or 24-hour time text, optionally following date text, to a fraction of one day.
+
+**Examples:**
+
+- =TIMEVALUE("6:45 PM")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =TIMEVALUE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.TOCOL`
 
 Flatten an array into one spilled column, optionally ignoring blanks or errors and scanning by column.
@@ -3132,6 +3241,23 @@ Convert text to uppercase.
 **Schema returns:**
 
 - `value` (string) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.VALUE`
+
+Convert deterministic ASCII numeric text with optional grouping, scientific notation, accounting parentheses, or percent suffix to a number.
+
+**Examples:**
+
+- =VALUE("1,234.50")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =VALUE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.VLOOKUP`
 

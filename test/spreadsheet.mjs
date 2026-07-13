@@ -1000,13 +1000,60 @@ assert.match(dateBook.help("fx.NETWORKDAYS").ndjson, /optional holidays/);
 const dateRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(dateBook));
 assert.deepEqual(dateRoundtrip.worksheets.getItem("Dates").getRange("B1:B32").values, dateSheet.getRange("B1:B32").values);
 
+const dateTimeTextBook = Workbook.create();
+const dateTimeTextSheet = dateTimeTextBook.worksheets.add("DateTimeText");
+dateTimeTextSheet.getRange("A1:A3").values = [["2024-02-29"], ["6:45 PM"], ["1,234.50"]];
+dateTimeTextSheet.getRange("B1:B32").formulas = [
+  ["=DATEVALUE(A1)"],
+  ["=DATEVALUE(\"29-Feb-2024\")"],
+  ["=DATEVALUE(\"February 29, 2024 6:45 PM\")"],
+  ["=DATEVALUE(\"2024-02-30\")"],
+  ["=DATEVALUE(\"2/29/2024\")"],
+  ["=DATEVALUE(\"1900-02-29\")"],
+  ["=TIME(27,0,0)"],
+  ["=TIME(0,750,0)"],
+  ["=TIME(0,0,2000)"],
+  ["=TIME(-1,0,0)"],
+  ["=TIME(32768,0,0)"],
+  ["=TIMEVALUE(A2)"],
+  ["=TIMEVALUE(\"22-Aug-2008 6:35 AM\")"],
+  ["=TIMEVALUE(\"25:00\")"],
+  ["=HOUR(0.78125)"],
+  ["=MINUTE(\"12:45:18 PM\")"],
+  ["=SECOND(\"12:45:18 PM\")"],
+  ["=HOUR(DATEVALUE(\"2024-01-01\"))"],
+  ["=VALUE(A3)"],
+  ["=VALUE(\"(1,234.50)\")"],
+  ["=VALUE(\"12.5%\")"],
+  ["=VALUE(\"1.25E3\")"],
+  ["=VALUE(\"not-a-number\")"],
+  ["=VALUE(42)"],
+  ["=TIME(1,2)"],
+  ["=DATEVALUE(45351)"],
+  ["=TIMEVALUE(0.5)"],
+  ["=HOUR(-0.25)"],
+  ["=TIMEVALUE(\"2024-02-30 6:45 PM\")"],
+  ["=HOUR(\"not-a-date 6:45 PM\")"],
+  ["=VALUE(\"(12.5%)\")"],
+  ["=VALUE(\"(-1)\")"],
+];
+dateTimeTextBook.recalculate();
+assert.deepEqual(dateTimeTextSheet.getRange("B1:B32").values.flat(), [45351, 45351, 45351, "#VALUE!", "#VALUE!", 60, 0.125, 750 / 1440, 2000 / 86400, "#NUM!", "#NUM!", 0.78125, (6 * 3600 + 35 * 60) / 86400, "#VALUE!", 18, 45, 18, 0, 1234.5, -1234.5, 0.125, 1250, "#VALUE!", 42, "#VALUE!", "#VALUE!", "#VALUE!", "#VALUE!", "#VALUE!", "#VALUE!", -0.125, "#VALUE!"]);
+assert.match(dateTimeTextBook.help("fx.DATEVALUE").ndjson, /ambiguous locale-numeric dates/);
+assert.match(dateTimeTextBook.help("fx.TIME").ndjson, /wrapping at 24 hours/);
+assert.match(dateTimeTextBook.help("fx.TIMEVALUE").ndjson, /12-hour or 24-hour/);
+assert.match(dateTimeTextBook.help("fx.HOUR").ndjson, /0 through 23/);
+assert.match(dateTimeTextBook.help("fx.VALUE").ndjson, /accounting parentheses/);
+const dateTimeTextRoundtrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(dateTimeTextBook));
+assert.deepEqual(dateTimeTextRoundtrip.worksheets.getItem("DateTimeText").getRange("B1:B32").values, dateTimeTextSheet.getRange("B1:B32").values);
+
 const date1904Book = Workbook.create({ dateSystem: "1904" });
 assert.equal(date1904Book.dateSystem, "1904");
 assert.equal(Workbook.create({ date1904: true }).dateSystem, "1904");
 assert.equal(Workbook.create().setDateSystem(true).dateSystem, "1904");
 assert.throws(() => Workbook.create({ dateSystem: "unix" }), /expected 1900 or 1904/);
 const date1904Sheet = date1904Book.worksheets.add("Dates1904");
-date1904Sheet.getRange("A1:A16").formulas = [
+date1904Sheet.getRange("A1:A20").formulas = [
   ["=DATE(1904,1,1)"],
   ["=DATE(1904,1,2)"],
   ["=DATE(2024,2,29)"],
@@ -1023,9 +1070,13 @@ date1904Sheet.getRange("A1:A16").formulas = [
   ["=DATE(1900,1,1)"],
   ["=DATE(9999,12,31)"],
   ["=DATE(1904,2,29)"],
+  ["=DATEVALUE(\"1904-01-01\")"],
+  ["=DATEVALUE(\"2024-02-29\")"],
+  ["=DATEVALUE(\"1900-02-29\")"],
+  ["=HOUR(TIME(27,0,0))"],
 ];
 date1904Book.recalculate();
-assert.deepEqual(date1904Sheet.getRange("A1:A16").values.flat(), [0, 1, 43889, 1904, 1, 1, 31, 30, 2, 6, 5, 6, 3, "#NUM!", 2957003, 59]);
+assert.deepEqual(date1904Sheet.getRange("A1:A20").values.flat(), [0, 1, 43889, 1904, 1, 1, 31, 30, 2, 6, 5, 6, 3, "#NUM!", 2957003, 59, 0, 43889, "#VALUE!", 3]);
 const date1904Inspect = date1904Book.inspect({ kind: "workbook" });
 assert.match(date1904Inspect.ndjson, /"dateSystem":"1904"/);
 assert.match(date1904Inspect.ndjson, /"date1904":true/);
@@ -1037,7 +1088,7 @@ assert.match(date1904WorkbookXml, /<workbookPr date1904="1"\/>/);
 assert.match(await date1904Zip.file("customXml/open-office-artifact.json").async("text"), /"dateSystem": "1904"/);
 const date1904Roundtrip = await SpreadsheetFile.importXlsx(date1904Xlsx);
 assert.equal(date1904Roundtrip.dateSystem, "1904");
-assert.deepEqual(date1904Roundtrip.worksheets.getItem("Dates1904").getRange("A1:A16").values, date1904Sheet.getRange("A1:A16").values);
+assert.deepEqual(date1904Roundtrip.worksheets.getItem("Dates1904").getRange("A1:A20").values, date1904Sheet.getRange("A1:A20").values);
 const date1904TrueXlsx = await SpreadsheetFile.patchXlsx(date1904Xlsx, [{ path: "xl/workbook.xml", xml: date1904WorkbookXml.replace('date1904="1"', 'date1904="true"') }]);
 assert.equal((await SpreadsheetFile.importXlsx(date1904TrueXlsx)).dateSystem, "1904");
 const date1900PatchedXlsx = await SpreadsheetFile.patchXlsx(date1904Xlsx, [{ path: "xl/workbook.xml", xml: date1904WorkbookXml.replace('date1904="1"', 'date1904="0"') }]);

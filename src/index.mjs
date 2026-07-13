@@ -25,6 +25,7 @@ import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
+import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./spreadsheet/formula-coercion.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
@@ -955,6 +956,12 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDUP", category: "math-trig", summary: "Round a numeric value away from zero at the requested positive or negative digit position.", examples: ["=ROUNDUP(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ROUNDDOWN", category: "math-trig", summary: "Round a numeric value toward zero at the requested positive or negative digit position.", examples: ["=ROUNDDOWN(A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.DATE", category: "date-time", summary: "Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility.", examples: ["=DATE(2026,7,12)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.DATEVALUE", category: "date-time", summary: "Convert deterministic ISO or English month-name date text to a serial in the workbook's 1900 or 1904 date system; ambiguous locale-numeric dates return #VALUE!.", examples: ["=DATEVALUE(\"2026-07-13\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TIME", category: "date-time", summary: "Return a time fraction from hour, minute, and second values from 0 through 32767, carrying overflow and wrapping at 24 hours.", examples: ["=TIME(16,48,10)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.TIMEVALUE", category: "date-time", summary: "Convert deterministic 12-hour or 24-hour time text, optionally following date text, to a fraction of one day.", examples: ["=TIMEVALUE(\"6:45 PM\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.HOUR", category: "date-time", summary: "Return the 0 through 23 hour component from a nonnegative serial or supported time text.", examples: ["=HOUR(TIMEVALUE(\"6:45 PM\"))"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.MINUTE", category: "date-time", summary: "Return the 0 through 59 minute component from a nonnegative serial or supported time text.", examples: ["=MINUTE(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SECOND", category: "date-time", summary: "Return the 0 through 59 second component from a nonnegative serial or supported time text.", examples: ["=SECOND(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.YEAR", category: "date-time", summary: "Return the year component of a serial in the workbook's 1900 or 1904 date system.", examples: ["=YEAR(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.MONTH", category: "date-time", summary: "Return the month component of a serial in the workbook's 1900 or 1904 date system.", examples: ["=MONTH(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.DAY", category: "date-time", summary: "Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60.", examples: ["=DAY(A1)"] },
@@ -1004,6 +1011,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.UPPER", category: "text", summary: "Convert text to uppercase.", examples: ["=UPPER(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LOWER", category: "text", summary: "Convert text to lowercase.", examples: ["=LOWER(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TRIM", category: "text", summary: "Trim leading/trailing whitespace and collapse internal whitespace.", examples: ["=TRIM(A1)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.VALUE", category: "text", summary: "Convert deterministic ASCII numeric text with optional grouping, scientific notation, accounting parentheses, or percent suffix to a number.", examples: ["=VALUE(\"1,234.50\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.IFERROR", category: "logical", summary: "Return a fallback value when an expression evaluates to a formula error.", examples: ["=IFERROR(XLOOKUP(\"missing\",A1:A10,B1:B10),\"not found\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.IFNA", category: "logical", summary: "Return a fallback only when an expression evaluates to #N/A; preserve every other result or error.", examples: ["=IFNA(XLOOKUP(\"missing\",A1:A10,B1:B10),\"not found\")"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.ISNUMBER", category: "information", summary: "Return TRUE when a value is numeric.", examples: ["=ISNUMBER(A1)"] },
@@ -2284,7 +2292,7 @@ for (const item of HELP_CATALOG) {
       : item.category === "logical" || item.category === "information"
         ? (functionName === "IF" || functionName === "IFERROR" ? "unknown" : "boolean")
         : item.category === "text"
-          ? (functionName === "LEN" ? "number" : "string")
+          ? (functionName === "LEN" || functionName === "VALUE" ? "number" : "string")
           : functionName === "XLOOKUP" || functionName === "INDEX" || functionName === "VLOOKUP" || functionName === "HLOOKUP"
             ? "unknown"
             : "number";
@@ -5320,6 +5328,33 @@ function excelDateParts(serialValue, dateSystem = "1900") {
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
 }
 
+function excelDateValue(value, dateSystem = "1900") {
+  const parsed = parseFormulaDateText(value);
+  if (!parsed) return "#VALUE!";
+  if (dateSystem === "1900" && parsed.year === 1900 && parsed.month === 2 && parsed.day === 29) return 60;
+  const serial = excelGregorianSerial(parsed.year, parsed.month, parsed.day, dateSystem);
+  const restored = excelDateParts(serial, dateSystem);
+  if (!restored || restored.year !== parsed.year || restored.month !== parsed.month || restored.day !== parsed.day) return "#VALUE!";
+  return serial;
+}
+
+function excelTimeValue(value, dateSystem = "1900") {
+  const time = parseFormulaTimeText(value);
+  if (time) return time.dateText && formulaErrorCode(excelDateValue(time.dateText, dateSystem)) ? "#VALUE!" : time.serial;
+  return formulaErrorCode(excelDateValue(value, dateSystem)) ? "#VALUE!" : 0;
+}
+
+function excelTimePart(value, part, dateSystem = "1900") {
+  if (typeof value === "string") {
+    const time = parseFormulaTimeText(value);
+    if (time) return time.dateText && formulaErrorCode(excelDateValue(time.dateText, dateSystem)) ? "#VALUE!" : time[part];
+    return formulaErrorCode(excelDateValue(value, dateSystem)) ? "#VALUE!" : 0;
+  }
+  const parsed = formulaTimeParts(value);
+  if (parsed) return parsed[part];
+  return "#VALUE!";
+}
+
 function excelDaysInMonth(year, month, dateSystem = "1900") {
   if (dateSystem === "1900" && year === 1900 && month === 2) return 29;
   const date = new Date(0);
@@ -5614,6 +5649,15 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const parts = [0, 1, 2].map((index) => excelFormulaDateNumber(scalar(index, 0)));
       return parts.find(formulaErrorCode) || excelDateSerial(parts[0], parts[1], parts[2], dateSystem);
     }
+    case "DATEVALUE": return args.length === 1 ? excelDateValue(scalar(0), dateSystem) : "#VALUE!";
+    case "TIMEVALUE": return args.length === 1 ? excelTimeValue(scalar(0), dateSystem) : "#VALUE!";
+    case "TIME": {
+      if (args.length !== 3) return "#VALUE!";
+      const parts = [0, 1, 2].map((index) => excelFormulaDateNumber(scalar(index)));
+      const error = parts.find(formulaErrorCode);
+      if (error) return error;
+      return formulaTimeSerial(...parts) ?? "#NUM!";
+    }
     case "YEAR":
     case "MONTH":
     case "DAY": {
@@ -5622,6 +5666,9 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const parts = excelDateParts(serial, dateSystem);
       return parts ? parts[fnName.toLowerCase()] : "#NUM!";
     }
+    case "HOUR": return args.length === 1 ? excelTimePart(scalar(0), "hour", dateSystem) : "#VALUE!";
+    case "MINUTE": return args.length === 1 ? excelTimePart(scalar(0), "minute", dateSystem) : "#VALUE!";
+    case "SECOND": return args.length === 1 ? excelTimePart(scalar(0), "second", dateSystem) : "#VALUE!";
     case "EDATE": return excelShiftMonth(scalar(0, 0), scalar(1, 0), false, dateSystem);
     case "EOMONTH": return excelShiftMonth(scalar(0, 0), scalar(1, 0), true, dateSystem);
     case "DAYS": {
@@ -5677,6 +5724,13 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "UPPER": return formulaText(scalar(0, "")).toUpperCase();
     case "LOWER": return formulaText(scalar(0, "")).toLowerCase();
     case "TRIM": return formulaText(scalar(0, "")).trim().replace(/\s+/g, " ");
+    case "VALUE": {
+      if (args.length !== 1) return "#VALUE!";
+      const value = scalar(0);
+      const error = formulaErrorCode(value);
+      if (error) return error;
+      return parseFormulaNumberText(value) ?? "#VALUE!";
+    }
     case "COUNTIF": { if (args.length < 2) return "#VALUE!"; const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesFormulaCriteria(value, criteria)).length; }
     case "COUNTIFS": {
       if (args.length < 2 || args.length % 2 !== 0) return "#VALUE!";

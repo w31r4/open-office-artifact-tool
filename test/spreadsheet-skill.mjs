@@ -50,6 +50,10 @@ try {
     ["=Inputs!B3", "=Inputs!C3", "=(B3-C3)/B3"],
     ["=Inputs!B4", "=Inputs!C4", "=(B4-C4)/B4"],
   ]);
+  assert.deepEqual(workbook.worksheets.getItem("DateTimeText").getRange("B2:B9").values, [[44650], [44650], [0.78125], [18], [45], [18], [1234.5], [0.125]]);
+  assert.match(workbook.help("fx.DATEVALUE").ndjson, /ambiguous locale-numeric dates/);
+  assert.match(workbook.help("fx.TIMEVALUE").ndjson, /fraction of one day/);
+  assert.match(workbook.help("fx.VALUE").ndjson, /scientific notation/);
   assert.deepEqual(workbook.worksheets.getItem("Summary").mergedRanges, ["A15:G15"]);
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.fill, "#0F766E");
   assert.equal(workbook.worksheets.getItem("Summary").getRange("A15").format.font.color, "#FFFFFF");
@@ -126,7 +130,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.inspect, "utf8"), /"name":"Margin Rate"/);
   assert.match(result.qa.workbook.inspect({ kind: "thread", maxChars: 4000 }).ndjson, /Margin evidence is approved/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
-  assert.equal(result.qa.packageInspect.records[0].sheets, 2);
+  assert.equal(result.qa.packageInspect.records[0].sheets, 3);
   assert.equal(result.qa.packageInspect.records[0].semanticIssues, 0);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
 
@@ -166,6 +170,7 @@ try {
     assert.equal(libreOfficeSummary.getRange("A15").format.alignment.horizontal, "center");
     assert.equal(libreOfficeSummary.getRange("A1").format.border.bottom.style, "double");
     assert.equal(libreOfficeSummary.getRange("G14").values[0][0], 1);
+    assert.deepEqual(libreOfficeWorkbook.worksheets.getItem("DateTimeText").getRange("B2:B9").values, [[44650], [44650], [0.78125], [18], [45], [18], [1234.5], [0.125]]);
     assert.ok(libreOfficeSummary.charts.items.length >= 1);
     assert.ok(libreOfficeSummary.images.items.length >= 1);
     assert.ok(libreOfficeSummary.pivotTables.items.some((pivot) => pivot.name === "RevenuePivot"));
@@ -250,7 +255,7 @@ try {
   assert.equal(baselineCompare.summary.pixelDiff.changed, false);
   assert.equal(baselineCompare.summary.visualQaOk, true);
   assert.equal(baselineCompare.summary.allSheets, true);
-  assert.deepEqual(baselineCompare.summary.sheetRenders.map((item) => item.sheetName).sort(), ["Inputs", "Summary"]);
+  assert.deepEqual(baselineCompare.summary.sheetRenders.map((item) => item.sheetName).sort(), ["DateTimeText", "Inputs", "Summary"]);
   assert.ok(baselineCompare.summary.sheetRenders.every((item) => item.baselineCompared && item.pixelDiff.changed === false && item.ok));
   for (const sheetRender of baselineCompare.summary.sheetRenders) {
     assert.ok((await fs.stat(sheetRender.preview)).size > 100);

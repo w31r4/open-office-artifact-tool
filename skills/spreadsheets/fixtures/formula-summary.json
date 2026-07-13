@@ -208,6 +208,49 @@
           }
         }
       ]
+    },
+    {
+      "name": "DateTimeText",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:B9",
+          "values": [
+            ["Conversion", "Result"],
+            ["ISO date", null],
+            ["English date", null],
+            ["Time fraction", null],
+            ["Hour", null],
+            ["Minute", null],
+            ["Second", null],
+            ["Grouped number", null],
+            ["Percent", null]
+          ]
+        },
+        {
+          "range": "B2:B9",
+          "formulas": [
+            ["=DATEVALUE(\"2026-03-31\")"],
+            ["=DATEVALUE(\"31-Mar-2026 6:45 PM\")"],
+            ["=TIMEVALUE(\"6:45 PM\")"],
+            ["=HOUR(TIME(18,45,18))"],
+            ["=MINUTE(\"6:45:18 PM\")"],
+            ["=SECOND(\"6:45:18 PM\")"],
+            ["=VALUE(\"1,234.50\")"],
+            ["=VALUE(\"12.5%\")"]
+          ]
+        },
+        {
+          "range": "A1:B1",
+          "format": { "fill": "#0F766E", "font": { "bold": true, "color": "#FFFFFF" }, "alignment": { "horizontal": "center" } }
+        },
+        { "range": "A1:B9", "autofitColumns": true },
+        { "range": "A1:A9", "format": { "columnWidth": 18 } },
+        { "range": "B1:B9", "format": { "columnWidth": 16 } },
+        { "range": "B2:B3", "format": { "numberFormat": "yyyy-mm-dd" } },
+        { "range": "B4:B4", "format": { "numberFormat": "h:mm AM/PM" } },
+        { "range": "B9:B9", "format": { "numberFormat": "0.0%" } }
+      ]
     }
   ],
   "commentSelf": { "displayName": "Spreadsheet Agent" },
@@ -250,6 +293,11 @@
       "sheet": "Summary",
       "range": "G2:G14",
       "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889], [5], [2], [1]]
+    },
+    {
+      "sheet": "DateTimeText",
+      "range": "B2:B9",
+      "values": [[44650], [44650], [0.78125], [18], [45], [18], [1234.5], [0.125]]
     }
   ],
   "qa": {
