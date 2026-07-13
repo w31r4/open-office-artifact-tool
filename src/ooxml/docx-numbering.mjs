@@ -27,6 +27,16 @@ function pictureBulletSource(picture) {
   return picture?.dataUrl || picture?.uri;
 }
 
+function pictureBulletKey(picture) {
+  if (!picture) return "";
+  return JSON.stringify([
+    pictureBulletSource(picture),
+    picture.widthPt,
+    picture.heightPt,
+    picture.alt,
+  ]);
+}
+
 function pictureBulletData(dataUrl) {
   const match = /^data:(image\/(?:png|jpeg|gif));base64,([A-Za-z0-9+/=]+)$/i.exec(String(dataUrl || ""));
   if (!match) return undefined;
@@ -73,7 +83,7 @@ function sameLevel(left, right) {
     && left.numberFormat === right.numberFormat
     && left.start === right.start
     && left.levelText === right.levelText
-    && pictureBulletSource(left.pictureBullet) === pictureBulletSource(right.pictureBullet);
+    && pictureBulletKey(left.pictureBullet) === pictureBulletKey(right.pictureBullet);
 }
 
 export function collectDocxNumbering(document, options = {}) {
@@ -83,9 +93,8 @@ export function collectDocxNumbering(document, options = {}) {
     if (!Number.isInteger(block.start) || block.start < 1) throw new RangeError(`DOCX list item ${block.id} start must be a positive integer.`);
     if (!String(block.numberFormat || "").trim()) throw new TypeError(`DOCX list item ${block.id} numberFormat must be non-empty.`);
     const pictureBullet = normalizeDocumentPictureBullet(block.pictureBullet);
-    const source = pictureBulletSource(pictureBullet);
     const key = block.numberingId === undefined || block.numberingId === null
-      ? `default:${block.listType}:${source || "text"}`
+      ? `default:${block.listType}:${pictureBulletKey(pictureBullet) || "text"}`
       : `native:${block.numberingId}`;
     if (!groups.has(key)) groups.set(key, { key, blocks: [], levels: new Map() });
     const group = groups.get(key);
@@ -118,7 +127,8 @@ export function collectDocxNumbering(document, options = {}) {
   });
 
   const pictureBullets = [];
-  const pictureBySource = new Map();
+  const pictureByKey = new Map();
+  const assetBySource = new Map();
   const mediaParts = [];
   const relationships = [];
   let nextMediaPartId = Math.max(1, Number(options.startMediaPartId) || 1);
@@ -126,17 +136,24 @@ export function collectDocxNumbering(document, options = {}) {
     const picture = level.pictureBullet;
     const source = pictureBulletSource(picture);
     if (!source) continue;
-    let planned = pictureBySource.get(source);
+    const key = pictureBulletKey(picture);
+    let planned = pictureByKey.get(key);
     if (!planned) {
       const pictureBulletId = pictureBullets.length;
-      const relId = `rIdPictureBullet${pictureBullets.length + 1}`;
-      const data = picture.dataUrl ? pictureBulletData(picture.dataUrl) : undefined;
-      const mediaPart = data ? { outputPath: `word/media/image${nextMediaPartId++}.${data.extension}`, ...data } : undefined;
+      let asset = assetBySource.get(source);
+      if (!asset) {
+        const relId = `rIdPictureBullet${assetBySource.size + 1}`;
+        const data = picture.dataUrl ? pictureBulletData(picture.dataUrl) : undefined;
+        const mediaPart = data ? { outputPath: `word/media/image${nextMediaPartId++}.${data.extension}`, ...data } : undefined;
+        asset = { relId, mediaPart };
+        assetBySource.set(source, asset);
+        if (mediaPart) mediaParts.push(mediaPart);
+        relationships.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: mediaPart ? mediaPart.outputPath.replace(/^word\//, "") : picture.uri, targetMode: mediaPart ? undefined : "External" });
+      }
+      const { relId, mediaPart } = asset;
       planned = { pictureBulletId, relId, picture, mediaPart };
       pictureBullets.push(planned);
-      pictureBySource.set(source, planned);
-      if (mediaPart) mediaParts.push(mediaPart);
-      relationships.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: mediaPart ? mediaPart.outputPath.replace(/^word\//, "") : picture.uri, targetMode: mediaPart ? undefined : "External" });
+      pictureByKey.set(key, planned);
     }
     level.pictureBulletId = planned.pictureBulletId;
   }

@@ -667,10 +667,28 @@ const multiplePictureBulletXml = await multiplePictureBulletZip.file("word/numbe
 assert.match(multiplePictureBulletXml, /<v:shapetype id="_x0000_t75"/);
 assert.match(multiplePictureBulletXml, /<v:shapetype id="_x0000_t76"/);
 assert.match(multiplePictureBulletXml, /<v:shape id="_x0000_i1026" type="#_x0000_t76"/);
+const resizedPictureBulletDocument = DocumentModel.create({ paragraphs: ["Resized picture bullets"] });
+resizedPictureBulletDocument.addListItem("Small marker", { pictureBullet: { dataUrl: pictureBulletPng, widthPt: 8, heightPt: 9, alt: "Small status" } });
+resizedPictureBulletDocument.addListItem("Large marker", { pictureBullet: { dataUrl: pictureBulletPng, widthPt: 16, heightPt: 17, alt: "Large status" } });
+const resizedPictureBulletDocx = await DocumentFile.exportDocx(resizedPictureBulletDocument);
+const resizedPictureBulletZip = await JSZip.loadAsync(new Uint8Array(await resizedPictureBulletDocx.arrayBuffer()));
+const resizedPictureBulletXml = await resizedPictureBulletZip.file("word/numbering.xml").async("text");
+const resizedPictureBulletRels = await resizedPictureBulletZip.file("word/_rels/numbering.xml.rels").async("text");
+assert.equal((resizedPictureBulletXml.match(/<w:numPicBullet\b/g) || []).length, 2);
+assert.match(resizedPictureBulletXml, /style="width:8pt;height:9pt"[^>]*>[\s\S]*?o:title="Small status"/);
+assert.match(resizedPictureBulletXml, /style="width:16pt;height:17pt"[^>]*>[\s\S]*?o:title="Large status"/);
+assert.equal((resizedPictureBulletRels.match(/relationships\/image/g) || []).length, 1);
+const resizedPictureBulletRoundTrip = await DocumentFile.importDocx(resizedPictureBulletDocx, { preferNative: true });
+assert.equal(resizedPictureBulletRoundTrip.blocks.find((item) => item.text === "Small marker")?.pictureBullet?.widthPt, 8);
+assert.equal(resizedPictureBulletRoundTrip.blocks.find((item) => item.text === "Large marker")?.pictureBullet?.alt, "Large status");
 const conflictingPictureBulletDocument = DocumentModel.create({ paragraphs: ["Conflicting picture bullets"] });
 conflictingPictureBulletDocument.addListItem("Embedded", { numberingId: 99, pictureBullet: pictureBulletPng });
 conflictingPictureBulletDocument.addListItem("External", { numberingId: 99, pictureBullet: "https://example.com/status.png" });
 await assert.rejects(() => DocumentFile.exportDocx(conflictingPictureBulletDocument), /numbering 99 level 0 has conflicting definitions/);
+const conflictingPictureBulletPresentationDocument = DocumentModel.create({ paragraphs: ["Conflicting picture bullet presentation"] });
+conflictingPictureBulletPresentationDocument.addListItem("Small", { numberingId: 100, pictureBullet: { dataUrl: pictureBulletPng, widthPt: 8 } });
+conflictingPictureBulletPresentationDocument.addListItem("Large", { numberingId: 100, pictureBullet: { dataUrl: pictureBulletPng, widthPt: 16 } });
+await assert.rejects(() => DocumentFile.exportDocx(conflictingPictureBulletPresentationDocument), /numbering 100 level 0 has conflicting definitions/);
 
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/theme" Target="theme\/theme1\.xml"/);
