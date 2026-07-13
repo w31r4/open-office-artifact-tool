@@ -121,8 +121,8 @@ public sealed class PptxCodecTests
         var imported = Import(source);
         Assert.True(imported.Ok, Diagnostics(imported));
         var shape = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements).Shape;
-        Assert.Equal("Quarterly brief\nSource-bound detail", shape.Text);
-        Assert.Equal(2, shape.TextBody.Paragraphs.Count);
+        Assert.Equal("Quarterly brief\nSource-bound detail\nExplicitly unbulleted\nOpaque picture marker", shape.Text);
+        Assert.Equal(4, shape.TextBody.Paragraphs.Count);
         Assert.Equal("center", shape.TextBody.Paragraphs[0].Alignment);
         Assert.Equal(2, shape.TextBody.Paragraphs[0].Runs.Count);
         Assert.True(shape.TextBody.Paragraphs[0].Runs[0].Bold);
@@ -130,11 +130,19 @@ public sealed class PptxCodecTests
         Assert.Equal("Aptos Display", shape.TextBody.Paragraphs[0].Runs[0].FontFamily);
         Assert.Equal("0F172A", shape.TextBody.Paragraphs[0].Runs[0].ColorRgb);
         Assert.True(shape.TextBody.Paragraphs[0].Runs[1].Italic);
+        Assert.Equal(PresentationTextParagraph.BulletOneofCase.BulletCharacter, shape.TextBody.Paragraphs[0].BulletCase);
+        Assert.Equal("•", shape.TextBody.Paragraphs[0].BulletCharacter);
         Assert.False(shape.TextBody.Paragraphs[1].HasAlignment);
+        Assert.Equal("romanLcPeriod", shape.TextBody.Paragraphs[1].AutoNumber.Scheme);
+        Assert.Equal(3U, shape.TextBody.Paragraphs[1].AutoNumber.StartAt);
+        Assert.Equal(PresentationTextParagraph.BulletOneofCase.NoBullet, shape.TextBody.Paragraphs[2].BulletCase);
+        Assert.Equal(PresentationTextParagraph.BulletOneofCase.None, shape.TextBody.Paragraphs[3].BulletCase);
 
         shape.TextBody.Paragraphs[0].Runs[0].Text = "Updated ";
         shape.TextBody.Paragraphs[0].Runs[0].Bold = false;
         shape.TextBody.Paragraphs[0].Runs[0].ColorRgb = "2563EB";
+        shape.TextBody.Paragraphs[0].BulletCharacter = "◆";
+        shape.TextBody.Paragraphs[1].AutoNumber = new PresentationAutoNumberBullet { Scheme = "arabicPeriod", StartAt = 5 };
         shape.Text = PptxTextCodec.Flatten(shape.TextBody);
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, Diagnostics(preserved));
@@ -149,8 +157,15 @@ public sealed class PptxCodecTests
             Assert.Equal("2563EB", run.RunProperties.GetFirstChild<A.SolidFill>()!.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value);
             Assert.Equal(A.TextUnderlineValues.Single, run.RunProperties.Underline!.Value);
             Assert.Equal("Noto Sans CJK SC", run.RunProperties.GetFirstChild<A.EastAsianFont>()!.Typeface!.Value);
-            Assert.Equal("•", paragraph.ParagraphProperties!.GetFirstChild<A.CharacterBullet>()!.Char!.Value);
-            Assert.Equal(A.TextAlignmentTypeValues.Distributed, nativeShape.TextBody.Elements<A.Paragraph>().Last().ParagraphProperties!.Alignment!.Value);
+            Assert.Equal("◆", paragraph.ParagraphProperties!.GetFirstChild<A.CharacterBullet>()!.Char!.Value);
+            Assert.Equal("Wingdings", paragraph.ParagraphProperties.GetFirstChild<A.BulletFont>()!.Typeface!.Value);
+            var autoNumber = nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.GetFirstChild<A.AutoNumberedBullet>()!;
+            Assert.Equal("arabicPeriod", autoNumber.Type!.InnerText);
+            Assert.Equal(5, autoNumber.StartAt!.Value);
+            Assert.NotNull(nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(2).ParagraphProperties!.GetFirstChild<A.NoBullet>());
+            Assert.NotNull(nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(3).ParagraphProperties!.GetFirstChild<A.PictureBullet>());
+            Assert.Single(package.PresentationPart.SlideParts.Single().ImageParts);
+            Assert.Equal(A.TextAlignmentTypeValues.Distributed, nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.Alignment!.Value);
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
 
@@ -159,6 +174,28 @@ public sealed class PptxCodecTests
         var rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("presentation_text_topology_changed", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void InvalidBasicListMarkersFailClosed()
+    {
+        var request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletCharacter = "two";
+        var invalidCharacter = Invoke(request);
+        Assert.False(invalidCharacter.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidCharacter.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[1].AutoNumber = new PresentationAutoNumberBullet { Scheme = "not-a-scheme" };
+        var invalidScheme = Invoke(request);
+        Assert.False(invalidScheme.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidScheme.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[2].NoBullet = false;
+        var invalidNone = Invoke(request);
+        Assert.False(invalidNone.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidNone.Diagnostics).Code);
     }
 
     private static CodecResponse Invoke(CodecRequest request) =>
@@ -227,7 +264,7 @@ public sealed class PptxCodecTests
 
     private static CodecRequest RichTextExportRequest()
     {
-        var first = new PresentationTextParagraph { Alignment = "center" };
+        var first = new PresentationTextParagraph { Alignment = "center", BulletCharacter = "•" };
         first.Runs.Add(new PresentationTextRun
         {
             Text = "Quarterly ",
@@ -237,11 +274,21 @@ public sealed class PptxCodecTests
             ColorRgb = "0F172A",
         });
         first.Runs.Add(new PresentationTextRun { Text = "brief", Italic = true, FontSizePoints = 27 });
-        var second = new PresentationTextParagraph { Level = 1 };
+        var second = new PresentationTextParagraph
+        {
+            Level = 1,
+            AutoNumber = new PresentationAutoNumberBullet { Scheme = "romanLcPeriod", StartAt = 3 },
+        };
         second.Runs.Add(new PresentationTextRun { Text = "Source-bound detail", FontSizePoints = 15 });
+        var third = new PresentationTextParagraph { NoBullet = true };
+        third.Runs.Add(new PresentationTextRun { Text = "Explicitly unbulleted", FontSizePoints = 15 });
+        var fourth = new PresentationTextParagraph();
+        fourth.Runs.Add(new PresentationTextRun { Text = "Opaque picture marker", FontSizePoints = 15 });
         var textBody = new PresentationTextBody();
         textBody.Paragraphs.Add(first);
         textBody.Paragraphs.Add(second);
+        textBody.Paragraphs.Add(third);
+        textBody.Paragraphs.Add(fourth);
         var slide = new PresentationSlide { Id = "presentation/slide/1", Name = "Rich text" };
         slide.Elements.Add(new PresentationElement
         {
@@ -291,9 +338,16 @@ public sealed class PptxCodecTests
         using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
         {
             var shape = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>().Single();
+            var slidePart = presentation.PresentationPart!.SlideParts.Single();
             var paragraph = shape.TextBody!.Elements<A.Paragraph>().First();
-            paragraph.ParagraphProperties!.Append(new A.CharacterBullet { Char = "•" });
-            shape.TextBody.Elements<A.Paragraph>().Last().ParagraphProperties!.Alignment = A.TextAlignmentTypeValues.Distributed;
+            paragraph.ParagraphProperties!.AddChild(new A.BulletFont { Typeface = "Wingdings" }, true);
+            shape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.Alignment = A.TextAlignmentTypeValues.Distributed;
+            var pictureParagraph = shape.TextBody.Elements<A.Paragraph>().Last();
+            var pictureProperties = pictureParagraph.ParagraphProperties ?? pictureParagraph.PrependChild(new A.ParagraphProperties());
+            pictureProperties.AddChild(new A.PictureBullet(new A.Blip { Embed = "rIdTextBullet1" }), true);
+            var imagePart = slidePart.AddImagePart(ImagePartType.Png, "rIdTextBullet1");
+            using (var image = new MemoryStream(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")))
+                imagePart.FeedData(image);
             var properties = paragraph.Elements<A.Run>().First().RunProperties!;
             properties.Underline = A.TextUnderlineValues.Single;
             properties.Append(new A.EastAsianFont { Typeface = "Noto Sans CJK SC" });

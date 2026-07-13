@@ -216,10 +216,13 @@ try {
   assert.equal(wasmPreservation.qa.verify.ok, true);
   const wasmSlide = wasmPreservation.qa.presentation.slides.items[0];
   const wasmTitle = wasmSlide.shapes.items.find((item) => item.name === "wasm-title");
-  assert.equal(wasmTitle?.text.value, "After OpenXML WASM");
+  assert.equal(wasmTitle?.text.value, "After OpenXML WASM\nCharacter marker\nAutomatic marker\nMarker removal");
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.bold, true);
-  assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 36);
+  assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");
+  assert.equal(wasmTitle?.text.paragraphs[1].bulletCharacter, "◆");
+  assert.deepEqual(wasmTitle?.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 5 });
+  assert.equal(wasmTitle?.text.paragraphs[3].bulletNone, true);
   assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
   assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
   assert.match(wasmSlide.speakerNotes.text, /parts, and relationships must survive/);

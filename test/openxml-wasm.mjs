@@ -181,36 +181,48 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
   text: [
     {
       alignment: "center",
+      bulletCharacter: "•",
       runs: [
         { text: "Quarterly ", style: { bold: true, fontSize: 36, fontFamily: "Aptos Display", color: "#0F172A" } },
         { text: "brief", style: { italic: true, fontSize: 36 } },
       ],
     },
-    { level: 1, runs: [{ text: "Source-bound detail", style: { fontSize: 20, color: "#475569" } }] },
+    { level: 1, autoNumber: { type: "romanLcPeriod", startAt: 3 }, runs: [{ text: "Source-bound detail", style: { fontSize: 20, color: "#475569" } }] },
+    { bulletNone: true, runs: [{ text: "Explicitly unbulleted", style: { fontSize: 20 } }] },
   ],
 });
 const richPptx = await exportPptxWithOpenXmlWasm(richPresentation);
 const richPptxImported = await importPptxWithOpenXmlWasm(richPptx);
 const richImportedShape = richPptxImported.slides.getItem(0).shapes.items[0];
-assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail");
-assert.equal(richImportedShape.text.paragraphs.length, 2);
+assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail\nExplicitly unbulleted");
+assert.equal(richImportedShape.text.paragraphs.length, 3);
 assert.equal(richImportedShape.text.paragraphs[0].alignment, "center");
+assert.equal(richImportedShape.text.paragraphs[0].bulletCharacter, "•");
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.bold, true);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontSize, 36);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontFamily, "Aptos Display");
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.color, "#0F172A");
 assert.equal(richImportedShape.text.paragraphs[0].runs[1].style.italic, true);
+assert.deepEqual(richImportedShape.text.paragraphs[1].autoNumber, { type: "romanLcPeriod", startAt: 3 });
+assert.equal(richImportedShape.text.paragraphs[2].bulletNone, true);
 richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
   ...paragraph,
+  ...(paragraphIndex === 0 ? { bulletCharacter: "◆" } : {}),
+  ...(paragraphIndex === 1 ? { autoNumber: { type: "arabicPeriod", startAt: 5 } } : {}),
+  ...(paragraphIndex === 2 ? { bulletNone: undefined, bulletCharacter: "–" } : {}),
   runs: paragraph.runs.map((run, runIndex) => paragraphIndex === 0 && runIndex === 0
     ? { ...run, text: "Updated ", style: { ...run.style, bold: false, color: "#2563EB" } }
     : run),
 }));
 const richPptxEdited = await exportPptxWithOpenXmlWasm(richPptxImported);
 const richPptxRoundTrip = await importPptxWithOpenXmlWasm(richPptxEdited);
-assert.equal(richPptxRoundTrip.slides.getItem(0).shapes.items[0].text.value, "Updated brief\nSource-bound detail");
-assert.equal(richPptxRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].runs[0].style.bold, false);
-assert.equal(richPptxRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].runs[0].style.color, "#2563EB");
+const richRoundTripShape = richPptxRoundTrip.slides.getItem(0).shapes.items[0];
+assert.equal(richRoundTripShape.text.value, "Updated brief\nSource-bound detail\nExplicitly unbulleted");
+assert.equal(richRoundTripShape.text.paragraphs[0].runs[0].style.bold, false);
+assert.equal(richRoundTripShape.text.paragraphs[0].runs[0].style.color, "#2563EB");
+assert.equal(richRoundTripShape.text.paragraphs[0].bulletCharacter, "◆");
+assert.deepEqual(richRoundTripShape.text.paragraphs[1].autoNumber, { type: "arabicPeriod", startAt: 5 });
+assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 richImportedShape.text.paragraphs = [
   ...richImportedShape.text.paragraphs.slice(0, 1),
   { ...richImportedShape.text.paragraphs[1], runs: [...richImportedShape.text.paragraphs[1].runs, { text: "unsafe", style: {} }] },
@@ -231,6 +243,21 @@ const invalidRichPresentation = Presentation.create();
 invalidRichPresentation.slides.add().shapes.add({ text: [{ runs: [{ text: "transparent", style: { color: "transparent" } }] }] });
 await assert.rejects(
   exportPptxWithOpenXmlWasm(invalidRichPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
+);
+
+const invalidBulletPresentation = Presentation.create();
+const invalidBulletShape = invalidBulletPresentation.slides.add().shapes.add({ text: [{ autoNumber: "arabicPeriod", runs: ["invalid"] }] });
+invalidBulletShape.text._paragraphs[0].autoNumber = { type: "not-a-scheme" };
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidBulletPresentation),
+  (error) => error instanceof RangeError && /auto-number type/.test(error.message),
+);
+
+const unsupportedBulletStylePresentation = Presentation.create();
+unsupportedBulletStylePresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", bulletFont: "Wingdings", runs: ["styled"] }] });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(unsupportedBulletStylePresentation),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
 );
 

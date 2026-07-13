@@ -1,5 +1,6 @@
 import { Presentation } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { isPresentationAutoNumberType } from "../presentation/text-paragraphs.mjs";
 import { OpenXmlWasmCodecError } from "./openxml-wasm-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -8,7 +9,7 @@ const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
 const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "color"]);
-const PARAGRAPH_KEYS = new Set(["runs", "level", "alignment", "style"]);
+const PARAGRAPH_KEYS = new Set(["runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletNone"]);
 
 function emuFromPixels(value, name) {
   const number = Number(value);
@@ -55,6 +56,32 @@ function wireRun(run, inheritedStyle, shapeId) {
   };
 }
 
+function wireBullet(paragraph, original, shapeId) {
+  const choices = [paragraph.bulletCharacter != null, Boolean(paragraph.autoNumber), paragraph.bulletNone === true];
+  if (choices.filter(Boolean).length > 1) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph selects more than one list marker.`, [], { code: "invalid_presentation_text" });
+  }
+  if (paragraph.bulletCharacter != null) {
+    const character = String(paragraph.bulletCharacter);
+    if ([...character].length !== 1) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} bullet character must contain one Unicode scalar value.`, [], { code: "invalid_presentation_text" });
+    return { case: "bulletCharacter", value: character };
+  }
+  if (paragraph.autoNumber) {
+    const scheme = String(paragraph.autoNumber.type || paragraph.autoNumber.scheme || "");
+    if (!isPresentationAutoNumberType(scheme)) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported auto-number scheme ${scheme || "(missing)"}.`, [], { code: "invalid_presentation_text" });
+    const rawStart = paragraph.autoNumber.startAt ?? paragraph.autoNumber.start;
+    const startAt = rawStart == null ? undefined : Number(rawStart);
+    if (startAt !== undefined && (!Number.isInteger(startAt) || startAt < 1 || startAt > 32767)) {
+      throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} auto-number start must be from 1 through 32767.`, [], { code: "invalid_presentation_text" });
+    }
+    return { case: "autoNumber", value: { scheme, ...(startAt === undefined ? {} : { startAt }) } };
+  }
+  if (paragraph.bulletNone === true || new Set(["noBullet", "bulletCharacter", "autoNumber"]).has(original?.bullet?.case)) {
+    return { case: "noBullet", value: true };
+  }
+  return undefined;
+}
+
 function wireParagraph(paragraph, textStyle, original, shapeId) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -69,10 +96,12 @@ function wireParagraph(paragraph, textStyle, original, shapeId) {
   }
   const originalLevel = original?.level;
   const includeLevel = level !== 0 || originalLevel !== undefined;
+  const bullet = wireBullet(paragraph, original, shapeId);
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     runs: (paragraph.runs || []).map((run) => wireRun(run, { ...textStyle, ...(paragraph.style || {}) }, shapeId)),
+    ...(bullet ? { bullet } : {}),
   };
 }
 
@@ -234,12 +263,20 @@ function modelRun(run) {
   };
 }
 
+function modelBullet(bullet) {
+  if (bullet?.case === "noBullet") return { bulletNone: true };
+  if (bullet?.case === "bulletCharacter") return { bulletCharacter: bullet.value };
+  if (bullet?.case === "autoNumber") return { autoNumber: { type: bullet.value.scheme, ...(bullet.value.startAt === undefined ? {} : { startAt: bullet.value.startAt }) } };
+  return {};
+}
+
 function modelText(shape) {
   if (!shape.textBody) return shape.text;
   return shape.textBody.paragraphs.map((paragraph) => ({
     runs: paragraph.runs.map(modelRun),
     level: paragraph.level ?? 0,
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
+    ...modelBullet(paragraph.bullet),
     style: {},
   }));
 }

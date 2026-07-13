@@ -28,6 +28,7 @@ internal static class PptxTextCodec
             if (properties?.Level is not null) paragraph.Level = checked((uint)properties.Level.Value);
             if (properties?.Alignment?.Value is { } alignment && AlignmentName(alignment) is { Length: > 0 } alignmentName)
                 paragraph.Alignment = alignmentName;
+            PptxBulletCodec.Read(paragraph, properties);
             foreach (var sourceRun in sourceParagraph.Elements<A.Run>())
             {
                 runCount++;
@@ -79,6 +80,7 @@ internal static class PptxTextCodec
             if (paragraph.HasLevel && paragraph.Level > 8)
                 throw new CodecException("invalid_presentation_text", "Presentation paragraph level must be from 0 through 8.");
             if (paragraph.HasAlignment) ParseAlignment(paragraph.Alignment);
+            PptxBulletCodec.Validate(paragraph);
             foreach (var run in paragraph.Runs)
             {
                 runCount++;
@@ -136,6 +138,7 @@ internal static class PptxTextCodec
                 paragraphProperties.Level = null;
                 if (paragraphProperties.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0)
                     paragraphProperties.Alignment = null;
+                PptxBulletCodec.Scrub(paragraphProperties);
             }
             foreach (var run in paragraph.Elements<A.Run>())
             {
@@ -180,11 +183,12 @@ internal static class PptxTextCodec
     private static A.Paragraph BuildParagraph(PresentationTextParagraph source)
     {
         var paragraph = new A.Paragraph();
-        if (source.HasLevel || source.HasAlignment)
+        if (source.HasLevel || source.HasAlignment || PptxBulletCodec.HasModeledBullet(source))
         {
             var properties = new A.ParagraphProperties();
             if (source.HasLevel) properties.Level = checked((int)source.Level);
             if (source.HasAlignment) properties.Alignment = ParseAlignment(source.Alignment);
+            PptxBulletCodec.Append(properties, source);
             paragraph.Append(properties);
         }
         foreach (var run in source.Runs) paragraph.Append(BuildRun(run));
@@ -202,7 +206,7 @@ internal static class PptxTextCodec
     private static void ApplyParagraphProperties(A.Paragraph source, PresentationTextParagraph requested)
     {
         var properties = source.ParagraphProperties;
-        if (properties is null && (requested.HasLevel || requested.HasAlignment))
+        if (properties is null && (requested.HasLevel || requested.HasAlignment || PptxBulletCodec.HasModeledBullet(requested)))
         {
             properties = new A.ParagraphProperties();
             source.PrependChild(properties);
@@ -211,6 +215,7 @@ internal static class PptxTextCodec
         properties.Level = requested.HasLevel ? checked((int)requested.Level) : null;
         if (requested.HasAlignment) properties.Alignment = ParseAlignment(requested.Alignment);
         else if (properties.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0) properties.Alignment = null;
+        PptxBulletCodec.Apply(properties, requested);
     }
 
     private static void ApplyRun(A.Run source, PresentationTextRun requested)
