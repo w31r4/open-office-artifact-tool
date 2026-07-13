@@ -38,17 +38,17 @@
     {
       "path": "_framework/Google.Protobuf.wasm",
       "bytes": 328981,
-      "sha256": "745397e699462c7e14d7c54ad01e2808efbc52436ed00309555dad5f1925a577"
+      "sha256": "3b824794a4a65617dd95c4127954f8126c8e8fec519efd73ba58434e9ea5b291"
     },
     {
       "path": "_framework/OpenOffice.OpenXmlCodec.wasm",
-      "bytes": 267541,
-      "sha256": "ca4f9e3dc13516e4b70fa1d56b4910bb4d0faed522c6647b0e1ba06c9b18347e"
+      "bytes": 268565,
+      "sha256": "dffdba2e645642a0a997da20031d6af968e1e86caeef9c742e7a10ba7904019e"
     },
     {
       "path": "_framework/OpenOffice.OpenXmlWasm.wasm",
       "bytes": 6421,
-      "sha256": "93100fcb4b423643a1919c3cc73b32c5a5ee0f2f2f98d4e7ca55bce4a6cb08ed"
+      "sha256": "af3cada560512930b85d5b0863cc0f95b089626d4b1fbcb1c6dad9e23ff8065a"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -117,8 +117,8 @@
     },
     {
       "path": "_framework/System.Private.CoreLib.wasm",
-      "bytes": 1946901,
-      "sha256": "f2523ea52ef83f05ec51b10ef66df9f838b56c040419dd9450b8f3cacaa8889f"
+      "bytes": 1947925,
+      "sha256": "a1c3a23fd3b3b6ff4505a322a15c1dfc4b09f4bd281bf5e89b10062888699747"
     },
     {
       "path": "_framework/System.Private.Uri.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3149,
-      "sha256": "e415aa034cf5c5e1bc871a17caddf19c68b288a7b19aca6a62b0dd814403700c"
+      "sha256": "88d8e43ec4ef89eed08df2b4894e9416104dd8caaa7190a344742c24a780504f"
     },
     {
       "path": "_framework/dotnet.js",
@@ -173,7 +173,7 @@
     {
       "path": "_framework/dotnet.native.wasm",
       "bytes": 1417190,
-      "sha256": "4e7607cf52843586ae039b8a63b563f49a5b3ff7e4833ce90994d4360c97e4fb"
+      "sha256": "dcd87bce11cbc98fafae33278aff7c8fcc2d4551e685c622fe0b45577501d277"
     },
     {
       "path": "_framework/dotnet.runtime.js",
@@ -201,5 +201,5 @@
       "sha256": "7ae7e50d45200aa9644c03ee5a50359bdb4a8dfc3c408a5f28b95add0a08096c"
     }
   ],
-  "totalBytes": 12664007
+  "totalBytes": 12666055
 }

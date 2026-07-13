@@ -241,6 +241,10 @@ public sealed class PptxCodecTests
 
         var imported = Import(authored.File.ToByteArray());
         Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Contains(imported.Artifact.OpaqueOpc.PackageRelationships,
+            relationship => relationship.SourcePath == "ppt/slides/slide1.xml" && relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal));
+        Assert.Contains(imported.Artifact.OpaqueOpc.PackageRelationships,
+            relationship => relationship.SourcePath == "ppt/slides/slide1.xml" && relationship.Type.EndsWith("/slide", StringComparison.Ordinal));
         var runs = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs;
         Assert.Equal("https://example.com/guide?x=1&y=2", runs[0].RunHyperlink.Uri);
         Assert.Equal("Read the guide", runs[0].RunHyperlink.Tooltip);
@@ -256,6 +260,7 @@ public sealed class PptxCodecTests
         runs[3].NoHyperlink = true;
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.Equal("opaque_content_preserved", Assert.Single(preserved.Diagnostics).Code);
         using (var stream = new MemoryStream(preserved.File.ToByteArray()))
         using (var package = PresentationDocument.Open(stream, false))
         {

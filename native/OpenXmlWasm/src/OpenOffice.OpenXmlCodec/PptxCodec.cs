@@ -136,6 +136,7 @@ internal static class PptxCodec
         stream.Write(sourceBytes);
         stream.Position = 0;
         var changedParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var addedRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         using (var package = PresentationDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = false }))
         {
             var presentationPart = package.PresentationPart ??
@@ -225,7 +226,11 @@ internal static class PptxCodec
                     changedParts.Add(PartPath(slidePart));
                 }
                 if (hyperlinkContext.RelationshipsChanged)
+                {
                     changedParts.Add(RelationshipPartPath(slidePart));
+                    foreach (var id in hyperlinkContext.AddedRelationshipIds)
+                        addedRelationshipIds.Add($"{PartPath(slidePart)}\0{id}");
+                }
             }
         }
 
@@ -235,7 +240,7 @@ internal static class PptxCodec
         AssertPackagePartsUnchangedExcept(sourceBytes, bytes, changedParts);
         ValidatePreservedSlideElements(sourceBytes, bytes, envelope.Presentation);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Pptx, includeSourcePackage: false);
-        PackageGuards.AssertOpaqueGraphMatches(envelope.OpaqueOpc, outputOpaque, "opaque_content_not_preserved");
+        AssertOpaqueGraphMatchesWithAddedLinkRelationships(envelope.OpaqueOpc, outputOpaque, addedRelationshipIds);
         var diagnostics = new List<Diagnostic>();
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning(
@@ -642,6 +647,41 @@ internal static class PptxCodec
         var unexpected = changed.Where(path => !allowedPaths.Contains(path)).Take(8).ToArray();
         if (unexpected.Length > 0)
             throw new CodecException("presentation_unowned_part_changed", $"Source-preserving PPTX export changed unowned package parts: {string.Join(", ", unexpected)}.");
+    }
+
+    private static void AssertOpaqueGraphMatchesWithAddedLinkRelationships(
+        OpaqueOpcGraph expected,
+        OpaqueOpcGraph actual,
+        IReadOnlySet<string> allowedAddedRelationshipIds)
+    {
+        var guarded = actual.Clone();
+        var removed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var relationship in guarded.PackageRelationships.ToArray())
+        {
+            var key = $"{relationship.SourcePath}\0{relationship.Id}";
+            if (!allowedAddedRelationshipIds.Contains(key)) continue;
+            var isExternalLink = relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
+                                 relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase);
+            var isSlideJump = relationship.Type.EndsWith("/slide", StringComparison.Ordinal) &&
+                              !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase);
+            if (!IsNumberedSlidePath(relationship.SourcePath) || (!isExternalLink && !isSlideJump))
+                throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX link added unsupported relationship {relationship.Id} from {relationship.SourcePath}.");
+            guarded.PackageRelationships.Remove(relationship);
+            removed.Add(key);
+        }
+        if (!removed.SetEquals(allowedAddedRelationshipIds))
+            throw new CodecException("opaque_content_not_preserved", "Modeled PPTX link relationship additions do not match the relationships written to the package.");
+        PackageGuards.AssertOpaqueGraphMatches(expected, guarded, "opaque_content_not_preserved");
+    }
+
+    private static bool IsNumberedSlidePath(string path)
+    {
+        const string prefix = "ppt/slides/slide";
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
     private static void ValidatePreservedSlideElements(byte[] sourceBytes, byte[] outputBytes, PresentationArtifact requested)
