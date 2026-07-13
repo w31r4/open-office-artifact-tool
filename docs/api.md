@@ -1052,7 +1052,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
-| `slide.shapes.add` | api | Add a shape/textbox with geometry, position, fill, line, and text. |
+| `slide.shapes.add` | api | Add a shape/textbox with geometry, position, fill, line, text, and bounded DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
 
 ### presentation details
@@ -1602,7 +1602,7 @@ Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit
 
 #### `slide.shapes.add`
 
-Add a shape/textbox with geometry, position, fill, line, and text.
+Add a shape/textbox with geometry, position, fill, line, text, and bounded DrawingML text-body layout.
 
 **Schema parameters:**
 
@@ -1610,6 +1610,7 @@ Add a shape/textbox with geometry, position, fill, line, and text.
 - `geometry` (string) — Shape geometry such as rect or ellipse.
 - `position` (object) — Pixel left/top/width/height frame.
 - `text` (string|string[]|object|object[]) — Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks.
+- `textBodyProperties` (object) — DrawingML text-frame layout: pixel insets, top/center/bottom anchor, square/none wrapping, and none/shrinkText/resizeShape AutoFit.
 - `fill` (string|object) — Shape fill.
 - `line` (object) — Line color, width, dash, and arrow metadata.
 - `placeholder` (object) — Optional layout placeholder metadata.
