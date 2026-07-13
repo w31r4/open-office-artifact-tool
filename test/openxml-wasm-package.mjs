@@ -15,8 +15,8 @@ try {
 
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", tarball], temporary);
   const probe = `
-    import { Workbook } from "open-office-artifact-tool";
-    import { exportXlsxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+    import { DocumentModel, Workbook } from "open-office-artifact-tool";
+    import { exportDocxWithOpenXmlWasm, exportXlsxWithOpenXmlWasm, importDocxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
     const workbook = Workbook.create({ dateSystem: "1904" });
     const sheet = workbook.worksheets.add("Packaged");
     sheet.getRange("A1:B1").values = [["clean install", 7]];
@@ -24,6 +24,11 @@ try {
     const imported = await importXlsxWithOpenXmlWasm(file);
     if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
     if (imported.worksheets.getItem("Packaged").getRange("A1:B1").values[0][1] !== 7) process.exit(2);
+    const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });
+    const docx = await exportDocxWithOpenXmlWasm(document);
+    const importedDocument = await importDocxWithOpenXmlWasm(docx);
+    if (docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(3);
+    if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(4);
   `;
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
     PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin",

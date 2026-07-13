@@ -1,6 +1,7 @@
 {
   "name": "business-brief",
   "outputName": "business-brief.docx",
+  "roundtripCodec": "openxml-wasm",
   "designPreset": "report",
   "theme": {
     "name": "Business Brief Theme",

@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 233);
+assert.equal(HELP_CATALOG.length, 235);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -195,7 +195,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.maxFontBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.subsetFont?.type, "boolean");
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 32);
+assert.equal(documentCatalog.length, 34);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -229,6 +229,9 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "fx.WORKDAY.INTL")?.categ
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenXmlWasm")?.schema?.parameters?.allowLossy?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenXmlWasm")?.schema?.returns?.blob?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenXmlWasm")?.schema?.parameters?.allowLossy?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenXmlWasm")?.schema?.returns?.blob?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "importDocxWithOpenXmlWasm")?.schema?.returns?.document?.type, "DocumentModel");
 assert.equal(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenXmlWasm")?.schema?.parameters?.limits?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "openXmlWasmStatus")?.schema?.returns?.status?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenXmlWasm")?.schema?.parameters?.request?.required, true);

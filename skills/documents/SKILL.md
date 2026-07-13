@@ -16,6 +16,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 - For style-driven lists, give paragraph styles a shared `numberingId`, use a distinct derived style for each associated level, and give the numbering style the same `numberingId`. Set `numberingStyleId` on authored list items. Native import resolves paragraph-style `numPr`, `pStyle`, `styleLink`, and `numStyleLink` chains; malformed or cyclic chains are package errors.
 - Preserve direct and theme-backed run formatting. Theme fonts/colors and paired complex-script properties must survive a metadata-free native import before delivery.
 - Keep semantic and package inspection bounded. Store QA evidence in a temporary/output directory.
+- The checked-in `business-brief` fixture deliberately crosses the experimental `openxml-wasm` DOCX roundtrip. The adapter preserves unchanged advanced WordprocessingML from a hash-bound source package and rejects unsupported edits; normal advanced authoring continues through `DocumentFile` until the C# semantic slice expands.
 - Do not deliver a DOCX until semantic verification and page-image review pass.
 
 ## Authoring workflow

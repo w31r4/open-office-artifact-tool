@@ -38,6 +38,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
+| `exportDocxWithOpenXmlWasm` | api | Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled C# Open XML SDK WebAssembly codec. |
+| `importDocxWithOpenXmlWasm` | api | Experimentally import DOCX bytes with loss-aware block source bindings for fail-closed advanced-content preservation. |
 
 ### document details
 
@@ -583,6 +585,33 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 **Schema returns:**
 
 - `document` (DocumentModel) — Editable document facade.
+
+#### `exportDocxWithOpenXmlWasm`
+
+Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled C# Open XML SDK WebAssembly codec.
+
+**Schema parameters:**
+
+- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings from the WASM importer.
+- `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — DOCX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata.
+
+#### `importDocxWithOpenXmlWasm`
+
+Experimentally import DOCX bytes with loss-aware block source bindings for fail-closed advanced-content preservation.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|ArrayBuffer) required — DOCX package bytes.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `document` (DocumentModel) — Imported document facade carrying source/opaque package evidence and loss-aware block bindings for fail-closed second export.
 
 ## pdf
 

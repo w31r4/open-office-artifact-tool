@@ -1,6 +1,6 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { readFile } from "node:fs/promises";
-import { FileBlob, Workbook } from "../index.mjs";
+import { DocumentModel, FileBlob, Workbook } from "../index.mjs";
 import {
   ArtifactFamily,
   CodecOperation,
@@ -12,9 +12,11 @@ import {
 export const OPEN_XML_WASM_PROTOCOL_VERSION = 1;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const RUNTIME_URL = new URL("../../runtime/openxml-wasm/main.mjs", import.meta.url);
 const MANIFEST_URL = new URL("../../runtime/openxml-wasm/manifest.json", import.meta.url);
 const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-state");
+const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-document-state");
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
 const DEFAULT_THEME_COLORS = {
   dk1: "#000000", lt1: "#FFFFFF", dk2: "#1F497D", lt2: "#EEECE1",
@@ -273,6 +275,208 @@ export async function importXlsxWithOpenXmlWasm(input, options = {}) {
     limits: codecLimits(options.limits),
   });
   return workbookFromEnvelope(response.artifact);
+}
+
+const DOCUMENT_RUN_STYLE_KEYS = new Set(["runStyleId", "bold", "italic", "underline"]);
+
+function documentRun(run, blockId) {
+  const style = run.style || {};
+  const unsupported = Object.keys(style).filter((key) => !DOCUMENT_RUN_STYLE_KEYS.has(key));
+  if (unsupported.length) {
+    throw new OpenXmlWasmCodecError(`Document block ${blockId} uses unsupported run style fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_document_features" });
+  }
+  return {
+    text: String(run.text ?? ""),
+    styleId: style.runStyleId || "",
+    bold: style.bold === true,
+    italic: style.italic === true,
+    underline: style.underline === true || style.underline === "single",
+  };
+}
+
+function sameTableValues(block, original) {
+  return JSON.stringify(block.values || []) === JSON.stringify((original.content.value.rows || []).map((row) => [...row.cells]));
+}
+
+function unchangedSourceBlock(block, original) {
+  switch (original.content.case) {
+    case "paragraph": {
+      if (block.kind !== "paragraph" || block.text !== original.content.value.text || block.styleId !== (original.styleId || "Normal")) return false;
+      if (original.source?.editable !== false) return false;
+      return block.runs.every((run) => Object.keys(run.style || {}).length === 0);
+    }
+    case "table": {
+      if (block.kind !== "table" || !sameTableValues(block, original)) return false;
+      return block.styleId === original.styleId || (!original.styleId && block.styleId === "TableGrid");
+    }
+    case "opaque":
+      return block.kind === "paragraph" && block.text === original.content.value.text && block.runs.every((run) => Object.keys(run.style || {}).length === 0);
+    default:
+      return false;
+  }
+}
+
+function documentBlock(block, original) {
+  if (original && unchangedSourceBlock(block, original)) return original;
+  const common = {
+    id: original?.id || block.id,
+    name: block.name || original?.name || "",
+    styleId: block.styleId || original?.styleId || "",
+    source: original?.source,
+  };
+  if (block.kind === "paragraph") {
+    return {
+      ...common,
+      content: {
+        case: "paragraph",
+        value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id)) },
+      },
+    };
+  }
+  if (block.kind === "table") {
+    return {
+      ...common,
+      content: {
+        case: "table",
+        value: { rows: (block.values || []).map((cells) => ({ cells: cells.map((value) => String(value ?? "")) })) },
+      },
+    };
+  }
+  throw new OpenXmlWasmCodecError(`The DOCX WebAssembly vertical slice cannot author document block kind ${block.kind}.`, [], { code: "unsupported_document_features" });
+}
+
+function unsupportedDocumentCollections(document) {
+  const unsupported = [];
+  for (const [label, value] of [
+    ["bookmarks", document.bookmarks],
+    ["comments", document.comments],
+    ["bibliography sources", document.bibliographySources],
+    ["headers", document.headers],
+    ["footers", document.footers],
+    ["section settings", document.sectionSettings],
+  ]) {
+    if (value?.length) unsupported.push(label);
+  }
+  if (document.bibliography && Object.values(document.bibliography).some(Boolean)) unsupported.push("bibliography settings");
+  return unsupported;
+}
+
+function documentEnvelope(document) {
+  if (!(document instanceof DocumentModel)) throw new TypeError("exportDocxWithOpenXmlWasm expects a DocumentModel instance.");
+  const state = document[DOCUMENT_STATE];
+  if (!state) {
+    const unsupported = unsupportedDocumentCollections(document);
+    if (unsupported.length) {
+      throw new OpenXmlWasmCodecError(`The DOCX WebAssembly vertical slice cannot author: ${unsupported.join(", ")}. Use DocumentFile.exportDocx until parity reaches these features.`, [], { code: "unsupported_document_features" });
+    }
+  }
+  if (state && state.blocks.length !== document.blocks.length) {
+    throw new OpenXmlWasmCodecError(`Source-preserving DOCX export requires the original ${state.blocks.length}-block topology; the document contains ${document.blocks.length} blocks.`, [], { code: "document_topology_changed" });
+  }
+  return {
+    protocolVersion: OPEN_XML_WASM_PROTOCOL_VERSION,
+    family: ArtifactFamily.DOCUMENT,
+    source: state?.source,
+    opaqueOpc: state?.opaqueOpc,
+    diagnostics: state?.diagnostics || [],
+    payload: {
+      case: "document",
+      value: {
+        id: document.id,
+        name: document.name,
+        blocks: document.blocks.map((block, index) => documentBlock(block, state?.blocks[index])),
+      },
+    },
+  };
+}
+
+export async function exportDocxWithOpenXmlWasm(document, options = {}) {
+  const response = await invokeOpenXmlWasm({
+    protocolVersion: OPEN_XML_WASM_PROTOCOL_VERSION,
+    operation: CodecOperation.EXPORT_DOCX,
+    family: ArtifactFamily.DOCUMENT,
+    artifact: documentEnvelope(document),
+    limits: codecLimits(options.limits),
+    allowLossy: options.allowLossy === true,
+  });
+  return new FileBlob(response.file, {
+    type: DOCX_MIME,
+    metadata: { artifactKind: "document", codec: "openxml-wasm", diagnostics: response.diagnostics },
+  });
+}
+
+function documentFromEnvelope(envelope) {
+  if (envelope.family !== ArtifactFamily.DOCUMENT || envelope.payload.case !== "document") {
+    throw new OpenXmlWasmCodecError("OpenXML WebAssembly response does not contain a document artifact.", [], { code: "invalid_document_artifact" });
+  }
+  const source = envelope.payload.value;
+  const styles = {};
+  for (const block of source.blocks) {
+    if (block.styleId) styles[block.styleId] = { id: block.styleId, name: block.styleId, type: block.content.case === "table" ? "table" : "paragraph" };
+    if (block.content.case === "paragraph") {
+      for (const run of block.content.value.runs) {
+        if (run.styleId) styles[run.styleId] = { id: run.styleId, name: run.styleId, type: "character" };
+      }
+    }
+  }
+  const blocks = source.blocks.map((block) => {
+    switch (block.content.case) {
+      case "paragraph":
+        return {
+          kind: "paragraph",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "Normal",
+          text: block.content.value.text,
+          runs: block.content.value.runs.length ? block.content.value.runs.map((run) => ({
+            text: run.text,
+            style: {
+              ...(run.styleId ? { runStyleId: run.styleId } : {}),
+              ...(run.bold ? { bold: true } : {}),
+              ...(run.italic ? { italic: true } : {}),
+              ...(run.underline ? { underline: true } : {}),
+            },
+          })) : undefined,
+        };
+      case "table":
+        return {
+          kind: "table",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "TableGrid",
+          values: block.content.value.rows.map((row) => [...row.cells]),
+        };
+      case "opaque":
+        return {
+          kind: "paragraph",
+          id: block.id,
+          name: block.name || `Preserved ${block.content.value.elementName}`,
+          styleId: "Normal",
+          text: block.content.value.text,
+        };
+      default:
+        throw new OpenXmlWasmCodecError(`Document block ${block.id} has no supported wire content.`, [], { code: "invalid_document_artifact" });
+    }
+  });
+  const document = DocumentModel.create({ name: source.name || "Imported document", styles, blocks });
+  document.id = source.id || document.id;
+  Object.defineProperty(document, DOCUMENT_STATE, {
+    configurable: true,
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, blocks: source.blocks },
+    writable: true,
+  });
+  return document;
+}
+
+export async function importDocxWithOpenXmlWasm(input, options = {}) {
+  const response = await invokeOpenXmlWasm({
+    protocolVersion: OPEN_XML_WASM_PROTOCOL_VERSION,
+    operation: CodecOperation.IMPORT_DOCX,
+    family: ArtifactFamily.DOCUMENT,
+    file: await inputBytes(input),
+    limits: codecLimits(options.limits),
+  });
+  return documentFromEnvelope(response.artifact);
 }
 
 export async function openXmlWasmStatus() {

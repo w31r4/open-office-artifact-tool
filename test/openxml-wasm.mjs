@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import JSZip from "jszip";
-import { Workbook, SpreadsheetFile } from "../src/index.mjs";
+import { DocumentFile, DocumentModel, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
 import {
   OpenXmlWasmCodecError,
+  exportDocxWithOpenXmlWasm,
   exportXlsxWithOpenXmlWasm,
+  importDocxWithOpenXmlWasm,
   importXlsxWithOpenXmlWasm,
   openXmlWasmStatus,
 } from "../src/codecs/openxml-wasm.mjs";
@@ -98,6 +100,55 @@ const styledRoundTrip = await SpreadsheetFile.importXlsx(styledPreserved);
 assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("B2").values[0][0], 2);
 assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("A1").format.font.bold, true);
 assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").tables.items[0].name, "StyledTable");
+
+const minimalDocument = DocumentModel.create({
+  name: "OpenXML WASM brief",
+  blocks: [
+    { kind: "paragraph", text: "Quarterly brief", styleId: "Normal", runs: [{ text: "Quarterly ", style: { bold: true } }, { text: "brief", style: { italic: true } }] },
+    { kind: "table", styleId: "TableGrid", values: [["Revenue", "42"], ["Status", "Ready"]] },
+  ],
+});
+const docxExported = await exportDocxWithOpenXmlWasm(minimalDocument);
+assert.deepEqual([...docxExported.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+assert.equal(docxExported.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+assert.equal(docxExported.metadata.codec, "openxml-wasm");
+assert.equal((await DocumentFile.inspectDocx(docxExported)).ok, true);
+const docxImported = await importDocxWithOpenXmlWasm(docxExported);
+assert.equal(docxImported.name, "Imported document");
+assert.equal(docxImported.blocks[0].text, "Quarterly brief");
+assert.equal(docxImported.blocks[0].runs[0].style.bold, true);
+assert.deepEqual(docxImported.blocks[1].values, [["Revenue", "42"], ["Status", "Ready"]]);
+assert.equal(docxImported.verify().ok, true);
+
+const richDocument = DocumentModel.create({ name: "Source preservation", blocks: [] });
+richDocument.addParagraph("Editable lead", { styleId: "Normal" });
+richDocument.addHyperlink("Preserved link", "https://example.invalid/source");
+richDocument.addHeader("Preserved header", { sectionIndex: 0, referenceType: "default" });
+const richSource = await DocumentFile.exportDocx(richDocument);
+const richImported = await importDocxWithOpenXmlWasm(richSource);
+assert.equal(richImported.blocks[0].text, "Editable lead");
+assert.equal(richImported.blocks[1].text, "Preserved link");
+richImported.blocks[0].text = "Edited lead";
+richImported.blocks[0].runs[0].text = "Edited lead";
+const richPreserved = await exportDocxWithOpenXmlWasm(richImported);
+assert.equal(richPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
+const richRoundTrip = await DocumentFile.importDocx(richPreserved, { preferNative: true });
+assert.equal(richRoundTrip.blocks[0].text, "Edited lead");
+assert.equal(richRoundTrip.blocks.some((block) => block.kind === "hyperlink" && block.text === "Preserved link"), true);
+assert.equal(richRoundTrip.headers.some((header) => header.text === "Preserved header"), true);
+richImported.blocks[1].text = "Unsafe hyperlink edit";
+richImported.blocks[1].runs[0].text = "Unsafe hyperlink edit";
+await assert.rejects(
+  exportDocxWithOpenXmlWasm(richImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_document_edit",
+);
+
+const unsupportedDocument = DocumentModel.create({ blocks: [] });
+unsupportedDocument.addHyperlink("Unsupported direct authoring", "https://example.invalid/direct");
+await assert.rejects(
+  exportDocxWithOpenXmlWasm(unsupportedDocument),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_document_features",
+);
 
 assert.equal(status.available, true);
 assert.equal(status.protocolVersion, 1);

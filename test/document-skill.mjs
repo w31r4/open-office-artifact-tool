@@ -20,6 +20,7 @@ const nativeStatus = nativeDocumentRenderStatus();
 try {
   const result = await runDocumentFixture(fixturePath, { outputDir, nativeRender: nativeStatus.available ? "required" : "auto" });
   assert.equal(result.fixture.name, "business-brief");
+  assert.equal(result.roundtripCodec, "openxml-wasm");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
@@ -113,12 +114,12 @@ try {
   assert.match(businessBriefSections[0], /<w:headerReference\b/);
   assert.match(businessBriefSections[0], /<w:footerReference\b/);
   assert.doesNotMatch(businessBriefSections[1], /<w:(?:header|footer)Reference\b/);
-  assert.match(businessBriefDocumentXml, /<w:bookmarkStart w:id="42" w:name="RecommendationSection"\/>/);
-  assert.match(businessBriefDocumentXml, /<w:bookmarkEnd w:id="42"\/>/);
-  assert.match(businessBriefDocumentXml, /<w:bookmarkStart w:id="43" w:name="ReadinessEvidence"\/><w:r><w:t>Semantic<\/w:t>/);
-  assert.match(businessBriefDocumentXml, /<w:t>Required<\/w:t><\/w:r><w:bookmarkEnd w:id="43"\/>/);
-  assert.match(businessBriefDocumentXml, /<w:hyperlink w:anchor="RecommendationSection" w:history="0" w:tooltip="Open the recommendation section">/);
-  assert.match(businessBriefDocumentXml, /<w:hyperlink w:anchor="ReadinessEvidence" w:history="0" w:tooltip="Open the readiness table evidence">/);
+  assert.match(businessBriefDocumentXml, /<w:bookmarkStart\b(?=[^>]*w:id="42")(?=[^>]*w:name="RecommendationSection")[^>]*\/>/);
+  assert.match(businessBriefDocumentXml, /<w:bookmarkEnd\b(?=[^>]*w:id="42")[^>]*\/>/);
+  assert.match(businessBriefDocumentXml, /<w:bookmarkStart\b(?=[^>]*w:id="43")(?=[^>]*w:name="ReadinessEvidence")[^>]*\/>\s*<w:r><w:t>Semantic<\/w:t>/);
+  assert.match(businessBriefDocumentXml, /<w:t>Required<\/w:t><\/w:r>\s*<w:bookmarkEnd\b(?=[^>]*w:id="43")[^>]*\/>/);
+  assert.match(businessBriefDocumentXml, /<w:hyperlink\b(?=[^>]*w:anchor="RecommendationSection")(?=[^>]*w:history="0")(?=[^>]*w:tooltip="Open the recommendation section")[^>]*>/);
+  assert.match(businessBriefDocumentXml, /<w:hyperlink\b(?=[^>]*w:anchor="ReadinessEvidence")(?=[^>]*w:history="0")(?=[^>]*w:tooltip="Open the readiness table evidence")[^>]*>/);
   assert.match(businessBriefDocumentXml, /w:instr="CITATION ECMA376"/);
   const businessBriefRels = await businessBriefZip.file("word/_rels/document.xml.rels").async("text");
   assert.match(businessBriefRels, /relationships\/commentsExtended/);

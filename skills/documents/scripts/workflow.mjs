@@ -13,6 +13,7 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+import { exportDocxWithOpenXmlWasm, importDocxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -311,6 +312,12 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     });
   }
   if (packagePatches.length) docx = await DocumentFile.patchDocx(docx, packagePatches);
+  const roundtripCodec = String(options.roundtripCodec || fixture.roundtripCodec || "none").toLowerCase();
+  if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
+  if (roundtripCodec === "openxml-wasm") {
+    const imported = await importDocxWithOpenXmlWasm(docx);
+    docx = await exportDocxWithOpenXmlWasm(imported);
+  }
   await docx.save(docxPath);
   const qa = await verifyDocumentFile(docxPath, {
     outputDir: path.join(outputDir, "qa"),
@@ -324,7 +331,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     pixelRegistration: options.pixelRegistration,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
-    preferNative: packagePatches.length > 0,
+    preferNative: packagePatches.length > 0 || roundtripCodec === "openxml-wasm",
   });
-  return { fixture, docxPath, qa };
+  return { fixture, docxPath, qa, roundtripCodec };
 }

@@ -11,7 +11,7 @@ This package is implemented independently using open implementation code:
 - shared `FileBlob`
 - `inspect(...)`, `resolve(...)`, `help(...)`, render/export-style APIs where practical
 
-The long-term Office I/O architecture is documented in [docs/reference-runtime-architecture.md](docs/reference-runtime-architecture.md). The agent-facing model remains JavaScript. A first source-built C# Open XML SDK codec now runs from bundled .NET WebAssembly for a bounded XLSX slice; DOCX/PPTX and advanced workbook semantics still use the existing JavaScript codecs as the default migration fallback. The Windows Microsoft Office bridge is optional render/compatibility QA, not the core file codec.
+The long-term Office I/O architecture is documented in [docs/reference-runtime-architecture.md](docs/reference-runtime-architecture.md). The agent-facing model remains JavaScript. Source-built C# Open XML SDK codecs now run from bundled .NET WebAssembly for bounded XLSX and DOCX slices; PPTX and advanced authoring semantics still use the existing JavaScript codecs as the default migration fallback. The Windows Microsoft Office bridge is optional render/compatibility QA, not the core file codec.
 
 ## Current status
 
@@ -55,6 +55,8 @@ Every informative PDF image and chart must provide concise, meaningful `alt` tex
 
 Set `headingLevel: 1` through `6` on positioned PDF text that acts as a heading. Visual style remains independent from semantics: the value is preserved through inspect/layout/model roundtrip and exported as an H1-H6 structure role. `pdf.verify()` reports a heading sequence that starts below H1 or skips a level, and the runnable verifier compares modeled heading counts with the real tagged bytes.
 
+The bundled codec also has a bounded DOCX slice. The complex Documents fixture crosses it with source-preserving advanced WordprocessingML and real page-render QA; direct authoring outside the modeled paragraph/run/table subset still fails closed.
+
 ## Usage
 
 ```js
@@ -86,6 +88,17 @@ const workbook = Workbook.create({ dateSystem: "1904" });
 workbook.worksheets.add("Summary").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 42.5]];
 const xlsx = await exportXlsxWithOpenXmlWasm(workbook);
 const roundtripped = await importXlsxWithOpenXmlWasm(xlsx);
+```
+
+The same subpath authors a bounded DOCX semantic slice. Imported advanced blocks are hash-bound to the original package: unchanged content is preserved, while edits to not-yet-modeled structures fail explicitly.
+
+```js
+import { DocumentModel } from "open-office-artifact-tool";
+import { exportDocxWithOpenXmlWasm, importDocxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+
+const document = DocumentModel.create({ paragraphs: ["OpenXML WASM document"] });
+const docx = await exportDocxWithOpenXmlWasm(document);
+const importedDocument = await importDocxWithOpenXmlWasm(docx);
 ```
 
 Presentation compose-first authoring uses helper nodes that mirror the agent-oriented JSX vocabulary while staying transpiler-free:
