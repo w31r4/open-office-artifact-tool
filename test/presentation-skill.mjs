@@ -88,6 +88,10 @@ try {
   assert.equal((fixtureChartXml.match(/<c:catAx>/g) || []).length, 1);
   assert.equal((fixtureChartXml.match(/<c:valAx>/g) || []).length, 1);
   assert.match(fixtureChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="8"\/><\/c:marker>/);
+  assert.match(fixtureChartXml, /<c:dLblPos val="inEnd"\/>[\s\S]*?<c:showCatName val="1"\/>/);
+  assert.match(fixtureChartXml, /<c:dLblPos val="t"\/>[\s\S]*?<c:showVal val="1"\/>/);
+  assert.match(fixtureChartXml, /<c:name>Native evidence trend<\/c:name>[\s\S]*?<c:trendlineType val="linear"\/>[\s\S]*?<c:dispRSqr val="0"\/>/);
+  assert.match(fixtureChartXml, /<a:srgbClr val="7C3AED"\/>[\s\S]*?<a:prstDash val="dashDot"\/>/);
   assert.match(fixtureChartXml, /<a:ln w="19050">[\s\S]*?<a:prstDash val="dash"\/>/);
   assert.match(fixtureChartXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="FACC15"\/>[\s\S]*?<a:prstDash val="dot"\/>/);
   assert.match(fixtureThirdSlideXml, /<a:buBlip><a:blip r:embed="rId\d+"\/><\/a:buBlip>/);
@@ -98,6 +102,17 @@ try {
   assert.deepEqual(fixtureChart.series.map((series) => series.chartType), ["bar", "line"]);
   assert.deepEqual(fixtureChart.barOptions, { direction: "column", grouping: "clustered", gapWidth: 80, overlap: 0 });
   assert.deepEqual(fixtureChart.lineOptions, { grouping: "standard", marker: { symbol: "diamond", size: 8 }, smooth: false });
+  assert.deepEqual(fixtureChart.series.map((series) => series.dataLabels), [
+    { showValue: true, showCategoryName: true, position: "inEnd" },
+    { showValue: true, showCategoryName: false, position: "t" },
+  ]);
+  assert.deepEqual(fixtureChart.series[1].trendlines, [{
+    type: "linear",
+    name: "Native evidence trend",
+    displayEquation: false,
+    displayRSquared: false,
+    line: { fill: "#7C3AED", width: 1.5, style: "dashDot" },
+  }]);
   assert.deepEqual(fixtureChart.series[0].line, { fill: "#0369A1", width: 1.5, style: "dash" });
   assert.deepEqual(fixtureChart.series[1].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
   const fixturePictureBullet = first.qa.presentation.slides.items[2].shapes.items.find((shape) => shape.name === "package-callout").text.paragraphs[1].bulletImage;

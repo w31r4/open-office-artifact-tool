@@ -8,6 +8,11 @@ const DATA_LABEL_POSITION_ALIASES = new Map([
   ["bottom", "b"], ["center", "ctr"], ["insideBase", "inBase"], ["insideEnd", "inEnd"],
   ["left", "l"], ["outsideEnd", "outEnd"], ["right", "r"], ["top", "t"],
 ]);
+const TRENDLINE_TYPES = new Set(["exp", "linear", "log", "movingAvg", "poly", "power"]);
+const TRENDLINE_TYPE_ALIASES = new Map([
+  ["exponential", "exp"], ["logarithmic", "log"], ["movingAverage", "movingAvg"],
+  ["polynomial", "poly"],
+]);
 const LINE_DASH_TO_OOXML = new Map([
   ["solid", "solid"], ["dot", "dot"], ["dash", "dash"], ["longDash", "lgDash"],
   ["dashDot", "dashDot"], ["longDashDot", "lgDashDot"], ["longDashDotDot", "lgDashDotDot"],
@@ -167,6 +172,52 @@ export function normalizePresentationChartDataLabels(value) {
   };
 }
 
+function normalizePresentationChartTrendline(value, valueCount) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("chart trendlines must be objects.");
+  const rawType = value.type || "linear";
+  const type = TRENDLINE_TYPE_ALIASES.get(rawType) || rawType;
+  if (!TRENDLINE_TYPES.has(type)) throw new TypeError(`chart trendline type must be one of: ${[...TRENDLINE_TYPES].join(", ")}.`);
+  const order = type === "poly"
+    ? boundedInteger(value.order, { name: "polynomial chart trendline order", min: 2, max: 6, fallback: 2 })
+    : undefined;
+  const periodMax = valueCount == null ? 255 : Math.min(255, valueCount - 1);
+  if (type === "movingAvg" && periodMax < 2) throw new RangeError("moving-average chart trendlines require at least three series values.");
+  const period = type === "movingAvg"
+    ? boundedInteger(value.period, { name: "moving-average chart trendline period", min: 2, max: periodMax, fallback: 2 })
+    : undefined;
+  const normalizeExtension = (candidate, name) => {
+    const normalized = boundedNumber(candidate, { name, min: 0, max: 1_000_000, optional: true });
+    if (normalized != null && normalized * 2 !== Math.round(normalized * 2)) throw new RangeError(`${name} must use 0.5 increments for category charts.`);
+    return normalized;
+  };
+  const forward = normalizeExtension(value.forward, "chart trendline forward");
+  const backward = normalizeExtension(value.backward, "chart trendline backward");
+  const intercept = boundedNumber(value.intercept, { name: "chart trendline intercept", min: -Number.MAX_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER, optional: true });
+  const name = value.name == null ? undefined : String(value.name);
+  if (name != null && (name.length < 1 || name.length > 255)) throw new RangeError("chart trendline name must contain 1 to 255 characters.");
+  const line = normalizePresentationChartLine(value.line ?? value.stroke);
+  return {
+    type,
+    ...(name ? { name } : {}),
+    ...(order == null ? {} : { order }),
+    ...(period == null ? {} : { period }),
+    ...(forward == null ? {} : { forward }),
+    ...(backward == null ? {} : { backward }),
+    ...(intercept == null ? {} : { intercept }),
+    displayEquation: Boolean(value.displayEquation ?? value.showEquation),
+    displayRSquared: Boolean(value.displayRSquared ?? value.showRSquared),
+    ...(line ? { line } : {}),
+  };
+}
+
+export function normalizePresentationChartTrendlines(value, valueCount, chartType) {
+  if (value == null || value === false) return [];
+  const items = Array.isArray(value) ? value : [value];
+  if (items.length > 0 && chartType === "pie") throw new TypeError("chart trendlines are supported only for bar and line series.");
+  if (items.length > 16) throw new RangeError("chart series support at most 16 trendlines.");
+  return items.map((item) => normalizePresentationChartTrendline(item, valueCount));
+}
+
 function chartTextTitleXml(text = "") {
   return `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(text)}</a:t></a:r></a:p></c:rich></c:tx></c:title>`;
 }
@@ -200,6 +251,17 @@ function presentationDataLabelsXml(dataLabels, force = false) {
   return `<c:dLbls>${positionXml}<c:showLegendKey val="0"/><c:showVal val="${normalized.showValue ? 1 : 0}"/><c:showCatName val="${normalized.showCategoryName ? 1 : 0}"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>`;
 }
 
+function presentationTrendlineXml(trendline) {
+  const nameXml = trendline.name ? `<c:name>${xmlEscape(trendline.name)}</c:name>` : "";
+  const lineXml = trendline.line ? chartShapePropertiesXml(undefined, trendline.line) : "";
+  const orderXml = trendline.order == null ? "" : `<c:order val="${trendline.order}"/>`;
+  const periodXml = trendline.period == null ? "" : `<c:period val="${trendline.period}"/>`;
+  const forwardXml = trendline.forward == null ? "" : `<c:forward val="${trendline.forward}"/>`;
+  const backwardXml = trendline.backward == null ? "" : `<c:backward val="${trendline.backward}"/>`;
+  const interceptXml = trendline.intercept == null ? "" : `<c:intercept val="${trendline.intercept}"/>`;
+  return `<c:trendline>${nameXml}${lineXml}<c:trendlineType val="${trendline.type}"/>${orderXml}${periodXml}${forwardXml}${backwardXml}${interceptXml}<c:dispRSqr val="${trendline.displayRSquared ? 1 : 0}"/><c:dispEq val="${trendline.displayEquation ? 1 : 0}"/></c:trendline>`;
+}
+
 export function presentationChartXml(chart) {
   const type = chart.chartType === "combo" ? "combo" : chart.chartType === "line" ? "line" : chart.chartType === "pie" ? "pie" : "bar";
   const style = normalizePresentationChartStyle(type, chart);
@@ -217,7 +279,8 @@ export function presentationChartXml(chart) {
     const seriesLine = seriesStyle.line || (seriesType === "line" ? { fill: color, width: 2, style: "solid" } : undefined);
     const pointsXml = seriesStyle.points.map(chartPointXml).join("");
     const seriesDataLabelsXml = series.dataLabels == null ? "" : presentationDataLabelsXml(series.dataLabels, true);
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${seriesType === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}${seriesDataLabelsXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${seriesType === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
+    const trendlinesXml = normalizePresentationChartTrendlines(series.trendlines ?? series.trendline, values.length, seriesType).map(presentationTrendlineXml).join("");
+    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${seriesType === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}${seriesDataLabelsXml}${trendlinesXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${seriesType === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
   };
   const categoryAxisTitle = chart.axes?.category?.title ? chartTextTitleXml(chart.axes.category.title) : "";
   const valueAxisTitle = chart.axes?.value?.title ? chartTextTitleXml(chart.axes.value.title) : "";
@@ -293,11 +356,33 @@ function parseDataLabels(xml) {
   });
 }
 
+function parseTrendlines(xml, valueCount) {
+  const pattern = new RegExp(`<${localTag("trendline")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("trendline")}>`, "gi");
+  return [...String(xml || "").matchAll(pattern)].map((match) => {
+    const block = match[0];
+    const shape = parseChartShapeProperties(block);
+    return normalizePresentationChartTrendline({
+      type: tagValue(block, "trendlineType") || "linear",
+      name: decodeXml(tagBlock(block, "name")) || undefined,
+      order: tagValue(block, "order"),
+      period: tagValue(block, "period"),
+      forward: tagValue(block, "forward"),
+      backward: tagValue(block, "backward"),
+      intercept: tagValue(block, "intercept"),
+      displayRSquared: Boolean(booleanTag(block, "dispRSqr")),
+      displayEquation: Boolean(booleanTag(block, "dispEq")),
+      line: shape.line,
+    }, valueCount);
+  });
+}
+
 function parseSeries(chartBlock, chartType) {
   const pattern = new RegExp(`<${localTag("ser")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ser")}>`, "gi");
   return [...String(chartBlock || "").matchAll(pattern)].map((match, index) => {
     const xml = match[0];
-    const xmlWithoutPoints = xml.replace(new RegExp(`<${localTag("dPt")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("dPt")}>`, "gi"), "");
+    const xmlWithoutPoints = xml
+      .replace(new RegExp(`<${localTag("dPt")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("dPt")}>`, "gi"), "")
+      .replace(new RegExp(`<${localTag("trendline")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("trendline")}>`, "gi"), "");
     const tx = tagBlock(xml, "tx");
     const name = decodeXml(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "i").exec(tx)?.[1] || `Series ${index + 1}`);
     const shapeStyle = parseChartShapeProperties(xmlWithoutPoints);
@@ -307,11 +392,13 @@ function parseSeries(chartBlock, chartType) {
     const markerSize = tagValue(markerBlock, "size");
     const marker = markerSymbol ? normalizePresentationChartMarker({ symbol: markerSymbol, size: markerSize == null ? undefined : Number(markerSize) }) : undefined;
     const dataLabels = parseDataLabels(xml);
+    const values = valuesFrom("val").map((value) => Number(value) || 0);
+    const trendlines = parseTrendlines(xml, values.length);
     return {
       ...(chartType ? { chartType } : {}),
       order: Number(tagValue(xml, "order") ?? index),
       name,
-      values: valuesFrom("val").map((value) => Number(value) || 0),
+      values,
       categories: valuesFrom("cat"),
       color: shapeStyle.fill || shapeStyle.line?.fill,
       line: shapeStyle.line,
@@ -319,6 +406,7 @@ function parseSeries(chartBlock, chartType) {
       marker,
       smooth: booleanTag(xml, "smooth"),
       ...(dataLabels ? { dataLabels } : {}),
+      ...(trendlines.length ? { trendlines } : {}),
     };
   });
 }

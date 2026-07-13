@@ -280,7 +280,7 @@ const comboChart = pieSlide.charts.add("combo", {
   dataLabels: { showValue: true, position: "outsideEnd" },
   series: [
     { chartType: "bar", name: "Revenue", values: [10, 14, 18], color: "#3d8dff", dataLabels: { showValue: true, showCategoryName: true, position: "insideEnd" } },
-    { chartType: "line", name: "Margin", values: [4, 6, 7], color: "#dc2626", line: { fill: "#dc2626", width: 2, style: "dash" }, marker: { symbol: "diamond", size: 8 }, dataLabels: { showValue: true, position: "top" } },
+    { chartType: "line", name: "Margin", values: [4, 6, 7], color: "#dc2626", line: { fill: "#dc2626", width: 2, style: "dash" }, marker: { symbol: "diamond", size: 8 }, dataLabels: { showValue: true, position: "top" }, trendline: { type: "linear", name: "Margin trend", forward: 0.5, backward: 0.5, intercept: 1, displayEquation: true, displayRSquared: true, line: { fill: "#111827", width: 1.25, style: "dashDot" } } },
     { chartType: "bar", name: "Forecast", values: [12, 16, 20], color: "#6dcbf4", dataLabels: false },
   ],
 });
@@ -288,6 +288,9 @@ assert.throws(() => pieSlide.charts.add("bar", { styleId: 49 }), /styleId must b
 assert.throws(() => pieSlide.charts.add("bar", { barOptions: { grouping: "standard" } }), /chart bar grouping must be one of/);
 assert.throws(() => pieSlide.charts.add("line", { lineOptions: { marker: { symbol: "hexagon" } } }), /chart marker symbol must be one of/);
 assert.throws(() => pieSlide.charts.add("bar", { series: [{ values: [1], dataLabels: { position: "floating" } }] }), /data-label position must be one of/);
+assert.throws(() => pieSlide.charts.add("pie", { series: [{ values: [1, 2, 3], trendline: { type: "linear" } }] }), /supported only for bar and line series/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2], trendline: { type: "movingAverage", period: 2 } }] }), /require at least three series values/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], trendline: { type: "linear", forward: 0.25 } }] }), /must use 0.5 increments/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ name: "Missing type", values: [1] }] }), /series chartType must be bar or line/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", name: "Only bars", values: [1] }] }), /requires at least one bar series and one line series/);
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
@@ -320,12 +323,34 @@ assert.deepEqual(presentation.resolve(comboChart.id).series.map((series) => seri
   { showValue: true, showCategoryName: false, position: "t" },
   { showValue: false, showCategoryName: false, position: "bestFit" },
 ]);
+assert.deepEqual(presentation.resolve(comboChart.id).series[1].trendlines, [{
+  type: "linear",
+  name: "Margin trend",
+  forward: 0.5,
+  backward: 0.5,
+  intercept: 1,
+  displayEquation: true,
+  displayRSquared: true,
+  line: { fill: "#111827", width: 1.25, style: "dashDot" },
+}]);
+const trendlineCatalog = Presentation.create().slides.add().charts.add("line", {
+  categories: ["A", "B", "C", "D"],
+  series: [{
+    values: [1, 2, 4, 8],
+    trendlines: [
+      { type: "exponential" }, { type: "linear" }, { type: "logarithmic" },
+      { type: "movingAverage", period: 2 }, { type: "polynomial", order: 3 }, { type: "power" },
+    ],
+  }],
+});
+assert.deepEqual(trendlineCatalog.series[0].trendlines.map((trendline) => trendline.type), ["exp", "linear", "log", "movingAvg", "poly", "power"]);
 const comboChartSvg = comboChart.toSvg();
 assert.match(comboChartSvg, /<rect [^>]*fill="#3d8dff"/i);
 assert.match(comboChartSvg, /<polyline [^>]*stroke="#dc2626"/i);
 assert.match(comboChartSvg, />6<\/text>/);
 assert.match(comboChartSvg, />Q2: 14<\/text>/);
 assert.doesNotMatch(comboChartSvg, />16<\/text>/);
+assert.match(comboChartSvg, /<line [^>]*stroke="#111827"[^>]*stroke-width="1\.25"[^>]*stroke-dasharray="6 3 1 3"/i);
 assert.ok(comboChartSvg.indexOf('fill="#3d8dff"') < comboChartSvg.indexOf("<polyline"));
 const lineChartSvg = lineChart.toSvg();
 assert.match(lineChartSvg, /<path d="M/);
@@ -674,6 +699,15 @@ assert.equal((comboChartXml.match(/<c:axId val="1"\/>/g) || []).length, 3);
 assert.equal((comboChartXml.match(/<c:axId val="2"\/>/g) || []).length, 3);
 assert.match(comboChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="8"\/><\/c:marker>/);
 assert.match(comboChartXml, /<a:ln w="25400"><a:solidFill><a:srgbClr val="DC2626"\/><\/a:solidFill><a:prstDash val="dash"\/><\/a:ln>/);
+const comboSeriesBlocks = [...comboChartXml.matchAll(/<c:ser>[\s\S]*?<\/c:ser>/g)].map((match) => match[0]);
+const revenueSeriesXml = comboSeriesBlocks.find((block) => /<c:v>Revenue<\/c:v>/.test(block));
+const marginSeriesXml = comboSeriesBlocks.find((block) => /<c:v>Margin<\/c:v>/.test(block));
+const forecastSeriesXml = comboSeriesBlocks.find((block) => /<c:v>Forecast<\/c:v>/.test(block));
+assert.match(revenueSeriesXml, /<c:dLbls><c:dLblPos val="inEnd"\/>[\s\S]*?<c:showVal val="1"\/>[\s\S]*?<c:showCatName val="1"\/>/);
+assert.match(marginSeriesXml, /<c:dLbls><c:dLblPos val="t"\/>[\s\S]*?<c:showVal val="1"\/>[\s\S]*?<c:showCatName val="0"\/>/);
+assert.match(marginSeriesXml, /<c:trendline><c:name>Margin trend<\/c:name><c:spPr><a:ln w="15875">[\s\S]*?<a:srgbClr val="111827"\/>[\s\S]*?<a:prstDash val="dashDot"\/>[\s\S]*?<c:trendlineType val="linear"\/><c:forward val="0\.5"\/><c:backward val="0\.5"\/><c:intercept val="1"\/><c:dispRSqr val="1"\/><c:dispEq val="1"\/><\/c:trendline>/);
+assert.match(forecastSeriesXml, /<c:dLbls><c:showLegendKey val="0"\/><c:showVal val="0"\/><c:showCatName val="0"\/>/);
+assert.equal((comboChartXml.match(/<c:dLblPos val="outEnd"\/>/g) || []).length, 2);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
@@ -746,6 +780,22 @@ assert.deepEqual(loadedComboChart.series.map((series) => series.chartType), ["ba
 assert.deepEqual(loadedComboChart.barOptions, { direction: "column", grouping: "clustered", gapWidth: 90, overlap: 0 });
 assert.deepEqual(loadedComboChart.lineOptions, { grouping: "standard", marker: { symbol: "diamond", size: 8 }, smooth: false });
 assert.deepEqual(loadedComboChart.series[1].line, { fill: "#DC2626", width: 2, style: "dash" });
+assert.deepEqual(loadedComboChart.series[1].trendlines, [{
+  type: "linear",
+  name: "Margin trend",
+  forward: 0.5,
+  backward: 0.5,
+  intercept: 1,
+  displayEquation: true,
+  displayRSquared: true,
+  line: { fill: "#111827", width: 1.25, style: "dashDot" },
+}]);
+assert.deepEqual(loadedComboChart.dataLabels, { showValue: true, showCategoryName: false, position: "outEnd" });
+assert.deepEqual(loadedComboChart.series.map((series) => series.dataLabels), [
+  { showValue: true, showCategoryName: true, position: "inEnd" },
+  { showValue: true, showCategoryName: false, position: "t" },
+  { showValue: false, showCategoryName: false, position: "bestFit" },
+]);
 const alternateChartPrefixXml = lineChartXml.replace('<c:smooth val="1"/>', "<c:smooth/>")
   .replaceAll("xmlns:c=", "xmlns:cx=").replaceAll("<c:", "<cx:").replaceAll("</c:", "</cx:")
   .replaceAll("xmlns:a=", "xmlns:ax=").replaceAll("<a:", "<ax:").replaceAll("</a:", "</ax:");
@@ -768,11 +818,17 @@ const alternateComboPrefixLoaded = await PresentationFile.importPptx(alternateCo
 const alternateComboChart = alternateComboPrefixLoaded.slides.items[1].charts.items.find((chart) => chart.name === "revenue-margin-combo");
 assert.equal(alternateComboChart.chartType, "combo");
 assert.deepEqual(alternateComboChart.series.map((series) => `${series.chartType}:${series.name}`), ["bar:Revenue", "line:Margin", "bar:Forecast"]);
+assert.deepEqual(alternateComboChart.series.map((series) => series.dataLabels?.position), ["inEnd", "t", "bestFit"]);
+assert.equal(alternateComboChart.series[1].trendlines[0].name, "Margin trend");
 const alternateComboSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(alternateComboPrefixLoaded)).arrayBuffer()));
 const alternateComboSecondXml = await alternateComboSecondZip.file("ppt/charts/chart4.xml").async("text");
 assert.match(alternateComboSecondXml, /<c:barChart>[\s\S]*?<c:lineChart>/);
 assert.equal((alternateComboSecondXml.match(/<c:catAx>/g) || []).length, 1);
 assert.deepEqual([...alternateComboSecondXml.matchAll(/<c:order val="(\d+)"\/>/g)].map((match) => Number(match[1])).sort((left, right) => left - right), [0, 1, 2]);
+assert.match(alternateComboSecondXml, /<c:dLblPos val="inEnd"\/>/);
+assert.match(alternateComboSecondXml, /<c:dLblPos val="t"\/>/);
+assert.match(alternateComboSecondXml, /<c:trendlineType val="linear"\/>/);
+assert.match(alternateComboSecondXml, /<c:dispRSqr val="1"\/><c:dispEq val="1"\/>/);
 assert.match(loadedAll, /"colorMap"/);
 const loadedComment = loaded.slides.items[0].comments.items[0];
 assert.ok(loaded.slides.items[0].resolve(loadedComment.targetId));
