@@ -4,6 +4,8 @@ import path from "node:path";
 import JSZip from "jszip";
 import { DocumentFile, DocumentModel, FileBlob, renderArtifact } from "../src/index.mjs";
 
+const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=";
+
 const document = DocumentModel.create({
   name: "Research memo",
   paragraphs: ["Research memo", "This document exercises the clean-room DOCX facade."],
@@ -94,7 +96,7 @@ table.getCell(2, 1).value = "anchored";
 const tableCellBookmark = document.addBookmark(table.getCell(1, 0), "EvidenceCells", { endTarget: table.getCell(2, 1), nativeId: 43 });
 const customListParent = document.addListItem("Lettered evidence group", { listType: "number", level: 0, numberFormat: "upperLetter", start: 2, levelText: "%1)", numberingId: 42, name: "lettered-evidence" });
 const customListChild = document.addListItem("Nested roman evidence", { listType: "number", level: 1, numberFormat: "lowerRoman", start: 3, levelText: "%1.%2)", numberingId: 42, name: "roman-evidence" });
-const pictureBullet = document.addListItem("Picture bullet evidence", { name: "picture-bullet-evidence", pictureBullet: { dataUrl: logo.dataUrl, widthPt: 10, heightPt: 10, alt: "Green status marker" } });
+const pictureBullet = document.addListItem("Picture bullet evidence", { name: "picture-bullet-evidence", pictureBullet: { dataUrl: pictureBulletPng, widthPt: 10, heightPt: 10, alt: "Green status marker" } });
 const comment = document.addComment(heading, "Check this heading before final export.", { author: "Reviewer", initials: "RV", date: "2026-07-11T00:10:00.000Z", dateUtc: "2026-07-11T08:10:00+08:00", durableId: "0000A001", person: { providerId: "None", userId: "reviewer@example.test" }, resolved: true });
 const tableComment = document.addComment(table, "Review the evidence table.", { author: "R&D Analyst", initials: "RA", date: "2026-07-11T00:15:00.000Z" });
 const linkComment = document.addComment(hyperlink, "Verify the native hyperlink target.", { author: "Link Reviewer", initials: "LR", date: "2026-07-11T00:18:00.000Z" });
@@ -603,14 +605,73 @@ assert.match(numberingXml, /<w:abstractNum w:abstractNumId="3">/);
 assert.match(numberingXml, /<w:lvl w:ilvl="0"><w:start w:val="2"\/><w:numFmt w:val="upperLetter"\/><w:lvlText w:val="%1\)"/);
 assert.match(numberingXml, /<w:lvl w:ilvl="1"><w:start w:val="3"\/><w:numFmt w:val="lowerRoman"\/><w:lvlText w:val="%1\.%2\)"/);
 assert.match(documentXml, new RegExp(`<w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr>[\\s\\S]*?Nested roman evidence`));
-assert.match(numberingXml, /<w:numPicBullet w:numPicBulletId="0"><w:drawing><wp:inline/);
-assert.match(numberingXml, /<wp:extent cx="127000" cy="127000"\/>/);
-assert.match(numberingXml, /<wp:docPr id="1" name="Picture Bullet 1" descr="Green status marker"\/>/);
-assert.match(numberingXml, /<a:blip r:embed="rIdPictureBullet1"\/>/);
+assert.match(numberingXml, /<w:numPicBullet w:numPicBulletId="0"><w:pict><v:shapetype/);
+assert.match(numberingXml, /<v:shape id="_x0000_i1025"[^>]*style="width:10pt;height:10pt" o:bullet="t">/);
+assert.match(numberingXml, /<v:imagedata r:id="rIdPictureBullet1" o:title="Green status marker"\/>/);
 assert.match(numberingXml, /<w:abstractNum w:abstractNumId="4">[\s\S]*?<w:lvlPicBulletId w:val="0"\/>/);
 assert.match(documentXml, new RegExp(`<w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/></w:numPr>[\\s\\S]*?Picture bullet evidence`));
 assert.match(numberingRelsXml, /Id="rIdPictureBullet1"[^>]*relationships\/image[^>]*Target="media\/image2\.png"/);
 assert.ok(zip.file("word/media/image2.png"));
+
+const missingPictureBulletRelationshipZip = await JSZip.loadAsync(docxBytes);
+missingPictureBulletRelationshipZip.file("word/_rels/numbering.xml.rels", numberingRelsXml.replace(/<Relationship\b[^>]*Id="rIdPictureBullet1"[^>]*\/>/, ""));
+await assert.rejects(
+  async () => DocumentFile.importDocx(new FileBlob(await missingPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true }),
+  /picture bullet 0 references missing image relationship rIdPictureBullet1/,
+);
+const wrongPictureBulletRelationshipZip = await JSZip.loadAsync(docxBytes);
+wrongPictureBulletRelationshipZip.file("word/_rels/numbering.xml.rels", numberingRelsXml.replace(/relationships\/image/, "relationships/hyperlink"));
+await assert.rejects(
+  async () => DocumentFile.importDocx(new FileBlob(await wrongPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true }),
+  /picture bullet 0 references missing image relationship rIdPictureBullet1/,
+);
+const missingPictureBulletPartZip = await JSZip.loadAsync(docxBytes);
+missingPictureBulletPartZip.remove("word/media/image2.png");
+await assert.rejects(
+  async () => DocumentFile.importDocx(new FileBlob(await missingPictureBulletPartZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true }),
+  /picture bullet 0 relationship rIdPictureBullet1 targets missing part word\/media\/image2\.png/,
+);
+const alternatePictureBulletPrefixZip = await JSZip.loadAsync(docxBytes);
+const alternatePictureBulletPrefixXml = numberingXml
+  .replace(/\bwp:/g, "wordDrawing:")
+  .replace(/\bpic:/g, "picture:")
+  .replace(/\bw:/g, "word:")
+  .replace(/\br:/g, "relationships:")
+  .replace(/\ba:/g, "drawing:")
+  .replace(/\bv:/g, "vector:")
+  .replace(/\bo:/g, "office:");
+alternatePictureBulletPrefixZip.file("word/numbering.xml", alternatePictureBulletPrefixXml);
+const alternatePictureBulletPrefixDocument = await DocumentFile.importDocx(new FileBlob(await alternatePictureBulletPrefixZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true });
+assert.equal(alternatePictureBulletPrefixDocument.blocks.find((item) => item.text === "Picture bullet evidence")?.pictureBullet?.alt, "Green status marker");
+
+const drawingPictureBulletZip = await JSZip.loadAsync(docxBytes);
+const drawingPictureBulletXml = numberingXml
+  .replace('xmlns:o="urn:schemas-microsoft-com:office:office"', 'xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"')
+  .replace(/<w:numPicBullet\b[^>]*>[\s\S]*?<\/w:numPicBullet>/, '<w:numPicBullet w:numPicBulletId="0"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="127000" cy="127000"/><wp:docPr id="1" name="Drawing picture bullet" descr="DrawingML status marker"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Drawing picture bullet"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdPictureBullet1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="127000" cy="127000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:numPicBullet>');
+drawingPictureBulletZip.file("word/numbering.xml", drawingPictureBulletXml);
+const drawingPictureBulletDocument = await DocumentFile.importDocx(new FileBlob(await drawingPictureBulletZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: docx.type }), { preferNative: true });
+assert.equal(drawingPictureBulletDocument.blocks.find((item) => item.text === "Picture bullet evidence")?.pictureBullet?.alt, "DrawingML status marker");
+
+const externalPictureBulletDocument = DocumentModel.create({ paragraphs: ["External picture bullet"] });
+externalPictureBulletDocument.addListItem("Non-fetched marker", { pictureBullet: { uri: "https://example.com/status.png", widthPt: 9, alt: "External status" } });
+const externalPictureBulletDocx = await DocumentFile.exportDocx(externalPictureBulletDocument);
+const externalPictureBulletZip = await JSZip.loadAsync(new Uint8Array(await externalPictureBulletDocx.arrayBuffer()));
+assert.match(await externalPictureBulletZip.file("word/numbering.xml").async("text"), /<v:imagedata r:id="rIdPictureBullet1" o:title="External status"\/>/);
+assert.match(await externalPictureBulletZip.file("word\/_rels\/numbering.xml.rels").async("text"), /Target="https:\/\/example\.com\/status\.png" TargetMode="External"/);
+assert.equal((await DocumentFile.importDocx(externalPictureBulletDocx, { preferNative: true })).blocks.find((item) => item.text === "Non-fetched marker")?.pictureBullet?.uri, "https://example.com/status.png");
+const multiplePictureBulletDocument = DocumentModel.create({ paragraphs: ["Multiple picture bullets"] });
+multiplePictureBulletDocument.addListItem("Green marker", { pictureBullet: pictureBulletPng });
+multiplePictureBulletDocument.addListItem("Dot marker", { pictureBullet: logo.dataUrl });
+const multiplePictureBulletZip = await JSZip.loadAsync(new Uint8Array(await (await DocumentFile.exportDocx(multiplePictureBulletDocument)).arrayBuffer()));
+const multiplePictureBulletXml = await multiplePictureBulletZip.file("word/numbering.xml").async("text");
+assert.match(multiplePictureBulletXml, /<v:shapetype id="_x0000_t75"/);
+assert.match(multiplePictureBulletXml, /<v:shapetype id="_x0000_t76"/);
+assert.match(multiplePictureBulletXml, /<v:shape id="_x0000_i1026" type="#_x0000_t76"/);
+const conflictingPictureBulletDocument = DocumentModel.create({ paragraphs: ["Conflicting picture bullets"] });
+conflictingPictureBulletDocument.addListItem("Embedded", { numberingId: 99, pictureBullet: pictureBulletPng });
+conflictingPictureBulletDocument.addListItem("External", { numberingId: 99, pictureBullet: "https://example.com/status.png" });
+await assert.rejects(() => DocumentFile.exportDocx(conflictingPictureBulletDocument), /numbering 99 level 0 has conflicting definitions/);
+
 const documentRelsXml = await zip.file("word/_rels/document.xml.rels").async("text");
 assert.match(documentRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/theme" Target="theme\/theme1\.xml"/);
 assert.match(documentRelsXml, /Id="rIdImage1"/);

@@ -145,18 +145,16 @@ export function collectDocxNumbering(document, options = {}) {
 
 function pictureBulletXml(entry) {
   const { picture, pictureBulletId, relId } = entry;
-  const cx = Math.round(picture.widthPt * EMUS_PER_POINT);
-  const cy = Math.round(picture.heightPt * EMUS_PER_POINT);
-  const relationshipAttribute = picture.dataUrl ? `r:embed="${attrEscape(relId)}"` : `r:link="${attrEscape(relId)}"`;
   const objectId = pictureBulletId + 1;
-  return `<w:numPicBullet w:numPicBulletId="${pictureBulletId}"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${objectId}" name="Picture Bullet ${objectId}" descr="${attrEscape(picture.alt)}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${objectId}" name="Picture Bullet ${objectId}" descr="${attrEscape(picture.alt)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip ${relationshipAttribute}/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:numPicBullet>`;
+  const shapeTypeId = `_x0000_t${75 + pictureBulletId}`;
+  return `<w:numPicBullet w:numPicBulletId="${pictureBulletId}"><w:pict><v:shapetype id="${shapeTypeId}" coordsize="21600,21600" o:spt="75" o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f"><v:stroke joinstyle="miter"/><v:formulas><v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/><v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/><v:f eqn="sum @0 0 1"/><v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/><v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/><v:f eqn="sum @10 21600 0"/></v:formulas><v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/><o:lock v:ext="edit" aspectratio="t"/></v:shapetype><v:shape id="_x0000_i${1024 + objectId}" type="#${shapeTypeId}" style="width:${picture.widthPt}pt;height:${picture.heightPt}pt" o:bullet="t"><v:imagedata r:id="${attrEscape(relId)}" o:title="${attrEscape(picture.alt)}"/></v:shape></w:pict></w:numPicBullet>`;
 }
 
 export function docxNumberingXml(numbering) {
   const pictures = numbering.pictureBullets.map(pictureBulletXml).join("");
   const abstracts = numbering.definitions.map((definition) => `<w:abstractNum w:abstractNumId="${definition.abstractNumId}"><w:multiLevelType w:val="multilevel"/>${definition.levels.map((level) => `<w:lvl w:ilvl="${level.level}"><w:start w:val="${level.start}"/><w:numFmt w:val="${attrEscape(level.numberFormat)}"/><w:lvlText w:val="${attrEscape(level.levelText)}"/>${level.pictureBulletId == null ? "" : `<w:lvlPicBulletId w:val="${level.pictureBulletId}"/>`}<w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${(level.level + 1) * 720}" w:hanging="360"/></w:pPr>${level.numberFormat === "bullet" && level.pictureBulletId == null ? '<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' : ""}</w:lvl>`).join("")}</w:abstractNum>`).join("");
   const instances = numbering.definitions.map((definition) => `<w:num w:numId="${definition.numId}"><w:abstractNumId w:val="${definition.abstractNumId}"/></w:num>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">${pictures}${abstracts}${instances}</w:numbering>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">${pictures}${abstracts}${instances}</w:numbering>`;
 }
 
 function parseNumberingLevel(xml, pictureById, fallbackLevel = 0) {
@@ -188,8 +186,11 @@ async function parsePictureBullets(xml, context) {
     const blip = localOpening(match[0], "blip");
     const embeddedId = attributeByLocalName(blip, "embed");
     const linkedId = attributeByLocalName(blip, "link");
-    if (Boolean(embeddedId) === Boolean(linkedId)) throw new Error(`DOCX picture bullet ${id} requires exactly one embedded or linked image relationship.`);
-    const relationshipId = embeddedId || linkedId;
+    const imageData = localOpening(match[0], "imagedata");
+    const vmlId = attributeByLocalName(imageData, "id");
+    const relationshipIds = [embeddedId, linkedId, vmlId].filter(Boolean);
+    if (relationshipIds.length !== 1) throw new Error(`DOCX picture bullet ${id} requires exactly one DrawingML or VML image relationship.`);
+    const relationshipId = relationshipIds[0];
     const relationship = relationships.find((item) => item.id === relationshipId);
     if (!relationship || !String(relationship.type || "").endsWith(IMAGE_RELATIONSHIP_SUFFIX)) throw new Error(`DOCX picture bullet ${id} references missing image relationship ${relationshipId}.`);
     const isExternal = String(relationship.targetMode || "").toLowerCase() === "external";
@@ -208,11 +209,15 @@ async function parsePictureBullets(xml, context) {
       if (bytes.length > (context.maxPictureBulletBytes || MAX_PICTURE_BULLET_BYTES)) throw new RangeError(`DOCX picture bullet ${id} exceeds the decoded byte budget.`);
       dataUrl = `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
     }
+    const shape = localOpening(match[0], "shape");
+    const style = attributeByLocalName(shape, "style") || "";
+    const widthStyle = /(?:^|;)\s*width\s*:\s*([0-9.]+)pt(?:;|$)/i.exec(style)?.[1];
+    const heightStyle = /(?:^|;)\s*height\s*:\s*([0-9.]+)pt(?:;|$)/i.exec(style)?.[1];
     const extent = attributes(localOpening(match[0], "extent"));
-    const widthPt = boundedPoints(Number(extent.cx || 12 * EMUS_PER_POINT) / EMUS_PER_POINT, 12, "width");
-    const heightPt = boundedPoints(Number(extent.cy || 12 * EMUS_PER_POINT) / EMUS_PER_POINT, widthPt, "height");
+    const widthPt = boundedPoints(widthStyle ?? (Number(extent.cx || 12 * EMUS_PER_POINT) / EMUS_PER_POINT), 12, "width");
+    const heightPt = boundedPoints(heightStyle ?? (Number(extent.cy || widthPt * EMUS_PER_POINT) / EMUS_PER_POINT), widthPt, "height");
     const docPr = localOpening(match[0], "docPr");
-    const alt = decodeXml(attributeByLocalName(docPr, "descr") || attributeByLocalName(docPr, "title") || "Picture bullet");
+    const alt = decodeXml(attributeByLocalName(docPr, "descr") || attributeByLocalName(docPr, "title") || attributeByLocalName(imageData, "title") || "Picture bullet");
     result.set(String(id), normalizeDocumentPictureBullet({ dataUrl, uri, widthPt, heightPt, alt }));
   }
   return result;

@@ -47,7 +47,9 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/commentsIds\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/commentsExtensible\.xml/);
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /word\/people\.xml/);
-  assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
+  const modelPreviewSvg = await fs.readFile(result.qa.summary.files.preview, "utf8");
+  assert.match(modelPreviewSvg, /<svg/);
+  assert.match(modelPreviewSvg, /data-picture-bullet="embedded"/);
   const nativePreferred = await verifyDocumentFile(result.docxPath, { outputDir: path.join(outputDir, "native-preferred"), preferNative: true, nativeRender: "off" });
   assert.equal(nativePreferred.summary.verifyOk, true);
   assert.match(nativePreferred.inspect.ndjson, /Office artifact readiness brief/);
@@ -159,6 +161,15 @@ try {
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Preserve native numbering definitions.")?.numberFormat, "upperLetter");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.numberFormat, "lowerRoman");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.level, 1);
+  const nativePictureBullet = nativePreferredDocument.blocks.find((item) => item.text === "Retain native picture bullet relationships.")?.pictureBullet;
+  assert.match(nativePictureBullet?.dataUrl || "", /^data:image\/png;base64,/);
+  assert.equal(nativePictureBullet?.alt, "Green readiness marker");
+  const businessBriefNumberingXml = await businessBriefZip.file("word/numbering.xml").async("text");
+  const businessBriefNumberingRels = await businessBriefZip.file("word/_rels/numbering.xml.rels").async("text");
+  assert.match(businessBriefNumberingXml, /<w:numPicBullet w:numPicBulletId="0">/);
+  assert.match(businessBriefNumberingXml, /<w:lvlPicBulletId w:val="0"\/>/);
+  assert.match(businessBriefNumberingRels, /Target="media\/image2\.png"/);
+  assert.ok(businessBriefZip.file("word/media/image2.png"));
 
   const packageComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-comments.json"), {
     outputDir: path.join(outputDir, "package-comments"),
