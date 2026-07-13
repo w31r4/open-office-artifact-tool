@@ -241,8 +241,9 @@ message PresentationShape {
 }
 
 // The public PresentationML text slice models agent-facing paragraph/run and
-// basic list-marker semantics. Picture bullets, marker styling, hyperlinks,
-// fields, tabs, breaks, body properties, and list styles stay source-bound.
+// basic list-marker and direct marker-style semantics. Picture bullets,
+// non-RGB marker colors, hyperlinks, fields, tabs, breaks, body properties,
+// and list styles stay source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
 }
@@ -257,6 +258,21 @@ message PresentationTextParagraph {
     bool no_bullet = 4;
     string bullet_character = 5;
     PresentationAutoNumberBullet auto_number = 6;
+  }
+  // Each unset style choice means no direct style for new text and preserve an
+  // unmodeled source choice during a source-bound edit.
+  oneof bullet_font {
+    string bullet_font_family = 7;
+    bool bullet_font_follow_text = 8;
+  }
+  oneof bullet_color {
+    string bullet_color_rgb = 9;
+    bool bullet_color_follow_text = 10;
+  }
+  oneof bullet_size {
+    double bullet_size_points = 11;
+    double bullet_size_percent = 12;
+    bool bullet_size_follow_text = 13;
   }
 }
 

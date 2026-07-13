@@ -9,7 +9,11 @@ const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
 const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "color"]);
-const PARAGRAPH_KEYS = new Set(["runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletNone"]);
+const PARAGRAPH_KEYS = new Set([
+  "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletNone",
+  "bulletFont", "bulletFontFollowText", "bulletColor", "bulletColorFollowText",
+  "bulletSize", "bulletSizePercent", "bulletSizeFollowText",
+]);
 
 function emuFromPixels(value, name) {
   const number = Number(value);
@@ -82,6 +86,57 @@ function wireBullet(paragraph, original, shapeId) {
   return undefined;
 }
 
+function wireBulletFont(paragraph, original, shapeId) {
+  if (paragraph.bulletFont != null && paragraph.bulletFontFollowText === true) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph selects both a bullet font and follow-text font.`, [], { code: "invalid_presentation_text" });
+  }
+  if (paragraph.bulletFont != null) {
+    const family = String(paragraph.bulletFont).trim();
+    if (!family || family.length > 255) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an invalid bullet font family.`, [], { code: "invalid_presentation_text" });
+    return { case: "bulletFontFamily", value: family };
+  }
+  if (paragraph.bulletFontFollowText === true || new Set(["bulletFontFamily", "bulletFontFollowText"]).has(original?.bulletFont?.case)) {
+    return { case: "bulletFontFollowText", value: true };
+  }
+  return undefined;
+}
+
+function wireBulletColor(paragraph, original, shapeId) {
+  if (paragraph.bulletColor != null && paragraph.bulletColorFollowText === true) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph selects both a bullet color and follow-text color.`, [], { code: "invalid_presentation_text" });
+  }
+  if (paragraph.bulletColor != null) {
+    const rgb = presentationRgb(paragraph.bulletColor, `${shapeId}.text.bulletColor`);
+    if (!rgb) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a transparent bullet color outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
+    return { case: "bulletColorRgb", value: rgb };
+  }
+  if (paragraph.bulletColorFollowText === true || new Set(["bulletColorRgb", "bulletColorFollowText"]).has(original?.bulletColor?.case)) {
+    return { case: "bulletColorFollowText", value: true };
+  }
+  return undefined;
+}
+
+function wireBulletSize(paragraph, original, shapeId) {
+  const choices = [paragraph.bulletSize != null, paragraph.bulletSizePercent != null, paragraph.bulletSizeFollowText === true];
+  if (choices.filter(Boolean).length > 1) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph selects more than one bullet size.`, [], { code: "invalid_presentation_text" });
+  }
+  if (paragraph.bulletSize != null) {
+    const pixels = Number(paragraph.bulletSize);
+    if (!Number.isFinite(pixels) || pixels < 4 / 3 || pixels > MAX_FONT_SIZE_PIXELS) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an invalid fixed bullet size.`, [], { code: "invalid_presentation_text" });
+    return { case: "bulletSizePoints", value: pixels * POINTS_PER_PIXEL };
+  }
+  if (paragraph.bulletSizePercent != null) {
+    const percent = Number(paragraph.bulletSizePercent);
+    if (!Number.isFinite(percent) || percent < 0.25 || percent > 4) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an invalid percentage bullet size.`, [], { code: "invalid_presentation_text" });
+    return { case: "bulletSizePercent", value: percent };
+  }
+  if (paragraph.bulletSizeFollowText === true || new Set(["bulletSizePoints", "bulletSizePercent", "bulletSizeFollowText"]).has(original?.bulletSize?.case)) {
+    return { case: "bulletSizeFollowText", value: true };
+  }
+  return undefined;
+}
+
 function wireParagraph(paragraph, textStyle, original, shapeId) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -97,11 +152,17 @@ function wireParagraph(paragraph, textStyle, original, shapeId) {
   const originalLevel = original?.level;
   const includeLevel = level !== 0 || originalLevel !== undefined;
   const bullet = wireBullet(paragraph, original, shapeId);
+  const bulletFont = wireBulletFont(paragraph, original, shapeId);
+  const bulletColor = wireBulletColor(paragraph, original, shapeId);
+  const bulletSize = wireBulletSize(paragraph, original, shapeId);
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     runs: (paragraph.runs || []).map((run) => wireRun(run, { ...textStyle, ...(paragraph.style || {}) }, shapeId)),
     ...(bullet ? { bullet } : {}),
+    ...(bulletFont ? { bulletFont } : {}),
+    ...(bulletColor ? { bulletColor } : {}),
+    ...(bulletSize ? { bulletSize } : {}),
   };
 }
 
@@ -270,6 +331,18 @@ function modelBullet(bullet) {
   return {};
 }
 
+function modelBulletStyle(paragraph) {
+  return {
+    ...(paragraph.bulletFont?.case === "bulletFontFamily" ? { bulletFont: paragraph.bulletFont.value } : {}),
+    ...(paragraph.bulletFont?.case === "bulletFontFollowText" ? { bulletFontFollowText: true } : {}),
+    ...(paragraph.bulletColor?.case === "bulletColorRgb" ? { bulletColor: `#${paragraph.bulletColor.value}` } : {}),
+    ...(paragraph.bulletColor?.case === "bulletColorFollowText" ? { bulletColorFollowText: true } : {}),
+    ...(paragraph.bulletSize?.case === "bulletSizePoints" ? { bulletSize: paragraph.bulletSize.value / POINTS_PER_PIXEL } : {}),
+    ...(paragraph.bulletSize?.case === "bulletSizePercent" ? { bulletSizePercent: paragraph.bulletSize.value } : {}),
+    ...(paragraph.bulletSize?.case === "bulletSizeFollowText" ? { bulletSizeFollowText: true } : {}),
+  };
+}
+
 function modelText(shape) {
   if (!shape.textBody) return shape.text;
   return shape.textBody.paragraphs.map((paragraph) => ({
@@ -277,6 +350,7 @@ function modelText(shape) {
     level: paragraph.level ?? 0,
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     ...modelBullet(paragraph.bullet),
+    ...modelBulletStyle(paragraph),
     style: {},
   }));
 }
