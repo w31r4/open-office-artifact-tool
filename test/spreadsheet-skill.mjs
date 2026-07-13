@@ -15,13 +15,25 @@ const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-spreadshe
 const baselineDir = path.join(outputDir, "baselines");
 
 try {
-  const result = await runSpreadsheetFixture(fixturePath, { outputDir, nativeRender: "off" });
+  const nativeAvailable = nativeSpreadsheetRenderStatus().available;
+  const result = await runSpreadsheetFixture(fixturePath, {
+    outputDir,
+    renderFormat: "png",
+    allSheets: true,
+    nativeRender: nativeAvailable ? "required" : "off",
+  });
   assert.equal(result.fixture.name, "formula-summary");
   assert.equal(result.roundtripCodec, "openxml-wasm");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
-  assert.equal(result.qa.summary.renderFormat, "svg");
+  assert.equal(result.qa.summary.renderFormat, "png");
+  assert.equal(result.qa.summary.sheetRenders.length, 3);
+  if (nativeAvailable) {
+    assert.equal(result.qa.summary.nativeRender.status, "passed");
+    assert.equal(result.qa.summary.nativeRender.pageCountMatches, true);
+    assert.ok(result.qa.summary.nativeRender.pageCount >= 3);
+  }
   for (const filePath of Object.values(result.qa.summary.files)) {
     const stat = await fs.stat(filePath);
     assert.ok(stat.isFile() && stat.size > 0, `Expected non-empty skill output ${filePath}`);
@@ -145,7 +157,7 @@ try {
   assert.match(await fs.readFile(result.qa.summary.files.packageInspect, "utf8"), /xl\/workbook\.xml/);
   assert.equal(result.qa.packageInspect.records[0].sheets, 3);
   assert.equal(result.qa.packageInspect.records[0].semanticIssues, 0);
-  assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
+  assert.deepEqual([...(await fs.readFile(result.qa.summary.files.preview)).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
 
   const wasmResult = await runSpreadsheetFixture(path.join(repoRoot, "skills", "spreadsheets", "fixtures", "openxml-wasm-basic.json"), {
     outputDir: path.join(outputDir, "openxml-wasm-basic"),

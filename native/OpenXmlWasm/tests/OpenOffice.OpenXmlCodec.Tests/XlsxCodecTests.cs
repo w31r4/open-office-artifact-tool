@@ -104,6 +104,8 @@ public sealed class XlsxCodecTests
         Assert.Equal("xl/workbook.xml", relationship.SourcePath);
         Assert.Equal("External", relationship.TargetMode);
         Assert.Equal("https://example.invalid/data", relationship.Target);
+        Assert.False(imported.Artifact.OpaqueOpc.SourcePackage.Data.IsEmpty);
+        Assert.All(imported.Artifact.OpaqueOpc.Parts, part => Assert.True(part.Data.IsEmpty));
 
         imported.Artifact.Workbook.Worksheets[0].Cells[1].NumberValue = 99;
         var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest

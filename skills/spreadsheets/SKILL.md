@@ -126,8 +126,11 @@ Run the checked-in clean-room fixture end to end:
 ```sh
 node skills/spreadsheets/scripts/run-fixture.mjs \
   --fixture skills/spreadsheets/fixtures/formula-summary.json \
+  --render-format png --all-sheets true --native-render required \
   --output-dir tmp/spreadsheet-skill-fixture
 ```
+
+This fixture intentionally runs `JavaScript export → OpenXML-WASM import → source-preserving OpenXML-WASM export` before inspect/render/verify. Its advanced theme, styles, table, pivot, chart, image, comments, formulas, and native pages therefore exercise both codec boundaries.
 
 The source-built Open XML SDK WebAssembly codec is available for the bounded first-slice workbook features: primitive/cached-formula cells, date-system selection, sheets, merges, dimensions, gridlines, and frozen panes. Exercise that path through the same agent QA workflow:
 
@@ -139,7 +142,7 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
   --output-dir tmp/openxml-wasm-spreadsheet-fixture
 ```
 
-The WebAssembly path is fail-closed for styles, themes, defined names, tables, pivots, drawings, comments, validations, conditional formatting, and advanced formula metadata. Use the default `javascript` codec for those workbooks until the public protobuf schema covers them; do not pass `allowLossy` merely to make a complex artifact export.
+Direct WebAssembly authoring is fail-closed for styles, themes, defined names, tables, pivots, drawings, comments, validations, conditional formatting, and advanced formula metadata. Imported workbooks are different: the codec retains a bounded, hash-bound source package and applies modeled edits in place, then verifies every opaque part digest and relationship before returning the file. Use the default `javascript` codec to create advanced workbooks until the public protobuf schema covers them; never discard or fabricate preservation state merely to make an export pass.
 
 Create and later compare an approved sheet/range baseline:
 

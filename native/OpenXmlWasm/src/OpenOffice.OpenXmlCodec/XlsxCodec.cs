@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using DocumentFormat.OpenXml.Validation;
 using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenOffice.OpenXmlCodec;
@@ -59,6 +60,7 @@ internal static class XlsxCodec
         var bytes = stream.ToArray();
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
             throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
+        ValidateOffice2021(bytes);
         return new XlsxExportResult(bytes, diagnostics);
     }
 
@@ -144,6 +146,7 @@ internal static class XlsxCodec
         var bytes = stream.ToArray();
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
             throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
+        ValidateOffice2021(bytes);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, includeSourcePackage: false);
         PackageGuards.AssertOpaqueGraphMatches(envelope.OpaqueOpc, outputOpaque, "opaque_content_not_preserved");
         return new XlsxExportResult(bytes,
@@ -160,6 +163,20 @@ internal static class XlsxCodec
         PatchRowsAndCells(worksheet, source, sharedStrings);
         PatchMergedRanges(worksheet, source);
         worksheet.Save();
+    }
+
+    private static void ValidateOffice2021(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, isEditable: false);
+        var errors = new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document).Take(2).ToArray();
+        if (errors.Length == 0) return;
+        var first = errors[0];
+        var suffix = errors.Length > 1 ? " Additional validation errors were omitted." : string.Empty;
+        throw new CodecException(
+            "openxml_validation_failed",
+            $"Open XML SDK Office 2021 validation failed: {first.Description}.{suffix}",
+            first.Part?.Uri.ToString());
     }
 
     private static void PatchSheetView(Worksheet worksheet, WorksheetArtifact source)

@@ -75,7 +75,6 @@ internal static class PackageGuards
                 opaque.Parts.Add(new OpaqueOpcPart
                 {
                     Path = entry.FullName,
-                    Data = Google.Protobuf.ByteString.CopyFrom(data),
                     Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
                 });
             }

@@ -135,11 +135,11 @@ The first source-built boundary now exists:
 - `proto/open_office/artifact/v1/office_artifact.proto` is the independently designed, versioned public wire contract. Buf generates the shipped JavaScript binding; `Grpc.Tools` generates the C# binding from the same source.
 - `native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec` uses `DocumentFormat.OpenXml` 3.5.1 and `Google.Protobuf` 3.35.1 for bounded XLSX import/export and structured diagnostics.
 - `native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm` exposes one `[JSExport]` byte-in/byte-out method and publishes a trimmed `browser-wasm` AppBundle.
-- `src/codecs/openxml-wasm.mjs` lazily initializes and caches that runtime, maps the JavaScript workbook model to the public wire schema, and fails closed on workbook features outside the first slice.
+- `src/codecs/openxml-wasm.mjs` lazily initializes and caches that runtime, maps the JavaScript workbook model to the public wire schema, fails closed when directly authoring workbook features outside the first slice, and carries validated source-package preservation state across imported-workbook edits.
 - `runtime/openxml-wasm` contains the reproducible release bundle, integrity manifest, CycloneDX SBOM, .NET license, and upstream third-party notices. It is built from this repository; it contains no reference-package artifact.
 - The npm clean-install gate packs the real tarball, installs it in a temporary directory, removes `dotnet` from runtime `PATH`, and performs XLSX export/import through the public package subpath.
 
-The first slice covers workbook date systems, worksheets, primitive and cached-formula cells, merged ranges, row/column dimensions, gridline state, and frozen panes. It retains unknown OPC parts and relationships in the envelope, rejects unsafe second export by default, and requires explicit `allowLossy` before discarding them. Styles, themes, tables, pivots, drawings, comments, validations, defined names, and advanced formula metadata still use the JavaScript codec.
+The first slice covers workbook date systems, worksheets, primitive and cached-formula cells, merged ranges, row/column dimensions, gridline state, and frozen panes. Import stores one budget-checked source-package snapshot plus opaque part digests and relationship inventory in the public envelope. Second export verifies the snapshot SHA-256 and source identity, updates modeled fields in the original package through Open XML SDK, and then rejects the result unless all opaque part digests and relationships still match. This preserves imported styles, themes, tables, pivots, drawings, comments, validations, defined names, and arbitrary legal targets without pretending those features are semantically modeled by C#. Direct advanced authoring still uses the JavaScript codec, and missing/tampered preservation state remains fail-closed unless the caller explicitly accepts lossy rebuilding.
 
 DOCX and PPTX remain on the JavaScript semantic codecs. The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
@@ -224,8 +224,8 @@ The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wa
 1. **Implemented:** add a source-built `native/OpenXmlWasm` scaffold and a minimal versioned schema.
 2. **Implemented:** prove one end-to-end XLSX vertical slice: JS model to message bytes to C# Open XML SDK to XLSX, then back to the JS model.
 3. **Implemented:** package the runtime and run the installed tarball with `dotnet` removed from runtime `PATH`.
-4. **Next migration gate:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, and native render pages.
-5. Add loss-aware opaque package preservation and third-party XLSX corpus roundtrips.
+4. **Implemented locally:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, all-sheet Playwright output, and LibreOffice/Poppler native pages.
+5. **Implemented for imported XLSX:** retain a hash-bound source package, edit modeled fields in place, and verify opaque part/relationship preservation after write. Broader third-party corpus roundtrips remain the next XLSX migration gate.
 6. Extend the same shared runtime/schema/package graph to DOCX and PPTX. Use the PPTX bundle design from the start rather than postponing native-object preservation.
 7. Make WebAssembly the default only after compatibility and failure-mode gates pass. Retain an explicit JavaScript fallback until the migration matrix is complete.
 8. Keep PDF and render adapters on their existing independent paths.
@@ -241,12 +241,12 @@ The first WebAssembly migration milestone is not complete until every row is don
 | Clean temporary npm install imports/exports XLSX with `dotnet` absent from runtime `PATH` | done locally and in hosted Linux CI |
 | Minimal public workbook fixture roundtrips through JavaScript model and WebAssembly codec | done |
 | Generated XLSX passes package inspection and Open XML SDK Office 2021 validation with zero errors | done |
-| Unknown OPC content is detected and second export is fail-closed unless explicitly lossy | done for opaque parts/relationships; preservation-on-write remains todo |
+| Unknown OPC content is detected and second export is fail-closed unless explicitly lossy | done: hash/source/graph-bound snapshot preservation plus post-write opaque digest/inventory verification |
 | Malformed/oversized input produces bounded structured errors | partial: byte/ZIP/part/sheet/cell/path/ratio budgets covered; broader malformed corpus remains todo |
 | Runtime initialization is lazy, cached, and concurrency-tested | done |
 | Bounded `openxml-wasm-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally and in hosted Linux CI |
-| Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | todo |
-| LibreOffice/Poppler render-backed cross-codec output passes | done locally for `openxml-wasm-basic`; complex fixtures remain todo |
+| Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | done locally; hosted Linux evidence pending |
+| LibreOffice/Poppler render-backed cross-codec output passes | done locally for `openxml-wasm-basic` and the three-sheet formula-summary (four native pages); hosted evidence for the complex path pending |
 | Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | done in hosted run [`29251523500`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29251523500) |
 
 ## Explicit non-goals

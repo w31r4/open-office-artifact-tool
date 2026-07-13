@@ -76,7 +76,7 @@ await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Sheet1" })).save(
 const importedCsv = await SpreadsheetFile.importCsv("Name,Value\r\nRevenue,120", { coerceTypes: true });
 ```
 
-The experimental Open XML SDK WebAssembly subpath currently accepts a bounded workbook feature set and fails closed for advanced workbook content. It uses only bundled runtime assets at consumption time; a local .NET SDK is not required:
+The experimental Open XML SDK WebAssembly subpath authors a bounded workbook feature set directly. For imported XLSX files, it also carries a budget-checked, hash-bound source-package snapshot and updates modeled workbook/sheet/cell fields in place, so unmodeled styles, tables, pivots, drawings, comments, and arbitrary legal OPC targets survive the second export byte-for-byte at the opaque-part boundary. New advanced workbooks still use the JavaScript codec until their semantics enter the public schema. Consumption uses only bundled runtime assets; a local .NET SDK is not required:
 
 ```js
 import { Workbook } from "open-office-artifact-tool";
