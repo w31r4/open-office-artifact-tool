@@ -579,6 +579,7 @@ const functionBook = Workbook.create();
 const functionSheet = functionBook.worksheets.add("Calculated Functions");
 functionSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East", 10, 4], ["East", 20, 8], ["West", 5, 0]];
 assert.equal(evaluatePivotFormula('LEN("A😀")'), 2);
+assert.equal(evaluatePivotFormula('LEN("❤️")'), 2);
 assert.equal(evaluatePivotFormula('LEFT("A😀B",2)'), "A😀");
 assert.equal(evaluatePivotFormula('RIGHT("A😀B",2)'), "😀B");
 assert.equal(evaluatePivotFormula('MID("A😀BC",2,2)'), "😀B");
