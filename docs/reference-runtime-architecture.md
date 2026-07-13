@@ -132,8 +132,8 @@ Primary public references:
 
 Current source inventory:
 
-- JavaScript source under `src/`: 23,494 lines.
-- `src/index.mjs`: 12,728 lines, about 54.2% of JavaScript source.
+- JavaScript source under `src/`: 23,698 committed lines.
+- `src/index.mjs`: 12,675 lines, about 53.5% of JavaScript source.
 - C# under `native/`: 490 lines.
 - Core dependency for Office packages: `jszip`.
 - C# package references for Open XML: none.
