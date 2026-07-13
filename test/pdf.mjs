@@ -45,6 +45,7 @@ const image = pdf.addImage({
 const chart = pdf.addChart({
   name: "pipeline-chart",
   title: "Pipeline by quarter",
+  alt: "Bar chart showing pipeline rising from 8 in Q1 to 18 in Q3.",
   chartType: "bar",
   categories: ["Q1", "Q2", "Q3"],
   series: [{ name: "Pipeline", values: [8, 12, 18], color: "#2563eb" }],
@@ -206,6 +207,10 @@ assert.equal(fileInspect.summary.structureRoles.Table, 2);
 assert.equal(fileInspect.summary.structureRoles.TR, 6);
 assert.equal(fileInspect.summary.structureRoles.TH, 6);
 assert.equal(fileInspect.summary.structureRoles.TD, 7);
+assert.equal(fileInspect.summary.figures, 2);
+assert.equal(fileInspect.summary.figureAltTexts, 2);
+assert.equal(fileInspect.summary.missingFigureAltTexts, 0);
+assert.equal(fileInspect.summary.artifacts, 0);
 assert.deepEqual(fileInspect.summary.readingOrderIds, firstPage.readingOrder.concat(`${pdf.pages[1].id}/text`));
 assert.equal(fileInspect.summary.readingOrderItems, firstPage.readingOrder.length + 1);
 assert.equal(fileInspect.summary.structureElements, fileInspect.summary.markedContentItems + fileInspect.summary.tableStructures + fileInspect.summary.tableRows);
@@ -222,6 +227,7 @@ assert.match(taggedText, /\/RowSpan 2/);
 assert.match(taggedText, /\/ID \(inline-table-id\/cell\/1\/3\)/);
 assert.match(taggedText, /\/Headers \[\(inline-table-id\/cell\/1\/3\)\]/);
 assert.match(taggedText, /\/Alt \(Report logo\)/);
+assert.match(taggedText, /\/Alt \(Bar chart showing pipeline rising from 8 in Q1 to 18 in Q3\.\)/);
 const taggedContentStream = [...taggedText.matchAll(/stream\n([\s\S]*?)endstream/g)].map((match) => match[1]).find((content) => /\/H1 << \/MCID/.test(content));
 assert.ok(taggedContentStream.indexOf("/H1") < taggedContentStream.indexOf(" Do"), "explicit logical order must not change visual paint order");
 
@@ -247,6 +253,31 @@ await assert.rejects(() => PdfFile.exportPdf(invalidReadingOrder), /Invalid PDF 
 const unicodeReadingOrderId = PdfArtifact.create({ pages: [{ id: "页面(1)", text: "ASCII body", readingOrder: ["页面(1)/text"] }] });
 const unicodeReadingOrderInspect = await PdfFile.inspectPdf(await PdfFile.exportPdf(unicodeReadingOrderId));
 assert.deepEqual(unicodeReadingOrderInspect.summary.readingOrderIds, ["页面(1)/text"]);
+
+const decorativePdf = PdfArtifact.create({
+  pages: [{
+    id: "decorative-page",
+    text: "Decorative content stays visual",
+    images: [{ id: "decorative-accent", decorative: true, dataUrl: image.dataUrl, bbox: [500, 40, 20, 20] }],
+    readingOrder: ["decorative-page/text"],
+  }],
+});
+assert.equal(decorativePdf.verify().ok, true);
+assert.deepEqual(decorativePdf.pages[0].readingOrderRecords(0).map((record) => record.targetId), ["decorative-page/text"]);
+const decorativeBlob = await PdfFile.exportPdf(decorativePdf);
+const decorativeInspect = await PdfFile.inspectPdf(decorativeBlob);
+assert.equal(decorativeInspect.summary.figures, 0);
+assert.equal(decorativeInspect.summary.figureAltTexts, 0);
+assert.equal(decorativeInspect.summary.artifacts, 1);
+assert.match(await decorativeBlob.text(), /\/Artifact BMC/);
+assert.equal((await PdfFile.importPdf(decorativeBlob)).pages[0].images[0].decorative, true);
+
+const missingAltPdf = PdfArtifact.create({ text: "Missing alt" });
+missingAltPdf.addImage({ dataUrl: image.dataUrl });
+assert.match(missingAltPdf.verify().ndjson, /missingFigureAltText/);
+const genericAltPdf = PdfArtifact.create({ text: "Generic alt" });
+genericAltPdf.addChart({ title: "Trend", alt: "Chart", categories: ["A"], series: [{ values: [1] }] });
+assert.match(genericAltPdf.verify().ndjson, /genericFigureAltText/);
 
 const unicodePdf = PdfArtifact.create({ metadata: { title: "Unicode résumé", language: "el-GR" }, text: "Unicode résumé\nПривет κόσμος café\nA A\u00a0A" });
 await assert.rejects(() => PdfFile.exportPdf(unicodePdf), /provide PdfFile\.exportPdf.*font/);

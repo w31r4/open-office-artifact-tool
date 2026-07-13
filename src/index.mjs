@@ -35,6 +35,7 @@ import { inheritPresentationParagraphs, normalizePresentationParagraphs, normali
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
 import { analyzePdfReadingOrder, inspectPdfReadingOrderIds, normalizePdfReadingOrder, pdfPageBodyTextLines, pdfReadingOrderInspectRecords, resolvePdfReadingOrder } from "./pdf/reading-order.mjs";
+import { inspectPdfFigureAccessibility, normalizePdfFigureAccessibility, pdfFigureAccessibilityIssue } from "./pdf/accessibility.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./spreadsheet/formula-coercion.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -1111,17 +1112,17 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addFlowText", summary: "Wrap long text into positioned lines and automatically append pages when the configured content box is full." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alternative text or explicit decorative-artifact semantics, and a page-space bounding box." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, meaningful alternative text or decorative-artifact semantics, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for incomplete, duplicate, unknown, or ambiguous reading-order targets plus empty pages, Unicode dashes, text extraction sanity, page geometry, bounds, invalid images, table semantics, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, table attributes/IDs, optional Unicode TrueType embedding, positioned text, vector tables/charts, and PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, top-level structure reading-order IDs, font evidence, structure-role/span/header-association counts, and marked-content count." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, H1/P, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
@@ -1410,7 +1411,8 @@ const HELP_DETAIL_OVERRIDES = {
         dataUrl: { type: "string", description: "Embedded PNG or JPEG image data URL." },
         uri: { type: "string", description: "External image URI metadata." },
         prompt: { type: "string", description: "Image generation/extraction prompt metadata." },
-        alt: { type: "string", description: "Alternative text." },
+        alt: { type: "string", description: "Meaningful alternative text; required unless decorative is true." },
+        decorative: { type: "boolean", description: "Mark the image as decorative PDF Artifact content and exclude it from logical reading order." },
         bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
         fit: { type: "string", description: "contain or cover intent metadata." },
       },
@@ -1424,6 +1426,8 @@ const HELP_DETAIL_OVERRIDES = {
         pageIndex: { type: "number", description: "Zero-based target page index." },
         chartType: { type: "string", description: "bar or line." },
         title: { type: "string", description: "Visible chart title." },
+        alt: { type: "string", description: "Meaningful alternative text describing the chart; required unless decorative is true." },
+        decorative: { type: "boolean", description: "Mark the chart as decorative PDF Artifact content and exclude it from logical reading order." },
         categories: { type: "string[]", required: true, description: "Category labels." },
         series: { type: "object[]", required: true, description: "Series with name, numeric values, and optional color." },
         bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
@@ -11390,7 +11394,9 @@ class PdfImage {
     this.dataUrl = config.dataUrl;
     this.uri = config.uri;
     this.prompt = config.prompt;
-    this.alt = config.alt || config.altText || config.name || "image";
+    const accessibility = normalizePdfFigureAccessibility(config);
+    this.alt = accessibility.alt;
+    this.decorative = accessibility.decorative;
     this.bbox = config.bbox || [72, 280, Number(config.width || 180), Number(config.height || 120)];
     this.fit = config.fit || "contain";
     this.isMask = Boolean(config.isMask);
@@ -11401,8 +11407,8 @@ class PdfImage {
     this.sourceOperator = config.sourceOperator;
   }
 
-  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl), isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
-  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, bbox: this.bbox, fit: this.fit, isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
+  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, decorative: this.decorative, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl), isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, decorative: this.decorative, bbox: this.bbox, fit: this.fit, isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
 }
 
 class PdfChart {
@@ -11411,6 +11417,9 @@ class PdfChart {
     this.id = config.id || aid("pch");
     this.name = config.name || "";
     this.title = config.title || config.name || "Chart";
+    const accessibility = normalizePdfFigureAccessibility(config);
+    this.alt = accessibility.alt;
+    this.decorative = accessibility.decorative;
     this.chartType = config.chartType || config.type || "bar";
     this.categories = (config.categories || config.labels || []).map((item) => String(item ?? ""));
     const sourceSeries = config.series || [{ name: config.seriesName || "Series 1", values: config.values || config.data || [] }];
@@ -11422,8 +11431,8 @@ class PdfChart {
     this.bbox = config.bbox || [72, 430, 468, 180];
   }
 
-  inspectRecord(pageIndex) { return { kind: "chart", id: this.id, page: pageIndex + 1, name: this.name || undefined, title: this.title, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
-  toJSON() { return { id: this.id, name: this.name, title: this.title, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
+  inspectRecord(pageIndex) { return { kind: "chart", id: this.id, page: pageIndex + 1, name: this.name || undefined, title: this.title, alt: this.alt, decorative: this.decorative, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
+  toJSON() { return { id: this.id, name: this.name, title: this.title, alt: this.alt, decorative: this.decorative, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
 }
 
 class PdfPage {
@@ -11728,6 +11737,8 @@ export class PdfArtifact {
         }
       }
       for (const image of page.images) {
+        const accessibilityIssue = pdfFigureAccessibilityIssue(image, "PDF image");
+        if (accessibilityIssue) issues.push(verificationIssue("pdf", accessibilityIssue.code, accessibilityIssue.message, { page: pageIndex + 1, id: image.id, figureKind: "image" }));
         if (!image.dataUrl && !image.uri && !image.prompt) issues.push(verificationIssue("pdf", "emptyImage", `PDF image ${image.id} on page ${pageIndex + 1} has no dataUrl, uri, or prompt.`, { page: pageIndex + 1, id: image.id }));
         if (image.dataUrl && !imageDataFromDataUrl(image.dataUrl)) issues.push(verificationIssue("pdf", "invalidImageDataUrl", `PDF image ${image.id} on page ${pageIndex + 1} has an unsupported data URL.`, { page: pageIndex + 1, id: image.id }));
         const [left, top, width, height] = image.bbox || [];
@@ -11736,6 +11747,8 @@ export class PdfArtifact {
         }
       }
       for (const chart of page.charts) {
+        const accessibilityIssue = pdfFigureAccessibilityIssue(chart, "PDF chart");
+        if (accessibilityIssue) issues.push(verificationIssue("pdf", accessibilityIssue.code, accessibilityIssue.message, { page: pageIndex + 1, id: chart.id, figureKind: "chart" }));
         if (!chart.categories.length || !chart.series.length || chart.series.every((series) => !series.values.length)) issues.push(verificationIssue("pdf", "emptyChart", `PDF chart ${chart.id} on page ${pageIndex + 1} has no categories or series data.`, { page: pageIndex + 1, id: chart.id }));
         for (const series of chart.series) {
           if (series.values.some((value) => !Number.isFinite(value))) issues.push(verificationIssue("pdf", "chartNonNumericData", `PDF chart ${chart.id} contains non-numeric series values.`, { page: pageIndex + 1, id: chart.id, series: series.name }));
@@ -11773,8 +11786,8 @@ export class PdfArtifact {
           textItems: page.textItems.map((item) => ({ kind: "textItem", page: pageNumber, ...item })),
           regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
           tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, cells: serializePdfTableCells(table), bbox: table.bbox, source: table.source || undefined })),
-          images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt, isMask: image.isMask || undefined, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
-          charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
+          images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, decorative: image.decorative, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt, isMask: image.isMask || undefined, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
+          charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, alt: chart.alt, decorative: chart.decorative, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
           readingOrder: page.readingOrderRecords(pageIndex),
         };
       }),
@@ -11799,10 +11812,11 @@ export class PdfFile {
     const pages = [...text.matchAll(/\/Type\s*\/Page\b/g)].length;
     const objects = [...text.matchAll(/\b\d+\s+\d+\s+obj\b/g)].length;
     const readingOrderIds = inspectPdfReadingOrderIds(text);
+    const figureAccessibility = inspectPdfFigureAccessibility(text);
     const structureRoles = {};
     for (const match of text.matchAll(/\/Type\s*\/StructElem\b[\s\S]*?\/S\s*\/([A-Za-z0-9]+)/g)) structureRoles[match[1]] = (structureRoles[match[1]] || 0) + 1;
     const records = [
-      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, readingOrderIds, readingOrderItems: readingOrderIds.length, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, tableCellIds: [...text.matchAll(/\/S\s*\/(?:TH|TD)\b[\s\S]*?\/ID\s*(?:\([^)]*\)|<[A-Fa-f0-9]+>)/g)].length, rowSpans: [...text.matchAll(/\/RowSpan\s+[2-9]\d*/g)].length, columnSpans: [...text.matchAll(/\/ColSpan\s+[2-9]\d*/g)].length, headerAssociations: [...text.matchAll(/\/Headers\s*\[[^\]]+\]/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, readingOrderIds, readingOrderItems: readingOrderIds.length, ...figureAccessibility, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, tableCellIds: [...text.matchAll(/\/S\s*\/(?:TH|TD)\b[\s\S]*?\/ID\s*(?:\([^)]*\)|<[A-Fa-f0-9]+>)/g)].length, rowSpans: [...text.matchAll(/\/RowSpan\s+[2-9]\d*/g)].length, columnSpans: [...text.matchAll(/\/ColSpan\s+[2-9]\d*/g)].length, headerAssociations: [...text.matchAll(/\/Headers\s*\[[^\]]+\]/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
@@ -11915,8 +11929,8 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     textItems: page.textItems || page.items || [],
     regions: page.regions || [],
     tables: ((page.tables || []).length ? (page.tables || []) : reconstructPdfTablesFromTextGeometry(page, index)).map((table, tableIndex) => ({ id: table.id, name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], cells: table.cells || table.cellConfigs, bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96], source: table.source })),
-    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "parsed image", dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120], isMask: image.isMask, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
-    charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
+    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "Parsed raster content", decorative: image.decorative, dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120], isMask: image.isMask, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
+    charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, alt: chart.alt || chart.altText || chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, decorative: chart.decorative, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
   }));
   return PdfArtifact.create({ metadata: { ...metadata, ...(source.metadata || parsed?.metadata || {}) }, pages: pages.length ? pages : [{ text: "" }] });
 }
@@ -12561,12 +12575,13 @@ function pdfSemanticPlan(page, assetByImage, fontState) {
     contentGroups.push({ role: "P", commands: [command], sourceId: item.id, structureId: item.id });
   });
   page.tables.forEach((table) => contentGroups.push({ role: "Table", title: table.name || "Data table", children: pdfTableSemanticRows(page, table, fontState), sourceId: table.id, structureId: table.id }));
-  page.images.forEach((image) => contentGroups.push({ role: "Figure", alt: image.alt || image.name || "Image", commands: pdfImageCommands(page, image, assetByImage.get(image), fontState), sourceId: image.id, structureId: image.id }));
-  page.charts.forEach((chart) => contentGroups.push({ role: "Figure", alt: chart.title || chart.name || "Chart", commands: pdfChartCommands(page, chart, fontState), sourceId: chart.id, structureId: chart.id }));
+  page.images.forEach((image) => contentGroups.push({ role: "Figure", alt: image.alt, artifact: image.decorative, commands: pdfImageCommands(page, image, assetByImage.get(image), fontState), sourceId: image.id, structureId: image.id }));
+  page.charts.forEach((chart) => contentGroups.push({ role: "Figure", alt: chart.alt, artifact: chart.decorative, commands: pdfChartCommands(page, chart, fontState), sourceId: chart.id, structureId: chart.id }));
+  const semanticContentGroups = contentGroups.filter((group) => !group.artifact);
   let mcid = 0;
-  for (const leaf of pdfSemanticLeaves(contentGroups)) leaf.mcid = mcid++;
+  for (const leaf of pdfSemanticLeaves(semanticContentGroups)) leaf.mcid = mcid++;
   const groupsBySourceId = new Map();
-  for (const group of contentGroups) {
+  for (const group of semanticContentGroups) {
     if (!groupsBySourceId.has(group.sourceId)) groupsBySourceId.set(group.sourceId, []);
     groupsBySourceId.get(group.sourceId).push(group);
   }
@@ -12583,6 +12598,7 @@ function pdfSemanticLeaves(groups) {
 }
 
 function pdfMarkedContent(group) {
+  if (group.artifact) return `/Artifact BMC\n${group.commands.join("\n")}\nEMC`;
   if (Array.isArray(group.children)) return group.children.map(pdfMarkedContent).join("\n");
   return `/${group.role} << /MCID ${group.mcid} >> BDC\n${group.commands.join("\n")}\nEMC`;
 }

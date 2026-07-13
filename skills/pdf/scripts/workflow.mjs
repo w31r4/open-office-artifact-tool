@@ -171,13 +171,19 @@ export async function verifyPdfFile(inputPath, options = {}) {
     && fileInspect.summary.headerAssociations >= expectedTableStructure.headerAssociations;
   const expectedReadingOrderIds = pdf.pages.flatMap((page, pageIndex) => page.readingOrderRecords(pageIndex).map((record) => record.targetId));
   const readingOrderPassed = !fileInspect.summary.hasEmbeddedModel || JSON.stringify(fileInspect.summary.readingOrderIds) === JSON.stringify(expectedReadingOrderIds);
-  const accessibility = { requireTagged: options.requireTagged === true, tagged: fileInspect.summary.tagged, expectedTableStructure, tableStructurePassed, expectedReadingOrderIds, readingOrderPassed };
+  const modeledFigures = pdf.pages.flatMap((page) => [...page.images, ...page.charts]);
+  const expectedFigureAccessibility = { figures: modeledFigures.filter((figure) => !figure.decorative).length, artifacts: modeledFigures.filter((figure) => figure.decorative).length };
+  const figureAccessibilityPassed = !fileInspect.summary.hasEmbeddedModel || (fileInspect.summary.figures === expectedFigureAccessibility.figures
+    && fileInspect.summary.figureAltTexts === expectedFigureAccessibility.figures
+    && fileInspect.summary.missingFigureAltTexts === 0
+    && fileInspect.summary.artifacts >= expectedFigureAccessibility.artifacts);
+  const accessibility = { requireTagged: options.requireTagged === true, tagged: fileInspect.summary.tagged, expectedTableStructure, tableStructurePassed, expectedReadingOrderIds, readingOrderPassed, expectedFigureAccessibility, figureAccessibilityPassed };
   const summary = { input: absoluteInput, outputDir, pages: pdf.pages.length, verifyOk: verify.ok, file: fileInspect.summary, accessibility, extractedTextChars: extractedText.length, extractedTables: extractedTables.length, baselineDir, writeBaseline: Boolean(options.writeBaseline), modelRender, nativeRender, pdfjs: { status: pdfjs.status, reason: pdfjs.reason, pages: pdfjs.pdf?.pages.length, textChars: pdfjs.text?.length, tables: pdfjs.tables?.length, paths: pdfjs.paths }, files: paths };
   await fs.writeFile(paths.summary, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
   const visualFailed = modelRender.ok === false || (nativeRender.status === "passed" && nativeRender.ok === false);
   const parserFailed = (String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "required" || String(options.pdfjs ?? options.pdfjsParse ?? "auto").toLowerCase() === "true") && pdfjs.status !== "passed";
-  const accessibilityFailed = options.requireTagged === true && (!fileInspect.summary.tagged || !tableStructurePassed || !readingOrderPassed);
-  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed || accessibilityFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}, tagged=${fileInspect.summary.tagged}, tableStructure=${tableStructurePassed}, readingOrder=${readingOrderPassed}. See ${outputDir}`);
+  const accessibilityFailed = options.requireTagged === true && (!fileInspect.summary.tagged || !tableStructurePassed || !readingOrderPassed || !figureAccessibilityPassed);
+  if (options.failOnIssues !== false && (!verify.ok || visualFailed || parserFailed || accessibilityFailed)) throw new Error(`PDF QA failed: semantic=${verify.ok}, visual=${!visualFailed}, native=${nativeRender.status}, pdfjs=${pdfjs.status}, tagged=${fileInspect.summary.tagged}, tableStructure=${tableStructurePassed}, readingOrder=${readingOrderPassed}, figures=${figureAccessibilityPassed}. See ${outputDir}`);
   return { pdf, inspect, fileInspect, verify, extractedText, extractedTables, modelRender, nativeRender, pdfjs, summary };
 }
 

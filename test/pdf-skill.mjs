@@ -20,6 +20,10 @@ try {
   assert.equal(first.qa.fileInspect.summary.hasEof, true);
   assert.equal(first.qa.fileInspect.summary.tagged, true);
   assert.equal(first.qa.fileInspect.summary.language, "en-US");
+  assert.equal(first.qa.fileInspect.summary.figures, 3);
+  assert.equal(first.qa.fileInspect.summary.figureAltTexts, 3);
+  assert.equal(first.qa.fileInspect.summary.missingFigureAltTexts, 0);
+  assert.equal(first.qa.fileInspect.summary.artifacts, 1);
   assert.deepEqual(first.qa.pdf.pages[0].readingOrder, ["qa-report-page-1/text", "verified-mark-image", "qa-agent-ready-heading", "qa-gates-table", "evidence-chart", "qa-page-1-footer"]);
   const modeledReadingOrder = first.qa.pdf.pages.flatMap((page, pageIndex) => page.readingOrderRecords(pageIndex).map((record) => record.targetId));
   assert.deepEqual(first.qa.fileInspect.summary.readingOrderIds, modeledReadingOrder);
@@ -35,6 +39,7 @@ try {
   assert.equal(first.qa.fileInspect.summary.headerAssociations, 18);
   assert.equal(first.qa.summary.accessibility.tableStructurePassed, true);
   assert.equal(first.qa.summary.accessibility.readingOrderPassed, true);
+  assert.equal(first.qa.summary.accessibility.figureAccessibilityPassed, true);
   assert.equal(first.qa.fileInspect.summary.structureElements, first.qa.fileInspect.summary.markedContentItems + first.qa.fileInspect.summary.tableStructures + first.qa.fileInspect.summary.tableRows);
   const untaggedPath = path.join(root, "untagged.pdf");
   await (await PdfFile.exportPdf(first.qa.pdf, { tagged: false })).save(untaggedPath);
@@ -51,6 +56,10 @@ try {
   const tamperedReadingOrderBytes = Buffer.from((await fs.readFile(first.pdfPath)).toString("latin1").replace("/ID (verified-mark-image)", "/ID (tampered-mark-image)"), "latin1");
   await fs.writeFile(tamperedReadingOrderPath, tamperedReadingOrderBytes);
   await assert.rejects(() => verifyPdfFile(tamperedReadingOrderPath, { outputDir: path.join(root, "tampered-reading-order-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /readingOrder=false/);
+  const missingFigureAltPath = path.join(root, "missing-figure-alt.pdf");
+  const missingFigureAltBytes = Buffer.from((await fs.readFile(first.pdfPath)).toString("latin1").replace("/Alt (Verified workflow)", "/Foo (Verified workflow)"), "latin1");
+  await fs.writeFile(missingFigureAltPath, missingFigureAltBytes);
+  await assert.rejects(() => verifyPdfFile(missingFigureAltPath, { outputDir: path.join(root, "missing-figure-alt-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /figures=false/);
   assert.equal(first.qa.modelRender.pages.length, 3);
   assert.equal(first.qa.pdfjs.status, "passed");
   assert.equal(first.qa.pdfjs.pdf.pages.length, 3);

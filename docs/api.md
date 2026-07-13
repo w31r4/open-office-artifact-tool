@@ -589,9 +589,9 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 | Name | Kind | Summary |
 | --- | --- | --- |
 | `createPdfjsParser` | api | Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes. |
-| `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
+| `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, meaningful alternative text or decorative-artifact semantics, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
 | `pdf.addFlowText` | api | Wrap long text into positioned lines and automatically append pages when the configured content box is full. |
-| `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box. |
+| `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alternative text or explicit decorative-artifact semantics, and a page-space bounding box. |
 | `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
 | `pdf.addTable` | api | Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box. |
 | `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering. |
@@ -602,11 +602,11 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 | `pdf.page.setReadingOrder` | api | Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, and charts by stable ID without changing visual paint order. |
 | `pdf.render` | api | Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters. |
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts. |
-| `pdf.verify` | api | Return QA issues for incomplete, duplicate, unknown, or ambiguous reading-order targets plus empty pages, Unicode dashes, text extraction sanity, page geometry, bounds, invalid images, table semantics, and chart data. |
+| `pdf.verify` | api | Return QA issues for missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts. |
-| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, table attributes/IDs, optional Unicode TrueType embedding, positioned text, vector tables/charts, and PNG/JPEG images. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, H1/P, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, top-level structure reading-order IDs, font evidence, structure-role/span/header-association counts, and marked-content count. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count. |
 
 ### pdf details
 
@@ -630,7 +630,7 @@ Create an optional PDF.js parser adapter to extract page geometry, positioned te
 
 #### `pdf.addChart`
 
-Add a modeled bar/line chart region with categories, series, title, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip.
+Add a modeled bar/line chart region with categories, series, title, meaningful alternative text or decorative-artifact semantics, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip.
 
 **Examples:**
 
@@ -641,6 +641,8 @@ Add a modeled bar/line chart region with categories, series, title, bbox, inspec
 - `pageIndex` (number) — Zero-based target page index.
 - `chartType` (string) — bar or line.
 - `title` (string) — Visible chart title.
+- `alt` (string) — Meaningful alternative text describing the chart; required unless decorative is true.
+- `decorative` (boolean) — Mark the chart as decorative PDF Artifact content and exclude it from logical reading order.
 - `categories` (string[]) required — Category labels.
 - `series` (object[]) required — Series with name, numeric values, and optional color.
 - `bbox` (number[]) — Page-space [left, top, width, height] in points.
@@ -675,7 +677,7 @@ Wrap long text into positioned lines and automatically append pages when the con
 
 #### `pdf.addImage`
 
-Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and page-space bounding box.
+Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alternative text or explicit decorative-artifact semantics, and a page-space bounding box.
 
 **Examples:**
 
@@ -687,7 +689,8 @@ Add a modeled PDF image region with dataUrl/URI/prompt metadata, alt text, and p
 - `dataUrl` (string) — Embedded PNG or JPEG image data URL.
 - `uri` (string) — External image URI metadata.
 - `prompt` (string) — Image generation/extraction prompt metadata.
-- `alt` (string) — Alternative text.
+- `alt` (string) — Meaningful alternative text; required unless decorative is true.
+- `decorative` (boolean) — Mark the image as decorative PDF Artifact content and exclude it from logical reading order.
 - `bbox` (number[]) — Page-space [left, top, width, height] in points.
 - `fit` (string) — contain or cover intent metadata.
 
@@ -889,7 +892,7 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 #### `pdf.verify`
 
-Return QA issues for incomplete, duplicate, unknown, or ambiguous reading-order targets plus empty pages, Unicode dashes, text extraction sanity, page geometry, bounds, invalid images, table semantics, and chart data.
+Return QA issues for missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data.
 
 **Examples:**
 
@@ -924,7 +927,7 @@ Create a modeled PDF artifact with pages, text, span-aware accessible table regi
 
 #### `PdfFile.exportPdf`
 
-Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, with language/title metadata, H1/P/Figure structure, semantic Table/TR/TH/TD hierarchy, table attributes/IDs, optional Unicode TrueType embedding, positioned text, vector tables/charts, and PNG/JPEG images.
+Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, H1/P, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images.
 
 **Examples:**
 
@@ -965,7 +968,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, top-level structure reading-order IDs, font evidence, structure-role/span/header-association counts, and marked-content count.
+Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count.
 
 **Examples:**
 

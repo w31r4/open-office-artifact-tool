@@ -184,6 +184,9 @@ assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.ret
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addPage")?.schema?.parameters?.readingOrder?.type, "string[]|object[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.page.setReadingOrder")?.schema?.parameters?.order?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addImage")?.schema?.parameters?.decorative?.type, "boolean");
+assert.match(HELP_CATALOG.find((item) => item.name === "pdf.addImage")?.schema?.parameters?.alt?.description || "", /required unless decorative/);
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addChart")?.schema?.parameters?.alt?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.tagged?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.language?.type, "string");

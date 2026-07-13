@@ -51,6 +51,8 @@ Modeled PDF tables accept zero-based `cells` overrides with `rowSpan`, `columnSp
 
 Call `page.setReadingOrder([...])` with every semantic page target exactly once. Use `${page.id}/text` for non-positioned body text, followed by positioned-text, table, image, and chart IDs in the desired logical sequence. The declared order is round-tripped in the model, exposed through `inspect({ kind: "readingOrder" })`, `resolve`, and layout JSON, validated fail-closed, and emitted through `StructTreeRoot`; `PdfFile.inspectPdf()` reports the resulting top-level structure IDs. Visual paint order remains unchanged.
 
+Every informative PDF image and chart must provide concise, meaningful `alt` text. Set `decorative: true` only for content that should remain visible but be ignored by assistive technology; decorative figures are excluded from reading order and emitted as `/Artifact BMC` marked content instead of `Figure` structure elements. `pdf.verify()` rejects missing or generic alternatives, and the runnable PDF verifier compares modeled Figure/Artifact expectations with real exported bytes.
+
 ## Usage
 
 ```js

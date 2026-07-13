@@ -14,8 +14,8 @@ export function pdfReadingOrderEntries(page = {}) {
   if (bodyLines.length) entries.push({ id: `${page.id}/text`, kind: "text", label: bodyLines[0] });
   for (const item of page.textItems || []) if (String(item.text || "").trim()) entries.push({ id: String(item.id), kind: "textItem", label: String(item.text) });
   for (const table of page.tables || []) entries.push({ id: String(table.id), kind: "table", label: table.name || "Data table" });
-  for (const image of page.images || []) entries.push({ id: String(image.id), kind: "image", label: image.alt || image.name || "Image" });
-  for (const chart of page.charts || []) entries.push({ id: String(chart.id), kind: "chart", label: chart.title || chart.name || "Chart" });
+  for (const image of page.images || []) if (!image.decorative) entries.push({ id: String(image.id), kind: "image", label: image.alt || image.name || "Image" });
+  for (const chart of page.charts || []) if (!chart.decorative) entries.push({ id: String(chart.id), kind: "chart", label: chart.alt || chart.title || chart.name || "Chart" });
   return entries;
 }
 
