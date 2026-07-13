@@ -225,6 +225,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /LEN\/LEFT\/RIGHT\/MID/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /DATE\/YEAR\/MONTH\/DAY/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /EDATE\/EOMONTH\/DAYS\/WEEKDAY/);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /TIME\/HOUR\/MINUTE\/SECOND/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");

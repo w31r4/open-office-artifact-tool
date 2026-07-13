@@ -1,4 +1,5 @@
-import { pivotDateSerial, pivotFormulaDateParts, pivotShiftDateMonths, pivotWeekdayIndex } from "./pivot-dates.mjs";
+import { formulaTimeParts, formulaTimeSerial } from "./formula-coercion.mjs";
+import { pivotDateParts, pivotDateSerial, pivotFormulaDateParts, pivotShiftDateMonths, pivotWeekdayIndex } from "./pivot-dates.mjs";
 
 const PIVOT_FUNCTIONS = new Map([
   ["ABS", { minArgs: 1, maxArgs: 1 }],
@@ -38,6 +39,10 @@ const PIVOT_FUNCTIONS = new Map([
   ["EOMONTH", { minArgs: 2, maxArgs: 2 }],
   ["DAYS", { minArgs: 2, maxArgs: 2 }],
   ["WEEKDAY", { minArgs: 1, maxArgs: 2 }],
+  ["TIME", { minArgs: 3, maxArgs: 3 }],
+  ["HOUR", { minArgs: 1, maxArgs: 1 }],
+  ["MINUTE", { minArgs: 1, maxArgs: 1 }],
+  ["SECOND", { minArgs: 1, maxArgs: 1 }],
 ]);
 
 const COMPARISON_OPERATORS = new Set(["=", "<>", "<", "<=", ">", ">="]);
@@ -327,6 +332,12 @@ function pivotTextCount(value, fallback) {
   return Math.trunc(count);
 }
 
+function pivotTimeParts(value, dateSystem) {
+  const parts = formulaTimeParts(scalarFormulaValue(value));
+  if (!parts || (parts.dateText && !pivotDateParts(parts.dateText, dateSystem))) return undefined;
+  return parts;
+}
+
 function formulaFunction(name, args, options) {
   if (name === "ISERROR") return formulaError(args[0]);
   if (name === "ISNUMBER") return typeof args[0] === "number" && Number.isFinite(args[0]);
@@ -401,6 +412,16 @@ function formulaFunction(name, args, options) {
     if (returnType === 3) return (weekday + 6) % 7;
     if (returnType >= 12 && returnType <= 17) return (weekday - (returnType - 10) + 7) % 7 + 1;
     return "#NUM!";
+  }
+  if (name === "TIME") {
+    const values = args.map(numericValue);
+    const valueError = values.find(formulaError);
+    if (valueError) return valueError;
+    return formulaTimeSerial(values[0], values[1], values[2]) ?? "#NUM!";
+  }
+  if (name === "HOUR" || name === "MINUTE" || name === "SECOND") {
+    const parts = pivotTimeParts(args[0], options.dateSystem);
+    return parts ? parts[name.toLowerCase()] : "#VALUE!";
   }
   if (name === "ABS") return formulaUnary(args[0], Math.abs);
   if (name === "SQRT") {

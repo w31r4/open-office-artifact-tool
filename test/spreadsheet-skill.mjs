@@ -85,6 +85,7 @@ try {
   assert.match(fixturePivotCacheXml, /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost',LEN\(TRIM\(&quot;  ok  &quot;\)\)=2,UPPER\(LEFT\(&quot;pass&quot;,1\)\)=&quot;P&quot;,LOWER\(RIGHT\(&quot;OK&quot;,1\)\)=&quot;k&quot;,MID\(&quot;margin&quot;,2,2\)=&quot;ar&quot;\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
   assert.match(fixturePivotCacheXml, /formula="IF\(AND\(DATE\(1904,1,1\)=0,YEAR\(DATE\(2026,3,31\)\)=2026,MONTH\(DATE\(2026,3,31\)\)=3,DAY\(DATE\(2026,3,31\)\)=31\),'Revenue'-'Cost',0\)"/);
   assert.match(fixturePivotCacheXml, /formula="IF\(AND\(DAY\(EDATE\(DATE\(2024,1,31\),1\)\)=29,DAY\(EOMONTH\(DATE\(2024,2,10\),0\)\)=29,DAYS\(DATE\(2024,3,1\),DATE\(2024,2,28\)\)=2,WEEKDAY\(DATE\(2026,3,31\),2\)=2\),'Revenue'-'Cost',0\)"/);
+  assert.match(fixturePivotCacheXml, /formula="IF\(AND\(HOUR\(TIME\(27,0,0\)\)=3,MINUTE\(TIME\(0,750,0\)\)=30,SECOND\(TIME\(0,0,2000\)\)=20,HOUR\(DATE\(2026,3,31\)\+TIME\(18,45,30\)\)=18\),'Revenue'-'Cost',0\)"/);
   const summaryDrawings = workbook.worksheets.getItem("Summary");
   assert.equal(summaryDrawings.charts.items.length, 1);
   assert.equal(summaryDrawings.charts.items[0].title, "Quarter performance");
@@ -97,7 +98,7 @@ try {
   assert.equal(workbook.resolve(summaryDrawings.images.items[0].id), summaryDrawings.images.items[0]);
   assert.equal(summaryDrawings.pivotTables.items.length, 1);
   const summaryPivot = summaryDrawings.pivotTables.getItemOrNullObject("RevenuePivot");
-  assert.deepEqual(summaryPivot.computedValues(), [["Period Year", "Period Quarter", "Period Month", "Month", "Period End", "Revenue total", "Margin rate", "Date contract", "Date shift contract"], ["2026", "Q1", "Mar", "Mar", "2026-03-31T18:00:00Z", 150, 0.4, 60, 60]]);
+  assert.deepEqual(summaryPivot.computedValues(), [["Period Year", "Period Quarter", "Period Month", "Month", "Period End", "Revenue total", "Margin rate", "Date contract", "Date shift contract", "Time contract"], ["2026", "Q1", "Mar", "Mar", "2026-03-31T18:00:00Z", 150, 0.4, 60, 60, 60]]);
   assert.deepEqual(summaryPivot.groupFields, [
     { name: "Period Year", sourceField: "Period End", groupBy: "years" },
     { name: "Period Quarter", sourceField: "Period End", groupBy: "quarters", parent: "Period Year" },
@@ -108,12 +109,14 @@ try {
     { name: "Margin Rate", formula: '=IF(AND(ISNUMBER(\'Revenue\'),\'Revenue\'>=\'Cost\',LEN(TRIM("  ok  "))=2,UPPER(LEFT("pass",1))="P",LOWER(RIGHT("OK",1))="k",MID("margin",2,2)="ar"),IFERROR(ROUND(SQRT(POWER(\'Revenue\'-\'Cost\',2))/\'Revenue\',2),0),0)', numFmtId: 0, references: ["Revenue", "Cost"] },
     { name: "Date Contract", formula: "=IF(AND(DATE(1904,1,1)=0,YEAR(DATE(2026,3,31))=2026,MONTH(DATE(2026,3,31))=3,DAY(DATE(2026,3,31))=31),'Revenue'-'Cost',0)", numFmtId: 0, references: ["Revenue", "Cost"] },
     { name: "Date Shift Contract", formula: "=IF(AND(DAY(EDATE(DATE(2024,1,31),1))=29,DAY(EOMONTH(DATE(2024,2,10),0))=29,DAYS(DATE(2024,3,1),DATE(2024,2,28))=2,WEEKDAY(DATE(2026,3,31),2)=2),'Revenue'-'Cost',0)", numFmtId: 0, references: ["Revenue", "Cost"] },
+    { name: "Time Contract", formula: "=IF(AND(HOUR(TIME(27,0,0))=3,MINUTE(TIME(0,750,0))=30,SECOND(TIME(0,0,2000))=20,HOUR(DATE(2026,3,31)+TIME(18,45,30))=18),'Revenue'-'Cost',0)", numFmtId: 0, references: ["Revenue", "Cost"] },
   ]);
   assert.deepEqual(nativeCommentWorkbook.resolve("RevenuePivot").calculatedFields, summaryPivot.calculatedFields);
   const nativePivotSecondZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(nativeCommentWorkbook)).arrayBuffer()));
   assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost',LEN\(TRIM\(&quot;  ok  &quot;\)\)=2,UPPER\(LEFT\(&quot;pass&quot;,1\)\)=&quot;P&quot;,LOWER\(RIGHT\(&quot;OK&quot;,1\)\)=&quot;k&quot;,MID\(&quot;margin&quot;,2,2\)=&quot;ar&quot;\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
   assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(DATE\(1904,1,1\)=0,YEAR\(DATE\(2026,3,31\)\)=2026,MONTH\(DATE\(2026,3,31\)\)=3,DAY\(DATE\(2026,3,31\)\)=31\),'Revenue'-'Cost',0\)"/);
   assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(DAY\(EDATE\(DATE\(2024,1,31\),1\)\)=29,DAY\(EOMONTH\(DATE\(2024,2,10\),0\)\)=29,DAYS\(DATE\(2024,3,1\),DATE\(2024,2,28\)\)=2,WEEKDAY\(DATE\(2026,3,31\),2\)=2\),'Revenue'-'Cost',0\)"/);
+  assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(HOUR\(TIME\(27,0,0\)\)=3,MINUTE\(TIME\(0,750,0\)\)=30,SECOND\(TIME\(0,0,2000\)\)=20,HOUR\(DATE\(2026,3,31\)\+TIME\(18,45,30\)\)=18\),'Revenue'-'Cost',0\)"/);
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
   assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);
