@@ -578,6 +578,19 @@ assert.equal(alternatePrefixPrecise.resolve("PreciseDatePivot").filters[0].useWh
 const functionBook = Workbook.create();
 const functionSheet = functionBook.worksheets.add("Calculated Functions");
 functionSheet.getRange("A1:C4").values = [["Region", "Revenue", "Cost"], ["East", 10, 4], ["East", 20, 8], ["West", 5, 0]];
+assert.equal(evaluatePivotFormula('LEN("A😀")'), 2);
+assert.equal(evaluatePivotFormula('LEFT("A😀B",2)'), "A😀");
+assert.equal(evaluatePivotFormula('RIGHT("A😀B",2)'), "😀B");
+assert.equal(evaluatePivotFormula('MID("A😀BC",2,2)'), "😀B");
+assert.equal(evaluatePivotFormula('LOWER("MiXeD")'), "mixed");
+assert.equal(evaluatePivotFormula('UPPER("MiXeD")'), "MIXED");
+assert.equal(evaluatePivotFormula('TRIM("  alpha   beta  ")'), "alpha beta");
+assert.equal(evaluatePivotFormula('TRIM("  alpha   beta  ")'), "alpha  beta");
+assert.equal(evaluatePivotFormula('LEFT("abc",-1)'), "#VALUE!");
+assert.equal(evaluatePivotFormula('RIGHT("abc",0)'), "");
+assert.equal(evaluatePivotFormula('MID("abc",0,1)'), "#VALUE!");
+assert.equal(evaluatePivotFormula('MID("abc",5,2)'), "");
+assert.throws(() => evaluatePivotFormula('MID("abc",1)'), /requires exactly 3 arguments/);
 const functionPivot = functionSheet.pivotTables.add({
   name: "FunctionPivot",
   sourceRange: "A1:C4",
@@ -591,6 +604,7 @@ const functionPivot = functionSheet.pivotTables.add({
     { name: "Margin Distance", formula: "=IFNA(SQRT(POWER([Revenue]-[Cost],2)),0)" },
     { name: "Revenue Modulus", formula: "=MOD(INT([Revenue]),MAX(SIGN([Cost]),1)+2)" },
     { name: "Scaled Margin", formula: "=PRODUCT([Revenue]-[Cost],2)" },
+    { name: "Text Contract", formula: '=IF(AND(LEN(TRIM("  ok  "))=2,UPPER(LEFT("pass",1))="P",LOWER(RIGHT("OK",1))="k",MID("margin",2,2)="ar"),[Revenue]-[Cost],0)' },
   ],
   valueFields: [
     { field: "Margin Ratio", name: "Rounded margin" },
@@ -600,9 +614,10 @@ const functionPivot = functionSheet.pivotTables.add({
     { field: "Margin Distance", name: "Margin distance" },
     { field: "Revenue Modulus", name: "Revenue modulus" },
     { field: "Scaled Margin", name: "Scaled margin" },
+    { field: "Text Contract", name: "Text contract" },
   ],
 });
-assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin", "Guarded margin", "Safe ratio", "Valid margin", "Margin distance", "Revenue modulus", "Scaled margin"], ["East", 1.5, 1.5, 2.5, true, 18, 0, 36], ["West", 5, 0, "n/a", true, 5, 2, 10]]);
+assert.deepEqual(functionPivot.computedValues(), [["Region", "Rounded margin", "Guarded margin", "Safe ratio", "Valid margin", "Margin distance", "Revenue modulus", "Scaled margin", "Text contract"], ["East", 1.5, 1.5, 2.5, true, 18, 0, 36, 18], ["West", 5, 0, "n/a", true, 5, 2, 10, 5]]);
 const functionXlsx = await SpreadsheetFile.exportXlsx(functionBook);
 const functionZip = await JSZip.loadAsync(new Uint8Array(await functionXlsx.arrayBuffer()));
 const functionPivotCacheXml = await functionZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
@@ -613,6 +628,7 @@ assert.match(functionPivotCacheXml, /formula="AND\(ISNUMBER\('Revenue'\),NOT\('R
 assert.match(functionPivotCacheXml, /formula="IFNA\(SQRT\(POWER\('Revenue'-'Cost',2\)\),0\)"/);
 assert.match(functionPivotCacheXml, /formula="MOD\(INT\('Revenue'\),MAX\(SIGN\('Cost'\),1\)\+2\)"/);
 assert.match(functionPivotCacheXml, /formula="PRODUCT\('Revenue'-'Cost',2\)"/);
+assert.match(functionPivotCacheXml, /formula="IF\(AND\(LEN\(TRIM\(&quot;  ok  &quot;\)\)=2,UPPER\(LEFT\(&quot;pass&quot;,1\)\)=&quot;P&quot;,LOWER\(RIGHT\(&quot;OK&quot;,1\)\)=&quot;k&quot;,MID\(&quot;margin&quot;,2,2\)=&quot;ar&quot;\),'Revenue'-'Cost',0\)"/);
 functionZip.remove("customXml/open-office-artifact.json");
 const nativeFunctionBook = await SpreadsheetFile.importXlsx(new FileBlob(await functionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: functionXlsx.type }));
 assert.deepEqual(nativeFunctionBook.resolve("FunctionPivot").computedValues(), functionPivot.computedValues());

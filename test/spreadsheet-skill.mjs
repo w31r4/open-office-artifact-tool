@@ -82,7 +82,7 @@ try {
   const fixturePivotCacheXml = await fixtureZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text");
   assert.match(fixturePivotXml, /x14:pivotFilter useWholeDay="0"/);
   assert.match(fixturePivotXml, /stringValue1="2026-03-31T17:00:00" stringValue2="2026-03-31T19:00:00"/);
-  assert.match(fixturePivotCacheXml, /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost'\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
+  assert.match(fixturePivotCacheXml, /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost',LEN\(TRIM\(&quot;  ok  &quot;\)\)=2,UPPER\(LEFT\(&quot;pass&quot;,1\)\)=&quot;P&quot;,LOWER\(RIGHT\(&quot;OK&quot;,1\)\)=&quot;k&quot;,MID\(&quot;margin&quot;,2,2\)=&quot;ar&quot;\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
   const summaryDrawings = workbook.worksheets.getItem("Summary");
   assert.equal(summaryDrawings.charts.items.length, 1);
   assert.equal(summaryDrawings.charts.items[0].title, "Quarter performance");
@@ -103,11 +103,11 @@ try {
   ]);
   assert.deepEqual(summaryPivot.filters, [{ field: "Month", include: ["Jan", "Mar"] }, { field: "Period End", type: "dateBetween", value1: "2026-03-31T17:00:00", value2: "2026-03-31T19:00:00", useWholeDay: false }]);
   assert.deepEqual(summaryPivot.calculatedFields, [
-    { name: "Margin Rate", formula: "=IF(AND(ISNUMBER('Revenue'),'Revenue'>='Cost'),IFERROR(ROUND(SQRT(POWER('Revenue'-'Cost',2))/'Revenue',2),0),0)", numFmtId: 0, references: ["Revenue", "Cost"] },
+    { name: "Margin Rate", formula: '=IF(AND(ISNUMBER(\'Revenue\'),\'Revenue\'>=\'Cost\',LEN(TRIM("  ok  "))=2,UPPER(LEFT("pass",1))="P",LOWER(RIGHT("OK",1))="k",MID("margin",2,2)="ar"),IFERROR(ROUND(SQRT(POWER(\'Revenue\'-\'Cost\',2))/\'Revenue\',2),0),0)', numFmtId: 0, references: ["Revenue", "Cost"] },
   ]);
   assert.deepEqual(nativeCommentWorkbook.resolve("RevenuePivot").calculatedFields, summaryPivot.calculatedFields);
   const nativePivotSecondZip = await JSZip.loadAsync(new Uint8Array(await (await SpreadsheetFile.exportXlsx(nativeCommentWorkbook)).arrayBuffer()));
-  assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost'\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
+  assert.match(await nativePivotSecondZip.file("xl/pivotCache/pivotCacheDefinition1.xml").async("text"), /formula="IF\(AND\(ISNUMBER\('Revenue'\),'Revenue'&gt;='Cost',LEN\(TRIM\(&quot;  ok  &quot;\)\)=2,UPPER\(LEFT\(&quot;pass&quot;,1\)\)=&quot;P&quot;,LOWER\(RIGHT\(&quot;OK&quot;,1\)\)=&quot;k&quot;,MID\(&quot;margin&quot;,2,2\)=&quot;ar&quot;\),IFERROR\(ROUND\(SQRT\(POWER\('Revenue'-'Cost',2\)\)\/'Revenue',2\),0\),0\)"/);
   assert.equal(summaryPivot.refreshPolicy.refreshOnLoad, false);
   assert.equal(summaryPivot.refreshPolicy.refreshedBy, "Spreadsheet skill");
   assert.equal(workbook.resolve("RevenuePivot"), summaryPivot);

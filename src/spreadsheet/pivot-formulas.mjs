@@ -21,6 +21,13 @@ const PIVOT_FUNCTIONS = new Map([
   ["ISERROR", { minArgs: 1, maxArgs: 1 }],
   ["ISNUMBER", { minArgs: 1, maxArgs: 1 }],
   ["ISTEXT", { minArgs: 1, maxArgs: 1 }],
+  ["LEN", { minArgs: 1, maxArgs: 1 }],
+  ["LEFT", { minArgs: 1, maxArgs: 2 }],
+  ["RIGHT", { minArgs: 1, maxArgs: 2 }],
+  ["MID", { minArgs: 3, maxArgs: 3 }],
+  ["LOWER", { minArgs: 1, maxArgs: 1 }],
+  ["UPPER", { minArgs: 1, maxArgs: 1 }],
+  ["TRIM", { minArgs: 1, maxArgs: 1 }],
 ]);
 
 const COMPARISON_OPERATORS = new Set(["=", "<>", "<", "<=", ">", ">="]);
@@ -291,6 +298,25 @@ function formulaUnary(value, transform) {
   return formulaError(number) ? number : transform(number);
 }
 
+function pivotTextValue(value) {
+  if (formulaError(value)) return value;
+  value = scalarFormulaValue(value);
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  return String(value);
+}
+
+function pivotTextCharacters(value) {
+  const text = pivotTextValue(value);
+  return formulaError(text) ? text : Array.from(text);
+}
+
+function pivotTextCount(value, fallback) {
+  if (value == null) return fallback;
+  const count = numericValue(value);
+  if (formulaError(count)) return count;
+  return Math.trunc(count);
+}
+
 function formulaFunction(name, args) {
   if (name === "ISERROR") return formulaError(args[0]);
   if (name === "ISNUMBER") return typeof args[0] === "number" && Number.isFinite(args[0]);
@@ -298,6 +324,35 @@ function formulaFunction(name, args) {
   if (name === "NA") return "#N/A";
   const error = args.find(formulaError);
   if (error) return error;
+  if (name === "LEN") {
+    const characters = pivotTextCharacters(args[0]);
+    return formulaError(characters) ? characters : characters.length;
+  }
+  if (name === "LEFT" || name === "RIGHT") {
+    const characters = pivotTextCharacters(args[0]);
+    if (formulaError(characters)) return characters;
+    const count = pivotTextCount(args[1], 1);
+    if (formulaError(count)) return count;
+    if (count < 0) return "#VALUE!";
+    const result = name === "LEFT" ? characters.slice(0, count) : count === 0 ? [] : characters.slice(-count);
+    return formulaText(result.join(""));
+  }
+  if (name === "MID") {
+    const characters = pivotTextCharacters(args[0]);
+    if (formulaError(characters)) return characters;
+    const start = pivotTextCount(args[1]);
+    const count = pivotTextCount(args[2]);
+    if (formulaError(start)) return start;
+    if (formulaError(count)) return count;
+    if (start < 1 || count < 0) return "#VALUE!";
+    return formulaText(characters.slice(start - 1, start - 1 + count).join(""));
+  }
+  if (name === "LOWER" || name === "UPPER" || name === "TRIM") {
+    const text = pivotTextValue(args[0]);
+    if (formulaError(text)) return text;
+    if (name === "TRIM") return formulaText(text.replace(/ +/g, " ").replace(/^ | $/g, ""));
+    return formulaText(name === "LOWER" ? text.toLowerCase() : text.toUpperCase());
+  }
   if (name === "ABS") return formulaUnary(args[0], Math.abs);
   if (name === "SQRT") {
     const value = numericValue(args[0]);

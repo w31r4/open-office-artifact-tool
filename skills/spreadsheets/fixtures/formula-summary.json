@@ -189,7 +189,7 @@
             "refreshedDateIso": "2026-07-12T00:00:00Z"
           },
           "calculatedFields": [
-            { "name": "Margin Rate", "formula": "=IF(AND(ISNUMBER([Revenue]),[Revenue]>=[Cost]),IFERROR(ROUND(SQRT(POWER([Revenue]-[Cost],2))/[Revenue],2),0),0)" }
+            { "name": "Margin Rate", "formula": "=IF(AND(ISNUMBER([Revenue]),[Revenue]>=[Cost],LEN(TRIM(\"  ok  \"))=2,UPPER(LEFT(\"pass\",1))=\"P\",LOWER(RIGHT(\"OK\",1))=\"k\",MID(\"margin\",2,2)=\"ar\"),IFERROR(ROUND(SQRT(POWER([Revenue]-[Cost],2))/[Revenue],2),0),0)" }
           ],
           "valueFields": [
             { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" },
