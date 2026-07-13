@@ -31,7 +31,7 @@
             },
             { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
             { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "uri": "https://example.com/remove" } }] },
-            { "bulletCharacter": "–", "bulletSize": 24, "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }] }
+            { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==" }, "runs": [{ "text": "Picture marker", "style": { "fontSize": 18, "color": "#334155" } }] }
           ]
         },
         {
@@ -101,9 +101,9 @@
           "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" } }]
         },
         {
-          "bulletNone": true,
+          "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGP4WSz2n5aYYdSCn6NB9HM0Ff0czWjFo0VF8WhpWjxa4YiNVplig7tVAQCYyaKMC7QtnwAAAABJRU5ErkJggg==" },
           "bulletSizeFollowText": true,
-          "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }]
+          "runs": [{ "text": "Picture marker", "style": { "fontSize": 18, "color": "#334155" } }]
         }
       ]
     }

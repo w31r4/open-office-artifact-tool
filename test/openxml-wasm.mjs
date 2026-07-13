@@ -23,6 +23,11 @@ const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(Presentat
 assert.equal(legacyTabWire[0], 0x72, "Presentation tab stops must retain repeated-message field 14.");
 assert.equal(fromBinary(PresentationTextParagraphSchema, legacyTabWire).tabStops[0].positionEmu, 120n);
 assert.deepEqual([...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { noTabStops: true }))], [0x78, 0x01], "Explicit tab deletion must remain additive field 15.");
+assert.deepEqual(
+  [...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { bullet: { case: "pictureBullet", value: { source: { case: "assetId", value: "x" } } } })).slice(0, 2)],
+  [0x82, 0x01],
+  "Presentation picture bullets must use additive field 16.",
+);
 assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
 
 const workbook = Workbook.create({ dateSystem: "1904" });
@@ -250,6 +255,61 @@ assert.equal(richRoundTripShape.text.paragraphs[1].bulletColor, "#16A34A");
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletSizePercent, 1.25);
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
+
+const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+const replacementPictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=";
+const pictureBulletPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+pictureBulletPresentation.slides.add({ name: "Picture markers" }).shapes.add({
+  name: "Embedded and external markers",
+  position: { left: 60, top: 40, width: 920, height: 180 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: [
+    { bulletImage: { dataUrl: pictureBulletPng }, runs: ["Embedded marker"] },
+    { bulletImage: { uri: "https://example.com/marker.png" }, runs: ["External marker"] },
+  ],
+});
+pictureBulletPresentation.slides.add({ name: "Shared marker" }).shapes.add({
+  name: "Shared embedded marker",
+  position: { left: 60, top: 40, width: 920, height: 100 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: [{ bulletImage: pictureBulletPng, runs: ["Same bytes, different owner"] }],
+});
+const pictureBulletPptx = await exportPptxWithOpenXmlWasm(pictureBulletPresentation);
+const pictureBulletZip = await JSZip.loadAsync(pictureBulletPptx.bytes);
+assert.equal(Object.keys(pictureBulletZip.files).filter((name) => /^ppt\/media\//.test(name)).length, 1);
+assert.match(await pictureBulletZip.file("ppt/slides/slide1.xml").async("text"), /<a:buBlip><a:blip r:embed="[^"]+"[^>]*\/><\/a:buBlip>/);
+assert.match(await pictureBulletZip.file("ppt/slides/slide1.xml").async("text"), /<a:buBlip><a:blip r:link="[^"]+"[^>]*\/><\/a:buBlip>/);
+assert.match(await pictureBulletZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /relationships\/image[^>]*Target="https:\/\/example\.com\/marker\.png"[^>]*TargetMode="External"/);
+const pictureBulletImported = await importPptxWithOpenXmlWasm(pictureBulletPptx);
+const importedPictureParagraphs = pictureBulletImported.slides.getItem(0).shapes.items[0].text.paragraphs;
+assert.equal(importedPictureParagraphs[0].bulletImage.dataUrl, pictureBulletPng);
+assert.deepEqual(importedPictureParagraphs[1].bulletImage, { uri: "https://example.com/marker.png", relationshipMode: "link" });
+assert.equal(pictureBulletImported.slides.getItem(1).shapes.items[0].text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
+pictureBulletImported.slides.getItem(0).shapes.items[0].text.paragraphs = importedPictureParagraphs.map((paragraph, index) => index === 0
+  ? { ...paragraph, bulletImage: { dataUrl: replacementPictureBulletPng } }
+  : { ...paragraph, bulletImage: undefined, bulletNone: true });
+const pictureBulletEdited = await exportPptxWithOpenXmlWasm(pictureBulletImported);
+const pictureBulletEditedZip = await JSZip.loadAsync(pictureBulletEdited.bytes);
+assert.equal(Object.keys(pictureBulletEditedZip.files).filter((name) => /^ppt\/media\//.test(name)).length, 2);
+const pictureBulletRoundTrip = await importPptxWithOpenXmlWasm(pictureBulletEdited);
+assert.equal(pictureBulletRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].bulletImage.dataUrl, replacementPictureBulletPng);
+assert.equal(pictureBulletRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[1].bulletNone, true);
+assert.equal(pictureBulletRoundTrip.slides.getItem(1).shapes.items[0].text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
+
+for (const bulletImage of [
+  { dataUrl: "data:image/png;base64,YWJj" },
+  { dataUrl: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString("base64")}` },
+  { uri: "file:///tmp/marker.png" },
+]) {
+  const invalidPictureBullet = Presentation.create();
+  invalidPictureBullet.slides.add().shapes.add({ text: [{ bulletImage, runs: ["invalid"] }] });
+  await assert.rejects(
+    exportPptxWithOpenXmlWasm(invalidPictureBullet),
+    (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_asset",
+  );
+}
 
 const inlinePresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const inlineShape = inlinePresentation.slides.add({ name: "Inline text" }).shapes.add({

@@ -1020,8 +1020,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none list markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
-| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles and bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
+| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
@@ -1090,7 +1090,7 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenXmlWasm`
 
-Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none list markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
+Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
 
 **Schema parameters:**
 
@@ -1104,7 +1104,7 @@ Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and
 
 #### `importPptxWithOpenXmlWasm`
 
-Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles and bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 

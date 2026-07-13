@@ -157,6 +157,7 @@ internal static class PptxCodec
             var slidePartById = slideParts
                 .Select((part, index) => (Part: part, Id: envelope.Presentation.Slides[index].Id))
                 .ToDictionary(item => item.Id, item => item.Part, StringComparer.Ordinal);
+            assetCatalog.IndexExistingParts(slideParts.SelectMany(part => part.ImageParts));
 
             ulong semanticItems = 0;
             for (var slideIndex = 0; slideIndex < slideIds.Length; slideIndex++)

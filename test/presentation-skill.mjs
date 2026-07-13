@@ -216,7 +216,7 @@ try {
   assert.equal(wasmPreservation.qa.verify.ok, true);
   const wasmSlide = wasmPreservation.qa.presentation.slides.items[0];
   const wasmTitle = wasmSlide.shapes.items.find((item) => item.name === "wasm-title");
-  assert.equal(wasmTitle?.text.value, "After OpenXML WASM\t2\nField and line-break evidence\nCharacter marker\nAutomatic marker\nMarker removal");
+  assert.equal(wasmTitle?.text.value, "After OpenXML WASM\t2\nField and line-break evidence\nCharacter marker\nAutomatic marker\nPicture marker");
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.bold, true);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");
@@ -235,7 +235,7 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[2].bulletColor, "#16a34a");
   assert.equal(wasmTitle?.text.paragraphs[2].bulletSizePercent, 1.25);
   assert.equal(wasmTitle?.text.paragraphs[2].runs[0].link, undefined);
-  assert.equal(wasmTitle?.text.paragraphs[3].bulletNone, true);
+  assert.match(wasmTitle?.text.paragraphs[3].bulletImage.dataUrl, /^data:image\/png;base64,/);
   assert.equal(wasmTitle?.text.paragraphs[3].bulletSizeFollowText, true);
   assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
   assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
@@ -245,10 +245,12 @@ try {
   assert.ok(wasmZip.file("ppt/media/image1.png"));
   assert.ok(wasmZip.file("ppt/notesSlides/notesSlide1.xml"));
   assert.ok(wasmZip.file("ppt/slideMasters/slideMaster1.xml"));
+  assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 3);
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
   assert.match(wasmSlideXml, /<a:tabLst><a:tab pos="7429500" algn="r"\s*\/><\/a:tabLst>/);
   assert.match(wasmSlideXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
   assert.match(wasmSlideXml, /<a:br><a:rPr[^>]*i="1"/);
+  assert.match(wasmSlideXml, /<a:buBlip><a:blip r:embed="[^"]+"[^>]*\/><\/a:buBlip>/);
   const wasmSlideRelationships = await wasmZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
   assert.match(wasmSlideRelationships, /relationships\/(?:chart|image|notesSlide|slideLayout)/);
   assert.match(wasmSlideRelationships, /relationships\/hyperlink[^>]*Target="https:\/\/example\.com\/after"[^>]*TargetMode="External"/);
