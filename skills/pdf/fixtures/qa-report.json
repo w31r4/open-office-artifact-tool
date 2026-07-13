@@ -9,7 +9,7 @@
       "height": 792,
       "text": "Office artifact QA report\nSemantic and visual evidence agree",
       "textItems": [
-        { "id": "qa-agent-ready-heading", "text": "Agent-ready evidence", "bbox": [72, 142, 240, 20], "fontName": "Helvetica", "fontSize": 18, "color": "#16a34a", "bold": true },
+        { "id": "qa-agent-ready-heading", "text": "Agent-ready evidence", "bbox": [72, 142, 240, 20], "fontName": "Helvetica", "fontSize": 18, "color": "#16a34a", "bold": true, "headingLevel": 2 },
         { "id": "qa-page-1-footer", "text": "Page 1 of 2", "bbox": [470, 752, 80, 12], "fontName": "Helvetica", "fontSize": 10, "color": "#64748b" }
       ],
       "regions": [
@@ -45,7 +45,7 @@
       "height": 792,
       "text": "Extraction remains independently verifiable\nParser evidence complements visual review",
       "textItems": [
-        { "text": "PDF.js and Poppler agree", "bbox": [72, 142, 260, 20], "fontName": "Helvetica", "fontSize": 18, "color": "#2563eb", "bold": true },
+        { "text": "PDF.js and Poppler agree", "bbox": [72, 142, 260, 20], "fontName": "Helvetica", "fontSize": 18, "color": "#2563eb", "bold": true, "headingLevel": 2 },
         { "text": "Page 2 of 2", "bbox": [470, 752, 80, 12], "fontName": "Helvetica", "fontSize": 10, "color": "#64748b" }
       ],
       "regions": [

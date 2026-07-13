@@ -594,7 +594,7 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alternative text or explicit decorative-artifact semantics, and a page-space bounding box. |
 | `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
 | `pdf.addTable` | api | Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box. |
-| `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering. |
+| `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level, inspect/resolve/layout records, and SVG preview rendering. |
 | `pdf.extractTables` | api | Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
 | `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude. |
@@ -602,11 +602,11 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 | `pdf.page.setReadingOrder` | api | Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, and charts by stable ID without changing visual paint order. |
 | `pdf.render` | api | Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters. |
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts. |
-| `pdf.verify` | api | Return QA issues for missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
+| `pdf.verify` | api | Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts. |
-| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, H1/P, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count. |
 
 ### pdf details
 
@@ -744,7 +744,7 @@ Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, hea
 
 #### `pdf.addText`
 
-Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/layout records, and SVG preview rendering.
+Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level, inspect/resolve/layout records, and SVG preview rendering.
 
 **Examples:**
 
@@ -760,6 +760,7 @@ Add positioned PDF text with page-space bbox, font metadata, inspect/resolve/lay
 - `color` (string) — Text color.
 - `bold` (boolean) — Bold text flag.
 - `italic` (boolean) — Italic text flag.
+- `headingLevel` (number) — Optional semantic PDF heading level from 1 through 6; visual styling remains independent.
 
 **Schema returns:**
 
@@ -892,7 +893,7 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 #### `pdf.verify`
 
-Return QA issues for missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data.
+Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data.
 
 **Examples:**
 
@@ -927,7 +928,7 @@ Create a modeled PDF artifact with pages, text, span-aware accessible table regi
 
 #### `PdfFile.exportPdf`
 
-Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, H1/P, semantic Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images.
+Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images.
 
 **Examples:**
 
@@ -968,7 +969,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count.
+Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count.
 
 **Examples:**
 

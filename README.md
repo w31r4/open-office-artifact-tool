@@ -53,6 +53,8 @@ Call `page.setReadingOrder([...])` with every semantic page target exactly once.
 
 Every informative PDF image and chart must provide concise, meaningful `alt` text. Set `decorative: true` only for content that should remain visible but be ignored by assistive technology; decorative figures are excluded from reading order and emitted as `/Artifact BMC` marked content instead of `Figure` structure elements. `pdf.verify()` rejects missing or generic alternatives, and the runnable PDF verifier compares modeled Figure/Artifact expectations with real exported bytes.
 
+Set `headingLevel: 1` through `6` on positioned PDF text that acts as a heading. Visual style remains independent from semantics: the value is preserved through inspect/layout/model roundtrip and exported as an H1-H6 structure role. `pdf.verify()` reports a heading sequence that starts below H1 or skips a level, and the runnable verifier compares modeled heading counts with the real tagged bytes.
+
 ## Usage
 
 ```js

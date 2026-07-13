@@ -182,6 +182,7 @@ const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
 assert.equal(pdfCatalog.length, 19);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.headingLevel?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addPage")?.schema?.parameters?.readingOrder?.type, "string[]|object[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.page.setReadingOrder")?.schema?.parameters?.order?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addImage")?.schema?.parameters?.decorative?.type, "boolean");

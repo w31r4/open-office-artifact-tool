@@ -24,6 +24,9 @@ try {
   assert.equal(first.qa.fileInspect.summary.figureAltTexts, 3);
   assert.equal(first.qa.fileInspect.summary.missingFigureAltTexts, 0);
   assert.equal(first.qa.fileInspect.summary.artifacts, 1);
+  assert.equal(first.qa.fileInspect.summary.headingLevels.H1, 2);
+  assert.equal(first.qa.fileInspect.summary.headingLevels.H2, 2);
+  assert.equal(first.qa.fileInspect.summary.headings, 4);
   assert.deepEqual(first.qa.pdf.pages[0].readingOrder, ["qa-report-page-1/text", "verified-mark-image", "qa-agent-ready-heading", "qa-gates-table", "evidence-chart", "qa-page-1-footer"]);
   const modeledReadingOrder = first.qa.pdf.pages.flatMap((page, pageIndex) => page.readingOrderRecords(pageIndex).map((record) => record.targetId));
   assert.deepEqual(first.qa.fileInspect.summary.readingOrderIds, modeledReadingOrder);
@@ -40,6 +43,7 @@ try {
   assert.equal(first.qa.summary.accessibility.tableStructurePassed, true);
   assert.equal(first.qa.summary.accessibility.readingOrderPassed, true);
   assert.equal(first.qa.summary.accessibility.figureAccessibilityPassed, true);
+  assert.equal(first.qa.summary.accessibility.headingStructurePassed, true);
   assert.equal(first.qa.fileInspect.summary.structureElements, first.qa.fileInspect.summary.markedContentItems + first.qa.fileInspect.summary.tableStructures + first.qa.fileInspect.summary.tableRows);
   const untaggedPath = path.join(root, "untagged.pdf");
   await (await PdfFile.exportPdf(first.qa.pdf, { tagged: false })).save(untaggedPath);
@@ -60,6 +64,10 @@ try {
   const missingFigureAltBytes = Buffer.from((await fs.readFile(first.pdfPath)).toString("latin1").replace("/Alt (Verified workflow)", "/Foo (Verified workflow)"), "latin1");
   await fs.writeFile(missingFigureAltPath, missingFigureAltBytes);
   await assert.rejects(() => verifyPdfFile(missingFigureAltPath, { outputDir: path.join(root, "missing-figure-alt-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /figures=false/);
+  const flattenedHeadingPath = path.join(root, "flattened-heading.pdf");
+  const flattenedHeadingBytes = Buffer.from((await fs.readFile(first.pdfPath)).toString("latin1").replace("/S /H2", "/S /P "), "latin1");
+  await fs.writeFile(flattenedHeadingPath, flattenedHeadingBytes);
+  await assert.rejects(() => verifyPdfFile(flattenedHeadingPath, { outputDir: path.join(root, "flattened-heading-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /headings=false/);
   assert.equal(first.qa.modelRender.pages.length, 3);
   assert.equal(first.qa.pdfjs.status, "passed");
   assert.equal(first.qa.pdfjs.pdf.pages.length, 3);

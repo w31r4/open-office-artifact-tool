@@ -51,7 +51,7 @@ const chart = pdf.addChart({
   series: [{ name: "Pipeline", values: [8, 12, 18], color: "#2563eb" }],
   bbox: [72, 420, 360, 150],
 });
-const positionedText = pdf.addText("Positioned KPI", { bbox: [72, 150, 120, 14], fontSize: 13, color: "#7c3aed", fontName: "Helvetica" });
+const positionedText = pdf.addText("Positioned KPI", { bbox: [72, 150, 120, 14], fontSize: 13, color: "#7c3aed", fontName: "Helvetica", headingLevel: 2 });
 const firstPage = pdf.pages[0];
 const firstPageReadingOrder = [
   `${firstPage.id}/text`,
@@ -93,6 +93,7 @@ assert.equal(editableSpanTable.page.artifact.verify().ok, true);
 assert.equal(pdf.resolve(image.id), image);
 assert.equal(pdf.resolve(chart.id), chart);
 assert.equal(pdf.resolve(positionedText.id).text, "Positioned KPI");
+assert.equal(pdf.resolve(positionedText.id).headingLevel, 2);
 assert.equal(pdf.resolve("missing/pdf-id"), undefined);
 assert.match(pdf.inspect({ kind: "table", search: "Retention" }).ndjson, /94%/);
 assert.match(pdf.inspect({ kind: "tableCell", target: spanningHeader.id }).ndjson, /"columnSpan":2/);
@@ -156,7 +157,7 @@ assert.equal(layout.kind, "pdfLayout");
 assert.equal(layout.pages.length, 1);
 assert.equal(layout.pages[0].kind, "pdfPageLayout");
 assert.equal(layout.pages[0].tables.length, 2);
-assert.ok(layout.pages[0].textItems.some((item) => item.text === "Positioned KPI" && item.color === "#7c3aed"));
+assert.ok(layout.pages[0].textItems.some((item) => item.text === "Positioned KPI" && item.color === "#7c3aed" && item.headingLevel === 2));
 assert.ok(layout.pages[0].images.some((item) => item.alt === "Report logo"));
 assert.ok(layout.pages[0].charts.some((item) => item.title === "Pipeline by quarter"));
 assert.deepEqual(layout.pages[0].readingOrder.map((item) => item.targetId), firstPage.readingOrder);
@@ -207,6 +208,9 @@ assert.equal(fileInspect.summary.structureRoles.Table, 2);
 assert.equal(fileInspect.summary.structureRoles.TR, 6);
 assert.equal(fileInspect.summary.structureRoles.TH, 6);
 assert.equal(fileInspect.summary.structureRoles.TD, 7);
+assert.equal(fileInspect.summary.headingLevels.H1, 2);
+assert.equal(fileInspect.summary.headingLevels.H2, 1);
+assert.equal(fileInspect.summary.headings, 3);
 assert.equal(fileInspect.summary.figures, 2);
 assert.equal(fileInspect.summary.figureAltTexts, 2);
 assert.equal(fileInspect.summary.missingFigureAltTexts, 0);
@@ -221,6 +225,7 @@ assert.match(taggedText, /\/S \/Table/);
 assert.match(taggedText, /\/S \/TR/);
 assert.match(taggedText, /\/S \/TH/);
 assert.match(taggedText, /\/S \/TD/);
+assert.match(taggedText, /\/S \/H2/);
 assert.match(taggedText, /\/A << \/O \/Table \/Scope \/Column >>/);
 assert.match(taggedText, /\/ColSpan 2/);
 assert.match(taggedText, /\/RowSpan 2/);
@@ -233,7 +238,19 @@ assert.ok(taggedContentStream.indexOf("/H1") < taggedContentStream.indexOf(" Do"
 
 const readingOrderRoundtrip = await PdfFile.importPdf(blob);
 assert.deepEqual(readingOrderRoundtrip.pages[0].readingOrder, firstPage.readingOrder);
+assert.equal(readingOrderRoundtrip.pages[0].textItems.find((item) => item.id === positionedText.id).headingLevel, 2);
 assert.deepEqual(readingOrderRoundtrip.layoutJson({ page: 1 }).pages[0].readingOrder.map((item) => item.targetId), firstPage.readingOrder);
+
+assert.throws(() => PdfArtifact.create({ pages: [{ textItems: [{ text: "Bad heading", headingLevel: 0 }] }] }), /headingLevel must be an integer from 1 through 6/);
+assert.throws(() => PdfArtifact.create({ pages: [{ textItems: [{ text: "Bad heading", headingLevel: 7 }] }] }), /headingLevel must be an integer from 1 through 6/);
+assert.throws(() => PdfArtifact.create({ pages: [{ textItems: [{ text: "Bad heading", headingLevel: 1.5 }] }] }), /headingLevel must be an integer from 1 through 6/);
+const skippedHeadingPdf = PdfArtifact.create({ pages: [{ id: "heading-skip-page", text: "Report title", textItems: [{ id: "heading-skip-h3", text: "Skipped subsection", headingLevel: 3 }], readingOrder: ["heading-skip-page/text", "heading-skip-h3"] }] });
+assert.match(skippedHeadingPdf.verify().ndjson, /headingLevelSkipped/);
+const crossPageHeadingPdf = PdfArtifact.create({ pages: [
+  { id: "heading-page-1", text: "Document title", readingOrder: ["heading-page-1/text"] },
+  { id: "heading-page-2", text: "Continued section", textItems: [{ id: "heading-page-2-h2", text: "Continued section", headingLevel: 2 }], readingOrder: ["heading-page-2-h2"] },
+] });
+assert.equal(crossPageHeadingPdf.verify().ok, true);
 
 const invalidReadingOrder = PdfArtifact.create({
   pages: [{

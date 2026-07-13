@@ -22,14 +22,15 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 1. Create a `PdfArtifact` or import an existing PDF with `PdfFile.importPdf` and an explicit parser when arbitrary-PDF extraction is required.
 2. Inspect pages, positioned text, reading-order entries, regions, tables, table cells, images, and charts before editing.
 3. Use `pdf.addFlowText(...)` for long prose so wrapping, margins, long tokens, and page creation remain deterministic; use explicit bounding boxes for intentionally positioned labels, tables, images, and charts. For complex tables, declare zero-based `cells` overrides with spans, TH/TD roles, scopes, and header IDs, then resolve/edit cells through `table.getCell(row, column)`.
-4. Give every informative image and chart concise, meaningful `alt` text. Mark purely decorative images/charts with `decorative: true`; they remain visible but become PDF Artifact content and must not appear in reading order.
-5. After all semantic page items are final, call `page.setReadingOrder(...)` with every non-positioned body-text, positioned-text, table, informative image, and informative chart target exactly once. Use `${page.id}/text` for body text. Adding content afterward requires updating the explicit order.
-6. Run `pdf.verify()`; fix missing/generic Figure alt text, incomplete/duplicate/unknown reading-order targets, page bounds, malformed data, empty objects, Unicode dashes, invalid/overlapping spans, dangling header associations, and non-numeric chart issues.
-7. Export with `PdfFile.exportPdf()` (tagged by default) and import the exported file again.
-8. Inspect the binary structure with `PdfFile.inspectPdf()`; require tagged status, language, top-level reading-order IDs, Figure `/Alt` coverage, expected Artifact count, structure roles, stable table-cell IDs, span/header-association counts, and cell-level marked content for agent-authored delivery PDFs. Modeled tables must have matching `Table` → `TR` → `TH`/`TD` hierarchy and Table-owner `RowSpan`/`ColSpan`/`Scope`/`Headers` attributes where modeled.
-9. Parse the real PDF through PDF.js and check extracted text, geometry, tables, embedded-image data URLs/placement boxes, and page count.
-10. Render every modeled page with Playwright and every real PDF page with Poppler.
-11. Inspect every page PNG at full size. When a baseline is approved, compare both modeled and native PNG pixels on later runs.
+4. Set `headingLevel: 1` through `6` on positioned text that is structurally a heading; do not infer semantics from font size or bold styling, and do not skip heading levels in logical reading order.
+5. Give every informative image and chart concise, meaningful `alt` text. Mark purely decorative images/charts with `decorative: true`; they remain visible but become PDF Artifact content and must not appear in reading order.
+6. After all semantic page items are final, call `page.setReadingOrder(...)` with every non-positioned body-text, positioned-text, table, informative image, and informative chart target exactly once. Use `${page.id}/text` for body text. Adding content afterward requires updating the explicit order.
+7. Run `pdf.verify()`; fix heading starts/skips, missing/generic Figure alt text, incomplete/duplicate/unknown reading-order targets, page bounds, malformed data, empty objects, Unicode dashes, invalid/overlapping spans, dangling header associations, and non-numeric chart issues.
+8. Export with `PdfFile.exportPdf()` (tagged by default) and import the exported file again.
+9. Inspect the binary structure with `PdfFile.inspectPdf()`; require tagged status, language, top-level reading-order IDs, modeled H1-H6 counts, Figure `/Alt` coverage, expected Artifact count, structure roles, stable table-cell IDs, span/header-association counts, and cell-level marked content for agent-authored delivery PDFs. Modeled tables must have matching `Table` → `TR` → `TH`/`TD` hierarchy and Table-owner `RowSpan`/`ColSpan`/`Scope`/`Headers` attributes where modeled.
+10. Parse the real PDF through PDF.js and check extracted text, geometry, tables, embedded-image data URLs/placement boxes, and page count.
+11. Render every modeled page with Playwright and every real PDF page with Poppler.
+12. Inspect every page PNG at full size. When a baseline is approved, compare both modeled and native PNG pixels on later runs.
 
 ```js
 import { PdfArtifact, PdfFile } from "open-office-artifact-tool";
@@ -38,7 +39,7 @@ const pdf = PdfArtifact.create({
   pages: [{
     id: "qa-page-1",
     text: "QA report\nSemantic and visual evidence agree",
-    textItems: [{ id: "qa-heading", text: "Agent-ready", bbox: [72, 142, 180, 20], fontSize: 18, color: "#16a34a", bold: true }],
+    textItems: [{ id: "qa-heading", text: "Agent-ready", bbox: [72, 142, 180, 20], fontSize: 18, color: "#16a34a", bold: true, headingLevel: 2 }],
     tables: [{
       name: "qa-gates",
       id: "qa-gates-table",
@@ -126,8 +127,8 @@ node skills/pdf/scripts/run-fixture.mjs \
 
 ## QA gates
 
-- `PdfFile.inspectPdf(...)` checks the PDF header/version, page/object counts, embedded clean-room model, EOF marker, tagged status, language, top-level structure reading-order IDs, Figure alt-text coverage, Artifact count, structure-element/role counts, stable table-cell IDs, row/column spans, header associations, and MCID count.
-- Agent-authored fixture PDFs require `--require-tagged true`. The verifier compares modeled and real-file reading-order IDs, Figure/Artifact expectations, and derived table/row/cell/span/header counts; it rejects reordered, flattened, missing-alt, or improperly tagged decorative content. This is stronger structural evidence, but not proof of full PDF/UA conformance; review Unicode fonts, contrast, and the output of a formal validator separately.
+- `PdfFile.inspectPdf(...)` checks the PDF header/version, page/object counts, embedded clean-room model, EOF marker, tagged status, language, top-level structure reading-order IDs, H1-H6 counts, Figure alt-text coverage, Artifact count, structure-element/role counts, stable table-cell IDs, row/column spans, header associations, and MCID count.
+- Agent-authored fixture PDFs require `--require-tagged true`. The verifier compares modeled and real-file reading-order IDs, heading roles, Figure/Artifact expectations, and derived table/row/cell/span/header counts; it rejects reordered, flattened-heading, missing-alt, or improperly tagged decorative content. This is stronger structural evidence, but not proof of full PDF/UA conformance; review Unicode fonts, contrast, and the output of a formal validator separately.
 - `pdf.inspect(...)`, `pdf.extractText()`, `pdf.extractTables()`, and `pdf.verify()` prove modeled agent-facing semantics.
 - PDF.js independently parses the real exported bytes into page text geometry, regions, inferred tables, and bounded PNG image data when XObject pixels are available; placeholders must be reported when masks or unsupported color spaces prevent extraction.
 - Per-page Playwright PNGs catch modeled preview regressions.
