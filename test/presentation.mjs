@@ -291,6 +291,8 @@ assert.throws(() => pieSlide.charts.add("bar", { series: [{ values: [1], dataLab
 assert.throws(() => pieSlide.charts.add("pie", { series: [{ values: [1, 2, 3], trendline: { type: "linear" } }] }), /supported only for bar and line series/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2], trendline: { type: "movingAverage", period: 2 } }] }), /require at least three series values/);
 assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], trendline: { type: "linear", forward: 0.25 } }] }), /must use 0.5 increments/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], trendline: { type: "linear", order: 2 } }] }), /order is supported only for polynomial/);
+assert.throws(() => pieSlide.charts.add("line", { series: [{ values: [1, 2, 3], trendline: { type: "polynomial", order: 7 } }] }), /order must be an integer from 2 to 6/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ name: "Missing type", values: [1] }] }), /series chartType must be bar or line/);
 assert.throws(() => pieSlide.charts.add("combo", { series: [{ chartType: "bar", name: "Only bars", values: [1] }] }), /requires at least one bar series and one line series/);
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");

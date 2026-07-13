@@ -177,6 +177,8 @@ function normalizePresentationChartTrendline(value, valueCount) {
   const rawType = value.type || "linear";
   const type = TRENDLINE_TYPE_ALIASES.get(rawType) || rawType;
   if (!TRENDLINE_TYPES.has(type)) throw new TypeError(`chart trendline type must be one of: ${[...TRENDLINE_TYPES].join(", ")}.`);
+  if (value.order != null && type !== "poly") throw new TypeError("chart trendline order is supported only for polynomial trendlines.");
+  if (value.period != null && type !== "movingAvg") throw new TypeError("chart trendline period is supported only for moving-average trendlines.");
   const order = type === "poly"
     ? boundedInteger(value.order, { name: "polynomial chart trendline order", min: 2, max: 6, fallback: 2 })
     : undefined;
