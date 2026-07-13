@@ -18,7 +18,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
 | `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
-| `document.addListItem` | api | Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances. |
+| `document.addListItem` | api | Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
@@ -244,7 +244,7 @@ Append a tracked insertion with author/date metadata and native DOCX w:ins expor
 
 #### `document.addListItem`
 
-Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances.
+Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions.
 
 **Schema parameters:**
 
@@ -255,11 +255,12 @@ Append a real numbered or bulleted list item backed by multi-level DOCX abstract
 - `start` (number) — Positive starting value for this numbering level.
 - `levelText` (string) — OOXML level text template using placeholders such as %1 or %2.
 - `numberingId` (number|string) — Optional list-instance identity used to group levels during export and preserved by native import.
+- `pictureBullet` (string|object) — Embedded PNG/JPEG/GIF base64 data URL, absolute non-fetched http(s) URI, or { dataUrl|uri, widthPt?, heightPt?, alt? } picture marker owned by the Numbering part.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
 
-- `listItem` (DocumentListItemBlock) — Appended native-numbering list item.
+- `listItem` (DocumentListItemBlock) — Appended native-numbering list item, including normalized pictureBullet metadata when configured.
 
 #### `document.addParagraph`
 
