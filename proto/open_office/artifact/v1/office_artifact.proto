@@ -243,11 +243,12 @@ message PresentationShape {
 // The public PresentationML text slice models agent-facing paragraph/inlines,
 // list-marker/direct marker-style semantics, content-addressed or external
 // picture bullets, tab stops, direct left-margin/hanging-indent layout,
-// direct paragraph spacing/default-run styles, and bounded click links.
+// direct paragraph spacing/default-run styles, bounded text-body layout, and
+// bounded click links.
 // Transformed or non-sRGB/non-theme marker colors, custom-show/mouse-over
-// links, field paragraph properties, body properties, and master/layout text
-// styles stay source-bound. Shape-local list levels use the bounded fields
-// below.
+// links, field paragraph properties, advanced body properties, and
+// master/layout text styles stay source-bound. Shape-local list levels use the
+// bounded fields below.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
   // Text-body list defaults keyed by each paragraph message's required level
@@ -257,6 +258,42 @@ message PresentationTextBody {
   // Explicitly removes the modeled lvl1pPr through lvl9pPr children while
   // retaining any unmodeled list-style content.
   optional bool no_list_styles = 3;
+  PresentationTextBodyProperties body_properties = 4;
+}
+
+// Bounded a:bodyPr semantics. Each unset choice preserves source state; each
+// explicit no_* choice removes only the modeled attribute or AutoFit child.
+// Insets use DrawingML EMUs. Rotation, vertical text, columns, overflow,
+// WordArt/warp/3D, and attributed normAutofit remain source-bound.
+message PresentationTextBodyProperties {
+  oneof left_inset {
+    int64 left_inset_emu = 1;
+    bool no_left_inset = 2;
+  }
+  oneof top_inset {
+    int64 top_inset_emu = 3;
+    bool no_top_inset = 4;
+  }
+  oneof right_inset {
+    int64 right_inset_emu = 5;
+    bool no_right_inset = 6;
+  }
+  oneof bottom_inset {
+    int64 bottom_inset_emu = 7;
+    bool no_bottom_inset = 8;
+  }
+  oneof anchor {
+    string vertical_anchor = 9;
+    bool no_vertical_anchor = 10;
+  }
+  oneof wrapping {
+    string wrap = 11;
+    bool no_wrap = 12;
+  }
+  oneof auto_fit {
+    string auto_fit_mode = 13;
+    bool no_auto_fit_mode = 14;
+  }
 }
 
 message PresentationTextStyle {

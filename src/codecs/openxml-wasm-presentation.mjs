@@ -1,6 +1,7 @@
 import { Presentation } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
+import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
 import { isPresentationAutoNumberType } from "../presentation/text-paragraphs.mjs";
 import { createPresentationAssetCatalog, validatePictureBulletUri } from "./openxml-wasm-assets.mjs";
 import { OpenXmlWasmCodecError } from "./openxml-wasm-error.mjs";
@@ -10,6 +11,7 @@ const EMU_PER_POINT = 12700;
 const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
 const MAX_PARAGRAPH_COORDINATE_EMU = 51_206_400;
+const MAX_TEXT_BODY_INSET_EMU = 2_147_483_647;
 const MAX_PARAGRAPH_SPACING_POINTS = 1584;
 const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
@@ -366,6 +368,54 @@ function modelRunCase(run) {
   return "text";
 }
 
+function wireTextBodyProperties(value, original, shapeId) {
+  let properties;
+  try {
+    properties = normalizePresentationTextBodyProperties(value);
+  } catch (error) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses invalid text body properties: ${error.message}`, [], { code: "invalid_presentation_text" });
+  }
+  const originalProperties = original?.bodyProperties;
+  const insetChoice = (key, wireName, noWireName) => {
+    if (properties.insets?.[key] != null) {
+      const emu = Math.round(properties.insets[key] * EMU_PER_PIXEL);
+      if (emu < 0 || emu > MAX_TEXT_BODY_INSET_EMU) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an out-of-range ${key} text inset.`, [], { code: "invalid_presentation_text" });
+      return { case: wireName, value: BigInt(emu) };
+    }
+    const originalCase = originalProperties?.[`${key}Inset`]?.case;
+    return new Set([wireName, noWireName]).has(originalCase) ? { case: noWireName, value: true } : undefined;
+  };
+  const leftInset = insetChoice("left", "leftInsetEmu", "noLeftInset");
+  const topInset = insetChoice("top", "topInsetEmu", "noTopInset");
+  const rightInset = insetChoice("right", "rightInsetEmu", "noRightInset");
+  const bottomInset = insetChoice("bottom", "bottomInsetEmu", "noBottomInset");
+  const anchor = properties.anchor != null
+    ? { case: "verticalAnchor", value: properties.anchor }
+    : new Set(["verticalAnchor", "noVerticalAnchor"]).has(originalProperties?.anchor?.case)
+      ? { case: "noVerticalAnchor", value: true }
+      : undefined;
+  const wrapping = properties.wrap != null
+    ? { case: "wrap", value: properties.wrap }
+    : new Set(["wrap", "noWrap"]).has(originalProperties?.wrapping?.case)
+      ? { case: "noWrap", value: true }
+      : undefined;
+  const autoFit = properties.autoFit != null
+    ? { case: "autoFitMode", value: properties.autoFit }
+    : new Set(["autoFitMode", "noAutoFitMode"]).has(originalProperties?.autoFit?.case)
+      ? { case: "noAutoFitMode", value: true }
+      : undefined;
+  if (![leftInset, topInset, rightInset, bottomInset, anchor, wrapping, autoFit].some(Boolean)) return undefined;
+  return {
+    ...(leftInset ? { leftInset } : {}),
+    ...(topInset ? { topInset } : {}),
+    ...(rightInset ? { rightInset } : {}),
+    ...(bottomInset ? { bottomInset } : {}),
+    ...(anchor ? { anchor } : {}),
+    ...(wrapping ? { wrapping } : {}),
+    ...(autoFit ? { autoFit } : {}),
+  };
+}
+
 function presentationTextBody(shape, original, assetCatalog) {
   const textStyleUnsupported = unsupportedStyleFields(shape.text?.style);
   if (textStyleUnsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} uses unsupported text-frame style fields: ${textStyleUnsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -384,10 +434,12 @@ function presentationTextBody(shape, original, assetCatalog) {
     { forceLevel: true },
   ));
   const noListStyles = listStyles.length === 0 && (originalListStyles.size > 0 || original?.textBody?.noListStyles === true);
+  const bodyProperties = wireTextBodyProperties(shape.text?.bodyProperties, original?.textBody, shape.id);
   return {
     paragraphs: paragraphs.map((paragraph, index) => wireParagraph(paragraph, shape.text?.style || {}, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog)),
     ...(listStyles.length ? { listStyles } : {}),
     ...(noListStyles ? { noListStyles: true } : {}),
+    ...(bodyProperties ? { bodyProperties } : {}),
   };
 }
 
@@ -640,6 +692,21 @@ function modelListStyles(shape, assetCatalog) {
   return Object.fromEntries(shape.textBody.listStyles.map((style) => [style.level, modelParagraph(style, assetCatalog, { includeRuns: false })]));
 }
 
+function modelTextBodyProperties(shape) {
+  const source = shape.textBody?.bodyProperties;
+  if (!source) return {};
+  const properties = {};
+  const insets = {};
+  for (const [key, choice] of [["left", source.leftInset], ["top", source.topInset], ["right", source.rightInset], ["bottom", source.bottomInset]]) {
+    if (choice?.case?.endsWith("InsetEmu")) insets[key] = Number(choice.value) / EMU_PER_PIXEL;
+  }
+  if (Object.keys(insets).length) properties.insets = insets;
+  if (source.anchor?.case === "verticalAnchor") properties.anchor = source.anchor.value;
+  if (source.wrapping?.case === "wrap") properties.wrap = source.wrapping.value;
+  if (source.autoFit?.case === "autoFitMode") properties.autoFit = source.autoFit.value;
+  return properties;
+}
+
 export function presentationFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.PRESENTATION || envelope.payload.case !== "presentation") {
     throw new OpenXmlWasmCodecError("OpenXML WebAssembly response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
@@ -672,6 +739,7 @@ export function presentationFromEnvelope(envelope) {
           fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
           text: modelText(shape, assetCatalog),
+          textBodyProperties: modelTextBodyProperties(shape),
         });
         model.text.inheritedParagraphStyles = modelListStyles(shape, assetCatalog);
       } else if (element.content.case === "opaque") {
