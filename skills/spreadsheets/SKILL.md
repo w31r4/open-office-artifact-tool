@@ -129,6 +129,18 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
   --output-dir tmp/spreadsheet-skill-fixture
 ```
 
+The source-built Open XML SDK WebAssembly codec is available for the bounded first-slice workbook features: primitive/cached-formula cells, date-system selection, sheets, merges, dimensions, gridlines, and frozen panes. Exercise that path through the same agent QA workflow:
+
+```sh
+node skills/spreadsheets/scripts/run-fixture.mjs \
+  --fixture skills/spreadsheets/fixtures/openxml-wasm-basic.json \
+  --codec openxml-wasm \
+  --native-render required \
+  --output-dir tmp/openxml-wasm-spreadsheet-fixture
+```
+
+The WebAssembly path is fail-closed for styles, themes, defined names, tables, pivots, drawings, comments, validations, conditional formatting, and advanced formula metadata. Use the default `javascript` codec for those workbooks until the public protobuf schema covers them; do not pass `allowLossy` merely to make a complex artifact export.
+
 Create and later compare an approved sheet/range baseline:
 
 ```sh

@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 229);
+assert.equal(HELP_CATALOG.length, 233);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -211,7 +211,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /bulletFont.*bulletColor.*bulletSizePercent.*FollowText/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*tooltip.*targetFrame/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 134);
+assert.equal(workbookCatalog.length, 138);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -226,6 +226,11 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.setDateSystem")
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.category, "date-time");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.WORKDAY.INTL")?.category, "date-time");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenXmlWasm")?.schema?.parameters?.allowLossy?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenXmlWasm")?.schema?.returns?.blob?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenXmlWasm")?.schema?.parameters?.limits?.type, "object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "openXmlWasmStatus")?.schema?.returns?.status?.type, "object");
+assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenXmlWasm")?.schema?.parameters?.request?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.validateResult?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.syncSourceReferences?.type, "boolean");

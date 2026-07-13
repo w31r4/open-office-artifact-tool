@@ -1863,6 +1863,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `exportXlsxWithOpenXmlWasm` | api | Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -1951,6 +1952,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
+| `importXlsxWithOpenXmlWasm` | api | Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec. |
+| `invokeOpenXmlWasm` | api | Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects. |
+| `openXmlWasmStatus` | api | Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.fillDown` | api | Copy top-row contents and formatting down the range while translating relative A1 formula references. |
@@ -1999,6 +2003,21 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `worksheet.unmergeCells` | api | Remove every merged region intersecting an A1 range without discarding the retained upper-left content. |
 
 ### workbook details
+
+#### `exportXlsxWithOpenXmlWasm`
+
+Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec.
+
+**Schema parameters:**
+
+- `workbook` (Workbook) required — Workbook facade within the current first-slice feature boundary.
+- `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
+- `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — XLSX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata.
 
 #### `fx.ABS`
 
@@ -3501,6 +3520,39 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `importXlsxWithOpenXmlWasm`
+
+Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|ArrayBuffer) required — XLSX package bytes.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — Imported first-slice workbook facade carrying source/opaque package evidence for fail-closed second export.
+
+#### `invokeOpenXmlWasm`
+
+Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects.
+
+**Schema parameters:**
+
+- `request` (object) required — Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure.
+
+**Schema returns:**
+
+- `response` (object) — Decoded public CodecResponse wire message; structured codec failures throw OpenXmlWasmCodecError.
+
+#### `openXmlWasmStatus`
+
+Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest.
+
+**Schema returns:**
+
+- `status` (object) — Bundled runtime status with protocolVersion, assemblyName, and integrity manifest.
 
 #### `range.conditionalFormats.add`
 

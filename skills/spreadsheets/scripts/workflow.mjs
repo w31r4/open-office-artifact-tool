@@ -13,6 +13,7 @@ import {
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+import { exportXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -330,7 +331,12 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const workbook = createWorkbookFromFixture(fixture);
   const workbookPath = path.join(outputDir, fixture.outputName || `${fixture.name || "workbook"}.xlsx`);
-  await (await SpreadsheetFile.exportXlsx(workbook)).save(workbookPath);
+  const codec = String(options.codec || fixture.codec || "javascript").toLowerCase();
+  if (!new Set(["javascript", "openxml-wasm"]).has(codec)) throw new Error(`Unsupported spreadsheet fixture codec ${codec}; expected javascript or openxml-wasm.`);
+  const file = codec === "openxml-wasm"
+    ? await exportXlsxWithOpenXmlWasm(workbook)
+    : await SpreadsheetFile.exportXlsx(workbook);
+  await file.save(workbookPath);
   const qa = await verifyWorkbookFile(workbookPath, {
     outputDir: path.join(outputDir, "qa"),
     sheetName: options.sheetName || fixture.qa?.sheetName,
@@ -347,5 +353,5 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     allSheets: options.allSheets,
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
   });
-  return { fixture, workbookPath, qa };
+  return { fixture, workbookPath, qa, codec };
 }

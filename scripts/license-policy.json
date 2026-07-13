@@ -6,11 +6,13 @@
     "(MIT AND Zlib)",
     "(MIT OR GPL-3.0-or-later)",
     "Apache-2.0",
+    "(Apache-2.0 AND BSD-3-Clause)",
     "LGPL-3.0-or-later",
     "Apache-2.0 AND LGPL-3.0-or-later",
     "Apache-2.0 AND LGPL-3.0-or-later AND MIT"
   ],
   "declaredPackages": {
+    "@bufbuild/protobuf": "(Apache-2.0 AND BSD-3-Clause)",
     "jszip": "(MIT OR GPL-3.0-or-later)",
     "pdfjs-dist": "Apache-2.0",
     "playwright": "Apache-2.0",

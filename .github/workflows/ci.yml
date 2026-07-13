@@ -16,8 +16,16 @@ jobs:
           cache: npm
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 8.0.128
       - run: npm ci
+      - name: Install .NET WebAssembly workloads
+        run: dotnet workload install wasm-tools wasm-experimental --skip-manifest-update
+      - name: Verify generated protocol and bundled OpenXML runtime
+        run: |
+          npm run proto:check
+          dotnet restore native/OpenXmlWasm/OpenXmlWasm.sln --locked-mode
+          npm run build:openxml-wasm
+          git diff --exit-code -- src/generated runtime/openxml-wasm
       - name: Install Chromium and native render tools
         run: |
           npx playwright install --with-deps chromium
@@ -36,3 +44,4 @@ jobs:
       - run: git diff --exit-code docs/api.md
       - run: npm run test:pack
       - run: dotnet test native/OfficeBridge
+      - run: dotnet test native/OpenXmlWasm/OpenXmlWasm.sln --configuration Release --no-restore

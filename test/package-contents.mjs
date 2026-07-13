@@ -10,11 +10,25 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
-const maxPackedBytes = 500_000;
-const maxUnpackedBytes = 2_150_000;
+const maxPackedBytes = 8_000_000;
+const maxUnpackedBytes = 16_000_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
+  "proto/open_office/artifact/v1/office_artifact.proto",
+  "src/generated/open_office/artifact/v1/office_artifact_pb.js",
+  "src/codecs/openxml-wasm.mjs",
+  "runtime/openxml-wasm/main.mjs",
+  "runtime/openxml-wasm/manifest.json",
+  "runtime/openxml-wasm/sbom.cdx.json",
+  "runtime/openxml-wasm/DOTNET-LICENSE.TXT",
+  "runtime/openxml-wasm/DOTNET-THIRD-PARTY-NOTICES.TXT",
+  "runtime/openxml-wasm/_framework/dotnet.native.wasm",
+  "runtime/openxml-wasm/_framework/OpenOffice.OpenXmlWasm.wasm",
+  "native/OpenXmlWasm/OpenXmlWasm.sln",
+  "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/XlsxCodec.cs",
+  "native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm/Program.cs",
+  "native/OpenXmlWasm/tests/OpenOffice.OpenXmlCodec.Tests/XlsxCodecTests.cs",
   "src/ooxml/docx-comments.mjs",
   "src/ooxml/docx-bibliography.mjs",
   "src/presentation/chart-trendline-svg.mjs",
@@ -62,6 +76,7 @@ for (const required of [
   "skills/shared/visual-baselines.mjs",
   "skills/spreadsheets/scripts/verify-workbook.mjs",
   "skills/spreadsheets/fixtures/formula-summary.json",
+  "skills/spreadsheets/fixtures/openxml-wasm-basic.json",
   "skills/spreadsheets/fixtures/structured-intersection.json",
   "skills/documents/SKILL.md",
   "skills/documents/scripts/verify-document.mjs",

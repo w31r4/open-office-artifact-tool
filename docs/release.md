@@ -13,6 +13,9 @@ Status date: 2026-07-13
 The current release gate is:
 
 ```sh
+npm run proto:check
+npm run build:openxml-wasm
+npm run test:openxml-wasm-dotnet
 npm test
 npm run docs:api
 npm run test:pack
@@ -30,13 +33,14 @@ The checker runs npm tests/docs/pack, conditionally runs dotnet tests when `dotn
 
 GitHub CI and the manual release workflow install Playwright Chromium, LibreOffice Writer/Calc/Impress, Poppler, and .NET 8 before running these gates. Their environment-probe step is required, so hosted runs exercise real browser and native render branches instead of silently accepting skips.
 
-`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, spreadsheet Pivot/date/group/filter/formula/aggregation/coercion/threaded-comment modules, PresentationML grouped-shape, Office 2021 modern-comment, and opaque native-object graph codecs/validators, the DOCX bibliography, bookmark/internal-link, and section/header-footer planners, the PDF table-grid normalizer, the structured-intersection fixture/shared visual-baseline lifecycle, and third-party notices while rejecting reference/handoff material and local dotnet `bin/obj` build output. The current 93-file dry-run package is about 413.0 kB compressed and 1,824,688 bytes unpacked; it remains below the deliberately tight 1,845,000-byte gate. The latest reviewed increase adds metadata-free preservation of top-level/grouped PresentationML content parts, embedded/linked OLE objects, SmartArt/diagram graphic frames, recursively reachable relationship-owned parts, collision-safe part relocation, and agent-facing read-only inspect/resolve/layout records. The gate catches accidentally bundled fonts, references, fixtures outside the published skills, and build artifacts while forcing explicit review when legitimate published capability grows the package.
+`test/package-contents.mjs` also validates the actual dry-run tarball manifest. It requires the project-local runnable skills, native bridge source, public protobuf source/generated binding, source-built OpenXML-WASM projects, runtime integrity manifest/SBOM/.NET notices, spreadsheet Pivot/date/group/filter/formula/aggregation/coercion/threaded-comment modules, PresentationML grouped-shape, Office 2021 modern-comment, and opaque native-object graph codecs/validators, the DOCX bibliography, bookmark/internal-link, and section/header-footer planners, the PDF table-grid/accessibility normalizers, the structured-intersection/OpenXML-WASM fixtures, shared visual-baseline lifecycle, and third-party notices while rejecting reference/handoff material and local dotnet `bin/obj` build output. The current 166-file dry-run package is about 4.3 MB compressed and 14.5 MB unpacked, below the reviewed 8 MB/16 MB gates; most of the increase is the bundled .NET/Open XML SDK runtime required for no-local-dotnet Office I/O. The gate catches accidentally bundled fonts, reference assets, fixtures outside the published skills, symbols/maps, and build artifacts while forcing explicit review when legitimate published capability grows the package.
 
 ## Latest observed blockers in this environment
 
 - `npm whoami` fails with `ENEEDAUTH`; this machine is not logged in to npm.
 - `npm view open-office-artifact-tool version --json` returns `E404`; the package name/version was not visible on npm from this environment.
 - `dotnet test native/OfficeBridge` passes locally with .NET 8 (`5` tests passed on macOS arm64); Windows + Microsoft Office automation remains an external integration gate.
+- `dotnet test native/OpenXmlWasm/OpenXmlWasm.sln --configuration Release` passes locally (`6` tests), and the bounded XLSX fixture passes bundled-runtime, Playwright, LibreOffice, and Poppler gates; hosted Linux evidence for this new workload remains pending until the milestone commit is pushed.
 - Playwright renderer smoke tests pass locally with Playwright 1.61.1 and its Chromium runtime, covering PNG, WebP, JPEG, and PDF output.
 
 ## Publish command once auth is available

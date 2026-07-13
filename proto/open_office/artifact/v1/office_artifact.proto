@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package open_office.artifact.v1;
+
+option csharp_namespace = "OpenOffice.Artifact.Wire.V1";
+
+// This is an independently designed public wire contract for the clean-room
+// implementation. Field numbers are part of this project's public API.
+enum ArtifactFamily {
+  ARTIFACT_FAMILY_UNSPECIFIED = 0;
+  ARTIFACT_FAMILY_WORKBOOK = 1;
+  ARTIFACT_FAMILY_PRESENTATION = 2;
+  ARTIFACT_FAMILY_DOCUMENT = 3;
+}
+
+enum CodecOperation {
+  CODEC_OPERATION_UNSPECIFIED = 0;
+  CODEC_OPERATION_IMPORT_XLSX = 1;
+  CODEC_OPERATION_EXPORT_XLSX = 2;
+}
+
+enum DiagnosticSeverity {
+  DIAGNOSTIC_SEVERITY_UNSPECIFIED = 0;
+  DIAGNOSTIC_SEVERITY_INFO = 1;
+  DIAGNOSTIC_SEVERITY_WARNING = 2;
+  DIAGNOSTIC_SEVERITY_ERROR = 3;
+}
+
+enum WorkbookDateSystem {
+  WORKBOOK_DATE_SYSTEM_UNSPECIFIED = 0;
+  WORKBOOK_DATE_SYSTEM_1900 = 1;
+  WORKBOOK_DATE_SYSTEM_1904 = 2;
+}
+
+message CodecLimits {
+  uint64 max_input_bytes = 1;
+  uint64 max_uncompressed_bytes = 2;
+  uint32 max_parts = 3;
+  uint32 max_sheets = 4;
+  uint64 max_cells = 5;
+  uint32 max_compression_ratio = 6;
+}
+
+message CodecRequest {
+  uint32 protocol_version = 1;
+  CodecOperation operation = 2;
+  ArtifactFamily family = 3;
+  ArtifactEnvelope artifact = 4;
+  bytes file = 5;
+  CodecLimits limits = 6;
+  bool allow_lossy = 7;
+}
+
+message CodecResponse {
+  uint32 protocol_version = 1;
+  bool ok = 2;
+  bytes file = 3;
+  ArtifactEnvelope artifact = 4;
+  repeated Diagnostic diagnostics = 5;
+}
+
+message ArtifactEnvelope {
+  uint32 protocol_version = 1;
+  ArtifactFamily family = 2;
+  SourceIdentity source = 3;
+  repeated Asset assets = 4;
+  repeated Diagnostic diagnostics = 5;
+  OpaqueOpcGraph opaque_opc = 6;
+
+  oneof payload {
+    WorkbookArtifact workbook = 10;
+    PresentationArtifact presentation = 11;
+    DocumentArtifact document = 12;
+  }
+}
+
+message SourceIdentity {
+  string format = 1;
+  string package_sha256 = 2;
+  string producer = 3;
+  string source_name = 4;
+}
+
+message Asset {
+  string id = 1;
+  string file_name = 2;
+  string content_type = 3;
+  bytes data = 4;
+  string sha256 = 5;
+}
+
+message Diagnostic {
+  DiagnosticSeverity severity = 1;
+  string code = 2;
+  string message = 3;
+  string source_path = 4;
+  string source_identity = 5;
+}
+
+message OpaqueOpcGraph {
+  repeated OpaqueOpcPart parts = 1;
+  repeated OpaqueOpcRelationship package_relationships = 2;
+}
+
+message OpaqueOpcPart {
+  string path = 1;
+  string content_type = 2;
+  bytes data = 3;
+  repeated OpaqueOpcRelationship relationships = 4;
+  string sha256 = 5;
+}
+
+message OpaqueOpcRelationship {
+  string id = 1;
+  string type = 2;
+  string target = 3;
+  string target_mode = 4;
+  string source_path = 5;
+}
+
+message WorkbookArtifact {
+  string id = 1;
+  WorkbookDateSystem date_system = 2;
+  repeated WorksheetArtifact worksheets = 3;
+}
+
+message WorksheetArtifact {
+  string id = 1;
+  string name = 2;
+  repeated CellArtifact cells = 3;
+  bool show_grid_lines = 4;
+  FreezePane freeze_pane = 5;
+  repeated ColumnDimension column_dimensions = 6;
+  repeated RowDimension row_dimensions = 7;
+  repeated string merged_ranges = 8;
+}
+
+message CellArtifact {
+  uint32 row = 1;
+  uint32 column = 2;
+  string formula = 3;
+
+  oneof value {
+    string string_value = 10;
+    double number_value = 11;
+    bool bool_value = 12;
+    string error_value = 13;
+  }
+}
+
+message FreezePane {
+  uint32 rows = 1;
+  uint32 columns = 2;
+  string top_left_cell = 3;
+  string active_pane = 4;
+}
+
+message ColumnDimension {
+  uint32 column = 1;
+  double width = 2;
+  bool hidden = 3;
+  bool best_fit = 4;
+}
+
+message RowDimension {
+  uint32 row = 1;
+  double height = 2;
+  bool hidden = 3;
+}
+
+// Reserved semantic roots keep the envelope evolution path explicit while the
+// first implemented codec slice is XLSX.
+message PresentationArtifact {}
+message DocumentArtifact {}

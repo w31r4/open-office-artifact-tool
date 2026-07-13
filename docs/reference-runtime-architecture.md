@@ -1,6 +1,6 @@
 # Reference runtime architecture and clean-room direction
 
-- Status: accepted direction, implementation pending
+- Status: accepted direction, first XLSX WebAssembly vertical slice implemented; migration active
 - Evidence snapshot: 2026-07-13
 - Reference package: `office-artifact-tool@2.8.22`
 - Reference runtime asset package: `@officer/walnut@0.1.210`
@@ -128,19 +128,20 @@ Primary public references:
 - [.NET WebAssembly browser/Node application templates and JS interop](https://learn.microsoft.com/en-us/aspnet/core/client-side/dotnet-interop/wasm-browser-app)
 - [Protocol Buffers C# generated code guide](https://protobuf.dev/reference/csharp/csharp-generated/)
 
-## Current project gap
+## Current implementation state
 
-Current source inventory:
+The first source-built boundary now exists:
 
-- JavaScript source under `src/`: 23,698 committed lines.
-- `src/index.mjs`: 12,675 lines, about 53.5% of JavaScript source.
-- C# under `native/`: 490 lines.
-- Core dependency for Office packages: `jszip`.
-- C# package references for Open XML: none.
+- `proto/open_office/artifact/v1/office_artifact.proto` is the independently designed, versioned public wire contract. Buf generates the shipped JavaScript binding; `Grpc.Tools` generates the C# binding from the same source.
+- `native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec` uses `DocumentFormat.OpenXml` 3.5.1 and `Google.Protobuf` 3.35.1 for bounded XLSX import/export and structured diagnostics.
+- `native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm` exposes one `[JSExport]` byte-in/byte-out method and publishes a trimmed `browser-wasm` AppBundle.
+- `src/codecs/openxml-wasm.mjs` lazily initializes and caches that runtime, maps the JavaScript workbook model to the public wire schema, and fails closed on workbook features outside the first slice.
+- `runtime/openxml-wasm` contains the reproducible release bundle, integrity manifest, CycloneDX SBOM, .NET license, and upstream third-party notices. It is built from this repository; it contains no reference-package artifact.
+- The npm clean-install gate packs the real tarball, installs it in a temporary directory, removes `dotnet` from runtime `PATH`, and performs XLSX export/import through the public package subpath.
 
-All current DOCX/PPTX/XLSX semantic import/export work therefore runs through the JavaScript package layer. The C# `OfficeBridge` is a separate JSON stdin/stdout process that uses late-bound Microsoft Office COM automation on Windows for render/convert/application operations.
+The first slice covers workbook date systems, worksheets, primitive and cached-formula cells, merged ranges, row/column dimensions, gridline state, and frozen panes. It retains unknown OPC parts and relationships in the envelope, rejects unsafe second export by default, and requires explicit `allowLossy` before discarding them. Styles, themes, tables, pivots, drawings, comments, validations, defined names, and advanced formula metadata still use the JavaScript codec.
 
-This means the project has built valuable product-layer behavior but is missing the reference architecture's core Office codec boundary. Continuing indefinitely with JavaScript-only OOXML feature patches would duplicate more of the package/part/schema work already provided by the public Open XML SDK.
+DOCX and PPTX remain on the JavaScript semantic codecs. The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
 ## Target architecture
 
@@ -216,14 +217,14 @@ The schema must be designed from this project's public model, ECMA-376/ISO 29500
 - Pin reproducible .NET, Open XML SDK, and protobuf versions.
 - Do not ship symbols, source maps, debug files, or reference-package assets unless deliberately licensed and required.
 
-The installed machine currently has .NET SDK 8.0.128 but no WebAssembly workload. Microsoft documents the `wasmconsole` Node/V8 template through the `wasm-experimental` workload; the .NET 8 JS interop APIs themselves are supported even though the standalone templates' developer workflow remains experimental. The first implementation milestone must pin and install the chosen workload in CI rather than relying on global machine state.
+The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wasm-tools`/`wasm-experimental` workload packs. CI installs those workloads explicitly, regenerates the runtime, and rejects differences from the checked-in bundle. NuGet restore runs in locked mode. Consumers do not run this build toolchain.
 
 ## Migration plan
 
-1. Add a source-built `native/OpenXmlWasm` scaffold and a minimal versioned schema.
-2. Prove one end-to-end XLSX vertical slice: JS model to message bytes to C# Open XML SDK to XLSX, then back to the JS model.
-3. Package the runtime and run the installed tarball with `dotnet` removed from runtime `PATH`.
-4. Exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, and native render pages.
+1. **Implemented:** add a source-built `native/OpenXmlWasm` scaffold and a minimal versioned schema.
+2. **Implemented:** prove one end-to-end XLSX vertical slice: JS model to message bytes to C# Open XML SDK to XLSX, then back to the JS model.
+3. **Implemented:** package the runtime and run the installed tarball with `dotnet` removed from runtime `PATH`.
+4. **Next migration gate:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, and native render pages.
 5. Add loss-aware opaque package preservation and third-party XLSX corpus roundtrips.
 6. Extend the same shared runtime/schema/package graph to DOCX and PPTX. Use the PPTX bundle design from the start rather than postponing native-object preservation.
 7. Make WebAssembly the default only after compatibility and failure-mode gates pass. Retain an explicit JavaScript fallback until the migration matrix is complete.
@@ -231,18 +232,22 @@ The installed machine currently has .NET SDK 8.0.128 but no WebAssembly workload
 
 ## First vertical-slice acceptance criteria
 
-The first WebAssembly milestone is not complete until all of these are true:
+The first WebAssembly migration milestone is not complete until every row is done:
 
-- every runtime artifact is built from this repository and public dependencies;
-- the npm tarball contains all required runtime files and no reference runtime files;
-- a clean temporary npm install imports and exports a real XLSX under Node without a local .NET SDK;
-- JavaScript and WebAssembly codec modes roundtrip the same public workbook fixture;
-- the generated XLSX passes package inspection and Open XML SDK validation with zero errors;
-- the imported workbook passes inspect/resolve/verify and runnable spreadsheet skill gates;
-- LibreOffice/Poppler render-backed output passes when those QA tools are installed;
-- malformed and oversized input produces bounded structured errors in both JavaScript and C#;
-- runtime initialization is lazy, cached, and concurrency-tested;
-- `npm test`, generated API docs, package dry-run, C# tests, WebAssembly build tests, and hosted CI pass.
+| Acceptance gate | Status |
+| --- | --- |
+| Runtime artifacts are built only from this repository and public dependencies | done |
+| Tarball contains runtime, integrity manifest, SBOM, licenses, source, and no reference artifacts | done locally |
+| Clean temporary npm install imports/exports XLSX with `dotnet` absent from runtime `PATH` | done locally |
+| Minimal public workbook fixture roundtrips through JavaScript model and WebAssembly codec | done |
+| Generated XLSX passes package inspection and Open XML SDK Office 2021 validation with zero errors | done |
+| Unknown OPC content is detected and second export is fail-closed unless explicitly lossy | done for opaque parts/relationships; preservation-on-write remains todo |
+| Malformed/oversized input produces bounded structured errors | partial: byte/ZIP/part/sheet/cell/path/ratio budgets covered; broader malformed corpus remains todo |
+| Runtime initialization is lazy, cached, and concurrency-tested | done |
+| Bounded `openxml-wasm-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally |
+| Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | todo |
+| LibreOffice/Poppler render-backed cross-codec output passes | done locally for `openxml-wasm-basic`; complex fixtures remain todo |
+| Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | todo until final local gate, push, and hosted run |
 
 ## Explicit non-goals
 

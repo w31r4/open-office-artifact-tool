@@ -1,0 +1,52 @@
+{
+  "name": "openxml-wasm-basic",
+  "outputName": "openxml-wasm-basic.xlsx",
+  "codec": "openxml-wasm",
+  "dateSystem": "1904",
+  "sheets": [
+    {
+      "name": "Summary",
+      "showGridLines": false,
+      "freezePanes": { "rows": 1, "columns": 1 },
+      "ranges": [
+        {
+          "range": "A1:B3",
+          "values": [
+            ["Metric", "Value"],
+            ["Revenue", 42.5],
+            ["Double", null]
+          ]
+        },
+        {
+          "range": "B3",
+          "formulas": [["=B2*2"]]
+        },
+        {
+          "range": "A4:B4",
+          "values": [["Ready", true]],
+          "merge": true
+        }
+      ]
+    },
+    {
+      "name": "Details",
+      "ranges": [
+        {
+          "range": "A1:B2",
+          "values": [["Codec", "Open XML SDK"], ["Runtime", "WebAssembly"]]
+        }
+      ]
+    }
+  ],
+  "expectations": [
+    { "sheet": "Summary", "range": "B2:B3", "values": [[42.5], [85]] }
+  ],
+  "qa": {
+    "sheetName": "Summary",
+    "range": "A1:B4",
+    "renderFormat": "png",
+    "inspectKind": "workbook,sheet,formula,merge,dimension",
+    "maxChars": 16000,
+    "nativeRender": "auto"
+  }
+}

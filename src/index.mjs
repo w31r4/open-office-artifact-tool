@@ -908,6 +908,10 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenXmlWasm", summary: "Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenXmlWasm", summary: "Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "openXmlWasmStatus", summary: "Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
+  { artifactKind: "workbook", kind: "api", name: "invokeOpenXmlWasm", summary: "Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importDelimited", summary: "Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines." },
@@ -2125,6 +2129,20 @@ const WORKBOOK_HELP_SCHEMAS = {
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
+  "exportXlsxWithOpenXmlWasm": helpSchema({
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current first-slice feature boundary." },
+    recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
+    allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
+  }, "blob", "FileBlob", "XLSX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
+  "importXlsxWithOpenXmlWasm": helpSchema({
+    input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
+  }, "workbook", "Workbook", "Imported first-slice workbook facade carrying source/opaque package evidence for fail-closed second export."),
+  "openXmlWasmStatus": helpSchema({}, "status", "object", "Bundled runtime status with protocolVersion, assemblyName, and integrity manifest."),
+  "invokeOpenXmlWasm": helpSchema({
+    request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
+  }, "response", "object", "Decoded public CodecResponse wire message; structured codec failures throw OpenXmlWasmCodecError."),
   "SpreadsheetFile.inspectXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
     includeText: { type: "boolean", description: "Include bounded XML/JSON/relationship previews." },
@@ -6285,7 +6303,7 @@ export class SpreadsheetFile {
     const themeColors = parseXlsxThemeColors(nativeThemeXml);
     const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"), { themeColors });
     workbook.indexedColors = [...(styles.indexedColors || [])];
-    const sheetNames = [...String(workbookText || "").matchAll(/<sheet\b[^>]*\/?>/g)].map((match, position) => {
+    const sheetNames = [...String(workbookText || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sheet\b[^>]*\/?>/g)].map((match, position) => {
       const attrs = ooxmlXmlAttributes(match[0]);
       const relationshipId = Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
       const relationship = workbookRelationships.get(relationshipId);
@@ -6427,7 +6445,7 @@ function sharedStringsXml(sharedStrings) {
 }
 
 function parseSharedStringsXml(xml = "") {
-  return [...String(xml || "").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) => decodeXml([...match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((text) => text[1]).join("")));
+  return [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?si\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?si>/g)].map((match) => decodeXml([...match[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((text) => text[1]).join("")));
 }
 
 function collectWorkbookStyles(workbook) {
@@ -6509,7 +6527,7 @@ function workbookXml(workbook, pivotParts = []) {
 }
 
 function parseWorkbookDefinedNames(workbook, xml = "") {
-  for (const match of String(xml || "").matchAll(/<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g)) {
+  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?definedName\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?definedName>/g)) {
     const attrs = match[1] || "";
     const name = decodeXml(/\bname="([^"]+)"/.exec(attrs)?.[1] || "");
     if (!name) continue;
@@ -6876,11 +6894,11 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
 function parseWorksheetXml(sheet, xml, options = {}) {
   parseWorksheetViewXml(sheet, xml);
   parseWorksheetDimensionsXml(sheet, xml);
-  const cellMatches = [...String(xml || "").matchAll(/<c\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)].map((match) => {
+  const cellMatches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?c\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?c>)/g)].map((match) => {
     const attrs = match[1];
     const body = match[2] || "";
     const address = /r="([^"]+)"/.exec(attrs)?.[1];
-    const formulaMatch = /<f\b([^>]*)>([\s\S]*?)<\/f>/.exec(body);
+    const formulaMatch = /<(?:[A-Za-z_][\w.-]*:)?f\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?f>/.exec(body);
     return { attrs, body, address, formulaAttrs: parseAttrs(formulaMatch?.[1] || ""), formulaBody: formulaMatch ? decodeXml(formulaMatch[2] || "") : undefined };
   }).filter((item) => item.address);
   const sharedFormulas = new Map();
@@ -6911,10 +6929,11 @@ function parseWorksheetXml(sheet, xml, options = {}) {
         cell.formulaType = formulaAttrs.t || undefined;
       }
     }
-    const text = /<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/.exec(body)?.[1];
-    const value = /<v[^>]*>([\s\S]*?)<\/v>/.exec(body)?.[1];
+    const text = /<(?:[A-Za-z_][\w.-]*:)?is\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?is>/.exec(body)?.[1];
+    const value = /<(?:[A-Za-z_][\w.-]*:)?v\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?v>/.exec(body)?.[1];
     const type = /\bt="([^"]+)"/.exec(attrs)?.[1];
     if (type === "s" && value !== undefined) cell.value = options.sharedStrings?.[Number(value)] ?? "";
+    else if (type === "b" && value !== undefined) cell.value = ["1", "true"].includes(String(value).trim().toLowerCase());
     else if (text !== undefined) cell.value = decodeXml(text);
     else if (value !== undefined) cell.value = Number.isFinite(Number(value)) && type !== "str" ? Number(value) : decodeXml(value);
   }

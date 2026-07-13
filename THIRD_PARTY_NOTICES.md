@@ -6,11 +6,17 @@ The npm package declares or optionally integrates the following public libraries
 
 | Component | Role | License |
 | --- | --- | --- |
+| Buf Protobuf (`@bufbuild/protobuf`) | Public protobuf wire-schema runtime for JavaScript | Apache-2.0 AND BSD-3-Clause |
 | JSZip | OOXML ZIP package reading/writing | MIT option from `(MIT OR GPL-3.0-or-later)` |
 | PDF.js (`pdfjs-dist`) | Optional arbitrary-PDF parsing | Apache-2.0 |
 | Playwright | Optional deterministic browser rendering | Apache-2.0 |
 | sharp | Optional raster conversion and JPEG/WebP pixel decoding | Apache-2.0 |
 | node-canvas (`canvas`) | Optional canvas raster adapter | MIT |
+| Microsoft Open XML SDK (`DocumentFormat.OpenXml`) | OOXML package codec compiled from source into the bundled WebAssembly runtime | MIT |
+| Google Protobuf for .NET | Public protobuf wire-schema runtime compiled from source into the bundled WebAssembly runtime | BSD-3-Clause |
+| .NET 8 WebAssembly runtime | Bundled execution runtime for the Open XML codec | MIT plus the upstream third-party notices shipped under `runtime/openxml-wasm/` |
+
+Buf CLI, `protoc-gen-es`, `Grpc.Tools`, and the .NET SDK/WebAssembly workload are build-only tools. Their generated protocol bindings or compiled outputs are shipped, but the tools themselves are not included in the npm tarball.
 
 Sharp may install platform-specific libvips binary packages under LGPL-3.0-or-later, sometimes combined with Apache-2.0/MIT components. These are optional dynamically linked runtime dependencies and are not copied into this repository or npm tarball. Downstream distributors remain responsible for the corresponding LGPL notices and relinking/source obligations when redistributing those binaries.
 
@@ -19,7 +25,7 @@ The following external programs are invoked only when installed separately. They
 - Chromium or another Playwright-managed browser: see the browser distribution's own third-party notices.
 - LibreOffice: MPL-2.0 and LGPL-3.0-or-later licensing applies to the separately installed application.
 - Poppler command-line tools: GPL licensing applies to the separately installed binaries.
-- .NET 8: used to build/run the optional Office bridge; it is not bundled.
+- .NET 8 SDK: used to build the WebAssembly codec and optional Office bridge; the SDK is not bundled. The source-built .NET WebAssembly runtime needed by consumers is bundled with its upstream license and notices.
 - Microsoft Office: reference software required only for optional Windows native automation; users must supply a valid installation and license.
 
 OOXML, Open Packaging Conventions, PDF, and related file-format specifications are used as public interoperability standards. Reference package observations are limited to public package shape, exports, examples, smoke tests, and observable behavior.

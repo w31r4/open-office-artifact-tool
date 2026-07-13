@@ -146,6 +146,21 @@ try {
   assert.equal(result.qa.packageInspect.records[0].semanticIssues, 0);
   assert.match(await fs.readFile(result.qa.summary.files.preview, "utf8"), /<svg/);
 
+  const wasmResult = await runSpreadsheetFixture(path.join(repoRoot, "skills", "spreadsheets", "fixtures", "openxml-wasm-basic.json"), {
+    outputDir: path.join(outputDir, "openxml-wasm-basic"),
+    nativeRender: nativeSpreadsheetRenderStatus().available ? "required" : "off",
+  });
+  assert.equal(wasmResult.codec, "openxml-wasm");
+  assert.equal(wasmResult.qa.summary.packageOk, true);
+  assert.equal(wasmResult.qa.summary.verifyOk, true);
+  assert.equal(wasmResult.qa.summary.visualQaOk, true);
+  assert.equal(wasmResult.qa.summary.renderFormat, "png");
+  const wasmWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(wasmResult.workbookPath));
+  assert.equal(wasmWorkbook.dateSystem, "1904");
+  assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("B2:B3").values, [[42.5], [85]]);
+  assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").mergedRanges, ["A4:B4"]);
+  if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
+
   const secondQa = await verifyWorkbookFile(result.workbookPath, {
     outputDir: path.join(outputDir, "second-qa"),
     sheetName: "Inputs",

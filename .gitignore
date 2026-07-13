@@ -6,3 +6,5 @@ coverage/
 tmp/
 native/OfficeBridge/**/bin/
 native/OfficeBridge/**/obj/
+native/OpenXmlWasm/**/bin/
+native/OpenXmlWasm/**/obj/

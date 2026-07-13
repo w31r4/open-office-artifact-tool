@@ -1,0 +1,135 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import JSZip from "jszip";
+import { Workbook, SpreadsheetFile } from "../src/index.mjs";
+import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
+import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
+import {
+  OpenXmlWasmCodecError,
+  exportXlsxWithOpenXmlWasm,
+  importXlsxWithOpenXmlWasm,
+  openXmlWasmStatus,
+} from "../src/codecs/openxml-wasm.mjs";
+
+const workbook = Workbook.create({ dateSystem: "1904" });
+const summary = workbook.worksheets.add("Summary");
+summary.getRange("A1:B2").values = [["Quarter", 42.5], [true, null]];
+summary.getRange("B2").formulas = [["=B1*2"]];
+summary.freezePanes.freezeRows(1).freezeColumns(1);
+summary.showGridLines = false;
+summary.columnDimensions.set(0, { width: 18, bestFit: true });
+summary.rowDimensions.set(0, { height: 24 });
+summary.mergeCells("A3:B3");
+const details = workbook.worksheets.add("Details");
+details.getRange("A1:B1").values = [["Status", "ready"]];
+
+const concurrentWorkbook = Workbook.create();
+concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
+const [status, exported, concurrentExport] = await Promise.all([
+  openXmlWasmStatus(),
+  exportXlsxWithOpenXmlWasm(workbook),
+  exportXlsxWithOpenXmlWasm(concurrentWorkbook),
+]);
+assert.deepEqual([...concurrentExport.bytes.slice(0, 2)], [0x50, 0x4b]);
+assert.deepEqual([...exported.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+assert.equal(exported.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+assert.equal(exported.metadata.codec, "openxml-wasm");
+assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
+
+const imported = await importXlsxWithOpenXmlWasm(exported);
+assert.equal(imported.dateSystem, "1904");
+assert.equal(imported.worksheets.items.length, 2);
+assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
+assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
+assert.deepEqual(imported.worksheets.getItem("Summary").freezePanes.toJSON(), { rows: 1, columns: 1, frozen: true, topLeftCell: "B2", activePane: "bottomRight" });
+assert.equal(imported.worksheets.getItem("Summary").showGridLines, false);
+assert.equal(imported.worksheets.getItem("Summary").columnDimensions.get(0).width, 18);
+assert.deepEqual(imported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
+assert.match(imported.inspect({ kind: "workbook,sheet,formula" }).ndjson, /"dateSystem":"1904"/);
+assert.equal(imported.verify().ok, true);
+assert.equal(imported.resolve(imported.worksheets.getItem("Summary").id).name, "Summary");
+
+// Open XML SDK serializes SpreadsheetML with a legal namespace prefix. Keep the
+// JavaScript migration oracle able to read the same package while both codecs
+// coexist, so cross-codec fixtures compare semantics instead of XML spelling.
+const javascriptImported = await SpreadsheetFile.importXlsx(exported);
+assert.equal(javascriptImported.dateSystem, "1904");
+assert.equal(javascriptImported.worksheets.items.length, 2);
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
+
+const secondExport = await exportXlsxWithOpenXmlWasm(imported, { recalculate: false });
+assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
+
+const externalZip = await JSZip.loadAsync(exported.bytes);
+const relationshipPath = "xl/_rels/workbook.xml.rels";
+const relationships = await externalZip.file(relationshipPath).async("text");
+externalZip.file(relationshipPath, relationships.replace("</Relationships>", '<Relationship Id="rIdExternal" Type="urn:open-office-artifact-tool:test" Target="https://example.invalid/data" TargetMode="External"/></Relationships>'));
+const externalBytes = await externalZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const opaqueImported = await importXlsxWithOpenXmlWasm(externalBytes);
+await assert.rejects(
+  exportXlsxWithOpenXmlWasm(opaqueImported, { recalculate: false }),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "opaque_content_requires_preservation",
+);
+const lossy = await exportXlsxWithOpenXmlWasm(opaqueImported, { allowLossy: true, recalculate: false });
+assert.equal(lossy.metadata.diagnostics.some((item) => item.code === "opaque_content_discarded"), true);
+
+await assert.rejects(
+  importXlsxWithOpenXmlWasm(exported, { limits: { maxInputBytes: 16 } }),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "input_budget_exceeded",
+);
+
+const styled = Workbook.create();
+const styledSheet = styled.worksheets.add("Sheet1");
+styledSheet.getRange("A1").values = [["styled"]];
+styledSheet.store.get("A1").style = { font: { bold: true } };
+await assert.rejects(
+  exportXlsxWithOpenXmlWasm(styled),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_workbook_features",
+);
+
+assert.equal(status.available, true);
+assert.equal(status.protocolVersion, 1);
+assert.equal(status.assemblyName, "OpenOffice.OpenXmlWasm.dll");
+assert.ok(status.manifest.totalBytes > 1_000_000);
+assert.equal(status.manifest.files.some((file) => file.path.endsWith(".map") || file.path.endsWith(".symbols")), false);
+
+const sofficeStatus = spawnSync("soffice", ["--version"], { encoding: "utf8" });
+const popplerStatus = spawnSync("pdftoppm", ["-v"], { encoding: "utf8" });
+if (sofficeStatus.status === 0 && popplerStatus.status === 0) {
+  const pdf = await createLibreOfficeRenderer({ timeoutMs: 60_000 })({
+    input: exported,
+    inputType: exported.type,
+    outputType: "application/pdf",
+    format: "pdf",
+    artifactKind: "workbook",
+  });
+  assert.equal(new TextDecoder().decode(pdf.bytes.slice(0, 4)), "%PDF");
+  const png = await createPopplerRenderer({ dpi: 96, timeoutMs: 60_000 })({
+    input: pdf,
+    inputType: pdf.type,
+    outputType: "image/png",
+    format: "png",
+    artifactKind: "workbook",
+    pageIndex: 0,
+  });
+  assert.deepEqual([...png.bytes.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+}
+
+const noDotnetProbe = `
+  import { Workbook } from ${JSON.stringify(new URL("../src/index.mjs", import.meta.url).href)};
+  import { exportXlsxWithOpenXmlWasm } from ${JSON.stringify(new URL("../src/codecs/openxml-wasm.mjs", import.meta.url).href)};
+  const workbook = Workbook.create();
+  workbook.worksheets.add("Sheet1").getRange("A1").values = [["no dotnet on PATH"]];
+  const file = await exportXlsxWithOpenXmlWasm(workbook);
+  if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
+`;
+const child = spawnSync(process.execPath, ["--input-type=module", "-e", noDotnetProbe], {
+  cwd: new URL("..", import.meta.url),
+  encoding: "utf8",
+  env: { ...process.env, PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin" },
+});
+assert.equal(child.status, 0, `bundled runtime failed without dotnet on PATH\nSTDOUT:\n${child.stdout}\nSTDERR:\n${child.stderr}`);
+
+console.log("openxml wasm smoke ok");

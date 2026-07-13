@@ -93,6 +93,13 @@ if (!skipCommands) {
   } else {
     checks.push(summarizeCheck("dotnet test native/OfficeBridge", { ok: true, stdout: "skipped: dotnet or native/OfficeBridge unavailable", stderr: "", command: "dotnet test native/OfficeBridge" }, false));
   }
+  if (fs.existsSync(path.join(repoRoot, "native", "OpenXmlWasm")) && commandExists("dotnet")) {
+    const check = summarizeCheck("dotnet test native/OpenXmlWasm", run("dotnet", ["test", "native/OpenXmlWasm/OpenXmlWasm.sln", "--configuration", "Release"]));
+    checks.push(check);
+    if (!check.ok) blockers.push("dotnet test native/OpenXmlWasm failed.");
+  } else {
+    checks.push(summarizeCheck("dotnet test native/OpenXmlWasm", { ok: true, stdout: "skipped: dotnet or native/OpenXmlWasm unavailable", stderr: "", command: "dotnet test native/OpenXmlWasm" }, false));
+  }
 }
 
 let npmAuth = { ok: false, skipped: skipNetwork, stdout: "", stderr: "", command: "npm whoami" };
