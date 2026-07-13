@@ -242,7 +242,8 @@ message PresentationShape {
 
 // The public PresentationML text slice models agent-facing paragraph/inlines,
 // list-marker/direct marker-style semantics, content-addressed or external
-// picture bullets, tab stops, and bounded click links. Transformed or
+// picture bullets, tab stops, direct left-margin/hanging-indent layout, and
+// bounded click links. Transformed or
 // non-sRGB/non-theme marker colors, custom-show/mouse-over links, field
 // paragraph properties, body properties, and list styles stay source-bound.
 message PresentationTextBody {
@@ -283,6 +284,16 @@ message PresentationTextParagraph {
   // preserves an unmodeled source list; no_tab_stops explicitly removes it.
   repeated PresentationTabStop tab_stops = 14;
   optional bool no_tab_stops = 15;
+  // Values use DrawingML EMUs. Unset preserves source/inherited layout;
+  // explicit no_* choices remove a modeled direct override.
+  oneof left_margin {
+    int64 margin_left_emu = 18;
+    bool no_margin_left = 20;
+  }
+  oneof indentation {
+    int64 indent_emu = 19;
+    bool no_indent = 21;
+  }
 }
 
 message PresentationPictureBullet {

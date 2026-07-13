@@ -9,6 +9,7 @@ const EMU_PER_PIXEL = 9525;
 const EMU_PER_POINT = 12700;
 const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
+const MAX_PARAGRAPH_COORDINATE_EMU = 51_206_400;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
 const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
@@ -18,13 +19,22 @@ const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "col
 const PARAGRAPH_KEYS = new Set([
   "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletImage", "bulletNone",
   "bulletFont", "bulletFontFollowText", "bulletColor", "bulletColorFollowText",
-  "bulletSize", "bulletSizePercent", "bulletSizeFollowText", "tabStops",
+  "bulletSize", "bulletSizePercent", "bulletSizeFollowText", "tabStops", "marginLeft", "indent",
 ]);
 
 function emuFromPixels(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) throw new OpenXmlWasmCodecError(`${name} must be a non-negative finite number.`, [], { code: "invalid_presentation_frame" });
   return BigInt(Math.round(number * EMU_PER_PIXEL));
+}
+
+function paragraphEmuFromPixels(value, name, { allowNegative = false } = {}) {
+  const number = Number(value);
+  const emu = Math.round(number * EMU_PER_PIXEL);
+  if (!Number.isFinite(number) || (!allowNegative && number < 0) || emu < (allowNegative ? -MAX_PARAGRAPH_COORDINATE_EMU : 0) || emu > MAX_PARAGRAPH_COORDINATE_EMU) {
+    throw new OpenXmlWasmCodecError(`${name} is outside the supported DrawingML coordinate range.`, [], { code: "invalid_presentation_text" });
+  }
+  return BigInt(emu);
 }
 
 function presentationRgb(value, name) {
@@ -199,6 +209,23 @@ function wireTabStops(paragraph, original, shapeId) {
   return {};
 }
 
+function wireParagraphLayout(paragraph, original, shapeId) {
+  const leftMargin = paragraph.marginLeft != null
+    ? { case: "marginLeftEmu", value: paragraphEmuFromPixels(paragraph.marginLeft, `${shapeId}.text.marginLeft`) }
+    : new Set(["marginLeftEmu", "noMarginLeft"]).has(original?.leftMargin?.case)
+      ? { case: "noMarginLeft", value: true }
+      : undefined;
+  const indentation = paragraph.indent != null
+    ? { case: "indentEmu", value: paragraphEmuFromPixels(paragraph.indent, `${shapeId}.text.indent`, { allowNegative: true }) }
+    : new Set(["indentEmu", "noIndent"]).has(original?.indentation?.case)
+      ? { case: "noIndent", value: true }
+      : undefined;
+  return {
+    ...(leftMargin ? { leftMargin } : {}),
+    ...(indentation ? { indentation } : {}),
+  };
+}
+
 function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -218,6 +245,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
   const bulletColor = wireBulletColor(paragraph, original, shapeId);
   const bulletSize = wireBulletSize(paragraph, original, shapeId);
   const tabs = wireTabStops(paragraph, original, shapeId);
+  const layout = wireParagraphLayout(paragraph, original, shapeId);
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
@@ -227,6 +255,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
     ...(bulletColor ? { bulletColor } : {}),
     ...(bulletSize ? { bulletSize } : {}),
     ...tabs,
+    ...layout,
   };
 }
 
@@ -445,6 +474,13 @@ function modelBulletStyle(paragraph) {
   };
 }
 
+function modelParagraphLayout(paragraph) {
+  return {
+    ...(paragraph.leftMargin?.case === "marginLeftEmu" ? { marginLeft: Number(paragraph.leftMargin.value) / EMU_PER_PIXEL } : {}),
+    ...(paragraph.indentation?.case === "indentEmu" ? { indent: Number(paragraph.indentation.value) / EMU_PER_PIXEL } : {}),
+  };
+}
+
 function modelText(shape, assetCatalog) {
   if (!shape.textBody) return shape.text;
   return shape.textBody.paragraphs.map((paragraph) => ({
@@ -453,6 +489,7 @@ function modelText(shape, assetCatalog) {
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     ...modelBullet(paragraph.bullet, assetCatalog),
     ...modelBulletStyle(paragraph),
+    ...modelParagraphLayout(paragraph),
     ...(paragraph.tabStops?.length ? { tabStops: paragraph.tabStops.map((tab) => ({ position: Number(tab.positionEmu) / EMU_PER_PIXEL, alignment: tab.alignment })) } : {}),
     style: {},
   }));

@@ -29,7 +29,7 @@
                 { "text": "Field and line-break evidence", "style": { "fontSize": 18, "color": "#475569" } }
               ]
             },
-            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
+            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "marginLeft": 32, "indent": -16, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
             { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "uri": "https://example.com/remove" } }] },
             { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==" }, "runs": [{ "text": "Picture marker", "style": { "fontSize": 18, "color": "#334155" } }] }
           ]
@@ -91,6 +91,8 @@
           "bulletFontFollowText": true,
           "bulletColor": "accent1",
           "bulletSize": 24,
+          "marginLeft": 40,
+          "indent": -20,
           "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "lastSlide", "highlightClick": false } }]
         },
         {

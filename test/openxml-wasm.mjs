@@ -33,6 +33,16 @@ assert.deepEqual(
   [0x8a, 0x01],
   "Presentation scheme marker colors must use additive field 17.",
 );
+assert.deepEqual(
+  [...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { leftMargin: { case: "marginLeftEmu", value: 1n } })).slice(0, 2)],
+  [0x90, 0x01],
+  "Presentation paragraph left margins must use additive field 18.",
+);
+assert.deepEqual(
+  [...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { leftMargin: { case: "noMarginLeft", value: true } })).slice(0, 2)],
+  [0xa0, 0x01],
+  "Explicit paragraph left-margin deletion must use additive field 20.",
+);
 assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
 
 const workbook = Workbook.create({ dateSystem: "1904" });
@@ -205,6 +215,8 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
       bulletFont: "Georgia",
       bulletColor: "accent1",
       bulletSizePercent: 1.5,
+      marginLeft: 32,
+      indent: -16,
       runs: [
         { text: "Quarterly ", style: { bold: true, fontSize: 36, fontFamily: "Aptos Display", color: "#0F172A" } },
         { text: "brief", style: { italic: true, fontSize: 36 } },
@@ -226,6 +238,8 @@ assert.equal(richImportedShape.text.paragraphs[0].bulletCharacter, "•");
 assert.equal(richImportedShape.text.paragraphs[0].bulletFont, "Georgia");
 assert.equal(richImportedShape.text.paragraphs[0].bulletColor, "accent1");
 assert.equal(richImportedShape.text.paragraphs[0].bulletSizePercent, 1.5);
+assert.equal(richImportedShape.text.paragraphs[0].marginLeft, 32);
+assert.equal(richImportedShape.text.paragraphs[0].indent, -16);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.bold, true);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontSize, 36);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontFamily, "Aptos Display");
@@ -239,7 +253,7 @@ assert.equal(richImportedShape.text.paragraphs[2].bulletNone, true);
 assert.equal(richImportedShape.text.paragraphs[2].bulletSize, 24);
 richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
   ...paragraph,
-  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "accent2", bulletSizePercent: undefined, bulletSize: 24 } : {}),
+  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "accent2", bulletSizePercent: undefined, bulletSize: 24, marginLeft: 40, indent: -20 } : {}),
   ...(paragraphIndex === 1 ? { autoNumber: { type: "arabicPeriod", startAt: 5 }, bulletFontFollowText: undefined, bulletFont: "Aptos", bulletColorFollowText: undefined, bulletColor: "#16A34A", bulletSizeFollowText: undefined, bulletSizePercent: 1.25 } : {}),
   ...(paragraphIndex === 2 ? { bulletNone: undefined, bulletCharacter: "–", bulletSize: undefined, bulletSizeFollowText: true } : {}),
   runs: paragraph.runs.map((run, runIndex) => paragraphIndex === 0 && runIndex === 0
@@ -258,12 +272,26 @@ assert.equal(richRoundTripShape.text.paragraphs[0].bulletCharacter, "◆");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletFontFollowText, true);
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletColor, "accent2");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletSize, 24);
+assert.equal(richRoundTripShape.text.paragraphs[0].marginLeft, 40);
+assert.equal(richRoundTripShape.text.paragraphs[0].indent, -20);
 assert.deepEqual(richRoundTripShape.text.paragraphs[1].autoNumber, { type: "arabicPeriod", startAt: 5 });
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletFont, "Aptos");
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletColor, "#16A34A");
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletSizePercent, 1.25);
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
+
+richRoundTripShape.text.paragraphs = richRoundTripShape.text.paragraphs.map((paragraph, index) => index === 0
+  ? { ...paragraph, marginLeft: undefined, indent: undefined }
+  : paragraph);
+const richLayoutDeleted = await exportPptxWithOpenXmlWasm(richPptxRoundTrip);
+const richLayoutDeletedZip = await JSZip.loadAsync(richLayoutDeleted.bytes);
+const richLayoutDeletedXml = await richLayoutDeletedZip.file("ppt/slides/slide1.xml").async("text");
+assert.doesNotMatch(richLayoutDeletedXml, /\bmarL=/);
+assert.doesNotMatch(richLayoutDeletedXml, /\bindent=/);
+const richLayoutDeletedRoundTrip = await importPptxWithOpenXmlWasm(richLayoutDeleted);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].marginLeft, undefined);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].indent, undefined);
 
 const transformedColorZip = await JSZip.loadAsync(richPptx.bytes);
 const transformedColorSlidePath = "ppt/slides/slide1.xml";
@@ -489,6 +517,13 @@ invalidSchemeBulletColorShape.text._paragraphs[0].bulletColor = "accent7";
 await assert.rejects(
   exportPptxWithOpenXmlWasm(invalidSchemeBulletColorPresentation),
   (error) => error instanceof TypeError && /scheme color/.test(error.message),
+);
+
+const invalidParagraphLayoutPresentation = Presentation.create();
+invalidParagraphLayoutPresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", marginLeft: 6000, indent: -20, runs: ["too wide"] }] });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidParagraphLayoutPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text",
 );
 
 const preservedPresentation = Presentation.create({

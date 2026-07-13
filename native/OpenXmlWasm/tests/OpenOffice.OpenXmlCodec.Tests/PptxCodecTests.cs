@@ -253,6 +253,55 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ParagraphMarginsAndHangingIndentsAuthorImportEditAndDelete()
+    {
+        var request = RichTextExportRequest();
+        var paragraph = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        paragraph.MarginLeftEmu = 914_400;
+        paragraph.IndentEmu = -228_600;
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!;
+            Assert.Equal(914_400, properties.LeftMargin!.Value);
+            Assert.Equal(-228_600, properties.Indent!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        paragraph = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(PresentationTextParagraph.LeftMarginOneofCase.MarginLeftEmu, paragraph.LeftMarginCase);
+        Assert.Equal(914_400, paragraph.MarginLeftEmu);
+        Assert.Equal(PresentationTextParagraph.IndentationOneofCase.IndentEmu, paragraph.IndentationCase);
+        Assert.Equal(-228_600, paragraph.IndentEmu);
+
+        paragraph.MarginLeftEmu = 1_143_000;
+        paragraph.IndentEmu = -285_750;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var reimported = Import(edited.File.ToByteArray());
+        paragraph = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(1_143_000, paragraph.MarginLeftEmu);
+        Assert.Equal(-285_750, paragraph.IndentEmu);
+
+        paragraph.NoMarginLeft = true;
+        paragraph.NoIndent = true;
+        var deleted = Export(reimported.Artifact);
+        Assert.True(deleted.Ok, Diagnostics(deleted));
+        using (var stream = new MemoryStream(deleted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!;
+            Assert.Null(properties.LeftMargin);
+            Assert.Null(properties.Indent);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+    }
+
+    [Fact]
     public void FieldsBreaksAndTabStopsRoundTripEditAndPreserveResidualProperties()
     {
         var request = RichTextExportRequest();
@@ -646,6 +695,18 @@ public sealed class PptxCodecTests
         var invalidFollow = Invoke(request);
         Assert.False(invalidFollow.Ok);
         Assert.Equal("invalid_presentation_text", Assert.Single(invalidFollow.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].MarginLeftEmu = 51_206_401;
+        var invalidMargin = Invoke(request);
+        Assert.False(invalidMargin.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidMargin.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].NoIndent = false;
+        var invalidIndentDeletion = Invoke(request);
+        Assert.False(invalidIndentDeletion.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidIndentDeletion.Diagnostics).Code);
     }
 
     private static CodecResponse Invoke(CodecRequest request) =>
