@@ -46,6 +46,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /relationship-free slide-show action hyperlinks/);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /nextSlide.*previousSlide.*firstSlide.*lastSlide.*endShow/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
@@ -222,6 +224,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /lazy IF\/IFERROR/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /LEN\/LEFT\/RIGHT\/MID/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /DATE\/YEAR\/MONTH\/DAY/);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /EDATE\/EOMONTH\/DAYS\/WEEKDAY/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");

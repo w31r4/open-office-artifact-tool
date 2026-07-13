@@ -71,7 +71,7 @@
       "notes": "Use the table to distinguish facade evidence from native OOXML package evidence.",
       "shapes": [
         { "name": "structure-lead", "position": { "left": 42, "top": 126, "width": 1196, "height": 54 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": [{ "runs": ["Each gate leaves bounded evidence an agent can inspect and resolve through ", { "run": "public Open XML guidance", "link": { "uri": "https://learn.microsoft.com/en-us/office/open-xml/open-xml-sdk", "tooltip": "Open XML SDK guidance" } }, "."] }], "textStyle": { "fontSize": 20, "color": "#334155" } },
-        { "name": "structure-footer", "position": { "left": 1160, "top": 648, "width": 78, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "02", "textStyle": { "fontSize": 16, "color": "#64748B" } }
+        { "name": "structure-footer", "position": { "left": 1100, "top": 648, "width": 138, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": [{ "runs": [{ "run": "Next: QA →", "link": { "action": "nextSlide", "tooltip": "Continue to visual QA" } }] }], "textStyle": { "fontSize": 16, "color": "#64748B" } }
       ],
       "tables": [
         { "name": "evidence-table", "position": { "left": 42, "top": 220, "width": 1196, "height": 370 }, "rows": 4, "columns": 4, "styleOptions": { "headerRow": true }, "values": [["Gate", "Public API", "Native evidence", "Result"], ["Semantic", "inspect + resolve", "stable objects", "Pass"], ["Package", "inspectPptx", "slides, charts, media", "Pass"], ["Visual", "verify + render", "page PNG baseline", "Required"]] }

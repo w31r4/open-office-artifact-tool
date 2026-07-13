@@ -4,6 +4,30 @@ import { attributes, attrEscape, decodeXml } from "../ooxml/source-reference-xml
 export const PRESENTATION_HYPERLINK_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
 export const PRESENTATION_SLIDE_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide";
 
+const PRESENTATION_RUN_ACTION_URIS = new Map([
+  ["nextSlide", "ppaction://hlinkshowjump?jump=nextslide"],
+  ["previousSlide", "ppaction://hlinkshowjump?jump=previousslide"],
+  ["firstSlide", "ppaction://hlinkshowjump?jump=firstslide"],
+  ["lastSlide", "ppaction://hlinkshowjump?jump=lastslide"],
+  ["endShow", "ppaction://hlinkshowjump?jump=endshow"],
+]);
+
+const PRESENTATION_RUN_ACTION_ALIASES = new Map([
+  ["next", "nextSlide"],
+  ["nextslide", "nextSlide"],
+  ["previous", "previousSlide"],
+  ["prev", "previousSlide"],
+  ["previousslide", "previousSlide"],
+  ["first", "firstSlide"],
+  ["firstslide", "firstSlide"],
+  ["last", "lastSlide"],
+  ["lastslide", "lastSlide"],
+  ["end", "endShow"],
+  ["endshow", "endShow"],
+]);
+
+const PRESENTATION_RUN_ACTIONS_BY_URI = new Map([...PRESENTATION_RUN_ACTION_URIS].map(([action, uri]) => [uri, action]));
+
 function optionalBoolean(value, name) {
   if (value == null) return undefined;
   if (typeof value !== "boolean") throw new TypeError(`Presentation run hyperlink ${name} must be a boolean.`);
@@ -24,15 +48,23 @@ function normalizeExternalUri(value) {
   return uri;
 }
 
+function normalizePresentationRunAction(value) {
+  const raw = String(value || "").trim();
+  const action = PRESENTATION_RUN_ACTION_URIS.has(raw) ? raw : PRESENTATION_RUN_ACTION_ALIASES.get(raw.toLowerCase());
+  if (!action) throw new RangeError(`Unsupported Presentation run hyperlink action ${raw || "(empty)"}.`);
+  return action;
+}
+
 export function normalizePresentationRunLink(value, options = {}) {
   if (value == null || value === false) return undefined;
   const input = typeof value === "string" ? { uri: value } : value;
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError("Presentation run hyperlink must be an absolute URI or object.");
   const uriValue = input.uri ?? input.url ?? input.href;
   const slideIdValue = input.slideId ?? input.targetSlideId ?? input.targetId;
+  const actionValue = input.action ?? input.jump;
   const targetPartValue = options.allowTargetPart ? input.targetPart : undefined;
-  const targets = [uriValue, slideIdValue, targetPartValue].filter((item) => item != null && String(item).trim());
-  if (targets.length !== 1) throw new Error("Presentation run hyperlink requires exactly one of uri or slideId.");
+  const targets = [uriValue, slideIdValue, actionValue, targetPartValue].filter((item) => item != null && String(item).trim());
+  if (targets.length !== 1) throw new Error("Presentation run hyperlink requires exactly one of uri, slideId, or action.");
   const tooltip = input.tooltip == null ? undefined : String(input.tooltip);
   if (tooltip != null && tooltip.length > 1024) throw new RangeError("Presentation run hyperlink tooltip exceeds 1024 characters.");
   const targetFrame = input.targetFrame ?? input.tgtFrame;
@@ -51,6 +83,7 @@ export function normalizePresentationRunLink(value, options = {}) {
     if (!slideId || slideId.length > 512) throw new RangeError("Presentation run hyperlink slideId must contain 1 through 512 characters.");
     return { slideId, ...common };
   }
+  if (actionValue != null) return { action: normalizePresentationRunAction(actionValue), ...common };
   const targetPart = String(targetPartValue || "").trim();
   if (!targetPart || targetPart.length > 1024) throw new RangeError("Imported Presentation run hyperlink target part is invalid.");
   return { targetPart, ...common };
@@ -58,6 +91,7 @@ export function normalizePresentationRunLink(value, options = {}) {
 
 export function presentationRunHyperlinkKey(link, slidePartById = new Map()) {
   if (!link) return undefined;
+  if (link.action) return undefined;
   if (link.uri) return `external:${link.uri}`;
   const targetPart = link.targetPart || slidePartById.get(link.slideId);
   return targetPart ? `slide:${targetPart}` : undefined;
@@ -76,6 +110,7 @@ export function planPresentationRunHyperlinks(options = {}) {
     const relationshipIds = new Map();
     const relationships = [];
     for (const link of owner.references || []) {
+      if (link.action) continue;
       const key = presentationRunHyperlinkKey(link, slidePartById);
       if (!key) throw new Error(`Presentation run hyperlink references missing slide ${link.slideId || "(unknown)"}.`);
       if (relationshipIds.has(key)) continue;
@@ -99,6 +134,19 @@ export function parsePresentationRunLinkXml(runXml = "", context = {}) {
   if (!opening) return undefined;
   const linkAttributes = attributes(opening);
   const relationshipId = relationshipAttribute(linkAttributes, "id");
+  const actionUri = linkAttributes.action == null ? undefined : decodeXml(linkAttributes.action);
+  const action = PRESENTATION_RUN_ACTIONS_BY_URI.get(actionUri);
+  if (action) {
+    if (relationshipId) throw new Error(`Presentation run action ${action} must not reference relationship ${relationshipId}.`);
+    return normalizePresentationRunLink({
+      action,
+      ...(linkAttributes.tooltip == null ? {} : { tooltip: decodeXml(linkAttributes.tooltip) }),
+      ...(linkAttributes.tgtFrame == null ? {} : { targetFrame: decodeXml(linkAttributes.tgtFrame) }),
+      ...(linkAttributes.history == null ? {} : { history: ["1", "true", "on"].includes(String(linkAttributes.history).toLowerCase()) }),
+      ...(linkAttributes.highlightClick == null ? {} : { highlightClick: ["1", "true", "on"].includes(String(linkAttributes.highlightClick).toLowerCase()) }),
+    });
+  }
+  if (actionUri && !relationshipId) throw new RangeError(`Unsupported Presentation run hyperlink action ${actionUri}.`);
   if (!relationshipId) throw new Error("Presentation run hyperlink is missing its relationship ID.");
   const relationship = (context.relationships || []).find((item) => item.id === relationshipId);
   if (!relationship) throw new Error(`Presentation run hyperlink references missing relationship ${relationshipId}.`);
@@ -128,6 +176,12 @@ export function parsePresentationRunLinkXml(runXml = "", context = {}) {
 
 export function presentationRunHyperlinkXml(link, relationshipId) {
   if (!link) return "";
+  if (link.action) {
+    const actionUri = PRESENTATION_RUN_ACTION_URIS.get(link.action);
+    if (!actionUri) throw new RangeError(`Unsupported Presentation run hyperlink action ${link.action}.`);
+    const attributesXml = `${link.tooltip == null ? "" : ` tooltip="${attrEscape(link.tooltip)}"`}${link.targetFrame == null ? "" : ` tgtFrame="${attrEscape(link.targetFrame)}"`}${link.history == null ? "" : ` history="${link.history ? 1 : 0}"`}${link.highlightClick == null ? "" : ` highlightClick="${link.highlightClick ? 1 : 0}"`}`;
+    return `<a:hlinkClick r:id="" action="${attrEscape(actionUri)}"${attributesXml}/>`;
+  }
   if (!relationshipId) throw new Error("Presentation run hyperlink has no relationship in its owning OOXML part.");
   const attributesXml = `${link.slideId || link.targetPart ? ' action="ppaction://hlinksldjump"' : ""}${link.tooltip == null ? "" : ` tooltip="${attrEscape(link.tooltip)}"`}${link.targetFrame == null ? "" : ` tgtFrame="${attrEscape(link.targetFrame)}"`}${link.history == null ? "" : ` history="${link.history ? 1 : 0}"`}${link.highlightClick == null ? "" : ` highlightClick="${link.highlightClick ? 1 : 0}"`}`;
   return `<a:hlinkClick r:id="${attrEscape(relationshipId)}"${attributesXml}/>`;

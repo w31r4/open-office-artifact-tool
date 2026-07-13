@@ -985,7 +985,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
-| `shape.text.set` | api | Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI or internal slide hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip. |
+| `shape.text.set` | api | Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, or relationship-free slide-show action hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
 | `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1327,11 +1327,11 @@ Apply path-validated PPTX part patches, including safe slide/master/layout ID li
 
 #### `shape.text.set`
 
-Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI or internal slide hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip.
+Set plain or structured Presentation text with ordered paragraphs, styled runs, external URI, internal slide, or relationship-free slide-show action hyperlinks, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip.
 
 **Schema parameters:**
 
-- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts one absolute uri or target slideId plus optional tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
+- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. A run link accepts exactly one absolute uri, target slideId, or relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow) plus optional tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
 
 **Schema returns:**
 
@@ -3616,7 +3616,7 @@ Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discre
 - `columnFields` (string[]) — Column field names.
 - `valueFields` (object[]) — Value field and aggregation definitions.
 - `groupFields` (object[]) — Derived group fields with unique name/sourceField. Calendar/time groupBy values years/quarters/months/days/hours/minutes/seconds form OOXML base/par hierarchies and accept bounded groupInterval values; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items.
-- `calculatedFields` (object[]) — Calculated value fields over grouped source-field sums with arithmetic, percent, concatenation, comparisons, string/boolean constants, 12 bounded numeric functions, AND/OR/NOT, lazy IF/IFERROR/IFNA, NA, ISERROR/ISNUMBER/ISTEXT, Excel Compatibility Version 2 surrogate-aware LEN/LEFT/RIGHT/MID, LOWER/UPPER/ASCII-space TRIM, and workbook-date-system-aware DATE/YEAR/MONTH/DAY. Accepts [Field] or quoted field references; cell references, calculated-field chaining, and non-whitelisted functions are rejected.
+- `calculatedFields` (object[]) — Calculated value fields over grouped source-field sums with arithmetic, percent, concatenation, comparisons, string/boolean constants, 12 bounded numeric functions, AND/OR/NOT, lazy IF/IFERROR/IFNA, NA, ISERROR/ISNUMBER/ISTEXT, Excel Compatibility Version 2 surrogate-aware LEN/LEFT/RIGHT/MID, LOWER/UPPER/ASCII-space TRIM, and workbook-date-system-aware DATE/YEAR/MONTH/DAY/EDATE/EOMONTH/DAYS/WEEKDAY. Accepts [Field] or quoted field references; cell references, calculated-field chaining, and non-whitelisted functions are rejected.
 - `filters` (object|object[]) — Axis filters. Use include/exclude items; absolute dateEqual/dateNotEqual/dateOlderThan/dateOlderThanOrEqual/dateNewerThan/dateNewerThanOrEqual/dateBetween/dateNotBetween filters with whole-day ISO dates by default or useWholeDay=false plus ISO date-time/Date thresholds at UTC-second precision; or relative UTC types yesterday/today/tomorrow, last/this/next week/month/quarter/year, and yearToDate. Relative filters remain whole-day, accept optional deterministic asOf, and use Monday-start ISO weeks.
 - `refreshPolicy` (object) — OOXML cache policy: refreshOnLoad, saveData, enableRefresh, invalid, missingItemsLimit, refreshedBy, and refreshedDateIso.
 

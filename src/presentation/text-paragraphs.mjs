@@ -502,7 +502,7 @@ export function presentationParagraphsSvg(paragraphs, frame, defaultStyle = {}, 
     const runsXml = paragraph.runs.map((run) => {
       const style = { ...paragraphStyle, ...(run.style || {}) };
       const width = run.text.length * (style.fontSize || fontSize) * 0.55;
-      const hyperlink = run.link?.uri || run.link?.slideId;
+      const hyperlink = run.link?.uri || run.link?.slideId || (run.link?.action ? `action:${run.link.action}` : undefined);
       const result = `<text x="${x}" y="${y + fontSize}" font-family="${attrEscape(style.fontFamily || "Arial")}" font-size="${style.fontSize || fontSize}" font-weight="${style.bold ? 700 : 400}" font-style="${style.italic ? "italic" : "normal"}"${style.underline || run.link ? ' text-decoration="underline"' : ""} fill="${attrEscape(style.color || (run.link ? "#2563eb" : paragraphStyle.color || "#0f172a"))}"${hyperlink ? ` data-hyperlink="${attrEscape(hyperlink)}"` : ""}>${escape(run.text)}</text>`;
       x += width;
       return result;
