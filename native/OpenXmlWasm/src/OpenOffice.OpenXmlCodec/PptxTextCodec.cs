@@ -18,6 +18,7 @@ internal static class PptxTextCodec
     {
         var body = new PresentationTextBody();
         if (source is null) return body;
+        PptxListStyleCodec.Read(body, source, slideContext);
         var paragraphs = source.Elements<A.Paragraph>().ToArray();
         if (paragraphs.Length > MaxParagraphs)
             throw new CodecException("presentation_text_budget_exceeded", $"Presentation shape exceeds the {MaxParagraphs}-paragraph text budget.");
@@ -52,22 +53,21 @@ internal static class PptxTextCodec
             // choice, so canonical semantic hashes collapse both forms.
             if (run.HyperlinkCase == PresentationTextRun.HyperlinkOneofCase.NoHyperlink) run.ClearHyperlink();
         }
-        foreach (var paragraph in shape.TextBody.Paragraphs)
-        {
-            if (paragraph.HasNoTabStops) paragraph.ClearNoTabStops();
-            if (paragraph.LeftMarginCase == PresentationTextParagraph.LeftMarginOneofCase.NoMarginLeft) paragraph.ClearLeftMargin();
-            if (paragraph.IndentationCase == PresentationTextParagraph.IndentationOneofCase.NoIndent) paragraph.ClearIndentation();
-            if (paragraph.LineSpacingCase == PresentationTextParagraph.LineSpacingOneofCase.NoLineSpacing) paragraph.ClearLineSpacing();
-            if (paragraph.SpaceBeforeCase == PresentationTextParagraph.SpaceBeforeOneofCase.NoSpaceBefore) paragraph.ClearSpaceBefore();
-            if (paragraph.SpaceAfterCase == PresentationTextParagraph.SpaceAfterOneofCase.NoSpaceAfter) paragraph.ClearSpaceAfter();
-            if (paragraph.DefaultRunStyleCase == PresentationTextParagraph.DefaultRunStyleOneofCase.NoDefaultRunProperties) paragraph.ClearDefaultRunStyle();
-        }
+        foreach (var paragraph in shape.TextBody.Paragraphs) NormalizeParagraphEditIntent(paragraph);
+        foreach (var style in shape.TextBody.ListStyles) NormalizeParagraphEditIntent(style);
+        for (var index = shape.TextBody.ListStyles.Count - 1; index >= 0; index--)
+            if (!PptxParagraphPropertiesCodec.HasModeledProperties(shape.TextBody.ListStyles[index])) shape.TextBody.ListStyles.RemoveAt(index);
+        var sortedListStyles = shape.TextBody.ListStyles.OrderBy(style => style.Level).ToArray();
+        shape.TextBody.ListStyles.Clear();
+        shape.TextBody.ListStyles.Add(sortedListStyles);
+        if (shape.TextBody.HasNoListStyles) shape.TextBody.ClearNoListStyles();
         shape.Text = Flatten(body);
     }
 
     internal static bool SupportsEditing(P.TextBody? body)
     {
         if (body is null) return true;
+        if (!PptxListStyleCodec.Supports(body)) return false;
         var paragraphs = body.Elements<A.Paragraph>().ToArray();
         if (paragraphs.Length > MaxParagraphs) return false;
         var inlines = 0;
@@ -90,6 +90,7 @@ internal static class PptxTextCodec
         if (shape.TextBody.Paragraphs.Count > MaxParagraphs)
             throw new CodecException("presentation_text_budget_exceeded", $"Presentation shape exceeds the {MaxParagraphs}-paragraph text budget.");
         var inlineCount = 0;
+        PptxListStyleCodec.Validate(shape.TextBody);
         foreach (var paragraph in shape.TextBody.Paragraphs)
         {
             PptxParagraphPropertiesCodec.Validate(paragraph, requireLevel: false);
@@ -114,6 +115,7 @@ internal static class PptxTextCodec
     {
         var body = new P.TextBody(new A.BodyProperties(), new A.ListStyle());
         var semantic = CanonicalBody(shape);
+        PptxListStyleCodec.Build(body.GetFirstChild<A.ListStyle>()!, semantic, slideContext);
         foreach (var paragraph in semantic.Paragraphs) body.Append(BuildParagraph(paragraph, slideContext));
         if (semantic.Paragraphs.Count == 0) body.Append(new A.Paragraph(new A.EndParagraphRunProperties { Language = "en-US" }));
         return body;
@@ -124,9 +126,10 @@ internal static class PptxTextCodec
         var semantic = CanonicalBody(requested);
         if (shape.TextBody is null)
         {
-            if (semantic.Paragraphs.Count == 0 || (semantic.Paragraphs.Count == 1 && semantic.Paragraphs[0].Runs.Count == 0)) return;
+            if (semantic.ListStyles.Count == 0 && (semantic.Paragraphs.Count == 0 || (semantic.Paragraphs.Count == 1 && semantic.Paragraphs[0].Runs.Count == 0))) return;
             throw new CodecException("presentation_text_topology_changed", "Source-preserving PPTX export cannot add a text body to an imported shape.");
         }
+        PptxListStyleCodec.Apply(shape.TextBody, semantic, slideContext);
         var paragraphs = shape.TextBody.Elements<A.Paragraph>().ToArray();
         if (paragraphs.Length != semantic.Paragraphs.Count)
             throw new CodecException("presentation_text_topology_changed", "Source-preserving PPTX export requires the original paragraph topology.");
@@ -145,6 +148,7 @@ internal static class PptxTextCodec
     internal static void ScrubModeledContent(P.TextBody? body, PptxSlideContext? slideContext = null)
     {
         if (body is null) return;
+        PptxListStyleCodec.Scrub(body, slideContext);
         foreach (var paragraph in body.Elements<A.Paragraph>())
         {
             if (paragraph.ParagraphProperties is { } paragraphProperties)
@@ -182,6 +186,17 @@ internal static class PptxTextCodec
         if (shape.Text.Length > 0) paragraph.Runs.Add(new PresentationTextRun { Text = shape.Text });
         body.Paragraphs.Add(paragraph);
         return body;
+    }
+
+    private static void NormalizeParagraphEditIntent(PresentationTextParagraph paragraph)
+    {
+        if (paragraph.HasNoTabStops) paragraph.ClearNoTabStops();
+        if (paragraph.LeftMarginCase == PresentationTextParagraph.LeftMarginOneofCase.NoMarginLeft) paragraph.ClearLeftMargin();
+        if (paragraph.IndentationCase == PresentationTextParagraph.IndentationOneofCase.NoIndent) paragraph.ClearIndentation();
+        if (paragraph.LineSpacingCase == PresentationTextParagraph.LineSpacingOneofCase.NoLineSpacing) paragraph.ClearLineSpacing();
+        if (paragraph.SpaceBeforeCase == PresentationTextParagraph.SpaceBeforeOneofCase.NoSpaceBefore) paragraph.ClearSpaceBefore();
+        if (paragraph.SpaceAfterCase == PresentationTextParagraph.SpaceAfterOneofCase.NoSpaceAfter) paragraph.ClearSpaceAfter();
+        if (paragraph.DefaultRunStyleCase == PresentationTextParagraph.DefaultRunStyleOneofCase.NoDefaultRunProperties) paragraph.ClearDefaultRunStyle();
     }
 
     private static PresentationTextRun ReadInline(OpenXmlElement source, PptxSlideContext? slideContext)
@@ -467,18 +482,4 @@ internal static class PptxTextCodec
         PptxHyperlinkCodec.Scrub(properties, slideContext);
     }
 
-    private static string AlignmentName(A.TextAlignmentTypeValues value) =>
-        value == A.TextAlignmentTypeValues.Left ? "left" :
-        value == A.TextAlignmentTypeValues.Center ? "center" :
-        value == A.TextAlignmentTypeValues.Right ? "right" :
-        value == A.TextAlignmentTypeValues.Justified ? "justify" : string.Empty;
-
-    private static A.TextAlignmentTypeValues ParseAlignment(string value) => value switch
-    {
-        "left" => A.TextAlignmentTypeValues.Left,
-        "center" => A.TextAlignmentTypeValues.Center,
-        "right" => A.TextAlignmentTypeValues.Right,
-        "justify" => A.TextAlignmentTypeValues.Justified,
-        _ => throw new CodecException("invalid_presentation_text", $"Unsupported Presentation paragraph alignment {value}."),
-    };
 }

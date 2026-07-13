@@ -897,6 +897,135 @@ public sealed class PptxCodecTests
         Assert.Equal("invalid_presentation_text", Assert.Single(invalidDefaultDeletion.Diagnostics).Code);
     }
 
+    [Fact]
+    public void TextBodyListStylesAuthorImportEditDeleteAndPreserveUnknownProperties()
+    {
+        var request = RichTextExportRequest();
+        var body = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody;
+        var first = new PresentationTextParagraph
+        {
+            Level = 0,
+            Alignment = "left",
+            BulletCharacter = "•",
+            BulletColorScheme = "accent1",
+            MarginLeftEmu = 914_400,
+            IndentEmu = -228_600,
+            SpaceAfterPoints = 6,
+            DefaultRunProperties = new PresentationTextStyle { FontSizePoints = 18, ColorScheme = "tx1" },
+        };
+        first.TabStops.Add(new PresentationTabStop { PositionEmu = 1_828_800, Alignment = "decimal" });
+        var picture = new PresentationTextParagraph
+        {
+            Level = 2,
+            PictureBullet = new PresentationPictureBullet(),
+            BulletSizeFollowText = true,
+            MarginLeftEmu = 1_828_800,
+        };
+        body.ListStyles.Add(first);
+        body.ListStyles.Add(picture);
+        var pictureBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        picture.PictureBullet.AssetId = AddPictureAsset(request.Artifact, pictureBytes, "image/png");
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var list = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.ListStyle>().Single();
+            var level1 = list.GetFirstChild<A.Level1ParagraphProperties>()!;
+            Assert.Null(level1.Level);
+            Assert.Equal(914_400, level1.LeftMargin!.Value);
+            Assert.Equal(-228_600, level1.Indent!.Value);
+            Assert.Equal(A.SchemeColorValues.Accent1, level1.GetFirstChild<A.BulletColor>()!.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Equal(1_828_800, level1.GetFirstChild<A.TabStopList>()!.GetFirstChild<A.TabStop>()!.Position!.Value);
+            Assert.Equal(1_800, level1.GetFirstChild<A.DefaultRunProperties>()!.FontSize!.Value);
+            Assert.NotNull(list.GetFirstChild<A.Level3ParagraphProperties>()!.GetFirstChild<A.PictureBullet>());
+            Assert.Single(package.PresentationPart.SlideParts.Single().ImageParts);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var source = AddUnmodeledListStyleProperty(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var shape = imported.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        Assert.Equal(new uint[] { 0, 2 }, shape.TextBody.ListStyles.Select(style => style.Level));
+        first = shape.TextBody.ListStyles.Single(style => style.Level == 0);
+        Assert.Equal("accent1", first.BulletColorScheme);
+        Assert.Equal(18, first.DefaultRunProperties.FontSizePoints);
+        Assert.Equal("tx1", first.DefaultRunProperties.ColorScheme);
+        Assert.Equal(1_828_800, first.TabStops.Single().PositionEmu);
+        Assert.Equal(PresentationTextParagraph.BulletOneofCase.PictureBullet, shape.TextBody.ListStyles.Single(style => style.Level == 2).BulletCase);
+
+        first.BulletCharacter = "◆";
+        first.BulletColorRgb = "16A34A";
+        first.MarginLeftEmu = 1_143_000;
+        shape.TextBody.ListStyles.Remove(shape.TextBody.ListStyles.Single(style => style.Level == 2));
+        shape.TextBody.ListStyles.Insert(0, new PresentationTextParagraph
+        {
+            Level = 8,
+            AutoNumber = new PresentationAutoNumberBullet { Scheme = "romanLcPeriod", StartAt = 4 },
+            BulletFontFollowText = true,
+            LineSpacingMultiplier = 1.25,
+        });
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var list = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.ListStyle>().Single();
+            var level1 = list.GetFirstChild<A.Level1ParagraphProperties>()!;
+            Assert.Equal(381_000, level1.RightMargin!.Value);
+            Assert.Equal(1_143_000, level1.LeftMargin!.Value);
+            Assert.Equal("◆", level1.GetFirstChild<A.CharacterBullet>()!.Char!.Value);
+            Assert.Equal("16A34A", level1.GetFirstChild<A.BulletColor>()!.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value);
+            Assert.Null(list.GetFirstChild<A.Level3ParagraphProperties>());
+            Assert.Equal("romanLcPeriod", list.GetFirstChild<A.Level9ParagraphProperties>()!.GetFirstChild<A.AutoNumberedBullet>()!.Type!.InnerText);
+            Assert.Single(package.PresentationPart.SlideParts.Single().ImageParts);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        shape = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        Assert.Equal(new uint[] { 0, 8 }, shape.TextBody.ListStyles.Select(style => style.Level));
+        shape.TextBody.ListStyles.Clear();
+        shape.TextBody.NoListStyles = true;
+        var deleted = Export(reimported.Artifact);
+        Assert.True(deleted.Ok, Diagnostics(deleted));
+        using (var stream = new MemoryStream(deleted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var list = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.ListStyle>().Single();
+            var retainedUnknown = list.GetFirstChild<A.Level1ParagraphProperties>()!;
+            Assert.Equal(381_000, retainedUnknown.RightMargin!.Value);
+            Assert.Null(retainedUnknown.LeftMargin);
+            Assert.Null(retainedUnknown.GetFirstChild<A.CharacterBullet>());
+            Assert.Null(list.GetFirstChild<A.Level9ParagraphProperties>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var deletedImport = Import(deleted.File.ToByteArray());
+        Assert.Empty(deletedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.ListStyles);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.ListStyles.Add(new PresentationTextParagraph { Alignment = "left" });
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.ListStyles.Add(new PresentationTextParagraph { Level = 0, Alignment = "left" });
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.ListStyles.Add(new PresentationTextParagraph { Level = 0, Alignment = "right" });
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        var invalidRunStyle = new PresentationTextParagraph { Level = 1, Alignment = "left" };
+        invalidRunStyle.Runs.Add(new PresentationTextRun { Text = "not allowed" });
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.ListStyles.Add(invalidRunStyle);
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.NoListStyles = false;
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
@@ -1215,6 +1344,19 @@ public sealed class PptxCodecTests
             var scheme = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First()
                 .ParagraphProperties!.GetFirstChild<A.DefaultRunProperties>()!.GetFirstChild<A.SolidFill>()!.GetFirstChild<A.SchemeColor>()!;
             scheme.Append(new A.Tint { Val = 50_000 });
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnmodeledListStyleProperty(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var list = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.ListStyle>().Single();
+            list.GetFirstChild<A.Level1ParagraphProperties>()!.RightMargin = 381_000;
         }
         return stream.ToArray();
     }

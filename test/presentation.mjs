@@ -1359,7 +1359,7 @@ const paragraphPresentation = Presentation.create({
 const paragraphSlide = paragraphPresentation.slides.add({ layoutId: "layout/lists" });
 const [inheritedListShape] = paragraphPresentation.layouts.getItem("layout/lists").apply(paragraphSlide);
 inheritedListShape.text.set([
-  { runs: ["Inherited one"] },
+  { spaceAfterPercent: 0.25, runs: ["Inherited one"] },
   { level: 1, runs: ["Layout picture"] },
   { level: 2, runs: ["Master picture"] },
   { level: 2, bulletCharacter: "!", runs: ["Direct override"] },
@@ -1486,6 +1486,8 @@ assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[2].bulletImage.
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[3].bulletImage, undefined);
 assert.deepEqual(paragraphLoadedInherited.position, { left: 80, top: 80, width: 720, height: 360 });
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].marginLeft, 28);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].spaceAfter, undefined);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].spaceAfterPercent, 0.25);
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].style.color, "accent1");
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].marginLeft, 52);
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].indent, -20);

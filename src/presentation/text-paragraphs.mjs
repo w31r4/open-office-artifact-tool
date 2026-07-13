@@ -296,6 +296,13 @@ export function inheritPresentationParagraphs(paragraphs = [], inheritedByLevel 
       else if (paragraph.bulletSizePercent != null) merged.bulletSizePercent = paragraph.bulletSizePercent;
       else merged.bulletSizeFollowText = true;
     }
+    for (const [points, percent] of [["spaceBefore", "spaceBeforePercent"], ["spaceAfter", "spaceAfterPercent"]]) {
+      if (paragraph[points] == null && paragraph[percent] == null) continue;
+      delete merged[points];
+      delete merged[percent];
+      if (paragraph[points] != null) merged[points] = paragraph[points];
+      else merged[percent] = paragraph[percent];
+    }
     return normalizeParagraph(merged);
   });
 }
@@ -370,7 +377,10 @@ function parseParagraphProperties(xml = "", inherited = {}) {
   });
   const level = normalizeLevel(attrs.lvl ?? inherited.level ?? 0);
   const alignment = { l: "left", ctr: "center", r: "right", just: "justify" }[attrs.algn] || inherited.alignment;
-  return {
+  const spaceBefore = parseSpacing(xml, "spcBef");
+  const spaceAfter = parseSpacing(xml, "spcAft");
+  const lineSpacing = parseSpacing(xml, "lnSpc");
+  const parsed = {
     ...inherited,
     level,
     ...(alignment ? { alignment } : {}),
@@ -388,21 +398,28 @@ function parseParagraphProperties(xml = "", inherited = {}) {
     ...(bulletSizePercent != null ? { bulletSizePercent: Number(bulletSizePercent) / 100000, bulletSize: undefined, bulletSizeFollowText: undefined } : {}),
     ...(bulletSizeFollowText ? { bulletSizeFollowText: true, bulletSize: undefined, bulletSizePercent: undefined } : {}),
     ...(tabStops.length ? { tabStops } : {}),
-    ...(parseSpacing(xml, "spcBef")?.points != null ? { spaceBefore: parseSpacing(xml, "spcBef").points } : {}),
-    ...(parseSpacing(xml, "spcBef")?.percent != null ? { spaceBeforePercent: parseSpacing(xml, "spcBef").percent } : {}),
-    ...(parseSpacing(xml, "spcAft")?.points != null ? { spaceAfter: parseSpacing(xml, "spcAft").points } : {}),
-    ...(parseSpacing(xml, "spcAft")?.percent != null ? { spaceAfterPercent: parseSpacing(xml, "spcAft").percent } : {}),
-    ...(parseSpacing(xml, "lnSpc")?.points != null ? { lineSpacing: parseSpacing(xml, "lnSpc").points } : {}),
-    ...(parseSpacing(xml, "lnSpc")?.percent != null ? { lineSpacing: parseSpacing(xml, "lnSpc").percent } : {}),
+    ...(lineSpacing?.points != null ? { lineSpacing: lineSpacing.points } : {}),
+    ...(lineSpacing?.percent != null ? { lineSpacing: lineSpacing.percent } : {}),
     style: { ...(inherited.style || {}), ...parseRunStyle(localElementBlock(xml, "defRPr") || xml) },
   };
+  for (const [spacing, points, percent] of [[spaceBefore, "spaceBefore", "spaceBeforePercent"], [spaceAfter, "spaceAfter", "spaceAfterPercent"]]) {
+    if (!spacing) continue;
+    delete parsed[points];
+    delete parsed[percent];
+    if (spacing.points != null) parsed[points] = spacing.points;
+    else parsed[percent] = spacing.percent;
+  }
+  return parsed;
 }
 
 function parseLevelStyles(xml = "") {
   const styles = {};
   for (let level = 0; level < 9; level += 1) {
     const block = localElement(xml, `lvl${level + 1}pPr`);
-    if (block) styles[level] = parseParagraphProperties(block, { level });
+    if (!block) continue;
+    const parsed = parseParagraphProperties(block, { level });
+    const modeled = Object.keys(parsed).some((key) => key !== "level" && key !== "runs" && key !== "style") || Object.keys(parsed.style || {}).length > 0;
+    if (modeled) styles[level] = parsed;
   }
   return styles;
 }

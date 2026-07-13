@@ -16,9 +16,13 @@
       "shapes": [
         {
           "name": "wasm-title",
-          "position": { "left": 48, "top": 20, "width": 1184, "height": 190 },
+          "position": { "left": 48, "top": 20, "width": 1184, "height": 200 },
           "fill": "#FFFFFF",
           "line": { "fill": "#334155", "width": 1 },
+          "paragraphStyles": {
+            "0": { "bulletCharacter": "▪", "bulletColor": "accent3", "marginLeft": 28, "indent": -14, "spaceAfter": 4, "style": { "fontSize": 18, "color": "tx1" } },
+            "2": { "autoNumber": { "type": "romanLcPeriod", "startAt": 2 }, "bulletFontFollowText": true, "lineSpacing": 1.15, "style": { "fontSize": 17, "color": "accent4" } }
+          },
           "text": [
             {
               "tabStops": [{ "position": 760, "alignment": "left" }],
@@ -72,6 +76,10 @@
     "edit": {
       "slideIndex": 0,
       "shapeName": "wasm-title",
+      "paragraphStyles": {
+        "0": { "bulletCharacter": "→", "bulletColor": "accent6", "marginLeft": 36, "indent": -18, "spaceAfterPercent": 0.2, "style": { "fontSize": 19, "bold": true, "color": "#7C3AED" } },
+        "8": { "autoNumber": { "type": "arabicPeriod", "startAt": 9 }, "bulletSizeFollowText": true, "lineSpacing": 16, "style": { "fontSize": 16, "color": "tx2" } }
+      },
       "text": [
         {
           "tabStops": [{ "position": 780, "alignment": "right" }],

@@ -245,8 +245,9 @@ message PresentationShape {
 // picture bullets, tab stops, direct left-margin/hanging-indent layout,
 // direct paragraph spacing/default-run styles, and bounded click links.
 // Transformed or non-sRGB/non-theme marker colors, custom-show/mouse-over
-// links, field paragraph properties, body properties, and list styles stay
-// source-bound.
+// links, field paragraph properties, body properties, and master/layout text
+// styles stay source-bound. Shape-local list levels use the bounded fields
+// below.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
   // Text-body list defaults keyed by each paragraph message's required level

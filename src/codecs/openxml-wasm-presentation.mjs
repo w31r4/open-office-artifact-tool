@@ -322,7 +322,7 @@ function wireParagraphSpacing(paragraph, original, shapeId) {
   };
 }
 
-function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
+function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog, { forceLevel = false } = {}) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const paragraphStyleUnsupported = unsupportedStyleFields(paragraph.style);
@@ -335,7 +335,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph alignment ${paragraph.alignment}.`, [], { code: "invalid_presentation_text" });
   }
   const originalLevel = original?.level;
-  const includeLevel = level !== 0 || originalLevel !== undefined;
+  const includeLevel = forceLevel || level !== 0 || originalLevel !== undefined;
   const bullet = wireBullet(paragraph, original, shapeId, assetCatalog);
   const bulletFont = wireBulletFont(paragraph, original, shapeId);
   const bulletColor = wireBulletColor(paragraph, original, shapeId);
@@ -367,17 +367,27 @@ function modelRunCase(run) {
 }
 
 function presentationTextBody(shape, original, assetCatalog) {
-  if (Object.keys(shape.text?.inheritedParagraphStyles || {}).length) {
-    throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} uses inherited paragraph styles outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
-  }
   const textStyleUnsupported = unsupportedStyleFields(shape.text?.style);
   if (textStyleUnsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} uses unsupported text-frame style fields: ${textStyleUnsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const paragraphs = shape.text?.paragraphs || [];
   if (original?.textBody && (original.textBody.paragraphs.length !== paragraphs.length || original.textBody.paragraphs.some((paragraph, index) => paragraph.runs.length !== (paragraphs[index]?.runs || []).length || paragraph.runs.some((run, runIndex) => run.content?.case !== modelRunCase(paragraphs[index].runs[runIndex]))))) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} changed its source-bound paragraph/inline topology.`, [], { code: "presentation_text_topology_changed" });
   }
+  const originalListStyles = new Map((original?.textBody?.listStyles || []).map((style) => [Number(style.level), style]));
+  const inheritedParagraphStyles = Object.entries(shape.text?.inheritedParagraphStyles || {}).sort(([left], [right]) => Number(left) - Number(right));
+  const listStyles = inheritedParagraphStyles.map(([level, style]) => wireParagraph(
+    { ...style, level: Number(level), runs: [] },
+    {},
+    originalListStyles.get(Number(level)),
+    shape.id,
+    assetCatalog,
+    { forceLevel: true },
+  ));
+  const noListStyles = listStyles.length === 0 && (originalListStyles.size > 0 || original?.textBody?.noListStyles === true);
   return {
     paragraphs: paragraphs.map((paragraph, index) => wireParagraph(paragraph, shape.text?.style || {}, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog)),
+    ...(listStyles.length ? { listStyles } : {}),
+    ...(noListStyles ? { noListStyles: true } : {}),
   };
 }
 
@@ -606,10 +616,9 @@ function modelDefaultRunStyle(paragraph) {
   };
 }
 
-function modelText(shape, assetCatalog) {
-  if (!shape.textBody) return shape.text;
-  return shape.textBody.paragraphs.map((paragraph) => ({
-    runs: paragraph.runs.map(modelRun),
+function modelParagraph(paragraph, assetCatalog, { includeRuns = true } = {}) {
+  return {
+    ...(includeRuns ? { runs: paragraph.runs.map(modelRun) } : {}),
     level: paragraph.level ?? 0,
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     ...modelBullet(paragraph.bullet, assetCatalog),
@@ -618,7 +627,17 @@ function modelText(shape, assetCatalog) {
     ...modelParagraphSpacing(paragraph),
     ...(paragraph.tabStops?.length ? { tabStops: paragraph.tabStops.map((tab) => ({ position: Number(tab.positionEmu) / EMU_PER_PIXEL, alignment: tab.alignment })) } : {}),
     style: modelDefaultRunStyle(paragraph),
-  }));
+  };
+}
+
+function modelText(shape, assetCatalog) {
+  if (!shape.textBody) return shape.text;
+  return shape.textBody.paragraphs.map((paragraph) => modelParagraph(paragraph, assetCatalog));
+}
+
+function modelListStyles(shape, assetCatalog) {
+  if (!shape.textBody) return {};
+  return Object.fromEntries(shape.textBody.listStyles.map((style) => [style.level, modelParagraph(style, assetCatalog, { includeRuns: false })]));
 }
 
 export function presentationFromEnvelope(envelope) {
@@ -654,6 +673,7 @@ export function presentationFromEnvelope(envelope) {
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
           text: modelText(shape, assetCatalog),
         });
+        model.text.inheritedParagraphStyles = modelListStyles(shape, assetCatalog);
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
         model = slide.nativeObjects.add({

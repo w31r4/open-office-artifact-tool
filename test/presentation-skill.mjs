@@ -243,6 +243,15 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[2].runs[0].link, undefined);
   assert.match(wasmTitle?.text.paragraphs[3].bulletImage.dataUrl, /^data:image\/png;base64,/);
   assert.equal(wasmTitle?.text.paragraphs[3].bulletSizeFollowText, true);
+  assert.deepEqual(Object.keys(wasmTitle?.text.inheritedParagraphStyles), ["0", "8"]);
+  assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletCharacter, "→");
+  assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletColor, "accent6");
+  assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].marginLeft, 36);
+  assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].indent, -18);
+  assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].spaceAfterPercent, 0.2);
+  assert.deepEqual(wasmTitle?.text.inheritedParagraphStyles[0].style, { bold: true, fontSize: 19, color: "#7c3aed" });
+  assert.deepEqual(wasmTitle?.text.inheritedParagraphStyles[8].autoNumber, { type: "arabicPeriod", startAt: 9 });
+  assert.equal(wasmTitle?.text.inheritedParagraphStyles[8].lineSpacing, 16);
   assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
   assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
   assert.match(wasmSlide.speakerNotes.text, /parts, and relationships must survive/);
@@ -260,6 +269,9 @@ try {
   assert.match(wasmSlideXml, /<a:spcBef><a:spcPct val="25000"\s*\/><\/a:spcBef>/);
   assert.match(wasmSlideXml, /<a:spcAft><a:spcPts val="450"\s*\/><\/a:spcAft>/);
   assert.match(wasmSlideXml, /<a:defRPr[^>]*sz="1500"[^>]*b="1">[\s\S]*?<a:srgbClr val="0EA5E9"\s*\/>[\s\S]*?<\/a:defRPr>/);
+  assert.match(wasmSlideXml, /<a:lstStyle[^>]*>[\s\S]*?<a:lvl1pPr[^>]*marL="342900"[^>]*indent="-171450">[\s\S]*?<a:spcAft><a:spcPct val="20000"\s*\/><\/a:spcAft>[\s\S]*?<a:schemeClr val="accent6"\s*\/>[\s\S]*?<a:buChar char="→"\s*\/>[\s\S]*?<a:defRPr[^>]*sz="1425"[^>]*b="1">[\s\S]*?<a:srgbClr val="7C3AED"\s*\/>[\s\S]*?<\/a:defRPr>[\s\S]*?<\/a:lvl1pPr>/);
+  assert.match(wasmSlideXml, /<a:lvl3pPr><a:defRPr lang="en-US"\s*\/><\/a:lvl3pPr>/);
+  assert.match(wasmSlideXml, /<a:lvl9pPr>[\s\S]*?<a:lnSpc><a:spcPts val="1200"\s*\/><\/a:lnSpc>[\s\S]*?<a:buSzTx\s*\/>[\s\S]*?<a:buAutoNum type="arabicPeriod" startAt="9"\s*\/>[\s\S]*?<a:defRPr[^>]*sz="1200">[\s\S]*?<a:schemeClr val="tx2"\s*\/>[\s\S]*?<\/a:defRPr>[\s\S]*?<\/a:lvl9pPr>/);
   assert.match(wasmSlideXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
   assert.match(wasmSlideXml, /<a:br><a:rPr[^>]*i="1"/);
   assert.match(wasmSlideXml, /<a:buBlip><a:blip r:embed="[^"]+"[^>]*\/><\/a:buBlip>/);

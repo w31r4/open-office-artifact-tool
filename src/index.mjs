@@ -9311,8 +9311,9 @@ async function parsePptxShape(owner, part, context = {}) {
     const geometry = /<(?:[A-Za-z_][\w.-]*:)?prstGeom[^>]*prst="([^"]+)"/.exec(spPr)?.[1] || "rect";
     const rPr = /<(?:[A-Za-z_][\w.-]*:)?rPr\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?rPr>/.exec(part);
     const localTextStyle = parsePresentationPlaceholderStyleXml(rPr?.[0] || "");
-    const paragraphStyles = inherited?.paragraphStyles || {};
     const relationshipContext = presentationPictureBulletImportContext(context);
+    const localParagraphStyles = await resolvePresentationPictureBulletStyles(parsePresentationListStyleXml(part), relationshipContext);
+    const paragraphStyles = mergePresentationParagraphStyles(inherited?.paragraphStyles || {}, localParagraphStyles);
     const paragraphs = await resolvePresentationPictureBulletParagraphs(parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles, relationshipContext }), relationshipContext);
     const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), text: paragraphs, placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
     applyPresentationElementIdentity(shape, part, "spMk");

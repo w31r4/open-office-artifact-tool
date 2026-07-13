@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenOffice.OpenXmlWasm.dll",
   "resources": {
-    "hash": "sha256-8HdDJfDx+lGBo8UjkvHkhvylKmQbWn+Gptg6oChz0Dc=",
+    "hash": "sha256-ehVZYAc2y7xs90IaWXQ8Qlrz5v8u0LbpKMnJBP2uS1Q=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -15,9 +15,9 @@
     "assembly": {
       "DocumentFormat.OpenXml.wasm": "sha256-iBAYBOnkiFiEyl1BPY19ne5tG6RbsLzMwcV1BNy/NqA=",
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-zJHDXbKqg6KwWmMnVoL2bfjng+JVBUhoFpJsMdH71rY=",
-      "Google.Protobuf.wasm": "sha256-O4JHlKSmVhfdlcQSeVT4EmyOj+xRnv1zulhDTp6lspE=",
-      "OpenOffice.OpenXmlCodec.wasm": "sha256-Mqd+4tinpBXgFypuWt+ag0Hlh1pr6ikr2TUjDYIJ394=",
-      "OpenOffice.OpenXmlWasm.wasm": "sha256-4Np7Sqz1WJoXUihpxw/71zf1tyA7cUovjYNFYrFi/UE=",
+      "Google.Protobuf.wasm": "sha256-jMjzsNhWZuPVAnpbLTCmyQwYd2ALJ6w4w+KuGD6tX5I=",
+      "OpenOffice.OpenXmlCodec.wasm": "sha256-muJQmbRl1RYgDk33eJnmtzdlg8vGciJtoJLzWgq0yVA=",
+      "OpenOffice.OpenXmlWasm.wasm": "sha256-nAZLk7slexkrqv490XPZDFQXi4RBKNBz50212Nf0GiE=",
       "System.Collections.Concurrent.wasm": "sha256-6kf5rzqw+ItWJiPj/r8v630e6jn8QqK0hzyymK14c70=",
       "System.Collections.wasm": "sha256-FyjJZ8uuBYrbbQ/cU6Gu3yMVy/B9bsgoV/sc5PIdyXo=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
