@@ -969,7 +969,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
-| `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
 | `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
@@ -981,8 +981,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.theme` | api | Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
-| `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry. |
-| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, and images. |
+| `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts. |
+| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
@@ -1065,7 +1065,7 @@ Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or targe
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -1083,7 +1083,7 @@ Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts,
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/comment/notes kinds.
+- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes kinds.
 - `search` (string) — Case-insensitive record filter.
 - `target` (string) — Stable target ID/anchor.
 - `before` (number) — Context records before matches.
@@ -1256,7 +1256,7 @@ Return QA issues for layout validation, missing master/layout references, placeh
 
 #### `PresentationFile.exportPptx`
 
-Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, and comment author registry.
+Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts.
 
 **Schema parameters:**
 
@@ -1268,7 +1268,7 @@ Serialize native PPTX with every master/layout ownership chain, per-master Theme
 
 #### `PresentationFile.importPptx`
 
-Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, and images.
+Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs.
 
 **Schema parameters:**
 

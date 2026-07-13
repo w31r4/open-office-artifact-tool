@@ -136,6 +136,7 @@ export async function parsePresentationGroupTree(owner, xml, context, adapters) 
     else if (child.localName === "grpSp") await parsePresentationGroupTree(group, child.xml, context, adapters);
     else if (child.localName === "graphicFrame") await adapters.parseGraphicFrame(group, child.xml, context);
     else if (child.localName === "pic") await adapters.parsePicture(group, child.xml, context);
+    else if (child.localName === "contentPart") await adapters.parseNativeObject(group, child.xml, context, "contentPart");
   }
   return group;
 }
@@ -159,12 +160,14 @@ export function createPresentationGroupShapeClass(adapters) {
       this.tables = adapters.createTableCollection(slide, this);
       this.charts = adapters.createChartCollection(slide, this);
       this.images = adapters.createImageCollection(slide, this);
+      this.nativeObjects = adapters.createNativeObjectCollection(slide, this);
       for (const child of config.children || []) {
         if (child?.kind === "groupShape" || child?.kind === "group") this.groups.add(child);
         else if (child?.kind === "connector") this.connectors.add(child);
         else if (child?.kind === "table") this.tables.add(child);
         else if (child?.kind === "chart") this.charts.add(child.chartType || child.type || "bar", child);
         else if (child?.kind === "image") this.images.add(child);
+        else if (child?.kind === "nativeObject") this.nativeObjects.add(child);
         else this.shapes.add(child);
       }
       for (const shape of config.shapes || []) this.shapes.add(shape);
@@ -173,6 +176,7 @@ export function createPresentationGroupShapeClass(adapters) {
       for (const table of config.tables || []) this.tables.add(table);
       for (const chart of config.charts || []) this.charts.add(chart.chartType || chart.type || "bar", chart);
       for (const image of config.images || []) this.images.add(image);
+      for (const object of config.nativeObjects || []) this.nativeObjects.add(object);
     }
 
     _rememberChild(element) { this.children.push(element); }
@@ -221,7 +225,7 @@ export function createPresentationGroupShapeClass(adapters) {
         else if ((adapters.isTable(child) && kinds.has("table")) || (adapters.isChart(child) && kinds.has("chart")) || (adapters.isImage(child) && kinds.has("image"))) {
           const frame = this.absoluteChildFrame(child);
           records.push({ ...child.inspectRecord(), parentGroupId: this.id, bbox: [frame.left, frame.top, frame.width, frame.height] });
-        }
+        } else if (adapters.isNativeObject(child) && (kinds.has("nativeObject") || kinds.has("native") || kinds.has(child.nativeKind))) records.push({ ...child.inspectRecord(), parentGroupId: this.id });
       }
       return records;
     }

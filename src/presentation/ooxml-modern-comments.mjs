@@ -51,8 +51,8 @@ export function deterministicPresentationGuid(seed) {
   return `{${words.slice(0, 8)}-${words.slice(8, 12)}-4${words.slice(13, 16)}-8${words.slice(17, 20)}-${words.slice(20, 32)}}`;
 }
 
-export function planPresentationSlideElementIdentities(slide, entries = []) {
-  const used = new Set();
+export function planPresentationSlideElementIdentities(slide, entries = [], options = {}) {
+  const used = new Set(options.reservedNativeIds || []);
   let nextId = 2;
   for (const { element } of entries) {
     const candidate = Number(element.nativeId);
