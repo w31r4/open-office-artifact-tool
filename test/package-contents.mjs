@@ -27,6 +27,7 @@ for (const required of [
   "src/ooxml/docx-numbering.mjs",
   "src/ooxml/docx-sections.mjs",
   "src/pdf/table-grid.mjs",
+  "src/pdf/reading-order.mjs",
   "src/index.mjs",
   "src/ooxml/docx-source-references.mjs",
   "src/ooxml/docx-settings.mjs",

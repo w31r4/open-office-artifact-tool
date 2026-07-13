@@ -51,6 +51,24 @@ const chart = pdf.addChart({
   bbox: [72, 420, 360, 150],
 });
 const positionedText = pdf.addText("Positioned KPI", { bbox: [72, 150, 120, 14], fontSize: 13, color: "#7c3aed", fontName: "Helvetica" });
+const firstPage = pdf.pages[0];
+const firstPageReadingOrder = [
+  `${firstPage.id}/text`,
+  image,
+  positionedText,
+  firstPage.tables[0],
+  inlineTable,
+  chart,
+];
+assert.equal(firstPage.setReadingOrder(firstPageReadingOrder), firstPage);
+assert.deepEqual(firstPage.readingOrder, firstPageReadingOrder.map((item) => typeof item === "string" ? item : item.id));
+const readingOrderInspect = pdf.inspect({ kind: "readingOrder", maxChars: 12000 });
+const readingOrderRecords = readingOrderInspect.ndjson.trim().split("\n").map(JSON.parse);
+assert.deepEqual(readingOrderRecords.map((record) => record.targetId), firstPage.readingOrder.concat(`${pdf.pages[1].id}/text`));
+assert.ok(readingOrderRecords.slice(0, firstPage.readingOrder.length).every((record) => record.explicit && record.valid));
+assert.equal(pdf.resolve(readingOrderRecords[0].id).targetId, `${firstPage.id}/text`);
+assert.throws(() => firstPage.setReadingOrder("not-an-array"), /readingOrder must be an array/);
+firstPage.setReadingOrder(firstPageReadingOrder);
 assert.match(pdf.inspect({ kind: "page,text,table,image,chart,textItem", maxChars: 12000 }).ndjson, /Positioned KPI/);
 assert.match(pdf.inspect({ kind: "page,text,table,image,chart,textItem", maxChars: 12000 }).ndjson, /pipeline-chart/);
 assert.match(pdf.inspect({ kind: "page,text,table,image,chart,textItem", maxChars: 12000 }).ndjson, /metrics-table/);
@@ -140,6 +158,7 @@ assert.equal(layout.pages[0].tables.length, 2);
 assert.ok(layout.pages[0].textItems.some((item) => item.text === "Positioned KPI" && item.color === "#7c3aed"));
 assert.ok(layout.pages[0].images.some((item) => item.alt === "Report logo"));
 assert.ok(layout.pages[0].charts.some((item) => item.title === "Pipeline by quarter"));
+assert.deepEqual(layout.pages[0].readingOrder.map((item) => item.targetId), firstPage.readingOrder);
 const imageLayoutBlob = await pdf.render({ format: "layout", target: image.id });
 assert.equal(imageLayoutBlob.metadata.target, image.id);
 const imageLayout = JSON.parse(await imageLayoutBlob.text());
@@ -187,6 +206,8 @@ assert.equal(fileInspect.summary.structureRoles.Table, 2);
 assert.equal(fileInspect.summary.structureRoles.TR, 6);
 assert.equal(fileInspect.summary.structureRoles.TH, 6);
 assert.equal(fileInspect.summary.structureRoles.TD, 7);
+assert.deepEqual(fileInspect.summary.readingOrderIds, firstPage.readingOrder.concat(`${pdf.pages[1].id}/text`));
+assert.equal(fileInspect.summary.readingOrderItems, firstPage.readingOrder.length + 1);
 assert.equal(fileInspect.summary.structureElements, fileInspect.summary.markedContentItems + fileInspect.summary.tableStructures + fileInspect.summary.tableRows);
 assert.match(fileInspect.ndjson, /"type":"Page"/);
 const taggedText = await blob.text();
@@ -201,6 +222,31 @@ assert.match(taggedText, /\/RowSpan 2/);
 assert.match(taggedText, /\/ID \(inline-table-id\/cell\/1\/3\)/);
 assert.match(taggedText, /\/Headers \[\(inline-table-id\/cell\/1\/3\)\]/);
 assert.match(taggedText, /\/Alt \(Report logo\)/);
+const taggedContentStream = [...taggedText.matchAll(/stream\n([\s\S]*?)endstream/g)].map((match) => match[1]).find((content) => /\/H1 << \/MCID/.test(content));
+assert.ok(taggedContentStream.indexOf("/H1") < taggedContentStream.indexOf(" Do"), "explicit logical order must not change visual paint order");
+
+const readingOrderRoundtrip = await PdfFile.importPdf(blob);
+assert.deepEqual(readingOrderRoundtrip.pages[0].readingOrder, firstPage.readingOrder);
+assert.deepEqual(readingOrderRoundtrip.layoutJson({ page: 1 }).pages[0].readingOrder.map((item) => item.targetId), firstPage.readingOrder);
+
+const invalidReadingOrder = PdfArtifact.create({
+  pages: [{
+    id: "invalid-reading-page",
+    text: "Invalid order",
+    tables: [{ id: "missing-reading-table", values: [["A"]] }],
+    readingOrder: ["invalid-reading-page/text", "invalid-reading-page/text", "unknown-target"],
+  }],
+});
+const invalidReadingReport = invalidReadingOrder.verify();
+assert.equal(invalidReadingReport.ok, false);
+assert.match(invalidReadingReport.ndjson, /readingOrderDuplicate/);
+assert.match(invalidReadingReport.ndjson, /readingOrderUnknown/);
+assert.match(invalidReadingReport.ndjson, /readingOrderMissing/);
+await assert.rejects(() => PdfFile.exportPdf(invalidReadingOrder), /Invalid PDF reading order.*readingOrderDuplicate/);
+
+const unicodeReadingOrderId = PdfArtifact.create({ pages: [{ id: "页面(1)", text: "ASCII body", readingOrder: ["页面(1)/text"] }] });
+const unicodeReadingOrderInspect = await PdfFile.inspectPdf(await PdfFile.exportPdf(unicodeReadingOrderId));
+assert.deepEqual(unicodeReadingOrderInspect.summary.readingOrderIds, ["页面(1)/text"]);
 
 const unicodePdf = PdfArtifact.create({ metadata: { title: "Unicode résumé", language: "el-GR" }, text: "Unicode résumé\nПривет κόσμος café\nA A\u00a0A" });
 await assert.rejects(() => PdfFile.exportPdf(unicodePdf), /provide PdfFile\.exportPdf.*font/);

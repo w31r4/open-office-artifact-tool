@@ -20,22 +20,24 @@ Use this project skill for standalone `.pdf` artifact work. It is the clean-room
 ## Authoring workflow
 
 1. Create a `PdfArtifact` or import an existing PDF with `PdfFile.importPdf` and an explicit parser when arbitrary-PDF extraction is required.
-2. Inspect pages, positioned text, regions, tables, table cells, images, and charts before editing.
+2. Inspect pages, positioned text, reading-order entries, regions, tables, table cells, images, and charts before editing.
 3. Use `pdf.addFlowText(...)` for long prose so wrapping, margins, long tokens, and page creation remain deterministic; use explicit bounding boxes for intentionally positioned labels, tables, images, and charts. For complex tables, declare zero-based `cells` overrides with spans, TH/TD roles, scopes, and header IDs, then resolve/edit cells through `table.getCell(row, column)`.
-4. Run `pdf.verify()`; fix page bounds, malformed data, empty objects, Unicode dashes, invalid/overlapping spans, dangling header associations, and non-numeric chart issues.
-5. Export with `PdfFile.exportPdf()` (tagged by default) and import the exported file again.
-6. Inspect the binary structure with `PdfFile.inspectPdf()`; require tagged status, language, structure roles, stable table-cell IDs, span/header-association counts, and cell-level marked content for agent-authored delivery PDFs. Modeled tables must have matching `Table` → `TR` → `TH`/`TD` hierarchy and Table-owner `RowSpan`/`ColSpan`/`Scope`/`Headers` attributes where modeled.
-7. Parse the real PDF through PDF.js and check extracted text, geometry, tables, embedded-image data URLs/placement boxes, and page count.
-8. Render every modeled page with Playwright and every real PDF page with Poppler.
-9. Inspect every page PNG at full size. When a baseline is approved, compare both modeled and native PNG pixels on later runs.
+4. After all semantic page items are final, call `page.setReadingOrder(...)` with every non-positioned body-text, positioned-text, table, image, and chart target exactly once. Use `${page.id}/text` for body text. Adding content afterward requires updating the explicit order.
+5. Run `pdf.verify()`; fix incomplete/duplicate/unknown reading-order targets, page bounds, malformed data, empty objects, Unicode dashes, invalid/overlapping spans, dangling header associations, and non-numeric chart issues.
+6. Export with `PdfFile.exportPdf()` (tagged by default) and import the exported file again.
+7. Inspect the binary structure with `PdfFile.inspectPdf()`; require tagged status, language, top-level reading-order IDs, structure roles, stable table-cell IDs, span/header-association counts, and cell-level marked content for agent-authored delivery PDFs. Modeled tables must have matching `Table` → `TR` → `TH`/`TD` hierarchy and Table-owner `RowSpan`/`ColSpan`/`Scope`/`Headers` attributes where modeled.
+8. Parse the real PDF through PDF.js and check extracted text, geometry, tables, embedded-image data URLs/placement boxes, and page count.
+9. Render every modeled page with Playwright and every real PDF page with Poppler.
+10. Inspect every page PNG at full size. When a baseline is approved, compare both modeled and native PNG pixels on later runs.
 
 ```js
 import { PdfArtifact, PdfFile } from "open-office-artifact-tool";
 
 const pdf = PdfArtifact.create({
   pages: [{
+    id: "qa-page-1",
     text: "QA report\nSemantic and visual evidence agree",
-    textItems: [{ text: "Agent-ready", bbox: [72, 142, 180, 20], fontSize: 18, color: "#16a34a", bold: true }],
+    textItems: [{ id: "qa-heading", text: "Agent-ready", bbox: [72, 142, 180, 20], fontSize: 18, color: "#16a34a", bold: true }],
     tables: [{
       name: "qa-gates",
       id: "qa-gates-table",
@@ -50,6 +52,7 @@ const pdf = PdfArtifact.create({
       ],
     }],
     charts: [{
+      id: "qa-chart",
       name: "evidence-chart",
       title: "Evidence by gate",
       chartType: "bar",
@@ -57,6 +60,7 @@ const pdf = PdfArtifact.create({
       categories: ["Model", "Native"],
       series: [{ name: "Checks", values: [4, 6], color: "#3D8DFF" }],
     }],
+    readingOrder: ["qa-page-1/text", "qa-heading", "qa-gates-table", "qa-chart"],
   }],
 });
 
@@ -120,8 +124,8 @@ node skills/pdf/scripts/run-fixture.mjs \
 
 ## QA gates
 
-- `PdfFile.inspectPdf(...)` checks the PDF header/version, page/object counts, embedded clean-room model, EOF marker, tagged status, language, structure-element/role counts, stable table-cell IDs, row/column spans, header associations, and MCID count.
-- Agent-authored fixture PDFs require `--require-tagged true`. The verifier derives expected table, row, normalized origin-cell, span, and header-association counts from the modeled artifact and rejects flattened or missing table semantics. This is stronger structural evidence, but not proof of full PDF/UA conformance; review reading order, alt text, Unicode fonts, contrast, and the output of a formal validator separately.
+- `PdfFile.inspectPdf(...)` checks the PDF header/version, page/object counts, embedded clean-room model, EOF marker, tagged status, language, top-level structure reading-order IDs, structure-element/role counts, stable table-cell IDs, row/column spans, header associations, and MCID count.
+- Agent-authored fixture PDFs require `--require-tagged true`. The verifier compares modeled and real-file reading-order IDs, derives expected table, row, normalized origin-cell, span, and header-association counts, and rejects reordered/flattened/missing structure semantics. This is stronger structural evidence, but not proof of full PDF/UA conformance; review alt text, Unicode fonts, contrast, and the output of a formal validator separately.
 - `pdf.inspect(...)`, `pdf.extractText()`, `pdf.extractTables()`, and `pdf.verify()` prove modeled agent-facing semantics.
 - PDF.js independently parses the real exported bytes into page text geometry, regions, inferred tables, and bounded PNG image data when XObject pixels are available; placeholders must be reported when masks or unsupported color spaces prevent extraction.
 - Per-page Playwright PNGs catch modeled preview regressions.

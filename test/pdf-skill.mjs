@@ -20,6 +20,10 @@ try {
   assert.equal(first.qa.fileInspect.summary.hasEof, true);
   assert.equal(first.qa.fileInspect.summary.tagged, true);
   assert.equal(first.qa.fileInspect.summary.language, "en-US");
+  assert.deepEqual(first.qa.pdf.pages[0].readingOrder, ["qa-report-page-1/text", "verified-mark-image", "qa-agent-ready-heading", "qa-gates-table", "evidence-chart", "qa-page-1-footer"]);
+  const modeledReadingOrder = first.qa.pdf.pages.flatMap((page, pageIndex) => page.readingOrderRecords(pageIndex).map((record) => record.targetId));
+  assert.deepEqual(first.qa.fileInspect.summary.readingOrderIds, modeledReadingOrder);
+  assert.equal(first.qa.fileInspect.summary.readingOrderItems, modeledReadingOrder.length);
   assert.ok(first.qa.fileInspect.summary.structureElements >= 10);
   assert.equal(first.qa.fileInspect.summary.tableStructures, 2);
   assert.equal(first.qa.fileInspect.summary.tableRows, 9);
@@ -30,6 +34,7 @@ try {
   assert.equal(first.qa.fileInspect.summary.columnSpans, 1);
   assert.equal(first.qa.fileInspect.summary.headerAssociations, 18);
   assert.equal(first.qa.summary.accessibility.tableStructurePassed, true);
+  assert.equal(first.qa.summary.accessibility.readingOrderPassed, true);
   assert.equal(first.qa.fileInspect.summary.structureElements, first.qa.fileInspect.summary.markedContentItems + first.qa.fileInspect.summary.tableStructures + first.qa.fileInspect.summary.tableRows);
   const untaggedPath = path.join(root, "untagged.pdf");
   await (await PdfFile.exportPdf(first.qa.pdf, { tagged: false })).save(untaggedPath);
@@ -42,6 +47,10 @@ try {
   assert.equal(flattenedInspect.summary.tableHeaders, 0);
   assert.equal(flattenedInspect.summary.tableDataCells, 0);
   await assert.rejects(() => verifyPdfFile(flattenedTablePath, { outputDir: path.join(root, "flattened-table-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /tagged=true, tableStructure=false/);
+  const tamperedReadingOrderPath = path.join(root, "tampered-reading-order.pdf");
+  const tamperedReadingOrderBytes = Buffer.from((await fs.readFile(first.pdfPath)).toString("latin1").replace("/ID (verified-mark-image)", "/ID (tampered-mark-image)"), "latin1");
+  await fs.writeFile(tamperedReadingOrderPath, tamperedReadingOrderBytes);
+  await assert.rejects(() => verifyPdfFile(tamperedReadingOrderPath, { outputDir: path.join(root, "tampered-reading-order-qa"), nativeRender: "off", pdfjs: "off", requireTagged: true }), /readingOrder=false/);
   assert.equal(first.qa.modelRender.pages.length, 3);
   assert.equal(first.qa.pdfjs.status, "passed");
   assert.equal(first.qa.pdfjs.pdf.pages.length, 3);
@@ -52,6 +61,7 @@ try {
   assert.match(first.qa.inspect.ndjson, /qa-gates/);
   assert.match(first.qa.inspect.ndjson, /Verified workflow/);
   assert.match(first.qa.inspect.ndjson, /Independent checks accumulate/);
+  assert.match(first.qa.inspect.ndjson, /"kind":"readingOrder"/);
   assert.equal(first.qa.extractedTables.length, 2);
   assert.equal(first.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   if (nativeStatus.available) assert.equal(first.qa.nativeRender.pageCount, 3);

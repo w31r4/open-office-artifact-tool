@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 228);
+assert.equal(HELP_CATALOG.length, 229);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -70,6 +70,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "document.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "DocumentFile.importDocx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.page.setReadingOrder"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addTable"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addFlowText"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
@@ -178,9 +179,11 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffAlignment?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelRegistration?.type, "boolean|number|object");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
-assert.equal(pdfCatalog.length, 18);
+assert.equal(pdfCatalog.length, 19);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addPage")?.schema?.parameters?.readingOrder?.type, "string[]|object[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.page.setReadingOrder")?.schema?.parameters?.order?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.tagged?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.language?.type, "string");
