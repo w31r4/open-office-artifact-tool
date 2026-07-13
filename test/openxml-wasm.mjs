@@ -83,6 +83,21 @@ assert.deepEqual(
   [0x70, 0x01],
   "Explicit text-body AutoFit deletion must use additive field 14.",
 );
+assert.equal(
+  toBinary(PresentationTextBodyPropertiesSchema, create(PresentationTextBodyPropertiesSchema, { rotation: { case: "rotationAngle60000", value: 900000 } }))[0],
+  0x78,
+  "Presentation text-body rotation must use additive field 15.",
+);
+assert.deepEqual(
+  [...toBinary(PresentationTextBodyPropertiesSchema, create(PresentationTextBodyPropertiesSchema, { rotation: { case: "noRotation", value: true } }))],
+  [0x80, 0x01, 0x01],
+  "Explicit text-body rotation deletion must use additive field 16.",
+);
+assert.deepEqual(
+  [...toBinary(PresentationTextBodyPropertiesSchema, create(PresentationTextBodyPropertiesSchema, { uprightText: { case: "noUpright", value: true } }))],
+  [0xf0, 0x01, 0x01],
+  "Explicit text-body upright deletion must use additive field 30.",
+);
 assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
 
 const workbook = Workbook.create({ dateSystem: "1904" });
@@ -248,7 +263,7 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
   position: { left: 60, top: 40, width: 920, height: 180 },
   fill: "#FFFFFF",
   line: { fill: "#334155", width: 1 },
-  textBodyProperties: { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" },
+  textBodyProperties: { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText", rotation: 15, verticalText: "vertical", verticalOverflow: "ellipsis", horizontalOverflow: "clip", columns: { count: 2, spacing: 18, rightToLeft: true }, upright: true },
   text: [
     {
       alignment: "center",
@@ -285,7 +300,7 @@ assert.match(richPptxXml, /<a:spcAft><a:spcPct val="50000"\s*\/><\/a:spcAft>/);
 assert.match(richPptxXml, /<a:defRPr[^>]*sz="1800"[^>]*b="0"[^>]*i="1">[\s\S]*?<a:schemeClr val="accent2"\s*\/>[\s\S]*?<a:latin typeface="Aptos"\s*\/>[\s\S]*?<\/a:defRPr>/);
 assert.match(richPptxXml, /<a:lstStyle[^>]*>[\s\S]*?<a:lvl1pPr[^>]*marL="457200"[^>]*indent="-152400">[\s\S]*?<a:schemeClr val="accent1"\s*\/>[\s\S]*?<a:tab pos="1714500" algn="dec"\s*\/>[\s\S]*?<a:defRPr[^>]*sz="1350">[\s\S]*?<a:schemeClr val="tx1"\s*\/>[\s\S]*?<\/a:defRPr>[\s\S]*?<\/a:lvl1pPr>/);
 assert.match(richPptxXml, /<a:lvl3pPr>[\s\S]*?<a:lnSpc><a:spcPct val="125000"\s*\/><\/a:lnSpc>[\s\S]*?<a:buAutoNum type="romanLcPeriod" startAt="3"\s*\/>[\s\S]*?<\/a:lvl3pPr>/);
-assert.match(richPptxXml, /<a:bodyPr[^>]*wrap="none"[^>]*lIns="76200"[^>]*tIns="38100"[^>]*rIns="114300"[^>]*bIns="57150"[^>]*anchor="ctr"[^>]*>\s*<a:normAutofit\s*\/>\s*<\/a:bodyPr>/);
+assert.match(richPptxXml, /<a:bodyPr[^>]*rot="900000"[^>]*vertOverflow="ellipsis"[^>]*horzOverflow="clip"[^>]*vert="vert"[^>]*wrap="none"[^>]*lIns="76200"[^>]*tIns="38100"[^>]*rIns="114300"[^>]*bIns="57150"[^>]*numCol="2"[^>]*spcCol="171450"[^>]*rtlCol="1"[^>]*anchor="ctr"[^>]*upright="1"[^>]*>\s*<a:normAutofit\s*\/>\s*<\/a:bodyPr>/);
 const richPptxImported = await importPptxWithOpenXmlWasm(richPptx);
 const richImportedShape = richPptxImported.slides.getItem(0).shapes.items[0];
 assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail\nExplicitly unbulleted");
@@ -321,12 +336,12 @@ assert.equal(richImportedShape.text.inheritedParagraphStyles[0].spaceAfter, 6);
 assert.deepEqual(richImportedShape.text.inheritedParagraphStyles[0].tabStops, [{ position: 180, alignment: "decimal" }]);
 assert.deepEqual(richImportedShape.text.inheritedParagraphStyles[0].style, { fontSize: 18, color: "tx1" });
 assert.deepEqual(richImportedShape.text.inheritedParagraphStyles[2].autoNumber, { type: "romanLcPeriod", startAt: 3 });
-assert.deepEqual(richImportedShape.text.bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" });
+assert.deepEqual(richImportedShape.text.bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText", rotation: 15, verticalText: "vertical", verticalOverflow: "ellipsis", horizontalOverflow: "clip", columns: { count: 2, spacing: 18, rightToLeft: true }, upright: true });
 richImportedShape.text.inheritedParagraphStyles = {
   0: { ...richImportedShape.text.inheritedParagraphStyles[0], bulletCharacter: "◆", bulletColor: "#16A34A", marginLeft: 56 },
   8: { level: 8, autoNumber: { type: "arabicPeriod", startAt: 9 }, bulletSizeFollowText: true, lineSpacing: 18, runs: [], style: {} },
 };
-richImportedShape.text.bodyProperties = { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape" };
+richImportedShape.text.bodyProperties = { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape", rotation: -30, verticalText: "vertical270", verticalOverflow: "clip", horizontalOverflow: "overflow", columns: { count: 3, spacing: 24, rightToLeft: false }, upright: false };
 richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
   ...paragraph,
   ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "accent2", bulletSizePercent: undefined, bulletSize: 24, marginLeft: 40, indent: -20, lineSpacing: 18, spaceBefore: undefined, spaceBeforePercent: 0.25, spaceAfterPercent: undefined, spaceAfter: 6, style: { bold: true, italic: false, fontSize: 26, fontFamily: "Georgia", color: "#0EA5E9" } } : {}),
@@ -347,7 +362,7 @@ assert.match(richPptxEditedXml, /<a:defRPr[^>]*sz="1950"[^>]*b="1"[^>]*i="0">[\s
 assert.match(richPptxEditedXml, /<a:lvl1pPr[^>]*marL="533400"[^>]*indent="-152400">[\s\S]*?<a:srgbClr val="16A34A"\s*\/>[\s\S]*?<a:buChar char="◆"\s*\/>[\s\S]*?<\/a:lvl1pPr>/);
 assert.doesNotMatch(richPptxEditedXml, /<a:lvl3pPr/);
 assert.match(richPptxEditedXml, /<a:lvl9pPr>[\s\S]*?<a:lnSpc><a:spcPts val="1350"\s*\/><\/a:lnSpc>[\s\S]*?<a:buSzTx\s*\/>[\s\S]*?<a:buAutoNum type="arabicPeriod" startAt="9"\s*\/>[\s\S]*?<\/a:lvl9pPr>/);
-assert.match(richPptxEditedXml, /<a:bodyPr[^>]*wrap="square"[^>]*lIns="152400"[^>]*tIns="95250"[^>]*bIns="66675"[^>]*anchor="b"[^>]*>\s*<a:spAutoFit\s*\/>\s*<\/a:bodyPr>/);
+assert.match(richPptxEditedXml, /<a:bodyPr[^>]*rot="-1800000"[^>]*vertOverflow="clip"[^>]*horzOverflow="overflow"[^>]*vert="vert270"[^>]*wrap="square"[^>]*lIns="152400"[^>]*tIns="95250"[^>]*bIns="66675"[^>]*numCol="3"[^>]*spcCol="228600"[^>]*rtlCol="0"[^>]*anchor="b"[^>]*upright="0"[^>]*>\s*<a:spAutoFit\s*\/>\s*<\/a:bodyPr>/);
 assert.doesNotMatch(richPptxEditedXml, /<a:bodyPr[^>]*\brIns=/);
 const richPptxRoundTrip = await importPptxWithOpenXmlWasm(richPptxEdited);
 const richRoundTripShape = richPptxRoundTrip.slides.getItem(0).shapes.items[0];
@@ -374,7 +389,7 @@ assert.deepEqual(Object.keys(richRoundTripShape.text.inheritedParagraphStyles), 
 assert.equal(richRoundTripShape.text.inheritedParagraphStyles[0].bulletCharacter, "◆");
 assert.equal(richRoundTripShape.text.inheritedParagraphStyles[0].bulletColor, "#16A34A");
 assert.equal(richRoundTripShape.text.inheritedParagraphStyles[8].lineSpacing, 18);
-assert.deepEqual(richRoundTripShape.text.bodyProperties, { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape" });
+assert.deepEqual(richRoundTripShape.text.bodyProperties, { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape", rotation: -30, verticalText: "vertical270", verticalOverflow: "clip", horizontalOverflow: "overflow", columns: { count: 3, spacing: 24, rightToLeft: false }, upright: false });
 
 richRoundTripShape.text.inheritedParagraphStyles = {};
 richRoundTripShape.text.bodyProperties = {};
@@ -682,6 +697,21 @@ invalidBodyPropertiesShape.text.bodyProperties = { anchor: "middle" };
 await assert.rejects(
   exportPptxWithOpenXmlWasm(invalidBodyPropertiesPresentation),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text" && /anchor/.test(error.message),
+);
+invalidBodyPropertiesShape.text.bodyProperties = { rotation: 361 };
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidBodyPropertiesPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text" && /rotation/.test(error.message),
+);
+invalidBodyPropertiesShape.text.bodyProperties = { verticalOverflow: "fade" };
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidBodyPropertiesPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text" && /vertical overflow/.test(error.message),
+);
+invalidBodyPropertiesShape.text.bodyProperties = { columns: { count: 17 } };
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidBodyPropertiesPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text" && /column count/.test(error.message),
 );
 
 const preservedPresentation = Presentation.create({

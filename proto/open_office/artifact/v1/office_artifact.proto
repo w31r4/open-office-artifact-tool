@@ -263,8 +263,9 @@ message PresentationTextBody {
 
 // Bounded a:bodyPr semantics. Each unset choice preserves source state; each
 // explicit no_* choice removes only the modeled attribute or AutoFit child.
-// Insets use DrawingML EMUs. Rotation, vertical text, columns, overflow,
-// WordArt/warp/3D, and attributed normAutofit remain source-bound.
+// Insets and column spacing use DrawingML EMUs; rotation retains native
+// 1/60000-degree units. WordArt vertical modes, paragraph compatibility flags,
+// warp/3D, and attributed normAutofit remain source-bound.
 message PresentationTextBodyProperties {
   oneof left_inset {
     int64 left_inset_emu = 1;
@@ -293,6 +294,38 @@ message PresentationTextBodyProperties {
   oneof auto_fit {
     string auto_fit_mode = 13;
     bool no_auto_fit_mode = 14;
+  }
+  oneof rotation {
+    int32 rotation_angle_60000 = 15;
+    bool no_rotation = 16;
+  }
+  oneof vertical_text {
+    string vertical_text_mode = 17;
+    bool no_vertical_text_mode = 18;
+  }
+  oneof vertical_overflow {
+    string vertical_overflow_mode = 19;
+    bool no_vertical_overflow_mode = 20;
+  }
+  oneof horizontal_overflow {
+    string horizontal_overflow_mode = 21;
+    bool no_horizontal_overflow_mode = 22;
+  }
+  oneof column_count {
+    uint32 columns = 23;
+    bool no_columns = 24;
+  }
+  oneof column_spacing {
+    int64 column_spacing_emu = 25;
+    bool no_column_spacing = 26;
+  }
+  oneof column_direction {
+    bool right_to_left_columns = 27;
+    bool no_column_direction = 28;
+  }
+  oneof upright_text {
+    bool upright = 29;
+    bool no_upright = 30;
   }
 }
 

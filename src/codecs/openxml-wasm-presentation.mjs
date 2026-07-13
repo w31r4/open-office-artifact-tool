@@ -12,6 +12,7 @@ const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
 const MAX_PARAGRAPH_COORDINATE_EMU = 51_206_400;
 const MAX_TEXT_BODY_INSET_EMU = 2_147_483_647;
+const ROTATION_UNITS_PER_DEGREE = 60_000;
 const MAX_PARAGRAPH_SPACING_POINTS = 1584;
 const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
@@ -404,7 +405,47 @@ function wireTextBodyProperties(value, original, shapeId) {
     : new Set(["autoFitMode", "noAutoFitMode"]).has(originalProperties?.autoFit?.case)
       ? { case: "noAutoFitMode", value: true }
       : undefined;
-  if (![leftInset, topInset, rightInset, bottomInset, anchor, wrapping, autoFit].some(Boolean)) return undefined;
+  const rotation = properties.rotation != null
+    ? { case: "rotationAngle60000", value: Math.round(properties.rotation * ROTATION_UNITS_PER_DEGREE) }
+    : new Set(["rotationAngle60000", "noRotation"]).has(originalProperties?.rotation?.case)
+      ? { case: "noRotation", value: true }
+      : undefined;
+  const verticalText = properties.verticalText != null
+    ? { case: "verticalTextMode", value: properties.verticalText }
+    : new Set(["verticalTextMode", "noVerticalTextMode"]).has(originalProperties?.verticalText?.case)
+      ? { case: "noVerticalTextMode", value: true }
+      : undefined;
+  const verticalOverflow = properties.verticalOverflow != null
+    ? { case: "verticalOverflowMode", value: properties.verticalOverflow }
+    : new Set(["verticalOverflowMode", "noVerticalOverflowMode"]).has(originalProperties?.verticalOverflow?.case)
+      ? { case: "noVerticalOverflowMode", value: true }
+      : undefined;
+  const horizontalOverflow = properties.horizontalOverflow != null
+    ? { case: "horizontalOverflowMode", value: properties.horizontalOverflow }
+    : new Set(["horizontalOverflowMode", "noHorizontalOverflowMode"]).has(originalProperties?.horizontalOverflow?.case)
+      ? { case: "noHorizontalOverflowMode", value: true }
+      : undefined;
+  const columnCount = properties.columns?.count != null
+    ? { case: "columns", value: properties.columns.count }
+    : new Set(["columns", "noColumns"]).has(originalProperties?.columnCount?.case)
+      ? { case: "noColumns", value: true }
+      : undefined;
+  const columnSpacing = properties.columns?.spacing != null
+    ? { case: "columnSpacingEmu", value: BigInt(Math.round(properties.columns.spacing * EMU_PER_PIXEL)) }
+    : new Set(["columnSpacingEmu", "noColumnSpacing"]).has(originalProperties?.columnSpacing?.case)
+      ? { case: "noColumnSpacing", value: true }
+      : undefined;
+  const columnDirection = properties.columns?.rightToLeft != null
+    ? { case: "rightToLeftColumns", value: properties.columns.rightToLeft }
+    : new Set(["rightToLeftColumns", "noColumnDirection"]).has(originalProperties?.columnDirection?.case)
+      ? { case: "noColumnDirection", value: true }
+      : undefined;
+  const uprightText = properties.upright != null
+    ? { case: "upright", value: properties.upright }
+    : new Set(["upright", "noUpright"]).has(originalProperties?.uprightText?.case)
+      ? { case: "noUpright", value: true }
+      : undefined;
+  if (![leftInset, topInset, rightInset, bottomInset, anchor, wrapping, autoFit, rotation, verticalText, verticalOverflow, horizontalOverflow, columnCount, columnSpacing, columnDirection, uprightText].some(Boolean)) return undefined;
   return {
     ...(leftInset ? { leftInset } : {}),
     ...(topInset ? { topInset } : {}),
@@ -413,6 +454,14 @@ function wireTextBodyProperties(value, original, shapeId) {
     ...(anchor ? { anchor } : {}),
     ...(wrapping ? { wrapping } : {}),
     ...(autoFit ? { autoFit } : {}),
+    ...(rotation ? { rotation } : {}),
+    ...(verticalText ? { verticalText } : {}),
+    ...(verticalOverflow ? { verticalOverflow } : {}),
+    ...(horizontalOverflow ? { horizontalOverflow } : {}),
+    ...(columnCount ? { columnCount } : {}),
+    ...(columnSpacing ? { columnSpacing } : {}),
+    ...(columnDirection ? { columnDirection } : {}),
+    ...(uprightText ? { uprightText } : {}),
   };
 }
 
@@ -704,6 +753,16 @@ function modelTextBodyProperties(shape) {
   if (source.anchor?.case === "verticalAnchor") properties.anchor = source.anchor.value;
   if (source.wrapping?.case === "wrap") properties.wrap = source.wrapping.value;
   if (source.autoFit?.case === "autoFitMode") properties.autoFit = source.autoFit.value;
+  if (source.rotation?.case === "rotationAngle60000") properties.rotation = source.rotation.value / ROTATION_UNITS_PER_DEGREE;
+  if (source.verticalText?.case === "verticalTextMode") properties.verticalText = source.verticalText.value;
+  if (source.verticalOverflow?.case === "verticalOverflowMode") properties.verticalOverflow = source.verticalOverflow.value;
+  if (source.horizontalOverflow?.case === "horizontalOverflowMode") properties.horizontalOverflow = source.horizontalOverflow.value;
+  const columns = {};
+  if (source.columnCount?.case === "columns") columns.count = source.columnCount.value;
+  if (source.columnSpacing?.case === "columnSpacingEmu") columns.spacing = Number(source.columnSpacing.value) / EMU_PER_PIXEL;
+  if (source.columnDirection?.case === "rightToLeftColumns") columns.rightToLeft = source.columnDirection.value;
+  if (Object.keys(columns).length) properties.columns = columns;
+  if (source.uprightText?.case === "upright") properties.upright = source.uprightText.value;
   return properties;
 }
 

@@ -20,21 +20,27 @@ const textBodyLayoutPresentation = Presentation.create();
 const textBodyLayoutShape = textBodyLayoutPresentation.slides.add().shapes.add({
   name: "Body layout",
   text: "Layout-aware text",
-  textBodyProperties: { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" },
+  textBodyProperties: { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText", rotation: 15, verticalText: "vertical", verticalOverflow: "ellipsis", horizontalOverflow: "clip", columns: { count: 2, spacing: 18, rightToLeft: true }, upright: true },
 });
-assert.deepEqual(textBodyLayoutShape.inspectRecord().bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" });
+assert.deepEqual(textBodyLayoutShape.inspectRecord().bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText", rotation: 15, verticalText: "vertical", verticalOverflow: "ellipsis", horizontalOverflow: "clip", columns: { count: 2, spacing: 18, rightToLeft: true }, upright: true });
 const textBodyLayoutPptx = await PresentationFile.exportPptx(textBodyLayoutPresentation);
 const textBodyLayoutZip = await JSZip.loadAsync(new Uint8Array(await textBodyLayoutPptx.arrayBuffer()));
-assert.match(await textBodyLayoutZip.file("ppt/slides/slide1.xml").async("text"), /<a:bodyPr wrap="none" lIns="76200" tIns="38100" rIns="114300" bIns="57150" anchor="ctr"><a:normAutofit\/><\/a:bodyPr>/);
+assert.match(await textBodyLayoutZip.file("ppt/slides/slide1.xml").async("text"), /<a:bodyPr rot="900000" vertOverflow="ellipsis" horzOverflow="clip" vert="vert" wrap="none" lIns="76200" tIns="38100" rIns="114300" bIns="57150" numCol="2" spcCol="171450" rtlCol="1" anchor="ctr" upright="1"><a:normAutofit\/><\/a:bodyPr>/);
 const textBodyLayoutLoaded = await PresentationFile.importPptx(textBodyLayoutPptx);
-assert.deepEqual(textBodyLayoutLoaded.slides.items[0].shapes.items[0].text.bodyProperties, { insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", autoFit: "shrinkText" });
-textBodyLayoutLoaded.slides.items[0].shapes.items[0].text.bodyProperties = { insets: { left: 16 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape" };
+assert.deepEqual(textBodyLayoutLoaded.slides.items[0].shapes.items[0].text.bodyProperties, { rotation: 15, verticalText: "vertical", verticalOverflow: "ellipsis", horizontalOverflow: "clip", insets: { left: 8, top: 4, right: 12, bottom: 6 }, anchor: "center", wrap: "none", columns: { count: 2, spacing: 18, rightToLeft: true }, upright: true, autoFit: "shrinkText" });
+textBodyLayoutLoaded.slides.items[0].shapes.items[0].text.bodyProperties = { insets: { left: 16 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape", rotation: -30, verticalText: "vertical270", verticalOverflow: "clip", horizontalOverflow: "overflow", columns: { count: 3, spacing: 24, rightToLeft: false }, upright: false };
 const textBodyLayoutSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(textBodyLayoutLoaded)).arrayBuffer()));
 const textBodyLayoutSecondXml = await textBodyLayoutSecondZip.file("ppt/slides/slide1.xml").async("text");
-assert.match(textBodyLayoutSecondXml, /<a:bodyPr wrap="square" lIns="152400" anchor="b"><a:spAutoFit\/><\/a:bodyPr>/);
+assert.match(textBodyLayoutSecondXml, /<a:bodyPr rot="-1800000" vertOverflow="clip" horzOverflow="overflow" vert="vert270" wrap="square" lIns="152400" numCol="3" spcCol="228600" rtlCol="0" anchor="b" upright="0"><a:spAutoFit\/><\/a:bodyPr>/);
 assert.doesNotMatch(textBodyLayoutSecondXml, /<a:bodyPr[^>]*\brIns=/);
 textBodyLayoutShape.text.bodyProperties = { anchor: "middle" };
 await assert.rejects(() => PresentationFile.exportPptx(textBodyLayoutPresentation), /Unsupported Presentation text body anchor/);
+textBodyLayoutShape.text.bodyProperties = { rotation: 361 };
+await assert.rejects(() => PresentationFile.exportPptx(textBodyLayoutPresentation), /rotation must be between -360 and 360/);
+textBodyLayoutShape.text.bodyProperties = { verticalText: "wordArtVertical" };
+await assert.rejects(() => PresentationFile.exportPptx(textBodyLayoutPresentation), /Unsupported Presentation vertical text mode/);
+textBodyLayoutShape.text.bodyProperties = { columns: { count: 17 } };
+await assert.rejects(() => PresentationFile.exportPptx(textBodyLayoutPresentation), /column count must be an integer from 1 through 16/);
 const multiMasterPresentation = Presentation.create({
   theme: { colors: { accent1: "#abcdef", accent6: "#123456" }, fonts: { minor: "Inter" } },
   masters: [

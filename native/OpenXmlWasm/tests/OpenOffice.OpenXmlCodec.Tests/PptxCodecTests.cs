@@ -1039,6 +1039,14 @@ public sealed class PptxCodecTests
             VerticalAnchor = "center",
             Wrap = "none",
             AutoFitMode = "shrinkText",
+            RotationAngle60000 = 900_000,
+            VerticalTextMode = "vertical",
+            VerticalOverflowMode = "ellipsis",
+            HorizontalOverflowMode = "clip",
+            Columns = 2,
+            ColumnSpacingEmu = 171_450,
+            RightToLeftColumns = true,
+            Upright = true,
         };
         var authored = Invoke(request);
         Assert.True(authored.Ok, Diagnostics(authored));
@@ -1052,6 +1060,14 @@ public sealed class PptxCodecTests
             Assert.Equal(57_150, properties.BottomInset!.Value);
             Assert.Equal(A.TextAnchoringTypeValues.Center, properties.Anchor!.Value);
             Assert.Equal(A.TextWrappingValues.None, properties.Wrap!.Value);
+            Assert.Equal(900_000, properties.Rotation!.Value);
+            Assert.Equal(A.TextVerticalValues.Vertical, properties.Vertical!.Value);
+            Assert.Equal(A.TextVerticalOverflowValues.Ellipsis, properties.VerticalOverflow!.Value);
+            Assert.Equal(A.TextHorizontalOverflowValues.Clip, properties.HorizontalOverflow!.Value);
+            Assert.Equal(2, properties.ColumnCount!.Value);
+            Assert.Equal(171_450, properties.ColumnSpacing!.Value);
+            Assert.True(properties.RightToLeftColumns!.Value);
+            Assert.True(properties.UpRight!.Value);
             Assert.NotNull(properties.GetFirstChild<A.NormalAutoFit>());
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
@@ -1068,6 +1084,14 @@ public sealed class PptxCodecTests
         Assert.Equal("center", bodyProperties.VerticalAnchor);
         Assert.Equal("none", bodyProperties.Wrap);
         Assert.Equal("shrinkText", bodyProperties.AutoFitMode);
+        Assert.Equal(900_000, bodyProperties.RotationAngle60000);
+        Assert.Equal("vertical", bodyProperties.VerticalTextMode);
+        Assert.Equal("ellipsis", bodyProperties.VerticalOverflowMode);
+        Assert.Equal("clip", bodyProperties.HorizontalOverflowMode);
+        Assert.Equal(2u, bodyProperties.Columns);
+        Assert.Equal(171_450, bodyProperties.ColumnSpacingEmu);
+        Assert.True(bodyProperties.RightToLeftColumns);
+        Assert.True(bodyProperties.Upright);
 
         bodyProperties.LeftInsetEmu = 152_400;
         bodyProperties.TopInsetEmu = 95_250;
@@ -1076,6 +1100,14 @@ public sealed class PptxCodecTests
         bodyProperties.VerticalAnchor = "bottom";
         bodyProperties.Wrap = "square";
         bodyProperties.AutoFitMode = "resizeShape";
+        bodyProperties.RotationAngle60000 = -1_800_000;
+        bodyProperties.VerticalTextMode = "vertical270";
+        bodyProperties.VerticalOverflowMode = "clip";
+        bodyProperties.HorizontalOverflowMode = "overflow";
+        bodyProperties.Columns = 3;
+        bodyProperties.ColumnSpacingEmu = 228_600;
+        bodyProperties.RightToLeftColumns = false;
+        bodyProperties.Upright = false;
         var edited = Export(imported.Artifact);
         Assert.True(edited.Ok, Diagnostics(edited));
         using (var stream = new MemoryStream(edited.File.ToByteArray()))
@@ -1089,8 +1121,16 @@ public sealed class PptxCodecTests
             Assert.Equal(A.TextAnchoringTypeValues.Bottom, properties.Anchor!.Value);
             Assert.Equal(A.TextWrappingValues.Square, properties.Wrap!.Value);
             Assert.NotNull(properties.GetFirstChild<A.ShapeAutoFit>());
-            Assert.Equal(600_000, properties.Rotation!.Value);
-            Assert.True(properties.UpRight!.Value);
+            Assert.Equal(-1_800_000, properties.Rotation!.Value);
+            Assert.Equal(A.TextVerticalValues.Vertical270, properties.Vertical!.Value);
+            Assert.Equal(A.TextVerticalOverflowValues.Clip, properties.VerticalOverflow!.Value);
+            Assert.Equal(A.TextHorizontalOverflowValues.Overflow, properties.HorizontalOverflow!.Value);
+            Assert.Equal(3, properties.ColumnCount!.Value);
+            Assert.Equal(228_600, properties.ColumnSpacing!.Value);
+            Assert.False(properties.RightToLeftColumns!.Value);
+            Assert.False(properties.UpRight!.Value);
+            Assert.True(properties.AnchorCenter!.Value);
+            Assert.True(properties.ForceAntiAlias!.Value);
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
 
@@ -1103,6 +1143,14 @@ public sealed class PptxCodecTests
         bodyProperties.NoVerticalAnchor = true;
         bodyProperties.NoWrap = true;
         bodyProperties.NoAutoFitMode = true;
+        bodyProperties.NoRotation = true;
+        bodyProperties.NoVerticalTextMode = true;
+        bodyProperties.NoVerticalOverflowMode = true;
+        bodyProperties.NoHorizontalOverflowMode = true;
+        bodyProperties.NoColumns = true;
+        bodyProperties.NoColumnSpacing = true;
+        bodyProperties.NoColumnDirection = true;
+        bodyProperties.NoUpright = true;
         var deleted = Export(reimported.Artifact);
         Assert.True(deleted.Ok, Diagnostics(deleted));
         using (var stream = new MemoryStream(deleted.File.ToByteArray()))
@@ -1116,8 +1164,16 @@ public sealed class PptxCodecTests
             Assert.Null(properties.Anchor);
             Assert.Null(properties.Wrap);
             Assert.DoesNotContain(properties.ChildElements, child => child is A.NoAutoFit or A.NormalAutoFit or A.ShapeAutoFit);
-            Assert.Equal(600_000, properties.Rotation!.Value);
-            Assert.True(properties.UpRight!.Value);
+            Assert.Null(properties.Rotation);
+            Assert.Null(properties.Vertical);
+            Assert.Null(properties.VerticalOverflow);
+            Assert.Null(properties.HorizontalOverflow);
+            Assert.Null(properties.ColumnCount);
+            Assert.Null(properties.ColumnSpacing);
+            Assert.Null(properties.RightToLeftColumns);
+            Assert.Null(properties.UpRight);
+            Assert.True(properties.AnchorCenter!.Value);
+            Assert.True(properties.ForceAntiAlias!.Value);
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
 
@@ -1152,6 +1208,21 @@ public sealed class PptxCodecTests
         Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
         request = RichTextExportRequest();
         request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { AutoFitMode = "stretchText" };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { RotationAngle60000 = 21_600_001 };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { VerticalTextMode = "wordArtVertical" };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { VerticalOverflowMode = "fade" };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { Columns = 17 };
+        Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.BodyProperties = new PresentationTextBodyProperties { ColumnSpacingEmu = -1 };
         Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
     }
 
@@ -1498,8 +1569,8 @@ public sealed class PptxCodecTests
         using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
         {
             var properties = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BodyProperties>().Single();
-            properties.Rotation = 600_000;
-            properties.UpRight = true;
+            properties.AnchorCenter = true;
+            properties.ForceAntiAlias = true;
         }
         return stream.ToArray();
     }

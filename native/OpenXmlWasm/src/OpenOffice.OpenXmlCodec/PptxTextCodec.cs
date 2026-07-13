@@ -217,6 +217,14 @@ internal static class PptxTextCodec
         if (properties.AnchorCase == PresentationTextBodyProperties.AnchorOneofCase.NoVerticalAnchor) properties.ClearAnchor();
         if (properties.WrappingCase == PresentationTextBodyProperties.WrappingOneofCase.NoWrap) properties.ClearWrapping();
         if (properties.AutoFitCase == PresentationTextBodyProperties.AutoFitOneofCase.NoAutoFitMode) properties.ClearAutoFit();
+        if (properties.RotationCase == PresentationTextBodyProperties.RotationOneofCase.NoRotation) properties.ClearRotation();
+        if (properties.VerticalTextCase == PresentationTextBodyProperties.VerticalTextOneofCase.NoVerticalTextMode) properties.ClearVerticalText();
+        if (properties.VerticalOverflowCase == PresentationTextBodyProperties.VerticalOverflowOneofCase.NoVerticalOverflowMode) properties.ClearVerticalOverflow();
+        if (properties.HorizontalOverflowCase == PresentationTextBodyProperties.HorizontalOverflowOneofCase.NoHorizontalOverflowMode) properties.ClearHorizontalOverflow();
+        if (properties.ColumnCountCase == PresentationTextBodyProperties.ColumnCountOneofCase.NoColumns) properties.ClearColumnCount();
+        if (properties.ColumnSpacingCase == PresentationTextBodyProperties.ColumnSpacingOneofCase.NoColumnSpacing) properties.ClearColumnSpacing();
+        if (properties.ColumnDirectionCase == PresentationTextBodyProperties.ColumnDirectionOneofCase.NoColumnDirection) properties.ClearColumnDirection();
+        if (properties.UprightTextCase == PresentationTextBodyProperties.UprightTextOneofCase.NoUpright) properties.ClearUprightText();
         if (!PptxBodyPropertiesCodec.HasModeledProperties(properties)) body.BodyProperties = null;
     }
 

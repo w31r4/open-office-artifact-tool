@@ -252,7 +252,7 @@ try {
   assert.deepEqual(wasmTitle?.text.inheritedParagraphStyles[0].style, { bold: true, fontSize: 19, color: "#7c3aed" });
   assert.deepEqual(wasmTitle?.text.inheritedParagraphStyles[8].autoNumber, { type: "arabicPeriod", startAt: 9 });
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[8].lineSpacing, 16);
-  assert.deepEqual(wasmTitle?.text.bodyProperties, { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape" });
+  assert.deepEqual(wasmTitle?.text.bodyProperties, { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape", rotation: 0, verticalText: "horizontal", verticalOverflow: "clip", horizontalOverflow: "overflow", columns: { count: 2, spacing: 24, rightToLeft: false }, upright: false });
   assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
   assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
   assert.match(wasmSlide.speakerNotes.text, /parts, and relationships must survive/);
@@ -264,7 +264,7 @@ try {
   assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 3);
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
   const wasmTitleBodyPropertiesXml = /<a:bodyPr\b[^>]*(?:\/>|>[\s\S]*?<\/a:bodyPr>)/.exec(wasmSlideXml)?.[0] || "";
-  assert.match(wasmTitleBodyPropertiesXml, /<a:bodyPr[^>]*wrap="square"[^>]*lIns="152400"[^>]*tIns="95250"[^>]*bIns="66675"[^>]*anchor="b"[^>]*>\s*<a:spAutoFit\s*\/>\s*<\/a:bodyPr>/);
+  assert.match(wasmTitleBodyPropertiesXml, /<a:bodyPr[^>]*rot="0"[^>]*vertOverflow="clip"[^>]*horzOverflow="overflow"[^>]*vert="horz"[^>]*wrap="square"[^>]*lIns="152400"[^>]*tIns="95250"[^>]*bIns="66675"[^>]*numCol="2"[^>]*spcCol="228600"[^>]*rtlCol="0"[^>]*anchor="b"[^>]*upright="0"[^>]*>\s*<a:spAutoFit\s*\/>\s*<\/a:bodyPr>/);
   assert.doesNotMatch(wasmTitleBodyPropertiesXml, /\brIns=/);
   assert.match(wasmSlideXml, /<a:tabLst><a:tab pos="7429500" algn="r"\s*\/><\/a:tabLst>/);
   assert.match(wasmSlideXml, /<a:buClr><a:schemeClr val="accent1"\s*\/><\/a:buClr>/);

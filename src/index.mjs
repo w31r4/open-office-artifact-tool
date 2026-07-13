@@ -1941,7 +1941,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks." },
-    textBodyProperties: { type: "object", description: "DrawingML text-frame layout: pixel insets, top/center/bottom anchor, square/none wrapping, and none/shrinkText/resizeShape AutoFit." },
+    textBodyProperties: { type: "object", description: "DrawingML text-frame layout: pixel insets; anchor/wrap/AutoFit; -360..360 degree rotation; horizontal/vertical/vertical270 text; horizontal/vertical overflow; 1-16 columns with pixel spacing and RTL flow; and upright text." },
     fill: { type: "string|object", description: "Shape fill." },
     line: { type: "object", description: "Line color, width, dash, and arrow metadata." },
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
