@@ -14,7 +14,7 @@ internal static class PptxTextCodec
     private const int MaxTabStops = 256;
     private const double MaxFontSizePoints = 768;
 
-    internal static PresentationTextBody Read(P.TextBody? source, PptxHyperlinkContext? hyperlinkContext = null)
+    internal static PresentationTextBody Read(P.TextBody? source, PptxSlideContext? slideContext = null)
     {
         var body = new PresentationTextBody();
         if (source is null) return body;
@@ -29,14 +29,14 @@ internal static class PptxTextCodec
             if (properties?.Level is not null) paragraph.Level = checked((uint)properties.Level.Value);
             if (properties?.Alignment?.Value is { } alignment && AlignmentName(alignment) is { Length: > 0 } alignmentName)
                 paragraph.Alignment = alignmentName;
-            PptxBulletCodec.Read(paragraph, properties);
+            PptxBulletCodec.Read(paragraph, properties, slideContext);
             PptxBulletStyleCodec.Read(paragraph, properties);
             foreach (var sourceInline in ParagraphInlines(sourceParagraph))
             {
                 inlineCount++;
                 if (inlineCount > MaxInlines)
                     throw new CodecException("presentation_text_budget_exceeded", $"Presentation shape exceeds the {MaxInlines}-inline text budget.");
-                paragraph.Runs.Add(ReadInline(sourceInline, hyperlinkContext));
+                paragraph.Runs.Add(ReadInline(sourceInline, slideContext));
             }
             ReadTabStops(paragraph, properties);
             body.Paragraphs.Add(paragraph);
@@ -112,16 +112,16 @@ internal static class PptxTextCodec
         _ = CanonicalBody(shape);
     }
 
-    internal static P.TextBody Build(PresentationShape shape, PptxHyperlinkContext? hyperlinkContext = null)
+    internal static P.TextBody Build(PresentationShape shape, PptxSlideContext? slideContext = null)
     {
         var body = new P.TextBody(new A.BodyProperties(), new A.ListStyle());
         var semantic = CanonicalBody(shape);
-        foreach (var paragraph in semantic.Paragraphs) body.Append(BuildParagraph(paragraph, hyperlinkContext));
+        foreach (var paragraph in semantic.Paragraphs) body.Append(BuildParagraph(paragraph, slideContext));
         if (semantic.Paragraphs.Count == 0) body.Append(new A.Paragraph(new A.EndParagraphRunProperties { Language = "en-US" }));
         return body;
     }
 
-    internal static void Apply(P.Shape shape, PresentationShape requested, PptxHyperlinkContext hyperlinkContext)
+    internal static void Apply(P.Shape shape, PresentationShape requested, PptxSlideContext slideContext)
     {
         var semantic = CanonicalBody(requested);
         if (shape.TextBody is null)
@@ -139,12 +139,12 @@ internal static class PptxTextCodec
             var inlines = ParagraphInlines(sourceParagraph);
             if (inlines.Length != requestedParagraph.Runs.Count)
                 throw new CodecException("presentation_text_topology_changed", $"Source-preserving PPTX export requires paragraph {paragraphIndex + 1}'s original inline topology.");
-            ApplyParagraphProperties(sourceParagraph, requestedParagraph);
-            for (var inlineIndex = 0; inlineIndex < inlines.Length; inlineIndex++) ApplyInline(inlines[inlineIndex], requestedParagraph.Runs[inlineIndex], hyperlinkContext);
+            ApplyParagraphProperties(sourceParagraph, requestedParagraph, slideContext);
+            for (var inlineIndex = 0; inlineIndex < inlines.Length; inlineIndex++) ApplyInline(inlines[inlineIndex], requestedParagraph.Runs[inlineIndex], slideContext);
         }
     }
 
-    internal static void ScrubModeledContent(P.TextBody? body, PptxHyperlinkContext? hyperlinkContext = null)
+    internal static void ScrubModeledContent(P.TextBody? body, PptxSlideContext? slideContext = null)
     {
         if (body is null) return;
         foreach (var paragraph in body.Elements<A.Paragraph>())
@@ -154,7 +154,7 @@ internal static class PptxTextCodec
                 paragraphProperties.Level = null;
                 if (paragraphProperties.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0)
                     paragraphProperties.Alignment = null;
-                PptxBulletCodec.Scrub(paragraphProperties);
+                PptxBulletCodec.Scrub(paragraphProperties, slideContext);
                 PptxBulletStyleCodec.Scrub(paragraphProperties);
                 paragraphProperties.GetFirstChild<A.TabStopList>()?.Remove();
             }
@@ -166,7 +166,7 @@ internal static class PptxTextCodec
                     field.Id = string.Empty;
                     field.Type = string.Empty;
                 }
-                ScrubRunProperties(InlineProperties(inline), hyperlinkContext);
+                ScrubRunProperties(InlineProperties(inline), slideContext);
             }
         }
     }
@@ -191,7 +191,7 @@ internal static class PptxTextCodec
         return body;
     }
 
-    private static PresentationTextRun ReadInline(OpenXmlElement source, PptxHyperlinkContext? hyperlinkContext)
+    private static PresentationTextRun ReadInline(OpenXmlElement source, PptxSlideContext? slideContext)
     {
         var run = source switch
         {
@@ -214,11 +214,11 @@ internal static class PptxTextCodec
         if (properties?.FontSize is not null) run.FontSizePoints = properties.FontSize.Value / 100d;
         if (properties?.GetFirstChild<A.LatinFont>()?.Typeface?.Value is { Length: > 0 } typeface) run.FontFamily = typeface;
         if (PptxColor.SolidRgb(properties?.GetFirstChild<A.SolidFill>()) is { Length: > 0 } rgb) run.ColorRgb = rgb;
-        PptxHyperlinkCodec.Read(run, properties, hyperlinkContext);
+        PptxHyperlinkCodec.Read(run, properties, slideContext);
         return run;
     }
 
-    private static A.Paragraph BuildParagraph(PresentationTextParagraph source, PptxHyperlinkContext? hyperlinkContext)
+    private static A.Paragraph BuildParagraph(PresentationTextParagraph source, PptxSlideContext? slideContext)
     {
         var paragraph = new A.Paragraph();
         if (source.HasLevel || source.HasAlignment || PptxBulletCodec.HasModeledBullet(source) || PptxBulletStyleCodec.HasModeledStyle(source) || source.TabStops.Count > 0)
@@ -227,20 +227,20 @@ internal static class PptxTextCodec
             if (source.HasLevel) properties.Level = checked((int)source.Level);
             if (source.HasAlignment) properties.Alignment = ParseAlignment(source.Alignment);
             PptxBulletStyleCodec.Append(properties, source);
-            PptxBulletCodec.Append(properties, source);
+            PptxBulletCodec.Append(properties, source, slideContext);
             AppendTabStops(properties, source);
             paragraph.Append(properties);
         }
-        foreach (var run in source.Runs) paragraph.Append(BuildInline(run, hyperlinkContext));
+        foreach (var run in source.Runs) paragraph.Append(BuildInline(run, slideContext));
         paragraph.Append(new A.EndParagraphRunProperties { Language = "en-US" });
         return paragraph;
     }
 
-    private static OpenXmlElement BuildInline(PresentationTextRun source, PptxHyperlinkContext? hyperlinkContext)
+    private static OpenXmlElement BuildInline(PresentationTextRun source, PptxSlideContext? slideContext)
     {
         var properties = new A.RunProperties { Language = "en-US" };
         ApplyRunProperties(properties, source);
-        PptxHyperlinkCodec.Append(properties, source, hyperlinkContext);
+        PptxHyperlinkCodec.Append(properties, source, slideContext);
         return source.ContentCase switch
         {
             PresentationTextRun.ContentOneofCase.Text => new A.Run(properties, new A.Text(source.Text)),
@@ -250,7 +250,7 @@ internal static class PptxTextCodec
         };
     }
 
-    private static void ApplyParagraphProperties(A.Paragraph source, PresentationTextParagraph requested)
+    private static void ApplyParagraphProperties(A.Paragraph source, PresentationTextParagraph requested, PptxSlideContext slideContext)
     {
         var properties = source.ParagraphProperties;
         if (properties is null && (requested.HasLevel || requested.HasAlignment || PptxBulletCodec.HasModeledBullet(requested) || PptxBulletStyleCodec.HasModeledStyle(requested) || requested.TabStops.Count > 0))
@@ -263,11 +263,11 @@ internal static class PptxTextCodec
         if (requested.HasAlignment) properties.Alignment = ParseAlignment(requested.Alignment);
         else if (properties.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0) properties.Alignment = null;
         PptxBulletStyleCodec.Apply(properties, requested);
-        PptxBulletCodec.Apply(properties, requested);
+        PptxBulletCodec.Apply(properties, requested, slideContext);
         ApplyTabStops(properties, requested);
     }
 
-    private static void ApplyInline(OpenXmlElement source, PresentationTextRun requested, PptxHyperlinkContext hyperlinkContext)
+    private static void ApplyInline(OpenXmlElement source, PresentationTextRun requested, PptxSlideContext slideContext)
     {
         if (!InlineKindMatches(source, requested))
             throw new CodecException("presentation_text_topology_changed", "Source-preserving PPTX export cannot change an inline between text, line-break, and field kinds.");
@@ -280,7 +280,7 @@ internal static class PptxTextCodec
         if (properties is not null)
         {
             ApplyRunProperties(properties, requested);
-            PptxHyperlinkCodec.Apply(properties, requested, hyperlinkContext);
+            PptxHyperlinkCodec.Apply(properties, requested, slideContext);
         }
         if (source is A.Run run) run.Text!.Text = requested.Text;
         else if (source is A.Field field)
@@ -471,7 +471,7 @@ internal static class PptxTextCodec
         else if (PptxColor.SolidRgb(fill).Length > 0) fill!.Remove();
     }
 
-    private static void ScrubRunProperties(A.RunProperties? properties, PptxHyperlinkContext? hyperlinkContext)
+    private static void ScrubRunProperties(A.RunProperties? properties, PptxSlideContext? slideContext)
     {
         if (properties is null) return;
         properties.Bold = null;
@@ -480,7 +480,7 @@ internal static class PptxTextCodec
         properties.GetFirstChild<A.LatinFont>()?.Remove();
         var fill = properties.GetFirstChild<A.SolidFill>();
         if (PptxColor.SolidRgb(fill).Length > 0) fill!.Remove();
-        PptxHyperlinkCodec.Scrub(properties, hyperlinkContext);
+        PptxHyperlinkCodec.Scrub(properties, slideContext);
     }
 
     private static string AlignmentName(A.TextAlignmentTypeValues value) =>

@@ -476,6 +476,95 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void PictureBulletsAuthorImportAndShareContentAddressedAssetsAcrossSlides()
+    {
+        var exported = Invoke(PictureBulletExportRequest());
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            Assert.Equal(2, slides.Length);
+            Assert.Equal(slides[0].ImageParts.Single().Uri, slides[1].ImageParts.Single().Uri);
+            Assert.Contains(slides[0].ExternalRelationships, relationship =>
+                relationship.RelationshipType.EndsWith("/image", StringComparison.Ordinal) &&
+                relationship.Uri.OriginalString == "https://example.com/marker.png");
+            Assert.Equal(2, slides[0].Slide!.Descendants<A.PictureBullet>().Count());
+            Assert.Single(slides[1].Slide!.Descendants<A.PictureBullet>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var asset = Assert.Single(imported.Artifact.Assets);
+        Assert.StartsWith("asset/presentation/picture-bullet/", asset.Id);
+        Assert.Equal(asset.Id, imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].PictureBullet.AssetId);
+        Assert.Equal("https://example.com/marker.png", imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[1].PictureBullet.Uri);
+        Assert.Equal(asset.Id, imported.Artifact.Presentation.Slides[1].Elements[0].Shape.TextBody.Paragraphs[0].PictureBullet.AssetId);
+    }
+
+    [Fact]
+    public void SourcePreservingPictureBulletEditAddsOnlyTrackedMediaAndKeepsOldGraph()
+    {
+        var source = Invoke(PictureBulletExportRequest());
+        var imported = Import(source.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var replacement = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=");
+        var replacementId = AddPictureAsset(imported.Artifact, replacement, "image/png");
+        var firstShape = imported.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        firstShape.TextBody.Paragraphs[0].PictureBullet = new PresentationPictureBullet { AssetId = replacementId };
+        firstShape.TextBody.Paragraphs[1].NoBullet = true;
+        firstShape.Text = PptxTextCodec.Flatten(firstShape.TextBody);
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using var stream = new MemoryStream(preserved.File.ToByteArray());
+        using var package = PresentationDocument.Open(stream, false);
+        var slides = OrderedSlides(package);
+        Assert.Equal(2, slides[0].ImageParts.Count());
+        Assert.Single(slides[1].ImageParts);
+        Assert.Contains(slides[0].ExternalRelationships, relationship => relationship.Uri.OriginalString == "https://example.com/marker.png");
+        var firstParagraphs = slides[0].Slide!.Descendants<A.Paragraph>().ToArray();
+        Assert.NotNull(firstParagraphs[0].ParagraphProperties!.GetFirstChild<A.PictureBullet>());
+        Assert.NotNull(firstParagraphs[1].ParagraphProperties!.GetFirstChild<A.NoBullet>());
+        Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+    }
+
+    [Fact]
+    public void InvalidPictureBulletAssetsAndUrisFailClosed()
+    {
+        var request = PictureBulletExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].PictureBullet =
+            new PresentationPictureBullet { AssetId = "asset/presentation/picture-bullet/missing" };
+        var missing = Invoke(request);
+        Assert.False(missing.Ok);
+        Assert.Equal("invalid_presentation_asset", Assert.Single(missing.Diagnostics).Code);
+
+        request = PictureBulletExportRequest();
+        request.Artifact.Assets[0].Sha256 = new string('0', 64);
+        var tampered = Invoke(request);
+        Assert.False(tampered.Ok);
+        Assert.Equal("invalid_presentation_asset", Assert.Single(tampered.Diagnostics).Code);
+
+        request = PictureBulletExportRequest();
+        request.Artifact.Assets.Clear();
+        var unsafeSvg = System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>");
+        var unsafeId = AddPictureAsset(request.Artifact, unsafeSvg, "image/svg+xml");
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].PictureBullet =
+            new PresentationPictureBullet { AssetId = unsafeId };
+        var unsafeResult = Invoke(request);
+        Assert.False(unsafeResult.Ok);
+        Assert.Equal("invalid_presentation_asset", Assert.Single(unsafeResult.Diagnostics).Code);
+
+        request = PictureBulletExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[1].PictureBullet =
+            new PresentationPictureBullet { Uri = "file:///tmp/marker.png" };
+        var forbiddenUri = Invoke(request);
+        Assert.False(forbiddenUri.Ok);
+        Assert.Equal("invalid_presentation_asset", Assert.Single(forbiddenUri.Diagnostics).Code);
+    }
+
+    [Fact]
     public void InvalidListMarkersAndStylesFailClosed()
     {
         var request = RichTextExportRequest();
@@ -738,6 +827,60 @@ public sealed class PptxCodecTests
         };
     }
 
+    private static CodecRequest PictureBulletExportRequest()
+    {
+        var request = ExportRequest();
+        var embedded = new PresentationTextParagraph
+        {
+            PictureBullet = new PresentationPictureBullet(),
+        };
+        embedded.Runs.Add(new PresentationTextRun { Text = "Embedded marker" });
+        var external = new PresentationTextParagraph
+        {
+            PictureBullet = new PresentationPictureBullet { Uri = "https://example.com/marker.png" },
+        };
+        external.Runs.Add(new PresentationTextRun { Text = "External marker" });
+        var body = new PresentationTextBody();
+        body.Paragraphs.Add(embedded);
+        body.Paragraphs.Add(external);
+        var firstShape = request.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        firstShape.TextBody = body;
+        firstShape.Text = PptxTextCodec.Flatten(body);
+
+        var secondBody = new PresentationTextBody();
+        var secondParagraph = new PresentationTextParagraph { PictureBullet = new PresentationPictureBullet() };
+        secondParagraph.Runs.Add(new PresentationTextRun { Text = "Shared marker" });
+        secondBody.Paragraphs.Add(secondParagraph);
+        var secondSlide = new PresentationSlide { Id = "presentation/slide/2", Name = "Shared asset" };
+        var secondElement = request.Artifact.Presentation.Slides[0].Elements[0].Clone();
+        secondElement.Id = "presentation/slide/2/title";
+        secondElement.Shape.TextBody = secondBody;
+        secondElement.Shape.Text = PptxTextCodec.Flatten(secondBody);
+        secondSlide.Elements.Add(secondElement);
+        request.Artifact.Presentation.Slides.Add(secondSlide);
+
+        var bytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        var assetId = AddPictureAsset(request.Artifact, bytes, "image/png");
+        embedded.PictureBullet.AssetId = assetId;
+        secondParagraph.PictureBullet.AssetId = assetId;
+        return request;
+    }
+
+    private static string AddPictureAsset(ArtifactEnvelope envelope, byte[] data, string contentType)
+    {
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)).ToLowerInvariant();
+        var id = $"asset/presentation/picture-bullet/{digest}";
+        envelope.Assets.Add(new Asset
+        {
+            Id = id,
+            FileName = $"picture-bullet-{digest[..16]}.{(contentType == "image/svg+xml" ? "svg" : "png")}",
+            ContentType = contentType,
+            Data = ByteString.CopyFrom(data),
+            Sha256 = digest,
+        });
+        return id;
+    }
+
     private static SlidePart[] OrderedSlides(PresentationDocument package)
     {
         var presentationPart = package.PresentationPart!;
@@ -775,7 +918,10 @@ public sealed class PptxCodecTests
             var pictureProperties = pictureParagraph.ParagraphProperties ?? pictureParagraph.PrependChild(new A.ParagraphProperties());
             pictureProperties.AddChild(new A.BulletColor(new A.SchemeColor { Val = A.SchemeColorValues.Accent1 }), true);
             pictureProperties.AddChild(new A.BulletFont { Typeface = "Wingdings" }, true);
-            pictureProperties.AddChild(new A.PictureBullet(new A.Blip { Embed = "rIdTextBullet1" }), true);
+            // A transformed blip remains deliberately outside the modeled
+            // picture-bullet slice and exercises fail-closed preservation.
+            pictureProperties.AddChild(new A.PictureBullet(
+                new A.Blip(new A.AlphaModulationFixed { Amount = 50_000 }) { Embed = "rIdTextBullet1" }), true);
             var imagePart = slidePart.AddImagePart(ImagePartType.Png, "rIdTextBullet1");
             using (var image = new MemoryStream(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")))
                 imagePart.FeedData(image);

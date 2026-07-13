@@ -2,6 +2,7 @@ import { Presentation } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { isPresentationAutoNumberType } from "../presentation/text-paragraphs.mjs";
+import { createPresentationAssetCatalog, validatePictureBulletUri } from "./openxml-wasm-assets.mjs";
 import { OpenXmlWasmCodecError } from "./openxml-wasm-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -11,7 +12,7 @@ const MAX_FONT_SIZE_PIXELS = 1024;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
 const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "color"]);
 const PARAGRAPH_KEYS = new Set([
-  "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletNone",
+  "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletImage", "bulletNone",
   "bulletFont", "bulletFontFollowText", "bulletColor", "bulletColorFollowText",
   "bulletSize", "bulletSizePercent", "bulletSizeFollowText", "tabStops",
 ]);
@@ -98,8 +99,8 @@ function wireRun(run, inheritedStyle, shapeId, original) {
   };
 }
 
-function wireBullet(paragraph, original, shapeId) {
-  const choices = [paragraph.bulletCharacter != null, Boolean(paragraph.autoNumber), paragraph.bulletNone === true];
+function wireBullet(paragraph, original, shapeId, assetCatalog) {
+  const choices = [paragraph.bulletCharacter != null, Boolean(paragraph.autoNumber), Boolean(paragraph.bulletImage), paragraph.bulletNone === true];
   if (choices.filter(Boolean).length > 1) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph selects more than one list marker.`, [], { code: "invalid_presentation_text" });
   }
@@ -118,7 +119,16 @@ function wireBullet(paragraph, original, shapeId) {
     }
     return { case: "autoNumber", value: { scheme, ...(startAt === undefined ? {} : { startAt }) } };
   }
-  if (paragraph.bulletNone === true || new Set(["noBullet", "bulletCharacter", "autoNumber"]).has(original?.bullet?.case)) {
+  if (paragraph.bulletImage) {
+    if (paragraph.bulletImage.relationshipId) {
+      throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses an unresolved picture-bullet relationship ID.`, [], { code: "invalid_presentation_asset" });
+    }
+    const source = paragraph.bulletImage.dataUrl
+      ? { case: "assetId", value: assetCatalog.addDataUrl(paragraph.bulletImage.dataUrl) }
+      : { case: "uri", value: validatePictureBulletUri(paragraph.bulletImage.uri) };
+    return { case: "pictureBullet", value: { source } };
+  }
+  if (paragraph.bulletNone === true || new Set(["noBullet", "bulletCharacter", "autoNumber", "pictureBullet"]).has(original?.bullet?.case)) {
     return { case: "noBullet", value: true };
   }
   return undefined;
@@ -183,7 +193,7 @@ function wireTabStops(paragraph, original, shapeId) {
   return {};
 }
 
-function wireParagraph(paragraph, textStyle, original, shapeId) {
+function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const paragraphStyleUnsupported = unsupportedStyleFields(paragraph.style);
@@ -197,7 +207,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId) {
   }
   const originalLevel = original?.level;
   const includeLevel = level !== 0 || originalLevel !== undefined;
-  const bullet = wireBullet(paragraph, original, shapeId);
+  const bullet = wireBullet(paragraph, original, shapeId, assetCatalog);
   const bulletFont = wireBulletFont(paragraph, original, shapeId);
   const bulletColor = wireBulletColor(paragraph, original, shapeId);
   const bulletSize = wireBulletSize(paragraph, original, shapeId);
@@ -220,7 +230,7 @@ function modelRunCase(run) {
   return "text";
 }
 
-function presentationTextBody(shape, original) {
+function presentationTextBody(shape, original, assetCatalog) {
   if (Object.keys(shape.text?.inheritedParagraphStyles || {}).length) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} uses inherited paragraph styles outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
   }
@@ -231,11 +241,11 @@ function presentationTextBody(shape, original) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} changed its source-bound paragraph/inline topology.`, [], { code: "presentation_text_topology_changed" });
   }
   return {
-    paragraphs: paragraphs.map((paragraph, index) => wireParagraph(paragraph, shape.text?.style || {}, original?.textBody?.paragraphs?.[index], shape.id)),
+    paragraphs: paragraphs.map((paragraph, index) => wireParagraph(paragraph, shape.text?.style || {}, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog)),
   };
 }
 
-function presentationShape(shape, original) {
+function presentationShape(shape, original, assetCatalog) {
   const originalShape = original?.content?.case === "shape" ? original.content.value : original;
   if (!new Set(["rect", "ellipse"]).has(shape.geometry)) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} uses unsupported geometry ${shape.geometry}.`, [], { code: "unsupported_presentation_features" });
@@ -243,7 +253,7 @@ function presentationShape(shape, original) {
   const position = shape.position || {};
   const lineWidth = Number(shape.line?.width ?? 1);
   if (!Number.isFinite(lineWidth) || lineWidth < 0) throw new OpenXmlWasmCodecError(`Presentation shape ${shape.id} has an invalid line width.`, [], { code: "invalid_presentation_frame" });
-  const textBody = presentationTextBody(shape, originalShape);
+  const textBody = presentationTextBody(shape, originalShape, assetCatalog);
   return {
     id: original?.id || shape.id,
     name: shape.name || original?.name || "",
@@ -320,6 +330,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
     }
   }
 
+  const assetCatalog = createPresentationAssetCatalog();
   const slides = presentation.slides.items.map((slide, slideIndex) => {
     const sourceState = state?.slides[slideIndex];
     if (sourceState) {
@@ -335,17 +346,18 @@ export function presentationEnvelope(presentation, protocolVersion) {
       source: sourceState?.wire.source,
       elements: sourceState
         ? sourceState.entries.map((entry) => {
-            if (entry.wire.content.case === "shape") return presentationShape(entry.model, entry.wire);
+            if (entry.wire.content.case === "shape") return presentationShape(entry.model, entry.wire, assetCatalog);
             if (opaquePresentationSnapshot(entry.model) !== entry.snapshot) throw new OpenXmlWasmCodecError(`Presentation element ${entry.model.id} is preserved but not editable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
             return entry.wire;
           })
-        : slide.shapes.items.map((shape) => presentationShape(shape)),
+        : slide.shapes.items.map((shape) => presentationShape(shape, undefined, assetCatalog)),
     };
   });
   return {
     protocolVersion,
     family: ArtifactFamily.PRESENTATION,
     source: state?.source,
+    assets: assetCatalog.assets(),
     opaqueOpc: state?.opaqueOpc,
     diagnostics: state?.diagnostics || [],
     payload: {
@@ -402,10 +414,15 @@ function modelHyperlink(link) {
   };
 }
 
-function modelBullet(bullet) {
+function modelBullet(bullet, assetCatalog) {
   if (bullet?.case === "noBullet") return { bulletNone: true };
   if (bullet?.case === "bulletCharacter") return { bulletCharacter: bullet.value };
   if (bullet?.case === "autoNumber") return { autoNumber: { type: bullet.value.scheme, ...(bullet.value.startAt === undefined ? {} : { startAt: bullet.value.startAt }) } };
+  if (bullet?.case === "pictureBullet") {
+    if (bullet.value.source?.case === "assetId") return { bulletImage: { dataUrl: assetCatalog.dataUrl(bullet.value.source.value), relationshipMode: "embed" } };
+    if (bullet.value.source?.case === "uri") return { bulletImage: { uri: validatePictureBulletUri(bullet.value.source.value), relationshipMode: "link" } };
+    throw new OpenXmlWasmCodecError("Presentation picture bullet has no source.", [], { code: "invalid_presentation_asset" });
+  }
   return {};
 }
 
@@ -421,13 +438,13 @@ function modelBulletStyle(paragraph) {
   };
 }
 
-function modelText(shape) {
+function modelText(shape, assetCatalog) {
   if (!shape.textBody) return shape.text;
   return shape.textBody.paragraphs.map((paragraph) => ({
     runs: paragraph.runs.map(modelRun),
     level: paragraph.level ?? 0,
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
-    ...modelBullet(paragraph.bullet),
+    ...modelBullet(paragraph.bullet, assetCatalog),
     ...modelBulletStyle(paragraph),
     ...(paragraph.tabStops?.length ? { tabStops: paragraph.tabStops.map((tab) => ({ position: Number(tab.positionEmu) / EMU_PER_PIXEL, alignment: tab.alignment })) } : {}),
     style: {},
@@ -439,6 +456,7 @@ export function presentationFromEnvelope(envelope) {
     throw new OpenXmlWasmCodecError("OpenXML WebAssembly response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
   }
   const source = envelope.payload.value;
+  const assetCatalog = createPresentationAssetCatalog(envelope.assets || []);
   const presentation = Presentation.create({
     slideSize: { width: Number(source.slideWidthEmu) / EMU_PER_PIXEL, height: Number(source.slideHeightEmu) / EMU_PER_PIXEL },
   });
@@ -464,7 +482,7 @@ export function presentationFromEnvelope(envelope) {
           },
           fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
-          text: modelText(shape),
+          text: modelText(shape, assetCatalog),
         });
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;

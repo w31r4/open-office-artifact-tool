@@ -241,9 +241,10 @@ message PresentationShape {
 }
 
 // The public PresentationML text slice models agent-facing paragraph/inlines,
-// basic list-marker/direct marker-style semantics, tab stops, and bounded click
-// links. Picture bullets, non-RGB marker colors, custom-show/mouse-over links,
-// field paragraph properties, body properties, and list styles stay source-bound.
+// list-marker/direct marker-style semantics, content-addressed or external
+// picture bullets, tab stops, and bounded click links. Non-RGB marker colors,
+// custom-show/mouse-over links, field paragraph properties, body properties,
+// and list styles stay source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
 }
@@ -258,6 +259,7 @@ message PresentationTextParagraph {
     bool no_bullet = 4;
     string bullet_character = 5;
     PresentationAutoNumberBullet auto_number = 6;
+    PresentationPictureBullet picture_bullet = 16;
   }
   // Each unset style choice means no direct style for new text and preserve an
   // unmodeled source choice during a source-bound edit.
@@ -278,6 +280,16 @@ message PresentationTextParagraph {
   // preserves an unmodeled source list; no_tab_stops explicitly removes it.
   repeated PresentationTabStop tab_stops = 14;
   optional bool no_tab_stops = 15;
+}
+
+message PresentationPictureBullet {
+  // Embedded pictures reference an envelope Asset. External pictures remain
+  // non-fetched absolute http(s) URIs. Package relationship IDs are deliberately
+  // absent because they are local codec details, not durable artifact identity.
+  oneof source {
+    string asset_id = 1;
+    string uri = 2;
+  }
 }
 
 message PresentationAutoNumberBullet {

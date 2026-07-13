@@ -5,52 +5,6 @@ using A = DocumentFormat.OpenXml.Drawing;
 
 namespace OpenOffice.OpenXmlCodec;
 
-// Owns the bounded DrawingML run-click slice and its slide relationships.
-// Package topology and opaque-graph policy remain in PptxCodec.
-internal sealed class PptxHyperlinkContext
-{
-    internal PptxHyperlinkContext(
-        SlidePart owner,
-        IReadOnlyDictionary<string, string> slideIdByPartPath,
-        IReadOnlyDictionary<string, SlidePart>? slidePartById = null)
-    {
-        Owner = owner;
-        SlideIdByPartPath = slideIdByPartPath;
-        SlidePartById = slidePartById ?? new Dictionary<string, SlidePart>(StringComparer.Ordinal);
-    }
-
-    internal SlidePart Owner { get; }
-    internal IReadOnlyDictionary<string, string> SlideIdByPartPath { get; }
-    internal IReadOnlyDictionary<string, SlidePart> SlidePartById { get; }
-    internal bool RelationshipsChanged { get; private set; }
-    internal IReadOnlyCollection<string> AddedRelationshipIds => _addedRelationshipIds;
-    private readonly HashSet<string> _addedRelationshipIds = new(StringComparer.Ordinal);
-
-    internal string AddExternal(string uri)
-    {
-        var existing = Owner.HyperlinkRelationships.FirstOrDefault(relationship =>
-            relationship.IsExternal && relationship.Uri.OriginalString.Equals(uri, StringComparison.Ordinal));
-        if (existing is not null) return existing.Id;
-        RelationshipsChanged = true;
-        var added = Owner.AddHyperlinkRelationship(new Uri(uri, UriKind.Absolute), true).Id;
-        _addedRelationshipIds.Add(added);
-        return added;
-    }
-
-    internal string AddSlide(string slideId)
-    {
-        if (!SlidePartById.TryGetValue(slideId, out var target))
-            throw new CodecException("invalid_presentation_hyperlink", $"Presentation run hyperlink references missing slide {slideId}.");
-        var existing = Owner.Parts.FirstOrDefault(pair => ReferenceEquals(pair.OpenXmlPart, target));
-        if (existing.OpenXmlPart is not null) return existing.RelationshipId;
-        RelationshipsChanged = true;
-        Owner.AddPart(target);
-        var added = Owner.GetIdOfPart(target);
-        _addedRelationshipIds.Add(added);
-        return added;
-    }
-}
-
 internal static class PptxHyperlinkCodec
 {
     private const string SlideJumpAction = "ppaction://hlinksldjump";
@@ -65,7 +19,7 @@ internal static class PptxHyperlinkCodec
     private static readonly IReadOnlyDictionary<string, string> ActionNameByUri =
         ActionUriByName.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
 
-    internal static void Read(PresentationTextRun target, A.RunProperties? properties, PptxHyperlinkContext? context)
+    internal static void Read(PresentationTextRun target, A.RunProperties? properties, PptxSlideContext? context)
     {
         if (context is not null && TryRead(properties?.GetFirstChild<A.HyperlinkOnClick>(), context, out var hyperlink))
             target.RunHyperlink = hyperlink;
@@ -91,14 +45,14 @@ internal static class PptxHyperlinkCodec
     internal static bool HasModeledChoice(PresentationTextRun run) =>
         run.HyperlinkCase != PresentationTextRun.HyperlinkOneofCase.None;
 
-    internal static void Append(A.RunProperties properties, PresentationTextRun source, PptxHyperlinkContext? context)
+    internal static void Append(A.RunProperties properties, PresentationTextRun source, PptxSlideContext? context)
     {
         if (source.HyperlinkCase != PresentationTextRun.HyperlinkOneofCase.RunHyperlink) return;
         if (context is null) throw new CodecException("invalid_presentation_hyperlink", "Presentation hyperlink authoring requires a slide relationship context.");
         properties.Append(Build(source.RunHyperlink, context));
     }
 
-    internal static void Apply(A.RunProperties properties, PresentationTextRun requested, PptxHyperlinkContext context)
+    internal static void Apply(A.RunProperties properties, PresentationTextRun requested, PptxSlideContext context)
     {
         var existing = properties.GetFirstChild<A.HyperlinkOnClick>();
         var recognized = TryRead(existing, context, out var current);
@@ -122,13 +76,13 @@ internal static class PptxHyperlinkCodec
         }
     }
 
-    internal static void Scrub(A.RunProperties? properties, PptxHyperlinkContext? context)
+    internal static void Scrub(A.RunProperties? properties, PptxSlideContext? context)
     {
         if (context is null || properties?.GetFirstChild<A.HyperlinkOnClick>() is not { } hyperlink) return;
         if (TryRead(hyperlink, context, out _)) hyperlink.Remove();
     }
 
-    private static bool TryRead(A.HyperlinkOnClick? source, PptxHyperlinkContext context, out PresentationRunHyperlink hyperlink)
+    private static bool TryRead(A.HyperlinkOnClick? source, PptxSlideContext context, out PresentationRunHyperlink hyperlink)
     {
         hyperlink = new PresentationRunHyperlink();
         if (source is null || source.ChildElements.Count > 0 || source.InvalidUrl is not null || source.EndSound is not null) return false;
@@ -170,14 +124,14 @@ internal static class PptxHyperlinkCodec
         }
     }
 
-    private static A.HyperlinkOnClick Build(PresentationRunHyperlink source, PptxHyperlinkContext context)
+    private static A.HyperlinkOnClick Build(PresentationRunHyperlink source, PptxSlideContext context)
     {
         Validate(source);
         var hyperlink = new A.HyperlinkOnClick();
         switch (source.TargetCase)
         {
             case PresentationRunHyperlink.TargetOneofCase.Uri:
-                hyperlink.Id = context.AddExternal(source.Uri);
+                hyperlink.Id = context.AddExternalHyperlink(source.Uri);
                 break;
             case PresentationRunHyperlink.TargetOneofCase.SlideId:
                 hyperlink.Id = context.AddSlide(source.SlideId);

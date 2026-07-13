@@ -5,8 +5,8 @@ using A = DocumentFormat.OpenXml.Drawing;
 
 namespace OpenOffice.OpenXmlCodec;
 
-// Owns the direct DrawingML list-marker choice. Marker styling and picture
-// relationships deliberately remain residual/source-bound.
+// Owns the direct DrawingML list-marker choice. Picture bytes are durable
+// assets while each slide context owns its package relationships.
 internal static class PptxBulletCodec
 {
     private static readonly HashSet<string> AutoNumberSchemes = new(StringComparer.Ordinal)
@@ -19,11 +19,11 @@ internal static class PptxBulletCodec
         "thaiAlphaParenBoth", "thaiAlphaParenR", "thaiAlphaPeriod", "thaiNumParenBoth", "thaiNumParenR", "thaiNumPeriod",
     };
 
-    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source)
+    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source, PptxSlideContext? context)
     {
         if (source is null) return;
         var choices = BulletChoices(source).ToArray();
-        if (choices.Length != 1 || !Modeled(choices[0])) return;
+        if (choices.Length != 1 || !Modeled(choices[0], context)) return;
         switch (choices[0])
         {
             case A.NoBullet:
@@ -35,6 +35,9 @@ internal static class PptxBulletCodec
             case A.AutoNumberedBullet autoNumber:
                 target.AutoNumber = new PresentationAutoNumberBullet { Scheme = Scheme(autoNumber) };
                 if (autoNumber.StartAt is not null) target.AutoNumber.StartAt = checked((uint)autoNumber.StartAt.Value);
+                break;
+            case A.PictureBullet picture when context!.TryReadPicture(picture, out var modeled):
+                target.PictureBullet = modeled;
                 break;
         }
     }
@@ -57,6 +60,9 @@ internal static class PptxBulletCodec
                 if (paragraph.AutoNumber.HasStartAt && (paragraph.AutoNumber.StartAt < 1 || paragraph.AutoNumber.StartAt > 32_767))
                     throw Invalid("Presentation auto-number start_at must be from 1 through 32767.");
                 return;
+            case PresentationTextParagraph.BulletOneofCase.PictureBullet:
+                PptxSlideContext.ValidatePicture(paragraph.PictureBullet);
+                return;
             default:
                 throw Invalid("Presentation paragraph contains an unknown bullet case.");
         }
@@ -65,29 +71,32 @@ internal static class PptxBulletCodec
     internal static bool HasModeledBullet(PresentationTextParagraph paragraph) =>
         paragraph.BulletCase != PresentationTextParagraph.BulletOneofCase.None;
 
-    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source, PptxSlideContext? context)
     {
         if (!HasModeledBullet(source)) return;
-        target.AddChild(Build(source), true);
+        target.AddChild(Build(source, context), true);
     }
 
-    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source, PptxSlideContext context)
     {
         if (!HasModeledBullet(source)) return;
         var existing = BulletChoices(target).ToArray();
-        if (existing.Length > 1 || existing.Any(choice => !Modeled(choice)))
+        if (existing.Length > 1 || existing.Any(choice => !Modeled(choice, context)))
             throw new CodecException("unsupported_presentation_edit", "Source-preserving PPTX export cannot replace an unmodeled or malformed list marker.");
+        if (existing.Length == 1 && existing[0] is A.PictureBullet picture &&
+            source.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
+            context.TryReadPicture(picture, out var current) && current.Equals(source.PictureBullet)) return;
         foreach (var choice in existing) choice.Remove();
-        target.AddChild(Build(source), true);
+        target.AddChild(Build(source, context), true);
     }
 
-    internal static void Scrub(A.ParagraphProperties target)
+    internal static void Scrub(A.ParagraphProperties target, PptxSlideContext? context)
     {
         var choices = BulletChoices(target).ToArray();
-        if (choices.Length == 1 && Modeled(choices[0])) choices[0].Remove();
+        if (choices.Length == 1 && Modeled(choices[0], context)) choices[0].Remove();
     }
 
-    private static OpenXmlElement Build(PresentationTextParagraph source) => source.BulletCase switch
+    private static OpenXmlElement Build(PresentationTextParagraph source, PptxSlideContext? context) => source.BulletCase switch
     {
         PresentationTextParagraph.BulletOneofCase.NoBullet => new A.NoBullet(),
         PresentationTextParagraph.BulletOneofCase.BulletCharacter => new A.CharacterBullet { Char = source.BulletCharacter },
@@ -96,18 +105,21 @@ internal static class PptxBulletCodec
             Type = new A.TextAutoNumberSchemeValues(source.AutoNumber.Scheme),
             StartAt = source.AutoNumber.HasStartAt ? checked((int)source.AutoNumber.StartAt) : null,
         },
+        PresentationTextParagraph.BulletOneofCase.PictureBullet => context?.BuildPicture(source.PictureBullet) ??
+            throw Invalid("Presentation picture bullet authoring requires a slide context."),
         _ => throw Invalid("Presentation paragraph has no modeled list marker."),
     };
 
     private static IEnumerable<OpenXmlElement> BulletChoices(A.ParagraphProperties source) =>
         source.ChildElements.Where(child => child is A.NoBullet or A.CharacterBullet or A.AutoNumberedBullet or A.PictureBullet);
 
-    private static bool Modeled(OpenXmlElement source) => source switch
+    private static bool Modeled(OpenXmlElement source, PptxSlideContext? context) => source switch
     {
         A.NoBullet => true,
         A.CharacterBullet character => ValidCharacter(character.Char?.Value),
         A.AutoNumberedBullet autoNumber => AutoNumberSchemes.Contains(Scheme(autoNumber)) &&
             (autoNumber.StartAt is null || autoNumber.StartAt.Value is >= 1 and <= 32_767),
+        A.PictureBullet picture => context is not null && context.TryReadPicture(picture, out _),
         _ => false,
     };
 
