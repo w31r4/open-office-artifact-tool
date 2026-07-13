@@ -240,8 +240,8 @@ message PresentationShape {
   PresentationTextBody text_body = 10;
 }
 
-// The first public PresentationML text slice intentionally models only
-// agent-facing paragraph/run semantics. Unsupported bullets, hyperlinks,
+// The public PresentationML text slice models agent-facing paragraph/run and
+// basic list-marker semantics. Picture bullets, marker styling, hyperlinks,
 // fields, tabs, breaks, body properties, and list styles stay source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
@@ -251,6 +251,19 @@ message PresentationTextParagraph {
   optional uint32 level = 1;
   optional string alignment = 2;
   repeated PresentationTextRun runs = 3;
+  // Unset means no direct marker for newly authored text and preserve an
+  // unknown source marker during a source-bound edit.
+  oneof bullet {
+    bool no_bullet = 4;
+    string bullet_character = 5;
+    PresentationAutoNumberBullet auto_number = 6;
+  }
+}
+
+message PresentationAutoNumberBullet {
+  // ECMA-376 ST_TextAutonumberScheme token, for example arabicPeriod.
+  string scheme = 1;
+  optional uint32 start_at = 2;
 }
 
 message PresentationTextRun {

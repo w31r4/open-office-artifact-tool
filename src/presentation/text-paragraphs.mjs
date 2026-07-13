@@ -15,6 +15,10 @@ const AUTO_NUMBER_TYPES = new Set([
   "thaiAlphaParenBoth", "thaiAlphaParenR", "thaiAlphaPeriod", "thaiNumParenBoth", "thaiNumParenR", "thaiNumPeriod",
 ]);
 
+export function isPresentationAutoNumberType(value) {
+  return AUTO_NUMBER_TYPES.has(String(value));
+}
+
 function xmlEscape(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
