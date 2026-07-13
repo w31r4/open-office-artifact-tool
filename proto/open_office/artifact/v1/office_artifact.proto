@@ -242,8 +242,8 @@ message PresentationShape {
 
 // The public PresentationML text slice models agent-facing paragraph/inlines,
 // list-marker/direct marker-style semantics, content-addressed or external
-// picture bullets, tab stops, direct left-margin/hanging-indent layout, and
-// bounded click links. Transformed or
+// picture bullets, tab stops, direct left-margin/hanging-indent layout,
+// direct paragraph spacing, and bounded click links. Transformed or
 // non-sRGB/non-theme marker colors, custom-show/mouse-over links, field
 // paragraph properties, body properties, and list styles stay source-bound.
 message PresentationTextBody {
@@ -293,6 +293,24 @@ message PresentationTextParagraph {
   oneof indentation {
     int64 indent_emu = 19;
     bool no_indent = 21;
+  }
+  // Point and multiplier choices retain the native DrawingML spcPts/spcPct
+  // identity. A multiplier of 1.0 is 100%. Unset preserves source/inherited
+  // spacing; explicit no_* choices remove a modeled direct override.
+  oneof line_spacing {
+    double line_spacing_points = 22;
+    double line_spacing_multiplier = 23;
+    bool no_line_spacing = 24;
+  }
+  oneof space_before {
+    double space_before_points = 25;
+    double space_before_multiplier = 26;
+    bool no_space_before = 27;
+  }
+  oneof space_after {
+    double space_after_points = 28;
+    double space_after_multiplier = 29;
+    bool no_space_after = 30;
   }
 }
 

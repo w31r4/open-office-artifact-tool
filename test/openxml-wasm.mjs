@@ -43,6 +43,16 @@ assert.deepEqual(
   [0xa0, 0x01],
   "Explicit paragraph left-margin deletion must use additive field 20.",
 );
+assert.deepEqual(
+  [...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { lineSpacing: { case: "lineSpacingPoints", value: 18 } })).slice(0, 2)],
+  [0xb1, 0x01],
+  "Presentation paragraph line spacing must use additive field 22.",
+);
+assert.deepEqual(
+  [...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { lineSpacing: { case: "noLineSpacing", value: true } })).slice(0, 2)],
+  [0xc0, 0x01],
+  "Explicit paragraph line-spacing deletion must use additive field 24.",
+);
 assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
 
 const workbook = Workbook.create({ dateSystem: "1904" });
@@ -217,6 +227,9 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
       bulletSizePercent: 1.5,
       marginLeft: 32,
       indent: -16,
+      lineSpacing: 1.25,
+      spaceBefore: 12,
+      spaceAfterPercent: 0.5,
       runs: [
         { text: "Quarterly ", style: { bold: true, fontSize: 36, fontFamily: "Aptos Display", color: "#0F172A" } },
         { text: "brief", style: { italic: true, fontSize: 36 } },
@@ -228,7 +241,11 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
 });
 const richPptx = await exportPptxWithOpenXmlWasm(richPresentation);
 const richPptxZip = await JSZip.loadAsync(richPptx.bytes);
-assert.match(await richPptxZip.file("ppt/slides/slide1.xml").async("text"), /<a:buClr><a:schemeClr val="accent1"\s*\/><\/a:buClr>/);
+const richPptxXml = await richPptxZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(richPptxXml, /<a:buClr><a:schemeClr val="accent1"\s*\/><\/a:buClr>/);
+assert.match(richPptxXml, /<a:lnSpc><a:spcPct val="125000"\s*\/><\/a:lnSpc>/);
+assert.match(richPptxXml, /<a:spcBef><a:spcPts val="900"\s*\/><\/a:spcBef>/);
+assert.match(richPptxXml, /<a:spcAft><a:spcPct val="50000"\s*\/><\/a:spcAft>/);
 const richPptxImported = await importPptxWithOpenXmlWasm(richPptx);
 const richImportedShape = richPptxImported.slides.getItem(0).shapes.items[0];
 assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail\nExplicitly unbulleted");
@@ -240,6 +257,9 @@ assert.equal(richImportedShape.text.paragraphs[0].bulletColor, "accent1");
 assert.equal(richImportedShape.text.paragraphs[0].bulletSizePercent, 1.5);
 assert.equal(richImportedShape.text.paragraphs[0].marginLeft, 32);
 assert.equal(richImportedShape.text.paragraphs[0].indent, -16);
+assert.equal(richImportedShape.text.paragraphs[0].lineSpacing, 1.25);
+assert.equal(richImportedShape.text.paragraphs[0].spaceBefore, 12);
+assert.equal(richImportedShape.text.paragraphs[0].spaceAfterPercent, 0.5);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.bold, true);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontSize, 36);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontFamily, "Aptos Display");
@@ -253,7 +273,7 @@ assert.equal(richImportedShape.text.paragraphs[2].bulletNone, true);
 assert.equal(richImportedShape.text.paragraphs[2].bulletSize, 24);
 richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
   ...paragraph,
-  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "accent2", bulletSizePercent: undefined, bulletSize: 24, marginLeft: 40, indent: -20 } : {}),
+  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "accent2", bulletSizePercent: undefined, bulletSize: 24, marginLeft: 40, indent: -20, lineSpacing: 18, spaceBefore: undefined, spaceBeforePercent: 0.25, spaceAfterPercent: undefined, spaceAfter: 6 } : {}),
   ...(paragraphIndex === 1 ? { autoNumber: { type: "arabicPeriod", startAt: 5 }, bulletFontFollowText: undefined, bulletFont: "Aptos", bulletColorFollowText: undefined, bulletColor: "#16A34A", bulletSizeFollowText: undefined, bulletSizePercent: 1.25 } : {}),
   ...(paragraphIndex === 2 ? { bulletNone: undefined, bulletCharacter: "–", bulletSize: undefined, bulletSizeFollowText: true } : {}),
   runs: paragraph.runs.map((run, runIndex) => paragraphIndex === 0 && runIndex === 0
@@ -262,7 +282,11 @@ richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((parag
 }));
 const richPptxEdited = await exportPptxWithOpenXmlWasm(richPptxImported);
 const richPptxEditedZip = await JSZip.loadAsync(richPptxEdited.bytes);
-assert.match(await richPptxEditedZip.file("ppt/slides/slide1.xml").async("text"), /<a:buClr><a:schemeClr val="accent2"\s*\/><\/a:buClr>/);
+const richPptxEditedXml = await richPptxEditedZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(richPptxEditedXml, /<a:buClr><a:schemeClr val="accent2"\s*\/><\/a:buClr>/);
+assert.match(richPptxEditedXml, /<a:lnSpc><a:spcPts val="1350"\s*\/><\/a:lnSpc>/);
+assert.match(richPptxEditedXml, /<a:spcBef><a:spcPct val="25000"\s*\/><\/a:spcBef>/);
+assert.match(richPptxEditedXml, /<a:spcAft><a:spcPts val="450"\s*\/><\/a:spcAft>/);
 const richPptxRoundTrip = await importPptxWithOpenXmlWasm(richPptxEdited);
 const richRoundTripShape = richPptxRoundTrip.slides.getItem(0).shapes.items[0];
 assert.equal(richRoundTripShape.text.value, "Updated brief\nSource-bound detail\nExplicitly unbulleted");
@@ -274,6 +298,9 @@ assert.equal(richRoundTripShape.text.paragraphs[0].bulletColor, "accent2");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletSize, 24);
 assert.equal(richRoundTripShape.text.paragraphs[0].marginLeft, 40);
 assert.equal(richRoundTripShape.text.paragraphs[0].indent, -20);
+assert.equal(richRoundTripShape.text.paragraphs[0].lineSpacing, 18);
+assert.equal(richRoundTripShape.text.paragraphs[0].spaceBeforePercent, 0.25);
+assert.equal(richRoundTripShape.text.paragraphs[0].spaceAfter, 6);
 assert.deepEqual(richRoundTripShape.text.paragraphs[1].autoNumber, { type: "arabicPeriod", startAt: 5 });
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletFont, "Aptos");
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletColor, "#16A34A");
@@ -282,16 +309,24 @@ assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
 
 richRoundTripShape.text.paragraphs = richRoundTripShape.text.paragraphs.map((paragraph, index) => index === 0
-  ? { ...paragraph, marginLeft: undefined, indent: undefined }
+  ? { ...paragraph, marginLeft: undefined, indent: undefined, lineSpacing: undefined, spaceBefore: undefined, spaceBeforePercent: undefined, spaceAfter: undefined, spaceAfterPercent: undefined }
   : paragraph);
 const richLayoutDeleted = await exportPptxWithOpenXmlWasm(richPptxRoundTrip);
 const richLayoutDeletedZip = await JSZip.loadAsync(richLayoutDeleted.bytes);
 const richLayoutDeletedXml = await richLayoutDeletedZip.file("ppt/slides/slide1.xml").async("text");
 assert.doesNotMatch(richLayoutDeletedXml, /\bmarL=/);
 assert.doesNotMatch(richLayoutDeletedXml, /\bindent=/);
+assert.doesNotMatch(richLayoutDeletedXml, /<a:lnSpc>/);
+assert.doesNotMatch(richLayoutDeletedXml, /<a:spcBef>/);
+assert.doesNotMatch(richLayoutDeletedXml, /<a:spcAft>/);
 const richLayoutDeletedRoundTrip = await importPptxWithOpenXmlWasm(richLayoutDeleted);
 assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].marginLeft, undefined);
 assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].indent, undefined);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].lineSpacing, undefined);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].spaceBefore, undefined);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].spaceBeforePercent, undefined);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].spaceAfter, undefined);
+assert.equal(richLayoutDeletedRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].spaceAfterPercent, undefined);
 
 const transformedColorZip = await JSZip.loadAsync(richPptx.bytes);
 const transformedColorSlidePath = "ppt/slides/slide1.xml";
@@ -523,6 +558,13 @@ const invalidParagraphLayoutPresentation = Presentation.create();
 invalidParagraphLayoutPresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", marginLeft: 6000, indent: -20, runs: ["too wide"] }] });
 await assert.rejects(
   exportPptxWithOpenXmlWasm(invalidParagraphLayoutPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text",
+);
+
+const invalidParagraphSpacingPresentation = Presentation.create();
+invalidParagraphSpacingPresentation.slides.add().shapes.add({ text: [{ spaceBefore: 2112.01, runs: ["too much space"] }] });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidParagraphSpacingPresentation),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_presentation_text",
 );
 

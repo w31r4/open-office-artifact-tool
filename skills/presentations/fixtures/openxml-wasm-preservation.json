@@ -16,7 +16,7 @@
       "shapes": [
         {
           "name": "wasm-title",
-          "position": { "left": 48, "top": 20, "width": 1184, "height": 180 },
+          "position": { "left": 48, "top": 20, "width": 1184, "height": 190 },
           "fill": "#FFFFFF",
           "line": { "fill": "#334155", "width": 1 },
           "text": [
@@ -29,7 +29,7 @@
                 { "text": "Field and line-break evidence", "style": { "fontSize": 18, "color": "#475569" } }
               ]
             },
-            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "marginLeft": 32, "indent": -16, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
+            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "marginLeft": 32, "indent": -16, "lineSpacing": 1.25, "spaceBefore": 12, "spaceAfterPercent": 0.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
             { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "uri": "https://example.com/remove" } }] },
             { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==" }, "runs": [{ "text": "Picture marker", "style": { "fontSize": 18, "color": "#334155" } }] }
           ]
@@ -93,6 +93,9 @@
           "bulletSize": 24,
           "marginLeft": 40,
           "indent": -20,
+          "lineSpacing": 18,
+          "spaceBeforePercent": 0.25,
+          "spaceAfter": 6,
           "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "lastSlide", "highlightClick": false } }]
         },
         {

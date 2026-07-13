@@ -37,6 +37,7 @@ for (const required of [
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxColor.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxHyperlinkCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxParagraphLayoutCodec.cs",
+  "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxParagraphSpacingCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxSlideContext.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxTextCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/XlsxCodec.cs",

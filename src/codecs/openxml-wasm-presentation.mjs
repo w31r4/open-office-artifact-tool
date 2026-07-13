@@ -10,6 +10,8 @@ const EMU_PER_POINT = 12700;
 const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
 const MAX_PARAGRAPH_COORDINATE_EMU = 51_206_400;
+const MAX_PARAGRAPH_SPACING_POINTS = 1584;
+const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
 const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
@@ -20,6 +22,7 @@ const PARAGRAPH_KEYS = new Set([
   "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletImage", "bulletNone",
   "bulletFont", "bulletFontFollowText", "bulletColor", "bulletColorFollowText",
   "bulletSize", "bulletSizePercent", "bulletSizeFollowText", "tabStops", "marginLeft", "indent",
+  "lineSpacing", "spaceBefore", "spaceBeforePercent", "spaceAfter", "spaceAfterPercent",
 ]);
 
 function emuFromPixels(value, name) {
@@ -226,6 +229,61 @@ function wireParagraphLayout(paragraph, original, shapeId) {
   };
 }
 
+function paragraphSpacingValue(value, name, { allowZero = true, maximum }) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < (allowZero ? 0 : Number.EPSILON) || number > maximum) {
+    throw new OpenXmlWasmCodecError(`${name} is outside the supported DrawingML spacing range.`, [], { code: "invalid_presentation_text" });
+  }
+  return number;
+}
+
+function paragraphSpacingPointsFromPixels(value, name, { allowZero = true } = {}) {
+  const pixels = paragraphSpacingValue(value, name, { allowZero, maximum: MAX_PARAGRAPH_SPACING_POINTS / POINTS_PER_PIXEL });
+  return pixels * POINTS_PER_PIXEL;
+}
+
+function wireParagraphSpacing(paragraph, original, shapeId) {
+  let lineSpacing;
+  if (paragraph.lineSpacing != null) {
+    const value = Number(paragraph.lineSpacing);
+    lineSpacing = value <= 10
+      ? { case: "lineSpacingMultiplier", value: paragraphSpacingValue(value, `${shapeId}.text.lineSpacing`, { allowZero: false, maximum: MAX_PARAGRAPH_SPACING_MULTIPLIER }) }
+      : { case: "lineSpacingPoints", value: paragraphSpacingPointsFromPixels(value, `${shapeId}.text.lineSpacing`, { allowZero: false }) };
+  } else if (new Set(["lineSpacingPoints", "lineSpacingMultiplier", "noLineSpacing"]).has(original?.lineSpacing?.case)) {
+    lineSpacing = { case: "noLineSpacing", value: true };
+  }
+
+  if (paragraph.spaceBefore != null && paragraph.spaceBeforePercent != null) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph must use either point or percentage space-before, not both.`, [], { code: "invalid_presentation_text" });
+  }
+  let spaceBefore;
+  if (paragraph.spaceBefore != null) {
+    spaceBefore = { case: "spaceBeforePoints", value: paragraphSpacingPointsFromPixels(paragraph.spaceBefore, `${shapeId}.text.spaceBefore`) };
+  } else if (paragraph.spaceBeforePercent != null) {
+    spaceBefore = { case: "spaceBeforeMultiplier", value: paragraphSpacingValue(paragraph.spaceBeforePercent, `${shapeId}.text.spaceBeforePercent`, { maximum: MAX_PARAGRAPH_SPACING_MULTIPLIER }) };
+  } else if (new Set(["spaceBeforePoints", "spaceBeforeMultiplier", "noSpaceBefore"]).has(original?.spaceBefore?.case)) {
+    spaceBefore = { case: "noSpaceBefore", value: true };
+  }
+
+  if (paragraph.spaceAfter != null && paragraph.spaceAfterPercent != null) {
+    throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph must use either point or percentage space-after, not both.`, [], { code: "invalid_presentation_text" });
+  }
+  let spaceAfter;
+  if (paragraph.spaceAfter != null) {
+    spaceAfter = { case: "spaceAfterPoints", value: paragraphSpacingPointsFromPixels(paragraph.spaceAfter, `${shapeId}.text.spaceAfter`) };
+  } else if (paragraph.spaceAfterPercent != null) {
+    spaceAfter = { case: "spaceAfterMultiplier", value: paragraphSpacingValue(paragraph.spaceAfterPercent, `${shapeId}.text.spaceAfterPercent`, { maximum: MAX_PARAGRAPH_SPACING_MULTIPLIER }) };
+  } else if (new Set(["spaceAfterPoints", "spaceAfterMultiplier", "noSpaceAfter"]).has(original?.spaceAfter?.case)) {
+    spaceAfter = { case: "noSpaceAfter", value: true };
+  }
+
+  return {
+    ...(lineSpacing ? { lineSpacing } : {}),
+    ...(spaceBefore ? { spaceBefore } : {}),
+    ...(spaceAfter ? { spaceAfter } : {}),
+  };
+}
+
 function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -246,6 +304,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
   const bulletSize = wireBulletSize(paragraph, original, shapeId);
   const tabs = wireTabStops(paragraph, original, shapeId);
   const layout = wireParagraphLayout(paragraph, original, shapeId);
+  const spacing = wireParagraphSpacing(paragraph, original, shapeId);
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
@@ -256,6 +315,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog) {
     ...(bulletSize ? { bulletSize } : {}),
     ...tabs,
     ...layout,
+    ...spacing,
   };
 }
 
@@ -481,6 +541,17 @@ function modelParagraphLayout(paragraph) {
   };
 }
 
+function modelParagraphSpacing(paragraph) {
+  return {
+    ...(paragraph.lineSpacing?.case === "lineSpacingPoints" ? { lineSpacing: paragraph.lineSpacing.value / POINTS_PER_PIXEL } : {}),
+    ...(paragraph.lineSpacing?.case === "lineSpacingMultiplier" ? { lineSpacing: paragraph.lineSpacing.value } : {}),
+    ...(paragraph.spaceBefore?.case === "spaceBeforePoints" ? { spaceBefore: paragraph.spaceBefore.value / POINTS_PER_PIXEL } : {}),
+    ...(paragraph.spaceBefore?.case === "spaceBeforeMultiplier" ? { spaceBeforePercent: paragraph.spaceBefore.value } : {}),
+    ...(paragraph.spaceAfter?.case === "spaceAfterPoints" ? { spaceAfter: paragraph.spaceAfter.value / POINTS_PER_PIXEL } : {}),
+    ...(paragraph.spaceAfter?.case === "spaceAfterMultiplier" ? { spaceAfterPercent: paragraph.spaceAfter.value } : {}),
+  };
+}
+
 function modelText(shape, assetCatalog) {
   if (!shape.textBody) return shape.text;
   return shape.textBody.paragraphs.map((paragraph) => ({
@@ -490,6 +561,7 @@ function modelText(shape, assetCatalog) {
     ...modelBullet(paragraph.bullet, assetCatalog),
     ...modelBulletStyle(paragraph),
     ...modelParagraphLayout(paragraph),
+    ...modelParagraphSpacing(paragraph),
     ...(paragraph.tabStops?.length ? { tabStops: paragraph.tabStops.map((tab) => ({ position: Number(tab.positionEmu) / EMU_PER_PIXEL, alignment: tab.alignment })) } : {}),
     style: {},
   }));

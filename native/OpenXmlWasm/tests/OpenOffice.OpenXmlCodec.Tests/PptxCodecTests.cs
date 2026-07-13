@@ -302,6 +302,67 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ParagraphSpacingAuthorsImportsEditsAndDeletesWithoutChangingUnits()
+    {
+        var request = RichTextExportRequest();
+        var paragraph = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        paragraph.LineSpacingMultiplier = 1.25;
+        paragraph.SpaceBeforePoints = 12;
+        paragraph.SpaceAfterMultiplier = 0.5;
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!;
+            Assert.Equal(125_000, properties.GetFirstChild<A.LineSpacing>()!.GetFirstChild<A.SpacingPercent>()!.Val!.Value);
+            Assert.Equal(1_200, properties.GetFirstChild<A.SpaceBefore>()!.GetFirstChild<A.SpacingPoints>()!.Val!.Value);
+            Assert.Equal(50_000, properties.GetFirstChild<A.SpaceAfter>()!.GetFirstChild<A.SpacingPercent>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        paragraph = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(PresentationTextParagraph.LineSpacingOneofCase.LineSpacingMultiplier, paragraph.LineSpacingCase);
+        Assert.Equal(1.25, paragraph.LineSpacingMultiplier);
+        Assert.Equal(PresentationTextParagraph.SpaceBeforeOneofCase.SpaceBeforePoints, paragraph.SpaceBeforeCase);
+        Assert.Equal(12, paragraph.SpaceBeforePoints);
+        Assert.Equal(PresentationTextParagraph.SpaceAfterOneofCase.SpaceAfterMultiplier, paragraph.SpaceAfterCase);
+        Assert.Equal(0.5, paragraph.SpaceAfterMultiplier);
+
+        paragraph.LineSpacingPoints = 18;
+        paragraph.SpaceBeforeMultiplier = 0.25;
+        paragraph.SpaceAfterPoints = 6;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        paragraph = reimported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(PresentationTextParagraph.LineSpacingOneofCase.LineSpacingPoints, paragraph.LineSpacingCase);
+        Assert.Equal(18, paragraph.LineSpacingPoints);
+        Assert.Equal(PresentationTextParagraph.SpaceBeforeOneofCase.SpaceBeforeMultiplier, paragraph.SpaceBeforeCase);
+        Assert.Equal(0.25, paragraph.SpaceBeforeMultiplier);
+        Assert.Equal(PresentationTextParagraph.SpaceAfterOneofCase.SpaceAfterPoints, paragraph.SpaceAfterCase);
+        Assert.Equal(6, paragraph.SpaceAfterPoints);
+
+        paragraph.NoLineSpacing = true;
+        paragraph.NoSpaceBefore = true;
+        paragraph.NoSpaceAfter = true;
+        var deleted = Export(reimported.Artifact);
+        Assert.True(deleted.Ok, Diagnostics(deleted));
+        using (var stream = new MemoryStream(deleted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Paragraph>().First().ParagraphProperties!;
+            Assert.Null(properties.GetFirstChild<A.LineSpacing>());
+            Assert.Null(properties.GetFirstChild<A.SpaceBefore>());
+            Assert.Null(properties.GetFirstChild<A.SpaceAfter>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+    }
+
+    [Fact]
     public void FieldsBreaksAndTabStopsRoundTripEditAndPreserveResidualProperties()
     {
         var request = RichTextExportRequest();
@@ -707,6 +768,18 @@ public sealed class PptxCodecTests
         var invalidIndentDeletion = Invoke(request);
         Assert.False(invalidIndentDeletion.Ok);
         Assert.Equal("invalid_presentation_text", Assert.Single(invalidIndentDeletion.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].SpaceBeforePoints = 1_584.01;
+        var invalidSpacing = Invoke(request);
+        Assert.False(invalidSpacing.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidSpacing.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].NoSpaceAfter = false;
+        var invalidSpacingDeletion = Invoke(request);
+        Assert.False(invalidSpacingDeletion.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidSpacingDeletion.Diagnostics).Code);
     }
 
     private static CodecResponse Invoke(CodecRequest request) =>

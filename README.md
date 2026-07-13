@@ -111,7 +111,7 @@ const deck = Presentation.create();
 deck.slides.add({ name: "Overview" }).shapes.add({
   name: "Title",
   text: [
-    { alignment: "center", runs: [
+    { alignment: "center", lineSpacing: 1.2, spaceAfter: 8, runs: [
       { text: "OpenXML ", style: { bold: true, fontSize: 36, color: "#0F172A" } },
       { text: "WASM presentation", style: { italic: true, fontSize: 36 }, link: { uri: "https://example.com/evidence", tooltip: "Open evidence" } },
     ] },

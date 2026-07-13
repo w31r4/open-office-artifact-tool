@@ -30,6 +30,7 @@ internal static class PptxTextCodec
             if (properties?.Alignment?.Value is { } alignment && AlignmentName(alignment) is { Length: > 0 } alignmentName)
                 paragraph.Alignment = alignmentName;
             PptxParagraphLayoutCodec.Read(paragraph, properties);
+            PptxParagraphSpacingCodec.Read(paragraph, properties);
             PptxBulletCodec.Read(paragraph, properties, slideContext);
             PptxBulletStyleCodec.Read(paragraph, properties);
             foreach (var sourceInline in ParagraphInlines(sourceParagraph))
@@ -63,6 +64,9 @@ internal static class PptxTextCodec
             if (paragraph.HasNoTabStops) paragraph.ClearNoTabStops();
             if (paragraph.LeftMarginCase == PresentationTextParagraph.LeftMarginOneofCase.NoMarginLeft) paragraph.ClearLeftMargin();
             if (paragraph.IndentationCase == PresentationTextParagraph.IndentationOneofCase.NoIndent) paragraph.ClearIndentation();
+            if (paragraph.LineSpacingCase == PresentationTextParagraph.LineSpacingOneofCase.NoLineSpacing) paragraph.ClearLineSpacing();
+            if (paragraph.SpaceBeforeCase == PresentationTextParagraph.SpaceBeforeOneofCase.NoSpaceBefore) paragraph.ClearSpaceBefore();
+            if (paragraph.SpaceAfterCase == PresentationTextParagraph.SpaceAfterOneofCase.NoSpaceAfter) paragraph.ClearSpaceAfter();
         }
         shape.Text = Flatten(body);
     }
@@ -78,6 +82,7 @@ internal static class PptxTextCodec
             if (paragraph.ChildElements.Any(child => child is not A.ParagraphProperties and not A.Run and not A.Break and not A.Field and not A.EndParagraphRunProperties)) return false;
             if (!SupportsTabStops(paragraph.ParagraphProperties)) return false;
             if (!PptxParagraphLayoutCodec.Supports(paragraph.ParagraphProperties)) return false;
+            if (!PptxParagraphSpacingCodec.Supports(paragraph.ParagraphProperties)) return false;
             foreach (var inline in ParagraphInlines(paragraph))
             {
                 inlines++;
@@ -99,6 +104,7 @@ internal static class PptxTextCodec
                 throw new CodecException("invalid_presentation_text", "Presentation paragraph level must be from 0 through 8.");
             if (paragraph.HasAlignment) ParseAlignment(paragraph.Alignment);
             PptxParagraphLayoutCodec.Validate(paragraph);
+            PptxParagraphSpacingCodec.Validate(paragraph);
             PptxBulletCodec.Validate(paragraph);
             PptxBulletStyleCodec.Validate(paragraph);
             ValidateTabStops(paragraph);
@@ -162,6 +168,7 @@ internal static class PptxTextCodec
                 if (paragraphProperties.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0)
                     paragraphProperties.Alignment = null;
                 PptxParagraphLayoutCodec.Scrub(paragraphProperties);
+                PptxParagraphSpacingCodec.Scrub(paragraphProperties);
                 PptxBulletCodec.Scrub(paragraphProperties, slideContext);
                 PptxBulletStyleCodec.Scrub(paragraphProperties);
                 paragraphProperties.GetFirstChild<A.TabStopList>()?.Remove();
@@ -229,12 +236,13 @@ internal static class PptxTextCodec
     private static A.Paragraph BuildParagraph(PresentationTextParagraph source, PptxSlideContext? slideContext)
     {
         var paragraph = new A.Paragraph();
-        if (source.HasLevel || source.HasAlignment || PptxParagraphLayoutCodec.HasAuthoredLayout(source) || PptxBulletCodec.HasModeledBullet(source) || PptxBulletStyleCodec.HasModeledStyle(source) || source.TabStops.Count > 0)
+        if (source.HasLevel || source.HasAlignment || PptxParagraphLayoutCodec.HasAuthoredLayout(source) || PptxParagraphSpacingCodec.HasAuthoredSpacing(source) || PptxBulletCodec.HasModeledBullet(source) || PptxBulletStyleCodec.HasModeledStyle(source) || source.TabStops.Count > 0)
         {
             var properties = new A.ParagraphProperties();
             if (source.HasLevel) properties.Level = checked((int)source.Level);
             if (source.HasAlignment) properties.Alignment = ParseAlignment(source.Alignment);
             PptxParagraphLayoutCodec.Append(properties, source);
+            PptxParagraphSpacingCodec.Append(properties, source);
             PptxBulletStyleCodec.Append(properties, source);
             PptxBulletCodec.Append(properties, source, slideContext);
             AppendTabStops(properties, source);
@@ -262,7 +270,7 @@ internal static class PptxTextCodec
     private static void ApplyParagraphProperties(A.Paragraph source, PresentationTextParagraph requested, PptxSlideContext slideContext)
     {
         var properties = source.ParagraphProperties;
-        if (properties is null && (requested.HasLevel || requested.HasAlignment || PptxParagraphLayoutCodec.HasAuthoredLayout(requested) || PptxBulletCodec.HasModeledBullet(requested) || PptxBulletStyleCodec.HasModeledStyle(requested) || requested.TabStops.Count > 0))
+        if (properties is null && (requested.HasLevel || requested.HasAlignment || PptxParagraphLayoutCodec.HasAuthoredLayout(requested) || PptxParagraphSpacingCodec.HasAuthoredSpacing(requested) || PptxBulletCodec.HasModeledBullet(requested) || PptxBulletStyleCodec.HasModeledStyle(requested) || requested.TabStops.Count > 0))
         {
             properties = new A.ParagraphProperties();
             source.PrependChild(properties);
@@ -272,6 +280,7 @@ internal static class PptxTextCodec
         if (requested.HasAlignment) properties.Alignment = ParseAlignment(requested.Alignment);
         else if (properties.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0) properties.Alignment = null;
         PptxParagraphLayoutCodec.Apply(properties, requested);
+        PptxParagraphSpacingCodec.Apply(properties, requested);
         PptxBulletStyleCodec.Apply(properties, requested);
         PptxBulletCodec.Apply(properties, requested, slideContext);
         ApplyTabStops(properties, requested);

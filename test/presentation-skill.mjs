@@ -231,6 +231,9 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[1].bulletSize, 24);
   assert.equal(wasmTitle?.text.paragraphs[1].marginLeft, 40);
   assert.equal(wasmTitle?.text.paragraphs[1].indent, -20);
+  assert.equal(wasmTitle?.text.paragraphs[1].lineSpacing, 18);
+  assert.equal(wasmTitle?.text.paragraphs[1].spaceBeforePercent, 0.25);
+  assert.equal(wasmTitle?.text.paragraphs[1].spaceAfter, 6);
   assert.deepEqual(wasmTitle?.text.paragraphs[1].runs[0].link, { action: "lastSlide", highlightClick: false });
   assert.deepEqual(wasmTitle?.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 5 });
   assert.equal(wasmTitle?.text.paragraphs[2].bulletFont, "Aptos");
@@ -252,6 +255,9 @@ try {
   assert.match(wasmSlideXml, /<a:tabLst><a:tab pos="7429500" algn="r"\s*\/><\/a:tabLst>/);
   assert.match(wasmSlideXml, /<a:buClr><a:schemeClr val="accent1"\s*\/><\/a:buClr>/);
   assert.match(wasmSlideXml, /<a:pPr[^>]*marL="381000"[^>]*indent="-190500"/);
+  assert.match(wasmSlideXml, /<a:lnSpc><a:spcPts val="1350"\s*\/><\/a:lnSpc>/);
+  assert.match(wasmSlideXml, /<a:spcBef><a:spcPct val="25000"\s*\/><\/a:spcBef>/);
+  assert.match(wasmSlideXml, /<a:spcAft><a:spcPts val="450"\s*\/><\/a:spcAft>/);
   assert.match(wasmSlideXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
   assert.match(wasmSlideXml, /<a:br><a:rPr[^>]*i="1"/);
   assert.match(wasmSlideXml, /<a:buBlip><a:blip r:embed="[^"]+"[^>]*\/><\/a:buBlip>/);
