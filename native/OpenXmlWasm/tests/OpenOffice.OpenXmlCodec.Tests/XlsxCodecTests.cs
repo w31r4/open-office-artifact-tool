@@ -163,6 +163,30 @@ public sealed class XlsxCodecTests
         Assert.Equal("opaque_content_discarded", Assert.Single(lossy.Diagnostics).Code);
     }
 
+    [Fact]
+    public void SourcePreservingExportRejectsInvalidOwnedMarkup()
+    {
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var imported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportXlsx,
+            Family = ArtifactFamily.Workbook,
+            File = ByteString.CopyFrom(AddInvalidWorksheetMarkup(firstExport.File.ToByteArray())),
+        }.ToByteArray()));
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(exported.Ok);
+        Assert.Equal("openxml_validation_failed", Assert.Single(exported.Diagnostics).Code);
+    }
+
     private static CodecRequest ExportRequest()
     {
         var sheet = new WorksheetArtifact
@@ -218,6 +242,24 @@ public sealed class XlsxCodecTests
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
         using (var writer = new StreamWriter(archive.CreateEntry(path).Open()))
             writer.Write("<probe/>");
+        return stream.ToArray();
+    }
+
+    private static byte[] AddInvalidWorksheetMarkup(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/worksheets/sheet1.xml") ?? throw new InvalidOperationException("Worksheet is missing.");
+            string xml;
+            using (var reader = new StreamReader(entry.Open())) xml = reader.ReadToEnd();
+            var closing = xml.LastIndexOf("</", StringComparison.Ordinal);
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/worksheets/sheet1.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(xml.Insert(closing, "<x:notARealWorksheetChild/>"));
+        }
         return stream.ToArray();
     }
 }
