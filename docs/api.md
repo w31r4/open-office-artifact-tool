@@ -1610,7 +1610,7 @@ Add a shape/textbox with geometry, position, fill, line, text, and bounded Drawi
 - `geometry` (string) — Shape geometry such as rect or ellipse.
 - `position` (object) — Pixel left/top/width/height frame.
 - `text` (string|string[]|object|object[]) — Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks.
-- `textBodyProperties` (object) — DrawingML text-frame layout: pixel insets, top/center/bottom anchor, square/none wrapping, and none/shrinkText/resizeShape AutoFit.
+- `textBodyProperties` (object) — DrawingML text-frame layout: pixel insets; anchor/wrap/AutoFit; -360..360 degree rotation; horizontal/vertical/vertical270 text; horizontal/vertical overflow; 1-16 columns with pixel spacing and RTL flow; and upright text.
 - `fill` (string|object) — Shape fill.
 - `line` (object) — Line color, width, dash, and arrow metadata.
 - `placeholder` (object) — Optional layout placeholder metadata.
