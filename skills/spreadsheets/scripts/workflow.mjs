@@ -13,7 +13,7 @@ import {
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportXlsxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -333,9 +333,15 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   const workbookPath = path.join(outputDir, fixture.outputName || `${fixture.name || "workbook"}.xlsx`);
   const codec = String(options.codec || fixture.codec || "javascript").toLowerCase();
   if (!new Set(["javascript", "openxml-wasm"]).has(codec)) throw new Error(`Unsupported spreadsheet fixture codec ${codec}; expected javascript or openxml-wasm.`);
-  const file = codec === "openxml-wasm"
+  let file = codec === "openxml-wasm"
     ? await exportXlsxWithOpenXmlWasm(workbook)
     : await SpreadsheetFile.exportXlsx(workbook);
+  const roundtripCodec = String(options.roundtripCodec || fixture.roundtripCodec || "none").toLowerCase();
+  if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
+  if (roundtripCodec === "openxml-wasm") {
+    const imported = await importXlsxWithOpenXmlWasm(file);
+    file = await exportXlsxWithOpenXmlWasm(imported, { recalculate: false });
+  }
   await file.save(workbookPath);
   const qa = await verifyWorkbookFile(workbookPath, {
     outputDir: path.join(outputDir, "qa"),
@@ -353,5 +359,5 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     allSheets: options.allSheets,
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
   });
-  return { fixture, workbookPath, qa, codec };
+  return { fixture, workbookPath, qa, codec, roundtripCodec };
 }

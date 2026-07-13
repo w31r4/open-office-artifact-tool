@@ -17,6 +17,7 @@ const baselineDir = path.join(outputDir, "baselines");
 try {
   const result = await runSpreadsheetFixture(fixturePath, { outputDir, nativeRender: "off" });
   assert.equal(result.fixture.name, "formula-summary");
+  assert.equal(result.roundtripCodec, "openxml-wasm");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);

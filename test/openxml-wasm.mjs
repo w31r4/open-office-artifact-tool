@@ -68,12 +68,13 @@ const relationships = await externalZip.file(relationshipPath).async("text");
 externalZip.file(relationshipPath, relationships.replace("</Relationships>", '<Relationship Id="rIdExternal" Type="urn:open-office-artifact-tool:test" Target="https://example.invalid/data" TargetMode="External"/></Relationships>'));
 const externalBytes = await externalZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 const opaqueImported = await importXlsxWithOpenXmlWasm(externalBytes);
-await assert.rejects(
-  exportXlsxWithOpenXmlWasm(opaqueImported, { recalculate: false }),
-  (error) => error instanceof OpenXmlWasmCodecError && error.code === "opaque_content_requires_preservation",
-);
-const lossy = await exportXlsxWithOpenXmlWasm(opaqueImported, { allowLossy: true, recalculate: false });
-assert.equal(lossy.metadata.diagnostics.some((item) => item.code === "opaque_content_discarded"), true);
+opaqueImported.worksheets.getItem("Summary").getRange("B1").values = [[99]];
+const preserved = await exportXlsxWithOpenXmlWasm(opaqueImported, { recalculate: false });
+assert.equal(preserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
+const preservedZip = await JSZip.loadAsync(preserved.bytes);
+assert.match(await preservedZip.file(relationshipPath).async("text"), /Id="rIdExternal"[^>]*Target="https:\/\/example\.invalid\/data"/);
+const preservedImported = await importXlsxWithOpenXmlWasm(preserved);
+assert.equal(preservedImported.worksheets.getItem("Summary").getRange("B1").values[0][0], 99);
 
 await assert.rejects(
   importXlsxWithOpenXmlWasm(exported, { limits: { maxInputBytes: 16 } }),
@@ -82,12 +83,21 @@ await assert.rejects(
 
 const styled = Workbook.create();
 const styledSheet = styled.worksheets.add("Sheet1");
-styledSheet.getRange("A1").values = [["styled"]];
-styledSheet.store.get("A1").style = { font: { bold: true } };
+styledSheet.getRange("A1:B2").values = [["Label", "Value"], ["styled", 1]];
+styledSheet.getRange("A1:B1").format = { fill: "#0F766E", font: { bold: true, color: "#FFFFFF" } };
+styledSheet.tables.add("A1:B2", true, "StyledTable").style = "TableStyleMedium4";
 await assert.rejects(
   exportXlsxWithOpenXmlWasm(styled),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_workbook_features",
 );
+const styledSource = await SpreadsheetFile.exportXlsx(styled);
+const styledImported = await importXlsxWithOpenXmlWasm(styledSource);
+styledImported.worksheets.getItem("Sheet1").getRange("B2").values = [[2]];
+const styledPreserved = await exportXlsxWithOpenXmlWasm(styledImported, { recalculate: false });
+const styledRoundTrip = await SpreadsheetFile.importXlsx(styledPreserved);
+assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("B2").values[0][0], 2);
+assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("A1").format.font.bold, true);
+assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").tables.items[0].name, "StyledTable");
 
 assert.equal(status.available, true);
 assert.equal(status.protocolVersion, 1);

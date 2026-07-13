@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Xml;
+using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
@@ -77,7 +79,7 @@ internal static class XlsxCodec
             Id = "workbook/1",
             DateSystem = workbookRoot.WorkbookProperties?.Date1904?.Value == true ? WorkbookDateSystem._1904 : WorkbookDateSystem._1900,
         };
-        var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable?.Elements<SharedStringItem>().Select(item => item.InnerText).ToArray() ?? [];
+        var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
         var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
         if ((uint)sheets.Length > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"XLSX workbook has {sheets.Length} sheets and exceeds max_sheets ({limits.MaxSheets}).");
@@ -126,7 +128,7 @@ internal static class XlsxCodec
             if (workbookRoot.WorkbookProperties is null)
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
             workbookRoot.WorkbookProperties.Date1904 = envelope.Workbook.DateSystem == WorkbookDateSystem._1904;
-            var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable?.Elements<SharedStringItem>().Select(item => item.InnerText).ToArray() ?? [];
+            var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
             for (var index = 0; index < sheets.Length; index++)
             {
                 var sheet = sheets[index];
@@ -300,6 +302,15 @@ internal static class XlsxCodec
             CellArtifact.ValueOneofCase.ErrorValue => left.ErrorValue == right.ErrorValue,
             _ => false,
         };
+    }
+
+    private static IReadOnlyList<string> ReadSharedStrings(SharedStringTablePart? part)
+    {
+        if (part is null) return [];
+        using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+        var document = XDocument.Load(reader, LoadOptions.None);
+        return document.Descendants().Where(item => item.Name.LocalName == "si").Select(item => item.Value).ToArray();
     }
 
     private static void PatchMergedRanges(Worksheet worksheet, WorksheetArtifact source)

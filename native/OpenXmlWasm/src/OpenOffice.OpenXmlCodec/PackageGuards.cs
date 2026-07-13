@@ -136,7 +136,19 @@ internal static class PackageGuards
             .ToArray();
         if (!expectedParts.SequenceEqual(actualParts, StringComparer.Ordinal) ||
             !expectedRelationships.SequenceEqual(actualRelationships, StringComparer.Ordinal))
-            throw new CodecException(code, "Opaque OPC parts or relationships do not match the validated source package graph.");
+        {
+            var expectedPartPaths = expected.Parts.ToDictionary(item => item.Path, PartSignature, StringComparer.OrdinalIgnoreCase);
+            var actualPartPaths = actual.Parts.ToDictionary(item => item.Path, PartSignature, StringComparer.OrdinalIgnoreCase);
+            var changedParts = expectedPartPaths.Keys.Concat(actualPartPaths.Keys).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(path => !expectedPartPaths.TryGetValue(path, out var left) || !actualPartPaths.TryGetValue(path, out var right) || left != right)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .Take(8)
+                .ToArray();
+            var relationshipChanged = !expectedRelationships.SequenceEqual(actualRelationships, StringComparer.Ordinal);
+            var detail = changedParts.Length > 0 ? $" Changed parts: {string.Join(", ", changedParts)}." : string.Empty;
+            if (relationshipChanged) detail += " Relationship inventory changed.";
+            throw new CodecException(code, $"Opaque OPC parts or relationships do not match the validated source package graph.{detail}");
+        }
     }
 
     private static string PartSignature(OpaqueOpcPart part)
