@@ -10,6 +10,7 @@ import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_
 import { docxBookmarkEntriesForBlock, docxBookmarkEntriesForTableCell, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, parseDocxTableBookmarkMarkers, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
 import { DOCX_BIBLIOGRAPHY_PATH, DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE, docxBibliographyXml, docxCitationInstruction, normalizeDocxBibliographySource, parseDocxBibliography, parseDocxCitationInstruction, planDocxBibliography, validateDocxBibliographyPackageSemantics } from "./ooxml/docx-bibliography.mjs";
 import { collectDocxHeaderFooterParts, normalizeDocxSectionSettings, parseDocxSectionDeclarations, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
+import { collectDocxNumbering, docxNumberingXml, normalizeDocumentPictureBullet, parseDocxNumberingXml } from "./ooxml/docx-numbering.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
@@ -1072,7 +1073,7 @@ export const HELP_CATALOG = [
 
   { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics." },
-  { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered or bulleted list item backed by multi-level DOCX abstract numbering definitions and numbering instances." },
+  { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
   { artifactKind: "document", kind: "api", name: "document.addHyperlink", summary: "Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state." },
@@ -1661,8 +1662,9 @@ const DOCUMENT_HELP_SCHEMAS = {
     start: { type: "number", description: "Positive starting value for this numbering level." },
     levelText: { type: "string", description: "OOXML level text template using placeholders such as %1 or %2." },
     numberingId: { type: "number|string", description: "Optional list-instance identity used to group levels during export and preserved by native import." },
+    pictureBullet: { type: "string|object", description: "Embedded PNG/JPEG/GIF base64 data URL, absolute non-fetched http(s) URI, or { dataUrl|uri, widthPt?, heightPt?, alt? } picture marker owned by the Numbering part." },
     styleId: { type: "string", description: "Named paragraph style ID." },
-  }, "listItem", "DocumentListItemBlock", "Appended native-numbering list item."),
+  }, "listItem", "DocumentListItemBlock", "Appended native-numbering list item, including normalized pictureBullet metadata when configured."),
   "document.addHeader": helpSchema({
     text: { type: "string", required: true, description: "Header text." },
     name: { type: "string", description: "Inspectable block name." },
@@ -9424,14 +9426,16 @@ class DocumentListItemBlock {
     this.numberFormat = configuredFormat || (this.listType === "number" ? "decimal" : "bullet");
     this.start = Number(config.start ?? 1);
     this.levelText = config.levelText || config.lvlText || (this.listType === "number" ? `%${this.level + 1}.` : "•");
+    this.pictureBullet = normalizeDocumentPictureBullet(config.pictureBullet ?? config.bulletImage ?? config.bullet?.image);
+    if (this.pictureBullet && (this.listType !== "bullet" || this.numberFormat !== "bullet")) throw new TypeError("DOCX picture bullet requires listType and numberFormat to be bullet.");
     this.numberingId = config.numberingId ?? config.numId;
     this.abstractNumberingId = config.abstractNumberingId ?? config.abstractNumId;
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
   }
 
-  inspectRecord(index) { return { kind: "listItem", id: this.id, index, name: this.name || undefined, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: "listItem", id: this.id, name: this.name, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, text: this.text }; }
+  inspectRecord(index) { return { kind: "listItem", id: this.id, index, name: this.name || undefined, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, pictureBullet: this.pictureBullet, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: "listItem", id: this.id, name: this.name, styleId: this.styleId, listType: this.listType, level: this.level, numberFormat: this.numberFormat, start: this.start, levelText: this.levelText, pictureBullet: this.pictureBullet, numberingId: this.numberingId, abstractNumberingId: this.abstractNumberingId, text: this.text }; }
 }
 
 class DocumentHyperlinkBlock {
@@ -10016,6 +10020,12 @@ export class DocumentModel {
         if (!Number.isInteger(block.level) || block.level < 0 || block.level > 8) issues.push(verificationIssue("document", "invalidListLevel", `List item ${block.id} level must be an integer from 0 through 8.`, { id: block.id, level: block.level }));
         if (!Number.isInteger(block.start) || block.start < 1) issues.push(verificationIssue("document", "invalidListStart", `List item ${block.id} start must be a positive integer.`, { id: block.id, start: block.start }));
         if (!String(block.numberFormat || "").trim()) issues.push(verificationIssue("document", "invalidListNumberFormat", `List item ${block.id} is missing numberFormat.`, { id: block.id, numberFormat: block.numberFormat }));
+        try {
+          const pictureBullet = normalizeDocumentPictureBullet(block.pictureBullet);
+          if (pictureBullet && (block.listType !== "bullet" || block.numberFormat !== "bullet")) issues.push(verificationIssue("document", "invalidPictureBulletListType", `List item ${block.id} picture bullet requires bullet list semantics.`, { id: block.id, listType: block.listType, numberFormat: block.numberFormat }));
+        } catch (error) {
+          issues.push(verificationIssue("document", "invalidPictureBullet", `List item ${block.id} has an invalid picture bullet: ${error.message}`, { id: block.id }));
+        }
       }
       if (block.kind === "table") {
         if (!block.rows || !block.columns) issues.push(verificationIssue("document", "emptyTable", `Table ${block.id} has no rows or columns.`, { id: block.id, rows: block.rows, columns: block.columns }));
@@ -10179,7 +10189,16 @@ export class DocumentModel {
         listCounters.set(key, next);
         const marker = block.listType === "number" ? `${next}.` : "•";
         const x = margin + block.level * 24;
-        parts.push(`<text x="${x}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(marker)}</text>`);
+        if (block.pictureBullet?.dataUrl) {
+          const markerWidth = Math.max(4, Number(block.pictureBullet.widthPt) || fontSize);
+          const markerHeight = Math.max(4, Number(block.pictureBullet.heightPt) || fontSize);
+          parts.push(`<image data-picture-bullet="embedded" href="${attrEscape(block.pictureBullet.dataUrl)}" x="${x}" y="${y - markerHeight}" width="${markerWidth}" height="${markerHeight}" preserveAspectRatio="xMidYMid meet"/>`);
+        } else if (block.pictureBullet?.uri) {
+          const markerSize = Math.max(4, Number(block.pictureBullet.widthPt) || fontSize);
+          parts.push(`<rect data-picture-bullet="external" data-uri="${attrEscape(block.pictureBullet.uri)}" x="${x}" y="${y - markerSize}" width="${markerSize}" height="${markerSize}" rx="2" fill="#dbeafe" stroke="#2563eb"/>`);
+        } else {
+          parts.push(`<text x="${x}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(marker)}</text>`);
+        }
         parts.push(`<text x="${x + 22}" y="${y}" font-family="${xmlEscape(style.fontFamily || "Arial")}" font-size="${fontSize}" font-style="${style.italic ? "italic" : "normal"}" font-weight="${style.bold ? "700" : "400"}" fill="${xmlEscape(style.color || "#111827")}">${xmlEscape(block.text)}</text>`);
         y += Math.max(20, fontSize * 1.5);
       } else if (block.kind === "table") {
@@ -10222,41 +10241,6 @@ function docxStylesXml(document) {
     return `<w:style w:type="${attrEscape(type)}" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/>${basedOn ? `<w:basedOn w:val="${attrEscape(basedOn)}"/>` : ""}${runProperties}</w:style>`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docDefaults}${styles}</w:styles>`;
-}
-
-function collectDocxNumbering(document) {
-  const groups = new Map();
-  for (const block of document.blocks.filter((item) => item.kind === "listItem")) {
-    if (!Number.isInteger(block.level) || block.level < 0 || block.level > 8) throw new RangeError(`DOCX list item ${block.id} level must be an integer from 0 through 8.`);
-    if (!Number.isInteger(block.start) || block.start < 1) throw new RangeError(`DOCX list item ${block.id} start must be a positive integer.`);
-    if (!String(block.numberFormat || "").trim()) throw new TypeError(`DOCX list item ${block.id} numberFormat must be non-empty.`);
-    const key = block.numberingId === undefined || block.numberingId === null ? `default:${block.listType}` : `native:${block.numberingId}`;
-    if (!groups.has(key)) groups.set(key, { key, blocks: [], levels: new Map() });
-    const group = groups.get(key);
-    group.blocks.push(block);
-    const level = block.level;
-    if (!group.levels.has(level)) group.levels.set(level, { listType: block.listType, numberFormat: block.numberFormat || (block.listType === "number" ? "decimal" : "bullet"), start: Number.isInteger(block.start) && block.start > 0 ? block.start : 1, levelText: block.levelText || (block.listType === "number" ? `%${level + 1}.` : "•") });
-  }
-  const numIdByBlock = new Map();
-  const definitions = [...groups.values()].map((group, index) => {
-    const numId = index + 1;
-    const abstractNumId = index + 1;
-    const maxLevel = Math.max(0, ...group.levels.keys());
-    const fallback = group.levels.get(0) || group.levels.values().next().value || { listType: "bullet", numberFormat: "bullet", start: 1, levelText: "•" };
-    const levels = Array.from({ length: maxLevel + 1 }, (_, level) => {
-      const config = group.levels.get(level) || { ...fallback, levelText: fallback.listType === "number" ? `%${level + 1}.` : "•" };
-      return { level, ...config };
-    });
-    for (const block of group.blocks) numIdByBlock.set(block.id, numId);
-    return { numId, abstractNumId, levels };
-  });
-  return { definitions, numIdByBlock };
-}
-
-function docxNumberingXml(numbering) {
-  const abstracts = numbering.definitions.map((definition) => `<w:abstractNum w:abstractNumId="${definition.abstractNumId}"><w:multiLevelType w:val="multilevel"/>${definition.levels.map((level) => `<w:lvl w:ilvl="${level.level}"><w:start w:val="${level.start}"/><w:numFmt w:val="${attrEscape(level.numberFormat)}"/><w:lvlText w:val="${attrEscape(level.levelText)}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${(level.level + 1) * 720}" w:hanging="360"/></w:pPr>${level.numberFormat === "bullet" ? '<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' : ""}</w:lvl>`).join("")}</w:abstractNum>`).join("");
-  const instances = numbering.definitions.map((definition) => `<w:num w:numId="${definition.numId}"><w:abstractNumId w:val="${definition.abstractNumId}"/></w:num>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${abstracts}${instances}</w:numbering>`;
 }
 
 function docxHeaderFooterXml(kind, blocks) {
@@ -10445,54 +10429,6 @@ function docxChildVal(xml, tagName) {
   return tag ? docxXmlAttribute(tag, "val") : undefined;
 }
 
-function parseDocxNumberingLevel(xml, fallbackLevel = 0) {
-  const opening = /^<w:lvl\b[^>]*>/.exec(xml)?.[0] || "";
-  const level = Number(ooxmlXmlAttributes(opening)["w:ilvl"] ?? fallbackLevel);
-  const numberFormat = docxChildVal(xml, "numFmt") || "decimal";
-  return {
-    level: Number.isInteger(level) ? level : fallbackLevel,
-    listType: numberFormat === "bullet" ? "bullet" : "number",
-    numberFormat,
-    start: Math.max(1, Number(docxChildVal(xml, "start") || 1)),
-    levelText: docxChildVal(xml, "lvlText") || (numberFormat === "bullet" ? "•" : `%${(Number.isInteger(level) ? level : fallbackLevel) + 1}.`),
-  };
-}
-
-function parseDocxNumberingXml(xml = "") {
-  const abstracts = new Map();
-  for (const match of String(xml || "").matchAll(/<w:abstractNum\b[^>]*>[\s\S]*?<\/w:abstractNum>/g)) {
-    const opening = /^<w:abstractNum\b[^>]*>/.exec(match[0])?.[0] || "";
-    const abstractNumId = ooxmlXmlAttributes(opening)["w:abstractNumId"];
-    if (abstractNumId === undefined) continue;
-    const levels = new Map();
-    for (const levelMatch of match[0].matchAll(/<w:lvl\b[^>]*>[\s\S]*?<\/w:lvl>/g)) {
-      const level = parseDocxNumberingLevel(levelMatch[0]);
-      levels.set(level.level, level);
-    }
-    abstracts.set(String(abstractNumId), levels);
-  }
-  const instances = new Map();
-  for (const match of String(xml || "").matchAll(/<w:num\b[^>]*>[\s\S]*?<\/w:num>/g)) {
-    const opening = /^<w:num\b[^>]*>/.exec(match[0])?.[0] || "";
-    const numId = ooxmlXmlAttributes(opening)["w:numId"];
-    const abstractNumId = docxChildVal(match[0], "abstractNumId");
-    if (numId === undefined || abstractNumId === undefined) continue;
-    const levels = new Map([...(abstracts.get(String(abstractNumId)) || new Map()).entries()].map(([level, config]) => [level, { ...config }]));
-    for (const overrideMatch of match[0].matchAll(/<w:lvlOverride\b[^>]*>[\s\S]*?<\/w:lvlOverride>/g)) {
-      const overrideOpening = /^<w:lvlOverride\b[^>]*>/.exec(overrideMatch[0])?.[0] || "";
-      const overrideLevel = Number(ooxmlXmlAttributes(overrideOpening)["w:ilvl"] ?? 0);
-      const nestedLevelXml = /<w:lvl\b[^>]*>[\s\S]*?<\/w:lvl>/.exec(overrideMatch[0])?.[0];
-      if (nestedLevelXml) levels.set(overrideLevel, parseDocxNumberingLevel(nestedLevelXml, overrideLevel));
-      else if (docxChildVal(overrideMatch[0], "startOverride") !== undefined) {
-        const current = levels.get(overrideLevel) || { level: overrideLevel, listType: "number", numberFormat: "decimal", start: 1, levelText: `%${overrideLevel + 1}.` };
-        levels.set(overrideLevel, { ...current, start: Math.max(1, Number(docxChildVal(overrideMatch[0], "startOverride") || 1)) });
-      }
-    }
-    instances.set(String(numId), { numberingId: Number.isFinite(Number(numId)) ? Number(numId) : numId, abstractNumberingId: Number.isFinite(Number(abstractNumId)) ? Number(abstractNumId) : abstractNumId, levels });
-  }
-  return instances;
-}
-
 function parseDocxRuns(part = "", context = {}) {
   const { theme = {}, styles, defaultRunStyle = {}, paragraphStyleId = "Normal" } = context;
   const paragraphStyles = styles?.cascade(paragraphStyleId) || [];
@@ -10585,7 +10521,7 @@ function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = n
     const numbering = numberingById.get(String(numId));
     const levelDefinition = numbering?.levels.get(level) || numbering?.levels.get(0);
     const numberFormat = levelDefinition?.numberFormat || (numId === "2" ? "decimal" : "bullet");
-    return { block: { kind: "listItem", text, styleId, level, listType: levelDefinition?.listType || (numberFormat === "bullet" ? "bullet" : "number"), numberFormat, start: levelDefinition?.start || 1, levelText: levelDefinition?.levelText || (numberFormat === "bullet" ? "•" : `%${level + 1}.`), numberingId: numbering?.numberingId ?? (Number.isFinite(Number(numId)) ? Number(numId) : numId), abstractNumberingId: numbering?.abstractNumberingId }, commentIds };
+    return { block: { kind: "listItem", text, styleId, level, listType: levelDefinition?.listType || (numberFormat === "bullet" ? "bullet" : "number"), numberFormat, start: levelDefinition?.start || 1, levelText: levelDefinition?.levelText || (numberFormat === "bullet" ? "•" : `%${level + 1}.`), pictureBullet: levelDefinition?.pictureBullet, numberingId: numbering?.numberingId ?? (Number.isFinite(Number(numId)) ? Number(numId) : numId), abstractNumberingId: numbering?.abstractNumberingId }, commentIds };
   }
   return { block: { kind: "paragraph", text, styleId, runs: runs.length ? runs : undefined }, commentIds };
 }
@@ -11156,14 +11092,15 @@ export class DocumentFile {
     const bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks);
     const bibliographyPlan = planDocxBibliography(document.bibliographySources, document.bibliography);
     const imageParts = collectDocxImageParts(document);
-    const numbering = collectDocxNumbering(document);
+    const numbering = collectDocxNumbering(document, { startMediaPartId: imageParts.length + 1 });
+    const allImageParts = [...imageParts, ...numbering.mediaParts];
     const hasNumbering = numbering.definitions.length > 0;
     const sectionPlan = planDocxHeaderFooterSections(document);
     const headerParts = collectDocxHeaderFooterParts(document, "header", sectionPlan);
     const footerParts = collectDocxHeaderFooterParts(document, "footer", sectionPlan);
     const settingsXml = docxSettingsXml(document.settings);
     const hasSettings = Boolean(settingsXml);
-    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: commentPlan.entries.length > 0, hasCommentsExtended: commentPlan.entries.length > 0, headerParts, footerParts, hasNumbering, hasSettings, imageParts }));
+    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: commentPlan.entries.length > 0, hasCommentsExtended: commentPlan.entries.length > 0, headerParts, footerParts, hasNumbering, hasSettings, imageParts: allImageParts }));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
     const docRels = [
       { id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" },
@@ -11204,7 +11141,10 @@ export class DocumentFile {
     zip.file("word/_rels/document.xml.rels", relsXml(docRels));
     zip.file("word/styles.xml", docxStylesXml(document));
     zip.file("word/theme/theme1.xml", docxThemeXml(document.theme));
-    if (hasNumbering) zip.file("word/numbering.xml", docxNumberingXml(numbering));
+    if (hasNumbering) {
+      zip.file("word/numbering.xml", docxNumberingXml(numbering));
+      if (numbering.relationships.length) zip.file("word/_rels/numbering.xml.rels", relsXml(numbering.relationships));
+    }
     if (commentPlan.entries.length) {
       zip.file("word/comments.xml", docxCommentsXml(commentPlan));
       zip.file(DOCX_COMMENTS_EXTENDED_PATH, docxCommentsExtendedXml(commentPlan));
@@ -11217,6 +11157,7 @@ export class DocumentFile {
     headerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("header", part.blocks)));
     footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
     imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
+    numbering.mediaParts.forEach((part) => zip.file(part.outputPath, part.bytes));
     zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
     zip.file("word/document.xml", docxDocumentXml(document, relIds, bookmarkPlan));
     return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
@@ -11249,12 +11190,18 @@ export class DocumentFile {
     const theme = parseDocxThemeXml(themeText);
     const stylesText = await zip.file(stylesPartPath)?.async("text");
     const numberingText = await zip.file(numberingPartPath)?.async("text");
+    const numberingRelationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(numberingPartPath, "DOCX"))?.async("text"));
     const settingsText = await zip.file(settingsPartPath)?.async("text");
     const importedStyleData = parseDocxStylesXml(stylesText, theme);
     const importedStyles = importedStyleData.styles;
     const defaultRunStyle = importedStyleData.defaultRunStyle;
     const importedStyleCollection = new DocumentStyleCollection(importedStyles);
-    const numberingById = parseDocxNumberingXml(numberingText);
+    const numberingById = await parseDocxNumberingXml(numberingText, {
+      partPath: numberingPartPath,
+      relationships: numberingRelationships,
+      resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "DOCX"),
+      readPart: (target) => zip.file(target)?.async("uint8array"),
+    });
     const importedSettings = parseDocxSettings(settingsText);
     const sectionDeclarations = parseDocxSectionDeclarations(xml);
     const commentsRelationship = documentRelationships.find((relationship) => relationship.type.endsWith("/comments") && relationship.targetMode.toLowerCase() !== "external");

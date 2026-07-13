@@ -24,6 +24,7 @@ for (const required of [
   "src/presentation/ooxml-hyperlinks.mjs",
   "src/presentation/ooxml-custom-shows.mjs",
   "src/ooxml/docx-links.mjs",
+  "src/ooxml/docx-numbering.mjs",
   "src/ooxml/docx-sections.mjs",
   "src/pdf/table-grid.mjs",
   "src/index.mjs",
