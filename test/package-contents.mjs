@@ -33,6 +33,7 @@ for (const required of [
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxBulletCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxBulletStyleCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxColor.cs",
+  "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxHyperlinkCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxTextCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/XlsxCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm/Program.cs",

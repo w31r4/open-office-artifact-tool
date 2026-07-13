@@ -220,14 +220,17 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.bold, true);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");
+  assert.deepEqual(wasmTitle?.text.paragraphs[0].runs[0].link, { uri: "https://example.com/after", targetFrame: "_blank", highlightClick: true });
   assert.equal(wasmTitle?.text.paragraphs[1].bulletCharacter, "◆");
   assert.equal(wasmTitle?.text.paragraphs[1].bulletFontFollowText, true);
   assert.equal(wasmTitle?.text.paragraphs[1].bulletColor, "#2563eb");
   assert.equal(wasmTitle?.text.paragraphs[1].bulletSize, 24);
+  assert.deepEqual(wasmTitle?.text.paragraphs[1].runs[0].link, { action: "lastSlide", highlightClick: false });
   assert.deepEqual(wasmTitle?.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 5 });
   assert.equal(wasmTitle?.text.paragraphs[2].bulletFont, "Aptos");
   assert.equal(wasmTitle?.text.paragraphs[2].bulletColor, "#16a34a");
   assert.equal(wasmTitle?.text.paragraphs[2].bulletSizePercent, 1.25);
+  assert.equal(wasmTitle?.text.paragraphs[2].runs[0].link, undefined);
   assert.equal(wasmTitle?.text.paragraphs[3].bulletNone, true);
   assert.equal(wasmTitle?.text.paragraphs[3].bulletSizeFollowText, true);
   assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
@@ -238,7 +241,9 @@ try {
   assert.ok(wasmZip.file("ppt/media/image1.png"));
   assert.ok(wasmZip.file("ppt/notesSlides/notesSlide1.xml"));
   assert.ok(wasmZip.file("ppt/slideMasters/slideMaster1.xml"));
-  assert.match(await wasmZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /relationships\/(?:chart|image|notesSlide|slideLayout)/);
+  const wasmSlideRelationships = await wasmZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+  assert.match(wasmSlideRelationships, /relationships\/(?:chart|image|notesSlide|slideLayout)/);
+  assert.match(wasmSlideRelationships, /relationships\/hyperlink[^>]*Target="https:\/\/example\.com\/after"[^>]*TargetMode="External"/);
   assert.equal(wasmPreservation.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
   const packageReview = await runPresentationFixture("skills/presentations/fixtures/package-notes-comments.json", {

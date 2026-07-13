@@ -240,6 +240,66 @@ assert.equal(richRoundTripShape.text.paragraphs[1].bulletColor, "#16A34A");
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletSizePercent, 1.25);
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
+
+const hyperlinkPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const hyperlinkSlide = hyperlinkPresentation.slides.add({ name: "Links" });
+const hyperlinkTarget = hyperlinkPresentation.slides.add({ name: "Details" });
+const hyperlinkAppendix = hyperlinkPresentation.slides.add({ name: "Appendix" });
+hyperlinkSlide.shapes.add({
+  name: "Run links",
+  position: { left: 60, top: 40, width: 920, height: 120 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: [{ runs: [
+    { text: "Guide ", link: { uri: "https://example.com/guide?x=1&y=2", tooltip: "Read the guide", targetFrame: "_blank", history: false, highlightClick: true } },
+    { text: "Details ", link: { slideId: hyperlinkTarget.id } },
+    { text: "Next ", link: { action: "nextSlide" } },
+    { text: "End", link: { action: "endShow" } },
+  ] }],
+});
+const hyperlinkPptx = await exportPptxWithOpenXmlWasm(hyperlinkPresentation);
+const hyperlinkZip = await JSZip.loadAsync(hyperlinkPptx.bytes);
+const hyperlinkSlideXml = await hyperlinkZip.file("ppt/slides/slide1.xml").async("text");
+const hyperlinkRelsXml = await hyperlinkZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+assert.match(hyperlinkSlideXml, /<a:hlinkClick[^>]*tgtFrame="_blank"[^>]*tooltip="Read the guide"[^>]*history="0"[^>]*highlightClick="1"/);
+assert.match(hyperlinkSlideXml, /action="ppaction:\/\/hlinksldjump"/);
+assert.match(hyperlinkSlideXml, /action="ppaction:\/\/hlinkshowjump\?jump=nextslide"/);
+assert.match(hyperlinkRelsXml, /relationships\/hyperlink[^>]*Target="https:\/\/example\.com\/guide\?x=1&amp;y=2"[^>]*TargetMode="External"/);
+assert.match(hyperlinkRelsXml, /relationships\/slide[^>]*Target="(?:\/ppt\/slides\/)?slide2\.xml"/);
+const hyperlinkImported = await importPptxWithOpenXmlWasm(hyperlinkPptx);
+const hyperlinkImportedShape = hyperlinkImported.slides.getItem(0).shapes.items[0];
+const hyperlinkRuns = hyperlinkImportedShape.text.paragraphs[0].runs;
+assert.deepEqual(hyperlinkRuns[0].link, { uri: "https://example.com/guide?x=1&y=2", tooltip: "Read the guide", targetFrame: "_blank", history: false, highlightClick: true });
+assert.deepEqual(hyperlinkRuns[1].link, { slideId: hyperlinkImported.slides.getItem(1).id });
+assert.deepEqual(hyperlinkRuns[2].link, { action: "nextSlide" });
+hyperlinkImportedShape.text.paragraphs = hyperlinkImportedShape.text.paragraphs.map((paragraph) => ({
+  ...paragraph,
+  runs: paragraph.runs.map((run, index) => ({
+    ...run,
+    link: index === 0
+      ? { uri: "https://example.com/updated", targetFrame: "_self" }
+      : index === 1
+        ? { slideId: hyperlinkImported.slides.getItem(2).id, tooltip: "Appendix" }
+        : index === 2
+          ? { action: "lastSlide", highlightClick: false }
+          : undefined,
+  })),
+}));
+const hyperlinkEdited = await exportPptxWithOpenXmlWasm(hyperlinkImported);
+const hyperlinkRoundTrip = await importPptxWithOpenXmlWasm(hyperlinkEdited);
+const hyperlinkRoundTripRuns = hyperlinkRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].runs;
+assert.deepEqual(hyperlinkRoundTripRuns[0].link, { uri: "https://example.com/updated", targetFrame: "_self" });
+assert.deepEqual(hyperlinkRoundTripRuns[1].link, { slideId: hyperlinkRoundTrip.slides.getItem(2).id, tooltip: "Appendix" });
+assert.deepEqual(hyperlinkRoundTripRuns[2].link, { action: "lastSlide", highlightClick: false });
+assert.equal(hyperlinkRoundTripRuns[3].link, undefined);
+
+const unsupportedHyperlinkPresentation = Presentation.create();
+unsupportedHyperlinkPresentation.slides.add().shapes.add({ text: [{ runs: [{ text: "Tour", link: { customShow: "Evidence" } }] }] });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(unsupportedHyperlinkPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features" && /custom-show hyperlink/.test(error.message),
+);
+
 richImportedShape.text.paragraphs = [
   ...richImportedShape.text.paragraphs.slice(0, 1),
   { ...richImportedShape.text.paragraphs[1], runs: [...richImportedShape.text.paragraphs[1].runs, { text: "unsafe", style: {} }] },

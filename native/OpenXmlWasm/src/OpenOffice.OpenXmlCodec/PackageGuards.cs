@@ -82,16 +82,10 @@ internal sealed class OpcPackageProfile
         path => CommonOwnedPaths.Contains(path) ||
                 path.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) ||
                 path.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase) ||
-                IsNumberedXml(path, "ppt/slides/slide"),
+                IsNumberedXml(path, "ppt/slides/slide") ||
+                IsNumberedRelationshipXml(path, "ppt/slides/_rels/slide"),
         relationship =>
         {
-            if (IsNumberedXml(relationship.SourcePath, "ppt/slides/slide"))
-            {
-                if (relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal))
-                    return relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase);
-                if (relationship.Type.EndsWith("/slide", StringComparison.Ordinal))
-                    return !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase);
-            }
             if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) return false;
             if (relationship.SourcePath.Length == 0)
                 return relationship.Type.EndsWith("/officeDocument", StringComparison.Ordinal) &&
@@ -103,6 +97,15 @@ internal sealed class OpcPackageProfile
     private static bool IsNumberedXml(string path, string prefix)
     {
         const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsNumberedRelationshipXml(string path, string prefix)
+    {
+        const string suffix = ".xml.rels";
         return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
                path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
                path[prefix.Length..^suffix.Length].Length > 0 &&

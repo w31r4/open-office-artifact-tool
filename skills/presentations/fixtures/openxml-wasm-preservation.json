@@ -20,9 +20,9 @@
           "fill": "#FFFFFF",
           "line": { "fill": "#334155", "width": 1 },
           "text": [
-            { "runs": [{ "text": "Before OpenXML WASM", "style": { "fontSize": 28, "bold": true, "color": "#0F172A" } }] },
-            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" } }] },
-            { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" } }] },
+            { "runs": [{ "text": "Before OpenXML WASM", "style": { "fontSize": 28, "bold": true, "color": "#0F172A" }, "link": { "uri": "https://example.com/before", "tooltip": "Original evidence", "history": false } }] },
+            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "nextSlide" } }] },
+            { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "uri": "https://example.com/remove" } }] },
             { "bulletCharacter": "–", "bulletSize": 24, "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }] }
           ]
         },
@@ -69,7 +69,8 @@
           "runs": [
             {
               "text": "After OpenXML WASM",
-              "style": { "fontSize": 28, "bold": true, "color": "#0F172A" }
+              "style": { "fontSize": 28, "bold": true, "color": "#0F172A" },
+              "link": { "uri": "https://example.com/after", "targetFrame": "_blank", "highlightClick": true }
             }
           ]
         },
@@ -78,7 +79,7 @@
           "bulletFontFollowText": true,
           "bulletColor": "#2563EB",
           "bulletSize": 24,
-          "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" } }]
+          "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "lastSlide", "highlightClick": false } }]
         },
         {
           "autoNumber": { "type": "arabicPeriod", "startAt": 5 },
