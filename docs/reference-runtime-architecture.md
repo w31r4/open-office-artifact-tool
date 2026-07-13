@@ -224,7 +224,7 @@ The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wa
 1. **Implemented:** add a source-built `native/OpenXmlWasm` scaffold and a minimal versioned schema.
 2. **Implemented:** prove one end-to-end XLSX vertical slice: JS model to message bytes to C# Open XML SDK to XLSX, then back to the JS model.
 3. **Implemented:** package the runtime and run the installed tarball with `dotnet` removed from runtime `PATH`.
-4. **Implemented locally:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, all-sheet Playwright output, and LibreOffice/Poppler native pages.
+4. **Implemented locally and in hosted Linux CI:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, all-sheet Playwright output, and LibreOffice/Poppler native pages.
 5. **Implemented for imported XLSX:** retain a hash-bound source package, edit modeled fields in place, and verify opaque part/relationship preservation after write. Broader third-party corpus roundtrips remain the next XLSX migration gate.
 6. Extend the same shared runtime/schema/package graph to DOCX and PPTX. Use the PPTX bundle design from the start rather than postponing native-object preservation.
 7. Make WebAssembly the default only after compatibility and failure-mode gates pass. Retain an explicit JavaScript fallback until the migration matrix is complete.
@@ -245,9 +245,9 @@ The first WebAssembly migration milestone is not complete until every row is don
 | Malformed/oversized input produces bounded structured errors | partial: byte/ZIP/part/sheet/cell/path/ratio budgets covered; broader malformed corpus remains todo |
 | Runtime initialization is lazy, cached, and concurrency-tested | done |
 | Bounded `openxml-wasm-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally and in hosted Linux CI |
-| Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | done locally; hosted Linux evidence pending |
-| LibreOffice/Poppler render-backed cross-codec output passes | done locally for `openxml-wasm-basic` and the three-sheet formula-summary (four native pages); hosted evidence for the complex path pending |
-| Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | done in hosted run [`29251523500`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29251523500) |
+| Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | done locally and in hosted run [`29257565233`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29257565233) |
+| LibreOffice/Poppler render-backed cross-codec output passes | done locally and in hosted Linux CI for `openxml-wasm-basic` plus the three-sheet formula-summary |
+| Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | done in hosted run [`29257565233`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29257565233) |
 
 ## Explicit non-goals
 
