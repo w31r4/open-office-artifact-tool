@@ -66,6 +66,117 @@ export function pivotWeekdayIndex(serialValue, dateSystem = "1900") {
   return ((adjusted % 7) + 7) % 7;
 }
 
+function pivotWeekendDays(value = 1, allowAllWeekend = false) {
+  if (typeof value === "string") {
+    const weekend = value;
+    if (/^[01]{7}$/.test(weekend)) {
+      if (weekend === "1111111" && !allowAllWeekend) return { error: "#VALUE!", weekends: new Set() };
+      const weekends = new Set();
+      for (let index = 0; index < 7; index += 1) if (weekend[index] === "1") weekends.add((index + 1) % 7);
+      return { weekends };
+    }
+    return { error: "#VALUE!", weekends: new Set() };
+  }
+  const weekendNumber = Number(value);
+  if (!Number.isInteger(weekendNumber)) return { error: "#NUM!", weekends: new Set() };
+  if (weekendNumber >= 1 && weekendNumber <= 7) {
+    const first = weekendNumber === 1 ? 6 : weekendNumber - 2;
+    return { weekends: new Set([first, (first + 1) % 7]) };
+  }
+  if (weekendNumber >= 11 && weekendNumber <= 17) return { weekends: new Set([weekendNumber - 11]) };
+  return { error: "#NUM!", weekends: new Set() };
+}
+
+function pivotHolidaySet(values, dateSystem) {
+  const holidays = new Set();
+  for (const value of values) {
+    if (value == null) continue;
+    const serial = Math.floor(Number(value));
+    if (!pivotFormulaDateParts(serial, dateSystem)) return { error: "#NUM!", holidays: new Set() };
+    holidays.add(serial);
+  }
+  return { holidays };
+}
+
+function pivotBusinessDaysSegment(low, high, dateSystem, weekends) {
+  if (low > high) return 0;
+  const total = high - low + 1;
+  const fullWeeks = Math.floor(total / 7);
+  let count = fullWeeks * (7 - weekends.size);
+  for (let serial = low + fullWeeks * 7; serial <= high; serial += 1) {
+    if (!weekends.has(pivotWeekdayIndex(serial, dateSystem))) count += 1;
+  }
+  return count;
+}
+
+function pivotBusinessDaysBetween(low, high, holidays, dateSystem, weekends) {
+  let count = dateSystem !== "1904" && low <= 60 && high >= 61
+    ? pivotBusinessDaysSegment(low, 60, dateSystem, weekends) + pivotBusinessDaysSegment(61, high, dateSystem, weekends)
+    : pivotBusinessDaysSegment(low, high, dateSystem, weekends);
+  for (const holiday of holidays) {
+    if (holiday >= low && holiday <= high && !weekends.has(pivotWeekdayIndex(holiday, dateSystem))) count -= 1;
+  }
+  return count;
+}
+
+export function pivotNetworkDays(startValue, endValue, options = {}) {
+  const dateSystem = options.dateSystem === "1904" ? "1904" : "1900";
+  const start = Math.floor(Number(startValue));
+  const end = Math.floor(Number(endValue));
+  if (!pivotFormulaDateParts(start, dateSystem) || !pivotFormulaDateParts(end, dateSystem)) return "#NUM!";
+  const holidayResult = pivotHolidaySet(options.holidays || [], dateSystem);
+  if (holidayResult.error) return holidayResult.error;
+  const weekendResult = pivotWeekendDays(options.weekend ?? 1, options.allowAllWeekend === true);
+  if (weekendResult.error) return weekendResult.error;
+  const direction = start <= end ? 1 : -1;
+  const count = pivotBusinessDaysBetween(Math.min(start, end), Math.max(start, end), holidayResult.holidays, dateSystem, weekendResult.weekends);
+  return count === 0 ? 0 : count * direction;
+}
+
+export function pivotWorkday(startValue, daysValue, options = {}) {
+  const dateSystem = options.dateSystem === "1904" ? "1904" : "1900";
+  const start = Math.floor(Number(startValue));
+  const days = Math.trunc(Number(daysValue));
+  const maxSerial = pivotMaxDateSerial(dateSystem);
+  if (!pivotFormulaDateParts(start, dateSystem) || !Number.isFinite(days) || Math.abs(days) > maxSerial) return "#NUM!";
+  const holidayResult = pivotHolidaySet(options.holidays || [], dateSystem);
+  if (holidayResult.error) return holidayResult.error;
+  const weekendResult = pivotWeekendDays(options.weekend ?? 1);
+  if (weekendResult.error) return weekendResult.error;
+  if (days === 0) return start;
+  const target = Math.abs(days);
+  const workdaysPerWeek = 7 - weekendResult.weekends.size;
+  const estimate = Math.ceil(target / workdaysPerWeek) * 7 + holidayResult.holidays.size + 7;
+  if (days > 0) {
+    const rangeStart = start + 1;
+    let high = Math.min(maxSerial, start + estimate);
+    while (high < maxSerial && pivotBusinessDaysBetween(rangeStart, high, holidayResult.holidays, dateSystem, weekendResult.weekends) < target) {
+      high = Math.min(maxSerial, high + Math.max(7, high - start));
+    }
+    if (rangeStart > maxSerial || pivotBusinessDaysBetween(rangeStart, high, holidayResult.holidays, dateSystem, weekendResult.weekends) < target) return "#NUM!";
+    let low = rangeStart;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (pivotBusinessDaysBetween(rangeStart, middle, holidayResult.holidays, dateSystem, weekendResult.weekends) >= target) high = middle;
+      else low = middle + 1;
+    }
+    return low;
+  }
+  const rangeEnd = start - 1;
+  let low = Math.max(0, start - estimate);
+  while (low > 0 && pivotBusinessDaysBetween(low, rangeEnd, holidayResult.holidays, dateSystem, weekendResult.weekends) < target) {
+    low = Math.max(0, low - Math.max(7, start - low));
+  }
+  if (rangeEnd < 0 || pivotBusinessDaysBetween(low, rangeEnd, holidayResult.holidays, dateSystem, weekendResult.weekends) < target) return "#NUM!";
+  let high = rangeEnd;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (pivotBusinessDaysBetween(middle, rangeEnd, holidayResult.holidays, dateSystem, weekendResult.weekends) >= target) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
 function textDateParts(value) {
   const text = String(value ?? "").trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2})(?::(\d{2}))?(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.exec(text);

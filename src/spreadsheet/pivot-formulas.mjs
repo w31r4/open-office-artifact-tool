@@ -1,5 +1,5 @@
 import { formulaTimeParts, formulaTimeSerial } from "./formula-coercion.mjs";
-import { pivotDateParts, pivotDateSerial, pivotFormulaDateParts, pivotShiftDateMonths, pivotWeekdayIndex } from "./pivot-dates.mjs";
+import { pivotDateParts, pivotDateSerial, pivotFormulaDateParts, pivotNetworkDays, pivotShiftDateMonths, pivotWeekdayIndex, pivotWorkday } from "./pivot-dates.mjs";
 
 const PIVOT_FUNCTIONS = new Map([
   ["ABS", { minArgs: 1, maxArgs: 1 }],
@@ -43,6 +43,10 @@ const PIVOT_FUNCTIONS = new Map([
   ["HOUR", { minArgs: 1, maxArgs: 1 }],
   ["MINUTE", { minArgs: 1, maxArgs: 1 }],
   ["SECOND", { minArgs: 1, maxArgs: 1 }],
+  ["NETWORKDAYS", { minArgs: 2, maxArgs: 3 }],
+  ["WORKDAY", { minArgs: 2, maxArgs: 3 }],
+  ["NETWORKDAYS.INTL", { minArgs: 2, maxArgs: 4 }],
+  ["WORKDAY.INTL", { minArgs: 2, maxArgs: 4 }],
 ]);
 
 const COMPARISON_OPERATORS = new Set(["=", "<>", "<", "<=", ">", ">="]);
@@ -422,6 +426,19 @@ function formulaFunction(name, args, options) {
   if (name === "HOUR" || name === "MINUTE" || name === "SECOND") {
     const parts = pivotTimeParts(args[0], options.dateSystem);
     return parts ? parts[name.toLowerCase()] : "#VALUE!";
+  }
+  if (name === "NETWORKDAYS" || name === "NETWORKDAYS.INTL" || name === "WORKDAY" || name === "WORKDAY.INTL") {
+    const start = numericValue(args[0]);
+    const endOrDays = numericValue(args[1]);
+    if (formulaError(start)) return start;
+    if (formulaError(endOrDays)) return endOrDays;
+    const international = name.endsWith(".INTL");
+    const weekend = international && args[2] != null ? scalarFormulaValue(args[2]) : 1;
+    const holidayArg = args[international ? 3 : 2];
+    const holiday = holidayArg == null ? undefined : numericValue(holidayArg);
+    if (formulaError(holiday)) return holiday;
+    const businessOptions = { dateSystem: options.dateSystem, weekend, holidays: holiday == null ? [] : [holiday], allowAllWeekend: name === "NETWORKDAYS.INTL" };
+    return name.startsWith("NETWORKDAYS") ? pivotNetworkDays(start, endOrDays, businessOptions) : pivotWorkday(start, endOrDays, businessOptions);
   }
   if (name === "ABS") return formulaUnary(args[0], Math.abs);
   if (name === "SQRT") {

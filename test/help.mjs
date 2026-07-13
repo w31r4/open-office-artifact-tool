@@ -229,6 +229,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /DATE\/YEAR\/MONTH\/DAY/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /EDATE\/EOMONTH\/DAYS\/WEEKDAY/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /TIME\/HOUR\/MINUTE\/SECOND/);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /NETWORKDAYS\/WORKDAY\/NETWORKDAYS.INTL\/WORKDAY.INTL/);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /one optional scalar holiday/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.patches?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.syncContentTypes?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.patchPptx")?.schema?.parameters?.validateResult?.type, "boolean");
