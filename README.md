@@ -55,7 +55,7 @@ Every informative PDF image and chart must provide concise, meaningful `alt` tex
 
 Set `headingLevel: 1` through `6` on positioned PDF text that acts as a heading. Visual style remains independent from semantics: the value is preserved through inspect/layout/model roundtrip and exported as an H1-H6 structure role. `pdf.verify()` reports a heading sequence that starts below H1 or skips a level, and the runnable verifier compares modeled heading counts with the real tagged bytes.
 
-The bundled codec also has bounded DOCX and PPTX slices. The complex Documents fixture crosses DOCX with source-preserving advanced WordprocessingML and real page-render QA. PPTX models simple top-level rectangle/ellipse shapes, while pictures, charts, groups, connectors, content parts, notes, masters, themes, and their relationship graphs are source-bound and retained unchanged until their editable semantics land. Direct authoring outside each modeled subset fails closed.
+The bundled codec also has bounded DOCX and PPTX slices. The complex Documents fixture crosses DOCX with source-preserving advanced WordprocessingML and real page-render QA. PPTX models top-level rectangle/ellipse shapes plus a basic paragraph/run text subset: level/alignment, bold/italic, font size/family, and solid RGB text color. Source-bound edits retain unmodeled paragraph/run XML when topology is unchanged; pictures, charts, groups, connectors, content parts, notes, masters, themes, and their relationship graphs remain read-only and preserved until their editable semantics land. Direct authoring outside each modeled subset fails closed.
 
 ## Usage
 
@@ -110,7 +110,10 @@ import { exportPptxWithOpenXmlWasm, importPptxWithOpenXmlWasm } from "open-offic
 const deck = Presentation.create();
 deck.slides.add({ name: "Overview" }).shapes.add({
   name: "Title",
-  text: "OpenXML WASM presentation",
+  text: [{ alignment: "center", runs: [
+    { text: "OpenXML ", style: { bold: true, fontSize: 36, color: "#0F172A" } },
+    { text: "WASM presentation", style: { italic: true, fontSize: 36 } },
+  ] }],
   position: { left: 60, top: 40, width: 860, height: 70 },
 });
 const pptx = await exportPptxWithOpenXmlWasm(deck);

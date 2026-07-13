@@ -112,6 +112,55 @@ public sealed class PptxCodecTests
         Assert.Equal("presentation_item_budget_exceeded", Assert.Single(itemBudget.Diagnostics).Code);
     }
 
+    [Fact]
+    public void RichTextRoundTripsAndPreservesUnmodeledRunAndParagraphProperties()
+    {
+        var authored = Invoke(RichTextExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddUnmodeledTextProperties(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var shape = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements).Shape;
+        Assert.Equal("Quarterly brief\nSource-bound detail", shape.Text);
+        Assert.Equal(2, shape.TextBody.Paragraphs.Count);
+        Assert.Equal("center", shape.TextBody.Paragraphs[0].Alignment);
+        Assert.Equal(2, shape.TextBody.Paragraphs[0].Runs.Count);
+        Assert.True(shape.TextBody.Paragraphs[0].Runs[0].Bold);
+        Assert.Equal(27, shape.TextBody.Paragraphs[0].Runs[0].FontSizePoints);
+        Assert.Equal("Aptos Display", shape.TextBody.Paragraphs[0].Runs[0].FontFamily);
+        Assert.Equal("0F172A", shape.TextBody.Paragraphs[0].Runs[0].ColorRgb);
+        Assert.True(shape.TextBody.Paragraphs[0].Runs[1].Italic);
+        Assert.False(shape.TextBody.Paragraphs[1].HasAlignment);
+
+        shape.TextBody.Paragraphs[0].Runs[0].Text = "Updated ";
+        shape.TextBody.Paragraphs[0].Runs[0].Bold = false;
+        shape.TextBody.Paragraphs[0].Runs[0].ColorRgb = "2563EB";
+        shape.Text = PptxTextCodec.Flatten(shape.TextBody);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using (var stream = new MemoryStream(preserved.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var nativeShape = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>().Single();
+            var paragraph = nativeShape.TextBody!.Elements<A.Paragraph>().First();
+            var run = paragraph.Elements<A.Run>().First();
+            Assert.Equal("Updated ", run.Text!.Text);
+            Assert.False(run.RunProperties!.Bold!.Value);
+            Assert.Equal("2563EB", run.RunProperties.GetFirstChild<A.SolidFill>()!.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value);
+            Assert.Equal(A.TextUnderlineValues.Single, run.RunProperties.Underline!.Value);
+            Assert.Equal("Noto Sans CJK SC", run.RunProperties.GetFirstChild<A.EastAsianFont>()!.Typeface!.Value);
+            Assert.Equal("•", paragraph.ParagraphProperties!.GetFirstChild<A.CharacterBullet>()!.Char!.Value);
+            Assert.Equal(A.TextAlignmentTypeValues.Distributed, nativeShape.TextBody.Elements<A.Paragraph>().Last().ParagraphProperties!.Alignment!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        shape.TextBody.Paragraphs[0].Runs.Add(new PresentationTextRun { Text = "unsafe topology" });
+        shape.Text = PptxTextCodec.Flatten(shape.TextBody);
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_text_topology_changed", Assert.Single(rejected.Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
@@ -174,6 +223,82 @@ public sealed class PptxCodecTests
                 Presentation = presentation,
             },
         };
+    }
+
+    private static CodecRequest RichTextExportRequest()
+    {
+        var first = new PresentationTextParagraph { Alignment = "center" };
+        first.Runs.Add(new PresentationTextRun
+        {
+            Text = "Quarterly ",
+            Bold = true,
+            FontSizePoints = 27,
+            FontFamily = "Aptos Display",
+            ColorRgb = "0F172A",
+        });
+        first.Runs.Add(new PresentationTextRun { Text = "brief", Italic = true, FontSizePoints = 27 });
+        var second = new PresentationTextParagraph { Level = 1 };
+        second.Runs.Add(new PresentationTextRun { Text = "Source-bound detail", FontSizePoints = 15 });
+        var textBody = new PresentationTextBody();
+        textBody.Paragraphs.Add(first);
+        textBody.Paragraphs.Add(second);
+        var slide = new PresentationSlide { Id = "presentation/slide/1", Name = "Rich text" };
+        slide.Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/rich-text",
+            Name = "Rich text",
+            Shape = new PresentationShape
+            {
+                Geometry = "rect",
+                LeftEmu = 571_500,
+                TopEmu = 381_000,
+                WidthEmu = 8_191_500,
+                HeightEmu = 1_714_500,
+                Text = PptxTextCodec.Flatten(textBody),
+                TextBody = textBody,
+                FillRgb = "FFFFFF",
+                LineRgb = "334155",
+                LineWidthEmu = 9_525,
+            },
+        });
+        var presentation = new PresentationArtifact
+        {
+            Id = "presentation/rich-text",
+            Name = "Rich text",
+            SlideWidthEmu = 12_192_000,
+            SlideHeightEmu = 6_858_000,
+        };
+        presentation.Slides.Add(slide);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportPptx,
+            Family = ArtifactFamily.Presentation,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Presentation,
+                Presentation = presentation,
+            },
+        };
+    }
+
+    private static byte[] AddUnmodeledTextProperties(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var shape = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>().Single();
+            var paragraph = shape.TextBody!.Elements<A.Paragraph>().First();
+            paragraph.ParagraphProperties!.Append(new A.CharacterBullet { Char = "•" });
+            shape.TextBody.Elements<A.Paragraph>().Last().ParagraphProperties!.Alignment = A.TextAlignmentTypeValues.Distributed;
+            var properties = paragraph.Elements<A.Run>().First().RunProperties!;
+            properties.Underline = A.TextUnderlineValues.Single;
+            properties.Append(new A.EastAsianFont { Typeface = "Noto Sans CJK SC" });
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddPicture(byte[] bytes)

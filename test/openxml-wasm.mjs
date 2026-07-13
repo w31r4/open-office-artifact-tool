@@ -171,6 +171,69 @@ assert.equal(pptxImported.slides.count, 1);
 assert.equal(pptxImported.slides.getItem(0).shapes.items[0].text.value, "OpenXML WASM presentation");
 assert.equal(pptxImported.verify().ok, true);
 
+const richPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add({
+  name: "Rich text",
+  geometry: "rect",
+  position: { left: 60, top: 40, width: 920, height: 180 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: [
+    {
+      alignment: "center",
+      runs: [
+        { text: "Quarterly ", style: { bold: true, fontSize: 36, fontFamily: "Aptos Display", color: "#0F172A" } },
+        { text: "brief", style: { italic: true, fontSize: 36 } },
+      ],
+    },
+    { level: 1, runs: [{ text: "Source-bound detail", style: { fontSize: 20, color: "#475569" } }] },
+  ],
+});
+const richPptx = await exportPptxWithOpenXmlWasm(richPresentation);
+const richPptxImported = await importPptxWithOpenXmlWasm(richPptx);
+const richImportedShape = richPptxImported.slides.getItem(0).shapes.items[0];
+assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail");
+assert.equal(richImportedShape.text.paragraphs.length, 2);
+assert.equal(richImportedShape.text.paragraphs[0].alignment, "center");
+assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.bold, true);
+assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontSize, 36);
+assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontFamily, "Aptos Display");
+assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.color, "#0F172A");
+assert.equal(richImportedShape.text.paragraphs[0].runs[1].style.italic, true);
+richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
+  ...paragraph,
+  runs: paragraph.runs.map((run, runIndex) => paragraphIndex === 0 && runIndex === 0
+    ? { ...run, text: "Updated ", style: { ...run.style, bold: false, color: "#2563EB" } }
+    : run),
+}));
+const richPptxEdited = await exportPptxWithOpenXmlWasm(richPptxImported);
+const richPptxRoundTrip = await importPptxWithOpenXmlWasm(richPptxEdited);
+assert.equal(richPptxRoundTrip.slides.getItem(0).shapes.items[0].text.value, "Updated brief\nSource-bound detail");
+assert.equal(richPptxRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].runs[0].style.bold, false);
+assert.equal(richPptxRoundTrip.slides.getItem(0).shapes.items[0].text.paragraphs[0].runs[0].style.color, "#2563EB");
+richImportedShape.text.paragraphs = [
+  ...richImportedShape.text.paragraphs.slice(0, 1),
+  { ...richImportedShape.text.paragraphs[1], runs: [...richImportedShape.text.paragraphs[1].runs, { text: "unsafe", style: {} }] },
+];
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(richPptxImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "presentation_text_topology_changed",
+);
+
+const unsupportedRichPresentation = Presentation.create();
+unsupportedRichPresentation.slides.add().shapes.add({ text: [{ runs: [{ text: "underline", style: { underline: "single" } }] }] });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(unsupportedRichPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
+);
+
+const invalidRichPresentation = Presentation.create();
+invalidRichPresentation.slides.add().shapes.add({ text: [{ runs: [{ text: "transparent", style: { color: "transparent" } }] }] });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(invalidRichPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
+);
+
 const preservedPresentation = Presentation.create({
   master: { id: "master/preservation", name: "Preservation master", background: "#FFFFFF", placeholders: [] },
 });

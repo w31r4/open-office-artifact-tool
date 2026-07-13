@@ -230,8 +230,9 @@ message PresentationShape {
   int64 top_emu = 3;
   int64 width_emu = 4;
   int64 height_emu = 5;
-  // Flattened compatibility view. When text_body is present, this must equal
-  // its paragraphs joined with line feeds.
+  // Flattened compatibility view. Writers should keep this equal to text_body
+  // paragraphs joined with line feeds. Legacy single-run writers may set only
+  // this field; multi-paragraph/run payloads must keep both views equal.
   string text = 6;
   string fill_rgb = 7;
   string line_rgb = 8;

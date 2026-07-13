@@ -57,7 +57,20 @@
     }
   ],
   "openXmlWasm": {
-    "edit": { "slideIndex": 0, "shapeName": "wasm-title", "text": "After OpenXML WASM" }
+    "edit": {
+      "slideIndex": 0,
+      "shapeName": "wasm-title",
+      "text": [
+        {
+          "runs": [
+            {
+              "text": "After OpenXML WASM",
+              "style": { "fontSize": 36, "bold": true, "color": "#0F172A" }
+            }
+          ]
+        }
+      ]
+    }
   },
   "expectInspect": [
     { "kind": "shape", "pattern": "Before OpenXML WASM" },
