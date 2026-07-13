@@ -21,11 +21,12 @@
       "textParagraphStyles": {
         "body": {
           "0": { "bulletCharacter": "•", "bulletFont": "Arial", "bulletColor": "accent1", "bulletSizePercent": 1.1, "marginLeft": 28, "indent": -14, "spaceAfter": 4, "style": { "fontSize": 20, "color": "tx2" } },
-          "1": { "bulletCharacter": "–", "bulletFont": "Arial", "bulletColor": "tx2", "bulletSize": 18, "marginLeft": 52, "indent": -18, "spaceBeforePercent": 0.2, "style": { "fontSize": 18, "color": "tx2" } }
+          "1": { "bulletCharacter": "–", "bulletFont": "Arial", "bulletColor": "tx2", "bulletSize": 18, "marginLeft": 52, "indent": -18, "spaceBeforePercent": 0.2, "style": { "fontSize": 18, "color": "tx2" } },
+          "2": { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=", "alt": "Inherited package evidence" }, "bulletSize": 16, "marginLeft": 72, "indent": -20, "style": { "fontSize": 18, "color": "tx2" } }
         }
       },
       "placeholders": [
-        { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "Agent Readiness Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
+        { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "structure-title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "text": "Native PPTX parts preserve agent-visible structure", "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
       ]
     },
     {
@@ -45,7 +46,7 @@
     }
   ],
   "layouts": [
-    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [] },
+    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [{ "type": "body", "idx": 2, "name": "Inherited Package Evidence", "position": { "left": 42, "top": 604, "width": 760, "height": 42 }, "text": [{ "level": 2, "runs": ["Master-owned picture bullet survives template inheritance"] }] }] },
     { "id": "layout/verification-grid", "name": "Verification Grid", "type": "blank", "masterId": "master/verification", "placeholders": [] }
   ],
   "slides": [
@@ -65,10 +66,10 @@
     {
       "name": "Native structure",
       "layoutId": "layout/blank-grid",
+      "applyLayoutPlaceholders": true,
       "background": "#FFFFFF",
       "notes": "Use the table to distinguish facade evidence from native OOXML package evidence.",
       "shapes": [
-        { "name": "structure-title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Native PPTX parts preserve agent-visible structure", "textStyle": { "fontSize": 42, "bold": true, "color": "#000000" } },
         { "name": "structure-lead", "position": { "left": 42, "top": 126, "width": 1196, "height": 54 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Each gate leaves bounded evidence an agent can inspect and resolve.", "textStyle": { "fontSize": 20, "color": "#334155" } },
         { "name": "structure-footer", "position": { "left": 1160, "top": 648, "width": 78, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "02", "textStyle": { "fontSize": 16, "color": "#64748B" } }
       ],

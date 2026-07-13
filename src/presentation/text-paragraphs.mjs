@@ -426,12 +426,12 @@ export function presentationParagraphsXml(paragraphs = [], defaultStyle = {}, op
   }).join("");
 }
 
-export function presentationListStyleXml(styles = {}) {
-  const levels = Object.entries(styles).sort(([left], [right]) => Number(left) - Number(right)).map(([level, style]) => paragraphPropertiesXml({ ...style, level: 0 }).replace(/^<a:pPr/, `<a:lvl${Number(level) + 1}pPr`).replace(/<\/a:pPr>$/, `</a:lvl${Number(level) + 1}pPr>`)).join("");
+export function presentationListStyleXml(styles = {}, options = {}) {
+  const levels = Object.entries(styles).sort(([left], [right]) => Number(left) - Number(right)).map(([level, style]) => paragraphPropertiesXml({ ...style, level: 0 }, options).replace(/^<a:pPr/, `<a:lvl${Number(level) + 1}pPr`).replace(/<\/a:pPr>$/, `</a:lvl${Number(level) + 1}pPr>`)).join("");
   return `<a:lstStyle>${levels}</a:lstStyle>`;
 }
 
-export function presentationMasterListStylesXml(stylesByKind = {}, fallbackTextStyles = {}) {
+export function presentationMasterListStylesXml(stylesByKind = {}, fallbackTextStyles = {}, options = {}) {
   const localNames = { title: "titleStyle", body: "bodyStyle", other: "otherStyle" };
   return Object.entries(localNames).map(([kind, localName]) => {
     const fallback = fallbackTextStyles[kind] || {};
@@ -444,7 +444,7 @@ export function presentationMasterListStylesXml(stylesByKind = {}, fallbackTextS
         ...explicit,
         style: { fontSize: fallback.fontSize == null ? undefined : fallback.fontSize * 4 / 3, bold: fallback.bold, italic: fallback.italic, color: fallback.color, fontFamily: fallback.fontFamily, ...(explicit.style || {}) },
       };
-      return paragraphPropertiesXml(paragraph).replace(/^<a:pPr/, `<a:lvl${level + 1}pPr`).replace(/<\/a:pPr>$/, `</a:lvl${level + 1}pPr>`).replace(/<a:defRPr lang="en-US" sz="([^"]+)"/, '<a:defRPr sz="$1"');
+      return paragraphPropertiesXml(paragraph, options).replace(/^<a:pPr/, `<a:lvl${level + 1}pPr`).replace(/<\/a:pPr>$/, `</a:lvl${level + 1}pPr>`).replace(/<a:defRPr lang="en-US" sz="([^"]+)"/, '<a:defRPr sz="$1"');
     }).join("");
     return `<p:${localName}>${levels}</p:${localName}>`;
   }).join("");

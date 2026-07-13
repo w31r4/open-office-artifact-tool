@@ -970,10 +970,10 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration and select legacy or Office 2021 modern comment serialization. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
-| `presentation.layouts.add` | api | Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts. |
-| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults. |
+| `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts. |
+| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
-| `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, optional inherited theme override, and typed placeholder defaults for its bound layouts. |
+| `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts. |
 | `presentation.masters.getItem` | api | Resolve a Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects. |
 | `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
@@ -1103,7 +1103,7 @@ Emit NDJSON for deck, slides, textboxes, shapes, grouped shapes, tables, charts,
 
 #### `presentation.layouts.add`
 
-Create a reusable slide layout with an optional background and typed placeholder overrides; export writes native slideLayout and slideMaster inheritance parts.
+Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts.
 
 **Schema parameters:**
 
@@ -1111,7 +1111,7 @@ Create a reusable slide layout with an optional background and typed placeholder
 - `type` (string) — Layout type.
 - `masterId` (string) — Master identity.
 - `background` (string|object) — Optional layout background overriding the linked master background.
-- `placeholders` (object[]) — Placeholder type/idx/name/frame/text/required/style definitions merged over matching master defaults.
+- `placeholders` (object[]) — Placeholder type/idx/name/frame/text/required/style/paragraphStyles definitions merged over matching master defaults; picture bullets own layout-part image relationships.
 
 **Schema returns:**
 
@@ -1119,7 +1119,7 @@ Create a reusable slide layout with an optional background and typed placeholder
 
 #### `presentation.master`
 
-Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults.
+Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets.
 
 **Schema parameters:**
 
@@ -1127,7 +1127,8 @@ Backward-compatible alias for the first Slide Master; configure its identity, ba
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, and text style.
+- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, text style, and paragraphStyles; picture bullets own master-part image relationships.
+- `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**
 
@@ -1147,7 +1148,7 @@ Set a partial per-master theme override inherited from the deck default, or clea
 
 #### `presentation.masters.add`
 
-Add a Slide Master with stable identity, native background, optional inherited theme override, and typed placeholder defaults for its bound layouts.
+Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts.
 
 **Schema parameters:**
 
@@ -1155,7 +1156,8 @@ Add a Slide Master with stable identity, native background, optional inherited t
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, and text style.
+- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, text style, and paragraphStyles; picture bullets own master-part image relationships.
+- `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**
 

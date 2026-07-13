@@ -56,6 +56,8 @@ try {
   const fixtureSecondThemeXml = await fixtureZip.file("ppt/theme/theme2.xml").async("text");
   const fixtureMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
   const fixtureSecondMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster2.xml").async("text");
+  const fixtureMasterRelsXml = await fixtureZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
+  const fixtureSecondSlideXml = await fixtureZip.file("ppt/slides/slide2.xml").async("text");
   const fixtureThirdSlideXml = await fixtureZip.file("ppt/slides/slide3.xml").async("text");
   const fixturePresentationXml = await fixtureZip.file("ppt/presentation.xml").async("text");
   const fixtureChartXml = await fixtureZip.file("ppt/charts/chart1.xml").async("text");
@@ -67,6 +69,9 @@ try {
   assert.match(fixtureMasterXml, /<p:titleStyle>[\s\S]*?<a:defRPr sz="4200"/);
   assert.match(fixtureMasterXml, /<p:bodyStyle>[\s\S]*?<a:buChar char="•"\/>[\s\S]*?<a:buChar char="–"\/>/);
   assert.match(fixtureMasterXml, /<p:bodyStyle>[\s\S]*?<a:buClr><a:schemeClr val="accent1"\/><\/a:buClr><a:buSzPct val="110000"\/><a:buFont typeface="Arial"\/>/);
+  assert.match(fixtureMasterXml, /<p:bodyStyle>[\s\S]*?<a:lvl3pPr[\s\S]*?<a:buBlip><a:blip r:embed="rId3"\/><\/a:buBlip>/);
+  assert.match(fixtureMasterRelsXml, /Id="rId3" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="\.\.\/media\/image2\.png"/);
+  assert.match(fixtureSecondSlideXml, /name="Inherited Package Evidence"[\s\S]*?<a:buBlip><a:blip r:embed="rId1"\/><\/a:buBlip>/);
   assert.match(fixtureThirdSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="125000"\/><a:buFont typeface="Georgia"\/><a:buChar char="◆"\/>/);
   assert.match(fixtureMasterXml, /<p:cSld name="Agent Readiness Master"><p:bg><p:bgRef idx="1001">/);
   assert.match(fixtureMasterXml, /<p:ph type="title" idx="1"\/>/);
@@ -90,6 +95,9 @@ try {
   assert.deepEqual(fixtureChart.series[1].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
   const fixturePictureBullet = first.qa.presentation.slides.items[2].shapes.items.find((shape) => shape.name === "package-callout").text.paragraphs[1].bulletImage;
   assert.match(fixturePictureBullet.dataUrl, /^data:image\/png;base64,/);
+  const fixtureInheritedPictureBullet = first.qa.presentation.slides.items[1].shapes.items.find((shape) => shape.name === "Inherited Package Evidence").text.effectiveParagraphs()[0].bulletImage;
+  assert.match(fixtureInheritedPictureBullet.dataUrl, /^data:image\/png;base64,/);
+  assert.equal(first.qa.presentation.master.textParagraphStyles.body[2].bulletImage.dataUrl, fixtureInheritedPictureBullet.dataUrl);
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);

@@ -208,7 +208,7 @@ export function presentationSlideMasterXml(layoutParts = [], theme = {}, options
   const colorMap = Object.entries(normalized.colorMap).map(([key, value]) => `${key}="${attrEscape(value)}"`).join(" ");
   const hasParagraphStyles = Object.values(options.textParagraphStyles || {}).some((styles) => Object.keys(styles || {}).length > 0);
   const textStyles = hasParagraphStyles
-    ? presentationMasterListStylesXml(options.textParagraphStyles, normalized.textStyles)
+    ? presentationMasterListStylesXml(options.textParagraphStyles, normalized.textStyles, { pictureBulletRelationshipId: options.pictureBulletRelationshipId })
     : Object.entries(normalized.textStyles).map(([kind, style]) => textStyleXml(kind, style)).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" preserve="1"><p:cSld name="${attrEscape(options.name || "Default Master")}">${options.backgroundXml || ""}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${options.placeholdersXml || ""}</p:spTree></p:cSld><p:clrMap ${colorMap}/><p:sldLayoutIdLst>${ids}</p:sldLayoutIdLst><p:txStyles>${textStyles}</p:txStyles></p:sldMaster>`;
 }

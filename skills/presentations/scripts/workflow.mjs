@@ -43,6 +43,11 @@ function addFixtureSlide(presentation, config = {}) {
   if (config.background) slide.background.fill = config.background;
   const byName = new Map();
   const remember = (item, name) => { if (name) byName.set(name, item); return item; };
+  if (config.applyLayoutPlaceholders) {
+    const layout = presentation.layouts.getItem(config.layoutId);
+    assert.ok(layout, `Missing presentation fixture layout ${config.layoutId}`);
+    for (const placeholder of layout.apply(slide)) remember(placeholder, placeholder.name);
+  }
   for (const shape of config.shapes || []) remember(addSlideShape(slide, shape), shape.name);
   for (const group of config.groups || []) {
     const created = slide.groups.add(group);

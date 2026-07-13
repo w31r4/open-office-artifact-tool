@@ -93,7 +93,20 @@ export function mergePresentationPlaceholders(masterPlaceholders = [], layoutPla
   const cloneParagraphStyles = (styles = {}) => Object.fromEntries(Object.entries(styles).map(([level, style]) => [level, { ...style, style: { ...(style.style || {}) } }]));
   const mergeParagraphStyles = (base = {}, overrides = {}) => {
     const result = cloneParagraphStyles(base);
-    for (const [level, style] of Object.entries(overrides)) result[level] = { ...(result[level] || {}), ...style, style: { ...(result[level]?.style || {}), ...(style.style || {}) } };
+    for (const [level, style] of Object.entries(overrides)) {
+      const inherited = { ...(result[level] || {}) };
+      if (["bulletCharacter", "bulletImage", "autoNumber", "bulletNone"].some((field) => Object.hasOwn(style, field))) {
+        delete inherited.bulletCharacter;
+        delete inherited.bulletImage;
+        delete inherited.autoNumber;
+        delete inherited.bulletNone;
+      }
+      for (const fields of [["bulletFont", "bulletFontFollowText"], ["bulletColor", "bulletColorFollowText"], ["bulletSize", "bulletSizePercent", "bulletSizeFollowText"]]) {
+        if (!fields.some((field) => Object.hasOwn(style, field))) continue;
+        for (const field of fields) delete inherited[field];
+      }
+      result[level] = { ...inherited, ...style, style: { ...(inherited.style || {}), ...(style.style || {}) } };
+    }
     return result;
   };
   const merged = new Map(masterPlaceholders.map((placeholder) => [placeholderKey(placeholder), { ...placeholder, position: placeholder.position && { ...placeholder.position }, style: { ...(placeholder.style || {}) }, paragraphStyles: cloneParagraphStyles(placeholder.paragraphStyles) }]));

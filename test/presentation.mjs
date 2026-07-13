@@ -943,6 +943,7 @@ assert.equal((await PresentationFile.inspectPptx(legacyGroupedPptx)).ok, true);
 const legacyGroupedLoaded = await PresentationFile.importPptx(legacyGroupedPptx);
 assert.equal(legacyGroupedLoaded.slides.items[0].resolve(legacyGroupedLoaded.slides.items[0].comments.items[0].targetId)?.name, "legacy-image");
 
+const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=";
 const paragraphPresentation = Presentation.create({
   master: {
     id: "master/lists",
@@ -951,6 +952,10 @@ const paragraphPresentation = Presentation.create({
       body: {
         0: { bulletCharacter: "○", bulletFont: "Arial", bulletColor: "accent2", bulletSizePercent: 1.1, marginLeft: 30, indent: -15, style: { fontSize: 22, color: "tx1" } },
         1: { bulletCharacter: "–", bulletFont: "Arial", bulletColor: "tx2", bulletSize: 18, marginLeft: 52, indent: -20, spaceBeforePercent: 0.2, style: { fontSize: 18, color: "tx2" } },
+        2: { bulletImage: { dataUrl: pictureBulletPng, alt: "Master picture bullet" }, bulletSize: 16, marginLeft: 72, indent: -20, style: { fontSize: 18, color: "tx2" } },
+      },
+      other: {
+        0: { bulletImage: { uri: "https://example.com/master-status.png", alt: "External master picture bullet" }, bulletSizePercent: 0.75 },
       },
     },
     placeholders: [{
@@ -961,11 +966,16 @@ const paragraphPresentation = Presentation.create({
       paragraphStyles: { 0: { bulletCharacter: "•", marginLeft: 28, indent: -14, spaceAfter: 6, style: { fontSize: 20, color: "accent1" } } },
     }],
   },
-  layouts: [{ id: "layout/lists", name: "List Layout", type: "obj", masterId: "master/lists", placeholders: [{ type: "body", idx: 1, name: "Inherited List" }] }],
+  layouts: [{ id: "layout/lists", name: "List Layout", type: "obj", masterId: "master/lists", placeholders: [{ type: "body", idx: 1, name: "Inherited List", paragraphStyles: { 1: { bulletImage: { dataUrl: pictureBulletPng, alt: "Layout picture bullet" }, bulletSizePercent: 0.9 } } }] }],
 });
 const paragraphSlide = paragraphPresentation.slides.add({ layoutId: "layout/lists" });
 const [inheritedListShape] = paragraphPresentation.layouts.getItem("layout/lists").apply(paragraphSlide);
-inheritedListShape.text.set([{ runs: ["Inherited one"] }, { level: 1, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, runs: ["Inherited two"] }]);
+inheritedListShape.text.set([
+  { runs: ["Inherited one"] },
+  { level: 1, runs: ["Layout picture"] },
+  { level: 2, runs: ["Master picture"] },
+  { level: 2, bulletCharacter: "!", runs: ["Direct override"] },
+]);
 const richTextShape = paragraphSlide.shapes.add({ name: "rich-list", position: { left: 820, top: 80, width: 380, height: 420 }, text: "" });
 richTextShape.text.set([
   [{ run: "Status", textStyle: { bold: true, color: "#0f172a" } }, " review"],
@@ -973,7 +983,6 @@ richTextShape.text.set([
   { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
 ]);
 richTextShape.text.style = { fontFamily: "Arial", fontSize: 20, color: "#334155", lineSpacing: 1.15 };
-const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=";
 const pictureBulletShape = paragraphSlide.shapes.add({ name: "picture-list", position: { left: 80, top: 470, width: 420, height: 90 }, text: [{ bulletImage: { dataUrl: pictureBulletPng, alt: "Green status" }, bulletSize: 18, marginLeft: 30, indent: -20, runs: ["Embedded picture bullet"] }] });
 const externalPictureBulletShape = paragraphSlide.shapes.add({ name: "external-picture-list", position: { left: 520, top: 470, width: 420, height: 90 }, text: [{ pictureBullet: "https://example.com/status.png", bulletSizePercent: 0.8, runs: ["External picture bullet"] }] });
 const pictureBulletGroup = paragraphSlide.groups.add({ name: "picture-bullet-group", position: { left: 940, top: 470, width: 250, height: 100 }, childFrame: { left: 0, top: 0, width: 250, height: 100 } });
@@ -1021,20 +1030,40 @@ const paragraphZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.ar
 const paragraphSlideXml = await paragraphZip.file("ppt/slides/slide1.xml").async("text");
 const paragraphSlideRelsXml = await paragraphZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
 const paragraphMasterXml = await paragraphZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+const paragraphMasterRelsXml = await paragraphZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
+const paragraphLayoutXml = await paragraphZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
+const paragraphLayoutRelsXml = await paragraphZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text");
 assert.match(paragraphSlideXml, /<a:buChar char="•"\/>/);
 assert.match(paragraphSlideXml, /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
 assert.match(paragraphSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="150000"\/><a:buFont typeface="Georgia"\/><a:buChar char="•"\/>/);
 assert.match(paragraphSlideXml, /<a:buClrTx\/><a:buSzTx\/><a:buFontTx\/><a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
-assert.equal((paragraphSlideXml.match(/<a:buBlip><a:blip r:embed="rId\d+"\/><\/a:buBlip>/g) || []).length, 2);
+assert.equal((paragraphSlideXml.match(/<a:buBlip><a:blip r:embed="rId\d+"\/><\/a:buBlip>/g) || []).length, 6);
 assert.match(paragraphSlideXml, /<a:buBlip><a:blip r:link="rId\d+"\/><\/a:buBlip>/);
 assert.match(paragraphSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="\.\.\/media\/image1\.png"/);
 assert.match(paragraphSlideRelsXml, /Target="https:\/\/example\.com\/status\.png" TargetMode="External"/);
 assert.ok(paragraphZip.file("ppt/media/image1.png"));
 assert.equal(Object.keys(paragraphZip.files).filter((file) => /^ppt\/media\/image\d+\.png$/.test(file)).length, 1);
+assert.match(paragraphMasterXml, /<p:bodyStyle>[\s\S]*?<a:lvl3pPr[\s\S]*?<a:buBlip><a:blip r:embed="rId3"\/><\/a:buBlip>/);
+assert.match(paragraphMasterRelsXml, /Id="rId3" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="\.\.\/media\/image1\.png"/);
+assert.match(paragraphMasterRelsXml, /Id="rId4" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="https:\/\/example\.com\/master-status\.png" TargetMode="External"/);
+assert.match(paragraphLayoutXml, /<a:lstStyle>[\s\S]*?<a:lvl2pPr[\s\S]*?<a:buBlip><a:blip r:embed="rId2"\/><\/a:buBlip>/);
+assert.match(paragraphLayoutRelsXml, /Id="rId2" Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="\.\.\/media\/image1\.png"/);
 const missingPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
 missingPictureBulletRelationshipZip.file("ppt/slides/_rels/slide1.xml.rels", paragraphSlideRelsXml.replace(/<Relationship[^>]*Target="\.\.\/media\/image1\.png"[^>]*\/>/, ""));
 const missingPictureBulletRelationshipPptx = new FileBlob(await missingPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
 await assert.rejects(() => PresentationFile.importPptx(missingPictureBulletRelationshipPptx), /picture bullet references missing image relationship/);
+const missingMasterPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+missingMasterPictureBulletRelationshipZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", paragraphMasterRelsXml.replace(/<Relationship Id="rId3"[^>]*\/>/, ""));
+const missingMasterPictureBulletRelationshipPptx = new FileBlob(await missingMasterPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(missingMasterPictureBulletRelationshipPptx), /picture bullet references missing image relationship rId3/);
+const missingLayoutPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+missingLayoutPictureBulletRelationshipZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels", paragraphLayoutRelsXml.replace(/<Relationship Id="rId2"[^>]*\/>/, ""));
+const missingLayoutPictureBulletRelationshipPptx = new FileBlob(await missingLayoutPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(missingLayoutPictureBulletRelationshipPptx), /picture bullet references missing image relationship rId2/);
+const strictPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+strictPictureBulletRelationshipZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", paragraphMasterRelsXml.replace("http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", "http://purl.oclc.org/ooxml/officeDocument/relationships/image"));
+const strictPictureBulletRelationshipPptx = new FileBlob(await strictPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+assert.equal((await PresentationFile.importPptx(strictPictureBulletRelationshipPptx)).master.textParagraphStyles.body[2].bulletImage.dataUrl, pictureBulletPng);
 assert.match(paragraphSlideXml, /<a:rPr[^>]*b="1"/);
 assert.match(paragraphSlideXml, /<a:rPr[^>]*i="1"[^>]*u="sng"/);
 assert.match(paragraphMasterXml, /<a:lstStyle><a:lvl1pPr[^>]*marL="266700"[^>]*indent="-133350"/);
@@ -1042,7 +1071,7 @@ assert.match(paragraphMasterXml, /<a:buChar char="•"\/>/);
 assert.match(paragraphMasterXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr[^>]*marL="495300"[^>]*indent="-190500"[\s\S]*?<a:spcPct val="20000"\/>[\s\S]*?<a:buChar char="–"\/>/);
 assert.match(paragraphMasterXml, /<p:bodyStyle>[\s\S]*?<a:buClr><a:schemeClr val="accent2"\/><\/a:buClr><a:buSzPct val="110000"\/><a:buFont typeface="Arial"\/><a:buChar char="○"\/>/);
 const inheritedListShapeXml = /<p:sp>[\s\S]*?<p:cNvPr[^>]*name="Inherited List"[\s\S]*?<\/p:sp>/.exec(paragraphSlideXml)[0];
-paragraphZip.file("ppt/slides/slide1.xml", paragraphSlideXml.replace(inheritedListShapeXml, inheritedListShapeXml.replaceAll(/<a:buChar char="[^"]+"\/>/g, "").replaceAll(/<a:buClr>[\s\S]*?<\/a:buClr>/g, "").replaceAll(/<a:buSz(?:Pct|Pts)\b[^>]*\/>/g, "").replaceAll(/<a:buFont\b[^>]*\/>/g, "").replaceAll(/ marL="-?\d+" indent="-?\d+"/g, "").replaceAll(/<a:spcBef>[\s\S]*?<\/a:spcBef>/g, "")));
+paragraphZip.file("ppt/slides/slide1.xml", paragraphSlideXml.replace(inheritedListShapeXml, inheritedListShapeXml.replaceAll(/<a:buChar char="(?:•|○|–)"\/>/g, "").replaceAll(/<a:buBlip>[\s\S]*?<\/a:buBlip>/g, "").replaceAll(/<a:buClr>[\s\S]*?<\/a:buClr>/g, "").replaceAll(/<a:buSz(?:Pct|Pts)\b[^>]*\/>/g, "").replaceAll(/<a:buFont\b[^>]*\/>/g, "").replaceAll(/ marL="-?\d+" indent="-?\d+"/g, "").replaceAll(/<a:spcBef>[\s\S]*?<\/a:spcBef>/g, "")));
 const inheritedParagraphPptx = new FileBlob(await paragraphZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
 const paragraphLoaded = await PresentationFile.importPptx(inheritedParagraphPptx);
 const paragraphLoadedInherited = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List");
@@ -1050,7 +1079,10 @@ const paragraphLoadedRich = paragraphLoaded.slides.items[0].shapes.items.find((s
 const paragraphLoadedPicture = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "picture-list");
 const paragraphLoadedExternalPicture = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "external-picture-list");
 const paragraphLoadedGroupedPicture = paragraphLoaded.slides.items[0].groups.items.find((group) => group.name === "picture-bullet-group").shapes.items[0];
-assert.deepEqual(paragraphLoadedInherited.text.effectiveParagraphs().map((paragraph) => paragraph.bulletCharacter), ["•", "–"]);
+assert.deepEqual(paragraphLoadedInherited.text.effectiveParagraphs().map((paragraph) => paragraph.bulletCharacter), ["•", undefined, undefined, "!"]);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletImage.dataUrl, pictureBulletPng);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[2].bulletImage.dataUrl, pictureBulletPng);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[3].bulletImage, undefined);
 assert.deepEqual(paragraphLoadedInherited.position, { left: 80, top: 80, width: 720, height: 360 });
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].marginLeft, 28);
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].style.color, "accent1");
@@ -1061,12 +1093,10 @@ assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].bulletFont, 
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].bulletColor, "accent2");
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].bulletSizePercent, 1.1);
 assert.equal(paragraphLoaded.master.textParagraphStyles.body[1].bulletSize, 18);
-assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletFont, undefined);
-assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletColor, undefined);
-assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletSize, undefined);
-assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletFontFollowText, true);
-assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletColorFollowText, true);
-assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletSizeFollowText, true);
+assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[1].bulletSizePercent, 0.9);
+assert.equal(paragraphLoaded.master.textParagraphStyles.body[2].bulletImage.dataUrl, pictureBulletPng);
+assert.deepEqual(paragraphLoaded.master.textParagraphStyles.other[0].bulletImage, { uri: "https://example.com/master-status.png", relationshipMode: "link" });
+assert.equal(paragraphLoaded.layouts.getItem("List Layout").placeholders[0].paragraphStyles[1].bulletImage.dataUrl, pictureBulletPng);
 assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletCharacter, "•");
 assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletFont, "Georgia");
 assert.equal(paragraphLoadedRich.text.paragraphs[1].bulletColor, "#dc2626");
@@ -1084,20 +1114,29 @@ const paragraphSecondPptx = await PresentationFile.exportPptx(paragraphLoaded);
 assert.equal((await PresentationFile.inspectPptx(paragraphSecondPptx)).ok, true);
 const paragraphSecondZip = await JSZip.loadAsync(new Uint8Array(await paragraphSecondPptx.arrayBuffer()));
 assert.match(await paragraphSecondZip.file("ppt/slides/slide1.xml").async("text"), /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
-assert.equal(((await paragraphSecondZip.file("ppt/slides/slide1.xml").async("text")).match(/<a:buBlip>/g) || []).length, 3);
+assert.equal(((await paragraphSecondZip.file("ppt/slides/slide1.xml").async("text")).match(/<a:buBlip>/g) || []).length, 7);
 assert.match(await paragraphSecondZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:bodyStyle>[\s\S]*?<a:buChar char="–"\/>/);
+assert.match(await paragraphSecondZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:bodyStyle>[\s\S]*?<a:lvl3pPr[\s\S]*?<a:buBlip>/);
+assert.match(await paragraphSecondZip.file("ppt/slideLayouts/slideLayout1.xml").async("text"), /<a:lvl2pPr[\s\S]*?<a:buBlip>/);
 const alternatePrefixParagraphZip = await JSZip.loadAsync(new Uint8Array(await inheritedParagraphPptx.arrayBuffer()));
 for (const file of ["ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml", "ppt/slides/slide1.xml"]) {
   const xml = await alternatePrefixParagraphZip.file(file).async("text");
   let remapped = xml.replaceAll("<p:", "<deck:").replaceAll("</p:", "</deck:").replace("xmlns:p=", "xmlns:deck=").replaceAll("<a:", "<draw:").replaceAll("</a:", "</draw:").replace("xmlns:a=", "xmlns:draw=");
-  if (file.includes("/slides/")) remapped = remapped.replaceAll("r:", "rel:");
+  remapped = remapped.replaceAll("r:", "rel:").replace("xmlns:r=", "xmlns:rel=");
   alternatePrefixParagraphZip.file(file, remapped);
+}
+for (const file of ["ppt/slideMasters/_rels/slideMaster1.xml.rels", "ppt/slideLayouts/_rels/slideLayout1.xml.rels", "ppt/slides/_rels/slide1.xml.rels"]) {
+  const xml = await alternatePrefixParagraphZip.file(file).async("text");
+  alternatePrefixParagraphZip.file(file, xml.replaceAll("http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", "http://purl.oclc.org/ooxml/officeDocument/relationships/image"));
 }
 const alternatePrefixParagraphPptx = new FileBlob(await alternatePrefixParagraphZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
 const alternatePrefixParagraphLoaded = await PresentationFile.importPptx(alternatePrefixParagraphPptx);
 assert.equal(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List").text.effectiveParagraphs()[0].bulletCharacter, "•");
 assert.deepEqual(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "rich-list").text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
 assert.equal(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "picture-list").text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
+assert.equal(alternatePrefixParagraphLoaded.master.textParagraphStyles.body[2].bulletImage.dataUrl, pictureBulletPng);
+assert.deepEqual(alternatePrefixParagraphLoaded.master.textParagraphStyles.other[0].bulletImage, { uri: "https://example.com/master-status.png", relationshipMode: "link" });
+assert.equal(alternatePrefixParagraphLoaded.layouts.getItem("List Layout").placeholders[0].paragraphStyles[1].bulletImage.dataUrl, pictureBulletPng);
 
 // Unsupported native drawing objects remain agent-visible and preserve their complete OPC relationship graph.
 const nativeObjectSource = Presentation.create();
