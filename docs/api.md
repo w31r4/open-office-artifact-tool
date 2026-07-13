@@ -1020,6 +1020,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
+| `exportPptxWithOpenXmlWasm` | api | Experimentally export a bounded Presentation shape slice through the bundled C# Open XML SDK WebAssembly codec, preserving source-bound unsupported native objects fail-closed. |
+| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with slide/shape-tree source bindings and opaque part/relationship evidence for loss-aware second export. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
@@ -1085,6 +1087,33 @@ Create an editable text block with name, className/style text tokens, and stable
 **Schema returns:**
 
 - `node` (object) — Paragraph compose node.
+
+#### `exportPptxWithOpenXmlWasm`
+
+Experimentally export a bounded Presentation shape slice through the bundled C# Open XML SDK WebAssembly codec, preserving source-bound unsupported native objects fail-closed.
+
+**Schema parameters:**
+
+- `presentation` (Presentation) required — Presentation facade within the simple rect/ellipse shape authoring boundary or carrying validated source bindings from the WASM importer.
+- `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata.
+
+#### `importPptxWithOpenXmlWasm`
+
+Experimentally import PPTX bytes with slide/shape-tree source bindings and opaque part/relationship evidence for loss-aware second export.
+
+**Schema parameters:**
+
+- `input` (FileBlob|Uint8Array|ArrayBuffer) required — PPTX package bytes.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `presentation` (Presentation) — Imported presentation facade carrying source/opaque package evidence and loss-aware slide element bindings for fail-closed second export.
 
 #### `Presentation.create`
 
