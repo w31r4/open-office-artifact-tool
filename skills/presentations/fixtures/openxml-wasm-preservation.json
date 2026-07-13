@@ -89,7 +89,7 @@
         {
           "bulletCharacter": "◆",
           "bulletFontFollowText": true,
-          "bulletColor": "#2563EB",
+          "bulletColor": "accent1",
           "bulletSize": 24,
           "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "action": "lastSlide", "highlightClick": false } }]
         },

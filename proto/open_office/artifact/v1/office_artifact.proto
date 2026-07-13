@@ -242,9 +242,9 @@ message PresentationShape {
 
 // The public PresentationML text slice models agent-facing paragraph/inlines,
 // list-marker/direct marker-style semantics, content-addressed or external
-// picture bullets, tab stops, and bounded click links. Non-RGB marker colors,
-// custom-show/mouse-over links, field paragraph properties, body properties,
-// and list styles stay source-bound.
+// picture bullets, tab stops, and bounded click links. Transformed or
+// non-sRGB/non-theme marker colors, custom-show/mouse-over links, field
+// paragraph properties, body properties, and list styles stay source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
 }
@@ -270,6 +270,9 @@ message PresentationTextParagraph {
   oneof bullet_color {
     string bullet_color_rgb = 9;
     bool bullet_color_follow_text = 10;
+    // One of the 16 public DrawingML theme tokens (for example accent1 or
+    // tx1). Color transforms remain source-bound rather than being flattened.
+    string bullet_color_scheme = 17;
   }
   oneof bullet_size {
     double bullet_size_points = 11;

@@ -10,6 +10,10 @@ const EMU_PER_POINT = 12700;
 const POINTS_PER_PIXEL = 0.75;
 const MAX_FONT_SIZE_PIXELS = 1024;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.openxml-wasm-presentation-state");
+const PRESENTATION_SCHEME_COLORS = new Set([
+  "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
+  "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink",
+]);
 const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "color"]);
 const PARAGRAPH_KEYS = new Set([
   "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletImage", "bulletNone",
@@ -154,11 +158,13 @@ function wireBulletColor(paragraph, original, shapeId) {
     throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} paragraph selects both a bullet color and follow-text color.`, [], { code: "invalid_presentation_text" });
   }
   if (paragraph.bulletColor != null) {
+    const scheme = String(paragraph.bulletColor).trim();
+    if (PRESENTATION_SCHEME_COLORS.has(scheme)) return { case: "bulletColorScheme", value: scheme };
     const rgb = presentationRgb(paragraph.bulletColor, `${shapeId}.text.bulletColor`);
     if (!rgb) throw new OpenXmlWasmCodecError(`Presentation shape ${shapeId} uses a transparent bullet color outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
     return { case: "bulletColorRgb", value: rgb };
   }
-  if (paragraph.bulletColorFollowText === true || new Set(["bulletColorRgb", "bulletColorFollowText"]).has(original?.bulletColor?.case)) {
+  if (paragraph.bulletColorFollowText === true || new Set(["bulletColorRgb", "bulletColorScheme", "bulletColorFollowText"]).has(original?.bulletColor?.case)) {
     return { case: "bulletColorFollowText", value: true };
   }
   return undefined;
@@ -431,6 +437,7 @@ function modelBulletStyle(paragraph) {
     ...(paragraph.bulletFont?.case === "bulletFontFamily" ? { bulletFont: paragraph.bulletFont.value } : {}),
     ...(paragraph.bulletFont?.case === "bulletFontFollowText" ? { bulletFontFollowText: true } : {}),
     ...(paragraph.bulletColor?.case === "bulletColorRgb" ? { bulletColor: `#${paragraph.bulletColor.value}` } : {}),
+    ...(paragraph.bulletColor?.case === "bulletColorScheme" ? { bulletColor: paragraph.bulletColor.value } : {}),
     ...(paragraph.bulletColor?.case === "bulletColorFollowText" ? { bulletColorFollowText: true } : {}),
     ...(paragraph.bulletSize?.case === "bulletSizePoints" ? { bulletSize: paragraph.bulletSize.value / POINTS_PER_PIXEL } : {}),
     ...(paragraph.bulletSize?.case === "bulletSizePercent" ? { bulletSizePercent: paragraph.bulletSize.value } : {}),

@@ -221,6 +221,38 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SchemeBulletColorsAuthorImportAndEditWithoutFlatteningThemeIdentity()
+    {
+        var request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletColorScheme = "accent1";
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var color = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BulletColor>().First();
+            Assert.Equal(A.SchemeColorValues.Accent1, color.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var paragraph = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        Assert.Equal(PresentationTextParagraph.BulletColorOneofCase.BulletColorScheme, paragraph.BulletColorCase);
+        Assert.Equal("accent1", paragraph.BulletColorScheme);
+        paragraph.BulletColorScheme = "tx2";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var color = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.BulletColor>().First();
+            Assert.Equal(A.SchemeColorValues.Text2, color.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+    }
+
+    [Fact]
     public void FieldsBreaksAndTabStopsRoundTripEditAndPreserveResidualProperties()
     {
         var request = RichTextExportRequest();
@@ -598,6 +630,12 @@ public sealed class PptxCodecTests
         Assert.Equal("invalid_presentation_color", Assert.Single(invalidColor.Diagnostics).Code);
 
         request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletColorScheme = "phClr";
+        var invalidSchemeColor = Invoke(request);
+        Assert.False(invalidSchemeColor.Ok);
+        Assert.Equal("invalid_presentation_color", Assert.Single(invalidSchemeColor.Diagnostics).Code);
+
+        request = RichTextExportRequest();
         request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletSizePoints = 0.5;
         var invalidSize = Invoke(request);
         Assert.False(invalidSize.Ok);
@@ -916,7 +954,9 @@ public sealed class PptxCodecTests
             shape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.Alignment = A.TextAlignmentTypeValues.Distributed;
             var pictureParagraph = shape.TextBody.Elements<A.Paragraph>().Last();
             var pictureProperties = pictureParagraph.ParagraphProperties ?? pictureParagraph.PrependChild(new A.ParagraphProperties());
-            pictureProperties.AddChild(new A.BulletColor(new A.SchemeColor { Val = A.SchemeColorValues.Accent1 }), true);
+            var transformedScheme = new A.SchemeColor { Val = A.SchemeColorValues.Accent1 };
+            transformedScheme.Append(new A.Tint { Val = 50_000 });
+            pictureProperties.AddChild(new A.BulletColor(transformedScheme), true);
             pictureProperties.AddChild(new A.BulletFont { Typeface = "Wingdings" }, true);
             // A transformed blip remains deliberately outside the modeled
             // picture-bullet slice and exercises fail-closed preservation.

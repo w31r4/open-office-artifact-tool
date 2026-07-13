@@ -24,7 +24,12 @@ internal static class PptxBulletStyleCodec
         if (color.Length == 1 && ModeledColor(color[0]))
         {
             if (color[0] is A.BulletColor specified)
-                target.BulletColorRgb = PptxColor.Normalize(specified.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value!);
+            {
+                if (specified.GetFirstChild<A.RgbColorModelHex>() is { } rgb)
+                    target.BulletColorRgb = PptxColor.Normalize(rgb.Val!.Value!);
+                else if (specified.GetFirstChild<A.SchemeColor>() is { } scheme && PptxColor.TrySchemeToken(scheme.Val!.Value, out var token))
+                    target.BulletColorScheme = token;
+            }
             else target.BulletColorFollowText = true;
         }
 
@@ -69,6 +74,9 @@ internal static class PptxBulletStyleCodec
                 break;
             case PresentationTextParagraph.BulletColorOneofCase.BulletColorRgb:
                 _ = PptxColor.Normalize(paragraph.BulletColorRgb);
+                break;
+            case PresentationTextParagraph.BulletColorOneofCase.BulletColorScheme:
+                _ = PptxColor.NormalizeScheme(paragraph.BulletColorScheme);
                 break;
             case PresentationTextParagraph.BulletColorOneofCase.BulletColorFollowText:
                 if (!paragraph.BulletColorFollowText) throw Invalid("Presentation bullet_color_follow_text must be true when selected.");
@@ -158,6 +166,7 @@ internal static class PptxBulletStyleCodec
     private static OpenXmlElement BuildColor(PresentationTextParagraph source) => source.BulletColorCase switch
     {
         PresentationTextParagraph.BulletColorOneofCase.BulletColorRgb => new A.BulletColor(new A.RgbColorModelHex { Val = PptxColor.Normalize(source.BulletColorRgb) }),
+        PresentationTextParagraph.BulletColorOneofCase.BulletColorScheme => new A.BulletColor(new A.SchemeColor { Val = PptxColor.SchemeValue(source.BulletColorScheme) }),
         PresentationTextParagraph.BulletColorOneofCase.BulletColorFollowText => new A.BulletColorText(),
         _ => throw Invalid("Presentation paragraph has no modeled bullet-color style."),
     };
@@ -190,6 +199,8 @@ internal static class PptxBulletStyleCodec
     {
         A.BulletColor color when EmptyAttributes(color) && color.ChildElements.Count == 1 && color.GetFirstChild<A.RgbColorModelHex>() is { } rgb =>
             SimpleAttribute(rgb, "val") && rgb.ChildElements.Count == 0 && ValidRgb(rgb.Val?.Value),
+        A.BulletColor color when EmptyAttributes(color) && color.ChildElements.Count == 1 && color.GetFirstChild<A.SchemeColor>() is { } scheme =>
+            SimpleAttribute(scheme, "val") && scheme.ChildElements.Count == 0 && ValidScheme(scheme.Val?.Value),
         A.BulletColorText follow => Empty(follow),
         _ => false,
     };
@@ -224,6 +235,9 @@ internal static class PptxBulletStyleCodec
             return false;
         }
     }
+
+    private static bool ValidScheme(A.SchemeColorValues? value) =>
+        value is { } scheme && PptxColor.TrySchemeToken(scheme, out _);
 
     private static CodecException Invalid(string message) => new("invalid_presentation_text", message);
 }

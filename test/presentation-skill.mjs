@@ -227,7 +227,7 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[0].runs[2].style.italic, true);
   assert.equal(wasmTitle?.text.paragraphs[1].bulletCharacter, "◆");
   assert.equal(wasmTitle?.text.paragraphs[1].bulletFontFollowText, true);
-  assert.equal(wasmTitle?.text.paragraphs[1].bulletColor, "#2563eb");
+  assert.equal(wasmTitle?.text.paragraphs[1].bulletColor, "accent1");
   assert.equal(wasmTitle?.text.paragraphs[1].bulletSize, 24);
   assert.deepEqual(wasmTitle?.text.paragraphs[1].runs[0].link, { action: "lastSlide", highlightClick: false });
   assert.deepEqual(wasmTitle?.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 5 });
@@ -248,6 +248,7 @@ try {
   assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 3);
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
   assert.match(wasmSlideXml, /<a:tabLst><a:tab pos="7429500" algn="r"\s*\/><\/a:tabLst>/);
+  assert.match(wasmSlideXml, /<a:buClr><a:schemeClr val="accent1"\s*\/><\/a:buClr>/);
   assert.match(wasmSlideXml, /<a:fld id="\{11111111-2222-4333-8444-555555555555\}" type="slidenum">/);
   assert.match(wasmSlideXml, /<a:br><a:rPr[^>]*i="1"/);
   assert.match(wasmSlideXml, /<a:buBlip><a:blip r:embed="[^"]+"[^>]*\/><\/a:buBlip>/);

@@ -28,6 +28,11 @@ assert.deepEqual(
   [0x82, 0x01],
   "Presentation picture bullets must use additive field 16.",
 );
+assert.deepEqual(
+  [...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { bulletColor: { case: "bulletColorScheme", value: "accent1" } })).slice(0, 2)],
+  [0x8a, 0x01],
+  "Presentation scheme marker colors must use additive field 17.",
+);
 assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
 
 const workbook = Workbook.create({ dateSystem: "1904" });
@@ -198,7 +203,7 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
       alignment: "center",
       bulletCharacter: "•",
       bulletFont: "Georgia",
-      bulletColor: "#DC2626",
+      bulletColor: "accent1",
       bulletSizePercent: 1.5,
       runs: [
         { text: "Quarterly ", style: { bold: true, fontSize: 36, fontFamily: "Aptos Display", color: "#0F172A" } },
@@ -210,6 +215,8 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
   ],
 });
 const richPptx = await exportPptxWithOpenXmlWasm(richPresentation);
+const richPptxZip = await JSZip.loadAsync(richPptx.bytes);
+assert.match(await richPptxZip.file("ppt/slides/slide1.xml").async("text"), /<a:buClr><a:schemeClr val="accent1"\s*\/><\/a:buClr>/);
 const richPptxImported = await importPptxWithOpenXmlWasm(richPptx);
 const richImportedShape = richPptxImported.slides.getItem(0).shapes.items[0];
 assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail\nExplicitly unbulleted");
@@ -217,7 +224,7 @@ assert.equal(richImportedShape.text.paragraphs.length, 3);
 assert.equal(richImportedShape.text.paragraphs[0].alignment, "center");
 assert.equal(richImportedShape.text.paragraphs[0].bulletCharacter, "•");
 assert.equal(richImportedShape.text.paragraphs[0].bulletFont, "Georgia");
-assert.equal(richImportedShape.text.paragraphs[0].bulletColor, "#DC2626");
+assert.equal(richImportedShape.text.paragraphs[0].bulletColor, "accent1");
 assert.equal(richImportedShape.text.paragraphs[0].bulletSizePercent, 1.5);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.bold, true);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontSize, 36);
@@ -232,7 +239,7 @@ assert.equal(richImportedShape.text.paragraphs[2].bulletNone, true);
 assert.equal(richImportedShape.text.paragraphs[2].bulletSize, 24);
 richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
   ...paragraph,
-  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "#2563EB", bulletSizePercent: undefined, bulletSize: 24 } : {}),
+  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "accent2", bulletSizePercent: undefined, bulletSize: 24 } : {}),
   ...(paragraphIndex === 1 ? { autoNumber: { type: "arabicPeriod", startAt: 5 }, bulletFontFollowText: undefined, bulletFont: "Aptos", bulletColorFollowText: undefined, bulletColor: "#16A34A", bulletSizeFollowText: undefined, bulletSizePercent: 1.25 } : {}),
   ...(paragraphIndex === 2 ? { bulletNone: undefined, bulletCharacter: "–", bulletSize: undefined, bulletSizeFollowText: true } : {}),
   runs: paragraph.runs.map((run, runIndex) => paragraphIndex === 0 && runIndex === 0
@@ -240,6 +247,8 @@ richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((parag
     : run),
 }));
 const richPptxEdited = await exportPptxWithOpenXmlWasm(richPptxImported);
+const richPptxEditedZip = await JSZip.loadAsync(richPptxEdited.bytes);
+assert.match(await richPptxEditedZip.file("ppt/slides/slide1.xml").async("text"), /<a:buClr><a:schemeClr val="accent2"\s*\/><\/a:buClr>/);
 const richPptxRoundTrip = await importPptxWithOpenXmlWasm(richPptxEdited);
 const richRoundTripShape = richPptxRoundTrip.slides.getItem(0).shapes.items[0];
 assert.equal(richRoundTripShape.text.value, "Updated brief\nSource-bound detail\nExplicitly unbulleted");
@@ -247,7 +256,7 @@ assert.equal(richRoundTripShape.text.paragraphs[0].runs[0].style.bold, false);
 assert.equal(richRoundTripShape.text.paragraphs[0].runs[0].style.color, "#2563EB");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletCharacter, "◆");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletFontFollowText, true);
-assert.equal(richRoundTripShape.text.paragraphs[0].bulletColor, "#2563EB");
+assert.equal(richRoundTripShape.text.paragraphs[0].bulletColor, "accent2");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletSize, 24);
 assert.deepEqual(richRoundTripShape.text.paragraphs[1].autoNumber, { type: "arabicPeriod", startAt: 5 });
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletFont, "Aptos");
@@ -255,6 +264,26 @@ assert.equal(richRoundTripShape.text.paragraphs[1].bulletColor, "#16A34A");
 assert.equal(richRoundTripShape.text.paragraphs[1].bulletSizePercent, 1.25);
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
+
+const transformedColorZip = await JSZip.loadAsync(richPptx.bytes);
+const transformedColorSlidePath = "ppt/slides/slide1.xml";
+const transformedColorSlideXml = await transformedColorZip.file(transformedColorSlidePath).async("text");
+transformedColorZip.file(
+  transformedColorSlidePath,
+  transformedColorSlideXml.replace('<a:schemeClr val="accent1" />', '<a:schemeClr val="accent1"><a:tint val="50000" /></a:schemeClr>'),
+);
+const transformedColorBytes = await transformedColorZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const transformedColorImported = await importPptxWithOpenXmlWasm(transformedColorBytes);
+const transformedColorShape = transformedColorImported.slides.getItem(0).shapes.items[0];
+assert.equal(transformedColorShape.text.paragraphs[0].bulletColor, undefined);
+const transformedColorPreserved = await exportPptxWithOpenXmlWasm(transformedColorImported);
+const transformedColorPreservedZip = await JSZip.loadAsync(transformedColorPreserved.bytes);
+assert.match(await transformedColorPreservedZip.file(transformedColorSlidePath).async("text"), /<a:schemeClr val="accent1"><a:tint val="50000"\s*\/><\/a:schemeClr>/);
+transformedColorShape.text.paragraphs = transformedColorShape.text.paragraphs.map((paragraph, index) => index === 0 ? { ...paragraph, bulletColor: "accent2" } : paragraph);
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(transformedColorImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_edit",
+);
 
 const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const replacementPictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=";
@@ -454,11 +483,12 @@ await assert.rejects(
   (error) => error instanceof RangeError && /auto-number type/.test(error.message),
 );
 
-const unsupportedBulletColorPresentation = Presentation.create();
-unsupportedBulletColorPresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", bulletColor: "accent1", runs: ["styled"] }] });
+const invalidSchemeBulletColorPresentation = Presentation.create();
+const invalidSchemeBulletColorShape = invalidSchemeBulletColorPresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", bulletColor: "accent1", runs: ["styled"] }] });
+invalidSchemeBulletColorShape.text._paragraphs[0].bulletColor = "accent7";
 await assert.rejects(
-  exportPptxWithOpenXmlWasm(unsupportedBulletColorPresentation),
-  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
+  exportPptxWithOpenXmlWasm(invalidSchemeBulletColorPresentation),
+  (error) => error instanceof TypeError && /scheme color/.test(error.message),
 );
 
 const preservedPresentation = Presentation.create({
