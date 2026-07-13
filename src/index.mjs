@@ -24,7 +24,7 @@ import { mergePresentationPlaceholders, normalizePresentationBackground, parsePr
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
-import { normalizePresentationChartDataLabels, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
+import { normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
 import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
@@ -1045,7 +1045,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or shared-axis bar+line combo chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, native trendlines/error bars, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets." },
@@ -1940,7 +1940,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     chartType: { type: "string", description: "bar, line, pie, or combo; combo series each require chartType bar or line and share the primary axes." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, and trendline/trendlines. Trendline types are exp/exponential, linear, log/logarithmic, movingAvg/movingAverage, poly/polynomial, and power, with bounded order/period/extensions/intercept, equation/R-squared flags, name, and line style; combo series require chartType bar or line." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, and errorBars. Trendlines support six standard types. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, end caps, and line style; combo series require chartType bar or line." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     axes: { type: "object", description: "Axis titles/options." },
     legend: { type: "object", description: "Legend options." },
@@ -8093,6 +8093,7 @@ function normalizeChartSeries(seriesItems = [], chartType = "bar") {
       ...(style.smooth == null ? {} : { smooth: style.smooth }),
       ...(series.dataLabels === undefined ? {} : { dataLabels: normalizePresentationChartDataLabels(series.dataLabels) }),
       ...((series.trendlines ?? series.trendline) == null ? {} : { trendlines: normalizePresentationChartTrendlines(series.trendlines ?? series.trendline, values.length, seriesChartType || chartType) }),
+      ...(series.errorBars == null ? {} : { errorBars: normalizePresentationChartErrorBars(series.errorBars, seriesChartType || chartType, values.length) }),
       ...(seriesChartType ? { chartType: seriesChartType } : {}),
     };
   });
@@ -8179,6 +8180,34 @@ function presentationLinearTrendlineSvg(series, plot, max, categoryCount, horizo
   }).join("");
 }
 
+function presentationChartErrorBarsSvg(series, points, plot, max) {
+  const errorBars = series.errorBars;
+  if (!errorBars || !points.length) return "";
+  const numericValues = (series.values || []).map(Number).filter(Number.isFinite);
+  const mean = numericValues.reduce((sum, value) => sum + value, 0) / Math.max(1, numericValues.length);
+  const deviation = Math.sqrt(numericValues.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, numericValues.length));
+  const magnitudeFor = (value, index, side) => errorBars.valueType === "cust" ? Number(errorBars[`${side}Values`]?.[index]) || 0
+    : errorBars.valueType === "percentage" ? Math.abs(Number(value) || 0) * (errorBars.value || 0) / 100
+    : errorBars.valueType === "stdDev" ? deviation * (errorBars.value || 1)
+      : errorBars.valueType === "stdErr" ? deviation / Math.sqrt(Math.max(1, numericValues.length))
+        : errorBars.value || 0;
+  const attributes = presentationChartLineSvgAttributes(errorBars.line || { fill: series.color || "#475569", width: 1, style: "solid" });
+  return points.map((point, index) => {
+    const pointIndex = point.index ?? index;
+    const scale = (errorBars.direction === "x" ? plot.width : plot.height) / Math.max(1, max);
+    const minus = errorBars.type !== "plus" ? magnitudeFor(series.values?.[pointIndex], pointIndex, "minus") * scale : 0;
+    const plus = errorBars.type !== "minus" ? magnitudeFor(series.values?.[pointIndex], pointIndex, "plus") * scale : 0;
+    const x1 = errorBars.direction === "x" ? point.x - minus : point.x;
+    const x2 = errorBars.direction === "x" ? point.x + plus : point.x;
+    const y1 = errorBars.direction === "y" ? point.y + minus : point.y;
+    const y2 = errorBars.direction === "y" ? point.y - plus : point.y;
+    const caps = errorBars.noEndCap ? "" : errorBars.direction === "x"
+      ? `${minus > 0 ? `<line x1="${x1}" y1="${point.y - 4}" x2="${x1}" y2="${point.y + 4}"${attributes}/>` : ""}${plus > 0 ? `<line x1="${x2}" y1="${point.y - 4}" x2="${x2}" y2="${point.y + 4}"${attributes}/>` : ""}`
+      : `${minus > 0 ? `<line x1="${point.x - 4}" y1="${y1}" x2="${point.x + 4}" y2="${y1}"${attributes}/>` : ""}${plus > 0 ? `<line x1="${point.x - 4}" y1="${y2}" x2="${point.x + 4}" y2="${y2}"${attributes}/>` : ""}`;
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"${attributes}/>${caps}`;
+  }).join("");
+}
+
 export class ChartElement {
   constructor(slide, chartType = "bar", config = {}) {
     this.slide = slide;
@@ -8255,7 +8284,7 @@ export class ChartElement {
           const plottedValue = this.lineOptions.grouping === "percentStacked" ? stackedValue / (lineStackedMax[index] || 1) : stackedValue;
           const x = plot.left + (categories.length <= 1 ? plot.width / 2 : (index / Math.max(1, categories.length - 1)) * plot.width);
           const y = plot.top + plot.height - (plottedValue / max) * plot.height;
-          return { x, y };
+          return { x, y, index };
         });
         const color = resolveColorToken(series.line?.fill || series.color, series.color);
         const smooth = series.smooth ?? this.lineOptions.smooth;
@@ -8269,7 +8298,7 @@ export class ChartElement {
           const label = presentationChartDataLabelText(effectiveLabels, categories[index], series.values?.[index]);
           return label ? `<text x="${point.x + 4}" y="${point.y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(label)}</text>` : "";
         }).join("");
-        return `${line}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}${labels}`;
+        return `${line}${presentationChartErrorBarsSvg(series, points, plot, max)}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}${labels}`;
       }).join("");
     const horizontal = barSeries.length > 0 && this.barOptions.direction === "bar";
     const barBody = (() => {
@@ -8292,13 +8321,15 @@ export class ChartElement {
           const x = plot.left + (stackedBars ? plot.width * offset : 0);
           const y = plot.top + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * barSeries.length) / 2 + seriesIndex * barExtent);
           const label = labelText ? `<text x="${x + width + 3}" y="${y + barExtent - 2}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
-          return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"${stroke}/>${label}`;
+          const errorBars = presentationChartErrorBarsSvg(series, [{ x: x + width, y: y + Math.max(1, barExtent - 2) / 2, index: categoryIndex }], plot, max);
+          return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"${stroke}/>${errorBars}${label}`;
         }
         const height = plot.height * ratio;
         const x = plot.left + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * barSeries.length) / 2 + seriesIndex * barExtent);
         const y = plot.top + plot.height - height - (stackedBars ? plot.height * offset : 0);
         const label = labelText ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
-        return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"${stroke}/>${label}`;
+        const errorBars = presentationChartErrorBarsSvg(series, [{ x: x + Math.max(1, barExtent - 2) / 2, y, index: categoryIndex }], plot, max);
+        return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"${stroke}/>${errorBars}${label}`;
       })).join("");
     })();
     const trendlineBody = [...barSeries, ...lineSeries].map((series) => presentationLinearTrendlineSvg(series, plot, max, categories.length, horizontal)).join("");

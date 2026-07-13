@@ -13,6 +13,10 @@ const TRENDLINE_TYPE_ALIASES = new Map([
   ["exponential", "exp"], ["logarithmic", "log"], ["movingAverage", "movingAvg"],
   ["polynomial", "poly"],
 ]);
+const ERROR_BAR_DIRECTIONS = new Set(["x", "y"]);
+const ERROR_BAR_TYPES = new Set(["both", "minus", "plus"]);
+const ERROR_BAR_VALUE_TYPES = new Set(["cust", "fixedVal", "percentage", "stdDev", "stdErr"]);
+const ERROR_BAR_VALUE_TYPE_ALIASES = new Map([["custom", "cust"], ["fixed", "fixedVal"], ["percent", "percentage"], ["standardDeviation", "stdDev"], ["standardError", "stdErr"]]);
 const LINE_DASH_TO_OOXML = new Map([
   ["solid", "solid"], ["dot", "dot"], ["dash", "dash"], ["longDash", "lgDash"],
   ["dashDot", "dashDot"], ["longDashDot", "lgDashDot"], ["longDashDotDot", "lgDashDotDot"],
@@ -220,6 +224,40 @@ export function normalizePresentationChartTrendlines(value, valueCount, chartTyp
   return items.map((item) => normalizePresentationChartTrendline(item, valueCount));
 }
 
+function normalizePresentationErrorBarValues(values, valueCount, name) {
+  if (!Array.isArray(values) || values.length === 0) throw new TypeError(`${name} must be a non-empty numeric array.`);
+  if (valueCount != null && values.length !== valueCount) throw new RangeError(`${name} must contain exactly ${valueCount} values.`);
+  return values.map((value) => boundedNumber(value, { name, min: 0, max: Number.MAX_SAFE_INTEGER }));
+}
+
+export function normalizePresentationChartErrorBars(value, chartType, valueCount) {
+  if (value == null || value === false) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("chart errorBars must be an object.");
+  if (chartType === "pie") throw new TypeError("chart errorBars are supported only for bar and line series.");
+  const direction = value.direction || "y";
+  if (!ERROR_BAR_DIRECTIONS.has(direction)) throw new TypeError(`chart error-bar direction must be one of: ${[...ERROR_BAR_DIRECTIONS].join(", ")}.`);
+  const type = value.type || "both";
+  if (!ERROR_BAR_TYPES.has(type)) throw new TypeError(`chart error-bar type must be one of: ${[...ERROR_BAR_TYPES].join(", ")}.`);
+  const rawValueType = value.valueType || value.kind || "fixedVal";
+  const valueType = ERROR_BAR_VALUE_TYPE_ALIASES.get(rawValueType) || rawValueType;
+  if (!ERROR_BAR_VALUE_TYPES.has(valueType)) throw new TypeError(`chart error-bar valueType must be one of: ${[...ERROR_BAR_VALUE_TYPES].join(", ")}.`);
+  const amount = ["cust", "stdErr"].includes(valueType) ? undefined : boundedNumber(value.value ?? value.amount, { name: "chart error-bar value", min: 0, max: Number.MAX_SAFE_INTEGER, fallback: valueType === "percentage" ? 5 : 1 });
+  if (valueType === "stdErr" && (value.value ?? value.amount) != null) throw new TypeError("standard-error chart error bars do not accept a value.");
+  const plusValues = valueType === "cust" && type !== "minus" ? normalizePresentationErrorBarValues(value.plusValues ?? value.plus, valueCount, "chart error-bar plusValues") : undefined;
+  const minusValues = valueType === "cust" && type !== "plus" ? normalizePresentationErrorBarValues(value.minusValues ?? value.minus, valueCount, "chart error-bar minusValues") : undefined;
+  const line = normalizePresentationChartLine(value.line ?? value.stroke);
+  return {
+    direction,
+    type,
+    valueType,
+    ...(amount == null ? {} : { value: amount }),
+    ...(plusValues ? { plusValues } : {}),
+    ...(minusValues ? { minusValues } : {}),
+    noEndCap: Boolean(value.noEndCap ?? value.endStyle === "none"),
+    ...(line ? { line } : {}),
+  };
+}
+
 function chartTextTitleXml(text = "") {
   return `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(text)}</a:t></a:r></a:p></c:rich></c:tx></c:title>`;
 }
@@ -264,6 +302,18 @@ function presentationTrendlineXml(trendline) {
   return `<c:trendline>${nameXml}${lineXml}<c:trendlineType val="${trendline.type}"/>${orderXml}${periodXml}${forwardXml}${backwardXml}${interceptXml}<c:dispRSqr val="${trendline.displayRSquared ? 1 : 0}"/><c:dispEq val="${trendline.displayEquation ? 1 : 0}"/></c:trendline>`;
 }
 
+function presentationErrorBarsXml(errorBars) {
+  if (!errorBars) return "";
+  const valuesXml = (name, values) => values?.length
+    ? `<c:${name}><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="${values.length}"/>${values.map((value, index) => `<c:pt idx="${index}"><c:v>${value}</c:v></c:pt>`).join("")}</c:numLit></c:${name}>`
+    : "";
+  const plusXml = valuesXml("plus", errorBars.plusValues);
+  const minusXml = valuesXml("minus", errorBars.minusValues);
+  const valueXml = errorBars.value == null ? "" : `<c:val val="${errorBars.value}"/>`;
+  const lineXml = errorBars.line ? chartShapePropertiesXml(undefined, errorBars.line) : "";
+  return `<c:errBars><c:errDir val="${errorBars.direction}"/><c:errBarType val="${errorBars.type}"/><c:errValType val="${errorBars.valueType}"/><c:noEndCap val="${errorBars.noEndCap ? 1 : 0}"/>${plusXml}${minusXml}${valueXml}${lineXml}</c:errBars>`;
+}
+
 export function presentationChartXml(chart) {
   const type = chart.chartType === "combo" ? "combo" : chart.chartType === "line" ? "line" : chart.chartType === "pie" ? "pie" : "bar";
   const style = normalizePresentationChartStyle(type, chart);
@@ -282,7 +332,8 @@ export function presentationChartXml(chart) {
     const pointsXml = seriesStyle.points.map(chartPointXml).join("");
     const seriesDataLabelsXml = series.dataLabels == null ? "" : presentationDataLabelsXml(series.dataLabels, true);
     const trendlinesXml = normalizePresentationChartTrendlines(series.trendlines ?? series.trendline, values.length, seriesType).map(presentationTrendlineXml).join("");
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${seriesType === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}${seriesDataLabelsXml}${trendlinesXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${seriesType === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
+    const errorBarsXml = presentationErrorBarsXml(normalizePresentationChartErrorBars(series.errorBars, seriesType, values.length));
+    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${seriesType === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}${seriesDataLabelsXml}${trendlinesXml}${errorBarsXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${seriesType === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
   };
   const categoryAxisTitle = chart.axes?.category?.title ? chartTextTitleXml(chart.axes.category.title) : "";
   const valueAxisTitle = chart.axes?.value?.title ? chartTextTitleXml(chart.axes.value.title) : "";
@@ -378,17 +429,35 @@ function parseTrendlines(xml, valueCount) {
   });
 }
 
+function parseErrorBars(xml, chartType, valueCount) {
+  const block = tagBlock(xml, "errBars");
+  if (!block) return undefined;
+  const shape = parseChartShapeProperties(block);
+  const valuesFrom = (name) => [...tagBlock(block, name).matchAll(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "gi"))].map((item) => Number(decodeXml(item[1])) || 0);
+  return normalizePresentationChartErrorBars({
+    direction: tagValue(block, "errDir") || "y",
+    type: tagValue(block, "errBarType") || "both",
+    valueType: tagValue(block, "errValType") || "fixedVal",
+    value: tagValue(block, "val"),
+    plusValues: valuesFrom("plus"),
+    minusValues: valuesFrom("minus"),
+    noEndCap: Boolean(booleanTag(block, "noEndCap")),
+    line: shape.line,
+  }, chartType, valueCount);
+}
+
 function parseSeries(chartBlock, chartType) {
   const pattern = new RegExp(`<${localTag("ser")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ser")}>`, "gi");
   return [...String(chartBlock || "").matchAll(pattern)].map((match, index) => {
     const xml = match[0];
-    const xmlWithoutPoints = xml
+    const xmlWithoutDecorations = xml
       .replace(new RegExp(`<${localTag("dPt")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("dPt")}>`, "gi"), "")
-      .replace(new RegExp(`<${localTag("trendline")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("trendline")}>`, "gi"), "");
+      .replace(new RegExp(`<${localTag("trendline")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("trendline")}>`, "gi"), "")
+      .replace(new RegExp(`<${localTag("errBars")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("errBars")}>`, "gi"), "");
     const tx = tagBlock(xml, "tx");
     const name = decodeXml(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "i").exec(tx)?.[1] || `Series ${index + 1}`);
-    const shapeStyle = parseChartShapeProperties(xmlWithoutPoints);
-    const valuesFrom = (name) => [...tagBlock(xml, name).matchAll(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "gi"))].map((item) => decodeXml(item[1]));
+    const shapeStyle = parseChartShapeProperties(xmlWithoutDecorations);
+    const valuesFrom = (name) => [...tagBlock(xmlWithoutDecorations, name).matchAll(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "gi"))].map((item) => decodeXml(item[1]));
     const markerBlock = tagBlock(xml, "marker");
     const markerSymbol = tagValue(markerBlock, "symbol");
     const markerSize = tagValue(markerBlock, "size");
@@ -396,6 +465,7 @@ function parseSeries(chartBlock, chartType) {
     const dataLabels = parseDataLabels(xml);
     const values = valuesFrom("val").map((value) => Number(value) || 0);
     const trendlines = parseTrendlines(xml, values.length);
+    const errorBars = parseErrorBars(xml, chartType, values.length);
     return {
       ...(chartType ? { chartType } : {}),
       order: Number(tagValue(xml, "order") ?? index),
@@ -409,6 +479,7 @@ function parseSeries(chartBlock, chartType) {
       smooth: booleanTag(xml, "smooth"),
       ...(dataLabels ? { dataLabels } : {}),
       ...(trendlines.length ? { trendlines } : {}),
+      ...(errorBars ? { errorBars } : {}),
     };
   });
 }
