@@ -190,12 +190,14 @@
           },
           "calculatedFields": [
             { "name": "Margin Rate", "formula": "=IF(AND(ISNUMBER([Revenue]),[Revenue]>=[Cost],LEN(TRIM(\"  ok  \"))=2,UPPER(LEFT(\"pass\",1))=\"P\",LOWER(RIGHT(\"OK\",1))=\"k\",MID(\"margin\",2,2)=\"ar\"),IFERROR(ROUND(SQRT(POWER([Revenue]-[Cost],2))/[Revenue],2),0),0)" },
-            { "name": "Date Contract", "formula": "=IF(AND(DATE(1904,1,1)=0,YEAR(DATE(2026,3,31))=2026,MONTH(DATE(2026,3,31))=3,DAY(DATE(2026,3,31))=31),[Revenue]-[Cost],0)" }
+            { "name": "Date Contract", "formula": "=IF(AND(DATE(1904,1,1)=0,YEAR(DATE(2026,3,31))=2026,MONTH(DATE(2026,3,31))=3,DAY(DATE(2026,3,31))=31),[Revenue]-[Cost],0)" },
+            { "name": "Date Shift Contract", "formula": "=IF(AND(DAY(EDATE(DATE(2024,1,31),1))=29,DAY(EOMONTH(DATE(2024,2,10),0))=29,DAYS(DATE(2024,3,1),DATE(2024,2,28))=2,WEEKDAY(DATE(2026,3,31),2)=2),[Revenue]-[Cost],0)" }
           ],
           "valueFields": [
             { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" },
             { "field": "Margin Rate", "name": "Margin rate" },
-            { "field": "Date Contract", "name": "Date contract" }
+            { "field": "Date Contract", "name": "Date contract" },
+            { "field": "Date Shift Contract", "name": "Date shift contract" }
           ]
         }
       ],

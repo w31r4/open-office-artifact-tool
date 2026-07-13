@@ -1,4 +1,4 @@
-import { pivotDateParts, pivotDateSerial, pivotMaxDateSerial } from "./pivot-dates.mjs";
+import { pivotDateSerial, pivotFormulaDateParts, pivotShiftDateMonths, pivotWeekdayIndex } from "./pivot-dates.mjs";
 
 const PIVOT_FUNCTIONS = new Map([
   ["ABS", { minArgs: 1, maxArgs: 1 }],
@@ -34,6 +34,10 @@ const PIVOT_FUNCTIONS = new Map([
   ["YEAR", { minArgs: 1, maxArgs: 1 }],
   ["MONTH", { minArgs: 1, maxArgs: 1 }],
   ["DAY", { minArgs: 1, maxArgs: 1 }],
+  ["EDATE", { minArgs: 2, maxArgs: 2 }],
+  ["EOMONTH", { minArgs: 2, maxArgs: 2 }],
+  ["DAYS", { minArgs: 2, maxArgs: 2 }],
+  ["WEEKDAY", { minArgs: 1, maxArgs: 2 }],
 ]);
 
 const COMPARISON_OPERATORS = new Set(["=", "<>", "<", "<=", ">", ">="]);
@@ -368,9 +372,35 @@ function formulaFunction(name, args, options) {
   if (name === "YEAR" || name === "MONTH" || name === "DAY") {
     const serial = numericValue(args[0]);
     if (formulaError(serial)) return serial;
-    if (serial < 0 || serial > pivotMaxDateSerial(options.dateSystem)) return "#NUM!";
-    const parts = pivotDateParts(serial, options.dateSystem);
+    const parts = pivotFormulaDateParts(serial, options.dateSystem);
     return parts ? parts[name.toLowerCase()] : "#NUM!";
+  }
+  if (name === "EDATE" || name === "EOMONTH") {
+    const values = args.map(numericValue);
+    const valueError = values.find(formulaError);
+    if (valueError) return valueError;
+    return pivotShiftDateMonths(values[0], values[1], name === "EOMONTH", options.dateSystem) ?? "#NUM!";
+  }
+  if (name === "DAYS") {
+    const values = args.map(numericValue);
+    const valueError = values.find(formulaError);
+    if (valueError) return valueError;
+    if (values.some((value) => !pivotFormulaDateParts(value, options.dateSystem))) return "#NUM!";
+    return Math.floor(values[0]) - Math.floor(values[1]);
+  }
+  if (name === "WEEKDAY") {
+    const serial = numericValue(args[0]);
+    const returnTypeValue = args[1] == null ? 1 : numericValue(args[1]);
+    if (formulaError(serial)) return serial;
+    if (formulaError(returnTypeValue)) return returnTypeValue;
+    const weekday = pivotWeekdayIndex(serial, options.dateSystem);
+    const returnType = Math.trunc(returnTypeValue);
+    if (weekday == null) return "#NUM!";
+    if (returnType === 1) return weekday + 1;
+    if (returnType === 2 || returnType === 11) return (weekday + 6) % 7 + 1;
+    if (returnType === 3) return (weekday + 6) % 7;
+    if (returnType >= 12 && returnType <= 17) return (weekday - (returnType - 10) + 7) % 7 + 1;
+    return "#NUM!";
   }
   if (name === "ABS") return formulaUnary(args[0], Math.abs);
   if (name === "SQRT") {
