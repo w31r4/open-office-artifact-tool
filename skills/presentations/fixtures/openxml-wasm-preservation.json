@@ -21,9 +21,9 @@
           "line": { "fill": "#334155", "width": 1 },
           "text": [
             { "runs": [{ "text": "Before OpenXML WASM", "style": { "fontSize": 28, "bold": true, "color": "#0F172A" } }] },
-            { "bulletCharacter": "•", "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" } }] },
-            { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" } }] },
-            { "bulletCharacter": "–", "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }] }
+            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" } }] },
+            { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" } }] },
+            { "bulletCharacter": "–", "bulletSize": 24, "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }] }
           ]
         },
         {
@@ -75,14 +75,21 @@
         },
         {
           "bulletCharacter": "◆",
+          "bulletFontFollowText": true,
+          "bulletColor": "#2563EB",
+          "bulletSize": 24,
           "runs": [{ "text": "Character marker", "style": { "fontSize": 18, "color": "#334155" } }]
         },
         {
           "autoNumber": { "type": "arabicPeriod", "startAt": 5 },
+          "bulletFont": "Aptos",
+          "bulletColor": "#16A34A",
+          "bulletSizePercent": 1.25,
           "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" } }]
         },
         {
           "bulletNone": true,
+          "bulletSizeFollowText": true,
           "runs": [{ "text": "Marker removal", "style": { "fontSize": 18, "color": "#334155" } }]
         }
       ]

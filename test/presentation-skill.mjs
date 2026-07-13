@@ -221,8 +221,15 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");
   assert.equal(wasmTitle?.text.paragraphs[1].bulletCharacter, "◆");
+  assert.equal(wasmTitle?.text.paragraphs[1].bulletFontFollowText, true);
+  assert.equal(wasmTitle?.text.paragraphs[1].bulletColor, "#2563eb");
+  assert.equal(wasmTitle?.text.paragraphs[1].bulletSize, 24);
   assert.deepEqual(wasmTitle?.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 5 });
+  assert.equal(wasmTitle?.text.paragraphs[2].bulletFont, "Aptos");
+  assert.equal(wasmTitle?.text.paragraphs[2].bulletColor, "#16a34a");
+  assert.equal(wasmTitle?.text.paragraphs[2].bulletSizePercent, 1.25);
   assert.equal(wasmTitle?.text.paragraphs[3].bulletNone, true);
+  assert.equal(wasmTitle?.text.paragraphs[3].bulletSizeFollowText, true);
   assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
   assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
   assert.match(wasmSlide.speakerNotes.text, /parts, and relationships must survive/);

@@ -132,17 +132,34 @@ public sealed class PptxCodecTests
         Assert.True(shape.TextBody.Paragraphs[0].Runs[1].Italic);
         Assert.Equal(PresentationTextParagraph.BulletOneofCase.BulletCharacter, shape.TextBody.Paragraphs[0].BulletCase);
         Assert.Equal("•", shape.TextBody.Paragraphs[0].BulletCharacter);
+        Assert.Equal("Georgia", shape.TextBody.Paragraphs[0].BulletFontFamily);
+        Assert.Equal("DC2626", shape.TextBody.Paragraphs[0].BulletColorRgb);
+        Assert.Equal(1.5, shape.TextBody.Paragraphs[0].BulletSizePercent);
         Assert.False(shape.TextBody.Paragraphs[1].HasAlignment);
         Assert.Equal("romanLcPeriod", shape.TextBody.Paragraphs[1].AutoNumber.Scheme);
         Assert.Equal(3U, shape.TextBody.Paragraphs[1].AutoNumber.StartAt);
+        Assert.True(shape.TextBody.Paragraphs[1].BulletFontFollowText);
+        Assert.True(shape.TextBody.Paragraphs[1].BulletColorFollowText);
+        Assert.True(shape.TextBody.Paragraphs[1].BulletSizeFollowText);
         Assert.Equal(PresentationTextParagraph.BulletOneofCase.NoBullet, shape.TextBody.Paragraphs[2].BulletCase);
+        Assert.Equal(18, shape.TextBody.Paragraphs[2].BulletSizePoints);
         Assert.Equal(PresentationTextParagraph.BulletOneofCase.None, shape.TextBody.Paragraphs[3].BulletCase);
+        Assert.Equal("Wingdings", shape.TextBody.Paragraphs[3].BulletFontFamily);
+        Assert.Equal(PresentationTextParagraph.BulletColorOneofCase.None, shape.TextBody.Paragraphs[3].BulletColorCase);
 
         shape.TextBody.Paragraphs[0].Runs[0].Text = "Updated ";
         shape.TextBody.Paragraphs[0].Runs[0].Bold = false;
         shape.TextBody.Paragraphs[0].Runs[0].ColorRgb = "2563EB";
         shape.TextBody.Paragraphs[0].BulletCharacter = "◆";
+        shape.TextBody.Paragraphs[0].BulletFontFollowText = true;
+        shape.TextBody.Paragraphs[0].BulletColorRgb = "2563EB";
+        shape.TextBody.Paragraphs[0].BulletSizePoints = 18;
         shape.TextBody.Paragraphs[1].AutoNumber = new PresentationAutoNumberBullet { Scheme = "arabicPeriod", StartAt = 5 };
+        shape.TextBody.Paragraphs[1].BulletFontFamily = "Aptos";
+        shape.TextBody.Paragraphs[1].BulletColorRgb = "16A34A";
+        shape.TextBody.Paragraphs[1].BulletSizePercent = 1.25;
+        shape.TextBody.Paragraphs[2].BulletSizeFollowText = true;
+        shape.TextBody.Paragraphs[3].BulletFontFamily = "Georgia";
         shape.Text = PptxTextCodec.Flatten(shape.TextBody);
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, Diagnostics(preserved));
@@ -158,14 +175,25 @@ public sealed class PptxCodecTests
             Assert.Equal(A.TextUnderlineValues.Single, run.RunProperties.Underline!.Value);
             Assert.Equal("Noto Sans CJK SC", run.RunProperties.GetFirstChild<A.EastAsianFont>()!.Typeface!.Value);
             Assert.Equal("◆", paragraph.ParagraphProperties!.GetFirstChild<A.CharacterBullet>()!.Char!.Value);
-            Assert.Equal("Wingdings", paragraph.ParagraphProperties.GetFirstChild<A.BulletFont>()!.Typeface!.Value);
-            var autoNumber = nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.GetFirstChild<A.AutoNumberedBullet>()!;
+            Assert.NotNull(paragraph.ParagraphProperties.GetFirstChild<A.BulletFontText>());
+            Assert.Equal("2563EB", paragraph.ParagraphProperties.GetFirstChild<A.BulletColor>()!.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value);
+            Assert.Equal(1800, paragraph.ParagraphProperties.GetFirstChild<A.BulletSizePoints>()!.Val!.Value);
+            var secondParagraph = nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!;
+            var autoNumber = secondParagraph.GetFirstChild<A.AutoNumberedBullet>()!;
             Assert.Equal("arabicPeriod", autoNumber.Type!.InnerText);
             Assert.Equal(5, autoNumber.StartAt!.Value);
-            Assert.NotNull(nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(2).ParagraphProperties!.GetFirstChild<A.NoBullet>());
-            Assert.NotNull(nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(3).ParagraphProperties!.GetFirstChild<A.PictureBullet>());
+            Assert.Equal("Aptos", secondParagraph.GetFirstChild<A.BulletFont>()!.Typeface!.Value);
+            Assert.Equal("16A34A", secondParagraph.GetFirstChild<A.BulletColor>()!.GetFirstChild<A.RgbColorModelHex>()!.Val!.Value);
+            Assert.Equal(125000, secondParagraph.GetFirstChild<A.BulletSizePercentage>()!.Val!.Value);
+            var thirdParagraph = nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(2).ParagraphProperties!;
+            Assert.NotNull(thirdParagraph.GetFirstChild<A.NoBullet>());
+            Assert.NotNull(thirdParagraph.GetFirstChild<A.BulletSizeText>());
+            var pictureParagraph = nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(3).ParagraphProperties!;
+            Assert.NotNull(pictureParagraph.GetFirstChild<A.PictureBullet>());
+            Assert.Equal("Georgia", pictureParagraph.GetFirstChild<A.BulletFont>()!.Typeface!.Value);
+            Assert.Equal(A.SchemeColorValues.Accent1, pictureParagraph.GetFirstChild<A.BulletColor>()!.GetFirstChild<A.SchemeColor>()!.Val!.Value);
             Assert.Single(package.PresentationPart.SlideParts.Single().ImageParts);
-            Assert.Equal(A.TextAlignmentTypeValues.Distributed, nativeShape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.Alignment!.Value);
+            Assert.Equal(A.TextAlignmentTypeValues.Distributed, secondParagraph.Alignment!.Value);
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
 
@@ -177,6 +205,14 @@ public sealed class PptxCodecTests
         Assert.False(pictureRejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(pictureRejected.Diagnostics).Code);
 
+        var unknownColorEdit = Import(source);
+        var unknownColorShape = Assert.Single(Assert.Single(unknownColorEdit.Artifact.Presentation.Slides).Elements).Shape;
+        unknownColorShape.TextBody.Paragraphs[3].BulletColorRgb = "FF0000";
+        unknownColorShape.Text = PptxTextCodec.Flatten(unknownColorShape.TextBody);
+        var unknownColorRejected = Export(unknownColorEdit.Artifact);
+        Assert.False(unknownColorRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(unknownColorRejected.Diagnostics).Code);
+
         shape.TextBody.Paragraphs[0].Runs.Add(new PresentationTextRun { Text = "unsafe topology" });
         shape.Text = PptxTextCodec.Flatten(shape.TextBody);
         var rejected = Export(imported.Artifact);
@@ -185,7 +221,7 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void InvalidBasicListMarkersFailClosed()
+    public void InvalidListMarkersAndStylesFailClosed()
     {
         var request = RichTextExportRequest();
         request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletCharacter = "two";
@@ -204,6 +240,30 @@ public sealed class PptxCodecTests
         var invalidNone = Invoke(request);
         Assert.False(invalidNone.Ok);
         Assert.Equal("invalid_presentation_text", Assert.Single(invalidNone.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletFontFamily = " ";
+        var invalidFont = Invoke(request);
+        Assert.False(invalidFont.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidFont.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletColorRgb = "not-rgb";
+        var invalidColor = Invoke(request);
+        Assert.False(invalidColor.Ok);
+        Assert.Equal("invalid_presentation_color", Assert.Single(invalidColor.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].BulletSizePoints = 0.5;
+        var invalidSize = Invoke(request);
+        Assert.False(invalidSize.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidSize.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[1].BulletSizeFollowText = false;
+        var invalidFollow = Invoke(request);
+        Assert.False(invalidFollow.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(invalidFollow.Diagnostics).Code);
     }
 
     private static CodecResponse Invoke(CodecRequest request) =>
@@ -272,7 +332,14 @@ public sealed class PptxCodecTests
 
     private static CodecRequest RichTextExportRequest()
     {
-        var first = new PresentationTextParagraph { Alignment = "center", BulletCharacter = "•" };
+        var first = new PresentationTextParagraph
+        {
+            Alignment = "center",
+            BulletCharacter = "•",
+            BulletFontFamily = "Georgia",
+            BulletColorRgb = "DC2626",
+            BulletSizePercent = 1.5,
+        };
         first.Runs.Add(new PresentationTextRun
         {
             Text = "Quarterly ",
@@ -286,9 +353,12 @@ public sealed class PptxCodecTests
         {
             Level = 1,
             AutoNumber = new PresentationAutoNumberBullet { Scheme = "romanLcPeriod", StartAt = 3 },
+            BulletFontFollowText = true,
+            BulletColorFollowText = true,
+            BulletSizeFollowText = true,
         };
         second.Runs.Add(new PresentationTextRun { Text = "Source-bound detail", FontSizePoints = 15 });
-        var third = new PresentationTextParagraph { NoBullet = true };
+        var third = new PresentationTextParagraph { NoBullet = true, BulletSizePoints = 18 };
         third.Runs.Add(new PresentationTextRun { Text = "Explicitly unbulleted", FontSizePoints = 15 });
         var fourth = new PresentationTextParagraph();
         fourth.Runs.Add(new PresentationTextRun { Text = "Opaque picture marker", FontSizePoints = 15 });
@@ -348,10 +418,11 @@ public sealed class PptxCodecTests
             var shape = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>().Single();
             var slidePart = presentation.PresentationPart!.SlideParts.Single();
             var paragraph = shape.TextBody!.Elements<A.Paragraph>().First();
-            paragraph.ParagraphProperties!.AddChild(new A.BulletFont { Typeface = "Wingdings" }, true);
             shape.TextBody.Elements<A.Paragraph>().ElementAt(1).ParagraphProperties!.Alignment = A.TextAlignmentTypeValues.Distributed;
             var pictureParagraph = shape.TextBody.Elements<A.Paragraph>().Last();
             var pictureProperties = pictureParagraph.ParagraphProperties ?? pictureParagraph.PrependChild(new A.ParagraphProperties());
+            pictureProperties.AddChild(new A.BulletColor(new A.SchemeColor { Val = A.SchemeColorValues.Accent1 }), true);
+            pictureProperties.AddChild(new A.BulletFont { Typeface = "Wingdings" }, true);
             pictureProperties.AddChild(new A.PictureBullet(new A.Blip { Embed = "rIdTextBullet1" }), true);
             var imagePart = slidePart.AddImagePart(ImagePartType.Png, "rIdTextBullet1");
             using (var image = new MemoryStream(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")))

@@ -1074,8 +1074,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs." },
-  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenXmlWasm", summary: "Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, and character/auto/none list markers through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenXmlWasm", summary: "Experimentally import PPTX bytes with editable fixed-topology basic text/list markers, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenXmlWasm", summary: "Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, character/auto/none list markers, and direct marker font/RGB color/fixed-percentage-follow size through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenXmlWasm", summary: "Experimentally import PPTX bytes with editable fixed-topology basic text, direct list markers and marker styles, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -2103,14 +2103,14 @@ const PRESENTATION_HELP_SCHEMAS = {
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
   }, "presentation", "Presentation", "Imported editable presentation facade."),
   "exportPptxWithOpenXmlWasm": helpSchema({
-    presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse plus basic paragraph/run and character/auto/none marker boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
+    presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse plus basic paragraph/run, character/auto/none marker, and direct marker font/RGB color/fixed-percentage-follow size boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
   "importPptxWithOpenXmlWasm": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable basic paragraph/run text and direct list markers plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable basic paragraph/run text, direct list markers, and direct marker styles plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
 };
 
 const WORKBOOK_HELP_SCHEMAS = {

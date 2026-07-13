@@ -182,13 +182,16 @@ const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add(
     {
       alignment: "center",
       bulletCharacter: "•",
+      bulletFont: "Georgia",
+      bulletColor: "#DC2626",
+      bulletSizePercent: 1.5,
       runs: [
         { text: "Quarterly ", style: { bold: true, fontSize: 36, fontFamily: "Aptos Display", color: "#0F172A" } },
         { text: "brief", style: { italic: true, fontSize: 36 } },
       ],
     },
-    { level: 1, autoNumber: { type: "romanLcPeriod", startAt: 3 }, runs: [{ text: "Source-bound detail", style: { fontSize: 20, color: "#475569" } }] },
-    { bulletNone: true, runs: [{ text: "Explicitly unbulleted", style: { fontSize: 20 } }] },
+    { level: 1, autoNumber: { type: "romanLcPeriod", startAt: 3 }, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, runs: [{ text: "Source-bound detail", style: { fontSize: 20, color: "#475569" } }] },
+    { bulletNone: true, bulletSize: 24, runs: [{ text: "Explicitly unbulleted", style: { fontSize: 20 } }] },
   ],
 });
 const richPptx = await exportPptxWithOpenXmlWasm(richPresentation);
@@ -198,18 +201,25 @@ assert.equal(richImportedShape.text.value, "Quarterly brief\nSource-bound detail
 assert.equal(richImportedShape.text.paragraphs.length, 3);
 assert.equal(richImportedShape.text.paragraphs[0].alignment, "center");
 assert.equal(richImportedShape.text.paragraphs[0].bulletCharacter, "•");
+assert.equal(richImportedShape.text.paragraphs[0].bulletFont, "Georgia");
+assert.equal(richImportedShape.text.paragraphs[0].bulletColor, "#DC2626");
+assert.equal(richImportedShape.text.paragraphs[0].bulletSizePercent, 1.5);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.bold, true);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontSize, 36);
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.fontFamily, "Aptos Display");
 assert.equal(richImportedShape.text.paragraphs[0].runs[0].style.color, "#0F172A");
 assert.equal(richImportedShape.text.paragraphs[0].runs[1].style.italic, true);
 assert.deepEqual(richImportedShape.text.paragraphs[1].autoNumber, { type: "romanLcPeriod", startAt: 3 });
+assert.equal(richImportedShape.text.paragraphs[1].bulletFontFollowText, true);
+assert.equal(richImportedShape.text.paragraphs[1].bulletColorFollowText, true);
+assert.equal(richImportedShape.text.paragraphs[1].bulletSizeFollowText, true);
 assert.equal(richImportedShape.text.paragraphs[2].bulletNone, true);
+assert.equal(richImportedShape.text.paragraphs[2].bulletSize, 24);
 richImportedShape.text.paragraphs = richImportedShape.text.paragraphs.map((paragraph, paragraphIndex) => ({
   ...paragraph,
-  ...(paragraphIndex === 0 ? { bulletCharacter: "◆" } : {}),
-  ...(paragraphIndex === 1 ? { autoNumber: { type: "arabicPeriod", startAt: 5 } } : {}),
-  ...(paragraphIndex === 2 ? { bulletNone: undefined, bulletCharacter: "–" } : {}),
+  ...(paragraphIndex === 0 ? { bulletCharacter: "◆", bulletFont: undefined, bulletFontFollowText: true, bulletColor: "#2563EB", bulletSizePercent: undefined, bulletSize: 24 } : {}),
+  ...(paragraphIndex === 1 ? { autoNumber: { type: "arabicPeriod", startAt: 5 }, bulletFontFollowText: undefined, bulletFont: "Aptos", bulletColorFollowText: undefined, bulletColor: "#16A34A", bulletSizeFollowText: undefined, bulletSizePercent: 1.25 } : {}),
+  ...(paragraphIndex === 2 ? { bulletNone: undefined, bulletCharacter: "–", bulletSize: undefined, bulletSizeFollowText: true } : {}),
   runs: paragraph.runs.map((run, runIndex) => paragraphIndex === 0 && runIndex === 0
     ? { ...run, text: "Updated ", style: { ...run.style, bold: false, color: "#2563EB" } }
     : run),
@@ -221,8 +231,15 @@ assert.equal(richRoundTripShape.text.value, "Updated brief\nSource-bound detail\
 assert.equal(richRoundTripShape.text.paragraphs[0].runs[0].style.bold, false);
 assert.equal(richRoundTripShape.text.paragraphs[0].runs[0].style.color, "#2563EB");
 assert.equal(richRoundTripShape.text.paragraphs[0].bulletCharacter, "◆");
+assert.equal(richRoundTripShape.text.paragraphs[0].bulletFontFollowText, true);
+assert.equal(richRoundTripShape.text.paragraphs[0].bulletColor, "#2563EB");
+assert.equal(richRoundTripShape.text.paragraphs[0].bulletSize, 24);
 assert.deepEqual(richRoundTripShape.text.paragraphs[1].autoNumber, { type: "arabicPeriod", startAt: 5 });
+assert.equal(richRoundTripShape.text.paragraphs[1].bulletFont, "Aptos");
+assert.equal(richRoundTripShape.text.paragraphs[1].bulletColor, "#16A34A");
+assert.equal(richRoundTripShape.text.paragraphs[1].bulletSizePercent, 1.25);
 assert.equal(richRoundTripShape.text.paragraphs[2].bulletCharacter, "–");
+assert.equal(richRoundTripShape.text.paragraphs[2].bulletSizeFollowText, true);
 richImportedShape.text.paragraphs = [
   ...richImportedShape.text.paragraphs.slice(0, 1),
   { ...richImportedShape.text.paragraphs[1], runs: [...richImportedShape.text.paragraphs[1].runs, { text: "unsafe", style: {} }] },
@@ -254,10 +271,10 @@ await assert.rejects(
   (error) => error instanceof RangeError && /auto-number type/.test(error.message),
 );
 
-const unsupportedBulletStylePresentation = Presentation.create();
-unsupportedBulletStylePresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", bulletFont: "Wingdings", runs: ["styled"] }] });
+const unsupportedBulletColorPresentation = Presentation.create();
+unsupportedBulletColorPresentation.slides.add().shapes.add({ text: [{ bulletCharacter: "•", bulletColor: "accent1", runs: ["styled"] }] });
 await assert.rejects(
-  exportPptxWithOpenXmlWasm(unsupportedBulletStylePresentation),
+  exportPptxWithOpenXmlWasm(unsupportedBulletColorPresentation),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
 );
 

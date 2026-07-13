@@ -1020,8 +1020,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, and character/auto/none list markers through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
-| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology basic text/list markers, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, character/auto/none list markers, and direct marker font/RGB color/fixed-percentage-follow size through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
+| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology basic text, direct list markers and marker styles, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
@@ -1090,11 +1090,11 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenXmlWasm`
 
-Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, and character/auto/none list markers through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
+Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text, character/auto/none list markers, and direct marker font/RGB color/fixed-percentage-follow size through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the top-level rect/ellipse plus basic paragraph/run and character/auto/none marker boundary, or carrying validated fixed-topology source bindings from the WASM importer.
+- `presentation` (Presentation) required — Presentation facade within the top-level rect/ellipse plus basic paragraph/run, character/auto/none marker, and direct marker font/RGB color/fixed-percentage-follow size boundary, or carrying validated fixed-topology source bindings from the WASM importer.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -1104,7 +1104,7 @@ Experimentally export bounded rectangle/ellipse shapes, basic paragraph/run text
 
 #### `importPptxWithOpenXmlWasm`
 
-Experimentally import PPTX bytes with editable fixed-topology basic text/list markers, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes with editable fixed-topology basic text, direct list markers and marker styles, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 
@@ -1113,7 +1113,7 @@ Experimentally import PPTX bytes with editable fixed-topology basic text/list ma
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable basic paragraph/run text and direct list markers plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export.
+- `presentation` (Presentation) — Imported presentation facade with editable basic paragraph/run text, direct list markers, and direct marker styles plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export.
 
 #### `Presentation.create`
 

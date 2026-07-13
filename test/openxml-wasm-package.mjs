@@ -30,11 +30,13 @@ try {
     if (docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(3);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(4);
     const presentation = Presentation.create();
-    presentation.slides.add({ name: "Packaged" }).shapes.add({ name: "Title", text: "clean install PPTX", position: { left: 40, top: 40, width: 640, height: 80 } });
+    presentation.slides.add({ name: "Packaged" }).shapes.add({ name: "Title", text: [{ bulletCharacter: "•", bulletFont: "Georgia", bulletColor: "#2563EB", bulletSizePercent: 1.25, runs: ["clean install PPTX"] }], position: { left: 40, top: 40, width: 640, height: 80 } });
     const pptx = await exportPptxWithOpenXmlWasm(presentation);
     const importedPresentation = await importPptxWithOpenXmlWasm(pptx);
     if (pptx.bytes[0] !== 0x50 || pptx.bytes[1] !== 0x4b) process.exit(5);
     if (importedPresentation.slides.getItem(0).shapes.items[0].text.value !== "clean install PPTX") process.exit(6);
+    const marker = importedPresentation.slides.getItem(0).shapes.items[0].text.paragraphs[0];
+    if (marker.bulletCharacter !== "•" || marker.bulletFont !== "Georgia" || marker.bulletColor.toLowerCase() !== "#2563eb" || marker.bulletSizePercent !== 1.25) process.exit(7);
   `;
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
     PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin",
