@@ -240,10 +240,10 @@ message PresentationShape {
   PresentationTextBody text_body = 10;
 }
 
-// The public PresentationML text slice models agent-facing paragraph/run,
-// basic list-marker/direct marker-style semantics, and bounded click links.
-// Picture bullets, non-RGB marker colors, custom-show/mouse-over links, fields,
-// tabs, breaks, body properties, and list styles stay source-bound.
+// The public PresentationML text slice models agent-facing paragraph/inlines,
+// basic list-marker/direct marker-style semantics, tab stops, and bounded click
+// links. Picture bullets, non-RGB marker colors, custom-show/mouse-over links,
+// field paragraph properties, body properties, and list styles stay source-bound.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;
 }
@@ -274,6 +274,7 @@ message PresentationTextParagraph {
     double bullet_size_percent = 12;
     bool bullet_size_follow_text = 13;
   }
+  repeated PresentationTabStop tab_stops = 14;
 }
 
 message PresentationAutoNumberBullet {
@@ -282,8 +283,20 @@ message PresentationAutoNumberBullet {
   optional uint32 start_at = 2;
 }
 
+message PresentationTabStop {
+  int64 position_emu = 1;
+  string alignment = 2;
+}
+
 message PresentationTextRun {
-  string text = 1;
+  // Text remains field 1 for binary compatibility with the initial public
+  // schema. Moving it into this oneof makes the DrawingML a:r/a:br/a:fld
+  // distinction explicit without changing its wire encoding.
+  oneof content {
+    string text = 1;
+    bool line_break = 9;
+    PresentationTextField field = 10;
+  }
   optional bool bold = 2;
   optional bool italic = 3;
   optional double font_size_points = 4;
@@ -295,6 +308,14 @@ message PresentationTextRun {
     bool no_hyperlink = 7;
     PresentationRunHyperlink run_hyperlink = 8;
   }
+}
+
+message PresentationTextField {
+  // DrawingML field IDs are canonical brace-wrapped UUIDs.
+  string id = 1;
+  string type = 2;
+  // Cached display text retained when Office cannot recalculate the field.
+  string text = 3;
 }
 
 message PresentationRunHyperlink {

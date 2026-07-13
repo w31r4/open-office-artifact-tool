@@ -6,6 +6,10 @@ const EMU_PER_PIXEL = 9525;
 const HUNDREDTH_POINTS_PER_PIXEL = 75;
 const MAX_PARAGRAPHS = 4096;
 const MAX_RUNS = 16384;
+const MAX_TAB_POSITION = 2147483647 / EMU_PER_PIXEL;
+const FIELD_ID_PATTERN = /^\{?([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\}?$/i;
+const TAB_ALIGNMENTS = new Set(["left", "center", "right", "decimal"]);
+let nextPresentationFieldId = 1;
 const AUTO_NUMBER_TYPES = new Set([
   "alphaLcParenBoth", "alphaLcParenR", "alphaLcPeriod", "alphaUcParenBoth", "alphaUcParenR", "alphaUcPeriod",
   "arabic1Minus", "arabic2Minus", "arabicDbPeriod", "arabicDbPlain", "arabicParenBoth", "arabicParenR", "arabicPeriod", "arabicPlain",
@@ -61,13 +65,62 @@ function normalizeRunStyle(style = {}) {
   };
 }
 
+function generatedFieldId() {
+  const suffix = (nextPresentationFieldId++).toString(16).padStart(12, "0");
+  return `{00000000-0000-4000-8000-${suffix}}`;
+}
+
+function normalizeFieldId(value) {
+  const raw = value == null ? generatedFieldId() : String(value).trim();
+  const match = FIELD_ID_PATTERN.exec(raw);
+  if (!match) throw new TypeError("Presentation field id must be a UUID, optionally wrapped in braces.");
+  return `{${match[1].toUpperCase()}}`;
+}
+
+function normalizeTextField(value, run = {}) {
+  const input = typeof value === "string" ? { type: value } : value;
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError("Presentation field must be a field type string or object.");
+  const type = String(input.type ?? input.fieldType ?? "").trim();
+  if (!type || type.length > 255 || /[\u0000-\u001f\u007f]/.test(type)) throw new TypeError("Presentation field type must contain 1 through 255 printable characters.");
+  return {
+    id: normalizeFieldId(input.id ?? input.fieldId),
+    type,
+    text: String(input.text ?? input.value ?? run.text ?? run.run ?? run.value ?? ""),
+  };
+}
+
+function normalizeTabStops(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new TypeError("Presentation paragraph tabStops must be an array.");
+  let previous = -1;
+  return value.map((item, index) => {
+    const input = typeof item === "number" ? { position: item } : item;
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new TypeError(`Presentation tab stop ${index + 1} must be a number or object.`);
+    const position = Number(input.position ?? input.pos ?? input.offset);
+    if (!Number.isFinite(position) || position < 0 || position > MAX_TAB_POSITION) throw new RangeError(`Presentation tab stop ${index + 1} position must fit the DrawingML signed 32-bit EMU range.`);
+    if (position <= previous) throw new RangeError("Presentation tab stops must use strictly increasing positions.");
+    previous = position;
+    const alignment = String(input.alignment ?? input.align ?? "left");
+    if (!TAB_ALIGNMENTS.has(alignment)) throw new RangeError(`Presentation tab stop ${index + 1} alignment must be left, center, right, or decimal.`);
+    return { position, alignment };
+  });
+}
+
 function normalizeRun(value, options = {}) {
   if (value == null) return { text: "", style: {} };
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return { text: String(value), style: {} };
   if (typeof value !== "object" || Array.isArray(value)) throw new TypeError("Presentation paragraph runs must be strings, numbers, booleans, or run objects.");
-  const text = String(value.run ?? value.text ?? value.value ?? "");
+  const isBreak = value.break === true || value.lineBreak === true || value.kind === "break";
+  const hasField = value.field != null || value.kind === "field";
+  if (isBreak && hasField) throw new TypeError("Presentation inline cannot be both a line break and a field.");
   const link = normalizePresentationRunLink(value.link ?? value.hyperlink, { allowTargetPart: options.allowTargetPart === true });
-  return { text, style: normalizeRunStyle(value.textStyle || value.style || {}), ...(link ? { link } : {}) };
+  const common = { style: normalizeRunStyle(value.textStyle || value.style || {}), ...(link ? { link } : {}) };
+  if (isBreak) {
+    if (value.run != null || value.text != null || value.value != null) throw new TypeError("Presentation line break cannot also carry text.");
+    return { break: true, ...common };
+  }
+  if (hasField) return { field: normalizeTextField(value.field ?? { type: value.fieldType, id: value.fieldId }, value), ...common };
+  return { text: String(value.run ?? value.text ?? value.value ?? ""), ...common };
 }
 
 function paragraphInput(value) {
@@ -152,6 +205,7 @@ function normalizeParagraph(value, defaults = {}, options = {}) {
   if (numeric.spaceBefore != null && numeric.spaceBeforePercent != null) throw new Error("Presentation paragraph must use either spaceBefore or spaceBeforePercent, not both.");
   if (numeric.spaceAfter != null && numeric.spaceAfterPercent != null) throw new Error("Presentation paragraph must use either spaceAfter or spaceAfterPercent, not both.");
   if ([numeric.bulletSize != null, numeric.bulletSizePercent != null, bulletSizeFollowText].filter(Boolean).length > 1) throw new Error("Presentation paragraph must use exactly one of bulletSize, bulletSizePercent, or bulletSizeFollowText.");
+  const tabStops = normalizeTabStops(input.tabStops ?? input.tabs ?? defaults.tabStops);
   return {
     runs,
     level,
@@ -165,13 +219,14 @@ function normalizeParagraph(value, defaults = {}, options = {}) {
     ...(bulletFontFollowText ? { bulletFontFollowText: true } : {}),
     ...(bulletColorFollowText ? { bulletColorFollowText: true } : {}),
     ...(bulletSizeFollowText ? { bulletSizeFollowText: true } : {}),
+    ...(tabStops.length ? { tabStops } : {}),
     ...numeric,
     style: normalizeRunStyle(input.style || input.textStyle || input.paragraphStyle?.textStyle || {}),
   };
 }
 
 function isStructuredParagraph(value) {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && ("runs" in value || "text" in value || "bullet" in value || "bulletCharacter" in value || "bulletImage" in value || "pictureBullet" in value || "autoNumber" in value || "numbering" in value || "paragraphStyle" in value || "level" in value || "bulletFont" in value || "bulletColor" in value || "bulletSize" in value || "bulletSizePercent" in value || "bulletFontFollowText" in value || "bulletColorFollowText" in value || "bulletSizeFollowText" in value));
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && ("runs" in value || "text" in value || "bullet" in value || "bulletCharacter" in value || "bulletImage" in value || "pictureBullet" in value || "autoNumber" in value || "numbering" in value || "paragraphStyle" in value || "level" in value || "bulletFont" in value || "bulletColor" in value || "bulletSize" in value || "bulletSizePercent" in value || "bulletFontFollowText" in value || "bulletColorFollowText" in value || "bulletSizeFollowText" in value || "tabStops" in value || "tabs" in value));
 }
 
 export function normalizePresentationParagraphs(value, options = {}) {
@@ -201,7 +256,7 @@ export function normalizePresentationParagraphStyles(value = {}) {
 }
 
 export function presentationParagraphText(paragraph) {
-  return (paragraph?.runs || []).map((run) => run.text).join("");
+  return (paragraph?.runs || []).map((run) => run.break ? "\n" : run.field?.text ?? run.text ?? "").join("");
 }
 
 export function presentationParagraphsText(paragraphs = []) {
@@ -209,7 +264,7 @@ export function presentationParagraphsText(paragraphs = []) {
 }
 
 export function presentationParagraphsNeedSerialization(paragraphs = []) {
-  return paragraphs.length > 1 || paragraphs.some((paragraph) => paragraph.level || paragraph.alignment || paragraph.bulletCharacter != null || paragraph.bulletImage || paragraph.autoNumber || paragraph.bulletNone || paragraph.bulletFont != null || paragraph.bulletColor != null || paragraph.bulletSize != null || paragraph.bulletSizePercent != null || paragraph.bulletFontFollowText || paragraph.bulletColorFollowText || paragraph.bulletSizeFollowText || paragraph.marginLeft != null || paragraph.indent != null || paragraph.spaceBefore != null || paragraph.spaceAfter != null || paragraph.spaceBeforePercent != null || paragraph.spaceAfterPercent != null || paragraph.lineSpacing != null || Object.keys(paragraph.style || {}).length || paragraph.runs.length !== 1 || paragraph.runs.some((run) => run.link || Object.keys(run.style || {}).length));
+  return paragraphs.length > 1 || paragraphs.some((paragraph) => paragraph.level || paragraph.alignment || paragraph.bulletCharacter != null || paragraph.bulletImage || paragraph.autoNumber || paragraph.bulletNone || paragraph.bulletFont != null || paragraph.bulletColor != null || paragraph.bulletSize != null || paragraph.bulletSizePercent != null || paragraph.bulletFontFollowText || paragraph.bulletColorFollowText || paragraph.bulletSizeFollowText || paragraph.tabStops?.length || paragraph.marginLeft != null || paragraph.indent != null || paragraph.spaceBefore != null || paragraph.spaceAfter != null || paragraph.spaceBeforePercent != null || paragraph.spaceAfterPercent != null || paragraph.lineSpacing != null || Object.keys(paragraph.style || {}).length || paragraph.runs.length !== 1 || paragraph.runs.some((run) => run.break || run.field || run.link || Object.keys(run.style || {}).length));
 }
 
 export function inheritPresentationParagraphs(paragraphs = [], inheritedByLevel = {}) {
@@ -249,8 +304,10 @@ export function replacePresentationParagraphText(paragraphs, search, replacement
   const needle = String(search);
   if (!needle) return paragraphs;
   for (const paragraph of paragraphs) for (const run of paragraph.runs) {
-    if (!run.text.includes(needle)) continue;
-    run.text = run.text.replace(search, replacement);
+    const text = run.field?.text ?? run.text;
+    if (text == null || !text.includes(needle)) continue;
+    if (run.field) run.field.text = text.replace(search, replacement);
+    else run.text = text.replace(search, replacement);
     return paragraphs;
   }
   return normalizePresentationParagraphs(presentationParagraphsText(paragraphs).replace(search, replacement));
@@ -304,6 +361,13 @@ function parseParagraphProperties(xml = "", inherited = {}) {
   const bulletFontFollowText = Boolean(localElementOpening(xml, "buFontTx"));
   const bulletColorFollowText = Boolean(localElementOpening(xml, "buClrTx"));
   const bulletSizeFollowText = Boolean(localElementOpening(xml, "buSzTx"));
+  const tabStops = [...localElementBlock(xml, "tabLst").matchAll(/<(?:[A-Za-z_][\w.-]*:)?tab\b[^>]*\/?>/g)].map((match) => {
+    const tab = attributes(match[0]);
+    return {
+      position: Number(tab.pos || 0) / EMU_PER_PIXEL,
+      alignment: ({ l: "left", ctr: "center", r: "right", dec: "decimal" })[tab.algn] || "left",
+    };
+  });
   const level = normalizeLevel(attrs.lvl ?? inherited.level ?? 0);
   const alignment = { l: "left", ctr: "center", r: "right", just: "justify" }[attrs.algn] || inherited.alignment;
   return {
@@ -323,6 +387,7 @@ function parseParagraphProperties(xml = "", inherited = {}) {
     ...(bulletSizePoints != null ? { bulletSize: Number(bulletSizePoints) / HUNDREDTH_POINTS_PER_PIXEL, bulletSizePercent: undefined, bulletSizeFollowText: undefined } : {}),
     ...(bulletSizePercent != null ? { bulletSizePercent: Number(bulletSizePercent) / 100000, bulletSize: undefined, bulletSizeFollowText: undefined } : {}),
     ...(bulletSizeFollowText ? { bulletSizeFollowText: true, bulletSize: undefined, bulletSizePercent: undefined } : {}),
+    ...(tabStops.length ? { tabStops } : {}),
     ...(parseSpacing(xml, "spcBef")?.points != null ? { spaceBefore: parseSpacing(xml, "spcBef").points } : {}),
     ...(parseSpacing(xml, "spcBef")?.percent != null ? { spaceBeforePercent: parseSpacing(xml, "spcBef").percent } : {}),
     ...(parseSpacing(xml, "spcAft")?.points != null ? { spaceAfter: parseSpacing(xml, "spcAft").points } : {}),
@@ -366,11 +431,18 @@ export function parsePresentationParagraphsXml(xml = "", options = {}) {
     const pPrAttrs = attributes(localElementOpening(pPr, "pPr"));
     const level = normalizeLevel(pPrAttrs.lvl || 0);
     const properties = parseParagraphProperties(pPr, inheritedByLevel[level] || { level });
-    const runs = [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:r|fld)\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?(?:r|fld)>/g)].map((match) => {
+    const runs = [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(r|fld|br)\b[^>]*(?:\/>|>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?\1>)/g)].map((match) => {
       const runXml = match[0];
+      const kind = match[1];
       const text = decodeXml([...runXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => item[1]).join(""));
       const link = parsePresentationRunLinkXml(runXml, options.relationshipContext);
-      return { text, style: parseRunStyle(runXml), ...(link ? { link } : {}) };
+      const common = { style: parseRunStyle(runXml), ...(link ? { link } : {}) };
+      if (kind === "br") return { break: true, ...common };
+      if (kind === "fld") {
+        const field = attributes(match[0].match(/^<[^>]+>/)?.[0] || "");
+        return { field: { id: decodeXml(field.id || ""), type: decodeXml(field.type || ""), text }, ...common };
+      }
+      return { text, ...common };
     });
     if (!runs.length) {
       const text = decodeXml([...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => item[1]).join(""));
