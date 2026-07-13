@@ -131,7 +131,7 @@ export async function parsePresentationGroupTree(owner, xml, context, adapters) 
   const group = owner.groups.add({ name: presentationGroupName(xml), position: geometry.frame, childFrame: geometry.childFrame });
   adapters.applyIdentity(group, xml, "grpSpMk");
   for (const child of directPresentationChildren(xml, "grpSp")) {
-    if (child.localName === "sp") adapters.parseShape(group, child.xml, { ...context, layout: undefined });
+    if (child.localName === "sp") await adapters.parseShape(group, child.xml, { ...context, layout: undefined });
     else if (child.localName === "cxnSp") adapters.parseConnector(group, child.xml);
     else if (child.localName === "grpSp") await parsePresentationGroupTree(group, child.xml, context, adapters);
     else if (child.localName === "graphicFrame") await adapters.parseGraphicFrame(group, child.xml, context);

@@ -79,9 +79,17 @@ try {
   assert.match(fixtureChartXml, /<c:barDir val="bar"\/>/);
   assert.match(fixtureChartXml, /<c:grouping val="stacked"\/>/);
   assert.match(fixtureChartXml, /<c:gapWidth val="80"\/>/);
+  assert.match(fixtureChartXml, /<a:ln w="19050">[\s\S]*?<a:prstDash val="dash"\/>/);
+  assert.match(fixtureChartXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="FACC15"\/>[\s\S]*?<a:prstDash val="dot"\/>/);
+  assert.match(fixtureThirdSlideXml, /<a:buBlip><a:blip r:embed="rId\d+"\/><\/a:buBlip>/);
+  assert.ok(fixtureZip.file("ppt/media/image2.png"));
   const fixtureChart = first.qa.presentation.slides.items[2].charts.items[0];
   assert.equal(fixtureChart.styleId, 10);
   assert.deepEqual(fixtureChart.barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
+  assert.deepEqual(fixtureChart.series[0].line, { fill: "#0369A1", width: 1.5, style: "dash" });
+  assert.deepEqual(fixtureChart.series[1].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
+  const fixturePictureBullet = first.qa.presentation.slides.items[2].shapes.items.find((shape) => shape.name === "package-callout").text.paragraphs[1].bulletImage;
+  assert.match(fixturePictureBullet.dataUrl, /^data:image\/png;base64,/);
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);

@@ -1,6 +1,15 @@
+import { resolveColorToken } from "../shared/colors.mjs";
+
 const BAR_GROUPINGS = new Set(["clustered", "stacked", "percentStacked"]);
 const LINE_GROUPINGS = new Set(["standard", "stacked", "percentStacked"]);
 const MARKER_SYMBOLS = new Set(["auto", "circle", "dash", "diamond", "dot", "none", "plus", "square", "star", "triangle", "x"]);
+const LINE_DASH_TO_OOXML = new Map([
+  ["solid", "solid"], ["dot", "dot"], ["dash", "dash"], ["longDash", "lgDash"],
+  ["dashDot", "dashDot"], ["longDashDot", "lgDashDot"], ["longDashDotDot", "lgDashDotDot"],
+  ["systemDash", "sysDash"], ["systemDot", "sysDot"], ["systemDashDot", "sysDashDot"], ["systemDashDotDot", "sysDashDotDot"],
+]);
+const LINE_DASH_FROM_OOXML = new Map([...LINE_DASH_TO_OOXML].map(([publicName, ooxmlName]) => [ooxmlName, publicName]));
+const SCHEME_COLORS = new Set(["tx1", "tx2", "bg1", "bg2", "dk1", "dk2", "lt1", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"]);
 
 function xmlEscape(value) {
   return String(value ?? "")
@@ -47,6 +56,13 @@ function boundedInteger(value, { name, min, max, fallback, optional = false }) {
   return parsed;
 }
 
+function boundedNumber(value, { name, min, max, fallback, optional = false }) {
+  if (value == null || value === "") return optional ? undefined : fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new RangeError(`${name} must be a number from ${min} to ${max}.`);
+  return parsed;
+}
+
 function enumValue(value, allowed, fallback, name) {
   if (value == null || value === "") return fallback;
   if (!allowed.has(value)) throw new TypeError(`${name} must be one of: ${[...allowed].join(", ")}.`);
@@ -63,6 +79,41 @@ export function normalizePresentationChartMarker(marker) {
   };
 }
 
+function normalizePresentationChartPaint(value) {
+  if (typeof value === "string" && value) return value;
+  if (!value || typeof value !== "object") return undefined;
+  return [value.fill, value.color, value.rgb].find((candidate) => typeof candidate === "string" && candidate) || undefined;
+}
+
+function normalizePresentationChartLine(line) {
+  if (line == null || line === false) return undefined;
+  const raw = typeof line === "string" ? { fill: line } : line;
+  if (!raw || typeof raw !== "object") throw new TypeError("chart line must be a color string or object.");
+  const style = raw.style || raw.dash || "solid";
+  if (!LINE_DASH_TO_OOXML.has(style)) throw new TypeError(`chart line style must be one of: ${[...LINE_DASH_TO_OOXML.keys()].join(", ")}.`);
+  return {
+    fill: normalizePresentationChartPaint(raw.fill ?? raw.color),
+    width: boundedNumber(raw.width, { name: "chart line width", min: 0.1, max: 100, fallback: 1 }),
+    style,
+  };
+}
+
+function normalizePresentationChartPoints(points, valueCount) {
+  const seen = new Set();
+  return (points || []).map((point) => {
+    if (!point || typeof point !== "object") throw new TypeError("chart points must be objects.");
+    const rawIndex = point.idx ?? point.index;
+    if (rawIndex == null) throw new TypeError("chart point idx is required.");
+    const idx = boundedInteger(rawIndex, { name: "chart point idx", min: 0, max: 1_048_575 });
+    if (valueCount != null && idx >= valueCount) throw new RangeError(`chart point idx ${idx} is outside the series value range.`);
+    if (seen.has(idx)) throw new TypeError(`chart point idx ${idx} is duplicated.`);
+    seen.add(idx);
+    const fill = normalizePresentationChartPaint(point.fill ?? point.color);
+    const line = normalizePresentationChartLine(point.line ?? point.stroke);
+    return { idx, ...(fill ? { fill } : {}), ...(line ? { line } : {}) };
+  });
+}
+
 export function normalizePresentationChartStyle(chartType, config = {}) {
   const type = String(chartType || config.chartType || "bar").toLowerCase();
   const style = config.style && typeof config.style === "object" ? config.style : {};
@@ -71,7 +122,7 @@ export function normalizePresentationChartStyle(chartType, config = {}) {
   const directionValue = rawBar.direction || rawBar.barDirection;
   const direction = directionValue === "horizontal" ? "bar" : directionValue === "vertical" ? "column" : directionValue;
   return {
-    styleId: boundedInteger(config.styleId ?? style.id, { name: "chart styleId", min: 1, max: 48, optional: true }),
+    styleId: boundedInteger(config.styleId ?? config.styleIndex ?? style.id, { name: "chart styleId", min: 1, max: 48, optional: true }),
     varyColors: Boolean(config.varyColors ?? style.varyColors ?? type === "pie"),
     barOptions: {
       direction: enumValue(direction, new Set(["column", "bar"]), "column", "chart bar direction"),
@@ -87,8 +138,11 @@ export function normalizePresentationChartStyle(chartType, config = {}) {
   };
 }
 
-export function normalizePresentationChartSeriesStyle(series = {}) {
+export function normalizePresentationChartSeriesStyle(series = {}, valueCount) {
   return {
+    color: normalizePresentationChartPaint(series.color ?? series.fill),
+    line: normalizePresentationChartLine(series.line ?? series.stroke),
+    points: normalizePresentationChartPoints(series.points, valueCount),
     marker: normalizePresentationChartMarker(series.marker),
     smooth: series.smooth == null ? undefined : Boolean(series.smooth),
   };
@@ -100,6 +154,24 @@ function chartTextTitleXml(text = "") {
 
 function markerXml(marker) {
   return marker ? `<c:marker><c:symbol val="${attrEscape(marker.symbol)}"/><c:size val="${marker.size}"/></c:marker>` : "";
+}
+
+function chartColorXml(value, fallback = "#0ea5e9") {
+  const raw = String(value || fallback);
+  if (SCHEME_COLORS.has(raw)) return `<a:schemeClr val="${raw}"/>`;
+  const resolved = resolveColorToken(raw, fallback);
+  const hex = /^#[A-Fa-f0-9]{6}$/.test(resolved) ? resolved.slice(1) : /^[A-Fa-f0-9]{6}$/.test(resolved) ? resolved : String(fallback).replace(/^#/, "");
+  return `<a:srgbClr val="${attrEscape(hex.toUpperCase())}"/>`;
+}
+
+function chartShapePropertiesXml(fill, line) {
+  const fillXml = fill ? `<a:solidFill>${chartColorXml(fill)}</a:solidFill>` : "";
+  const lineXml = line ? `<a:ln w="${Math.round(line.width * 12_700)}"><a:solidFill>${chartColorXml(line.fill || fill || "#0f172a")}</a:solidFill><a:prstDash val="${LINE_DASH_TO_OOXML.get(line.style)}"/></a:ln>` : "";
+  return fillXml || lineXml ? `<c:spPr>${fillXml}${lineXml}</c:spPr>` : "";
+}
+
+function chartPointXml(point) {
+  return `<c:dPt><c:idx val="${point.idx}"/>${chartShapePropertiesXml(point.fill, point.line)}</c:dPt>`;
 }
 
 export function presentationChartXml(chart) {
@@ -115,11 +187,13 @@ export function presentationChartXml(chart) {
     const categories = series.categories || chart.categories || values.map((_, pointIndex) => String(pointIndex + 1));
     const catPts = categories.map((category, pointIndex) => `<c:pt idx="${pointIndex}"><c:v>${xmlEscape(category)}</c:v></c:pt>`).join("");
     const valPts = values.map((value, pointIndex) => `<c:pt idx="${pointIndex}"><c:v>${Number(value) || 0}</c:v></c:pt>`).join("");
-    const color = String(series.color || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4]).replace(/^#/, "").slice(0, 6).padEnd(6, "0");
-    const seriesStyle = normalizePresentationChartSeriesStyle(series);
+    const seriesStyle = normalizePresentationChartSeriesStyle(series, values.length);
+    const color = seriesStyle.color || series.color || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4];
     const effectiveMarker = seriesStyle.marker || style.lineOptions.marker;
     const effectiveSmooth = seriesStyle.smooth ?? style.lineOptions.smooth;
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx><c:spPr><a:solidFill><a:srgbClr val="${attrEscape(color)}"/></a:solidFill></c:spPr>${type === "line" ? markerXml(effectiveMarker) : ""}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${type === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
+    const seriesLine = seriesStyle.line || (type === "line" ? { fill: color, width: 2, style: "solid" } : undefined);
+    const pointsXml = seriesStyle.points.map(chartPointXml).join("");
+    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${chartShapePropertiesXml(color, seriesLine)}${type === "line" ? markerXml(effectiveMarker) : ""}${pointsXml}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val>${type === "line" ? `<c:smooth val="${effectiveSmooth ? 1 : 0}"/>` : ""}</c:ser>`;
   }).join("");
   const categoryAxisTitle = chart.axes?.category?.title ? chartTextTitleXml(chart.axes.category.title) : "";
   const valueAxisTitle = chart.axes?.value?.title ? chartTextTitleXml(chart.axes.value.title) : "";
@@ -145,13 +219,49 @@ function parseChartTitle(xml, ownerName) {
   return decodeXml(new RegExp(`<${localTag("t")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("t")}>`, "i").exec(title)?.[1] || "");
 }
 
+function parseChartColor(xml) {
+  const srgb = new RegExp(`<${localTag("srgbClr")}\\b[^>]*\\bval="([A-Fa-f0-9]{6})"`, "i").exec(String(xml || ""))?.[1];
+  if (srgb) return `#${srgb}`;
+  const scheme = new RegExp(`<${localTag("schemeClr")}\\b[^>]*\\bval="([^"]+)"`, "i").exec(String(xml || ""))?.[1];
+  return scheme || undefined;
+}
+
+function parseChartShapeProperties(xml) {
+  const spPr = tagBlock(xml, "spPr");
+  if (!spPr) return {};
+  const linePattern = new RegExp(`<${localTag("ln")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ln")}>`, "i");
+  const lineMatch = linePattern.exec(spPr);
+  const lineXml = lineMatch?.[0] || "";
+  const fill = parseChartColor(lineMatch ? spPr.replace(lineMatch[0], "") : spPr);
+  if (!lineXml) return { fill };
+  const width = Number(new RegExp(`<${localTag("ln")}\\b[^>]*\\bw="(\\d+)"`, "i").exec(lineXml)?.[1]);
+  const dash = tagValue(lineXml, "prstDash") || "solid";
+  return {
+    fill,
+    line: {
+      fill: parseChartColor(lineXml),
+      width: Number.isFinite(width) && width > 0 ? width / 12_700 : 1,
+      style: LINE_DASH_FROM_OOXML.get(dash) || "solid",
+    },
+  };
+}
+
+function parseChartPoints(xml) {
+  const pattern = new RegExp(`<${localTag("dPt")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("dPt")}>`, "gi");
+  return [...String(xml || "").matchAll(pattern)].map((match) => {
+    const style = parseChartShapeProperties(match[0]);
+    return { idx: Number(tagValue(match[0], "idx")), ...(style.fill ? { fill: style.fill } : {}), ...(style.line ? { line: style.line } : {}) };
+  });
+}
+
 function parseSeries(chartBlock) {
   const pattern = new RegExp(`<${localTag("ser")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("ser")}>`, "gi");
   return [...String(chartBlock || "").matchAll(pattern)].map((match, index) => {
     const xml = match[0];
+    const xmlWithoutPoints = xml.replace(new RegExp(`<${localTag("dPt")}\\b[^>]*>[\\s\\S]*?<\\/${localTag("dPt")}>`, "gi"), "");
     const tx = tagBlock(xml, "tx");
     const name = decodeXml(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "i").exec(tx)?.[1] || `Series ${index + 1}`);
-    const color = new RegExp(`<${localTag("srgbClr")}\\b[^>]*\\bval="([A-Fa-f0-9]{6})"`, "i").exec(tagBlock(xml, "spPr"))?.[1];
+    const shapeStyle = parseChartShapeProperties(xmlWithoutPoints);
     const valuesFrom = (name) => [...tagBlock(xml, name).matchAll(new RegExp(`<${localTag("v")}\\b[^>]*>([\\s\\S]*?)<\\/${localTag("v")}>`, "gi"))].map((item) => decodeXml(item[1]));
     const markerBlock = tagBlock(xml, "marker");
     const markerSymbol = tagValue(markerBlock, "symbol");
@@ -161,7 +271,9 @@ function parseSeries(chartBlock) {
       name,
       values: valuesFrom("val").map((value) => Number(value) || 0),
       categories: valuesFrom("cat"),
-      color: color ? `#${color}` : undefined,
+      color: shapeStyle.fill || shapeStyle.line?.fill,
+      line: shapeStyle.line,
+      points: parseChartPoints(xml),
       marker,
       smooth: booleanTag(xml, "smooth"),
     };

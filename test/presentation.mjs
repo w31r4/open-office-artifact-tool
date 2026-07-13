@@ -234,8 +234,8 @@ const nativeChart = slide.charts.add("bar", {
   varyColors: true,
   barOptions: { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 },
   series: [
-    { name: "Revenue", values: [10, 14], color: "#0ea5e9" },
-    { name: "Forecast", values: [12, 16], color: "#f97316" },
+    { name: "Revenue", values: [10, 14], color: "#0ea5e9", line: { fill: "#0369a1", width: 1.5, style: "dash" }, points: [{ idx: 1, fill: "#facc15", line: { fill: "#dc2626", width: 2, style: "dot" } }] },
+    { name: "Forecast", values: [12, 16], fill: "accent1" },
   ],
 });
 const nativeImage = slide.images.add({
@@ -253,7 +253,7 @@ const pieChart = pieSlide.charts.add("pie", {
   categories: ["Product A", "Product B", "Other"],
   dataLabels: { showValue: true, showCategoryName: true },
   legend: { visible: true, position: "r" },
-  series: [{ name: "Share", values: [45, 35, 20] }],
+  series: [{ name: "Share", values: [45, 35, 20], points: [{ idx: 1, fill: "#facc15" }] }],
 });
 const lineChart = pieSlide.charts.add("line", {
   name: "trend-line",
@@ -263,7 +263,7 @@ const lineChart = pieSlide.charts.add("line", {
   styleId: 13,
   lineOptions: { grouping: "stacked", smooth: true, marker: { symbol: "diamond", size: 9 } },
   series: [
-    { name: "Model", values: [4, 7, 9], color: "#22c55e" },
+    { name: "Model", values: [4, 7, 9], color: "#22c55e", line: { fill: "#15803d", width: 3, style: "dashDot" }, points: [{ idx: 1, fill: "#eab308" }] },
     { name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false },
   ],
 });
@@ -299,6 +299,10 @@ assert.match(lineChartSvg, /M 930 158 L 934 166 L 926 166/);
 assert.throws(() => slide.charts.add("bar", { styleId: 49 }), /styleId must be an integer from 1 to 48/);
 assert.throws(() => slide.charts.add("bar", { barOptions: { gapWidth: 501 } }), /gapWidth must be an integer from 0 to 500/);
 assert.throws(() => slide.charts.add("line", { lineOptions: { marker: { symbol: "picture" } } }), /chart marker symbol must be one of/);
+assert.throws(() => slide.charts.add("bar", { series: [{ values: [1], points: [{ idx: 1, fill: "#ffffff" }] }] }), /outside the series value range/);
+assert.throws(() => slide.charts.add("bar", { series: [{ values: [1], points: [{ idx: 0 }, { idx: 0 }] }] }), /point idx 0 is duplicated/);
+assert.throws(() => slide.charts.add("line", { series: [{ values: [1], line: { style: "scribble" } }] }), /chart line style must be one of/);
+assert.equal(Presentation.create().slides.add().charts.add("bar", { styleIndex: 12 }).styleId, 12);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /"axes"/);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /Forecast/);
 assert.match(presentation.help("slide.charts.add").ndjson, /bar\/line\/pie/);
@@ -596,17 +600,22 @@ assert.match(chartXml, /Forecast/);
 assert.match(chartXml, /<c:showVal val="1"\/>/);
 assert.match(chartXml, /<c:legendPos val="r"\/>/);
 assert.match(chartXml, /0ea5e9/i);
+assert.match(chartXml, /<a:solidFill><a:schemeClr val="accent1"\/><\/a:solidFill>/);
 assert.match(chartXml, /<c:style val="10"\/>/);
 assert.match(chartXml, /<c:barDir val="bar"\/>/);
 assert.match(chartXml, /<c:grouping val="stacked"\/>/);
 assert.match(chartXml, /<c:varyColors val="1"\/>/);
 assert.match(chartXml, /<c:gapWidth val="80"\/>/);
 assert.match(chartXml, /<c:overlap val="-20"\/>/);
+assert.match(chartXml, /<a:ln w="19050"><a:solidFill><a:srgbClr val="0369A1"\/><\/a:solidFill><a:prstDash val="dash"\/><\/a:ln>/);
+assert.match(chartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbClr val="FACC15"\/><\/a:solidFill><a:ln w="25400">/);
+assert.match(chartXml, /<a:prstDash val="dot"\/><\/a:ln><\/c:spPr><\/c:dPt>/);
 const pieChartXml = await zip.file("ppt/charts/chart2.xml").async("text");
 assert.match(pieChartXml, /<c:pieChart>/);
 assert.match(pieChartXml, /Market Share/);
 assert.match(pieChartXml, /Product A/);
 assert.match(pieChartXml, /<c:v>45<\/c:v>/);
+assert.match(pieChartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbClr val="FACC15"\/><\/a:solidFill><\/c:spPr><\/c:dPt>/);
 const lineChartXml = await zip.file("ppt/charts/chart3.xml").async("text");
 assert.match(lineChartXml, /<c:style val="13"\/>/);
 assert.match(lineChartXml, /<c:lineChart><c:grouping val="stacked"\/>/);
@@ -614,6 +623,8 @@ assert.match(lineChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="9"\
 assert.match(lineChartXml, /<c:marker><c:symbol val="triangle"\/><c:size val="8"\/><\/c:marker>/);
 assert.equal((lineChartXml.match(/<c:smooth val="1"\/>/g) || []).length, 1);
 assert.equal((lineChartXml.match(/<c:smooth val="0"\/>/g) || []).length, 1);
+assert.match(lineChartXml, /<a:ln w="38100"><a:solidFill><a:srgbClr val="15803D"\/><\/a:solidFill><a:prstDash val="dashDot"\/><\/a:ln>/);
+assert.match(lineChartXml, /<c:dPt><c:idx val="1"\/><c:spPr><a:solidFill><a:srgbClr val="EAB308"\/><\/a:solidFill><\/c:spPr><\/c:dPt>/);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
@@ -668,11 +679,16 @@ assert.match(loadedAll, /"textStyles"/);
 const loadedBarChart = loaded.slides.items[0].charts.items.find((chart) => chart.name === "native-import-chart");
 assert.equal(loadedBarChart.styleId, 10);
 assert.deepEqual(loadedBarChart.barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
+assert.deepEqual(loadedBarChart.series[0].line, { fill: "#0369A1", width: 1.5, style: "dash" });
+assert.deepEqual(loadedBarChart.series[0].points, [{ idx: 1, fill: "#FACC15", line: { fill: "#DC2626", width: 2, style: "dot" } }]);
+assert.equal(loadedBarChart.series[1].color, "accent1");
 const loadedLineChart = loaded.slides.items[1].charts.items.find((chart) => chart.name === "trend-line");
 assert.equal(loadedLineChart.styleId, 13);
 assert.equal(loadedLineChart.lineOptions.grouping, "stacked");
 assert.deepEqual(loadedLineChart.series.map((series) => series.marker), [{ symbol: "diamond", size: 9 }, { symbol: "triangle", size: 8 }]);
 assert.deepEqual(loadedLineChart.series.map((series) => series.smooth), [true, false]);
+assert.deepEqual(loadedLineChart.series[0].line, { fill: "#15803D", width: 3, style: "dashDot" });
+assert.deepEqual(loadedLineChart.series[0].points, [{ idx: 1, fill: "#EAB308" }]);
 const alternateChartPrefixXml = lineChartXml.replace('<c:smooth val="1"/>', "<c:smooth/>")
   .replaceAll("xmlns:c=", "xmlns:cx=").replaceAll("<c:", "<cx:").replaceAll("</c:", "</cx:")
   .replaceAll("xmlns:a=", "xmlns:ax=").replaceAll("<a:", "<ax:").replaceAll("</a:", "</ax:");
@@ -683,7 +699,10 @@ assert.equal(alternateLineChart.styleId, 13);
 assert.equal(alternateLineChart.title, "Quality Trend");
 assert.deepEqual(alternateLineChart.series[0].marker, { symbol: "diamond", size: 9 });
 const alternateChartSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(alternateChartPrefixLoaded)).arrayBuffer()));
-assert.match(await alternateChartSecondZip.file("ppt/charts/chart3.xml").async("text"), /<c:style val="13"\/>/);
+const alternateChartSecondXml = await alternateChartSecondZip.file("ppt/charts/chart3.xml").async("text");
+assert.match(alternateChartSecondXml, /<c:style val="13"\/>/);
+assert.match(alternateChartSecondXml, /<a:prstDash val="dashDot"\/>/);
+assert.match(alternateChartSecondXml, /<c:dPt><c:idx val="1"\/>[\s\S]*?<a:srgbClr val="EAB308"\/>/);
 assert.match(loadedAll, /"colorMap"/);
 const loadedComment = loaded.slides.items[0].comments.items[0];
 assert.ok(loaded.slides.items[0].resolve(loadedComment.targetId));
@@ -954,13 +973,24 @@ richTextShape.text.set([
   { level: 1, autoNumber: { type: "arabicPeriod", startAt: 3 }, bulletFontFollowText: true, bulletColorFollowText: true, bulletSizeFollowText: true, marginLeft: 48, indent: -14, runs: [{ run: "Ship", textStyle: { italic: true, underline: "sng" } }] },
 ]);
 richTextShape.text.style = { fontFamily: "Arial", fontSize: 20, color: "#334155", lineSpacing: 1.15 };
+const pictureBulletPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=";
+const pictureBulletShape = paragraphSlide.shapes.add({ name: "picture-list", position: { left: 80, top: 470, width: 420, height: 90 }, text: [{ bulletImage: { dataUrl: pictureBulletPng, alt: "Green status" }, bulletSize: 18, marginLeft: 30, indent: -20, runs: ["Embedded picture bullet"] }] });
+const externalPictureBulletShape = paragraphSlide.shapes.add({ name: "external-picture-list", position: { left: 520, top: 470, width: 420, height: 90 }, text: [{ pictureBullet: "https://example.com/status.png", bulletSizePercent: 0.8, runs: ["External picture bullet"] }] });
+const pictureBulletGroup = paragraphSlide.groups.add({ name: "picture-bullet-group", position: { left: 940, top: 470, width: 250, height: 100 }, childFrame: { left: 0, top: 0, width: 250, height: 100 } });
+const groupedPictureBulletShape = pictureBulletGroup.shapes.add({ name: "grouped-picture-list", position: { left: 0, top: 0, width: 250, height: 100 }, text: [{ bullet: { image: pictureBulletPng }, runs: ["Grouped bullet"] }] });
 assert.equal(richTextShape.text.value, "Status review\nQuality: defects down\nShip");
 assert.equal(richTextShape.text.paragraphs[1].bulletCharacter, "•");
 assert.deepEqual(richTextShape.text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
 assert.match(richTextShape.toSvg(), />•<\/text>/);
 assert.match(richTextShape.toSvg(), />3\.<\/text>/);
 assert.match(richTextShape.toSvg(), /font-family="Georgia" font-size="30" fill="#dc2626">•<\/text>/);
+assert.equal(pictureBulletShape.text.paragraphs[0].bulletImage.alt, "Green status");
+assert.match(pictureBulletShape.toSvg(), /<image[^>]*data:image\/png;base64/);
+assert.match(externalPictureBulletShape.toSvg(), /data-picture-bullet="external"/);
+assert.equal(groupedPictureBulletShape.text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
 assert.throws(() => richTextShape.text.set([{ bulletCharacter: "xx", runs: ["bad"] }]), /exactly one Unicode character/);
+assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletImage: pictureBulletPng, runs: ["bad"] }]), /exactly one of bulletCharacter, autoNumber, bulletImage, or bulletNone/);
+assert.throws(() => richTextShape.text.set([{ bulletImage: "data:text\/plain;base64,SGVsbG8=", runs: ["bad"] }]), /base64 PNG, JPEG, GIF, or SVG/);
 assert.throws(() => richTextShape.text.set([{ autoNumber: { type: "unsupported" }, runs: ["bad"] }]), /Unsupported Presentation auto-number type/);
 assert.throws(() => richTextShape.text.set([{ spaceBefore: 4, spaceBeforePercent: 0.2, runs: ["bad"] }]), /either spaceBefore or spaceBeforePercent/);
 assert.throws(() => richTextShape.text.set([{ bulletCharacter: "•", bulletFont: "Arial", bulletFontFollowText: true, runs: ["bad"] }]), /cannot combine bulletFont/);
@@ -983,16 +1013,28 @@ assert.match(paragraphInspect.ndjson, /"bulletCharacter":"•"/);
 assert.match(paragraphInspect.ndjson, /"bulletFont":"Georgia","bulletColor":"#dc2626"/);
 assert.match(paragraphInspect.ndjson, /"bulletSizePercent":1.5/);
 assert.match(paragraphInspect.ndjson, /"type":"arabicPeriod","startAt":3/);
+assert.match(paragraphPresentation.inspect({ kind: "textbox", target: pictureBulletShape.id, maxChars: 20_000 }).ndjson, /"bulletImage":\{"dataUrl":"data:image\/png;base64/);
 assert.match(paragraphPresentation.help("shape.text.set").ndjson, /structured paragraphs/);
 const paragraphPptx = await PresentationFile.exportPptx(paragraphPresentation);
 assert.equal((await PresentationFile.inspectPptx(paragraphPptx)).ok, true);
 const paragraphZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
 const paragraphSlideXml = await paragraphZip.file("ppt/slides/slide1.xml").async("text");
+const paragraphSlideRelsXml = await paragraphZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
 const paragraphMasterXml = await paragraphZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
 assert.match(paragraphSlideXml, /<a:buChar char="•"\/>/);
 assert.match(paragraphSlideXml, /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
 assert.match(paragraphSlideXml, /<a:buClr><a:srgbClr val="DC2626"\/><\/a:buClr><a:buSzPct val="150000"\/><a:buFont typeface="Georgia"\/><a:buChar char="•"\/>/);
 assert.match(paragraphSlideXml, /<a:buClrTx\/><a:buSzTx\/><a:buFontTx\/><a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
+assert.equal((paragraphSlideXml.match(/<a:buBlip><a:blip r:embed="rId\d+"\/><\/a:buBlip>/g) || []).length, 2);
+assert.match(paragraphSlideXml, /<a:buBlip><a:blip r:link="rId\d+"\/><\/a:buBlip>/);
+assert.match(paragraphSlideRelsXml, /Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image" Target="\.\.\/media\/image1\.png"/);
+assert.match(paragraphSlideRelsXml, /Target="https:\/\/example\.com\/status\.png" TargetMode="External"/);
+assert.ok(paragraphZip.file("ppt/media/image1.png"));
+assert.equal(Object.keys(paragraphZip.files).filter((file) => /^ppt\/media\/image\d+\.png$/.test(file)).length, 1);
+const missingPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+missingPictureBulletRelationshipZip.file("ppt/slides/_rels/slide1.xml.rels", paragraphSlideRelsXml.replace(/<Relationship[^>]*Target="\.\.\/media\/image1\.png"[^>]*\/>/, ""));
+const missingPictureBulletRelationshipPptx = new FileBlob(await missingPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(missingPictureBulletRelationshipPptx), /picture bullet references missing image relationship/);
 assert.match(paragraphSlideXml, /<a:rPr[^>]*b="1"/);
 assert.match(paragraphSlideXml, /<a:rPr[^>]*i="1"[^>]*u="sng"/);
 assert.match(paragraphMasterXml, /<a:lstStyle><a:lvl1pPr[^>]*marL="266700"[^>]*indent="-133350"/);
@@ -1005,6 +1047,9 @@ const inheritedParagraphPptx = new FileBlob(await paragraphZip.generateAsync({ t
 const paragraphLoaded = await PresentationFile.importPptx(inheritedParagraphPptx);
 const paragraphLoadedInherited = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List");
 const paragraphLoadedRich = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "rich-list");
+const paragraphLoadedPicture = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "picture-list");
+const paragraphLoadedExternalPicture = paragraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "external-picture-list");
+const paragraphLoadedGroupedPicture = paragraphLoaded.slides.items[0].groups.items.find((group) => group.name === "picture-bullet-group").shapes.items[0];
 assert.deepEqual(paragraphLoadedInherited.text.effectiveParagraphs().map((paragraph) => paragraph.bulletCharacter), ["•", "–"]);
 assert.deepEqual(paragraphLoadedInherited.position, { left: 80, top: 80, width: 720, height: 360 });
 assert.equal(paragraphLoadedInherited.text.effectiveParagraphs()[0].marginLeft, 28);
@@ -1032,20 +1077,27 @@ assert.equal(paragraphLoadedRich.text.paragraphs[2].bulletColorFollowText, true)
 assert.equal(paragraphLoadedRich.text.paragraphs[2].bulletSizeFollowText, true);
 assert.equal(paragraphLoadedRich.text.paragraphs[2].runs[0].style.italic, true);
 assert.equal(paragraphLoadedRich.text.paragraphs[2].runs[0].style.underline, "sng");
+assert.equal(paragraphLoadedPicture.text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
+assert.deepEqual(paragraphLoadedExternalPicture.text.paragraphs[0].bulletImage, { uri: "https://example.com/status.png", relationshipMode: "link" });
+assert.equal(paragraphLoadedGroupedPicture.text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
 const paragraphSecondPptx = await PresentationFile.exportPptx(paragraphLoaded);
 assert.equal((await PresentationFile.inspectPptx(paragraphSecondPptx)).ok, true);
 const paragraphSecondZip = await JSZip.loadAsync(new Uint8Array(await paragraphSecondPptx.arrayBuffer()));
 assert.match(await paragraphSecondZip.file("ppt/slides/slide1.xml").async("text"), /<a:buAutoNum type="arabicPeriod" startAt="3"\/>/);
+assert.equal(((await paragraphSecondZip.file("ppt/slides/slide1.xml").async("text")).match(/<a:buBlip>/g) || []).length, 3);
 assert.match(await paragraphSecondZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<p:bodyStyle>[\s\S]*?<a:buChar char="–"\/>/);
 const alternatePrefixParagraphZip = await JSZip.loadAsync(new Uint8Array(await inheritedParagraphPptx.arrayBuffer()));
 for (const file of ["ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml", "ppt/slides/slide1.xml"]) {
   const xml = await alternatePrefixParagraphZip.file(file).async("text");
-  alternatePrefixParagraphZip.file(file, xml.replaceAll("<p:", "<deck:").replaceAll("</p:", "</deck:").replace("xmlns:p=", "xmlns:deck=").replaceAll("<a:", "<draw:").replaceAll("</a:", "</draw:").replace("xmlns:a=", "xmlns:draw="));
+  let remapped = xml.replaceAll("<p:", "<deck:").replaceAll("</p:", "</deck:").replace("xmlns:p=", "xmlns:deck=").replaceAll("<a:", "<draw:").replaceAll("</a:", "</draw:").replace("xmlns:a=", "xmlns:draw=");
+  if (file.includes("/slides/")) remapped = remapped.replaceAll("r:", "rel:");
+  alternatePrefixParagraphZip.file(file, remapped);
 }
 const alternatePrefixParagraphPptx = new FileBlob(await alternatePrefixParagraphZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
 const alternatePrefixParagraphLoaded = await PresentationFile.importPptx(alternatePrefixParagraphPptx);
 assert.equal(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "Inherited List").text.effectiveParagraphs()[0].bulletCharacter, "•");
 assert.deepEqual(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "rich-list").text.paragraphs[2].autoNumber, { type: "arabicPeriod", startAt: 3 });
+assert.equal(alternatePrefixParagraphLoaded.slides.items[0].shapes.items.find((shape) => shape.name === "picture-list").text.paragraphs[0].bulletImage.dataUrl, pictureBulletPng);
 
 // Unsupported native drawing objects remain agent-visible and preserve their complete OPC relationship graph.
 const nativeObjectSource = Presentation.create();

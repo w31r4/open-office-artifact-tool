@@ -1039,12 +1039,12 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, and text." },
-  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
+  { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered paragraphs, styled runs, character/picture bullets, auto-numbering, marker font/color/size or follow-text semantics, levels, indents, spacing, inspect/layout/SVG output, and native DrawingML roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie chart facade with standard chart style IDs, color variation, bar direction/grouping/gap/overlap, line markers/smoothing, axes, legend, data labels, layout JSON, SVG preview, and native PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie chart facade with standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, axes, legend, data labels, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults." },
@@ -1901,7 +1901,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     placeholder: { type: "object", description: "Optional layout placeholder metadata." },
   }, "shape", "Shape", "Appended editable shape/textbox."),
   "shape.text.set": helpSchema({
-    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles." },
+    text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, run arrays, or paragraph objects with runs, level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and run styles. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI." },
   }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
@@ -1939,12 +1939,13 @@ const PRESENTATION_HELP_SCHEMAS = {
     chartType: { type: "string", description: "bar, line, or pie." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, optional colors, and per-series line marker/smooth overrides." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, and line marker/smooth options." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     axes: { type: "object", description: "Axis titles/options." },
     legend: { type: "object", description: "Legend options." },
     dataLabels: { type: "object", description: "Data-label options." },
     styleId: { type: "number", description: "Standard DrawingML chart style ID from 1 through 48." },
+    styleIndex: { type: "number", description: "Public-contract alias for styleId, from 1 through 48." },
     varyColors: { type: "boolean", description: "Whether categories may use varied colors." },
     barOptions: { type: "object", description: "Bar direction (column or bar), grouping (clustered, stacked, percentStacked), gapWidth 0-500, and overlap -100 to 100." },
     lineOptions: { type: "object", description: "Line grouping, default marker symbol/size, and smooth-line behavior; series may override marker and smooth." },
@@ -7995,8 +7996,8 @@ export class Shape {
     return rect + text;
   }
 
-  toPptxShape(index) {
-    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, nativeId: this.nativeId, creationId: this.creationId });
+  toPptxShape(index, relationshipContext = {}) {
+    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, pictureBulletRelIds: relationshipContext.pictureBulletRelIds, nativeId: this.nativeId, creationId: this.creationId });
   }
 }
 
@@ -8061,12 +8062,15 @@ export class TableElement {
 
 function normalizeChartSeries(seriesItems = []) {
   return (seriesItems || []).map((series, index) => {
-    const style = normalizePresentationChartSeriesStyle(series);
+    const values = (series.values || series.data || []).map((value) => value);
+    const style = normalizePresentationChartSeriesStyle(series, values.length);
     return {
       name: series.name || `Series ${index + 1}`,
-      values: (series.values || series.data || []).map((value) => value),
+      values,
       categories: series.categories,
-      color: series.color || series.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4],
+      color: style.color || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4],
+      ...(style.line ? { line: style.line } : {}),
+      ...(style.points.length ? { points: style.points } : {}),
       ...(style.marker ? { marker: style.marker } : {}),
       ...(style.smooth == null ? {} : { smooth: style.smooth }),
     };
@@ -8119,6 +8123,12 @@ function presentationChartMarkerSvg(marker, x, y, color) {
   return `<circle cx="${x}" cy="${y}" r="${marker.symbol === "dot" ? Math.max(1, radius / 2) : radius}" fill="${stroke}"/>`;
 }
 
+function presentationChartLineSvgAttributes(line) {
+  if (!line) return "";
+  const dash = { dot: "1 3", dash: "6 4", longDash: "10 4", dashDot: "6 3 1 3", longDashDot: "10 4 1 4", longDashDotDot: "10 3 1 3 1 3", systemDash: "4 3", systemDot: "1 2", systemDashDot: "4 2 1 2", systemDashDotDot: "4 2 1 2 1 2" }[line.style];
+  return ` stroke="${xmlEscape(resolveColorToken(line.fill, line.fill || "#0f172a"))}" stroke-width="${line.width}"${dash ? ` stroke-dasharray="${dash}"` : ""}`;
+}
+
 export class ChartElement {
   constructor(slide, chartType = "bar", config = {}) {
     this.slide = slide;
@@ -8168,13 +8178,14 @@ export class ChartElement {
       let angle = -Math.PI / 2;
       const slices = values.map((value, index) => {
         const next = angle + (value / total) * Math.PI * 2;
-        const color = resolveColorToken(["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9");
+        const point = series.points?.find((item) => item.idx === index);
+        const color = resolveColorToken(point?.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9");
         const label = this.dataLabels.showValue ? `<text x="${cx + (radius + 8) * Math.cos((angle + next) / 2)}" y="${cy + (radius + 8) * Math.sin((angle + next) / 2)}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(categories[index] ?? value)}</text>` : "";
-        const path = `<path d="${pieSlicePath(cx, cy, radius, angle, next)}" fill="${xmlEscape(color)}" stroke="#ffffff"/>${label}`;
+        const path = `<path d="${pieSlicePath(cx, cy, radius, angle, next)}" fill="${xmlEscape(color)}"${presentationChartLineSvgAttributes(point?.line || series.line) || ' stroke="#ffffff"'}/>${label}`;
         angle = next;
         return path;
       }).join("");
-      const categoryLegend = categories.map((category, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4])}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(category)}</text>`).join("");
+      const categoryLegend = categories.map((category, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9"))}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(category)}</text>`).join("");
       return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${slices}${this.legend.visible ? categoryLegend : ""}`;
     }
     let body = "";
@@ -8187,13 +8198,14 @@ export class ChartElement {
           const y = plot.top + plot.height - (plottedValue / max) * plot.height;
           return { x, y };
         });
-        const color = resolveColorToken(series.color, series.color);
+        const color = resolveColorToken(series.line?.fill || series.color, series.color);
         const smooth = series.smooth ?? this.lineOptions.smooth;
+        const strokeAttributes = presentationChartLineSvgAttributes(series.line) || ` stroke="${xmlEscape(color)}" stroke-width="2"`;
         const line = smooth && points.length > 2
-          ? `<path d="M ${points[0].x} ${points[0].y} ${points.slice(1, -1).map((point, index) => { const next = points[index + 2]; return `Q ${point.x} ${point.y} ${(point.x + next.x) / 2} ${(point.y + next.y) / 2}`; }).join(" ")} T ${points.at(-1).x} ${points.at(-1).y}" fill="none" stroke="${xmlEscape(color)}" stroke-width="2"/>`
-          : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none" stroke="${xmlEscape(color)}" stroke-width="2"/>`;
+          ? `<path d="M ${points[0].x} ${points[0].y} ${points.slice(1, -1).map((point, index) => { const next = points[index + 2]; return `Q ${point.x} ${point.y} ${(point.x + next.x) / 2} ${(point.y + next.y) / 2}`; }).join(" ")} T ${points.at(-1).x} ${points.at(-1).y}" fill="none"${strokeAttributes}/>`
+          : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${strokeAttributes}/>`;
         const marker = series.marker || this.lineOptions.marker;
-        return `${line}${points.map((point) => presentationChartMarkerSvg(marker, point.x, point.y, color)).join("")}`;
+        return `${line}${points.map((point, index) => presentationChartMarkerSvg(marker, point.x, point.y, resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || color, color))).join("")}`;
       }).join("");
     } else {
       const horizontal = this.barOptions.direction === "bar";
@@ -8207,19 +8219,21 @@ export class ChartElement {
         const ratio = this.barOptions.grouping === "percentStacked" ? value / total : value / max;
         const offset = offsets[categoryIndex];
         offsets[categoryIndex] += ratio;
-        const color = xmlEscape(resolveColorToken(series.color, series.color));
+        const point = series.points?.find((item) => item.idx === categoryIndex);
+        const color = xmlEscape(resolveColorToken(point?.fill || series.color, series.color));
+        const stroke = presentationChartLineSvgAttributes(point?.line || series.line);
         if (horizontal) {
           const width = plot.width * ratio;
           const x = plot.left + (stackedBars ? plot.width * offset : 0);
           const y = plot.top + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * this.series.length) / 2 + seriesIndex * barExtent);
           const label = this.dataLabels.showValue ? `<text x="${x + width + 3}" y="${y + barExtent - 2}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(rawValue)}</text>` : "";
-          return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"/>${label}`;
+          return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"${stroke}/>${label}`;
         }
         const height = plot.height * ratio;
         const x = plot.left + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * this.series.length) / 2 + seriesIndex * barExtent);
         const y = plot.top + plot.height - height - (stackedBars ? plot.height * offset : 0);
         const label = this.dataLabels.showValue ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(rawValue)}</text>` : "";
-        return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"/>${label}`;
+        return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"${stroke}/>${label}`;
       })).join("");
     }
     const labels = this.chartType === "bar" && this.barOptions.direction === "bar"
@@ -8298,7 +8312,7 @@ export class PresentationFile {
     const reservedPresentationPaths = new Set([
       "ppt/presentation.xml",
       ...presentation.slides.items.map((_, index) => `ppt/slides/slide${index + 1}.xml`),
-      ...imageParts.map((part) => `ppt/media/image${part.imagePartId}.${part.extension}`),
+      ...imageParts.filter((part) => part.bytes).map((part) => `ppt/media/image${part.imagePartId}.${part.extension}`),
       ...chartParts.map((part) => `ppt/charts/chart${part.chartPartId}.xml`),
       ...themeParts.map((part) => `ppt/theme/theme${part.themePartId}.xml`),
       ...masterParts.map((part) => `ppt/slideMasters/slideMaster${part.masterPartId}.xml`),
@@ -8346,7 +8360,7 @@ export class PresentationFile {
     });
     if (commentAuthors.entries.length) zip.file("ppt/commentAuthors.xml", pptxCommentAuthorsXml(commentAuthors));
     if (modernComments.authors.length) zip.file("ppt/authors.xml", presentationModernAuthorsXml(modernComments));
-    imageParts.forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
+    imageParts.filter((part) => part.bytes).forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
     chartParts.forEach((part) => zip.file(`ppt/charts/chart${part.chartPartId}.xml`, presentationChartXml(part.chart)));
     nativeObjectPlan.parts.forEach((part) => {
       zip.file(part.outputPath, part.bytes);
@@ -8503,18 +8517,50 @@ function collectPresentationImageParts(presentation) {
   let imagePartId = 1;
   presentation.slides.items.forEach((slide, slideIndex) => {
     let relIndex = 1;
+    const bySource = new Map();
     presentationSlideElements(slide).filter((element) => element instanceof ImageElement).forEach((image, imageIndex) => {
       const data = imageDataFromDataUrl(image.dataUrl);
       if (!data) return;
-      parts.push({
+      const part = {
         slide,
         slideIndex,
         image,
         imageIndex,
         imagePartId: imagePartId++,
         slideRelId: `rId${relIndex++}`,
+        source: image.dataUrl,
+        bulletOwnerIds: new Set(),
         ...data,
-      });
+      };
+      parts.push(part);
+      bySource.set(part.source, part);
+    });
+    presentationSlideElements(slide).filter((element) => element instanceof Shape).forEach((shape) => {
+      for (const paragraph of shape.text.effectiveParagraphs()) {
+        const bulletImage = paragraph.bulletImage;
+        if (!bulletImage) continue;
+        const source = bulletImage.dataUrl || bulletImage.uri;
+        let part = bySource.get(source);
+        if (!part) {
+          const data = bulletImage.dataUrl ? imageDataFromDataUrl(bulletImage.dataUrl) : undefined;
+          if (bulletImage.dataUrl && !data) throw new TypeError(`Presentation picture bullet on shape ${shape.name || shape.id} has an unsupported data URL.`);
+          part = {
+            slide,
+            slideIndex,
+            image: undefined,
+            imageIndex: undefined,
+            imagePartId: data ? imagePartId++ : undefined,
+            slideRelId: `rId${relIndex++}`,
+            source,
+            external: Boolean(bulletImage.uri),
+            bulletOwnerIds: new Set(),
+            ...(data || {}),
+          };
+          parts.push(part);
+          bySource.set(source, part);
+        }
+        part.bulletOwnerIds.add(shape.id);
+      }
     });
   });
   return parts;
@@ -8563,7 +8609,7 @@ function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presenta
 
 function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
   return relsXml([
-    ...imageParts.map((part) => ({ id: part.slideRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `../media/image${part.imagePartId}.${part.extension}` })),
+    ...imageParts.map((part) => ({ id: part.slideRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: part.external ? part.source : `../media/image${part.imagePartId}.${part.extension}`, ...(part.external ? { targetMode: "External" } : {}) })),
     ...chartParts.map((part) => ({ id: part.slideRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart", target: `../charts/chart${part.chartPartId}.xml` })),
     ...(extras.nativeRelationships || []),
     ...(extras.layoutRelId ? [{ id: extras.layoutRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: `../slideLayouts/slideLayout${extras.layoutPartId}.xml` }] : []),
@@ -8704,7 +8750,8 @@ function pptxTextShapeXml(index, name, geometry, position, text = "", placeholde
   const transform = p ? `<a:xfrm><a:off x="${Math.round(p.left * 9525)}" y="${Math.round(p.top * 9525)}"/><a:ext cx="${Math.round(p.width * 9525)}" cy="${Math.round(p.height * 9525)}"/></a:xfrm>` : "";
   const textStyle = options.textStyle || {};
   const paragraphModels = options.paragraphs || normalizePresentationParagraphs(text);
-  const paragraphs = presentationParagraphsXml(paragraphModels, textStyle);
+  const pictureBulletRelIds = options.pictureBulletRelIds || new Map();
+  const paragraphs = presentationParagraphsXml(paragraphModels, textStyle, { pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) });
   const listStyle = presentationListStyleXml(options.paragraphStyles || options.inheritedParagraphStyles || {});
   const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx || 1)}"/>` : "";
   const shapeProperties = transform ? `<p:spPr>${transform}<a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr>` : "<p:spPr/>";
@@ -8834,9 +8881,15 @@ function pptxChartFrameXml(index, name, position, relId, identity = {}) {
 }
 
 function slideXml(slide, imageParts = [], chartParts = [], nativeObjectEntries = new Map()) {
-  const imageRelById = new Map(imageParts.map((part) => [part.image.id, part.slideRelId]));
+  const imageRelById = new Map(imageParts.filter((part) => part.image).map((part) => [part.image.id, part.slideRelId]));
   const chartRelById = new Map(chartParts.map((part) => [part.chart.id, part.slideRelId]));
-  const relationshipById = new Map([...imageRelById, ...chartRelById, ...nativeObjectEntries]);
+  const pictureBulletRelByOwner = new Map();
+  for (const part of imageParts) for (const ownerId of part.bulletOwnerIds || []) {
+    const context = pictureBulletRelByOwner.get(ownerId) || { pictureBulletRelIds: new Map() };
+    context.pictureBulletRelIds.set(part.source, part.slideRelId);
+    pictureBulletRelByOwner.set(ownerId, context);
+  }
+  const relationshipById = new Map([...imageRelById, ...chartRelById, ...pictureBulletRelByOwner, ...nativeObjectEntries]);
   const elements = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items, ...slide.nativeObjects.items];
   const shapes = elements.map((element, index) => element.toPptxShape(index, element instanceof GroupShape ? relationshipById : relationshipById.get(element.id))).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld>${presentationBackgroundXml(slide.background.fill ? slide.background : undefined)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes}</p:spTree></p:cSld></p:sld>`;
@@ -8870,6 +8923,23 @@ function pptxRelationshipTarget(rels, relId) {
   if (!rel?.target) return undefined;
   const target = rel.target.replace(/^\//, "");
   return target.startsWith("ppt/") ? target : path.posix.normalize(`ppt/slides/${target}`).replace(/^\.\//, "");
+}
+
+async function resolvePptxParagraphPictureBullets(paragraphs = [], context = {}) {
+  return Promise.all(paragraphs.map(async (paragraph) => {
+    const bulletImage = paragraph.bulletImage;
+    if (!bulletImage?.relationshipId) return paragraph;
+    const relationship = (context.rels || []).find((item) => item.id === bulletImage.relationshipId);
+    if (!relationship || !relationship.type.endsWith("/image")) throw new Error(`Presentation picture bullet references missing image relationship ${bulletImage.relationshipId}.`);
+    if (relationship.targetMode?.toLowerCase() === "external" || bulletImage.relationshipMode === "link") {
+      return { ...paragraph, bulletImage: { uri: relationship.target, relationshipMode: "link", ...(bulletImage.alt == null ? {} : { alt: bulletImage.alt }) } };
+    }
+    const target = ooxmlSafePartPath(ooxmlResolveRelationshipTarget(context.slidePath || "ppt/slides/slide1.xml", relationship.target), "PPTX");
+    const bytes = await context.zip?.file(target)?.async("uint8array");
+    if (!bytes) throw new Error(`Presentation picture bullet relationship ${bulletImage.relationshipId} targets missing part ${target}.`);
+    const extension = path.posix.extname(target).slice(1) || "png";
+    return { ...paragraph, bulletImage: { dataUrl: `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}`, relationshipMode: "embed", ...(bulletImage.alt == null ? {} : { alt: bulletImage.alt }) } };
+  }));
 }
 
 function parsePptxSlideLayout(presentation, xml = "", fallbackId = "imported-layout", masterId = "master/default") {
@@ -8953,7 +9023,7 @@ function parsePptxConnector(owner, part) {
   return applyPresentationElementIdentity(owner.connectors.add({ name, start, end, startTargetId, endTargetId, line: { fill: "#334155", width: 2, endArrow: /<(?:[A-Za-z_][\w.-]*:)?tailEnd\b/.test(part) ? "triangle" : undefined } }), part, "cxnSpMk");
 }
 
-function parsePptxShape(owner, part, context = {}) {
+async function parsePptxShape(owner, part, context = {}) {
     const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
     const phAttrs = /<(?:[A-Za-z_][\w.-]*:)?ph\b([^>]*)\/?>(?:<\/(?:[A-Za-z_][\w.-]*:)?ph>)?/.exec(part)?.[1];
     const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "body", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 1), name } : undefined;
@@ -8967,7 +9037,7 @@ function parsePptxShape(owner, part, context = {}) {
     const rPr = /<(?:[A-Za-z_][\w.-]*:)?rPr\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?rPr>/.exec(part);
     const localTextStyle = parsePresentationPlaceholderStyleXml(rPr?.[0] || "");
     const paragraphStyles = inherited?.paragraphStyles || {};
-    const paragraphs = parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles });
+    const paragraphs = await resolvePptxParagraphPictureBullets(parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles }), context);
     const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), text: paragraphs, placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
     applyPresentationElementIdentity(shape, part, "spMk");
     shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
@@ -8983,7 +9053,7 @@ async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined })
   slide.background = parsePresentationBackgroundXml(xml) || {};
   for (const child of directPresentationChildren(xml, "spTree")) {
     const part = child.xml;
-    if (child.localName === "sp") parsePptxShape(slide, part, context);
+    if (child.localName === "sp") await parsePptxShape(slide, part, context);
     else if (child.localName === "graphicFrame") await parsePptxGraphicFrame(slide, part, context);
     else if (child.localName === "pic") await parsePptxPicture(slide, part, context);
     else if (child.localName === "cxnSp") parsePptxConnector(slide, part);
