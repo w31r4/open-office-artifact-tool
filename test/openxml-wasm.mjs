@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import JSZip from "jszip";
-import { DocumentFile, DocumentModel, Workbook, SpreadsheetFile } from "../src/index.mjs";
+import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
 import {
   OpenXmlWasmCodecError,
   exportDocxWithOpenXmlWasm,
+  exportPptxWithOpenXmlWasm,
   exportXlsxWithOpenXmlWasm,
   importDocxWithOpenXmlWasm,
+  importPptxWithOpenXmlWasm,
   importXlsxWithOpenXmlWasm,
   openXmlWasmStatus,
 } from "../src/codecs/openxml-wasm.mjs";
@@ -148,6 +150,65 @@ unsupportedDocument.addHyperlink("Unsupported direct authoring", "https://exampl
 await assert.rejects(
   exportDocxWithOpenXmlWasm(unsupportedDocument),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_document_features",
+);
+
+const minimalPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+minimalPresentation.slides.add({ name: "Overview" }).shapes.add({
+  name: "Title",
+  geometry: "rect",
+  position: { left: 60, top: 40, width: 860, height: 70 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: "OpenXML WASM presentation",
+});
+const pptxExported = await exportPptxWithOpenXmlWasm(minimalPresentation);
+assert.deepEqual([...pptxExported.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+assert.equal(pptxExported.type, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+assert.equal(pptxExported.metadata.codec, "openxml-wasm");
+assert.equal((await PresentationFile.inspectPptx(pptxExported)).ok, true);
+const pptxImported = await importPptxWithOpenXmlWasm(pptxExported);
+assert.equal(pptxImported.slides.count, 1);
+assert.equal(pptxImported.slides.getItem(0).shapes.items[0].text.value, "OpenXML WASM presentation");
+assert.equal(pptxImported.verify().ok, true);
+
+const preservedPresentation = Presentation.create({
+  master: { id: "master/preservation", name: "Preservation master", background: "#FFFFFF", placeholders: [] },
+});
+const preservedSlide = preservedPresentation.slides.add({ name: "Opaque graph" });
+preservedSlide.shapes.add({ name: "Editable title", position: { left: 40, top: 32, width: 720, height: 64 }, fill: "#FFFFFF", line: { fill: "#334155", width: 1 }, text: "Before WASM" });
+preservedSlide.images.add({
+  name: "Preserved image",
+  alt: "Opaque image evidence",
+  position: { left: 40, top: 140, width: 180, height: 120 },
+  dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+});
+preservedSlide.charts.add("bar", {
+  name: "Preserved chart",
+  position: { left: 300, top: 140, width: 560, height: 360 },
+  categories: ["Model", "Package"],
+  series: [{ name: "Evidence", values: [8, 12] }],
+});
+const presentationSource = await PresentationFile.exportPptx(preservedPresentation);
+const presentationImported = await importPptxWithOpenXmlWasm(presentationSource);
+assert.equal(presentationImported.slides.getItem(0).nativeObjects.items.length, 2);
+presentationImported.slides.getItem(0).shapes.items[0].text.set("After WASM");
+const presentationPreserved = await exportPptxWithOpenXmlWasm(presentationImported);
+assert.equal(presentationPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
+const presentationRoundTrip = await PresentationFile.importPptx(presentationPreserved);
+assert.equal(presentationRoundTrip.slides.getItem(0).shapes.items[0].text.value, "After WASM");
+assert.equal(presentationRoundTrip.slides.getItem(0).images.items.length, 1);
+assert.equal(presentationRoundTrip.slides.getItem(0).charts.items.length, 1);
+presentationImported.slides.getItem(0).nativeObjects.items[0].name = "Unsafe native edit";
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(presentationImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_edit",
+);
+
+const unsupportedPresentation = Presentation.create();
+unsupportedPresentation.slides.add().images.add({ prompt: "Unsupported direct image authoring" });
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(unsupportedPresentation),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_features",
 );
 
 assert.equal(status.available, true);

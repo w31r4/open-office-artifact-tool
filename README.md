@@ -55,7 +55,7 @@ Every informative PDF image and chart must provide concise, meaningful `alt` tex
 
 Set `headingLevel: 1` through `6` on positioned PDF text that acts as a heading. Visual style remains independent from semantics: the value is preserved through inspect/layout/model roundtrip and exported as an H1-H6 structure role. `pdf.verify()` reports a heading sequence that starts below H1 or skips a level, and the runnable verifier compares modeled heading counts with the real tagged bytes.
 
-The bundled codec also has a bounded DOCX slice. The complex Documents fixture crosses it with source-preserving advanced WordprocessingML and real page-render QA; direct authoring outside the modeled paragraph/run/table subset still fails closed.
+The bundled codec also has bounded DOCX and PPTX slices. The complex Documents fixture crosses DOCX with source-preserving advanced WordprocessingML and real page-render QA. PPTX models simple top-level rectangle/ellipse shapes, while pictures, charts, groups, connectors, content parts, notes, masters, themes, and their relationship graphs are source-bound and retained unchanged until their editable semantics land. Direct authoring outside each modeled subset fails closed.
 
 ## Usage
 
@@ -99,6 +99,22 @@ import { exportDocxWithOpenXmlWasm, importDocxWithOpenXmlWasm } from "open-offic
 const document = DocumentModel.create({ paragraphs: ["OpenXML WASM document"] });
 const docx = await exportDocxWithOpenXmlWasm(document);
 const importedDocument = await importDocxWithOpenXmlWasm(docx);
+```
+
+PPTX uses the same loss-aware boundary. A simple deck can be authored directly; importing an advanced deck carries a hash-bound package snapshot and per-slide/per-shape-tree bindings so unsupported native objects survive a safe modeled shape edit.
+
+```js
+import { Presentation } from "open-office-artifact-tool";
+import { exportPptxWithOpenXmlWasm, importPptxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+
+const deck = Presentation.create();
+deck.slides.add({ name: "Overview" }).shapes.add({
+  name: "Title",
+  text: "OpenXML WASM presentation",
+  position: { left: 60, top: 40, width: 860, height: 70 },
+});
+const pptx = await exportPptxWithOpenXmlWasm(deck);
+const importedDeck = await importPptxWithOpenXmlWasm(pptx);
 ```
 
 Presentation compose-first authoring uses helper nodes that mirror the agent-oriented JSX vocabulary while staying transpiler-free:

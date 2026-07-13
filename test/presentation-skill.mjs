@@ -207,6 +207,26 @@ try {
   assert.match(packageDrawing.qa.inspect.ndjson, /Agent status/);
   assert.equal(packageDrawing.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
+  const wasmPreservation = await runPresentationFixture("skills/presentations/fixtures/openxml-wasm-preservation.json", {
+    outputDir: path.join(root, "openxml-wasm-preservation"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(wasmPreservation.roundtripCodec, "openxml-wasm");
+  assert.equal(wasmPreservation.qa.summary.packageOk, true);
+  assert.equal(wasmPreservation.qa.verify.ok, true);
+  const wasmSlide = wasmPreservation.qa.presentation.slides.items[0];
+  assert.equal(wasmSlide.shapes.items.find((item) => item.name === "wasm-title")?.text.value, "After OpenXML WASM");
+  assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
+  assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
+  assert.match(wasmSlide.speakerNotes.text, /parts, and relationships must survive/);
+  const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmPreservation.pptxPath));
+  assert.ok(wasmZip.file("ppt/charts/chart1.xml"));
+  assert.ok(wasmZip.file("ppt/media/image1.png"));
+  assert.ok(wasmZip.file("ppt/notesSlides/notesSlide1.xml"));
+  assert.ok(wasmZip.file("ppt/slideMasters/slideMaster1.xml"));
+  assert.match(await wasmZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /relationships\/(?:chart|image|notesSlide|slideLayout)/);
+  assert.equal(wasmPreservation.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const packageReview = await runPresentationFixture("skills/presentations/fixtures/package-notes-comments.json", {
     outputDir: path.join(root, "package-notes-comments"),
     nativeRender: nativeStatus.available ? "required" : "auto",

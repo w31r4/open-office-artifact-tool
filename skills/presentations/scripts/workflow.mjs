@@ -16,6 +16,7 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+import { exportPptxWithOpenXmlWasm, importPptxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
 import {
   prepareNumberedVisualBaselines,
   runPngVisualQa,
@@ -324,6 +325,19 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   let pptx = await PresentationFile.exportPptx(presentation);
   pptx = await applyFixturePackageDrawing(pptx, fixture);
   pptx = await applyFixturePackageReview(pptx, fixture);
+  const roundtripCodec = String(options.roundtripCodec || fixture.roundtripCodec || "none").toLowerCase();
+  if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported presentation roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
+  if (roundtripCodec === "openxml-wasm") {
+    const imported = await importPptxWithOpenXmlWasm(pptx);
+    const edit = fixture.openXmlWasm?.edit;
+    if (edit) {
+      const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
+      const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
+      assert.ok(shape, `Missing OpenXML WASM editable shape ${edit.shapeName || edit.shapeId}`);
+      shape.text.set(edit.text ?? shape.text.value);
+    }
+    pptx = await exportPptxWithOpenXmlWasm(imported);
+  }
   await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {
     outputDir: path.join(outputDir, "qa"),
@@ -337,5 +351,5 @@ export async function runPresentationFixture(fixturePath, options = {}) {
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
   });
-  return { fixture, pptxPath, qa };
+  return { fixture, pptxPath, qa, roundtripCodec };
 }

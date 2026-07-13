@@ -1,6 +1,6 @@
 # Reference runtime architecture and clean-room direction
 
-- Status: accepted direction, XLSX and DOCX WebAssembly vertical slices implemented; migration active
+- Status: accepted direction, XLSX, DOCX, and PPTX WebAssembly vertical slices implemented; migration active
 - Evidence snapshot: 2026-07-13
 - Reference package: `office-artifact-tool@2.8.22`
 - Reference runtime asset package: `@officer/walnut@0.1.210`
@@ -133,15 +133,19 @@ Primary public references:
 The first source-built boundary now exists:
 
 - `proto/open_office/artifact/v1/office_artifact.proto` is the independently designed, versioned public wire contract. Buf generates the shipped JavaScript binding; `Grpc.Tools` generates the C# binding from the same source.
-- `native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec` uses `DocumentFormat.OpenXml` 3.5.1 and `Google.Protobuf` 3.35.1 for bounded XLSX/DOCX import/export and structured diagnostics.
+- `native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec` uses `DocumentFormat.OpenXml` 3.5.1 and `Google.Protobuf` 3.35.1 for bounded XLSX/DOCX/PPTX import/export and structured diagnostics.
 - `native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm` exposes one `[JSExport]` byte-in/byte-out method and publishes a trimmed `browser-wasm` AppBundle.
-- `src/codecs/openxml-wasm.mjs` lazily initializes and caches that runtime, maps JavaScript workbook and document models to the public wire schema, fails closed when direct authoring leaves a modeled slice, and carries validated source-package preservation state across imported edits.
+- `src/codecs/openxml-wasm.mjs` lazily initializes and caches that runtime, maps JavaScript workbook, document, and presentation models to the public wire schema, fails closed when direct authoring leaves a modeled slice, and carries validated source-package preservation state across imported edits.
 - `runtime/openxml-wasm` contains the reproducible release bundle, integrity manifest, CycloneDX SBOM, .NET license, and upstream third-party notices. It is built from this repository; it contains no reference-package artifact.
-- The npm clean-install gate packs the real tarball, installs it in a temporary directory, removes `dotnet` from runtime `PATH`, and performs XLSX plus DOCX export/import through the public package subpath.
+- The npm clean-install gate packs the real tarball, installs it in a temporary directory, removes `dotnet` from runtime `PATH`, and performs XLSX, DOCX, and PPTX export/import through the public package subpath.
 
 The first slice covers workbook date systems, worksheets, primitive and cached-formula cells, merged ranges, row/column dimensions, gridline state, and frozen panes. Import stores one budget-checked source-package snapshot plus opaque part digests and relationship inventory in the public envelope. Second export verifies the snapshot SHA-256 and source identity, updates modeled fields in the original package through Open XML SDK, validates the complete result against Office 2021, and then rejects it unless all opaque part digests and relationships still match. This preserves imported styles, themes, tables, pivots, drawings, comments, validations, defined names, and arbitrary legal targets without pretending those features are semantically modeled by C#. Direct advanced authoring still uses the JavaScript codec, and missing/tampered preservation state remains fail-closed unless the caller explicitly accepts lossy rebuilding.
 
-The DOCX slice models ordered paragraphs, limited direct run formatting, and table text. Imported body blocks carry their original body position, XML digest, semantic digest, and an editability flag. Unchanged advanced WordprocessingML remains in the hash-bound source package; attempts to modify hyperlinks, fields, comments/bookmarks, drawings, numbering, sections, tables, or opaque top-level blocks fail closed until those semantics are modeled. The complex business-brief fixture crosses this path and then runs the existing JS package/semantic plus LibreOffice/Poppler gates. PPTX remains on the JavaScript semantic codec. The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
+The DOCX slice models ordered paragraphs, limited direct run formatting, and table text. Imported body blocks carry their original body position, XML digest, semantic digest, and an editability flag. Unchanged advanced WordprocessingML remains in the hash-bound source package; attempts to modify hyperlinks, fields, comments/bookmarks, drawings, numbering, sections, tables, or opaque top-level blocks fail closed until those semantics are modeled. The complex business-brief fixture crosses this path and then runs the existing JS package/semantic plus LibreOffice/Poppler gates.
+
+The PPTX slice models slide order/size and simple top-level rectangle/ellipse shapes. Every imported slide binds to its source part and presentation relationship; every top-level shape-tree element binds to its ordinal, XML digest, semantic digest, and editability state. Safe shape edits mutate the existing PresentationML element in place so unmodeled run properties survive. Pictures, charts/graphic frames, groups, connectors, content parts, notes, masters, layouts, themes, media, and arbitrary recursive OPC graphs remain source-preserved and read-only. Post-write validation requires Office 2021 zero errors, exact opaque graph equality, and byte equality for every package part except the explicitly changed slide XML. The runnable `openxml-wasm-preservation` fixture crosses JS export, WASM import/edit/export, JS semantic/package verification, and Playwright plus optional LibreOffice/Poppler rendering.
+
+The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
 ## Target architecture
 
@@ -226,9 +230,10 @@ The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wa
 3. **Implemented:** package the runtime and run the installed tarball with `dotnet` removed from runtime `PATH`.
 4. **Implemented locally and in hosted Linux CI:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, all-sheet Playwright output, and LibreOffice/Poppler native pages.
 5. **Implemented for imported XLSX:** retain a hash-bound source package, edit modeled fields in place, and verify opaque part/relationship preservation after write. Broader third-party corpus roundtrips remain the next XLSX migration gate.
-6. **DOCX first slice implemented locally and in hosted Linux CI:** ordered paragraph/run/table semantics, block-level source bindings, advanced-content preservation, complex runnable fixture, and no-local-dotnet package probe. Hosted run [`29264703143`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29264703143) passed the complete runtime/render/package/.NET gate. Broaden editable DOCX semantics and third-party corpus evidence, then extend the same runtime/schema/package graph to PPTX. Use the PPTX bundle design from the start rather than postponing native-object preservation.
-7. Make WebAssembly the default only after compatibility and failure-mode gates pass. Retain an explicit JavaScript fallback until the migration matrix is complete.
-8. Keep PDF and render adapters on their existing independent paths.
+6. **DOCX first slice implemented locally and in hosted Linux CI:** ordered paragraph/run/table semantics, block-level source bindings, advanced-content preservation, complex runnable fixture, and no-local-dotnet package probe. Hosted run [`29264703143`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29264703143) passed the complete runtime/render/package/.NET gate.
+7. **PPTX first slice implemented locally:** simple shape authoring/editing, slide/element source bindings, opaque native-object preservation from the first slice, Office 2021 validation, runnable render-backed fixture, and no-local-dotnet package probe. Hosted Linux CI and broader third-party corpus evidence remain pending.
+8. Make WebAssembly the default only after compatibility and failure-mode gates pass. Retain an explicit JavaScript fallback until the migration matrix is complete.
+9. Keep PDF and render adapters on their existing independent paths.
 
 ## First vertical-slice acceptance criteria
 

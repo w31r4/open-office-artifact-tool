@@ -15,8 +15,8 @@ try {
 
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", tarball], temporary);
   const probe = `
-    import { DocumentModel, Workbook } from "open-office-artifact-tool";
-    import { exportDocxWithOpenXmlWasm, exportXlsxWithOpenXmlWasm, importDocxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+    import { DocumentModel, Presentation, Workbook } from "open-office-artifact-tool";
+    import { exportDocxWithOpenXmlWasm, exportPptxWithOpenXmlWasm, exportXlsxWithOpenXmlWasm, importDocxWithOpenXmlWasm, importPptxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
     const workbook = Workbook.create({ dateSystem: "1904" });
     const sheet = workbook.worksheets.add("Packaged");
     sheet.getRange("A1:B1").values = [["clean install", 7]];
@@ -29,6 +29,12 @@ try {
     const importedDocument = await importDocxWithOpenXmlWasm(docx);
     if (docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(3);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(4);
+    const presentation = Presentation.create();
+    presentation.slides.add({ name: "Packaged" }).shapes.add({ name: "Title", text: "clean install PPTX", position: { left: 40, top: 40, width: 640, height: 80 } });
+    const pptx = await exportPptxWithOpenXmlWasm(presentation);
+    const importedPresentation = await importPptxWithOpenXmlWasm(pptx);
+    if (pptx.bytes[0] !== 0x50 || pptx.bytes[1] !== 0x4b) process.exit(5);
+    if (importedPresentation.slides.getItem(0).shapes.items[0].text.value !== "clean install PPTX") process.exit(6);
   `;
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
     PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin",
