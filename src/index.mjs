@@ -24,6 +24,7 @@ import { mergePresentationPlaceholders, normalizePresentationBackground, parsePr
 import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
 import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
 import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
+import { normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
@@ -1043,7 +1044,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie chart facade with chartType, title, categories, series colors, axes, legend, data labels, layout JSON, SVG preview, and PPTX chart output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie chart facade with standard chart style IDs, color variation, bar direction/grouping/gap/overlap, line markers/smoothing, axes, legend, data labels, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure its identity, background, optional theme override, and typed placeholder defaults." },
@@ -1938,11 +1939,15 @@ const PRESENTATION_HELP_SCHEMAS = {
     chartType: { type: "string", description: "bar, line, or pie." },
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", required: true, description: "Category labels." },
-    series: { type: "object[]", required: true, description: "Series with names, numeric values, and optional colors." },
+    series: { type: "object[]", required: true, description: "Series with names, numeric values, optional colors, and per-series line marker/smooth overrides." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     axes: { type: "object", description: "Axis titles/options." },
     legend: { type: "object", description: "Legend options." },
     dataLabels: { type: "object", description: "Data-label options." },
+    styleId: { type: "number", description: "Standard DrawingML chart style ID from 1 through 48." },
+    varyColors: { type: "boolean", description: "Whether categories may use varied colors." },
+    barOptions: { type: "object", description: "Bar direction (column or bar), grouping (clustered, stacked, percentStacked), gapWidth 0-500, and overlap -100 to 100." },
+    lineOptions: { type: "object", description: "Line grouping, default marker symbol/size, and smooth-line behavior; series may override marker and smooth." },
   }, "chart", "ChartElement", "Appended editable native-chart facade."),
   "slide.images.add": helpSchema({
     dataUrl: { type: "string", description: "Embedded image data URL." },
@@ -8055,12 +8060,17 @@ export class TableElement {
 }
 
 function normalizeChartSeries(seriesItems = []) {
-  return (seriesItems || []).map((series, index) => ({
-    name: series.name || `Series ${index + 1}`,
-    values: (series.values || series.data || []).map((value) => value),
-    categories: series.categories,
-    color: series.color || series.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4],
-  }));
+  return (seriesItems || []).map((series, index) => {
+    const style = normalizePresentationChartSeriesStyle(series);
+    return {
+      name: series.name || `Series ${index + 1}`,
+      values: (series.values || series.data || []).map((value) => value),
+      categories: series.categories,
+      color: series.color || series.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4],
+      ...(style.marker ? { marker: style.marker } : {}),
+      ...(style.smooth == null ? {} : { smooth: style.smooth }),
+    };
+  });
 }
 
 function normalizeChartAxes(config = {}) {
@@ -8095,6 +8105,20 @@ function pieSlicePath(cx, cy, radius, startAngle, endAngle) {
   return `M ${cx} ${cy} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
 }
 
+function presentationChartMarkerSvg(marker, x, y, color) {
+  if (!marker || marker.symbol === "none") return "";
+  const size = Math.max(2, Number(marker.size) || 5);
+  const radius = size / 2;
+  const stroke = xmlEscape(color);
+  if (marker.symbol === "square") return `<rect x="${x - radius}" y="${y - radius}" width="${size}" height="${size}" fill="${stroke}"/>`;
+  if (marker.symbol === "diamond") return `<path d="M ${x} ${y - radius} L ${x + radius} ${y} L ${x} ${y + radius} L ${x - radius} ${y} Z" fill="${stroke}"/>`;
+  if (marker.symbol === "triangle") return `<path d="M ${x} ${y - radius} L ${x + radius} ${y + radius} L ${x - radius} ${y + radius} Z" fill="${stroke}"/>`;
+  if (marker.symbol === "x") return `<path d="M ${x - radius} ${y - radius} L ${x + radius} ${y + radius} M ${x + radius} ${y - radius} L ${x - radius} ${y + radius}" fill="none" stroke="${stroke}" stroke-width="1.5"/>`;
+  if (marker.symbol === "plus") return `<path d="M ${x - radius} ${y} L ${x + radius} ${y} M ${x} ${y - radius} L ${x} ${y + radius}" fill="none" stroke="${stroke}" stroke-width="1.5"/>`;
+  if (marker.symbol === "dash") return `<line x1="${x - radius}" y1="${y}" x2="${x + radius}" y2="${y}" stroke="${stroke}" stroke-width="2"/>`;
+  return `<circle cx="${x}" cy="${y}" r="${marker.symbol === "dot" ? Math.max(1, radius / 2) : radius}" fill="${stroke}"/>`;
+}
+
 export class ChartElement {
   constructor(slide, chartType = "bar", config = {}) {
     this.slide = slide;
@@ -8111,20 +8135,25 @@ export class ChartElement {
     this.legend = normalizeChartLegend(config, this.series.length);
     this.hasLegend = this.legend.visible;
     this.dataLabels = normalizeChartDataLabels(config);
+    Object.assign(this, normalizePresentationChartStyle(this.chartType, config));
   }
 
   inspectRecord() {
     const p = this.position;
-    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, chartType: this.chartType, title: this.title, categories: this.categories, series: this.series.length, seriesDetails: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
+    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, chartType: this.chartType, title: this.title, categories: this.categories, series: this.series.length, seriesDetails: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, styleId: this.styleId, varyColors: this.varyColors, barOptions: this.chartType === "bar" ? this.barOptions : undefined, lineOptions: this.chartType === "line" ? this.lineOptions : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
   }
 
-  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels }; }
+  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, styleId: this.styleId, varyColors: this.varyColors, barOptions: this.chartType === "bar" ? this.barOptions : undefined, lineOptions: this.chartType === "line" ? this.lineOptions : undefined }; }
 
   toSvg() {
     const p = this.position;
     const categories = this.categories.length ? this.categories : Array.from({ length: Math.max(0, ...this.series.map((series) => series.values?.length || 0)) }, (_, index) => String(index + 1));
-    const allValues = this.series.flatMap((series) => series.values || []).map((value) => Number(value) || 0);
-    const max = Math.max(1, ...allValues);
+    const allValues = this.series.flatMap((series) => series.values || []).map((value) => Math.max(0, Number(value) || 0));
+    const stackedBars = this.chartType === "bar" && this.barOptions.grouping !== "clustered";
+    const stackedLines = this.chartType === "line" && this.lineOptions.grouping !== "standard";
+    const stackedMax = categories.map((_, categoryIndex) => this.series.reduce((sum, series) => sum + Math.max(0, Number(series.values?.[categoryIndex]) || 0), 0));
+    const percentStacked = this.barOptions?.grouping === "percentStacked" || this.lineOptions?.grouping === "percentStacked";
+    const max = percentStacked ? 1 : Math.max(1, ...(stackedBars || stackedLines ? stackedMax : allValues));
     const plot = { left: p.left + 42, top: p.top + 42, width: Math.max(0, p.width - 72), height: Math.max(0, p.height - 82) };
     const title = `<text x="${p.left + 12}" y="${p.top + 24}" font-family="Arial" font-size="16" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.chartType)}</text>`;
     const axes = `<line x1="${plot.left}" y1="${plot.top + plot.height}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#94a3b8"/><line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.top + plot.height}" stroke="#94a3b8"/>${this.axes.category.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${p.top + p.height - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.category.title)}</text>` : ""}${this.axes.value.title ? `<text x="${p.left + 8}" y="${plot.top + 10}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.value.title)}</text>` : ""}`;
@@ -8150,26 +8179,52 @@ export class ChartElement {
     }
     let body = "";
     if (/^line$/i.test(this.chartType)) {
-      body = this.series.map((series) => {
+      body = this.series.map((series, seriesIndex) => {
         const points = (series.values || []).map((value, index) => {
+          const stackedValue = stackedLines ? this.series.slice(0, seriesIndex + 1).reduce((sum, item) => sum + Math.max(0, Number(item.values?.[index]) || 0), 0) : Number(value) || 0;
+          const plottedValue = this.lineOptions.grouping === "percentStacked" ? stackedValue / (stackedMax[index] || 1) : stackedValue;
           const x = plot.left + (categories.length <= 1 ? plot.width / 2 : (index / Math.max(1, categories.length - 1)) * plot.width);
-          const y = plot.top + plot.height - ((Number(value) || 0) / max) * plot.height;
-          return `${x},${y}`;
-        }).join(" ");
-        return `<polyline points="${points}" fill="none" stroke="${xmlEscape(resolveColorToken(series.color, series.color))}" stroke-width="2"/>`;
+          const y = plot.top + plot.height - (plottedValue / max) * plot.height;
+          return { x, y };
+        });
+        const color = resolveColorToken(series.color, series.color);
+        const smooth = series.smooth ?? this.lineOptions.smooth;
+        const line = smooth && points.length > 2
+          ? `<path d="M ${points[0].x} ${points[0].y} ${points.slice(1, -1).map((point, index) => { const next = points[index + 2]; return `Q ${point.x} ${point.y} ${(point.x + next.x) / 2} ${(point.y + next.y) / 2}`; }).join(" ")} T ${points.at(-1).x} ${points.at(-1).y}" fill="none" stroke="${xmlEscape(color)}" stroke-width="2"/>`
+          : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none" stroke="${xmlEscape(color)}" stroke-width="2"/>`;
+        const marker = series.marker || this.lineOptions.marker;
+        return `${line}${points.map((point) => presentationChartMarkerSvg(marker, point.x, point.y, color)).join("")}`;
       }).join("");
     } else {
-      const groupW = categories.length ? plot.width / categories.length : 0;
-      const barW = Math.max(1, groupW / Math.max(1, this.series.length) * 0.72);
-      body = this.series.flatMap((series, seriesIndex) => (series.values || []).map((value, index) => {
-        const h = plot.height * (Number(value) || 0) / max;
-        const x = plot.left + index * groupW + seriesIndex * barW + groupW * 0.12;
-        const y = plot.top + plot.height - h;
-        const label = this.dataLabels.showValue ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(value)}</text>` : "";
-        return `<rect x="${x}" y="${y}" width="${Math.max(1, barW - 2)}" height="${h}" fill="${xmlEscape(resolveColorToken(series.color, series.color))}"/>${label}`;
+      const horizontal = this.barOptions.direction === "bar";
+      const groupExtent = categories.length ? (horizontal ? plot.height : plot.width) / categories.length : 0;
+      const gapRatio = Math.max(0.12, 100 / (100 + this.barOptions.gapWidth));
+      const barExtent = stackedBars ? groupExtent * gapRatio : groupExtent * gapRatio / Math.max(1, this.series.length);
+      const offsets = categories.map(() => 0);
+      body = this.series.flatMap((series, seriesIndex) => (series.values || []).map((rawValue, categoryIndex) => {
+        const total = stackedMax[categoryIndex] || 1;
+        const value = Math.max(0, Number(rawValue) || 0);
+        const ratio = this.barOptions.grouping === "percentStacked" ? value / total : value / max;
+        const offset = offsets[categoryIndex];
+        offsets[categoryIndex] += ratio;
+        const color = xmlEscape(resolveColorToken(series.color, series.color));
+        if (horizontal) {
+          const width = plot.width * ratio;
+          const x = plot.left + (stackedBars ? plot.width * offset : 0);
+          const y = plot.top + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * this.series.length) / 2 + seriesIndex * barExtent);
+          const label = this.dataLabels.showValue ? `<text x="${x + width + 3}" y="${y + barExtent - 2}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(rawValue)}</text>` : "";
+          return `<rect x="${x}" y="${y}" width="${width}" height="${Math.max(1, barExtent - 2)}" fill="${color}"/>${label}`;
+        }
+        const height = plot.height * ratio;
+        const x = plot.left + categoryIndex * groupExtent + (stackedBars ? (groupExtent - barExtent) / 2 : (groupExtent - barExtent * this.series.length) / 2 + seriesIndex * barExtent);
+        const y = plot.top + plot.height - height - (stackedBars ? plot.height * offset : 0);
+        const label = this.dataLabels.showValue ? `<text x="${x}" y="${y - 4}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(rawValue)}</text>` : "";
+        return `<rect x="${x}" y="${y}" width="${Math.max(1, barExtent - 2)}" height="${height}" fill="${color}"/>${label}`;
       })).join("");
     }
-    const labels = categories.map((category, index) => `<text x="${plot.left + index * (plot.width / Math.max(1, categories.length))}" y="${p.top + p.height - 18}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("");
+    const labels = this.chartType === "bar" && this.barOptions.direction === "bar"
+      ? categories.map((category, index) => `<text x="${plot.left - 4}" y="${plot.top + (index + 0.6) * (plot.height / Math.max(1, categories.length))}" text-anchor="end" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("")
+      : categories.map((category, index) => `<text x="${plot.left + index * (plot.width / Math.max(1, categories.length))}" y="${p.top + p.height - 18}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("");
     return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${axes}${body}${labels}${legend}`;
   }
 
@@ -8292,7 +8347,7 @@ export class PresentationFile {
     if (commentAuthors.entries.length) zip.file("ppt/commentAuthors.xml", pptxCommentAuthorsXml(commentAuthors));
     if (modernComments.authors.length) zip.file("ppt/authors.xml", presentationModernAuthorsXml(modernComments));
     imageParts.forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
-    chartParts.forEach((part) => zip.file(`ppt/charts/chart${part.chartPartId}.xml`, pptxChartXml(part.chart)));
+    chartParts.forEach((part) => zip.file(`ppt/charts/chart${part.chartPartId}.xml`, presentationChartXml(part.chart)));
     nativeObjectPlan.parts.forEach((part) => {
       zip.file(part.outputPath, part.bytes);
       if (part.relationshipsXml) zip.file(ooxmlRelationshipPartPath(part.outputPath, "PPTX"), part.relationshipsXml);
@@ -8778,32 +8833,6 @@ function pptxChartFrameXml(index, name, position, relId, identity = {}) {
   return `<p:graphicFrame><p:nvGraphicFramePr>${pptxNonVisualPropertiesXml(index, name, "", identity)}<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="${relId}"/></a:graphicData></a:graphic></p:graphicFrame>`;
 }
 
-function pptxChartTextTitleXml(text = "") {
-  return `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(text)}</a:t></a:r></a:p></c:rich></c:tx></c:title>`;
-}
-
-function pptxChartXml(chart) {
-  const chartElementName = chart.chartType === "line" ? "lineChart" : chart.chartType === "pie" ? "pieChart" : "barChart";
-  const grouping = chart.chartType === "line" ? "<c:grouping val=\"standard\"/>" : chart.chartType === "pie" ? "" : "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>";
-  const dataLabels = chart.dataLabels || {};
-  const dataLabelsXml = dataLabels.showValue || dataLabels.showCategoryName ? `<c:dLbls><c:showVal val=\"${dataLabels.showValue ? 1 : 0}\"/><c:showCatName val=\"${dataLabels.showCategoryName ? 1 : 0}\"/><c:showLegendKey val=\"0\"/><c:showSerName val=\"0\"/><c:showPercent val=\"0\"/><c:showBubbleSize val=\"0\"/></c:dLbls>` : "";
-  const seriesXml = (chart.series.length ? chart.series : [{ name: chart.title || "Series", values: [] }]).map((series, index) => {
-    const values = series.values || [];
-    const categories = series.categories || chart.categories || values.map((_, i) => String(i + 1));
-    const catPts = categories.map((category, pointIndex) => `<c:pt idx=\"${pointIndex}\"><c:v>${xmlEscape(category)}</c:v></c:pt>`).join("");
-    const valPts = values.map((value, pointIndex) => `<c:pt idx=\"${pointIndex}\"><c:v>${Number(value) || 0}</c:v></c:pt>`).join("");
-    const color = String(series.color || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4]).replace(/^#/, "").slice(0, 6).padEnd(6, "0");
-    return `<c:ser><c:idx val=\"${index}\"/><c:order val=\"${index}\"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx><c:spPr><a:solidFill><a:srgbClr val=\"${attrEscape(color)}\"/></a:solidFill></c:spPr><c:cat><c:strLit><c:ptCount val=\"${categories.length}\"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val=\"${values.length}\"/>${valPts}</c:numLit></c:val></c:ser>`;
-  }).join("");
-  const categoryAxisTitle = chart.axes?.category?.title ? pptxChartTextTitleXml(chart.axes.category.title) : "";
-  const valueAxisTitle = chart.axes?.value?.title ? pptxChartTextTitleXml(chart.axes.value.title) : "";
-  const legendXml = chart.legend?.visible || chart.hasLegend ? `<c:legend><c:legendPos val=\"${attrEscape(chart.legend?.position || "r")}\"/><c:layout/></c:legend>` : "";
-  const chartBody = chart.chartType === "pie"
-    ? `<c:${chartElementName}>${seriesXml}${dataLabelsXml}</c:${chartElementName}>`
-    : `<c:${chartElementName}>${grouping}${seriesXml}${dataLabelsXml}<c:axId val=\"1\"/><c:axId val=\"2\"/></c:${chartElementName}><c:catAx><c:axId val=\"1\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:axPos val=\"b\"/>${categoryAxisTitle}<c:crossAx val=\"2\"/></c:catAx><c:valAx><c:axId val=\"2\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:axPos val=\"l\"/>${valueAxisTitle}<c:crossAx val=\"1\"/></c:valAx>`;
-  return `<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><c:chart>${pptxChartTextTitleXml(chart.title || chart.chartType)}<c:plotArea><c:layout/>${chartBody}</c:plotArea>${legendXml}<c:plotVisOnly val=\"1\"/></c:chart></c:chartSpace>`;
-}
-
 function slideXml(slide, imageParts = [], chartParts = [], nativeObjectEntries = new Map()) {
   const imageRelById = new Map(imageParts.map((part) => [part.image.id, part.slideRelId]));
   const chartRelById = new Map(chartParts.map((part) => [part.chart.id, part.slideRelId]));
@@ -8874,23 +8903,9 @@ async function parsePptxChartGraphic(owner, part, context) {
   const relId = ooxmlTagRelationshipId(chartTag);
   const target = pptxRelationshipTarget(context.rels, relId);
   const chartXml = target ? await context.zip.file(target)?.async("text") : "";
-  const chartType = /<c:pieChart>/.test(chartXml) ? "pie" : /<c:lineChart>/.test(chartXml) ? "line" : "bar";
-  const title = decodeXml(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<a:t>([\s\S]*?)<\/a:t>[\s\S]*?<\/c:title>/.exec(chartXml)?.[1] || "");
-  const legendMatch = /<c:legend>[\s\S]*?<c:legendPos[^>]*val="([^"]+)"/.exec(chartXml);
-  const dataLabelsBlock = /<c:dLbls>([\s\S]*?)<\/c:dLbls>/.exec(chartXml)?.[1] || "";
-  const dataLabels = { showValue: /<c:showVal[^>]*val="1"/.test(dataLabelsBlock), showCategoryName: /<c:showCatName[^>]*val="1"/.test(dataLabelsBlock), position: "bestFit" };
-  const catAxisTitle = decodeXml(/<c:catAx>[\s\S]*?<c:title>[\s\S]*?<a:t>([\s\S]*?)<\/a:t>[\s\S]*?<\/c:title>/.exec(chartXml)?.[1] || "");
-  const valAxisTitle = decodeXml(/<c:valAx>[\s\S]*?<c:title>[\s\S]*?<a:t>([\s\S]*?)<\/a:t>[\s\S]*?<\/c:title>/.exec(chartXml)?.[1] || "");
-  const series = [...String(chartXml || "").matchAll(/<c:ser>[\s\S]*?<\/c:ser>/g)].map((seriesMatch, index) => {
-    const seriesXml = seriesMatch[0];
-    const name = decodeXml(/<c:tx>[\s\S]*?<c:v>([\s\S]*?)<\/c:v>[\s\S]*?<\/c:tx>/.exec(seriesXml)?.[1] || `Series ${index + 1}`);
-    const color = /<a:srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(seriesXml)?.[1];
-    const categories = [...( /<c:cat>([\s\S]*?)<\/c:cat>/.exec(seriesXml)?.[1] || "").matchAll(/<c:v>([\s\S]*?)<\/c:v>/g)].map((m) => decodeXml(m[1]));
-    const values = [...( /<c:val>([\s\S]*?)<\/c:val>/.exec(seriesXml)?.[1] || "").matchAll(/<c:v>([\s\S]*?)<\/c:v>/g)].map((m) => Number(decodeXml(m[1])) || 0);
-    return { name, values, categories, color: color ? `#${color}` : undefined };
-  });
-  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || title || "chart");
-  return applyPresentationElementIdentity(owner.charts.add(chartType, { name, title, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }), categories: series[0]?.categories || [], series, axes: { category: { title: catAxisTitle }, value: { title: valAxisTitle } }, legend: { visible: Boolean(legendMatch), position: legendMatch?.[1] || "r" }, dataLabels }), part, "graphicFrameMk");
+  const parsed = parsePresentationChartXml(chartXml);
+  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || parsed.title || "chart");
+  return applyPresentationElementIdentity(owner.charts.add(parsed.chartType, { ...parsed, name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }) }), part, "graphicFrameMk");
 }
 
 async function parsePptxPicture(owner, part, context) {

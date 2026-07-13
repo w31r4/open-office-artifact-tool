@@ -230,6 +230,9 @@ const nativeChart = slide.charts.add("bar", {
   axes: { category: { title: "Quarter" }, value: { title: "Revenue" } },
   legend: { visible: true, position: "r" },
   dataLabels: { showValue: true },
+  styleId: 10,
+  varyColors: true,
+  barOptions: { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 },
   series: [
     { name: "Revenue", values: [10, 14], color: "#0ea5e9" },
     { name: "Forecast", values: [12, 16], color: "#f97316" },
@@ -252,6 +255,21 @@ const pieChart = pieSlide.charts.add("pie", {
   legend: { visible: true, position: "r" },
   series: [{ name: "Share", values: [45, 35, 20] }],
 });
+const lineChart = pieSlide.charts.add("line", {
+  name: "trend-line",
+  title: "Quality Trend",
+  position: { left: 540, top: 120, width: 420, height: 240 },
+  categories: ["Plan", "Build", "Verify"],
+  styleId: 13,
+  lineOptions: { grouping: "stacked", smooth: true, marker: { symbol: "diamond", size: 9 } },
+  series: [
+    { name: "Model", values: [4, 7, 9], color: "#22c55e" },
+    { name: "Native", values: [3, 6, 10], color: "#a855f7", marker: { symbol: "triangle", size: 8 }, smooth: false },
+  ],
+});
+assert.throws(() => pieSlide.charts.add("bar", { styleId: 49 }), /styleId must be an integer from 1 to 48/);
+assert.throws(() => pieSlide.charts.add("bar", { barOptions: { grouping: "standard" } }), /chart bar grouping must be one of/);
+assert.throws(() => pieSlide.charts.add("line", { lineOptions: { marker: { symbol: "hexagon" } } }), /chart marker symbol must be one of/);
 assert.equal(presentation.resolve(pieChart.id).chartType, "pie");
 assert.match(presentation.inspect({ kind: "chart", target: pieChart.id, maxChars: 8000 }).ndjson, /Market Share/);
 slide.addNotes("Speaker note: call out pipeline risk.");
@@ -271,6 +289,16 @@ assert.equal(presentation.resolve(nativeChart.id).series[0].values[1], 14);
 assert.equal(presentation.resolve(nativeChart.id).axes.value.title, "Revenue");
 assert.equal(presentation.resolve(nativeChart.id).legend.visible, true);
 assert.equal(presentation.resolve(nativeChart.id).dataLabels.showValue, true);
+assert.equal(presentation.resolve(nativeChart.id).styleId, 10);
+assert.deepEqual(presentation.resolve(nativeChart.id).barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
+assert.deepEqual(presentation.resolve(lineChart.id).lineOptions, { grouping: "stacked", marker: { symbol: "diamond", size: 9 }, smooth: true });
+const lineChartSvg = lineChart.toSvg();
+assert.match(lineChartSvg, /<path d="M/);
+assert.match(lineChartSvg, /930,162/);
+assert.match(lineChartSvg, /M 930 158 L 934 166 L 926 166/);
+assert.throws(() => slide.charts.add("bar", { styleId: 49 }), /styleId must be an integer from 1 to 48/);
+assert.throws(() => slide.charts.add("bar", { barOptions: { gapWidth: 501 } }), /gapWidth must be an integer from 0 to 500/);
+assert.throws(() => slide.charts.add("line", { lineOptions: { marker: { symbol: "picture" } } }), /chart marker symbol must be one of/);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /"axes"/);
 assert.match(presentation.inspect({ kind: "chart", target: nativeChart.id, maxChars: 8000 }).ndjson, /Forecast/);
 assert.match(presentation.help("slide.charts.add").ndjson, /bar\/line\/pie/);
@@ -568,11 +596,24 @@ assert.match(chartXml, /Forecast/);
 assert.match(chartXml, /<c:showVal val="1"\/>/);
 assert.match(chartXml, /<c:legendPos val="r"\/>/);
 assert.match(chartXml, /0ea5e9/i);
+assert.match(chartXml, /<c:style val="10"\/>/);
+assert.match(chartXml, /<c:barDir val="bar"\/>/);
+assert.match(chartXml, /<c:grouping val="stacked"\/>/);
+assert.match(chartXml, /<c:varyColors val="1"\/>/);
+assert.match(chartXml, /<c:gapWidth val="80"\/>/);
+assert.match(chartXml, /<c:overlap val="-20"\/>/);
 const pieChartXml = await zip.file("ppt/charts/chart2.xml").async("text");
 assert.match(pieChartXml, /<c:pieChart>/);
 assert.match(pieChartXml, /Market Share/);
 assert.match(pieChartXml, /Product A/);
 assert.match(pieChartXml, /<c:v>45<\/c:v>/);
+const lineChartXml = await zip.file("ppt/charts/chart3.xml").async("text");
+assert.match(lineChartXml, /<c:style val="13"\/>/);
+assert.match(lineChartXml, /<c:lineChart><c:grouping val="stacked"\/>/);
+assert.match(lineChartXml, /<c:marker><c:symbol val="diamond"\/><c:size val="9"\/><\/c:marker>/);
+assert.match(lineChartXml, /<c:marker><c:symbol val="triangle"\/><c:size val="8"\/><\/c:marker>/);
+assert.equal((lineChartXml.match(/<c:smooth val="1"\/>/g) || []).length, 1);
+assert.equal((lineChartXml.match(/<c:smooth val="0"\/>/g) || []).length, 1);
 const out = path.join(os.tmpdir(), `open-office-artifact-${process.pid}.pptx`);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
@@ -617,12 +658,32 @@ assert.match(loadedAll, /Market Share/);
 assert.match(loadedAll, /Product A/);
 assert.match(loadedAll, /Quarter/);
 assert.match(loadedAll, /Forecast/);
+assert.match(loadedAll, /Quality Trend/);
 assert.match(loadedAll, /native-import-image/);
 assert.match(loadedAll, /Native import logo/);
 assert.match(loadedAll, /Speaker note/);
 assert.match(loadedAll, /Tighten this headline/);
 assert.match(loadedAll, /shape-to-table/);
 assert.match(loadedAll, /"textStyles"/);
+const loadedBarChart = loaded.slides.items[0].charts.items.find((chart) => chart.name === "native-import-chart");
+assert.equal(loadedBarChart.styleId, 10);
+assert.deepEqual(loadedBarChart.barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
+const loadedLineChart = loaded.slides.items[1].charts.items.find((chart) => chart.name === "trend-line");
+assert.equal(loadedLineChart.styleId, 13);
+assert.equal(loadedLineChart.lineOptions.grouping, "stacked");
+assert.deepEqual(loadedLineChart.series.map((series) => series.marker), [{ symbol: "diamond", size: 9 }, { symbol: "triangle", size: 8 }]);
+assert.deepEqual(loadedLineChart.series.map((series) => series.smooth), [true, false]);
+const alternateChartPrefixXml = lineChartXml.replace('<c:smooth val="1"/>', "<c:smooth/>")
+  .replaceAll("xmlns:c=", "xmlns:cx=").replaceAll("<c:", "<cx:").replaceAll("</c:", "</cx:")
+  .replaceAll("xmlns:a=", "xmlns:ax=").replaceAll("<a:", "<ax:").replaceAll("</a:", "</ax:");
+const alternateChartPrefixPptx = await PresentationFile.patchPptx(pptx, [{ path: "ppt/charts/chart3.xml", xml: alternateChartPrefixXml }]);
+const alternateChartPrefixLoaded = await PresentationFile.importPptx(alternateChartPrefixPptx);
+const alternateLineChart = alternateChartPrefixLoaded.slides.items[1].charts.items.find((chart) => chart.name === "trend-line");
+assert.equal(alternateLineChart.styleId, 13);
+assert.equal(alternateLineChart.title, "Quality Trend");
+assert.deepEqual(alternateLineChart.series[0].marker, { symbol: "diamond", size: 9 });
+const alternateChartSecondZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(alternateChartPrefixLoaded)).arrayBuffer()));
+assert.match(await alternateChartSecondZip.file("ppt/charts/chart3.xml").async("text"), /<c:style val="13"\/>/);
 assert.match(loadedAll, /"colorMap"/);
 const loadedComment = loaded.slides.items[0].comments.items[0];
 assert.ok(loaded.slides.items[0].resolve(loadedComment.targetId));

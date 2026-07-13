@@ -92,7 +92,7 @@
         { "name": "qa-footer", "position": { "left": 1160, "top": 648, "width": 78, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "03", "textStyle": { "fontSize": 16, "color": "#64748B" } }
       ],
       "charts": [
-        { "chartType": "bar", "name": "coverage-chart", "title": "Evidence produced per gate", "position": { "left": 42, "top": 150, "width": 560, "height": 500 }, "categories": ["Semantic", "Package", "Visual"], "axes": { "category": { "title": "Gate" }, "value": { "title": "Evidence records" } }, "legend": { "visible": true, "position": "b" }, "dataLabels": { "showValue": true }, "series": [{ "name": "Modeled", "values": [8, 2, 3], "color": "#6DCBF4" }, { "name": "Native", "values": [2, 9, 6], "color": "#3D8DFF" }] }
+        { "chartType": "bar", "name": "coverage-chart", "title": "Evidence produced per gate", "position": { "left": 42, "top": 150, "width": 560, "height": 500 }, "categories": ["Semantic", "Package", "Visual"], "styleId": 10, "varyColors": true, "barOptions": { "direction": "bar", "grouping": "stacked", "gapWidth": 80, "overlap": -20 }, "axes": { "category": { "title": "Gate" }, "value": { "title": "Evidence records" } }, "legend": { "visible": true, "position": "b" }, "dataLabels": { "showValue": true }, "series": [{ "name": "Modeled", "values": [8, 2, 3], "color": "#6DCBF4" }, { "name": "Native", "values": [2, 9, 6], "color": "#3D8DFF" }] }
       ],
       "connectors": [
         { "name": "chart-to-semantic", "start": { "x": 602, "y": 280 }, "end": { "x": 680, "y": 220 }, "line": { "fill": "#3D8DFF", "width": 2, "endArrow": "triangle" } }

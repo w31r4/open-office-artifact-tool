@@ -58,6 +58,7 @@ try {
   const fixtureSecondMasterXml = await fixtureZip.file("ppt/slideMasters/slideMaster2.xml").async("text");
   const fixtureThirdSlideXml = await fixtureZip.file("ppt/slides/slide3.xml").async("text");
   const fixturePresentationXml = await fixtureZip.file("ppt/presentation.xml").async("text");
+  const fixtureChartXml = await fixtureZip.file("ppt/charts/chart1.xml").async("text");
   assert.match(fixtureThemeXml, /<a:accent6><a:srgbClr val="DC2626"\/><\/a:accent6>/);
   assert.match(fixtureSecondThemeXml, /name="Verification Theme"/);
   assert.match(fixtureSecondThemeXml, /<a:accent1><a:srgbClr val="EDE9FE"\/><\/a:accent1>/);
@@ -74,6 +75,13 @@ try {
   assert.equal((fixturePresentationXml.match(/<p:sldMasterId\b/g) || []).length, 2);
   assert.match(await fixtureZip.file("ppt/slideLayouts/_rels/slideLayout2.xml.rels").async("text"), /slideMaster2\.xml/);
   assert.match(await fixtureZip.file("ppt/slideMasters/_rels/slideMaster2.xml.rels").async("text"), /theme2\.xml/);
+  assert.match(fixtureChartXml, /<c:style val="10"\/>/);
+  assert.match(fixtureChartXml, /<c:barDir val="bar"\/>/);
+  assert.match(fixtureChartXml, /<c:grouping val="stacked"\/>/);
+  assert.match(fixtureChartXml, /<c:gapWidth val="80"\/>/);
+  const fixtureChart = first.qa.presentation.slides.items[2].charts.items[0];
+  assert.equal(fixtureChart.styleId, 10);
+  assert.deepEqual(fixtureChart.barOptions, { direction: "bar", grouping: "stacked", gapWidth: 80, overlap: -20 });
   const importedSkillThread = first.qa.presentation.slides.items[1].comments.items[0];
   assert.deepEqual(importedSkillThread.comments.map((comment) => comment.author), ["QA Agent", "Maintainer"]);
   assert.equal(first.qa.summary.packageOk, true);
