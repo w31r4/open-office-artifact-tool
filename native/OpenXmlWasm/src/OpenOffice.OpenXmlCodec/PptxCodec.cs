@@ -269,6 +269,7 @@ internal static class PptxCodec
     {
         var frame = ReadFrame(shape);
         var properties = shape.ShapeProperties;
+        var textBody = PptxTextCodec.Read(shape.TextBody);
         return new PresentationShape
         {
             Geometry = Geometry(properties),
@@ -276,9 +277,10 @@ internal static class PptxCodec
             TopEmu = frame.Top,
             WidthEmu = frame.Width,
             HeightEmu = frame.Height,
-            Text = DescendantText(shape.TextBody),
-            FillRgb = SolidRgb(properties?.GetFirstChild<A.SolidFill>()),
-            LineRgb = SolidRgb(properties?.GetFirstChild<A.Outline>()?.GetFirstChild<A.SolidFill>()),
+            Text = PptxTextCodec.Flatten(textBody),
+            TextBody = textBody,
+            FillRgb = PptxColor.SolidRgb(properties?.GetFirstChild<A.SolidFill>()),
+            LineRgb = PptxColor.SolidRgb(properties?.GetFirstChild<A.Outline>()?.GetFirstChild<A.SolidFill>()),
             LineWidthEmu = properties?.GetFirstChild<A.Outline>()?.Width?.Value ?? 0,
         };
     }
@@ -295,17 +297,7 @@ internal static class PptxCodec
         var outline = properties.GetFirstChild<A.Outline>();
         if (outline is not null && !SimpleFill(outline)) return false;
         if (properties.ChildElements.Any(child => child is not A.Transform2D and not A.PresetGeometry and not A.NoFill and not A.SolidFill and not A.Outline)) return false;
-        var body = shape.TextBody;
-        if (body is null) return true;
-        var paragraphs = body.Elements<A.Paragraph>().ToArray();
-        if (paragraphs.Length > 1) return false;
-        if (paragraphs.Length == 0) return true;
-        var paragraph = paragraphs[0];
-        if (paragraph.ChildElements.Any(child => child is not A.ParagraphProperties and not A.Run and not A.EndParagraphRunProperties)) return false;
-        var runs = paragraph.Elements<A.Run>().ToArray();
-        if (runs.Length > 1) return false;
-        return runs.All(run => run.ChildElements.All(child => child is A.RunProperties or A.Text) &&
-                               run.Elements<A.Text>().Count() == 1);
+        return PptxTextCodec.SupportsEditing(shape.TextBody);
     }
 
     private static bool SimpleFill(OpenXmlCompositeElement element)
@@ -349,23 +341,7 @@ internal static class PptxCodec
         }
         if (shape.NonVisualShapeProperties?.NonVisualDrawingProperties is { } nonVisual)
             nonVisual.Name = source.Name;
-        var body = shape.TextBody ??= BasicTextBody();
-        var paragraph = body.Elements<A.Paragraph>().SingleOrDefault();
-        if (paragraph is null)
-        {
-            body.Append(Paragraph(semantic.Text));
-        }
-        else if (paragraph.Elements<A.Run>().SingleOrDefault() is { } run)
-        {
-            run.GetFirstChild<A.Text>()!.Text = semantic.Text;
-        }
-        else if (semantic.Text.Length > 0)
-        {
-            var newRun = new A.Run(new A.RunProperties { Language = "en-US" }, new A.Text(semantic.Text));
-            var end = paragraph.GetFirstChild<A.EndParagraphRunProperties>();
-            if (end is null) paragraph.Append(newRun);
-            else paragraph.InsertBefore(newRun, end);
-        }
+        PptxTextCodec.Apply(shape, semantic);
     }
 
     private static void ReplaceFill(OpenXmlCompositeElement parent, string rgb)
@@ -373,7 +349,7 @@ internal static class PptxCodec
         foreach (var child in parent.ChildElements.Where(child => child is A.NoFill or A.SolidFill).ToArray()) child.Remove();
         OpenXmlElement fill = string.IsNullOrWhiteSpace(rgb)
             ? new A.NoFill()
-            : new A.SolidFill(new A.RgbColorModelHex { Val = NormalizeRgb(rgb) });
+            : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(rgb) });
         var reference = parent.ChildElements.FirstOrDefault(child => child is A.Outline || child.LocalName is "effectLst" or "effectDag" or "scene3d" or "sp3d");
         if (reference is null) parent.Append(fill);
         else parent.InsertBefore(fill, reference);
@@ -381,9 +357,9 @@ internal static class PptxCodec
 
     private static bool FillMatches(OpenXmlCompositeElement parent, string rgb)
     {
-        var requested = string.IsNullOrWhiteSpace(rgb) ? string.Empty : NormalizeRgb(rgb);
+        var requested = string.IsNullOrWhiteSpace(rgb) ? string.Empty : PptxColor.Normalize(rgb);
         if (parent.GetFirstChild<A.NoFill>() is not null) return requested.Length == 0;
-        var solid = SolidRgb(parent.GetFirstChild<A.SolidFill>());
+        var solid = PptxColor.SolidRgb(parent.GetFirstChild<A.SolidFill>());
         if (solid.Length > 0) return requested.Equals(solid, StringComparison.OrdinalIgnoreCase);
         return requested.Length == 0 && !parent.ChildElements.Any(child => child.LocalName.EndsWith("Fill", StringComparison.Ordinal));
     }
@@ -453,11 +429,11 @@ internal static class PptxCodec
             new A.PresetGeometry(new A.AdjustValueList()) { Preset = semantic.Geometry == "ellipse" ? A.ShapeTypeValues.Ellipse : A.ShapeTypeValues.Rectangle });
         properties.Append(string.IsNullOrWhiteSpace(semantic.FillRgb)
             ? new A.NoFill()
-            : new A.SolidFill(new A.RgbColorModelHex { Val = NormalizeRgb(semantic.FillRgb) }));
+            : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(semantic.FillRgb) }));
         var outline = new A.Outline { Width = checked((int)semantic.LineWidthEmu) };
         outline.Append(string.IsNullOrWhiteSpace(semantic.LineRgb)
             ? new A.NoFill()
-            : new A.SolidFill(new A.RgbColorModelHex { Val = NormalizeRgb(semantic.LineRgb) }));
+            : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(semantic.LineRgb) }));
         properties.Append(outline);
         return new P.Shape(
             new P.NonVisualShapeProperties(
@@ -465,7 +441,7 @@ internal static class PptxCodec
                 new P.NonVisualShapeDrawingProperties(),
                 new P.ApplicationNonVisualDrawingProperties()),
             properties,
-            BasicTextBody(semantic.Text));
+            PptxTextCodec.Build(semantic));
     }
 
     private static P.ShapeTree BasicShapeTree() => new(
@@ -478,19 +454,6 @@ internal static class PptxCodec
             new A.Extents { Cx = 0L, Cy = 0L },
             new A.ChildOffset { X = 0L, Y = 0L },
             new A.ChildExtents { Cx = 0L, Cy = 0L })));
-
-    private static P.TextBody BasicTextBody(string text = "") => new(
-        new A.BodyProperties(),
-        new A.ListStyle(),
-        Paragraph(text));
-
-    private static A.Paragraph Paragraph(string text)
-    {
-        var paragraph = new A.Paragraph();
-        if (text.Length > 0) paragraph.Append(new A.Run(new A.RunProperties { Language = "en-US" }, new A.Text(text)));
-        paragraph.Append(new A.EndParagraphRunProperties { Language = "en-US" });
-        return paragraph;
-    }
 
     private static P.ColorMap BasicColorMap() => new()
     {
@@ -570,16 +533,6 @@ internal static class PptxCodec
         return value.Equals(A.ShapeTypeValues.Ellipse) ? "ellipse" : value.Equals(A.ShapeTypeValues.Rectangle) ? "rect" : value.ToString() ?? "rect";
     }
 
-    private static string SolidRgb(A.SolidFill? fill) => fill?.GetFirstChild<A.RgbColorModelHex>()?.Val?.Value ?? string.Empty;
-
-    private static string NormalizeRgb(string value)
-    {
-        var rgb = value.Trim().TrimStart('#').ToUpperInvariant();
-        if (rgb.Length != 6 || rgb.Any(character => !Uri.IsHexDigit(character)))
-            throw new CodecException("invalid_presentation_color", $"Presentation color {value} must be a six-digit RGB value.");
-        return rgb;
-    }
-
     private static string ElementName(OpenXmlElement element, int index) =>
         element.Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Name?.Value ?? $"{element.LocalName} {index + 1}";
 
@@ -591,6 +544,7 @@ internal static class PptxCodec
         var semantic = element.Clone();
         semantic.Id = string.Empty;
         semantic.Source = null;
+        if (semantic.ContentCase == PresentationElement.ContentOneofCase.Shape) PptxTextCodec.NormalizeSemantics(semantic.Shape);
         return Hash(semantic.ToByteArray());
     }
 
@@ -625,8 +579,9 @@ internal static class PptxCodec
                         throw new CodecException("invalid_presentation_frame", $"Presentation shape {element.Id} has an invalid frame.");
                     if (element.Shape.Geometry is not ("rect" or "ellipse"))
                         throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
-                    if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) NormalizeRgb(element.Shape.FillRgb);
-                    if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) NormalizeRgb(element.Shape.LineRgb);
+                    if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);
+                    if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) PptxColor.Normalize(element.Shape.LineRgb);
+                    PptxTextCodec.Validate(element.Shape);
                 }
                 else if (element.ContentCase != PresentationElement.ContentOneofCase.Opaque)
                     throw new CodecException("missing_presentation_element_content", $"Presentation element {element.Id} has no content.");
@@ -723,7 +678,7 @@ internal static class PptxCodec
                 foreach (var fill in outline.ChildElements.Where(child => child is A.NoFill or A.SolidFill).ToArray()) fill.Remove();
             }
         }
-        foreach (var text in shape.Descendants<A.Text>()) text.Text = string.Empty;
+        PptxTextCodec.ScrubModeledContent(shape.TextBody);
         return HashElement(shape);
     }
 

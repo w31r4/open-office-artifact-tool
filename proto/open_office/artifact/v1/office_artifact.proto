@@ -230,10 +230,35 @@ message PresentationShape {
   int64 top_emu = 3;
   int64 width_emu = 4;
   int64 height_emu = 5;
+  // Flattened compatibility view. When text_body is present, this must equal
+  // its paragraphs joined with line feeds.
   string text = 6;
   string fill_rgb = 7;
   string line_rgb = 8;
   int64 line_width_emu = 9;
+  PresentationTextBody text_body = 10;
+}
+
+// The first public PresentationML text slice intentionally models only
+// agent-facing paragraph/run semantics. Unsupported bullets, hyperlinks,
+// fields, tabs, breaks, body properties, and list styles stay source-bound.
+message PresentationTextBody {
+  repeated PresentationTextParagraph paragraphs = 1;
+}
+
+message PresentationTextParagraph {
+  optional uint32 level = 1;
+  optional string alignment = 2;
+  repeated PresentationTextRun runs = 3;
+}
+
+message PresentationTextRun {
+  string text = 1;
+  optional bool bold = 2;
+  optional bool italic = 3;
+  optional double font_size_points = 4;
+  optional string font_family = 5;
+  optional string color_rgb = 6;
 }
 
 message PresentationOpaqueElement {
