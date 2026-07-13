@@ -169,6 +169,14 @@ public sealed class PptxCodecTests
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
 
+        var pictureEdit = Import(source);
+        var pictureShape = Assert.Single(Assert.Single(pictureEdit.Artifact.Presentation.Slides).Elements).Shape;
+        pictureShape.TextBody.Paragraphs[3].BulletCharacter = "◆";
+        pictureShape.Text = PptxTextCodec.Flatten(pictureShape.TextBody);
+        var pictureRejected = Export(pictureEdit.Artifact);
+        Assert.False(pictureRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(pictureRejected.Diagnostics).Code);
+
         shape.TextBody.Paragraphs[0].Runs.Add(new PresentationTextRun { Text = "unsafe topology" });
         shape.Text = PptxTextCodec.Flatten(shape.TextBody);
         var rejected = Export(imported.Artifact);
