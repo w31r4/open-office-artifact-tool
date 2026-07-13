@@ -87,7 +87,7 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void ImportRetainsUnknownRelationshipAndExportIsFailClosed()
+    public void ImportPreservesUnknownRelationshipFromHashBoundSourcePackage()
     {
         var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
         var bytes = AddExternalWorkbookRelationship(firstExport.File.ToByteArray());
@@ -105,6 +105,40 @@ public sealed class XlsxCodecTests
         Assert.Equal("External", relationship.TargetMode);
         Assert.Equal("https://example.invalid/data", relationship.Target);
 
+        imported.Artifact.Workbook.Worksheets[0].Cells[1].NumberValue = 99;
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal("opaque_content_preserved", Assert.Single(preserved.Diagnostics).Code);
+
+        var reimported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportXlsx,
+            Family = ArtifactFamily.Workbook,
+            File = preserved.File,
+        }.ToByteArray()));
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(99, reimported.Artifact.Workbook.Worksheets[0].Cells[1].NumberValue);
+        Assert.Contains(reimported.Artifact.OpaqueOpc.PackageRelationships, item => item.Id == "rIdExternal" && item.Target == "https://example.invalid/data");
+
+        imported.Artifact.OpaqueOpc.SourcePackage.Sha256 = new string('0', 64);
+        var tampered = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(tampered.Ok);
+        Assert.Equal("source_package_hash_mismatch", Assert.Single(tampered.Diagnostics).Code);
+
+        imported.Artifact.OpaqueOpc.SourcePackage = new SourcePackageSnapshot();
         var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,

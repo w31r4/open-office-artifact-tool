@@ -100,6 +100,15 @@ message Diagnostic {
 message OpaqueOpcGraph {
   repeated OpaqueOpcPart parts = 1;
   repeated OpaqueOpcRelationship package_relationships = 2;
+  SourcePackageSnapshot source_package = 3;
+}
+
+// A bounded, hash-bound copy of the imported OPC package. The Open XML SDK
+// codec uses it as the preservation base while semantic coverage is migrating;
+// unsupported parts are never reconstructed from undocumented assumptions.
+message SourcePackageSnapshot {
+  bytes data = 1;
+  string sha256 = 2;
 }
 
 message OpaqueOpcPart {

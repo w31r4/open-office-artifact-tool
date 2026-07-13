@@ -18,11 +18,14 @@ internal static class XlsxCodec
             throw new CodecException("unsupported_artifact_version", $"Artifact protocol version {envelope.ProtocolVersion} is unsupported.");
         if (envelope.Family != ArtifactFamily.Workbook || envelope.PayloadCase != ArtifactEnvelope.PayloadOneofCase.Workbook)
             throw new CodecException("invalid_workbook_artifact", "Artifact envelope does not contain a workbook payload.");
-        var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) + (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
-        if (opaqueCount > 0 && !allowLossy)
-            throw new CodecException("opaque_content_requires_preservation", "Workbook contains opaque OPC parts or relationships that this first XLSX writer cannot preserve; pass allow_lossy only when discarding them is intentional.");
-
         ValidateWorkbookBudget(envelope.Workbook, limits);
+
+        var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) + (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
+        if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
+            return ExportPreservingSource(envelope, limits, opaqueCount);
+        if (opaqueCount > 0 && !allowLossy)
+            throw new CodecException("opaque_content_requires_preservation", "Workbook contains opaque OPC parts or relationships but its validated source package snapshot is unavailable; pass allow_lossy only when discarding them is intentional.");
+
         var diagnostics = new List<Diagnostic>();
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning("opaque_content_discarded", $"Discarded {opaqueCount} opaque OPC parts or relationships under explicit allow_lossy policy."));
@@ -63,7 +66,7 @@ internal static class XlsxCodec
         var diagnostics = new List<Diagnostic>();
         var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
         if (opaqueCount > 0)
-            diagnostics.Add(CodecProtocol.Warning("opaque_content_retained", $"Retained {opaqueCount} unsupported OPC parts or relationships; export requires preservation support or explicit allow_lossy.", opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
+            diagnostics.Add(CodecProtocol.Warning("opaque_content_retained", $"Retained {opaqueCount} unsupported OPC parts or relationships with a hash-bound source package snapshot for loss-aware export.", opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
 
         using var stream = new MemoryStream(bytes, writable: false);
         using var document = SpreadsheetDocument.Open(stream, isEditable: false);
@@ -104,6 +107,216 @@ internal static class XlsxCodec
         };
         envelope.Diagnostics.Add(diagnostics);
         return new XlsxImportResult(envelope, diagnostics);
+    }
+
+    private static XlsxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
+    {
+        var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits);
+        using var stream = new MemoryStream();
+        stream.Write(sourceBytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, isEditable: true))
+        {
+            var workbookPart = document.WorkbookPart ?? throw new CodecException("missing_workbook_part", "Source XLSX package has no Workbook part.", "xl/workbook.xml");
+            var workbookRoot = workbookPart.Workbook ?? throw new CodecException("missing_workbook_root", "Source XLSX package has no Workbook root element.", "xl/workbook.xml");
+            var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
+            if (sheets.Length != envelope.Workbook.Worksheets.Count)
+                throw new CodecException("source_package_topology_changed", "Source-preserving XLSX export currently requires the imported worksheet count to remain unchanged.");
+
+            if (workbookRoot.WorkbookProperties is null)
+                workbookRoot.WorkbookProperties = new WorkbookProperties();
+            workbookRoot.WorkbookProperties.Date1904 = envelope.Workbook.DateSystem == WorkbookDateSystem._1904;
+            var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable?.Elements<SharedStringItem>().Select(item => item.InnerText).ToArray() ?? [];
+            for (var index = 0; index < sheets.Length; index++)
+            {
+                var sheet = sheets[index];
+                var source = envelope.Workbook.Worksheets[index];
+                if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
+                    throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
+                sheet.Name = source.Name;
+                PatchWorksheet(worksheetPart, source, sharedStrings);
+            }
+            workbookRoot.Save();
+        }
+
+        var bytes = stream.ToArray();
+        if ((ulong)bytes.LongLength > limits.MaxInputBytes)
+            throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
+        var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, includeSourcePackage: false);
+        PackageGuards.AssertOpaqueGraphMatches(envelope.OpaqueOpc, outputOpaque, "opaque_content_not_preserved");
+        return new XlsxExportResult(bytes,
+        [
+            CodecProtocol.Warning("opaque_content_preserved", $"Preserved {opaqueCount} unsupported OPC parts or relationships from the validated source package while updating modeled workbook content."),
+        ]);
+    }
+
+    private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings)
+    {
+        var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {source.Name} has no Worksheet root element.");
+        PatchSheetView(worksheet, source);
+        PatchColumnDimensions(worksheet, source);
+        PatchRowsAndCells(worksheet, source, sharedStrings);
+        PatchMergedRanges(worksheet, source);
+        worksheet.Save();
+    }
+
+    private static void PatchSheetView(Worksheet worksheet, WorksheetArtifact source)
+    {
+        var sheetViews = worksheet.SheetViews;
+        if (sheetViews is null)
+        {
+            sheetViews = new SheetViews();
+            var before = worksheet.Elements().FirstOrDefault(item => item is SheetFormatProperties or Columns or SheetData);
+            if (before is null) worksheet.Append(sheetViews);
+            else worksheet.InsertBefore(sheetViews, before);
+        }
+        var sheetView = sheetViews.Elements<SheetView>().FirstOrDefault();
+        if (sheetView is null)
+        {
+            sheetView = new SheetView { WorkbookViewId = 0U };
+            sheetViews.Append(sheetView);
+        }
+        sheetView.ShowGridLines = source.ShowGridLines;
+        foreach (var pane in sheetView.Elements<Pane>().ToArray()) pane.Remove();
+        if (source.FreezePane is { } freeze && (freeze.Rows > 0 || freeze.Columns > 0))
+        {
+            sheetView.InsertAt(new Pane
+            {
+                State = PaneStateValues.Frozen,
+                HorizontalSplit = freeze.Columns,
+                VerticalSplit = freeze.Rows,
+                TopLeftCell = string.IsNullOrWhiteSpace(freeze.TopLeftCell) ? CellReference(freeze.Rows, freeze.Columns) : freeze.TopLeftCell,
+                ActivePane = freeze.Rows > 0 && freeze.Columns > 0
+                    ? PaneValues.BottomRight
+                    : freeze.Rows > 0 ? PaneValues.BottomLeft : PaneValues.TopRight,
+            }, 0);
+        }
+    }
+
+    private static void PatchColumnDimensions(Worksheet worksheet, WorksheetArtifact source)
+    {
+        var expected = source.ColumnDimensions.OrderBy(item => item.Column).ToArray();
+        var current = worksheet.Elements<Columns>().SelectMany(item => item.Elements<Column>())
+            .SelectMany(column => Enumerable.Range(
+                checked((int)(column.Min?.Value ?? 1) - 1),
+                checked((int)((column.Max?.Value ?? column.Min?.Value ?? 1) - (column.Min?.Value ?? 1) + 1)))
+                .Select(number => new ColumnDimension
+                {
+                    Column = checked((uint)number),
+                    Width = column.Width?.Value ?? 0,
+                    Hidden = column.Hidden?.Value ?? false,
+                    BestFit = column.BestFit?.Value ?? false,
+                }))
+            .OrderBy(item => item.Column)
+            .ToArray();
+        if (current.Length == expected.Length && current.Zip(expected).All(pair =>
+            pair.First.Column == pair.Second.Column &&
+            Math.Abs(pair.First.Width - pair.Second.Width) < 0.0000001 &&
+            pair.First.Hidden == pair.Second.Hidden &&
+            pair.First.BestFit == pair.Second.BestFit)) return;
+
+        foreach (var columns in worksheet.Elements<Columns>().ToArray()) columns.Remove();
+        if (expected.Length == 0) return;
+        var replacement = new Columns();
+        foreach (var dimension in expected)
+            replacement.Append(new Column
+            {
+                Min = dimension.Column + 1,
+                Max = dimension.Column + 1,
+                Width = dimension.Width > 0 ? dimension.Width : null,
+                CustomWidth = dimension.Width > 0,
+                Hidden = dimension.Hidden,
+                BestFit = dimension.BestFit,
+            });
+        var sheetData = worksheet.GetFirstChild<SheetData>();
+        if (sheetData is null) worksheet.Append(replacement);
+        else worksheet.InsertBefore(replacement, sheetData);
+    }
+
+    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings)
+    {
+        var sheetData = worksheet.GetFirstChild<SheetData>();
+        if (sheetData is null)
+        {
+            sheetData = new SheetData();
+            var before = worksheet.Elements().FirstOrDefault(item => item is SheetCalculationProperties or SheetProtection or ProtectedRanges or Scenarios or AutoFilter or SortState or DataConsolidate or CustomSheetViews or MergeCells or PhoneticProperties or ConditionalFormatting or DataValidations or Hyperlinks or PrintOptions or PageMargins or PageSetup or HeaderFooter or RowBreaks or ColumnBreaks or CustomProperties or CellWatches or IgnoredErrors or Drawing or LegacyDrawing or LegacyDrawingHeaderFooter or Picture or OleObjects or Controls or WebPublishItems or TableParts or WorksheetExtensionList);
+            if (before is null) worksheet.Append(sheetData);
+            else worksheet.InsertBefore(sheetData, before);
+        }
+        var rows = sheetData.Elements<Row>().ToDictionary(row => checked((uint)Math.Max(1, row.RowIndex?.Value ?? 1) - 1));
+        var dimensions = source.RowDimensions.ToDictionary(item => item.Row);
+        foreach (var dimension in dimensions.Values)
+        {
+            var row = GetOrCreateRow(sheetData, rows, dimension.Row);
+            row.Height = dimension.Height > 0 ? dimension.Height : null;
+            row.CustomHeight = dimension.Height > 0;
+            row.Hidden = dimension.Hidden;
+        }
+
+        foreach (var sourceCell in source.Cells.OrderBy(item => item.Row).ThenBy(item => item.Column))
+        {
+            var row = GetOrCreateRow(sheetData, rows, sourceCell.Row);
+            var reference = CellReference(sourceCell.Row, sourceCell.Column);
+            var cell = row.Elements<Cell>().FirstOrDefault(item => string.Equals(item.CellReference?.Value, reference, StringComparison.OrdinalIgnoreCase));
+            if (cell is not null && CellSemanticallyEqual(ReadCell(cell, sourceCell.Row, sharedStrings), sourceCell)) continue;
+            if (cell is null)
+            {
+                cell = BuildCell(sourceCell);
+                var before = row.Elements<Cell>().FirstOrDefault(item => ParseCellReference(item.CellReference?.Value, sourceCell.Row).Column > sourceCell.Column);
+                if (before is null) row.Append(cell);
+                else row.InsertBefore(cell, before);
+            }
+            else
+            {
+                var replacement = BuildCell(sourceCell);
+                cell.CellFormula = replacement.CellFormula?.CloneNode(true) as CellFormula;
+                cell.CellValue = replacement.CellValue?.CloneNode(true) as CellValue;
+                cell.InlineString = replacement.InlineString?.CloneNode(true) as InlineString;
+                cell.DataType = replacement.DataType;
+            }
+        }
+    }
+
+    private static Row GetOrCreateRow(SheetData sheetData, IDictionary<uint, Row> rows, uint rowIndex)
+    {
+        if (rows.TryGetValue(rowIndex, out var row)) return row;
+        row = new Row { RowIndex = rowIndex + 1 };
+        var before = sheetData.Elements<Row>().FirstOrDefault(item => (item.RowIndex?.Value ?? 1) > rowIndex + 1);
+        if (before is null) sheetData.Append(row);
+        else sheetData.InsertBefore(row, before);
+        rows[rowIndex] = row;
+        return row;
+    }
+
+    private static bool CellSemanticallyEqual(CellArtifact left, CellArtifact right)
+    {
+        if (!string.Equals(left.Formula, right.Formula, StringComparison.Ordinal) || left.ValueCase != right.ValueCase) return false;
+        return left.ValueCase switch
+        {
+            CellArtifact.ValueOneofCase.None => true,
+            CellArtifact.ValueOneofCase.StringValue => left.StringValue == right.StringValue,
+            CellArtifact.ValueOneofCase.NumberValue => left.NumberValue.Equals(right.NumberValue),
+            CellArtifact.ValueOneofCase.BoolValue => left.BoolValue == right.BoolValue,
+            CellArtifact.ValueOneofCase.ErrorValue => left.ErrorValue == right.ErrorValue,
+            _ => false,
+        };
+    }
+
+    private static void PatchMergedRanges(Worksheet worksheet, WorksheetArtifact source)
+    {
+        var expected = source.MergedRanges.OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToArray();
+        var current = worksheet.Elements<MergeCells>().SelectMany(item => item.Elements<MergeCell>())
+            .Select(item => item.Reference?.Value ?? string.Empty)
+            .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (current.SequenceEqual(expected, StringComparer.OrdinalIgnoreCase)) return;
+        foreach (var merges in worksheet.Elements<MergeCells>().ToArray()) merges.Remove();
+        if (source.MergedRanges.Count == 0) return;
+        var replacement = new MergeCells();
+        foreach (var reference in source.MergedRanges) replacement.Append(new MergeCell { Reference = reference });
+        var sheetData = worksheet.GetFirstChild<SheetData>();
+        if (sheetData is null) worksheet.Append(replacement);
+        else worksheet.InsertAfter(replacement, sheetData);
     }
 
     private static Worksheet BuildWorksheet(WorksheetArtifact source)

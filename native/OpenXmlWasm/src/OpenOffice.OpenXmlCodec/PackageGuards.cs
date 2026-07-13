@@ -33,7 +33,7 @@ internal static class PackageGuards
         "xl/_rels/workbook.xml.rels",
     };
 
-    internal static OpaqueOpcGraph ValidateAndCollectOpaque(byte[] bytes, EffectiveCodecLimits limits)
+    internal static OpaqueOpcGraph ValidateAndCollectOpaque(byte[] bytes, EffectiveCodecLimits limits, bool includeSourcePackage = true)
     {
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
             throw new CodecException("input_budget_exceeded", $"XLSX input has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
@@ -79,6 +79,15 @@ internal static class PackageGuards
                     Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
                 });
             }
+            if (includeSourcePackage)
+            {
+                var packageHash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+                opaque.SourcePackage = new SourcePackageSnapshot
+                {
+                    Data = Google.Protobuf.ByteString.CopyFrom(bytes),
+                    Sha256 = packageHash,
+                };
+            }
             return opaque;
         }
         catch (CodecException)
@@ -90,6 +99,61 @@ internal static class PackageGuards
             throw new CodecException("invalid_opc_package", "XLSX input is not a readable OPC ZIP package.", innerException: exception);
         }
     }
+
+    internal static byte[] ValidateSourcePackage(OpaqueOpcGraph opaque, SourceIdentity? source, EffectiveCodecLimits limits)
+    {
+        if (opaque.SourcePackage is null || opaque.SourcePackage.Data.IsEmpty)
+            throw new CodecException("missing_source_package", "Opaque OPC content cannot be preserved because its source package snapshot is missing.");
+        var bytes = opaque.SourcePackage.Data.ToByteArray();
+        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        if (!hash.Equals(opaque.SourcePackage.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new CodecException("source_package_hash_mismatch", "Source package bytes do not match the hash recorded in the public wire envelope.");
+        if (!string.IsNullOrWhiteSpace(source?.PackageSha256) && !hash.Equals(source.PackageSha256, StringComparison.OrdinalIgnoreCase))
+            throw new CodecException("source_identity_mismatch", "Source package bytes do not match source.package_sha256.");
+
+        var actual = ValidateAndCollectOpaque(bytes, limits, includeSourcePackage: false);
+        AssertOpaqueGraphMatches(opaque, actual, "source_package_graph_mismatch");
+        return bytes;
+    }
+
+    internal static void AssertOpaqueGraphMatches(OpaqueOpcGraph expected, OpaqueOpcGraph actual, string code)
+    {
+        var expectedParts = expected.Parts
+            .Select(PartSignature)
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        var actualParts = actual.Parts
+            .Select(PartSignature)
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        var expectedRelationships = expected.PackageRelationships
+            .Select(RelationshipSignature)
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        var actualRelationships = actual.PackageRelationships
+            .Select(RelationshipSignature)
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        if (!expectedParts.SequenceEqual(actualParts, StringComparer.Ordinal) ||
+            !expectedRelationships.SequenceEqual(actualRelationships, StringComparer.Ordinal))
+            throw new CodecException(code, "Opaque OPC parts or relationships do not match the validated source package graph.");
+    }
+
+    private static string PartSignature(OpaqueOpcPart part)
+    {
+        var hash = part.Sha256;
+        if (!part.Data.IsEmpty)
+        {
+            var dataHash = Convert.ToHexString(SHA256.HashData(part.Data.Span)).ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(hash) && !hash.Equals(dataHash, StringComparison.OrdinalIgnoreCase))
+                throw new CodecException("opaque_part_hash_mismatch", $"Opaque part {part.Path} does not match its recorded hash.", part.Path);
+            hash = dataHash;
+        }
+        return $"{part.Path}\0{hash.ToLowerInvariant()}";
+    }
+
+    private static string RelationshipSignature(OpaqueOpcRelationship relationship) =>
+        $"{relationship.SourcePath}\0{relationship.Id}\0{relationship.Type}\0{relationship.Target}\0{relationship.TargetMode}";
 
     private static bool IsOwned(string path) => OwnedPaths.Contains(path) || IsWorksheetXml(path);
 
