@@ -1060,6 +1060,14 @@ const missingLayoutPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint
 missingLayoutPictureBulletRelationshipZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels", paragraphLayoutRelsXml.replace(/<Relationship Id="rId2"[^>]*\/>/, ""));
 const missingLayoutPictureBulletRelationshipPptx = new FileBlob(await missingLayoutPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
 await assert.rejects(() => PresentationFile.importPptx(missingLayoutPictureBulletRelationshipPptx), /picture bullet references missing image relationship rId2/);
+const wrongTypePictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+wrongTypePictureBulletRelationshipZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", paragraphMasterRelsXml.replace(/(Id="rId3" Type="[^"]+)\/image"/, "$1/chart\""));
+const wrongTypePictureBulletRelationshipPptx = new FileBlob(await wrongTypePictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(wrongTypePictureBulletRelationshipPptx), /picture bullet references missing image relationship rId3/);
+const missingPictureBulletPartZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
+missingPictureBulletPartZip.remove("ppt/media/image1.png");
+const missingPictureBulletPartPptx = new FileBlob(await missingPictureBulletPartZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
+await assert.rejects(() => PresentationFile.importPptx(missingPictureBulletPartPptx), /picture bullet relationship rId3 targets missing part ppt\/media\/image1\.png/);
 const strictPictureBulletRelationshipZip = await JSZip.loadAsync(new Uint8Array(await paragraphPptx.arrayBuffer()));
 strictPictureBulletRelationshipZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels", paragraphMasterRelsXml.replace("http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", "http://purl.oclc.org/ooxml/officeDocument/relationships/image"));
 const strictPictureBulletRelationshipPptx = new FileBlob(await strictPictureBulletRelationshipZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: paragraphPptx.type });
