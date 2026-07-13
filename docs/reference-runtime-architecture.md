@@ -237,17 +237,17 @@ The first WebAssembly migration milestone is not complete until every row is don
 | Acceptance gate | Status |
 | --- | --- |
 | Runtime artifacts are built only from this repository and public dependencies | done |
-| Tarball contains runtime, integrity manifest, SBOM, licenses, source, and no reference artifacts | done locally |
-| Clean temporary npm install imports/exports XLSX with `dotnet` absent from runtime `PATH` | done locally |
+| Tarball contains runtime, integrity manifest, SBOM, licenses, source, and no reference artifacts | done locally and in hosted Linux CI |
+| Clean temporary npm install imports/exports XLSX with `dotnet` absent from runtime `PATH` | done locally and in hosted Linux CI |
 | Minimal public workbook fixture roundtrips through JavaScript model and WebAssembly codec | done |
 | Generated XLSX passes package inspection and Open XML SDK Office 2021 validation with zero errors | done |
 | Unknown OPC content is detected and second export is fail-closed unless explicitly lossy | done for opaque parts/relationships; preservation-on-write remains todo |
 | Malformed/oversized input produces bounded structured errors | partial: byte/ZIP/part/sheet/cell/path/ratio budgets covered; broader malformed corpus remains todo |
 | Runtime initialization is lazy, cached, and concurrency-tested | done |
-| Bounded `openxml-wasm-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally |
+| Bounded `openxml-wasm-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally and in hosted Linux CI |
 | Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | todo |
 | LibreOffice/Poppler render-backed cross-codec output passes | done locally for `openxml-wasm-basic`; complex fixtures remain todo |
-| Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | todo until final local gate, push, and hosted run |
+| Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | done in hosted run [`29251523500`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29251523500) |
 
 ## Explicit non-goals
 

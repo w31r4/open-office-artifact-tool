@@ -41,7 +41,7 @@ GitHub CI and the manual release workflow install Playwright Chromium, LibreOffi
 - `npm whoami` fails with `ENEEDAUTH`; this machine is not logged in to npm.
 - `npm view open-office-artifact-tool version --json` returns `E404`; the package name/version was not visible on npm from this environment.
 - `dotnet test native/OfficeBridge` passes locally with .NET 8 (`5` tests passed on macOS arm64); Windows + Microsoft Office automation remains an external integration gate.
-- `dotnet test native/OpenXmlWasm/OpenXmlWasm.sln --configuration Release` passes locally (`6` tests), and the bounded XLSX fixture passes bundled-runtime, Playwright, LibreOffice, and Poppler gates; hosted Linux evidence for this new workload remains pending until the milestone commit is pushed.
+- `dotnet test native/OpenXmlWasm/OpenXmlWasm.sln --configuration Release` passes locally (`6` tests), and the bounded XLSX fixture passes bundled-runtime, Playwright, LibreOffice, and Poppler gates. Hosted Linux run [`29251523500`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29251523500) also passed two isolated same-host WASM builds, all npm/docs/package gates, and both .NET test suites.
 - Playwright renderer smoke tests pass locally with Playwright 1.61.1 and its Chromium runtime, covering PNG, WebP, JPEG, and PDF output.
 
 ## Publish command once auth is available
