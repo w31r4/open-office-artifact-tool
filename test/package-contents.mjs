@@ -29,6 +29,7 @@ for (const required of [
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/XlsxCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm/Program.cs",
   "native/OpenXmlWasm/tests/OpenOffice.OpenXmlCodec.Tests/XlsxCodecTests.cs",
+  "scripts/verify-openxml-wasm-build.mjs",
   "src/ooxml/docx-comments.mjs",
   "src/ooxml/docx-bibliography.mjs",
   "src/presentation/chart-trendline-svg.mjs",

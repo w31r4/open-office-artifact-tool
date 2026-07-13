@@ -37,8 +37,7 @@ jobs:
         run: |
           npm run proto:check
           dotnet restore native/OpenXmlWasm/OpenXmlWasm.sln --locked-mode
-          npm run build:openxml-wasm
-          git diff --exit-code -- src/generated runtime/openxml-wasm
+          npm run verify:openxml-wasm-build
       - name: Install Chromium and native render tools
         run: |
           npx playwright install --with-deps chromium

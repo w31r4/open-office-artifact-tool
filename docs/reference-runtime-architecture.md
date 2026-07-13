@@ -217,7 +217,7 @@ The schema must be designed from this project's public model, ECMA-376/ISO 29500
 - Pin reproducible .NET, Open XML SDK, and protobuf versions.
 - Do not ship symbols, source maps, debug files, or reference-package assets unless deliberately licensed and required.
 
-The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wasm-tools`/`wasm-experimental` workload packs. CI installs those workloads explicitly, regenerates the runtime, and rejects differences from the checked-in bundle. NuGet restore runs in locked mode. Consumers do not run this build toolchain.
+The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wasm-tools`/`wasm-experimental` workload packs. NuGet restore runs in locked mode. Native Emscripten and managed wrapper bytes can differ across build hosts even though the output is portable WebAssembly, so CI performs two isolated builds on the same hosted runner and rejects any byte or file-inventory difference between them; the checked-in consumer bundle is separately covered by its integrity manifest, clean-install test, and functional codec gates. Consumers do not run this build toolchain.
 
 ## Migration plan
 

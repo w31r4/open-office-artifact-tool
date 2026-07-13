@@ -10,7 +10,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const project = path.join(repoRoot, "native", "OpenXmlWasm", "src", "OpenOffice.OpenXmlWasm", "OpenOffice.OpenXmlWasm.csproj");
 const sourceMain = path.join(path.dirname(project), "main.mjs");
 const appBundle = path.join(repoRoot, "native", "OpenXmlWasm", "src", "OpenOffice.OpenXmlWasm", "bin", "Release", "net8.0", "browser-wasm", "AppBundle");
-const destination = path.join(repoRoot, "runtime", "openxml-wasm");
+const destination = process.env.OPENXML_WASM_OUTPUT
+  ? path.resolve(process.env.OPENXML_WASM_OUTPUT)
+  : path.join(repoRoot, "runtime", "openxml-wasm");
 
 const restored = spawnSync("dotnet", ["restore", project, "--locked-mode"], { cwd: repoRoot, encoding: "utf8", stdio: "inherit", shell: false });
 if (restored.status !== 0) process.exit(restored.status || 1);
