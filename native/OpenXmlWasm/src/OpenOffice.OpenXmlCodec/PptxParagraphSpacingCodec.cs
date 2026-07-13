@@ -11,7 +11,7 @@ internal static class PptxParagraphSpacingCodec
     private const int MaxPointsHundredths = 158_400;
     private const int MaxPercentThousandths = 13_200_000;
 
-    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source)
+    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source)
     {
         ReadSlot(source?.GetFirstChild<A.LineSpacing>(), false,
             points => target.LineSpacingPoints = points,
@@ -24,7 +24,7 @@ internal static class PptxParagraphSpacingCodec
             multiplier => target.SpaceAfterMultiplier = multiplier);
     }
 
-    internal static bool Supports(A.ParagraphProperties? source) =>
+    internal static bool Supports(A.TextParagraphPropertiesType? source) =>
         source is null ||
         SupportsSingle(source.Elements<A.LineSpacing>(), false) &&
         SupportsSingle(source.Elements<A.SpaceBefore>(), true) &&
@@ -89,7 +89,7 @@ internal static class PptxParagraphSpacingCodec
         source.SpaceBeforeCase is PresentationTextParagraph.SpaceBeforeOneofCase.SpaceBeforePoints or PresentationTextParagraph.SpaceBeforeOneofCase.SpaceBeforeMultiplier ||
         source.SpaceAfterCase is PresentationTextParagraph.SpaceAfterOneofCase.SpaceAfterPoints or PresentationTextParagraph.SpaceAfterOneofCase.SpaceAfterMultiplier;
 
-    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (source.LineSpacingCase is PresentationTextParagraph.LineSpacingOneofCase.LineSpacingPoints or PresentationTextParagraph.LineSpacingOneofCase.LineSpacingMultiplier)
             target.AddChild(BuildLineSpacing(source), true);
@@ -99,7 +99,7 @@ internal static class PptxParagraphSpacingCodec
             target.AddChild(BuildSpaceAfter(source), true);
     }
 
-    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (source.LineSpacingCase != PresentationTextParagraph.LineSpacingOneofCase.None)
             Replace(target, target.Elements<A.LineSpacing>(), false,
@@ -112,7 +112,7 @@ internal static class PptxParagraphSpacingCodec
                 source.SpaceAfterCase == PresentationTextParagraph.SpaceAfterOneofCase.NoSpaceAfter ? null : BuildSpaceAfter(source), "space after");
     }
 
-    internal static void Scrub(A.ParagraphProperties target)
+    internal static void Scrub(A.TextParagraphPropertiesType target)
     {
         Scrub(target.Elements<A.LineSpacing>(), false);
         Scrub(target.Elements<A.SpaceBefore>(), true);
@@ -159,7 +159,7 @@ internal static class PptxParagraphSpacingCodec
             ? new A.SpacingPoints { Val = Points(source.SpaceAfterPoints, true, "space after") }
             : new A.SpacingPercent { Val = Percent(source.SpaceAfterMultiplier, true, "space after") });
 
-    private static void Replace<T>(A.ParagraphProperties target, IEnumerable<T> source, bool allowZero, T? replacement, string kind) where T : A.TextSpacingType
+    private static void Replace<T>(A.TextParagraphPropertiesType target, IEnumerable<T> source, bool allowZero, T? replacement, string kind) where T : A.TextSpacingType
     {
         var slots = source.ToArray();
         if (slots.Length > 1 || slots.Any(slot => !SupportsSlot(slot, allowZero))) throw Unsupported(kind);

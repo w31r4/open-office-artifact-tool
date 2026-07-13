@@ -19,7 +19,7 @@ internal static class PptxBulletCodec
         "thaiAlphaParenBoth", "thaiAlphaParenR", "thaiAlphaPeriod", "thaiNumParenBoth", "thaiNumParenR", "thaiNumPeriod",
     };
 
-    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source, PptxSlideContext? context)
+    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source, PptxSlideContext? context)
     {
         if (source is null) return;
         var choices = BulletChoices(source).ToArray();
@@ -71,13 +71,13 @@ internal static class PptxBulletCodec
     internal static bool HasModeledBullet(PresentationTextParagraph paragraph) =>
         paragraph.BulletCase != PresentationTextParagraph.BulletOneofCase.None;
 
-    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source, PptxSlideContext? context)
+    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source, PptxSlideContext? context)
     {
         if (!HasModeledBullet(source)) return;
         target.AddChild(Build(source, context), true);
     }
 
-    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source, PptxSlideContext context)
+    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source, PptxSlideContext context)
     {
         if (!HasModeledBullet(source)) return;
         var existing = BulletChoices(target).ToArray();
@@ -90,7 +90,7 @@ internal static class PptxBulletCodec
         target.AddChild(Build(source, context), true);
     }
 
-    internal static void Scrub(A.ParagraphProperties target, PptxSlideContext? context)
+    internal static void Scrub(A.TextParagraphPropertiesType target, PptxSlideContext? context)
     {
         var choices = BulletChoices(target).ToArray();
         if (choices.Length == 1 && Modeled(choices[0], context)) choices[0].Remove();
@@ -110,7 +110,7 @@ internal static class PptxBulletCodec
         _ => throw Invalid("Presentation paragraph has no modeled list marker."),
     };
 
-    private static IEnumerable<OpenXmlElement> BulletChoices(A.ParagraphProperties source) =>
+    private static IEnumerable<OpenXmlElement> BulletChoices(A.TextParagraphPropertiesType source) =>
         source.ChildElements.Where(child => child is A.NoBullet or A.CharacterBullet or A.AutoNumberedBullet or A.PictureBullet);
 
     private static bool Modeled(OpenXmlElement source, PptxSlideContext? context) => source switch

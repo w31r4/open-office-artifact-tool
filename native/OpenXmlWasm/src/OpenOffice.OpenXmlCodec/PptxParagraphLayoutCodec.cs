@@ -9,13 +9,13 @@ internal static class PptxParagraphLayoutCodec
 {
     private const long MaxCoordinateEmu = 51_206_400;
 
-    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source)
+    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source)
     {
         if (source?.LeftMargin?.Value is { } margin && ValidMargin(margin)) target.MarginLeftEmu = margin;
         if (source?.Indent?.Value is { } indent && ValidIndent(indent)) target.IndentEmu = indent;
     }
 
-    internal static bool Supports(A.ParagraphProperties? source) =>
+    internal static bool Supports(A.TextParagraphPropertiesType? source) =>
         source is null ||
         (source.LeftMargin is null || ValidMargin(source.LeftMargin.Value)) &&
         (source.Indent is null || ValidIndent(source.Indent.Value));
@@ -55,7 +55,7 @@ internal static class PptxParagraphLayoutCodec
         source.LeftMarginCase == PresentationTextParagraph.LeftMarginOneofCase.MarginLeftEmu ||
         source.IndentationCase == PresentationTextParagraph.IndentationOneofCase.IndentEmu;
 
-    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (source.LeftMarginCase == PresentationTextParagraph.LeftMarginOneofCase.MarginLeftEmu)
             target.LeftMargin = checked((int)source.MarginLeftEmu);
@@ -63,7 +63,7 @@ internal static class PptxParagraphLayoutCodec
             target.Indent = checked((int)source.IndentEmu);
     }
 
-    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (source.LeftMarginCase != PresentationTextParagraph.LeftMarginOneofCase.None)
         {
@@ -81,7 +81,7 @@ internal static class PptxParagraphLayoutCodec
         }
     }
 
-    internal static void Scrub(A.ParagraphProperties target)
+    internal static void Scrub(A.TextParagraphPropertiesType target)
     {
         if (target.LeftMargin?.Value is { } margin && ValidMargin(margin)) target.LeftMargin = null;
         if (target.Indent?.Value is { } indent && ValidIndent(indent)) target.Indent = null;

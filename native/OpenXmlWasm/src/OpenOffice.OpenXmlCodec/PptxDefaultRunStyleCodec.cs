@@ -10,7 +10,7 @@ internal static class PptxDefaultRunStyleCodec
 {
     private const double MaxFontSizePoints = 768;
 
-    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source)
+    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source)
     {
         var properties = source?.GetFirstChild<A.DefaultRunProperties>();
         if (properties is null) return;
@@ -32,7 +32,7 @@ internal static class PptxDefaultRunStyleCodec
         if (HasFields(style)) target.DefaultRunProperties = style;
     }
 
-    internal static bool Supports(A.ParagraphProperties? source) =>
+    internal static bool Supports(A.TextParagraphPropertiesType? source) =>
         source?.Elements<A.DefaultRunProperties>().Take(2).Count() is not > 1;
 
     internal static void Validate(PresentationTextParagraph paragraph)
@@ -56,13 +56,13 @@ internal static class PptxDefaultRunStyleCodec
     internal static bool HasAuthoredStyle(PresentationTextParagraph paragraph) =>
         paragraph.DefaultRunStyleCase == PresentationTextParagraph.DefaultRunStyleOneofCase.DefaultRunProperties;
 
-    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (!HasAuthoredStyle(source)) return;
         target.AddChild(Build(source.DefaultRunProperties), true);
     }
 
-    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (source.DefaultRunStyleCase == PresentationTextParagraph.DefaultRunStyleOneofCase.None) return;
         var properties = target.GetFirstChild<A.DefaultRunProperties>();
@@ -81,7 +81,7 @@ internal static class PptxDefaultRunStyleCodec
         ApplyStyle(properties, source.DefaultRunProperties);
     }
 
-    internal static void Scrub(A.ParagraphProperties target)
+    internal static void Scrub(A.TextParagraphPropertiesType target)
     {
         var properties = target.GetFirstChild<A.DefaultRunProperties>();
         if (properties is null) return;

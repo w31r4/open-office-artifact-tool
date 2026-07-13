@@ -10,7 +10,7 @@ internal static class PptxBulletStyleCodec
 {
     private const double MaxSizePoints = 768;
 
-    internal static void Read(PresentationTextParagraph target, A.ParagraphProperties? source)
+    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source)
     {
         if (source is null) return;
         var font = FontChoices(source).ToArray();
@@ -110,21 +110,21 @@ internal static class PptxBulletStyleCodec
         paragraph.BulletColorCase != PresentationTextParagraph.BulletColorOneofCase.None ||
         paragraph.BulletSizeCase != PresentationTextParagraph.BulletSizeOneofCase.None;
 
-    internal static void Append(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         if (source.BulletColorCase != PresentationTextParagraph.BulletColorOneofCase.None) target.AddChild(BuildColor(source), true);
         if (source.BulletSizeCase != PresentationTextParagraph.BulletSizeOneofCase.None) target.AddChild(BuildSize(source), true);
         if (source.BulletFontCase != PresentationTextParagraph.BulletFontOneofCase.None) target.AddChild(BuildFont(source), true);
     }
 
-    internal static void Apply(A.ParagraphProperties target, PresentationTextParagraph source)
+    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source)
     {
         ApplyChoice(target, source.BulletColorCase != PresentationTextParagraph.BulletColorOneofCase.None, ColorChoices, ModeledColor, () => BuildColor(source), "color");
         ApplyChoice(target, source.BulletSizeCase != PresentationTextParagraph.BulletSizeOneofCase.None, SizeChoices, ModeledSize, () => BuildSize(source), "size");
         ApplyChoice(target, source.BulletFontCase != PresentationTextParagraph.BulletFontOneofCase.None, FontChoices, ModeledFont, () => BuildFont(source), "font");
     }
 
-    internal static void Scrub(A.ParagraphProperties target)
+    internal static void Scrub(A.TextParagraphPropertiesType target)
     {
         ScrubChoice(target, ColorChoices, ModeledColor);
         ScrubChoice(target, SizeChoices, ModeledSize);
@@ -132,9 +132,9 @@ internal static class PptxBulletStyleCodec
     }
 
     private static void ApplyChoice(
-        A.ParagraphProperties target,
+        A.TextParagraphPropertiesType target,
         bool requested,
-        Func<A.ParagraphProperties, IEnumerable<OpenXmlElement>> choices,
+        Func<A.TextParagraphPropertiesType, IEnumerable<OpenXmlElement>> choices,
         Func<OpenXmlElement, bool> modeled,
         Func<OpenXmlElement> build,
         string kind)
@@ -148,8 +148,8 @@ internal static class PptxBulletStyleCodec
     }
 
     private static void ScrubChoice(
-        A.ParagraphProperties target,
-        Func<A.ParagraphProperties, IEnumerable<OpenXmlElement>> choices,
+        A.TextParagraphPropertiesType target,
+        Func<A.TextParagraphPropertiesType, IEnumerable<OpenXmlElement>> choices,
         Func<OpenXmlElement, bool> modeled)
     {
         var existing = choices(target).ToArray();
@@ -179,13 +179,13 @@ internal static class PptxBulletStyleCodec
         _ => throw Invalid("Presentation paragraph has no modeled bullet-size style."),
     };
 
-    private static IEnumerable<OpenXmlElement> FontChoices(A.ParagraphProperties source) =>
+    private static IEnumerable<OpenXmlElement> FontChoices(A.TextParagraphPropertiesType source) =>
         source.ChildElements.Where(child => child is A.BulletFont or A.BulletFontText);
 
-    private static IEnumerable<OpenXmlElement> ColorChoices(A.ParagraphProperties source) =>
+    private static IEnumerable<OpenXmlElement> ColorChoices(A.TextParagraphPropertiesType source) =>
         source.ChildElements.Where(child => child is A.BulletColor or A.BulletColorText);
 
-    private static IEnumerable<OpenXmlElement> SizeChoices(A.ParagraphProperties source) =>
+    private static IEnumerable<OpenXmlElement> SizeChoices(A.TextParagraphPropertiesType source) =>
         source.ChildElements.Where(child => child is A.BulletSizePoints or A.BulletSizePercentage or A.BulletSizeText);
 
     private static bool ModeledFont(OpenXmlElement source) => source switch
