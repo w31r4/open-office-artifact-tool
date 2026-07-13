@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
+import { PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenXmlWasmCodecError,
   exportDocxWithOpenXmlWasm,
@@ -14,6 +16,14 @@ import {
   importXlsxWithOpenXmlWasm,
   openXmlWasmStatus,
 } from "../src/codecs/openxml-wasm.mjs";
+
+const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, {
+  tabStops: [{ positionEmu: 120n, alignment: "left" }],
+}));
+assert.equal(legacyTabWire[0], 0x72, "Presentation tab stops must retain repeated-message field 14.");
+assert.equal(fromBinary(PresentationTextParagraphSchema, legacyTabWire).tabStops[0].positionEmu, 120n);
+assert.deepEqual([...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { noTabStops: true }))], [0x78, 0x01], "Explicit tab deletion must remain additive field 15.");
+assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
 
 const workbook = Workbook.create({ dateSystem: "1904" });
 const summary = workbook.worksheets.add("Summary");

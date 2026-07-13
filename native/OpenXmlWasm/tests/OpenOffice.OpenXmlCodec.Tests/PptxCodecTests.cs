@@ -346,6 +346,14 @@ public sealed class PptxCodecTests
 
         request = RichTextExportRequest();
         paragraph = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
+        paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 100, Alignment = "left" });
+        paragraph.NoTabStops = true;
+        var contradictoryTabs = Invoke(request);
+        Assert.False(contradictoryTabs.Ok);
+        Assert.Equal("invalid_presentation_text", Assert.Single(contradictoryTabs.Diagnostics).Code);
+
+        request = RichTextExportRequest();
+        paragraph = request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0];
         paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 200, Alignment = "left" });
         paragraph.TabStops.Add(new PresentationTabStop { PositionEmu = 100, Alignment = "decimal" });
         var unsortedTabs = Invoke(request);
