@@ -132,6 +132,7 @@ public sealed class XlsxCodecTests
         }.ToByteArray()));
         Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         Assert.Equal("opaque_content_preserved", Assert.Single(preserved.Diagnostics).Code);
+        Assert.Equal(ReadEntry(bytes, "xl/styles.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/styles.xml"));
 
         var reimported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
@@ -262,6 +263,15 @@ public sealed class XlsxCodecTests
         Assert.Equal("invalid_cell_number_format", Assert.Single(response.Diagnostics).Code);
     }
 
+    [Fact]
+    public void ImportRejectsMissingCustomNumberFormat()
+    {
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var response = Import(SetCellNumberFormatId(firstExport.File.ToByteArray(), "B1", 999U));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_cell_number_format", Assert.Single(response.Diagnostics).Code);
+    }
+
     private static CodecRequest ExportRequest()
     {
         var sheet = new WorksheetArtifact
@@ -333,6 +343,32 @@ public sealed class XlsxCodecTests
             worksheet.Save();
         }
         return stream.ToArray();
+    }
+
+    private static byte[] SetCellNumberFormatId(byte[] bytes, string reference, uint numberFormatId)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var cell = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(item => item.CellReference?.Value == reference);
+            var format = document.WorkbookPart.WorkbookStylesPart!.Stylesheet!.CellFormats!.Elements<CellFormat>().ElementAt(checked((int)(cell.StyleIndex?.Value ?? 0)));
+            format.NumberFormatId = numberFormatId;
+            format.ApplyNumberFormat = true;
+            document.WorkbookPart.WorkbookStylesPart.Stylesheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] ReadEntry(byte[] bytes, string path)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        using var entry = (archive.GetEntry(path) ?? throw new InvalidOperationException($"Missing package entry {path}.")).Open();
+        using var output = new MemoryStream();
+        entry.CopyTo(output);
+        return output.ToArray();
     }
 
     private static byte[] AddExternalWorkbookRelationship(byte[] bytes)

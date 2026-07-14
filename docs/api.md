@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded first-slice Workbook model through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including built-in/custom cell number formats, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2017,7 +2017,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes through the bounded source-built bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes and effective cell number-format codes through the bounded source-built bundled OpenChestnut codec. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2071,11 +2071,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded first-slice Workbook model through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including built-in/custom cell number formats, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the current first-slice feature boundary.
+- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including cell style.numberFormat codes but no other direct style authoring.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
@@ -3588,7 +3588,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes through the bounded source-built bundled OpenChestnut codec.
+Experimentally import XLSX bytes and effective cell number-format codes through the bounded source-built bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -3597,7 +3597,7 @@ Experimentally import XLSX bytes through the bounded source-built bundled OpenCh
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported first-slice workbook facade carrying source/opaque package evidence for fail-closed second export.
+- `workbook` (Workbook) — Imported bounded workbook facade with effective cell number formats plus source/opaque package evidence for fail-closed second export.
 
 #### `invokeOpenChestnut`
 
