@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -11,10 +12,10 @@ namespace OpenChestnut.Codec;
 
 // Owns the bounded worksheet TableParts -> TableDefinitionPart graph. Cell
 // values/formulas remain owned by XlsxCodec; this module owns the table-level
-// calculated-column/totals metadata plus bounded value/custom AutoFilters and
-// ordinary cell-value sort state. Query tables, dynamic/date-group/color/icon/
-// Top10 filters, custom-list/color/icon sorts, extensions, differential styles,
-// and other complex profiles remain opaque.
+// calculated-column/totals metadata plus bounded value/custom/dynamic/date-group/
+// Top10 AutoFilters and ordinary cell-value sort state. Query tables, color/icon
+// filters, custom-list/color/icon sorts, extensions, differential styles, and
+// other complex profiles remain opaque.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -36,6 +37,19 @@ internal sealed class XlsxTableCodec
     {
         "equal", "notEqual", "lessThan", "lessThanOrEqual", "greaterThan", "greaterThanOrEqual",
     };
+    private static readonly HashSet<string> DynamicFilterTypes = new(StringComparer.Ordinal)
+    {
+        "null", "aboveAverage", "belowAverage", "tomorrow", "today", "yesterday",
+        "nextWeek", "thisWeek", "lastWeek", "nextMonth", "thisMonth", "lastMonth",
+        "nextQuarter", "thisQuarter", "lastQuarter", "nextYear", "thisYear", "lastYear", "yearToDate",
+        "Q1", "Q2", "Q3", "Q4", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12",
+    };
+    private static readonly HashSet<string> CalendarTypes = new(StringComparer.Ordinal)
+    {
+        "none", "gregorian", "gregorianUs", "japan", "taiwan", "korea", "hijri", "thai", "hebrew",
+        "gregorianMeFrench", "gregorianArabic", "gregorianXlitEnglish", "gregorianXlitFrench",
+    };
+    private static readonly string[] DateGroupings = ["year", "month", "day", "hour", "minute", "second"];
     private readonly WorksheetPart _worksheetPart;
     private readonly string _worksheetPath;
     private readonly List<Entry> _entries = [];
@@ -250,11 +264,18 @@ internal sealed class XlsxTableCodec
         switch (filter.CriteriaCase)
         {
             case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Values:
-                if (filter.Values.Values.Count == 0 && !filter.Values.IncludeBlank)
-                    throw Invalid($"Worksheet table {table.Name} value filter must select a value or blanks.", location);
-                if (filter.Values.Values.Count > 10_000 || filter.Values.Values.Any(value => value.Length > 32_767 || value.Any(char.IsControl)) ||
+                if (filter.Values.Values.Count == 0 && filter.Values.DateGroups.Count == 0 && !filter.Values.IncludeBlank)
+                    throw Invalid($"Worksheet table {table.Name} value filter must select a value, grouped date, or blanks.", location);
+                if (filter.Values.Values.Count + filter.Values.DateGroups.Count > 10_000 ||
+                    filter.Values.Values.Any(value => value.Length > 32_767 || value.Any(char.IsControl)) ||
                     filter.Values.Values.Distinct(StringComparer.Ordinal).Count() != filter.Values.Values.Count)
                     throw Invalid($"Worksheet table {table.Name} has an invalid value filter.", location);
+                if (!string.IsNullOrEmpty(filter.Values.CalendarType) &&
+                    (filter.Values.DateGroups.Count == 0 || !CalendarTypes.Contains(filter.Values.CalendarType)))
+                    throw Invalid($"Worksheet table {table.Name} has an invalid date-group calendar type.", location);
+                foreach (var group in filter.Values.DateGroups) ValidateDateGroup(table, group, location);
+                if (filter.Values.DateGroups.Select(DateGroupSemantics).Distinct(StringComparer.Ordinal).Count() != filter.Values.DateGroups.Count)
+                    throw Invalid($"Worksheet table {table.Name} has duplicate grouped-date criteria.", location);
                 break;
             case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Custom:
                 if (filter.Custom.Criteria.Count is < 1 or > 2)
@@ -263,9 +284,36 @@ internal sealed class XlsxTableCodec
                     if (!CustomFilterOperators.Contains(criterion.Operator) || criterion.Value.Length > 32_767 || criterion.Value.Any(char.IsControl))
                         throw Invalid($"Worksheet table {table.Name} has an invalid custom filter criterion.", location);
                 break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Dynamic:
+                if (!DynamicFilterTypes.Contains(filter.Dynamic.Type) ||
+                    filter.Dynamic.HasValue && !double.IsFinite(filter.Dynamic.Value) ||
+                    filter.Dynamic.HasMaxValue && !double.IsFinite(filter.Dynamic.MaxValue))
+                    throw Invalid($"Worksheet table {table.Name} has an invalid dynamic filter.", location);
+                break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Top10:
+                if (!double.IsFinite(filter.Top10.Value) || filter.Top10.Value <= 0 || filter.Top10.Percent && filter.Top10.Value > 100 ||
+                    filter.Top10.HasFilterValue && !double.IsFinite(filter.Top10.FilterValue))
+                    throw Invalid($"Worksheet table {table.Name} has an invalid Top10 filter.", location);
+                break;
             default:
                 throw Invalid($"Worksheet table {table.Name} filter must provide exactly one supported criteria type.", location);
         }
+    }
+
+    private static void ValidateDateGroup(SpreadsheetTableArtifact table, SpreadsheetTableDateGroupItemArtifact group, string location)
+    {
+        if (!ValidDateGroup(group))
+            throw Invalid($"Worksheet table {table.Name} has an invalid grouped-date criterion.", location);
+    }
+
+    private static bool ValidDateGroup(SpreadsheetTableDateGroupItemArtifact group)
+    {
+        var groupingIndex = Array.IndexOf(DateGroupings, group.Grouping);
+        var fields = new[] { true, group.HasMonth, group.HasDay, group.HasHour, group.HasMinute, group.HasSecond };
+        return groupingIndex >= 0 && group.Year is >= 1000 and <= 9999 &&
+            fields.Select((present, index) => present == (index <= groupingIndex)).All(matches => matches) &&
+            (!group.HasMonth || group.Month is >= 1 and <= 12) && (!group.HasDay || group.Day is >= 1 and <= 31) &&
+            (!group.HasHour || group.Hour <= 23) && (!group.HasMinute || group.Minute <= 59) && (!group.HasSecond || group.Second <= 59);
     }
 
     private static void ValidateSortState(SpreadsheetTableArtifact table, (uint Top, uint Left, uint Bottom, uint Right) tableBounds, string location)
@@ -446,33 +494,92 @@ internal sealed class XlsxTableCodec
         if (child.Name == Spreadsheet + "filters")
         {
             if (child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "blank")) ||
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("blank" or "calendarType"))) ||
                 !TryBool(child.Attribute("blank")?.Value, defaultValue: false, out var includeBlank)) return false;
-            var values = new SpreadsheetTableValueFilterArtifact { IncludeBlank = includeBlank };
+            var calendarType = child.Attribute("calendarType")?.Value ?? string.Empty;
+            if (!string.IsNullOrEmpty(calendarType) && !CalendarTypes.Contains(calendarType)) return false;
+            var values = new SpreadsheetTableValueFilterArtifact { IncludeBlank = includeBlank, CalendarType = calendarType };
             foreach (var value in child.Elements())
             {
-                if (value.Name != Spreadsheet + "filter" || value.Elements().Any() || value.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-                    (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "val")) || value.Attribute("val") is null) return false;
-                values.Values.Add(value.Attribute("val")!.Value);
+                if (value.Name == Spreadsheet + "filter")
+                {
+                    if (value.Elements().Any() || value.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                        (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "val")) || value.Attribute("val") is null) return false;
+                    values.Values.Add(value.Attribute("val")!.Value);
+                    continue;
+                }
+                if (!TryReadDateGroup(value, out var group)) return false;
+                values.DateGroups.Add(group!);
             }
+            if (values.Values.Count + values.DateGroups.Count > 10_000 || values.Values.Count == 0 && values.DateGroups.Count == 0 && !includeBlank ||
+                values.Values.Any(value => value.Length > 32_767 || value.Any(char.IsControl)) ||
+                values.Values.Distinct(StringComparer.Ordinal).Count() != values.Values.Count ||
+                values.DateGroups.Select(DateGroupSemantics).Distinct(StringComparer.Ordinal).Count() != values.DateGroups.Count ||
+                !string.IsNullOrEmpty(calendarType) && values.DateGroups.Count == 0) return false;
             artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Values = values };
             return true;
         }
-        if (child.Name != Spreadsheet + "customFilters" || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "and")) ||
-            !TryBool(child.Attribute("and")?.Value, defaultValue: false, out var matchAll)) return false;
-        var custom = new SpreadsheetTableCustomFilterArtifact { MatchAll = matchAll };
-        foreach (var criterion in child.Elements())
+        if (child.Name == Spreadsheet + "customFilters")
         {
-            if (criterion.Name != Spreadsheet + "customFilter" || criterion.Elements().Any() || criterion.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("operator" or "val"))) || criterion.Attribute("val") is null) return false;
-            custom.Criteria.Add(new SpreadsheetTableCustomFilterCriterionArtifact
+            if (child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "and")) ||
+                !TryBool(child.Attribute("and")?.Value, defaultValue: false, out var matchAll)) return false;
+            var custom = new SpreadsheetTableCustomFilterArtifact { MatchAll = matchAll };
+            foreach (var criterion in child.Elements())
             {
-                Operator = criterion.Attribute("operator")?.Value ?? "equal",
-                Value = criterion.Attribute("val")!.Value,
-            });
+                if (criterion.Name != Spreadsheet + "customFilter" || criterion.Elements().Any() || criterion.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                    (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("operator" or "val"))) || criterion.Attribute("val") is null) return false;
+                var @operator = criterion.Attribute("operator")?.Value ?? "equal";
+                var criterionValue = criterion.Attribute("val")!.Value;
+                if (!CustomFilterOperators.Contains(@operator) || criterionValue.Length > 32_767 || criterionValue.Any(char.IsControl)) return false;
+                custom.Criteria.Add(new SpreadsheetTableCustomFilterCriterionArtifact { Operator = @operator, Value = criterionValue });
+            }
+            if (custom.Criteria.Count is < 1 or > 2) return false;
+            artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Custom = custom };
+            return true;
         }
-        artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Custom = custom };
+        if (child.Name == Spreadsheet + "dynamicFilter")
+        {
+            if (child.Elements().Any() || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("type" or "val" or "maxVal"))) ||
+                child.Attribute("type")?.Value is not string type || !DynamicFilterTypes.Contains(type) ||
+                !TryOptionalDouble(child.Attribute("val")?.Value, out var value) || !TryOptionalDouble(child.Attribute("maxVal")?.Value, out var maxValue)) return false;
+            var dynamic = new SpreadsheetTableDynamicFilterArtifact { Type = type };
+            if (value is not null) dynamic.Value = value.Value;
+            if (maxValue is not null) dynamic.MaxValue = maxValue.Value;
+            artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Dynamic = dynamic };
+            return true;
+        }
+        if (child.Name != Spreadsheet + "top10" || child.Elements().Any() || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("top" or "percent" or "val" or "filterVal"))) ||
+            !TryBool(child.Attribute("top")?.Value, defaultValue: true, out var top) ||
+            !TryBool(child.Attribute("percent")?.Value, defaultValue: false, out var percent) ||
+            !TryDouble(child.Attribute("val")?.Value, out var topValue) || !TryOptionalDouble(child.Attribute("filterVal")?.Value, out var filterValue) ||
+            topValue <= 0 || percent && topValue > 100) return false;
+        var top10 = new SpreadsheetTableTop10FilterArtifact { Top = top, Percent = percent, Value = topValue };
+        if (filterValue is not null) top10.FilterValue = filterValue.Value;
+        artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Top10 = top10 };
+        return true;
+    }
+
+    private static bool TryReadDateGroup(XElement element, out SpreadsheetTableDateGroupItemArtifact? group)
+    {
+        group = null;
+        if (element.Name != Spreadsheet + "dateGroupItem" || element.Elements().Any() || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("year" or "month" or "day" or "hour" or "minute" or "second" or "dateTimeGrouping"))) ||
+            !uint.TryParse(element.Attribute("year")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var year) ||
+            element.Attribute("dateTimeGrouping")?.Value is not string grouping ||
+            !TryOptionalUInt(element.Attribute("month")?.Value, out var month) || !TryOptionalUInt(element.Attribute("day")?.Value, out var day) ||
+            !TryOptionalUInt(element.Attribute("hour")?.Value, out var hour) || !TryOptionalUInt(element.Attribute("minute")?.Value, out var minute) ||
+            !TryOptionalUInt(element.Attribute("second")?.Value, out var second)) return false;
+        var result = new SpreadsheetTableDateGroupItemArtifact { Year = year, Grouping = grouping };
+        if (month is not null) result.Month = month.Value;
+        if (day is not null) result.Day = day.Value;
+        if (hour is not null) result.Hour = hour.Value;
+        if (minute is not null) result.Minute = minute.Value;
+        if (second is not null) result.Second = second.Value;
+        if (!ValidDateGroup(result)) return false;
+        group = result;
         return true;
     }
 
@@ -582,7 +689,9 @@ internal sealed class XlsxTableCodec
             {
                 var values = new XElement(Spreadsheet + "filters");
                 if (filter.Values.IncludeBlank) values.SetAttributeValue("blank", 1);
+                if (!string.IsNullOrEmpty(filter.Values.CalendarType)) values.SetAttributeValue("calendarType", filter.Values.CalendarType);
                 values.Add(filter.Values.Values.Select(value => new XElement(Spreadsheet + "filter", new XAttribute("val", value))));
+                values.Add(filter.Values.DateGroups.Select(CreateDateGroup));
                 element.Add(values);
                 break;
             }
@@ -595,7 +704,34 @@ internal sealed class XlsxTableCodec
                 element.Add(custom);
                 break;
             }
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Dynamic:
+            {
+                var dynamic = new XElement(Spreadsheet + "dynamicFilter", new XAttribute("type", filter.Dynamic.Type));
+                if (filter.Dynamic.HasValue) dynamic.SetAttributeValue("val", FormatDouble(filter.Dynamic.Value));
+                if (filter.Dynamic.HasMaxValue) dynamic.SetAttributeValue("maxVal", FormatDouble(filter.Dynamic.MaxValue));
+                element.Add(dynamic);
+                break;
+            }
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Top10:
+            {
+                var top10 = new XElement(Spreadsheet + "top10", new XAttribute("top", filter.Top10.Top ? 1 : 0),
+                    new XAttribute("percent", filter.Top10.Percent ? 1 : 0), new XAttribute("val", FormatDouble(filter.Top10.Value)));
+                if (filter.Top10.HasFilterValue) top10.SetAttributeValue("filterVal", FormatDouble(filter.Top10.FilterValue));
+                element.Add(top10);
+                break;
+            }
         }
+        return element;
+    }
+
+    private static XElement CreateDateGroup(SpreadsheetTableDateGroupItemArtifact group)
+    {
+        var element = new XElement(Spreadsheet + "dateGroupItem", new XAttribute("year", group.Year), new XAttribute("dateTimeGrouping", group.Grouping));
+        if (group.HasMonth) element.SetAttributeValue("month", group.Month);
+        if (group.HasDay) element.SetAttributeValue("day", group.Day);
+        if (group.HasHour) element.SetAttributeValue("hour", group.Hour);
+        if (group.HasMinute) element.SetAttributeValue("minute", group.Minute);
+        if (group.HasSecond) element.SetAttributeValue("second", group.Second);
         return element;
     }
 
@@ -640,7 +776,9 @@ internal sealed class XlsxTableCodec
         {
             case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Values:
                 yield return filter.Values.IncludeBlank.ToString();
+                yield return filter.Values.CalendarType;
                 foreach (var value in filter.Values.Values) yield return value;
+                foreach (var group in filter.Values.DateGroups) yield return DateGroupSemantics(group);
                 break;
             case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Custom:
                 yield return filter.Custom.MatchAll.ToString();
@@ -650,8 +788,29 @@ internal sealed class XlsxTableCodec
                     yield return criterion.Value;
                 }
                 break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Dynamic:
+                yield return filter.Dynamic.Type;
+                yield return filter.Dynamic.HasValue ? FormatDouble(filter.Dynamic.Value) : "no-value";
+                yield return filter.Dynamic.HasMaxValue ? FormatDouble(filter.Dynamic.MaxValue) : "no-max-value";
+                break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Top10:
+                yield return filter.Top10.Top.ToString();
+                yield return filter.Top10.Percent.ToString();
+                yield return FormatDouble(filter.Top10.Value);
+                yield return filter.Top10.HasFilterValue ? FormatDouble(filter.Top10.FilterValue) : "no-filter-value";
+                break;
         }
     }
+
+    private static string DateGroupSemantics(SpreadsheetTableDateGroupItemArtifact group) => string.Join(':',
+    [
+        group.Grouping, group.Year.ToString(CultureInfo.InvariantCulture),
+        group.HasMonth ? group.Month.ToString(CultureInfo.InvariantCulture) : "-",
+        group.HasDay ? group.Day.ToString(CultureInfo.InvariantCulture) : "-",
+        group.HasHour ? group.Hour.ToString(CultureInfo.InvariantCulture) : "-",
+        group.HasMinute ? group.Minute.ToString(CultureInfo.InvariantCulture) : "-",
+        group.HasSecond ? group.Second.ToString(CultureInfo.InvariantCulture) : "-",
+    ]);
 
     private static IEnumerable<string> SortStateSemantics(SpreadsheetTableSortStateArtifact? sort)
     {
@@ -694,6 +853,25 @@ internal sealed class XlsxTableCodec
         result = false;
         return false;
     }
+    private static bool TryDouble(string? value, out double result) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) && double.IsFinite(result);
+    private static bool TryOptionalDouble(string? value, out double? result)
+    {
+        result = null;
+        if (value is null) return true;
+        if (!TryDouble(value, out var parsed)) return false;
+        result = parsed;
+        return true;
+    }
+    private static bool TryOptionalUInt(string? value, out uint? result)
+    {
+        result = null;
+        if (value is null) return true;
+        if (!uint.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)) return false;
+        result = parsed;
+        return true;
+    }
+    private static string FormatDouble(double value) => value.ToString("R", CultureInfo.InvariantCulture);
     private static string Sha256(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static CodecException Invalid(string message, string? part) => new("invalid_worksheet_table", message, part);
 }

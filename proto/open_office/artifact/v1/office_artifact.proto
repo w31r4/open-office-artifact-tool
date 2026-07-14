@@ -227,13 +227,18 @@ message SpreadsheetTableFilterArtifact {
   oneof criteria {
     SpreadsheetTableValueFilterArtifact values = 2;
     SpreadsheetTableCustomFilterArtifact custom = 3;
+    SpreadsheetTableDynamicFilterArtifact dynamic = 4;
+    SpreadsheetTableTop10FilterArtifact top10 = 5;
   }
 }
 
-// Exact string values selected in a table column, optionally including blanks.
+// The native <filters> branch. Exact strings and grouped dates may coexist;
+// blanks and one calendar interpretation apply to the complete branch.
 message SpreadsheetTableValueFilterArtifact {
   repeated string values = 1;
   bool include_blank = 2;
+  repeated SpreadsheetTableDateGroupItemArtifact date_groups = 3;
+  string calendar_type = 4;
 }
 
 // One or two comparison criteria. With two criteria, match_all selects AND;
@@ -246,6 +251,31 @@ message SpreadsheetTableCustomFilterArtifact {
 message SpreadsheetTableCustomFilterCriterionArtifact {
   string operator = 1;
   string value = 2;
+}
+
+message SpreadsheetTableDateGroupItemArtifact {
+  uint32 year = 1;
+  optional uint32 month = 2;
+  optional uint32 day = 3;
+  optional uint32 hour = 4;
+  optional uint32 minute = 5;
+  optional uint32 second = 6;
+  string grouping = 7;
+}
+
+// Relative-date or aggregate filter. Optional thresholds retain the calculated
+// values written by spreadsheet applications without making them mandatory.
+message SpreadsheetTableDynamicFilterArtifact {
+  string type = 1;
+  optional double value = 2;
+  optional double max_value = 3;
+}
+
+message SpreadsheetTableTop10FilterArtifact {
+  bool top = 1;
+  bool percent = 2;
+  double value = 3;
+  optional double filter_value = 4;
 }
 
 // Sort range plus ordered value-sort conditions. A condition reference is one
