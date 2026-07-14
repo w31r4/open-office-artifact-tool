@@ -2,6 +2,9 @@
   "name": "business-brief",
   "outputName": "business-brief.docx",
   "roundtripCodec": "openxml-wasm",
+  "openXmlWasmEdits": [
+    { "kind": "hyperlink", "matchText": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/word-processing", "tooltip": "Edited through the source-built OpenXML WASM codec", "history": false }
+  ],
   "designPreset": "report",
   "theme": {
     "name": "Business Brief Theme",

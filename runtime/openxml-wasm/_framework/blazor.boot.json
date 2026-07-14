@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenOffice.OpenXmlWasm.dll",
   "resources": {
-    "hash": "sha256-L2DteiDvHo2QM4JYbLWDJmUxv20gbnE90vmLj1CldEA=",
+    "hash": "sha256-06FfFTR6gazdXqfKuom2QbShUDJLBuz1v6/pt9+xXxE=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -13,11 +13,11 @@
     },
     "wasmSymbols": {},
     "assembly": {
-      "DocumentFormat.OpenXml.wasm": "sha256-hlqUWMinM6wqJE2owy1kKgFctcWb+Bj5l2SvI5kidzE=",
-      "DocumentFormat.OpenXml.Framework.wasm": "sha256-F/e7lQptFUKdwd7shWoEYfN7/O1gBKU2vCDVpV2c7G4=",
+      "DocumentFormat.OpenXml.wasm": "sha256-Hnxexz8jdIlFM1Q+0cvxU8RfnzKGWvltz4ZmxM36t0M=",
+      "DocumentFormat.OpenXml.Framework.wasm": "sha256-vONbnq/Ze2Lv/7lASIiLJOElOYbr5fMi2VP5Pwndngw=",
       "Google.Protobuf.wasm": "sha256-s1iRUfB0y+LZkWzB+JdHYw17xaV0LtoJcquKz2NI/Y4=",
-      "OpenOffice.OpenXmlCodec.wasm": "sha256-fFgLSI7azspydD1VpyylRUTFS8zQonD8F40ZJW4BnYE=",
-      "OpenOffice.OpenXmlWasm.wasm": "sha256-ClY2gt+vFwq5nnwh5mkzCFbMdw5cNyVtE6qSi2p+y2I=",
+      "OpenOffice.OpenXmlCodec.wasm": "sha256-3yPK2aeijK+5zRDwvCITOZdi8ADmYMPlEcCA4qPaBI0=",
+      "OpenOffice.OpenXmlWasm.wasm": "sha256-p8xYnxv4PTIEjrkh+V4YaCdxek+2DMH5r4Rc86Djs+0=",
       "System.Collections.Concurrent.wasm": "sha256-6kf5rzqw+ItWJiPj/r8v630e6jn8QqK0hzyymK14c70=",
       "System.Collections.wasm": "sha256-FyjJZ8uuBYrbbQ/cU6Gu3yMVy/B9bsgoV/sc5PIdyXo=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
@@ -25,7 +25,7 @@
       "System.Diagnostics.DiagnosticSource.wasm": "sha256-+HA7fqZtc4WtfTXtiLG0hsRGEn8HtxqNG5P6HcAdJjA=",
       "System.IO.Compression.wasm": "sha256-7jxGP8B8VDthAYSB5CfPhZ9F5MK1H5k5bCk6qTfFaBg=",
       "System.IO.Packaging.wasm": "sha256-VV6Hu5t2TJqbyQzTflpVSWvsq/Pg9Czt/WBaBLx3dtQ=",
-      "System.Linq.wasm": "sha256-os20i81wq/59NVrjIgqxTMYL6T3a83xdQOgByDBQq88=",
+      "System.Linq.wasm": "sha256-R7ZFYgMCfesLLOeSuB/0Sf+eIpOcE0YQ+X3Uz5ByrUc=",
       "System.Linq.Expressions.wasm": "sha256-6O0NtpC9RMw8B7v1xW16hAE3Fvr4X81vDvDML9xG1Is=",
       "System.Memory.wasm": "sha256-EkXSv5aPjmBSRKfHQ3V4q7OCDGg207oHJxssCCsf45c=",
       "System.Net.Http.wasm": "sha256-TdCZzLWaTv2Ho/lJXIpnbAbtCiKovgBOezKcUOh1meY=",

@@ -294,6 +294,54 @@ function sameTableValues(block, original) {
   return JSON.stringify(block.values || []) === JSON.stringify((original.content.value.rows || []).map((row) => [...row.cells]));
 }
 
+function sameDocumentHyperlink(block, source) {
+  if (block.kind !== "hyperlink" || block.text !== source.text) return false;
+  if (block.styleId !== (source.styleId || "Normal")) return false;
+  if ((block.relationshipId || "") !== (source.relationshipId || "")) return false;
+  if ((block.tooltip || undefined) !== source.tooltip) return false;
+  if (block.history !== (source.history ?? true)) return false;
+  if (source.target.case === "externalUri") return !block.anchor && block.url === source.target.value;
+  if (source.target.case === "internalAnchor") return block.anchor === source.target.value && !block.url;
+  return false;
+}
+
+function documentHyperlink(block, original) {
+  const source = original?.content.case === "hyperlink" ? original.content.value : undefined;
+  if (source && (block.relationshipId || "") !== (source.relationshipId || "")) {
+    throw new OpenXmlWasmCodecError(`Document hyperlink ${block.id} relationshipId is a source locator and cannot be edited directly.`, [], { code: "unsupported_document_edit" });
+  }
+  const text = String(block.text ?? "");
+  if (text.length > 1_000_000) throw new OpenXmlWasmCodecError(`Document hyperlink ${block.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_hyperlink" });
+  const anchor = String(block.anchor || "").trim();
+  const url = String(block.url || "");
+  let target;
+  if (anchor) {
+    if (anchor.length > 255 || [...anchor].some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
+      throw new OpenXmlWasmCodecError(`Document hyperlink ${block.id} anchor must contain 1 through 255 characters without controls.`, [], { code: "invalid_document_hyperlink" });
+    }
+    target = { case: "internalAnchor", value: anchor };
+  } else {
+    let parsed;
+    try { parsed = new URL(url); } catch { parsed = undefined; }
+    if (!parsed || !new Set(["http:", "https:"]).has(parsed.protocol) || url.length > 4_096 || /[\u0000-\u001f\u007f]/.test(url)) {
+      throw new OpenXmlWasmCodecError(`Document hyperlink ${block.id} URI must be an absolute http(s) URI of at most 4096 characters without controls.`, [], { code: "invalid_document_hyperlink" });
+    }
+    target = { case: "externalUri", value: url };
+  }
+  if (block.tooltip != null && String(block.tooltip).length > 260) {
+    throw new OpenXmlWasmCodecError(`Document hyperlink ${block.id} tooltip exceeds 260 characters.`, [], { code: "invalid_document_hyperlink" });
+  }
+  const originalHistory = source?.history;
+  const history = source && block.history === (originalHistory ?? true) ? originalHistory : block.history;
+  return {
+    text,
+    target,
+    relationshipId: source?.relationshipId || "",
+    tooltip: block.tooltip == null ? undefined : String(block.tooltip),
+    history,
+  };
+}
+
 function unchangedSourceBlock(block, original) {
   switch (original.content.case) {
     case "paragraph": {
@@ -305,6 +353,8 @@ function unchangedSourceBlock(block, original) {
       if (block.kind !== "table" || !sameTableValues(block, original)) return false;
       return block.styleId === original.styleId || (!original.styleId && block.styleId === "TableGrid");
     }
+    case "hyperlink":
+      return sameDocumentHyperlink(block, original.content.value);
     case "opaque":
       return block.kind === "paragraph" && block.text === original.content.value.text && block.runs.every((run) => Object.keys(run.style || {}).length === 0);
     default:
@@ -336,6 +386,12 @@ function documentBlock(block, original) {
         case: "table",
         value: { rows: (block.values || []).map((cells) => ({ cells: cells.map((value) => String(value ?? "")) })) },
       },
+    };
+  }
+  if (block.kind === "hyperlink") {
+    return {
+      ...common,
+      content: { case: "hyperlink", value: documentHyperlink(block, original) },
     };
   }
   throw new OpenXmlWasmCodecError(`The DOCX WebAssembly vertical slice cannot author document block kind ${block.kind}.`, [], { code: "unsupported_document_features" });
@@ -442,6 +498,21 @@ function documentFromEnvelope(envelope) {
           styleId: block.styleId || "TableGrid",
           values: block.content.value.rows.map((row) => [...row.cells]),
         };
+      case "hyperlink": {
+        const hyperlink = block.content.value;
+        return {
+          kind: "hyperlink",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "Normal",
+          text: hyperlink.text,
+          url: hyperlink.target.case === "externalUri" ? hyperlink.target.value : undefined,
+          anchor: hyperlink.target.case === "internalAnchor" ? hyperlink.target.value : undefined,
+          relationshipId: hyperlink.relationshipId || undefined,
+          tooltip: hyperlink.tooltip,
+          history: hyperlink.history,
+        };
+      }
       case "opaque":
         return {
           kind: "paragraph",

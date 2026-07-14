@@ -30,6 +30,8 @@ for (const required of [
   "runtime/openxml-wasm/_framework/OpenOffice.OpenXmlWasm.wasm",
   "native/OpenXmlWasm/OpenXmlWasm.sln",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/DocxCodec.cs",
+  "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/DocxHyperlinkCodec.cs",
+  "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/DocxPartContext.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxCodec.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxAssetCatalog.cs",
   "native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec/PptxBackgroundCodec.cs",

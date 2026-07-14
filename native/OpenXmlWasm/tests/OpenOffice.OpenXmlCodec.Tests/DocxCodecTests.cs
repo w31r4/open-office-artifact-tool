@@ -146,6 +146,138 @@ public sealed class DocxCodecTests
         Assert.Equal("openxml_validation_failed", Assert.Single(response.Diagnostics).Code);
     }
 
+    [Fact]
+    public void SourcePreservingExportEditsOwnedHyperlinkTextTargetsAndRelationships()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddBookmarkTarget(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[0];
+        Assert.Equal(DocumentBlock.ContentOneofCase.Hyperlink, block.ContentCase);
+        Assert.True(block.Source.Editable);
+        Assert.NotEmpty(block.Source.ResidualSha256);
+        Assert.Equal("https://example.test/original", block.Hyperlink.ExternalUri);
+        var originalRelationshipId = block.Hyperlink.RelationshipId;
+
+        block.Hyperlink.Text = "Updated external link";
+        block.Hyperlink.ExternalUri = "https://example.test/updated";
+        block.Hyperlink.Tooltip = "Updated target";
+        block.Hyperlink.History = false;
+        var external = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(external.Ok, Diagnostics(external));
+        using (var stream = new MemoryStream(external.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var hyperlink = mainPart.Document!.Body!.Elements<W.Paragraph>().First().Elements<W.Hyperlink>().Single();
+            Assert.Equal("Updated external link", hyperlink.InnerText);
+            Assert.Equal("Updated target", hyperlink.Tooltip?.Value);
+            Assert.False(hyperlink.History?.Value);
+            Assert.NotEqual(originalRelationshipId, hyperlink.Id?.Value);
+            Assert.Equal("https://example.test/updated", mainPart.HyperlinkRelationships.Single(item => item.Id == hyperlink.Id).Uri.OriginalString);
+            Assert.DoesNotContain(mainPart.HyperlinkRelationships, item => item.Id == originalRelationshipId);
+            Assert.Equal("0000FF", hyperlink.Descendants<W.Color>().Single().Val?.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var internalImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        var internalBlock = internalImport.Artifact.Document.Blocks[0];
+        internalBlock.Hyperlink.Text = "Jump to target";
+        internalBlock.Hyperlink.InternalAnchor = "TargetBookmark";
+        internalBlock.Hyperlink.Tooltip = "Internal target";
+        var internalExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = internalImport.Artifact,
+        });
+        Assert.True(internalExport.Ok, Diagnostics(internalExport));
+        using (var stream = new MemoryStream(internalExport.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var hyperlink = mainPart.Document!.Body!.Elements<W.Paragraph>().First().Elements<W.Hyperlink>().Single();
+            Assert.Equal("TargetBookmark", hyperlink.Anchor?.Value);
+            Assert.Null(hyperlink.Id);
+            Assert.Empty(mainPart.HyperlinkRelationships);
+            Assert.NotNull(mainPart.Document.Descendants<W.BookmarkStart>().SingleOrDefault(item => item.Name?.Value == "TargetBookmark"));
+        }
+
+        var rebound = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = internalExport.File,
+        });
+        rebound.Artifact.Document.Blocks[0].Hyperlink.ExternalUri = "https://example.test/rebound";
+        var reboundExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = rebound.Artifact,
+        });
+        Assert.True(reboundExport.Ok, Diagnostics(reboundExport));
+        using (var stream = new MemoryStream(reboundExport.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+            Assert.Equal("https://example.test/rebound", Assert.Single(document.MainDocumentPart!.HyperlinkRelationships).Uri.OriginalString);
+    }
+
+    [Fact]
+    public void HyperlinkSliceRejectsUnsupportedTopologyAndUnsafeUri()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        var complex = AddSecondHyperlinkRun(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(complex),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Equal(DocumentBlock.ContentOneofCase.Hyperlink, imported.Artifact.Document.Blocks[0].ContentCase);
+        Assert.False(imported.Artifact.Document.Blocks[0].Source.Editable);
+        imported.Artifact.Document.Blocks[0].Hyperlink.Text = "Unsafe topology edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var unsafeRequest = HyperlinkExportRequest();
+        unsafeRequest.Artifact.Document.Blocks[0].Hyperlink.ExternalUri = "javascript:alert(1)";
+        var unsafeResponse = Invoke(unsafeRequest);
+        Assert.False(unsafeResponse.Ok);
+        Assert.Equal("invalid_document_hyperlink", Assert.Single(unsafeResponse.Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
@@ -194,6 +326,69 @@ public sealed class DocxCodecTests
                 Document = document,
             },
         };
+    }
+
+    private static CodecRequest HyperlinkExportRequest()
+    {
+        var document = new DocumentArtifact { Id = "document/hyperlink", Name = "Hyperlink fixture" };
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/link",
+            StyleId = "Normal",
+            Hyperlink = new DocumentHyperlink
+            {
+                Text = "Original link",
+                ExternalUri = "https://example.test/original",
+            },
+        });
+        var target = new DocumentBlock
+        {
+            Id = "document/target",
+            Paragraph = new DocumentParagraph { Text = "Target paragraph" },
+        };
+        target.Paragraph.Runs.Add(new DocumentRun { Text = target.Paragraph.Text });
+        document.Blocks.Add(target);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static byte[] AddBookmarkTarget(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            paragraph.PrependChild(new W.BookmarkStart { Id = "41", Name = "TargetBookmark" });
+            paragraph.Append(new W.BookmarkEnd { Id = "41" });
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSecondHyperlinkRun(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var hyperlink = document.MainDocumentPart!.Document!.Descendants<W.Hyperlink>().Single();
+            hyperlink.Append(new W.Run(new W.Text(" second run")));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddBookmarkAndExternalRelationship(byte[] bytes)

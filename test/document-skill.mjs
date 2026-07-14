@@ -122,6 +122,7 @@ try {
   assert.match(businessBriefDocumentXml, /<w:hyperlink\b(?=[^>]*w:anchor="ReadinessEvidence")(?=[^>]*w:history="0")(?=[^>]*w:tooltip="Open the readiness table evidence")[^>]*>/);
   assert.match(businessBriefDocumentXml, /w:instr="CITATION ECMA376"/);
   const businessBriefRels = await businessBriefZip.file("word/_rels/document.xml.rels").async("text");
+  assert.match(businessBriefRels, /Target="https:\/\/learn\.microsoft\.com\/office\/open-xml\/word-processing"[^>]*TargetMode="External"/);
   assert.match(businessBriefRels, /relationships\/commentsExtended/);
   assert.match(businessBriefRels, /relationships\/commentsIds/);
   assert.match(businessBriefRels, /relationships\/commentsExtensible/);
@@ -130,7 +131,10 @@ try {
   const nativeTableComment = nativePreferredDocument.comments.find((item) => item.text.includes("table comment anchor"));
   assert.equal(nativeTableComment?.author, "Maintainer");
   assert.equal(nativePreferredDocument.resolve(nativeTableComment?.targetId)?.kind, "table");
-  assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.url)?.url, "https://learn.microsoft.com/office/open-xml/open-xml-sdk");
+  const externalLink = nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.url);
+  assert.equal(externalLink?.url, "https://learn.microsoft.com/office/open-xml/word-processing");
+  assert.equal(externalLink?.tooltip, "Edited through the source-built OpenXML WASM codec");
+  assert.equal(externalLink?.history, false);
   const recommendationLink = nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.anchor === "RecommendationSection");
   const recommendationBookmark = nativePreferredDocument.bookmarks.find((item) => item.name === "RecommendationSection");
   const readinessBookmark = nativePreferredDocument.bookmarks.find((item) => item.name === "ReadinessEvidence");

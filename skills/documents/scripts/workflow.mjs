@@ -316,6 +316,22 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
   if (roundtripCodec === "openxml-wasm") {
     const imported = await importDocxWithOpenXmlWasm(docx);
+    for (const edit of fixture.openXmlWasmEdits || []) {
+      if (edit.kind !== "hyperlink") throw new Error(`Unsupported document OpenXML-WASM fixture edit kind ${edit.kind}.`);
+      const hyperlink = imported.blocks.find((block) => block.kind === "hyperlink" && (!edit.matchText || block.text === edit.matchText));
+      assert.ok(hyperlink, `Missing source-bound hyperlink fixture target ${edit.matchText || "(unspecified)"}.`);
+      if (Object.prototype.hasOwnProperty.call(edit, "text")) hyperlink.text = String(edit.text);
+      if (Object.prototype.hasOwnProperty.call(edit, "url")) {
+        hyperlink.url = String(edit.url || "");
+        hyperlink.anchor = undefined;
+      }
+      if (Object.prototype.hasOwnProperty.call(edit, "anchor")) {
+        hyperlink.anchor = String(edit.anchor || "") || undefined;
+        hyperlink.url = "";
+      }
+      if (Object.prototype.hasOwnProperty.call(edit, "tooltip")) hyperlink.tooltip = edit.tooltip;
+      if (Object.prototype.hasOwnProperty.call(edit, "history")) hyperlink.history = edit.history !== false;
+    }
     docx = await exportDocxWithOpenXmlWasm(imported);
   }
   await docx.save(docxPath);
