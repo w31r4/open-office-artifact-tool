@@ -2970,6 +2970,29 @@ const WORKSHEET_TABLE_QUERY_REFRESH_BOOLEAN_FIELDS = ["preserveSortFilterLayout"
 const WORKSHEET_TABLE_QUERY_REFRESH_UINT_FIELDS = ["minimumVersion", "nextId", "unboundColumnsLeft", "unboundColumnsRight"];
 const WORKSHEET_TABLE_QUERY_FIELD_BOOLEAN_FIELDS = ["dataBound", "rowNumbers", "fillFormulas", "clipped"];
 
+function normalizeWorksheetTableSortState(sortState) {
+  if (!sortState) return undefined;
+  return {
+    reference: String(sortState.reference ?? ""),
+    caseSensitive: Boolean(sortState.caseSensitive),
+    conditions: Array.isArray(sortState.conditions)
+      ? sortState.conditions.map((condition) => ({
+          reference: String(condition?.reference ?? ""),
+          descending: Boolean(condition?.descending),
+          ...((condition?.kind === "icon" || condition?.iconSet) ? {
+            kind: "icon",
+            iconSet: String(condition.iconSet ?? ""),
+            ...(condition.iconId == null ? {} : { iconId: Number(condition.iconId) }),
+          } : condition?.kind === "color" ? {
+            kind: "color",
+            target: String(condition.target ?? ""),
+            color: condition.color,
+          } : {}),
+        }))
+      : [],
+  };
+}
+
 function normalizeWorksheetTableQueryRefresh(refresh) {
   if (refresh == null) return undefined;
   const normalized = {
@@ -2983,6 +3006,8 @@ function normalizeWorksheetTableQueryRefresh(refresh) {
   };
   for (const field of WORKSHEET_TABLE_QUERY_REFRESH_BOOLEAN_FIELDS) if (refresh[field] !== undefined) normalized[field] = Boolean(refresh[field]);
   for (const field of WORKSHEET_TABLE_QUERY_REFRESH_UINT_FIELDS) if (refresh[field] !== undefined) normalized[field] = Number(refresh[field]);
+  if (Array.isArray(refresh.deletedFieldNames)) normalized.deletedFieldNames = refresh.deletedFieldNames.map((name) => String(name));
+  if (refresh.sortState) normalized.sortState = normalizeWorksheetTableSortState(refresh.sortState);
   return normalized;
 }
 
@@ -3085,25 +3110,7 @@ class WorksheetTable {
         ...(filter?.calendarType ? { calendarType: String(filter.calendarType) } : {}),
       };
     }) : [];
-    this.sortState = config.sortState ? {
-      reference: String(config.sortState.reference ?? ""),
-      caseSensitive: Boolean(config.sortState.caseSensitive),
-      conditions: Array.isArray(config.sortState.conditions)
-        ? config.sortState.conditions.map((condition) => ({
-            reference: String(condition?.reference ?? ""),
-            descending: Boolean(condition?.descending),
-            ...((condition?.kind === "icon" || condition?.iconSet) ? {
-              kind: "icon",
-              iconSet: String(condition.iconSet ?? ""),
-              ...(condition.iconId == null ? {} : { iconId: Number(condition.iconId) }),
-            } : condition?.kind === "color" ? {
-              kind: "color",
-              target: String(condition.target ?? ""),
-              color: condition.color,
-            } : {}),
-          }))
-        : [],
-    } : undefined;
+    this.sortState = normalizeWorksheetTableSortState(config.sortState);
     this.queryTable = normalizeWorksheetTableQuery(config.queryTable);
     if (config.queryTableUnsupported === true)
       Object.defineProperty(this, WORKSHEET_TABLE_QUERY_UNSUPPORTED, { configurable: true, value: true, writable: true });
@@ -7331,16 +7338,23 @@ function parseNativeTableFilters(xml, styles) {
   });
 }
 
-function parseNativeTableSortState(xml, styles) {
-  const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
-  if (!autoFilter) return undefined;
-  const match = /<(?:[A-Za-z_][\w.-]*:)?sortState\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sortState\s*>/.exec(autoFilter[1]);
-  if (!match) return undefined;
+function parseNativeSortState(xml, styles) {
+  const matches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortState\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sortState\s*>/g)];
+  if (matches.length !== 1) return undefined;
+  const match = matches[0];
   const attrs = ooxmlXmlAttributes(match[1] || "");
-  if (!attrs.ref || attrs.columnSort != null || attrs.sortMethod != null) return undefined;
-  const conditions = [...match[2].matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g)].map((conditionMatch) => {
+  if (!attrs.ref || Object.keys(attrs).some((name) => !["ref", "caseSensitive"].includes(name))) return undefined;
+  const body = match[2] || "";
+  const extensionPattern = /<(?:[A-Za-z_][\w.-]*:)?extLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst\s*>/g;
+  const extensions = [...body.matchAll(extensionPattern)];
+  if (extensions.length > 1) return undefined;
+  const conditionPattern = /<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g;
+  const conditionMatches = [...body.matchAll(conditionPattern)];
+  const residual = body.replace(extensionPattern, "").replace(conditionPattern, "").trim();
+  if (residual) return undefined;
+  const conditions = conditionMatches.map((conditionMatch) => {
     const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
-    if (!condition.ref || condition.customList != null) return undefined;
+    if (!condition.ref || Object.keys(condition).some((name) => !["ref", "descending", "sortBy", "iconSet", "iconId", "dxfId"].includes(name))) return undefined;
     const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
     if (condition.sortBy === "icon") {
       const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
@@ -7363,7 +7377,12 @@ function parseNativeTableSortState(xml, styles) {
   };
 }
 
-function parseNativeQueryTableRefresh(xml) {
+function parseNativeTableSortState(xml, styles) {
+  const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
+  return autoFilter ? parseNativeSortState(autoFilter[1], styles) : undefined;
+}
+
+function parseNativeQueryTableRefresh(xml, styles) {
   const matches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableRefresh\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableRefresh>/g)];
   if (matches.length !== 1) return undefined;
   const attrs = ooxmlXmlAttributes(matches[0][1] || "");
@@ -7427,10 +7446,28 @@ function parseNativeQueryTableRefresh(xml) {
     if (refresh.nextId != null && (refresh.nextId <= 0 || ids.has(refresh.nextId))) return undefined;
   }
   refresh.fields = fields;
+  const deletedCollections = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableDeletedFields\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableDeletedFields\s*>/g)];
+  if (deletedCollections.length === 1) {
+    const collectionAttrs = ooxmlXmlAttributes(deletedCollections[0][1] || "");
+    const deletedBody = deletedCollections[0][2] || "";
+    const deletedPattern = /<(?:[A-Za-z_][\w.-]*:)?deletedField\b([^>]*?)\/\s*>/g;
+    const deletedTags = [...deletedBody.matchAll(deletedPattern)];
+    const count = Number(collectionAttrs.count);
+    const deletedAttributes = deletedTags.map((tag) => ooxmlXmlAttributes(tag[1] || ""));
+    const names = deletedAttributes.map((attributes) => attributes.name).filter((name) => name != null).map(String);
+    const normalizedNames = new Set(names.map((name) => name.toLowerCase()));
+    if (Object.keys(collectionAttrs).every((name) => name === "count") && !deletedBody.replace(deletedPattern, "").trim() &&
+        deletedAttributes.every((attributes) => Object.keys(attributes).every((name) => name === "name")) &&
+        Number.isInteger(count) && count >= 0 && count === deletedTags.length && count === names.length && count <= 16384 &&
+        names.every((name) => name.trim() && name.length <= 255) && normalizedNames.size === names.length)
+      refresh.deletedFieldNames = names;
+  }
+  const sortState = parseNativeSortState(body, styles);
+  if (sortState) refresh.sortState = sortState;
   return refresh;
 }
 
-function parseNativeQueryTable(xml) {
+function parseNativeQueryTable(xml, styles) {
   const opening = /<(?:[A-Za-z_][\w.-]*:)?queryTable\b[^>]*>/.exec(String(xml || ""))?.[0];
   if (!opening) return undefined;
   const attrs = ooxmlXmlAttributes(opening);
@@ -7460,12 +7497,12 @@ function parseNativeQueryTable(xml) {
     if (!Number.isInteger(autoFormatId) || autoFormatId < 0) return undefined;
     query.autoFormatId = autoFormatId;
   }
-  const refresh = parseNativeQueryTableRefresh(xml);
+  const refresh = parseNativeQueryTableRefresh(xml, styles);
   if (refresh) query.refresh = refresh;
   return query;
 }
 
-async function importNativeTableQuery(zip, tablePartPath) {
+async function importNativeTableQuery(zip, tablePartPath, styles) {
   const relationshipPath = ooxmlRelationshipPartPath(tablePartPath, "XLSX");
   const relationshipFile = zip.file(relationshipPath);
   if (!relationshipFile) return {};
@@ -7477,7 +7514,7 @@ async function importNativeTableQuery(zip, tablePartPath) {
   const queryPartPath = ooxmlResolveRelationshipTarget(tablePartPath, queryRelationships[0].target);
   const queryXml = await zip.file(queryPartPath)?.async("text");
   if (!queryXml || zip.file(ooxmlRelationshipPartPath(queryPartPath, "XLSX"))) return { queryTableUnsupported: true };
-  const queryTable = parseNativeQueryTable(queryXml);
+  const queryTable = parseNativeQueryTable(queryXml, styles);
   if (!queryTable) return { queryTableUnsupported: true };
   const workbookRelationships = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
   const connectionRelationships = workbookRelationships.filter((item) => item.type.endsWith("/connections") && String(item.targetMode || "").toLowerCase() !== "external");
@@ -7526,7 +7563,7 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath, styles
     const columnNames = columnDefinitions.map((column) => column.name);
     const styleTag = /<(?:[A-Za-z_][\w.-]*:)?tableStyleInfo\b[^>]*\/?\s*>/.exec(xml)?.[0];
     const styleAttrs = ooxmlXmlAttributes(styleTag || "");
-    const queryProfile = await importNativeTableQuery(zip, tablePartPath);
+    const queryProfile = await importNativeTableQuery(zip, tablePartPath, styles);
     sheet.tables.add({
       range: attrs.ref,
       name: attrs.displayName || attrs.name || `Table${sheet.tables.items.length + 1}`,

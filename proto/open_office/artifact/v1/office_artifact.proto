@@ -370,6 +370,12 @@ message SpreadsheetTableQueryRefreshArtifact {
   optional uint32 unbound_columns_left = 6;
   optional uint32 unbound_columns_right = 7;
   repeated SpreadsheetTableQueryFieldArtifact fields = 8;
+  // Names from the existing queryTableDeletedFields history. Source-bound
+  // export keeps count/order fixed and permits only in-place name edits.
+  repeated string deleted_field_names = 9;
+  // Existing refresh-local sort state. Presence and condition topology are
+  // source-bound; recognized condition semantics can be edited in place.
+  SpreadsheetTableSortStateArtifact sort_state = 10;
 }
 
 // One queryTableField from the recognized source refresh profile. id and

@@ -42,6 +42,15 @@
     "connectionName": "Fixture warehouse",
     "queryName": "Warehouse sales",
     "fields": ["Region", "Revenue"],
+    "deletedFieldNames": ["Legacy Region", "Legacy Revenue"],
+    "sortState": {
+      "reference": "A2:B3",
+      "caseSensitive": true,
+      "conditions": [
+        { "reference": "B2:B3", "descending": true },
+        { "reference": "A2:A3", "kind": "icon", "iconSet": "3Arrows", "iconId": 0 }
+      ]
+    },
     "edit": {
       "name": "Warehouse sales refreshed",
       "disableRefresh": true,
@@ -54,6 +63,15 @@
       "preserveSortFilterLayout": false,
       "headersInLastRefresh": false,
       "minimumVersion": 1,
+      "deletedFieldNames": ["Legacy Territory", "Legacy Revenue"],
+      "sortState": {
+        "reference": "A2:B3",
+        "caseSensitive": false,
+        "conditions": [
+          { "reference": "B2:B3", "descending": false },
+          { "reference": "A2:A3", "descending": false, "kind": "icon", "iconSet": "3Arrows", "iconId": 1 }
+        ]
+      },
       "fields": [
         { "id": 1, "name": "Territory", "dataBound": false, "fillFormulas": true },
         { "id": 2, "clipped": true }

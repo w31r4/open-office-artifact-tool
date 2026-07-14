@@ -17,6 +17,7 @@ namespace OpenChestnut.Codec;
 internal sealed class XlsxQueryTableCodec
 {
     private enum RefreshProfile { Absent, Recognized, Opaque }
+    private enum NestedProfile { Absent, Recognized, Opaque }
 
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private static readonly HashSet<string> GrowShrinkTypes = new(StringComparer.Ordinal)
@@ -28,6 +29,10 @@ internal sealed class XlsxQueryTableCodec
     private readonly HashSet<uint> _connectionIds;
     private readonly RefreshProfile _refreshProfile;
     private readonly XElement? _refreshElement;
+    private readonly NestedProfile _deletedFieldsProfile;
+    private readonly XElement? _deletedFieldsElement;
+    private readonly NestedProfile _sortProfile;
+    private readonly XlsxQuerySortStateCodec? _sort;
     private readonly SpreadsheetTableQueryArtifact _sourceArtifact;
 
     private XlsxQueryTableCodec(
@@ -40,6 +45,10 @@ internal sealed class XlsxQueryTableCodec
         HashSet<uint> connectionIds,
         RefreshProfile refreshProfile,
         XElement? refreshElement,
+        NestedProfile deletedFieldsProfile,
+        XElement? deletedFieldsElement,
+        NestedProfile sortProfile,
+        XlsxQuerySortStateCodec? sort,
         SpreadsheetTableQueryArtifact artifact)
     {
         _part = part;
@@ -48,6 +57,10 @@ internal sealed class XlsxQueryTableCodec
         _connectionIds = connectionIds;
         _refreshProfile = refreshProfile;
         _refreshElement = refreshElement;
+        _deletedFieldsProfile = deletedFieldsProfile;
+        _deletedFieldsElement = deletedFieldsElement;
+        _sortProfile = sortProfile;
+        _sort = sort;
         Path = part.Uri.OriginalString.TrimStart('/');
         artifact.Source = new SpreadsheetTableQuerySourceBinding
         {
@@ -71,7 +84,7 @@ internal sealed class XlsxQueryTableCodec
     // Returns true when the table owns either no child relationship or exactly
     // one recognized QueryTablePart. False keeps the parent table in its prior
     // opaque/read-only profile without flattening an unknown graph.
-    internal static bool TryLoad(TableDefinitionPart tablePart, WorkbookPart workbookPart, out XlsxQueryTableCodec? codec)
+    internal static bool TryLoad(TableDefinitionPart tablePart, WorkbookPart workbookPart, XlsxCellStyleCodec styles, out XlsxQueryTableCodec? codec)
     {
         codec = null;
         if (tablePart.ExternalRelationships.Any()) return false;
@@ -82,11 +95,12 @@ internal sealed class XlsxQueryTableCodec
         var connectionsPart = workbookPart.ConnectionsPart;
         if (connectionsPart is null) return false;
 
-        if (!TryReadTableColumnIds(tablePart, out var tableColumnIds) ||
+        if (!TryReadTableIdentity(tablePart, out var tableColumnIds, out var tableBounds) ||
             !TryReadPart(queryPart, out var queryBytes, out var queryDocument) ||
             !TryReadPart(connectionsPart, out var connectionBytes, out var connectionDocument) ||
             !TryReadConnections(connectionDocument!, out var connectionIds) ||
-            !TryReadQuery(queryDocument!, tableColumnIds, out var artifact, out var refreshProfile, out var refreshElement) ||
+            !TryReadQuery(queryDocument!, tableColumnIds, styles, tableBounds, out var artifact, out var refreshProfile, out var refreshElement,
+                out var deletedFieldsProfile, out var deletedFieldsElement, out var sortProfile, out var sort) ||
             !connectionIds.Contains(artifact!.ConnectionId)) return false;
 
         codec = new XlsxQueryTableCodec(
@@ -99,6 +113,10 @@ internal sealed class XlsxQueryTableCodec
             connectionIds,
             refreshProfile,
             refreshElement,
+            deletedFieldsProfile,
+            deletedFieldsElement,
+            sortProfile,
+            sort,
             artifact!);
         return true;
     }
@@ -177,11 +195,24 @@ internal sealed class XlsxQueryTableCodec
                 after.HasTableColumnId && after.TableColumnId != before.TableColumnId)
                 throw Invalid("Source-preserving XLSX export cannot reorder or rebind query refresh field identity.", Path);
         }
+        if (_deletedFieldsProfile != NestedProfile.Recognized)
+        {
+            if (desired.DeletedFieldNames.Count != 0)
+                throw Invalid("Source-preserving XLSX export cannot fabricate or replace absent/opaque query refresh deleted fields.", Path);
+        }
+        else if (desired.DeletedFieldNames.Count != source.DeletedFieldNames.Count)
+            throw Invalid("Source-preserving XLSX export cannot add or remove query refresh deleted fields.", Path);
+        if (_sortProfile != NestedProfile.Recognized)
+        {
+            if (desired.SortState is not null)
+                throw Invalid("Source-preserving XLSX export cannot fabricate or replace an absent/opaque query refresh sort state.", Path);
+        }
+        else _sort!.ValidateShape(desired.SortState, Path);
     }
 
     private static void ValidateRefresh(SpreadsheetTableQueryRefreshArtifact refresh, string location)
     {
-        if (refresh.Fields.Count > 16_384 ||
+        if (refresh.Fields.Count > 16_384 || refresh.DeletedFieldNames.Count > 16_384 ||
             refresh.HasMinimumVersion && refresh.MinimumVersion > byte.MaxValue ||
             refresh.HasUnboundColumnsLeft && refresh.UnboundColumnsLeft > 16_384 ||
             refresh.HasUnboundColumnsRight && refresh.UnboundColumnsRight > 16_384)
@@ -203,6 +234,10 @@ internal sealed class XlsxQueryTableCodec
             if (field.HasClipped && field.Clipped && (!field.HasDataBound || !field.DataBound))
                 throw Invalid("Worksheet query refresh clipped fields must be explicitly bound to external data.", location);
         }
+        var deletedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in refresh.DeletedFieldNames)
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 255 || name.Any(char.IsControl) || !deletedNames.Add(name))
+                throw Invalid("Worksheet query refresh has an invalid or duplicate deleted-field name.", location);
         if (refresh.HasNextId && (refresh.NextId == 0 || ids.Contains(refresh.NextId)))
             throw Invalid("Worksheet query refresh next_id must identify an unused positive field ID.", location);
     }
@@ -218,18 +253,27 @@ internal sealed class XlsxQueryTableCodec
         SetOptional(element, "unboundColumnsLeft", refresh.HasUnboundColumnsLeft, refresh.UnboundColumnsLeft);
         SetOptional(element, "unboundColumnsRight", refresh.HasUnboundColumnsRight, refresh.UnboundColumnsRight);
         var fieldsElement = element.Elements(Spreadsheet + "queryTableFields").SingleOrDefault();
-        if (fieldsElement is null) return;
-        var fieldElements = fieldsElement.Elements(Spreadsheet + "queryTableField").ToArray();
-        for (var index = 0; index < fieldElements.Length; index++)
+        if (fieldsElement is not null)
         {
-            var field = refresh.Fields[index];
-            var fieldElement = fieldElements[index];
-            fieldElement.SetAttributeValue("name", field.HasName ? field.Name : null);
-            SetOptional(fieldElement, "dataBound", field.HasDataBound, field.DataBound);
-            SetOptional(fieldElement, "rowNumbers", field.HasRowNumbers, field.RowNumbers);
-            SetOptional(fieldElement, "fillFormulas", field.HasFillFormulas, field.FillFormulas);
-            SetOptional(fieldElement, "clipped", field.HasClipped, field.Clipped);
+            var fieldElements = fieldsElement.Elements(Spreadsheet + "queryTableField").ToArray();
+            for (var index = 0; index < fieldElements.Length; index++)
+            {
+                var field = refresh.Fields[index];
+                var fieldElement = fieldElements[index];
+                fieldElement.SetAttributeValue("name", field.HasName ? field.Name : null);
+                SetOptional(fieldElement, "dataBound", field.HasDataBound, field.DataBound);
+                SetOptional(fieldElement, "rowNumbers", field.HasRowNumbers, field.RowNumbers);
+                SetOptional(fieldElement, "fillFormulas", field.HasFillFormulas, field.FillFormulas);
+                SetOptional(fieldElement, "clipped", field.HasClipped, field.Clipped);
+            }
         }
+        if (_deletedFieldsProfile == NestedProfile.Recognized)
+        {
+            var deletedElements = _deletedFieldsElement!.Elements(Spreadsheet + "deletedField").ToArray();
+            for (var index = 0; index < deletedElements.Length; index++)
+                deletedElements[index].SetAttributeValue("name", refresh.DeletedFieldNames[index]);
+        }
+        if (_sortProfile == NestedProfile.Recognized) _sort!.Patch(refresh.SortState!, Path);
     }
 
     private void Patch(SpreadsheetTableQueryArtifact query)
@@ -265,13 +309,23 @@ internal sealed class XlsxQueryTableCodec
     private static bool TryReadQuery(
         XDocument document,
         IReadOnlySet<uint> tableColumnIds,
+        XlsxCellStyleCodec styles,
+        (uint Top, uint Left, uint Bottom, uint Right) tableBounds,
         out SpreadsheetTableQueryArtifact? artifact,
         out RefreshProfile refreshProfile,
-        out XElement? refreshElement)
+        out XElement? refreshElement,
+        out NestedProfile deletedFieldsProfile,
+        out XElement? deletedFieldsElement,
+        out NestedProfile sortProfile,
+        out XlsxQuerySortStateCodec? sort)
     {
         artifact = null;
         refreshProfile = RefreshProfile.Absent;
         refreshElement = null;
+        deletedFieldsProfile = NestedProfile.Absent;
+        deletedFieldsElement = null;
+        sortProfile = NestedProfile.Absent;
+        sort = null;
         var root = document.Root;
         if (root?.Name != Spreadsheet + "queryTable") return false;
         var name = root.Attribute("name")?.Value;
@@ -311,7 +365,8 @@ internal sealed class XlsxQueryTableCodec
         if (refreshElements.Length == 1)
         {
             refreshElement = refreshElements[0];
-            if (TryReadRefresh(refreshElement, tableColumnIds, out var refresh))
+            if (TryReadRefresh(refreshElement, tableColumnIds, styles, tableBounds, out var refresh,
+                out deletedFieldsProfile, out deletedFieldsElement, out sortProfile, out sort))
             {
                 result.Refresh = refresh;
                 refreshProfile = RefreshProfile.Recognized;
@@ -323,11 +378,16 @@ internal sealed class XlsxQueryTableCodec
         return true;
     }
 
-    private static bool TryReadTableColumnIds(TableDefinitionPart part, out HashSet<uint> ids)
+    private static bool TryReadTableIdentity(
+        TableDefinitionPart part,
+        out HashSet<uint> ids,
+        out (uint Top, uint Left, uint Bottom, uint Right) bounds)
     {
         ids = [];
+        bounds = default;
         var columns = part.Table?.TableColumns?.Elements<TableColumn>().ToArray();
-        if (columns is null || columns.Length == 0) return false;
+        if (columns is null || columns.Length == 0 || part.Table?.Reference?.Value is not string reference ||
+            !XlsxQuerySortStateCodec.TryRange(reference, out bounds)) return false;
         foreach (var column in columns)
         {
             var id = column.Id?.Value;
@@ -339,10 +399,20 @@ internal sealed class XlsxQueryTableCodec
     private static bool TryReadRefresh(
         XElement element,
         IReadOnlySet<uint> tableColumnIds,
-        out SpreadsheetTableQueryRefreshArtifact refresh)
+        XlsxCellStyleCodec styles,
+        (uint Top, uint Left, uint Bottom, uint Right) tableBounds,
+        out SpreadsheetTableQueryRefreshArtifact refresh,
+        out NestedProfile deletedFieldsProfile,
+        out XElement? deletedFieldsElement,
+        out NestedProfile sortProfile,
+        out XlsxQuerySortStateCodec? sort)
     {
         var result = new SpreadsheetTableQueryRefreshArtifact();
         refresh = result;
+        deletedFieldsProfile = NestedProfile.Absent;
+        deletedFieldsElement = null;
+        sortProfile = NestedProfile.Absent;
+        sort = null;
         if (!ReadOptionalBool(element, "preserveSortFilterLayout", value => result.PreserveSortFilterLayout = value) ||
             !ReadOptionalBool(element, "fieldIdWrapped", value => result.FieldIdWrapped = value) ||
             !ReadOptionalBool(element, "headersInLastRefresh", value => result.HeadersInLastRefresh = value) ||
@@ -380,6 +450,29 @@ internal sealed class XlsxQueryTableCodec
                 result.Fields.Add(field);
             }
         }
+        var deletedCollections = element.Elements(Spreadsheet + "queryTableDeletedFields").ToArray();
+        if (deletedCollections.Length == 1)
+        {
+            deletedFieldsElement = deletedCollections[0];
+            if (TryReadDeletedFields(deletedFieldsElement, out var names))
+            {
+                result.DeletedFieldNames.Add(names);
+                deletedFieldsProfile = NestedProfile.Recognized;
+            }
+            else deletedFieldsProfile = NestedProfile.Opaque;
+        }
+        else if (deletedCollections.Length > 1) deletedFieldsProfile = NestedProfile.Opaque;
+        var sortElements = element.Elements(Spreadsheet + "sortState").ToArray();
+        if (sortElements.Length == 1)
+        {
+            if (XlsxQuerySortStateCodec.TryCreate(sortElements[0], styles, tableBounds, out sort))
+            {
+                result.SortState = sort!.Artifact.Clone();
+                sortProfile = NestedProfile.Recognized;
+            }
+            else sortProfile = NestedProfile.Opaque;
+        }
+        else if (sortElements.Length > 1) sortProfile = NestedProfile.Opaque;
         try
         {
             ValidateRefresh(result, string.Empty);
@@ -391,6 +484,27 @@ internal sealed class XlsxQueryTableCodec
             refresh = new SpreadsheetTableQueryRefreshArtifact();
             return false;
         }
+    }
+
+    private static bool TryReadDeletedFields(XElement element, out IReadOnlyList<string> names)
+    {
+        names = [];
+        var fields = element.Elements().ToArray();
+        if (fields.Any(child => child.Name != Spreadsheet + "deletedField") ||
+            !uint.TryParse(element.Attribute("count")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ||
+            count != fields.Length || count > 16_384) return false;
+        var result = new List<string>(fields.Length);
+        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in fields)
+        {
+            if (field.Elements().Any() || field.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "name")) ||
+                field.Attribute("name")?.Value is not string name || string.IsNullOrWhiteSpace(name) || name.Length > 255 ||
+                name.Any(char.IsControl) || !unique.Add(name)) return false;
+            result.Add(name);
+        }
+        names = result;
+        return true;
     }
 
     private static bool TryReadConnections(XDocument document, out HashSet<uint> connectionIds)
@@ -510,6 +624,9 @@ internal sealed class XlsxQueryTableCodec
                 values.Add(Optional(field.HasClipped, field.Clipped));
                 values.Add(Optional(field.HasTableColumnId, field.TableColumnId));
             }
+            values.Add("<deleted-fields>");
+            values.AddRange(refresh.DeletedFieldNames);
+            values.AddRange(XlsxQuerySortStateCodec.Semantics(refresh.SortState));
         }
         return Sha256(Encoding.UTF8.GetBytes(string.Join('\0', values)));
     }

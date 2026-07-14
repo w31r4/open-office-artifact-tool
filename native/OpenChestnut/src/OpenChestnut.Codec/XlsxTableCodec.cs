@@ -205,7 +205,7 @@ internal sealed class XlsxTableCodec
         }
         var path = part.Uri.OriginalString.TrimStart('/');
         var tableReadable = TryRead(document, out var semantic);
-        var queryReadable = XlsxQueryTableCodec.TryLoad(part, _workbookPart, out var query);
+        var queryReadable = XlsxQueryTableCodec.TryLoad(part, _workbookPart, _styles, out var query);
         var editable = tableReadable && queryReadable && !part.ExternalRelationships.Any();
         if (!editable) semantic = null;
         else if (query is not null) semantic!.QueryTable = query.Artifact.Clone();

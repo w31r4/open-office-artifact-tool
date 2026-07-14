@@ -308,6 +308,15 @@ try {
     { id: 1, name: "Territory", dataBound: false, fillFormulas: true, clipped: false, tableColumnId: 1 },
     { id: 2, name: "Revenue", dataBound: true, clipped: true, tableColumnId: 2 },
   ]);
+  assert.deepEqual(queryResult.sourceQueryTable.query.refresh.deletedFieldNames, ["Legacy Territory", "Legacy Revenue"]);
+  assert.deepEqual(queryResult.sourceQueryTable.query.refresh.sortState, {
+    reference: "A2:B3",
+    caseSensitive: false,
+    conditions: [
+      { reference: "B2:B3", descending: false },
+      { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
+    ],
+  });
   assert.equal(queryResult.qa.summary.packageOk, true);
   assert.equal(queryResult.qa.summary.verifyOk, true);
   assert.equal(queryResult.qa.summary.visualQaOk, true);
@@ -344,6 +353,15 @@ try {
         { id: 1, name: "Territory", dataBound: false, fillFormulas: true, clipped: false, tableColumnId: 1 },
         { id: 2, name: "Revenue", dataBound: true, clipped: true, tableColumnId: 2 },
       ],
+      deletedFieldNames: ["Legacy Territory", "Legacy Revenue"],
+      sortState: {
+        reference: "A2:B3",
+        caseSensitive: false,
+        conditions: [
+          { reference: "B2:B3", descending: false },
+          { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
+        ],
+      },
     },
   });
   const queryZip = await JSZip.loadAsync(await fs.readFile(queryResult.workbookPath));
@@ -356,7 +374,12 @@ try {
   assert.match(runnableQueryXml, /id="1" name="Territory" dataBound="0" tableColumnId="1" fillFormulas="1" clipped="0"/);
   assert.match(runnableQueryXml, /id="2" name="Revenue" dataBound="1" tableColumnId="2" clipped="1"/);
   assert.match(runnableQueryXml, /<x:queryTableFields count="2">/);
+  assert.match(runnableQueryXml, /<x:deletedField name="Legacy Territory"/);
+  assert.match(runnableQueryXml, /<x:deletedField name="Legacy Revenue"/);
+  assert.match(runnableQueryXml, /<x:sortState ref="A2:B3">/);
+  assert.match(runnableQueryXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="1"/);
   assert.match(runnableQueryXml, /<fixture:fieldOpaque value="kept"/);
+  assert.match(runnableQueryXml, /<fixture:sortOpaque value="kept"/);
   assert.match(runnableQueryXml, /<fixture:opaque value="kept"/);
   assert.match(await fs.readFile(queryResult.qa.summary.files.packageInspect, "utf8"), /xl\/queryTables\/queryTable1\.xml/);
 

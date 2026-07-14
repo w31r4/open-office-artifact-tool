@@ -648,8 +648,7 @@ function publicTableFilter(filter) {
   };
 }
 
-function tableSortState(table) {
-  const sort = table?.sortState;
+function wireTableSortState(sort, address) {
   if (!sort) return undefined;
   return {
     reference: String(sort.reference ?? ""),
@@ -664,11 +663,15 @@ function tableSortState(table) {
               iconId: condition.iconId == null ? undefined : Number(condition.iconId),
             },
           } : condition?.kind === "color" ? {
-            color: wireTableColor(condition, `table ${table.name} sort ${condition.reference}`),
+            color: wireTableColor(condition, `${address} sort ${condition.reference}`),
           } : {}),
         }))
       : [],
   };
+}
+
+function tableSortState(table) {
+  return wireTableSortState(table?.sortState, `table ${table?.name || "(unnamed)"}`);
 }
 
 function publicTableSortState(sort) {
@@ -732,6 +735,9 @@ function publicTableQueryRefresh(value) {
   const refresh = { fields: Array.isArray(value.fields) ? value.fields.map(publicTableQueryField) : [] };
   for (const field of TABLE_QUERY_REFRESH_BOOLEAN_FIELDS) if (value[field] !== undefined) refresh[field] = Boolean(value[field]);
   for (const field of TABLE_QUERY_REFRESH_UINT_FIELDS) if (value[field] !== undefined) refresh[field] = Number(value[field]);
+  if (Array.isArray(value.deletedFieldNames) && value.deletedFieldNames.length)
+    refresh.deletedFieldNames = value.deletedFieldNames.map((name) => String(name));
+  if (value.sortState) refresh.sortState = publicTableSortState(value.sortState);
   return refresh;
 }
 
@@ -748,6 +754,11 @@ function publicTableQuery(value) {
 function wireTableQuery(table) {
   const query = publicTableQuery(table.queryTable);
   if (!query) return undefined;
+  if (table.queryTable?.refresh) {
+    query.refresh = publicTableQueryRefresh(table.queryTable.refresh);
+    if (table.queryTable.refresh.sortState)
+      query.refresh.sortState = wireTableSortState(table.queryTable.refresh.sortState, `table ${table.name} query refresh`);
+  }
   return { ...query, source: table[TABLE_STATE]?.wire?.queryTable?.source };
 }
 

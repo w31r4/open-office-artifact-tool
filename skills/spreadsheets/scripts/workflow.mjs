@@ -31,6 +31,27 @@ function fixtureXmlEscape(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+function sourceQuerySortStateXml(sortState) {
+  if (!sortState) return "";
+  const reference = String(sortState.reference || "");
+  const conditions = Array.isArray(sortState.conditions) ? sortState.conditions : [];
+  if (!reference || conditions.length === 0) throw new Error("sourceQueryTableFixture.sortState requires a reference and at least one condition.");
+  const conditionXml = conditions.map((condition) => {
+    const conditionReference = String(condition?.reference || "");
+    if (!conditionReference) throw new Error("sourceQueryTableFixture.sortState conditions require references.");
+    const descending = condition.descending ? ' descending="1"' : "";
+    if (condition.kind === "icon" || condition.iconSet) {
+      const iconSet = String(condition.iconSet || "");
+      if (!iconSet) throw new Error("sourceQueryTableFixture icon sorts require iconSet.");
+      const iconId = condition.iconId == null ? "" : ` iconId="${Number(condition.iconId)}"`;
+      return `<x:sortCondition ref="${fixtureXmlEscape(conditionReference)}"${descending} sortBy="icon" iconSet="${fixtureXmlEscape(iconSet)}"${iconId}/>`;
+    }
+    return `<x:sortCondition ref="${fixtureXmlEscape(conditionReference)}"${descending}/>`;
+  }).join("");
+  const caseSensitive = sortState.caseSensitive ? ' caseSensitive="1"' : "";
+  return `<x:sortState ref="${fixtureXmlEscape(reference)}"${caseSensitive}>${conditionXml}<x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState>`;
+}
+
 async function attachSourceQueryTableFixture(file, config = {}) {
   const tablePartPath = String(config.tablePartPath || "xl/tables/table1.xml");
   const queryPartPath = String(config.queryPartPath || "xl/queryTables/queryTable1.xml");
@@ -64,7 +85,12 @@ async function attachSourceQueryTableFixture(file, config = {}) {
   const queryFields = fields.map((name, index) => index === 0
     ? `<x:queryTableField id="1" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField>`
     : `<x:queryTableField id="${index + 1}" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="${index + 1}"/>`).join("");
-  zip.file(queryPartPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="${fixtureXmlEscape(config.queryName || "Fixture query")}" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="${connectionId}"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="${fields.length + 1}" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="${fields.length}">${queryFields}</x:queryTableFields></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>`);
+  const deletedFieldNames = Array.isArray(config.deletedFieldNames) ? config.deletedFieldNames.map(String) : [];
+  const deletedFieldsXml = deletedFieldNames.length
+    ? `<x:queryTableDeletedFields count="${deletedFieldNames.length}">${deletedFieldNames.map((name) => `<x:deletedField name="${fixtureXmlEscape(name)}"/>`).join("")}</x:queryTableDeletedFields>`
+    : "";
+  const sortStateXml = sourceQuerySortStateXml(config.sortState);
+  zip.file(queryPartPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="${fixtureXmlEscape(config.queryName || "Fixture query")}" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="${connectionId}"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="${fields.length + 1}" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="${fields.length}">${queryFields}</x:queryTableFields>${deletedFieldsXml}${sortStateXml}</x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>`);
   return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: XLSX_MIME, name: "source-query-table-fixture.xlsx" });
 }
 

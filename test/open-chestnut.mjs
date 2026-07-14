@@ -45,7 +45,7 @@ async function addQueryTableGraph(bytes) {
   ));
   zip.file("xl/tables/_rels/table1.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/></Relationships>');
   zip.file("xl/connections.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:connection id="7" name="Fixture warehouse" type="5" refreshedVersion="8" background="1" refreshOnLoad="0" saveData="1"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Status, Value FROM Metrics" commandType="2"/></x:connection></x:connections>');
-  zip.file("xl/queryTables/queryTable1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse metrics" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Status" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField><x:queryTableField id="2" name="Value" dataBound="1" tableColumnId="2"/></x:queryTableFields></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>');
+  zip.file("xl/queryTables/queryTable1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse metrics" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Status" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField><x:queryTableField id="2" name="Value" dataBound="1" tableColumnId="2"/></x:queryTableFields><x:queryTableDeletedFields count="2"><x:deletedField name="Legacy Status"/><x:deletedField name="Legacy Value"/></x:queryTableDeletedFields><x:sortState ref="A2:B3" caseSensitive="1"><x:sortCondition ref="B2:B3" descending="1"/><x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/><x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>');
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
@@ -65,6 +65,8 @@ assert.deepEqual([...toBinary(SpreadsheetTableArtifactSchema, create(Spreadsheet
 assert.deepEqual([...toBinary(SpreadsheetTableQueryArtifactSchema, create(SpreadsheetTableQueryArtifactSchema, { headers: false }))], [0x18, 0x00], "Spreadsheet QueryTable booleans must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetTableQueryArtifactSchema, create(SpreadsheetTableQueryArtifactSchema, { refresh: {} })).slice(0, 2)], [0xc2, 0x01], "Spreadsheet QueryTable refresh semantics must use additive query field 24.");
 assert.deepEqual([...toBinary(SpreadsheetTableQueryRefreshArtifactSchema, create(SpreadsheetTableQueryRefreshArtifactSchema, { preserveSortFilterLayout: false }))], [0x08, 0x00], "Spreadsheet QueryTable refresh booleans must preserve explicit false values.");
+assert.deepEqual([...toBinary(SpreadsheetTableQueryRefreshArtifactSchema, create(SpreadsheetTableQueryRefreshArtifactSchema, { deletedFieldNames: ["x"] }))], [0x4a, 0x01, 0x78], "Spreadsheet QueryTable deleted-field history must use additive refresh field 9.");
+assert.equal(toBinary(SpreadsheetTableQueryRefreshArtifactSchema, create(SpreadsheetTableQueryRefreshArtifactSchema, { sortState: { reference: "A2:B3" } }))[0], 0x52, "Spreadsheet QueryTable refresh-local sort state must use additive refresh field 10.");
 assert.deepEqual([...toBinary(SpreadsheetTableQueryFieldArtifactSchema, create(SpreadsheetTableQueryFieldArtifactSchema, { dataBound: false }))], [0x18, 0x00], "Spreadsheet QueryTable field booleans must preserve explicit false values.");
 assert.equal(toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { conditions: [{ reference: "B2:B3" }] }))[0], 0x1a, "Spreadsheet sort conditions must use sort-state field 3.");
 assert.equal(toBinary(SpreadsheetTableColumnArtifactSchema, create(SpreadsheetTableColumnArtifactSchema, { totalsRowFormulaArray: true }))[0], 0x38, "Spreadsheet table totals-formula array state must use column field 7.");
@@ -362,6 +364,15 @@ assert.deepEqual(queryTable.queryTable, {
       { id: 1, name: "Status", dataBound: true, fillFormulas: false, clipped: false, tableColumnId: 1 },
       { id: 2, name: "Value", dataBound: true, tableColumnId: 2 },
     ],
+    deletedFieldNames: ["Legacy Status", "Legacy Value"],
+    sortState: {
+      reference: "A2:B3",
+      caseSensitive: true,
+      conditions: [
+        { reference: "B2:B3", descending: true },
+        { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 0 },
+      ],
+    },
   },
 });
 assert.match(queryTable.inspectRecord().queryTable.name, /Warehouse metrics/);
@@ -378,6 +389,10 @@ queryTable.queryTable.refresh.fields[0].name = "State";
 queryTable.queryTable.refresh.fields[0].dataBound = false;
 queryTable.queryTable.refresh.fields[0].fillFormulas = true;
 queryTable.queryTable.refresh.fields[1].clipped = true;
+queryTable.queryTable.refresh.deletedFieldNames[0] = "Legacy State";
+queryTable.queryTable.refresh.sortState.caseSensitive = false;
+queryTable.queryTable.refresh.sortState.conditions[0].descending = false;
+queryTable.queryTable.refresh.sortState.conditions[1].iconId = 1;
 const queryExported = await exportXlsxWithOpenChestnut(queryImported, { recalculate: false });
 const queryOutputZip = await JSZip.loadAsync(queryExported.bytes);
 assert.deepEqual(await queryOutputZip.file("xl/connections.xml").async("uint8array"), queryConnectionXml, "connection definitions must remain byte-exact");
@@ -394,7 +409,13 @@ assert.match(queryOutputXml, /minimumVersion="1"/);
 assert.match(queryOutputXml, /id="1" name="State" dataBound="0" tableColumnId="1" fillFormulas="1" clipped="0"/);
 assert.match(queryOutputXml, /id="2" name="Value" dataBound="1" tableColumnId="2" clipped="1"/);
 assert.match(queryOutputXml, /<x:queryTableFields count="2">/);
+assert.match(queryOutputXml, /<x:deletedField name="Legacy State"/);
+assert.match(queryOutputXml, /<x:deletedField name="Legacy Value"/);
+assert.match(queryOutputXml, /<x:sortState ref="A2:B3">/);
+assert.match(queryOutputXml, /<x:sortCondition ref="B2:B3"/);
+assert.match(queryOutputXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="1"/);
 assert.match(queryOutputXml, /<fixture:fieldOpaque value="kept"/);
+assert.match(queryOutputXml, /<fixture:sortOpaque value="kept"/);
 assert.match(queryOutputXml, /<fixture:opaque value="kept"/);
 const queryReimported = await importXlsxWithOpenChestnut(queryExported);
 const queryReimportedTable = queryReimported.worksheets.getItem("Details").tables.getItemOrNullObject("QueriedStatusTable");
@@ -410,9 +431,20 @@ assert.deepEqual(queryReimportedTable.queryTable.refresh.fields, [
   { id: 1, name: "State", dataBound: false, fillFormulas: true, clipped: false, tableColumnId: 1 },
   { id: 2, name: "Value", dataBound: true, clipped: true, tableColumnId: 2 },
 ]);
+assert.deepEqual(queryReimportedTable.queryTable.refresh.deletedFieldNames, ["Legacy State", "Legacy Value"]);
+assert.deepEqual(queryReimportedTable.queryTable.refresh.sortState, {
+  reference: "A2:B3",
+  caseSensitive: false,
+  conditions: [
+    { reference: "B2:B3", descending: false },
+    { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
+  ],
+});
 const queryJavaScriptFallback = await SpreadsheetFile.importXlsx(queryExported);
 assert.equal(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.name, "Warehouse metrics refreshed");
 assert.deepEqual(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.refresh.fields, queryReimportedTable.queryTable.refresh.fields);
+assert.deepEqual(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.refresh.deletedFieldNames, queryReimportedTable.queryTable.refresh.deletedFieldNames);
+assert.deepEqual(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.refresh.sortState, queryReimportedTable.queryTable.refresh.sortState);
 await assert.rejects(
   SpreadsheetFile.exportXlsx(queryJavaScriptFallback),
   /JavaScript XLSX codec cannot author or source-preserve QueryTable\/external-connection graphs/,
@@ -447,6 +479,24 @@ invalidQueryNextId.worksheets.getItem("Details").tables.items[0].queryTable.refr
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidQueryNextId, { recalculate: false }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /unused positive field ID/i.test(error.message),
+);
+const removedDeletedQueryField = await importXlsxWithOpenChestnut(querySourceBytes);
+removedDeletedQueryField.worksheets.getItem("Details").tables.items[0].queryTable.refresh.deletedFieldNames.pop();
+await assert.rejects(
+  exportXlsxWithOpenChestnut(removedDeletedQueryField, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /add or remove query refresh deleted fields/i.test(error.message),
+);
+const removedRefreshSortCondition = await importXlsxWithOpenChestnut(querySourceBytes);
+removedRefreshSortCondition.worksheets.getItem("Details").tables.items[0].queryTable.refresh.sortState.conditions.pop();
+await assert.rejects(
+  exportXlsxWithOpenChestnut(removedRefreshSortCondition, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /add or remove query refresh sort conditions/i.test(error.message),
+);
+const invalidRefreshSortRange = await importXlsxWithOpenChestnut(querySourceBytes);
+invalidRefreshSortRange.worksheets.getItem("Details").tables.items[0].queryTable.refresh.sortState.reference = "A2:C3";
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidRefreshSortRange, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /contained in the source table range/i.test(error.message),
 );
 const fabricatedQueryWorkbook = Workbook.create();
 const fabricatedQuerySheet = fabricatedQueryWorkbook.worksheets.add("Query");

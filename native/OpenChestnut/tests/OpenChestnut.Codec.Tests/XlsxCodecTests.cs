@@ -663,6 +663,23 @@ public sealed class XlsxCodecTests
                 Assert.True(field.DataBound);
                 Assert.Equal(2U, field.TableColumnId);
             });
+        Assert.Equal(["Legacy Region", "Legacy Revenue"], refresh.DeletedFieldNames);
+        var refreshSort = Assert.IsType<SpreadsheetTableSortStateArtifact>(refresh.SortState);
+        Assert.Equal("A2:B3", refreshSort.Reference);
+        Assert.True(refreshSort.CaseSensitive);
+        Assert.Collection(refreshSort.Conditions,
+            condition =>
+            {
+                Assert.Equal("B2:B3", condition.Reference);
+                Assert.True(condition.Descending);
+                Assert.Null(condition.Icon);
+            },
+            condition =>
+            {
+                Assert.Equal("A2:A3", condition.Reference);
+                Assert.Equal("3Arrows", condition.Icon.IconSet);
+                Assert.Equal(0U, condition.Icon.IconId);
+            });
 
         table.Name = "WarehouseTable";
         query.Name = "Warehouse sales refreshed";
@@ -677,6 +694,10 @@ public sealed class XlsxCodecTests
         refresh.Fields[0].DataBound = false;
         refresh.Fields[0].FillFormulas = true;
         refresh.Fields[1].Clipped = true;
+        refresh.DeletedFieldNames[0] = "Legacy Territory";
+        refreshSort.CaseSensitive = false;
+        refreshSort.Conditions[0].Descending = false;
+        refreshSort.Conditions[1].Icon.IconId = 1;
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -701,7 +722,13 @@ public sealed class XlsxCodecTests
         Assert.Contains("id=\"1\" name=\"Territory\" dataBound=\"0\" tableColumnId=\"1\" fillFormulas=\"1\" clipped=\"0\"", queryXml);
         Assert.Contains("id=\"2\" name=\"Revenue\" dataBound=\"1\" tableColumnId=\"2\" clipped=\"1\"", queryXml);
         Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
+        Assert.Contains("<x:deletedField name=\"Legacy Territory\"", queryXml);
+        Assert.Contains("<x:deletedField name=\"Legacy Revenue\"", queryXml);
+        Assert.Contains("<x:sortState ref=\"A2:B3\">", queryXml);
+        Assert.Contains("<x:sortCondition ref=\"B2:B3\"", queryXml);
+        Assert.Contains("<x:sortCondition ref=\"A2:A3\" sortBy=\"icon\" iconSet=\"3Arrows\" iconId=\"1\"", queryXml);
         Assert.Contains("<fixture:fieldOpaque value=\"kept\"", queryXml);
+        Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
         Assert.Contains("<fixture:opaque value=\"kept\"", queryXml);
 
         var reimported = Import(output);
@@ -720,6 +747,10 @@ public sealed class XlsxCodecTests
         Assert.True(edited.QueryTable.Refresh.Fields[0].FillFormulas);
         Assert.True(edited.QueryTable.Refresh.Fields[1].DataBound);
         Assert.True(edited.QueryTable.Refresh.Fields[1].Clipped);
+        Assert.Equal(["Legacy Territory", "Legacy Revenue"], edited.QueryTable.Refresh.DeletedFieldNames);
+        Assert.False(edited.QueryTable.Refresh.SortState.CaseSensitive);
+        Assert.False(edited.QueryTable.Refresh.SortState.Conditions[0].Descending);
+        Assert.Equal(1U, edited.QueryTable.Refresh.SortState.Conditions[1].Icon.IconId);
         Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
         Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
     }
@@ -766,6 +797,71 @@ public sealed class XlsxCodecTests
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
         Assert.Contains("explicitly bound", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.DeletedFieldNames.RemoveAt(0);
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("add or remove query refresh deleted fields", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.DeletedFieldNames[1] = "Legacy Region";
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("duplicate deleted-field name", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Conditions.RemoveAt(0);
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("add or remove query refresh sort conditions", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Reference = "A2:C3";
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("contained in the source table range", Assert.Single(response.Diagnostics).Message);
+    }
+
+    [Fact]
+    public void OpaqueWorksheetQueryRefreshHistoryStaysHiddenAndPreserved()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray(), opaqueDeletedFields: true, opaqueSort: true);
+        AssertOffice2021Valid(source);
+        var imported = Import(source);
+        var query = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).QueryTable;
+        Assert.NotNull(query.Refresh);
+        Assert.Empty(query.Refresh.DeletedFieldNames);
+        Assert.Null(query.Refresh.SortState);
+        Assert.Equal("Region", query.Refresh.Fields[0].Name);
+        query.Name = "Opaque history retained";
+        query.Refresh.Fields[0].Name = "Territory";
+
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(exported.File.ToByteArray());
+        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
+        Assert.Contains("name=\"Opaque history retained\"", queryXml);
+        Assert.Contains("name=\"Territory\"", queryXml);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(queryXml, "<x:deletedField name=\"Legacy Region\"").Count);
+        Assert.Contains("sortMethod=\"stroke\"", queryXml);
+        Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.DeletedFieldNames.Add("Fabricated");
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("absent/opaque query refresh deleted fields", Assert.Single(rejected.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState = new SpreadsheetTableSortStateArtifact
+        {
+            Reference = "A2:B3",
+        };
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("absent/opaque query refresh sort state", Assert.Single(rejected.Diagnostics).Message);
     }
 
     [Fact]
@@ -2132,7 +2228,12 @@ public sealed class XlsxCodecTests
         return output.ToArray();
     }
 
-    private static byte[] AddQueryTableGraph(byte[] bytes, bool addUnsupportedRelationship = false, bool opaqueRefresh = false)
+    private static byte[] AddQueryTableGraph(
+        byte[] bytes,
+        bool addUnsupportedRelationship = false,
+        bool opaqueRefresh = false,
+        bool opaqueDeletedFields = false,
+        bool opaqueSort = false)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -2153,6 +2254,8 @@ public sealed class XlsxCodecTests
             if (addUnsupportedRelationship)
                 tablePart.AddExternalRelationship("urn:open-office-artifact-tool:unsupported-query-companion", new Uri("https://fixture.invalid/query"), "rIdUnsupportedQueryCompanion");
             var queryPart = tablePart.AddNewPart<QueryTablePart>("rIdQueryTable");
+            var secondDeletedFieldName = opaqueDeletedFields ? "Legacy Region" : "Legacy Revenue";
+            var sortOpaqueAttribute = opaqueSort ? " sortMethod=\"stroke\"" : string.Empty;
             WritePart(queryPart, $$"""
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7">
@@ -2163,6 +2266,15 @@ public sealed class XlsxCodecTests
                       </x:queryTableField>
                       <x:queryTableField id="2" name="Revenue" dataBound="1" tableColumnId="{{(opaqueRefresh ? 999 : 2)}}"/>
                     </x:queryTableFields>
+                    <x:queryTableDeletedFields count="2">
+                      <x:deletedField name="Legacy Region"/>
+                      <x:deletedField name="{{secondDeletedFieldName}}"/>
+                    </x:queryTableDeletedFields>
+                    <x:sortState ref="A2:B3" caseSensitive="1"{{sortOpaqueAttribute}}>
+                      <x:sortCondition ref="B2:B3" descending="1"/>
+                      <x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/>
+                      <x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst>
+                    </x:sortState>
                   </x:queryTableRefresh>
                   <x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst>
                 </x:queryTable>
