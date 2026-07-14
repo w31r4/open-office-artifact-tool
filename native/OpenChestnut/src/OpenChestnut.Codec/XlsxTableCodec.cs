@@ -227,18 +227,18 @@ internal sealed class XlsxTableCodec
         if (children.ElementAtOrDefault(expectedIndex++)?.Name != Spreadsheet + "tableColumns" ||
             children.ElementAtOrDefault(expectedIndex++)?.Name != Spreadsheet + "tableStyleInfo" || expectedIndex != children.Length) return false;
         var columnsRoot = root.Element(Spreadsheet + "tableColumns");
-        if (columnsRoot is null || columnsRoot.Attributes().Any(item => item.Name.Namespace != XNamespace.None || item.Name.LocalName != "count")) return false;
+        if (columnsRoot is null || columnsRoot.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "count"))) return false;
         var columns = columnsRoot.Elements().ToArray();
-        if (columns.Any(item => item.Name != Spreadsheet + "tableColumn" || item.Elements().Any() || item.Attributes().Any(attribute => attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("id" or "name")))) return false;
+        if (columns.Any(item => item.Name != Spreadsheet + "tableColumn" || item.Elements().Any() || item.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("id" or "name"))))) return false;
         if (!uint.TryParse(columnsRoot.Attribute("count")?.Value, out var columnCount) || columnCount != columns.Length) return false;
         for (var index = 0; index < columns.Length; index++)
             if (!uint.TryParse(columns[index].Attribute("id")?.Value, out var columnId) || columnId != index + 1) return false;
         var names = columns.Select(item => item.Attribute("name")?.Value).ToArray();
         if (names.Any(string.IsNullOrWhiteSpace)) return false;
         var filter = root.Element(Spreadsheet + "autoFilter");
-        if (filter is not null && (filter.Elements().Any() || filter.Attributes().Any(item => item.Name.Namespace != XNamespace.None || item.Name.LocalName != "ref") || filter.Attribute("ref")?.Value != reference)) return false;
+        if (filter is not null && (filter.Elements().Any() || filter.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "ref")) || filter.Attribute("ref")?.Value != reference)) return false;
         var style = root.Element(Spreadsheet + "tableStyleInfo");
-        if (style is null || style.Elements().Any() || style.Attributes().Any(item => item.Name.Namespace != XNamespace.None || item.Name.LocalName is not ("name" or "showFirstColumn" or "showLastColumn" or "showRowStripes" or "showColumnStripes"))) return false;
+        if (style is null || style.Elements().Any() || style.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName is not ("name" or "showFirstColumn" or "showLastColumn" or "showRowStripes" or "showColumnStripes")))) return false;
         var styleName = style.Attribute("name")?.Value;
         if (string.IsNullOrWhiteSpace(styleName) ||
             !TryBool(style.Attribute("showFirstColumn")?.Value, defaultValue: false, out var showFirstColumn) ||
