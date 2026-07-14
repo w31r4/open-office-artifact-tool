@@ -151,7 +151,7 @@ Missing master-style and background fields preserve source state. Explicit maste
 
 The placeholder slice passes 34 codec tests, a reproducible 38-file/12,864,199-byte runtime build, the 192-file clean-install package, and real Chromium/LibreOffice/Poppler gates. Hosted Linux run [`29298306670`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29298306670) passes that complete gate on `main`.
 
-The subsequent DOCX hyperlink slice passes hosted Linux run [`29299603126`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29299603126). The bounded simple-field slice raises the local gate to 39 codec tests, a reproducible 38-file/12,886,215-byte runtime build, the 195-file clean-install package, and real Chromium/LibreOffice/Poppler-backed document checks; hosted evidence is recorded after the milestone lands on `main`.
+The subsequent DOCX hyperlink slice passes hosted Linux run [`29299603126`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29299603126). The bounded simple-field slice raises the gate to 39 codec tests, a reproducible 38-file/12,886,215-byte runtime build, the 195-file clean-install package, and real Chromium/LibreOffice/Poppler-backed document checks. Hosted Linux run [`29301993212`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29301993212) passes that complete milestone on `main`.
 
 The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
