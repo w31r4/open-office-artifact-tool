@@ -53,6 +53,7 @@ internal sealed class OpcPackageProfile
         path => CommonOwnedPaths.Contains(path) ||
                 path.Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase) ||
                 path.Equals("xl/_rels/workbook.xml.rels", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("xl/styles.xml", StringComparison.OrdinalIgnoreCase) ||
                 IsNumberedXml(path, "xl/worksheets/sheet"),
         relationship =>
         {
@@ -61,7 +62,8 @@ internal sealed class OpcPackageProfile
                 return relationship.Type.EndsWith("/officeDocument", StringComparison.Ordinal) &&
                        relationship.Target.TrimStart('/').Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase);
             return relationship.SourcePath.Equals("xl/workbook.xml", StringComparison.OrdinalIgnoreCase) &&
-                   relationship.Type.EndsWith("/worksheet", StringComparison.Ordinal);
+                   (relationship.Type.EndsWith("/worksheet", StringComparison.Ordinal) ||
+                    relationship.Type.EndsWith("/styles", StringComparison.Ordinal));
         });
 
     internal static OpcPackageProfile Docx { get; } = new(

@@ -32,8 +32,8 @@
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
-      "bytes": 5721881,
-      "sha256": "7258d257201bdaf063ffe831e20f3801a165f5eca01f606231cceee1b14f36f0"
+      "bytes": 5722393,
+      "sha256": "bf9f6e45b02619f9211201168eff3dbc7c4fc7cca4d771539d55f9cf4a717393"
     },
     {
       "path": "_framework/Google.Protobuf.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenChestnut.Codec.wasm",
-      "bytes": 556821,
-      "sha256": "705661dd014fd0ff2c3804d097b5e55a6e2091c477de8757cc51918ac21e5fcd"
+      "bytes": 568085,
+      "sha256": "a48eed4e8cdb6474c1f3e17d178028676d63100c08f4418b930bbfd2687b4b65"
     },
     {
       "path": "_framework/OpenChestnut.Runtime.wasm",
       "bytes": 6421,
-      "sha256": "89dd676d71b63b3678710759a6dc169d6a4127bfc1edb730d8df62020bfd1849"
+      "sha256": "759504ac515ca65db6820a9b28b51df2ae98fa6a940afdb760fd37fc87f2bed1"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -92,8 +92,8 @@
     },
     {
       "path": "_framework/System.Linq.wasm",
-      "bytes": 47893,
-      "sha256": "b02a04dccfd7022309958f7d48106b8c4463e923132ce4b6633668810674f3ac"
+      "bytes": 51477,
+      "sha256": "b4444dfb0b6edcb096c131fc611fa9620ae760d292fae8d07281d9debfbb43d6"
     },
     {
       "path": "_framework/System.Memory.wasm",
@@ -117,8 +117,8 @@
     },
     {
       "path": "_framework/System.Private.CoreLib.wasm",
-      "bytes": 1949973,
-      "sha256": "9a260812b9a80791c537801af5867bed35245215e25f966f8958754728c8a481"
+      "bytes": 1950485,
+      "sha256": "c614703fffd4e15ce85c5831f838a705559a7b80fb349d557542c3a23ac9f8f2"
     },
     {
       "path": "_framework/System.Private.Uri.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3140,
-      "sha256": "4789f6630d185c2ec2192f062733253f139b33bd990d47d139838c33bf44a75c"
+      "sha256": "f865581072e75cad5934e1f5f2d3cf59918d80e0084eaf89a13b1a17966ad4e8"
     },
     {
       "path": "_framework/dotnet.js",
@@ -173,7 +173,7 @@
     {
       "path": "_framework/dotnet.native.wasm",
       "bytes": 1417190,
-      "sha256": "a532e95ee43dc15affde7f5df73bcd3f8b8536091fa49d2a84bc42ddab01af6d"
+      "sha256": "40125590c3604b0c3e0ddb1c7db9e1107a1976dddd0b5591a90a648543ed83bb"
     },
     {
       "path": "_framework/dotnet.runtime.js",
@@ -201,5 +201,5 @@
       "sha256": "db0ec1415b0f61bca62217c12aec17824066591f4a9caa43d328bca5322b22f6"
     }
   ],
-  "totalBytes": 12981948
+  "totalBytes": 12997820
 }

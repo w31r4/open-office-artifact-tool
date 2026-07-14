@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -20,6 +20,7 @@ import {
 const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, {
   tabStops: [{ positionEmu: 120n, alignment: "left" }],
 }));
+assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { numberFormatCode: "0.00%" }))[0], 0x22, "Spreadsheet number-format codes must use additive cell field 4.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
@@ -146,6 +147,8 @@ const workbook = Workbook.create({ dateSystem: "1904" });
 const summary = workbook.worksheets.add("Summary");
 summary.getRange("A1:B2").values = [["Quarter", 42.5], [true, null]];
 summary.getRange("B2").formulas = [["=B1*2"]];
+summary.getRange("B1").format.numberFormat = "0.000 \"units\"";
+summary.getRange("B2").format.numberFormat = "0.00%";
 summary.freezePanes.freezeRows(1).freezeColumns(1);
 summary.showGridLines = false;
 summary.columnDimensions.set(0, { width: 18, bestFit: true });
@@ -176,6 +179,8 @@ assert.deepEqual(imported.worksheets.getItem("Summary").freezePanes.toJSON(), { 
 assert.equal(imported.worksheets.getItem("Summary").showGridLines, false);
 assert.equal(imported.worksheets.getItem("Summary").columnDimensions.get(0).width, 18);
 assert.deepEqual(imported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
+assert.equal(imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "0.000 \"units\"");
+assert.equal(imported.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.00%");
 assert.match(imported.inspect({ kind: "workbook,sheet,formula" }).ndjson, /"dateSystem":"1904"/);
 assert.equal(imported.verify().ok, true);
 assert.equal(imported.resolve(imported.worksheets.getItem("Summary").id).name, "Summary");
@@ -189,9 +194,13 @@ assert.equal(javascriptImported.worksheets.items.length, 2);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
+assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "0.000 \"units\"");
+assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.00%");
 
+imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat = "$#,##0.00";
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
+assert.equal((await importXlsxWithOpenChestnut(secondExport)).worksheets.getItem("Summary").getRange("B1").format.numberFormat, "$#,##0.00");
 
 const externalZip = await JSZip.loadAsync(exported.bytes);
 const relationshipPath = "xl/_rels/workbook.xml.rels";
@@ -224,11 +233,21 @@ await assert.rejects(
 const styledSource = await SpreadsheetFile.exportXlsx(styled);
 const styledImported = await importXlsxWithOpenChestnut(styledSource);
 styledImported.worksheets.getItem("Sheet1").getRange("B2").values = [[2]];
+styledImported.worksheets.getItem("Sheet1").getRange("B2").format.numberFormat = "$#,##0.00";
 const styledPreserved = await exportXlsxWithOpenChestnut(styledImported, { recalculate: false });
 const styledRoundTrip = await SpreadsheetFile.importXlsx(styledPreserved);
 assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("B2").values[0][0], 2);
 assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("A1").format.font.bold, true);
+assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").getRange("B2").format.numberFormat, "$#,##0.00");
 assert.equal(styledRoundTrip.worksheets.getItem("Sheet1").tables.items[0].name, "StyledTable");
+
+const invalidNumberFormat = Workbook.create();
+invalidNumberFormat.worksheets.add("Sheet1").getRange("A1").values = [[1]];
+invalidNumberFormat.worksheets.getItem("Sheet1").getRange("A1").format.numberFormat = "x".repeat(4097);
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidNumberFormat),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_number_format",
+);
 
 const minimalDocument = DocumentModel.create({
   name: "OpenChestnut brief",

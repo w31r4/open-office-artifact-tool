@@ -500,7 +500,10 @@ function effectiveStyle(record, baseRecord, resources) {
 }
 
 export function parseXlsxStylesXml(xml = "", options = {}) {
-  const text = String(xml);
+  // Open XML SDK commonly emits a legal namespace prefix on every SpreadsheetML
+  // style element. Normalize element QNames for the bounded regex parser while
+  // leaving attributes and escaped format-code text untouched.
+  const text = String(xml).replace(/(<\/?)[A-Za-z_][\w.-]*:/g, "$1");
   const numberFormats = new Map(XLSX_BUILTIN_NUMBER_FORMATS);
   for (const match of text.matchAll(/<numFmt\b([^>]*)\/>/g)) { const attrs = parseAttrs(match[1]); numberFormats.set(Number(attrs.numFmtId), attrs.formatCode); }
   const colorResources = {

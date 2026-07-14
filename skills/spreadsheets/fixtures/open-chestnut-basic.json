@@ -2,6 +2,7 @@
   "name": "open-chestnut-basic",
   "outputName": "open-chestnut-basic.xlsx",
   "codec": "open-chestnut",
+  "roundtripCodec": "open-chestnut",
   "dateSystem": "1904",
   "sheets": [
     {
@@ -20,6 +21,14 @@
         {
           "range": "B3",
           "formulas": [["=B2*2"]]
+        },
+        {
+          "range": "B2",
+          "format": { "numberFormat": "0.000 \"units\"" }
+        },
+        {
+          "range": "B3",
+          "format": { "numberFormat": "0.00%" }
         },
         {
           "range": "A4:B4",

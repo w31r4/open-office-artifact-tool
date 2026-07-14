@@ -164,6 +164,7 @@ try {
     nativeRender: nativeSpreadsheetRenderStatus().available ? "required" : "off",
   });
   assert.equal(wasmResult.codec, "open-chestnut");
+  assert.equal(wasmResult.roundtripCodec, "open-chestnut");
   assert.equal(wasmResult.qa.summary.packageOk, true);
   assert.equal(wasmResult.qa.summary.verifyOk, true);
   assert.equal(wasmResult.qa.summary.visualQaOk, true);
@@ -171,7 +172,11 @@ try {
   const wasmWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(wasmResult.workbookPath));
   assert.equal(wasmWorkbook.dateSystem, "1904");
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("B2:B3").values, [[42.5], [85]]);
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.000 \"units\"");
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B3").format.numberFormat, "0.00%");
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").mergedRanges, ["A4:B4"]);
+  const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
+  assert.match(await wasmZip.file("xl/styles.xml").async("text"), /0\.000 &quot;units&quot;/);
   if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {

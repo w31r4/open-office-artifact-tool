@@ -1,5 +1,6 @@
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
@@ -23,6 +24,12 @@ public sealed class XlsxCodecTests
         {
             var errors = new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document).ToArray();
             Assert.Empty(errors);
+            var styles = document.WorkbookPart?.WorkbookStylesPart?.Stylesheet;
+            Assert.NotNull(styles);
+            Assert.Contains(styles!.NumberingFormats!.Elements<NumberingFormat>(), item => item.FormatCode?.Value == "0.000 \"units\"");
+            var cells = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().ToDictionary(item => item.CellReference!.Value!);
+            Assert.NotEqual(0U, cells["B1"].StyleIndex?.Value ?? 0U);
+            Assert.NotEqual(0U, cells["B2"].StyleIndex?.Value ?? 0U);
         }
 
         var importRequest = new CodecRequest
@@ -38,8 +45,16 @@ public sealed class XlsxCodecTests
         Assert.Equal("Summary", imported.Artifact.Workbook.Worksheets[0].Name);
         Assert.Collection(imported.Artifact.Workbook.Worksheets[0].Cells,
             cell => Assert.Equal("Quarter", cell.StringValue),
-            cell => Assert.Equal(42.5, cell.NumberValue),
-            cell => Assert.Equal("=B1*2", cell.Formula));
+            cell =>
+            {
+                Assert.Equal(42.5, cell.NumberValue);
+                Assert.Equal("0.000 \"units\"", cell.NumberFormatCode);
+            },
+            cell =>
+            {
+                Assert.Equal("=B1*2", cell.Formula);
+                Assert.Equal("0.00%", cell.NumberFormatCode);
+            });
     }
 
     [Fact]
@@ -187,6 +202,66 @@ public sealed class XlsxCodecTests
         Assert.Equal("openxml_validation_failed", Assert.Single(exported.Diagnostics).Code);
     }
 
+    [Fact]
+    public void SourcePreservingNumberFormatEditClonesCellFormatAndKeepsUnmodeledProperties()
+    {
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var bytes = AddUnmodeledCellFormatProperties(firstExport.File.ToByteArray(), out var originalStyleIndex);
+        var imported = Import(bytes);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        imported.Artifact.Workbook.Worksheets[0].Cells[1].NumberFormatCode = "$#,##0.00";
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var styles = document.WorkbookPart!.WorkbookStylesPart!.Stylesheet;
+            var formats = styles!.CellFormats!.Elements<CellFormat>().ToArray();
+            Assert.Equal(HorizontalAlignmentValues.Center, formats[originalStyleIndex].Alignment?.Horizontal?.Value);
+            Assert.False(formats[originalStyleIndex].Protection?.Locked?.Value ?? true);
+            var cell = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(item => item.CellReference?.Value == "B1");
+            Assert.NotEqual(originalStyleIndex, checked((int)(cell.StyleIndex?.Value ?? 0)));
+            var derived = formats[checked((int)cell.StyleIndex!.Value)];
+            Assert.Equal(HorizontalAlignmentValues.Center, derived.Alignment?.Horizontal?.Value);
+            Assert.False(derived.Protection?.Locked?.Value ?? true);
+            Assert.Equal(formats[originalStyleIndex].FontId?.Value, derived.FontId?.Value);
+            Assert.Equal(formats[originalStyleIndex].FillId?.Value, derived.FillId?.Value);
+            Assert.Equal(formats[originalStyleIndex].BorderId?.Value, derived.BorderId?.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var reimported = Import(exported.File.ToByteArray());
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal("$#,##0.00", reimported.Artifact.Workbook.Worksheets[0].Cells[1].NumberFormatCode);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidNumberFormatCode()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Cells[1].NumberFormatCode = new string('x', XlsxNumberFormatCodec.MaxFormatCodeLength + 1);
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_cell_number_format", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportRejectsMissingCellFormatReference()
+    {
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var response = Import(SetCellStyleIndex(firstExport.File.ToByteArray(), "B1", 999U));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_cell_number_format", Assert.Single(response.Diagnostics).Code);
+    }
+
     private static CodecRequest ExportRequest()
     {
         var sheet = new WorksheetArtifact
@@ -197,8 +272,8 @@ public sealed class XlsxCodecTests
             FreezePane = new FreezePane { Rows = 1, Columns = 1, TopLeftCell = "B2" },
         };
         sheet.Cells.Add(new CellArtifact { Row = 0, Column = 0, StringValue = "Quarter" });
-        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, NumberValue = 42.5 });
-        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, Formula = "=B1*2", NumberValue = 85 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, NumberValue = 42.5, NumberFormatCode = "0.000 \"units\"" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, Formula = "=B1*2", NumberValue = 85, NumberFormatCode = "0.00%" });
         sheet.ColumnDimensions.Add(new ColumnDimension { Column = 0, Width = 18, BestFit = true });
         sheet.RowDimensions.Add(new RowDimension { Row = 0, Height = 24 });
         sheet.MergedRanges.Add("A3:B3");
@@ -216,6 +291,48 @@ public sealed class XlsxCodecTests
                 Workbook = workbook,
             },
         };
+    }
+
+    private static CodecResponse Import(byte[] bytes) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+    {
+        ProtocolVersion = CodecProtocol.ProtocolVersion,
+        Operation = CodecOperation.ImportXlsx,
+        Family = ArtifactFamily.Workbook,
+        File = ByteString.CopyFrom(bytes),
+    }.ToByteArray()));
+
+    private static byte[] AddUnmodeledCellFormatProperties(byte[] bytes, out int styleIndex)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var cell = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(item => item.CellReference?.Value == "B1");
+            styleIndex = checked((int)(cell.StyleIndex?.Value ?? 0));
+            var format = document.WorkbookPart.WorkbookStylesPart!.Stylesheet!.CellFormats!.Elements<CellFormat>().ElementAt(styleIndex);
+            format.Alignment = new Alignment { Horizontal = HorizontalAlignmentValues.Center };
+            format.ApplyAlignment = true;
+            format.Protection = new Protection { Locked = false };
+            format.ApplyProtection = true;
+            document.WorkbookPart.WorkbookStylesPart.Stylesheet!.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetCellStyleIndex(byte[] bytes, string reference, uint styleIndex)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            var cell = worksheet.Descendants<Cell>().Single(item => item.CellReference?.Value == reference);
+            cell.StyleIndex = styleIndex;
+            worksheet.Save();
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddExternalWorkbookRelationship(byte[] bytes)

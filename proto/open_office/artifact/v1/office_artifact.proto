@@ -152,6 +152,8 @@ message CellArtifact {
   uint32 row = 1;
   uint32 column = 2;
   string formula = 3;
+  // Effective SpreadsheetML number-format code. Empty means General.
+  string number_format_code = 4;
 
   oneof value {
     string string_value = 10;

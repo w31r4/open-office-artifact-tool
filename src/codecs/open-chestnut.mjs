@@ -23,6 +23,7 @@ const RUNTIME_URL = new URL("../../runtime/open-chestnut/main.mjs", import.meta.
 const MANIFEST_URL = new URL("../../runtime/open-chestnut/manifest.json", import.meta.url);
 const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-state");
 const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-document-state");
+const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
 const DEFAULT_THEME_COLORS = {
   dk1: "#000000", lt1: "#FFFFFF", dk2: "#1F497D", lt2: "#EEECE1",
@@ -122,6 +123,15 @@ function itemCount(collection) {
   return Array.isArray(collection?.items) ? collection.items.length : 0;
 }
 
+function numberFormatCode(value, address) {
+  if (value == null || value === "") return "";
+  if (typeof value !== "string") throw new OpenChestnutCodecError(`Cell ${address} number format must be a string.`, [], { code: "invalid_cell_number_format" });
+  if (/^general$/i.test(value)) return "";
+  if (value.length > MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH) throw new OpenChestnutCodecError(`Cell ${address} number format exceeds ${MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH} characters.`, [], { code: "invalid_cell_number_format" });
+  if (/\p{Cc}/u.test(value)) throw new OpenChestnutCodecError(`Cell ${address} number format contains a control character.`, [], { code: "invalid_cell_number_format" });
+  return value;
+}
+
 function unsupportedWorkbookFeatures(workbook) {
   const unsupported = [];
   if (workbook.definedNames?.items?.length) unsupported.push("defined names");
@@ -139,7 +149,8 @@ function unsupportedWorkbookFeatures(workbook) {
     if (sheet.dataValidations?.items?.length) unsupported.push(`${prefix} data validations`);
     if (sheet.conditionalFormattings?.items?.length) unsupported.push(`${prefix} conditional formatting`);
     for (const [address, cell] of sheet.store?.entries?.() || []) {
-      if (cell.style && Object.keys(cell.style).length) unsupported.push(`${prefix} styled cell ${address}`);
+      const styleKeys = Object.keys(cell.style || {}).filter((key) => cell.style[key] != null);
+      if (styleKeys.some((key) => key !== "numberFormat")) unsupported.push(`${prefix} styled cell ${address}`);
       const metadata = Object.keys(cell).filter((key) => !["value", "formula", "style"].includes(key));
       if (metadata.length) unsupported.push(`${prefix} advanced formula metadata at ${address}`);
     }
@@ -153,6 +164,7 @@ function wireCell(address, cell) {
     row: coordinates.row,
     column: coordinates.column,
     formula: cell.formula ? String(cell.formula) : "",
+    numberFormatCode: numberFormatCode(cell.style?.numberFormat, address),
     value: { case: undefined },
   };
   if (cell.value == null) return target;
@@ -201,7 +213,7 @@ function workbookEnvelope(workbook) {
           columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
           rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
           mergedRanges: [...(sheet.mergedRanges || [])],
-          cells: (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula).map(([address, cell]) => wireCell(address, cell)),
+          cells: (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || numberFormatCode(cell.style?.numberFormat, "formatted cell")).map(([address, cell]) => wireCell(address, cell)),
         })),
       },
     },
@@ -246,6 +258,7 @@ function workbookFromEnvelope(envelope) {
     for (const sourceCell of sourceSheet.cells) {
       const cell = sheet.store.get(cellAddress(sourceCell.row, sourceCell.column));
       cell.formula = sourceCell.formula || null;
+      if (sourceCell.numberFormatCode) cell.style = { ...cell.style, numberFormat: sourceCell.numberFormatCode };
       switch (sourceCell.value.case) {
         case "stringValue": cell.value = sourceCell.value.value; break;
         case "numberValue": cell.value = sourceCell.value.value; break;
