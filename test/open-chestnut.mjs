@@ -287,10 +287,14 @@ inheritedNumberingZip.file("word/document.xml", inheritedDocumentXml.replace(
 ));
 const inheritedStylesXml = (await inheritedNumberingZip.file("word/styles.xml").async("text")).replace(
   "</w:styles>",
-  '<w:style w:type="paragraph" w:styleId="BaseList"><w:name w:val="Base list"/><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="DerivedList"><w:name w:val="Derived list"/><w:basedOn w:val="BaseList"/><w:pPr><w:numPr><w:ilvl w:val="0"/></w:numPr></w:pPr></w:style></w:styles>',
+  '<w:style w:type="paragraph" w:styleId="BaseList"><w:name w:val="Base list"/><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="DerivedList"><w:name w:val="Derived list"/><w:basedOn w:val="BaseList"/><w:pPr><w:numPr><w:ilvl w:val="8"/></w:numPr></w:pPr></w:style></w:styles>',
 );
 inheritedNumberingZip.file("word/styles.xml", inheritedStylesXml);
-const inheritedNumberingXml = await inheritedNumberingZip.file("word/numbering.xml").async("text");
+const inheritedNumberingXml = (await inheritedNumberingZip.file("word/numbering.xml").async("text")).replace(
+  /(<w:lvl w:ilvl="0">[\s\S]*?<w:numFmt\b[^>]*\/>)/,
+  '$1<w:pStyle w:val="DerivedList"/>',
+);
+inheritedNumberingZip.file("word/numbering.xml", inheritedNumberingXml);
 const inheritedNumberingSource = await inheritedNumberingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 const inheritedNumberingImported = await importDocxWithOpenChestnut(inheritedNumberingSource);
 assert.equal(inheritedNumberingImported.blocks[0].kind, "listItem");
@@ -305,6 +309,45 @@ const inheritedNumberingRoundTrip = await DocumentFile.importDocx(inheritedNumbe
 assert.equal(inheritedNumberingRoundTrip.blocks[0].kind, "listItem");
 assert.equal(inheritedNumberingRoundTrip.blocks[0].text, "Edited inherited numbering text");
 assert.equal(inheritedNumberingRoundTrip.blocks[0].styleId, "DerivedList");
+
+const styleLinkedNumberingZip = await JSZip.loadAsync(numberedSourceDocx.bytes);
+const styleLinkedDocumentXml = (await styleLinkedNumberingZip.file("word/document.xml").async("text")).replace(
+  /<w:pStyle w:val="Normal"\/><w:numPr>[\s\S]*?<\/w:numPr>/,
+  '<w:pStyle w:val="AgentListDerived"/>',
+);
+const styleLinkedStylesXml = (await styleLinkedNumberingZip.file("word/styles.xml").async("text")).replace(
+  "</w:styles>",
+  '<w:style w:type="paragraph" w:styleId="AgentListBase"><w:name w:val="Agent list base"/><w:pPr><w:numPr><w:numId w:val="6"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="AgentListDerived"><w:name w:val="Agent list derived"/><w:basedOn w:val="AgentListBase"/><w:pPr><w:numPr><w:ilvl w:val="8"/></w:numPr></w:pPr></w:style><w:style w:type="numbering" w:styleId="AgentNumbering"><w:name w:val="Agent numbering"/><w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr></w:style></w:styles>',
+);
+const styleLinkedNumberingXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="multilevel"/><w:numStyleLink w:val="AgentNumbering"/></w:abstractNum><w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="multilevel"/><w:styleLink w:val="AgentNumbering"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:pStyle w:val="AgentListBase"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="2"><w:start w:val="3"/><w:numFmt w:val="upperRoman"/><w:pStyle w:val="AgentListDerived"/><w:lvlText w:val="%1.%2.%3"/></w:lvl></w:abstractNum><w:num w:numId="4"><w:abstractNumId w:val="2"/></w:num><w:num w:numId="6"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="2"><w:startOverride w:val="9"/></w:lvlOverride></w:num></w:numbering>';
+styleLinkedNumberingZip.file("word/document.xml", styleLinkedDocumentXml);
+styleLinkedNumberingZip.file("word/styles.xml", styleLinkedStylesXml);
+styleLinkedNumberingZip.file("word/numbering.xml", styleLinkedNumberingXml);
+const styleLinkedNumberingSource = await styleLinkedNumberingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const styleLinkedNumberingImported = await importDocxWithOpenChestnut(styleLinkedNumberingSource);
+const styleLinkedBlock = styleLinkedNumberingImported.blocks[0];
+assert.equal(styleLinkedBlock.kind, "listItem");
+assert.equal(styleLinkedBlock.styleId, "AgentListDerived");
+assert.equal(styleLinkedBlock.level, 2);
+assert.equal(styleLinkedBlock.numberFormat, "upperRoman");
+assert.equal(styleLinkedBlock.start, 9);
+assert.equal(styleLinkedBlock.levelText, "%1.%2.%3");
+assert.equal(styleLinkedBlock.numberingId, 6);
+assert.equal(styleLinkedBlock.abstractNumberingId, 0);
+assert.equal(styleLinkedBlock.numberingStyleId, "AgentNumbering");
+styleLinkedBlock.text = "Edited numbering-style link text";
+const styleLinkedNumberingEdited = await exportDocxWithOpenChestnut(styleLinkedNumberingImported);
+const styleLinkedNumberingEditedZip = await JSZip.loadAsync(styleLinkedNumberingEdited.bytes);
+assert.equal(await styleLinkedNumberingEditedZip.file("word/styles.xml").async("text"), styleLinkedStylesXml);
+assert.equal(await styleLinkedNumberingEditedZip.file("word/numbering.xml").async("text"), styleLinkedNumberingXml);
+const styleLinkedNumberingRoundTrip = await DocumentFile.importDocx(styleLinkedNumberingEdited, { preferNative: true });
+assert.equal(styleLinkedNumberingRoundTrip.blocks[0].text, "Edited numbering-style link text");
+assert.equal(styleLinkedNumberingRoundTrip.blocks[0].numberingStyleId, "AgentNumbering");
+styleLinkedBlock.numberingStyleId = "UnsafeReplacement";
+await assert.rejects(
+  exportDocxWithOpenChestnut(styleLinkedNumberingImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
+);
 
 numberedSourceBlock.level = 1;
 await assert.rejects(

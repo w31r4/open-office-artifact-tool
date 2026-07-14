@@ -7,7 +7,7 @@
     { "kind": "hyperlink", "matchText": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/word-processing", "tooltip": "Edited through the source-built OpenChestnut codec", "history": false },
     { "kind": "field", "matchInstruction": "PAGE", "instruction": "NUMPAGES", "display": "2" },
     { "kind": "tableCell", "matchText": "OpenChestnut table", "row": 0, "column": 1, "value": "Pass" },
-    { "kind": "listItem", "matchText": "Preserve native numbering definitions.", "text": "Preserve inherited native numbering definitions." }
+    { "kind": "listItem", "matchText": "Preserve native numbering definitions.", "expectNumberingStyleId": "BriefNumbering", "expectLevel": 0, "text": "Preserve inherited native numbering definitions." }
   ],
   "designPreset": "report",
   "theme": {
