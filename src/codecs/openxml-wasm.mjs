@@ -274,6 +274,7 @@ export async function importXlsxWithOpenXmlWasm(input, options = {}) {
 }
 
 const DOCUMENT_RUN_STYLE_KEYS = new Set(["runStyleId", "bold", "italic", "underline"]);
+const DOCUMENT_FIELD_COMMANDS = new Set(["PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "DATE", "TIME", "CREATEDATE", "SAVEDATE", "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "COMMENTS", "FILENAME", "FILESIZE", "NUMWORDS", "NUMCHARS"]);
 
 function documentRun(run, blockId) {
   const style = run.style || {};
@@ -342,6 +343,23 @@ function documentHyperlink(block, original) {
   };
 }
 
+function documentField(block, original) {
+  if (original?.source?.editable === false) {
+    throw new OpenXmlWasmCodecError(`Document field ${block.id} is source-preserved but its instruction or result topology is not editable.`, [], { code: "unsupported_document_edit" });
+  }
+  const instruction = String(block.instruction ?? "");
+  const display = String(block.display ?? "");
+  if (!instruction.trim() || instruction.length > 8_192 || /[\u0000-\u001f\u007f]/.test(instruction)) {
+    throw new OpenXmlWasmCodecError(`Document field ${block.id} instruction must contain 1 through 8192 characters without controls.`, [], { code: "invalid_document_field" });
+  }
+  const command = /^[A-Za-z]+/.exec(instruction.trimStart())?.[0]?.toUpperCase();
+  if (!command || !DOCUMENT_FIELD_COMMANDS.has(command)) {
+    throw new OpenXmlWasmCodecError(`Document field ${block.id} command ${command || "(missing)"} is outside the bounded editable field catalog.`, [], { code: "invalid_document_field" });
+  }
+  if (display.length > 1_000_000) throw new OpenXmlWasmCodecError(`Document field ${block.id} display text exceeds 1,000,000 characters.`, [], { code: "invalid_document_field" });
+  return { instruction, display };
+}
+
 function unchangedSourceBlock(block, original) {
   switch (original.content.case) {
     case "paragraph": {
@@ -355,6 +373,8 @@ function unchangedSourceBlock(block, original) {
     }
     case "hyperlink":
       return sameDocumentHyperlink(block, original.content.value);
+    case "field":
+      return block.kind === "field" && block.styleId === (original.styleId || "Normal") && block.instruction === original.content.value.instruction && block.display === original.content.value.display;
     case "opaque":
       return block.kind === "paragraph" && block.text === original.content.value.text && block.runs.every((run) => Object.keys(run.style || {}).length === 0);
     default:
@@ -392,6 +412,12 @@ function documentBlock(block, original) {
     return {
       ...common,
       content: { case: "hyperlink", value: documentHyperlink(block, original) },
+    };
+  }
+  if (block.kind === "field") {
+    return {
+      ...common,
+      content: { case: "field", value: documentField(block, original) },
     };
   }
   throw new OpenXmlWasmCodecError(`The DOCX WebAssembly vertical slice cannot author document block kind ${block.kind}.`, [], { code: "unsupported_document_features" });
@@ -513,6 +539,15 @@ function documentFromEnvelope(envelope) {
           history: hyperlink.history,
         };
       }
+      case "field":
+        return {
+          kind: "field",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "Normal",
+          instruction: block.content.value.instruction,
+          display: block.content.value.display,
+        };
       case "opaque":
         return {
           kind: "paragraph",
