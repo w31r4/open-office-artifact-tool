@@ -332,6 +332,8 @@ export async function runPresentationFixture(fixturePath, options = {}) {
     const imported = await importPptxWithOpenXmlWasm(pptx);
     const edit = fixture.openXmlWasm?.edit;
     if (edit) {
+      if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
+      if (edit.layoutBackground) imported.layouts.items[0].background = edit.layoutBackground;
       if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);

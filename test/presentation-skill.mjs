@@ -248,6 +248,8 @@ try {
   assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.body[1], undefined);
   assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.other[2].bulletImage.uri, "https://example.com/master-marker.png");
   assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.other[2].bulletColor, "accent3");
+  assert.deepEqual(wasmPreservation.qa.presentation.master.background, { fill: "accent4", mode: "reference", index: 1003 });
+  assert.deepEqual(wasmPreservation.qa.presentation.layouts.items[0].background, { fill: "#f0fdf4", mode: "solid" });
   assert.deepEqual(Object.keys(wasmTitle?.text.inheritedParagraphStyles), ["0", "8"]);
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletCharacter, "→");
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletColor, "accent6");
@@ -269,6 +271,9 @@ try {
   assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 3);
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
   const wasmMasterXml = await wasmZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+  const wasmLayoutXml = await wasmZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
+  assert.match(wasmMasterXml, /<p:bg><p:bgRef idx="1003"><a:schemeClr\b[^>]*val="accent4"[^>]*\/><\/p:bgRef><\/p:bg>/);
+  assert.match(wasmLayoutXml, /<p:bg><p:bgPr><a:solidFill><a:srgbClr\b[^>]*val="F0FDF4"[^>]*\/><\/a:solidFill><a:effectLst\s*\/><\/p:bgPr><\/p:bg>/);
   assert.match(wasmMasterXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="r"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3150"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent2"\s*\/>[\s\S]*?<a:latin typeface="Georgia"\s*\/>/);
   const wasmMasterBodyLevel2 = /<p:bodyStyle>[\s\S]*?(<a:lvl2pPr\b[\s\S]*?<\/a:lvl2pPr>)/.exec(wasmMasterXml)?.[1] || "";
   assert.match(wasmMasterBodyLevel2, /<a:ea typeface="\+mn-ea"\s*\/>/);

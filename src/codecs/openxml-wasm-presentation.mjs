@@ -521,18 +521,54 @@ function wireMasterTextStyles(master, original, assetCatalog) {
   return result;
 }
 
+function wireBackground(background, ownerId) {
+  if (!background) return undefined;
+  const fill = String(background.fill || "").trim();
+  const color = PRESENTATION_SCHEME_COLORS.has(fill)
+    ? { case: "colorScheme", value: fill }
+    : { case: "colorRgb", value: presentationRgb(fill, `${ownerId}.background.fill`) };
+  if (!color.value) throw new OpenXmlWasmCodecError(`Presentation ${ownerId} uses an unsupported transparent background.`, [], { code: "unsupported_presentation_features" });
+  if (background.mode === "reference") {
+    const index = Number(background.index);
+    if (!Number.isInteger(index) || index < 0 || index > 4_294_967_295) {
+      throw new OpenXmlWasmCodecError(`Presentation ${ownerId} background reference index must be an unsigned 32-bit integer.`, [], { code: "invalid_presentation_background" });
+    }
+    return { color, kind: { case: "styleReferenceIndex", value: index } };
+  }
+  if (background.mode !== "solid") throw new OpenXmlWasmCodecError(`Presentation ${ownerId} background mode must be solid or reference.`, [], { code: "invalid_presentation_background" });
+  return { color, kind: { case: "solid", value: true } };
+}
+
+function modelBackground(background) {
+  if (!background?.color?.case || !background?.kind?.case) return undefined;
+  const fill = background.color.case === "colorScheme" ? background.color.value : `#${String(background.color.value).toLowerCase()}`;
+  return background.kind.case === "styleReferenceIndex"
+    ? { fill, mode: "reference", index: Number(background.kind.value) }
+    : { fill, mode: "solid" };
+}
+
+function sourceBackground(model, entry, ownerId) {
+  const current = model.background;
+  if (!current) {
+    if (entry.wire.background) throw new OpenXmlWasmCodecError(`Source-preserving PPTX export cannot yet remove ${ownerId}'s direct background.`, [], { code: "unsupported_presentation_edit" });
+    return undefined;
+  }
+  if (!entry.wire.background && JSON.stringify(current) === entry.backgroundSnapshot) return undefined;
+  return wireBackground(current, ownerId);
+}
+
 function masterReadOnlySnapshot(master) {
   return JSON.stringify({
     id: master.id,
     name: master.name,
     theme: master.theme?.toJSON(),
-    background: master.background,
     placeholders: master.placeholders,
   });
 }
 
 function layoutReadOnlySnapshot(layout) {
-  return JSON.stringify(layout.toJSON());
+  const { background: _background, ...readOnly } = layout.toJSON();
+  return JSON.stringify(readOnly);
 }
 
 function presentationMasters(presentation, state, assetCatalog) {
@@ -549,11 +585,12 @@ function presentationMasters(presentation, state, assetCatalog) {
         name: entry.wire.name,
         source: entry.wire.source,
         textStyles: wireMasterTextStyles(entry.model, entry.wire, assetCatalog),
+        background: sourceBackground(entry.model, entry, `master ${entry.model.id}`),
       };
     });
   }
   const master = presentation.master;
-  return master ? [{ id: master.id, name: master.name, textStyles: wireMasterTextStyles(master, undefined, assetCatalog) }] : [];
+  return master ? [{ id: master.id, name: master.name, textStyles: wireMasterTextStyles(master, undefined, assetCatalog), background: wireBackground(master.background, `master ${master.id}`) }] : [];
 }
 
 function presentationLayouts(presentation, state) {
@@ -565,7 +602,14 @@ function presentationLayouts(presentation, state) {
     if (layoutReadOnlySnapshot(entry.model) !== entry.snapshot) {
       throw new OpenXmlWasmCodecError(`Presentation layout ${entry.model.id} is preserved but not editable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
     }
-    return entry.wire;
+    return {
+      id: entry.wire.id,
+      name: entry.wire.name,
+      masterId: entry.wire.masterId,
+      type: entry.wire.type,
+      source: entry.wire.source,
+      background: sourceBackground(entry.model, entry, `layout ${entry.model.id}`),
+    };
   });
 }
 
@@ -619,7 +663,6 @@ function unsupportedPresentationFeatures(presentation) {
   const master = presentation.master;
   if (master?.theme) unsupported.push("master theme override");
   if (master?.placeholders?.length) unsupported.push("master placeholders");
-  if (master?.background && (master.background.mode !== "solid" || master.background.fill !== presentation.theme.colors.bg1)) unsupported.push("master background override");
   if (presentation.customShows?.items?.length) unsupported.push("custom shows");
   if (presentation.commentFormat !== "legacy") unsupported.push("modern comments");
   for (const slide of presentation.slides?.items || []) {
@@ -877,9 +920,10 @@ export function presentationFromEnvelope(envelope) {
       const model = presentation.masters.add({
         id: sourceMaster.id,
         name: sourceMaster.name,
+        ...(sourceMaster.background ? { background: modelBackground(sourceMaster.background) } : {}),
         textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
       });
-      masterStates.push({ wire: sourceMaster, model, snapshot: masterReadOnlySnapshot(model) });
+      masterStates.push({ wire: sourceMaster, model, snapshot: masterReadOnlySnapshot(model), backgroundSnapshot: JSON.stringify(model.background) });
     }
   }
   const layoutStates = [];
@@ -889,8 +933,9 @@ export function presentationFromEnvelope(envelope) {
       name: sourceLayout.name,
       type: sourceLayout.type,
       masterId: sourceLayout.masterId,
+      ...(sourceLayout.background ? { background: modelBackground(sourceLayout.background) } : {}),
     });
-    layoutStates.push({ wire: sourceLayout, model, snapshot: layoutReadOnlySnapshot(model) });
+    layoutStates.push({ wire: sourceLayout, model, snapshot: layoutReadOnlySnapshot(model), backgroundSnapshot: JSON.stringify(model.background) });
   }
   const slideStates = [];
   for (const sourceSlide of source.slides) {

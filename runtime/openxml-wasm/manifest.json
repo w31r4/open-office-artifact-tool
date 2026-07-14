@@ -27,13 +27,13 @@
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.Framework.wasm",
-      "bytes": 350485,
-      "sha256": "acc54509abc7f7f025c53ed01cb96e45ead2e05ffc2e3d5d6c84f95f0ddf362b"
+      "bytes": 350997,
+      "sha256": "17f7bb950a6d15429dc1deec856a0461f37bfced6004a536bc20d5a55d9cec6e"
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
       "bytes": 5719833,
-      "sha256": "c3ce95d77808d5e5044907157ba17b8621856e07df4f98c89036307850087d25"
+      "sha256": "865a9458c8a733ac2a244da8c32d642a015cb5c59bf818f99764af2399227731"
     },
     {
       "path": "_framework/Google.Protobuf.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenOffice.OpenXmlCodec.wasm",
-      "bytes": 422677,
-      "sha256": "96daf7b301db663fc0da2b03882fa99287bade9297f4e0fa4b66167952c7688c"
+      "bytes": 435989,
+      "sha256": "010059cc590accfe1978753651f090c2057dfb949c378a4f7f649c380ae0bb23"
     },
     {
       "path": "_framework/OpenOffice.OpenXmlWasm.wasm",
       "bytes": 6421,
-      "sha256": "965bc3e63297b342f402549e1cb634154f1123bc0540425e1d6ebb6178b7ec6f"
+      "sha256": "14e0eaf060114d14ac0cfb2bacf8a6613f838fe4a580c0d9c2629f8054f91f2c"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3149,
-      "sha256": "8e23ae2819791a0714db426a2463dfdf4219d8e5b87ae8a58e52db7d350b0af4"
+      "sha256": "6499cd02c2f8827caf90bd85151a8b226140115519dcfc54b7e19f3f2601c96f"
     },
     {
       "path": "_framework/dotnet.js",
@@ -201,5 +201,5 @@
       "sha256": "7ae7e50d45200aa9644c03ee5a50359bdb4a8dfc3c408a5f28b95add0a08096c"
     }
   ],
-  "totalBytes": 12836039
+  "totalBytes": 12849863
 }

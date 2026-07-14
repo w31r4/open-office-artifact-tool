@@ -220,6 +220,9 @@ message PresentationMaster {
   string name = 2;
   PresentationMasterSourceBinding source = 3;
   PresentationMasterTextStyles text_styles = 4;
+  // Direct p:bg only. Absence preserves source state and does not flatten
+  // theme or layout inheritance into a computed color.
+  PresentationBackground background = 5;
 }
 
 message PresentationMasterSourceBinding {
@@ -229,6 +232,8 @@ message PresentationMasterSourceBinding {
   string master_xml_sha256 = 4;
   string text_styles_semantic_sha256 = 5;
   bool text_styles_editable = 6;
+  string background_semantic_sha256 = 7;
+  bool background_editable = 8;
 }
 
 message PresentationLayout {
@@ -237,6 +242,8 @@ message PresentationLayout {
   string master_id = 3;
   string type = 4;
   PresentationLayoutSourceBinding source = 5;
+  // Direct layout p:bg only; absence inherits from the linked master.
+  PresentationBackground background = 6;
 }
 
 message PresentationLayoutSourceBinding {
@@ -245,6 +252,21 @@ message PresentationLayoutSourceBinding {
   string part_path = 2;
   string relationship_id = 3;
   string layout_xml_sha256 = 4;
+  string background_semantic_sha256 = 5;
+  bool background_editable = 6;
+}
+
+// Bounded direct PresentationML background. Color transforms, gradient,
+// pattern, image, group, and effect-bearing fills remain source-bound.
+message PresentationBackground {
+  oneof color {
+    string color_rgb = 1;
+    string color_scheme = 2;
+  }
+  oneof kind {
+    bool solid = 3;
+    uint32 style_reference_index = 4;
+  }
 }
 
 message PresentationMasterTextStyles {

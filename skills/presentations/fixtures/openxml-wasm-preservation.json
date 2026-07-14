@@ -85,6 +85,8 @@
     "edit": {
       "slideIndex": 0,
       "shapeName": "wasm-title",
+      "masterBackground": { "fill": "accent4", "mode": "reference", "index": 1003 },
+      "layoutBackground": { "fill": "#F0FDF4", "mode": "solid" },
       "masterTextParagraphStyles": {
         "title": {
           "0": { "alignment": "right", "style": { "fontSize": 42, "bold": true, "fontFamily": "Georgia", "color": "accent2" } }

@@ -101,7 +101,7 @@ const docx = await exportDocxWithOpenXmlWasm(document);
 const importedDocument = await importDocxWithOpenXmlWasm(docx);
 ```
 
-PPTX uses the same loss-aware boundary. A simple deck can be authored directly; importing an advanced deck carries hash-bound master/layout/slide/shape bindings so unsupported native objects survive safe modeled edits. The WebAssembly slice exposes every Slide Master and Slide Layout as a stable package locator, preserves the Slide → Layout → Master chain, and permits bounded title/body/other `p:txStyles` level edits while layout content and rebinding remain read-only.
+PPTX uses the same loss-aware boundary. A simple deck can be authored directly; importing an advanced deck carries hash-bound master/layout/slide/shape bindings so unsupported native objects survive safe modeled edits. The WebAssembly slice exposes every Slide Master and Slide Layout as a stable package locator, preserves the Slide → Layout → Master chain, and permits bounded title/body/other `p:txStyles` plus direct Master/Layout solid or theme-reference background edits. Effective background inheritance stays in the JavaScript model; layout placeholder content and slide rebinding remain read-only.
 
 ```js
 import { Presentation } from "open-office-artifact-tool";
@@ -110,6 +110,7 @@ import { exportPptxWithOpenXmlWasm, importPptxWithOpenXmlWasm } from "open-offic
 const deck = Presentation.create({
   master: {
     name: "Evidence Master",
+    background: { fill: "accent1", mode: "reference", index: 1001 },
     textParagraphStyles: {
       title: { 0: { alignment: "center", style: { bold: true, fontSize: 40, color: "accent1" } } },
     },

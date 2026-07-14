@@ -148,6 +148,102 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void MasterAndLayoutBackgroundsAuthorImportEditAndRejectUnsupportedFill()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Masters.Add(new PresentationMaster
+        {
+            Id = "master/background",
+            Name = "Background Master",
+            Background = new PresentationBackground { ColorScheme = "accent1", StyleReferenceIndex = 1001 },
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        byte[] source;
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(authored.File.Span);
+            stream.Position = 0;
+            using (var package = PresentationDocument.Open(stream, true))
+            {
+                var master = package.PresentationPart!.SlideMasterParts.Single().SlideMaster!;
+                var masterReference = master.CommonSlideData!.Background!.GetFirstChild<P.BackgroundStyleReference>()!;
+                Assert.Equal(1001U, masterReference.Index!.Value);
+                Assert.Equal(A.SchemeColorValues.Accent1, masterReference.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+                var layout = package.PresentationPart.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+                layout.CommonSlideData!.AddChild(new P.Background(
+                    new P.BackgroundProperties(
+                        new A.SolidFill(new A.RgbColorModelHex { Val = "FFF7ED" }),
+                        new A.EffectList())), true);
+                layout.Save();
+            }
+            source = stream.ToArray();
+        }
+
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var masterArtifact = Assert.Single(imported.Artifact.Presentation.Masters);
+        var layoutArtifact = Assert.Single(imported.Artifact.Presentation.Layouts);
+        Assert.True(masterArtifact.Source.BackgroundEditable);
+        Assert.Equal(PresentationBackground.KindOneofCase.StyleReferenceIndex, masterArtifact.Background.KindCase);
+        Assert.True(layoutArtifact.Source.BackgroundEditable);
+        Assert.Equal("FFF7ED", layoutArtifact.Background.ColorRgb);
+
+        masterArtifact.Background = new PresentationBackground { ColorRgb = "112233", Solid = true };
+        layoutArtifact.Background = new PresentationBackground { ColorScheme = "accent2", StyleReferenceIndex = 1002 };
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var master = package.PresentationPart!.SlideMasterParts.Single().SlideMaster!;
+            Assert.Equal("112233", master.CommonSlideData!.Background!.Descendants<A.RgbColorModelHex>().Single().Val!.Value);
+            var layout = package.PresentationPart.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+            var reference = layout.CommonSlideData!.Background!.GetFirstChild<P.BackgroundStyleReference>()!;
+            Assert.Equal(1002U, reference.Index!.Value);
+            Assert.Equal(A.SchemeColorValues.Accent2, reference.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.Equal("112233", Assert.Single(roundTrip.Artifact.Presentation.Masters).Background.ColorRgb);
+        Assert.Equal("accent2", Assert.Single(roundTrip.Artifact.Presentation.Layouts).Background.ColorScheme);
+
+        byte[] unsupportedSource;
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(authored.File.Span);
+            stream.Position = 0;
+            using (var package = PresentationDocument.Open(stream, true))
+            {
+                var layout = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+                layout.CommonSlideData!.AddChild(new P.Background(
+                    new P.BackgroundProperties(new A.NoFill(), new A.EffectList())), true);
+                layout.Save();
+            }
+            unsupportedSource = stream.ToArray();
+        }
+        var unsupported = Import(unsupportedSource);
+        Assert.True(unsupported.Ok, Diagnostics(unsupported));
+        var unsupportedLayout = Assert.Single(unsupported.Artifact.Presentation.Layouts);
+        Assert.False(unsupportedLayout.Source.BackgroundEditable);
+        Assert.Null(unsupportedLayout.Background);
+        unsupportedLayout.Background = new PresentationBackground { ColorRgb = "FFFFFF", Solid = true };
+        var rejected = Export(unsupported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Presentation.Masters.Add(new PresentationMaster
+        {
+            Id = "master/invalid-background",
+            Background = new PresentationBackground { ColorRgb = "FFFFFF", Solid = false },
+        });
+        var invalid = Invoke(request);
+        Assert.False(invalid.Ok);
+        Assert.Equal("invalid_presentation_background", Assert.Single(invalid.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportEditsSimpleShapeAndKeepsPictureGraph()
     {
         var first = Invoke(ExportRequest());
