@@ -622,9 +622,9 @@ message DocumentSourceBinding {
 message DocumentParagraph {
   string text = 1;
   repeated DocumentRun runs = 2;
-  // Direct w:numPr identity plus the resolved source level definition. The
-  // first source-bound slice permits text edits only; changing this shared
-  // numbering graph remains fail-closed.
+  // Direct w:numPr identity plus the resolved source level definition. A
+  // bounded source-preserving slice can edit one complete, directly assigned
+  // numId/level paragraph group through an instance-local level override.
   DocumentNumbering numbering = 3;
 }
 
@@ -636,7 +636,7 @@ message DocumentNumbering {
   uint32 start = 5;
   string level_text = 6;
   // Friendly numbering-style identity resolved from w:styleLink or
-  // w:numStyleLink. It remains source-bound in the text-only slice.
+  // w:numStyleLink. Linked style graphs remain source-bound.
   string numbering_style_id = 7;
 }
 

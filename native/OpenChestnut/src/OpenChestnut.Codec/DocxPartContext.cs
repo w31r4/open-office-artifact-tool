@@ -1,3 +1,4 @@
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using DocumentFormat.OpenXml.Packaging;
@@ -15,6 +16,7 @@ internal sealed class DocxPartContext
     private XDocument? _numberingDocument;
     private XDocument? _stylesDocument;
     private bool _numberingDocumentLoaded;
+    private string? _mutatedNumberingPartPath;
     private bool _stylesDocumentLoaded;
 
     internal DocxPartContext(MainDocumentPart owner)
@@ -37,6 +39,59 @@ internal sealed class DocxPartContext
         Owner.StyleDefinitionsPart,
         ref _stylesDocumentLoaded,
         ref _stylesDocument);
+
+    internal void SaveNumberingDocument()
+    {
+        var document = NumberingDocument ?? throw new CodecException(
+            "unsupported_document_edit",
+            "Numbering-definition edits require a source Numbering part.",
+            "word/numbering.xml");
+        var part = Owner.NumberingDefinitionsPart ?? throw new CodecException(
+            "unsupported_document_edit",
+            "Numbering-definition edits require a source Numbering part.",
+            "word/numbering.xml");
+        using var stream = part.GetStream(FileMode.Create, FileAccess.Write);
+        using var writer = XmlWriter.Create(stream, new XmlWriterSettings
+        {
+            Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            OmitXmlDeclaration = document.Declaration is null,
+            Indent = false,
+        });
+        document.Save(writer);
+        _mutatedNumberingPartPath = part.Uri.OriginalString.TrimStart('/');
+    }
+
+    internal bool HasNumberingReferenceOutsideMainDocument(int numberingId)
+    {
+        var visited = new HashSet<OpenXmlPart>(ReferenceEqualityComparer.Instance);
+        var pending = new Stack<OpenXmlPart>(Owner.Parts.Select(pair => pair.OpenXmlPart));
+        while (pending.Count > 0)
+        {
+            var part = pending.Pop();
+            if (!visited.Add(part) || ReferenceEquals(part, Owner.NumberingDefinitionsPart)) continue;
+            foreach (var child in part.Parts) pending.Push(child.OpenXmlPart);
+            if (!part.ContentType.Contains("xml", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+                using var reader = XmlReader.Create(stream, new XmlReaderSettings
+                {
+                    DtdProcessing = DtdProcessing.Prohibit,
+                    XmlResolver = null,
+                });
+                var document = XDocument.Load(reader, LoadOptions.None);
+                XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+                if (document.Descendants(w + "numId").Any(element =>
+                        int.TryParse(element.Attribute(w + "val")?.Value, out var value) && value == numberingId))
+                    return true;
+            }
+            catch (XmlException)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     internal bool HasBookmark(string name) =>
         Owner.Document?.Descendants<W.BookmarkStart>().Any(item => item.Name?.Value == name) == true;
@@ -81,6 +136,10 @@ internal sealed class DocxPartContext
         relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
         relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
         _mutatedRelationshipIds.Contains(relationship.Id);
+
+    internal bool IgnoresModeledPart(OpenOffice.Artifact.Wire.V1.OpaqueOpcPart part) =>
+        _mutatedNumberingPartPath is not null &&
+        part.Path.Equals(_mutatedNumberingPartPath, StringComparison.OrdinalIgnoreCase);
 
     private static XDocument? ReadCachedPart(OpenXmlPart? part, ref bool loaded, ref XDocument? document)
     {

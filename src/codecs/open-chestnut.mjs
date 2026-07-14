@@ -428,6 +428,34 @@ function sameDocumentNumbering(block, paragraph) {
     (block.numberingStyleId || "") === (numbering.numberingStyleId || "");
 }
 
+function sameDocumentNumberingIdentity(block, numbering) {
+  return numbering && block.kind === "listItem" &&
+    block.level === numbering.level &&
+    block.numberingId === numbering.numberingId &&
+    block.abstractNumberingId === numbering.abstractNumberingId &&
+    (block.numberingStyleId || "") === (numbering.numberingStyleId || "");
+}
+
+function editedDocumentNumbering(block, source) {
+  if (!sameDocumentNumberingIdentity(block, source)) {
+    throw new OpenChestnutCodecError(`Document list item ${block.id} numbering identity, level, and style linkage are source-bound.`, [], { code: "unsupported_document_edit" });
+  }
+  const numberFormat = String(block.numberFormat ?? "");
+  const levelText = String(block.levelText ?? "");
+  const start = uint32(block.start, `Document list item ${block.id} start`);
+  if (numberFormat.length > 128) {
+    throw new OpenChestnutCodecError(`Document list item ${block.id} numberFormat exceeds 128 characters.`, [], { code: "invalid_document_numbering" });
+  }
+  if (levelText.length > 1_024) {
+    throw new OpenChestnutCodecError(`Document list item ${block.id} levelText exceeds 1024 characters.`, [], { code: "invalid_document_numbering" });
+  }
+  const listType = numberFormat === "bullet" ? "bullet" : "number";
+  if (block.listType !== listType) {
+    throw new OpenChestnutCodecError(`Document list item ${block.id} listType must be ${listType} for numberFormat ${numberFormat || "(empty)"}.`, [], { code: "invalid_document_numbering" });
+  }
+  return { ...source, numberFormat, start, levelText };
+}
+
 function sameDocumentHyperlink(block, source) {
   if (block.kind !== "hyperlink" || block.text !== source.text) return false;
   if (block.styleId !== (source.styleId || "Normal")) return false;
@@ -543,9 +571,7 @@ function documentBlock(block, original) {
     if (original.source?.editable === false) {
       throw new OpenChestnutCodecError(`Document list item ${block.id} is source-preserved but its paragraph topology is not editable.`, [], { code: "unsupported_document_edit" });
     }
-    if (!sameDocumentNumbering({ ...block, text: source.text }, source)) {
-      throw new OpenChestnutCodecError(`Document list item ${block.id} numbering identity, level, and definition metadata are source-bound.`, [], { code: "unsupported_document_edit" });
-    }
+    const numbering = editedDocumentNumbering(block, source.numbering);
     const text = String(block.text ?? "");
     if (text.length > 1_000_000) throw new OpenChestnutCodecError(`Document list item ${block.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_numbering" });
     return {
@@ -555,7 +581,7 @@ function documentBlock(block, original) {
         value: {
           text,
           runs: source.runs.map((run) => ({ ...run, text })),
-          numbering: source.numbering,
+          numbering,
         },
       },
     };

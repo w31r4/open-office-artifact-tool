@@ -424,6 +424,132 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportEditsCompleteDirectNumberingGroupThroughInstanceOverride()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var source = AddDirectNumbering(authored.File.ToByteArray(), numberAllParagraphs: true, level: 2);
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.All(imported.Artifact.Document.Blocks, block =>
+        {
+            Assert.True(block.Source.Editable);
+            Assert.Equal(77u, block.Paragraph.Numbering.NumberingId);
+            Assert.Equal(2u, block.Paragraph.Numbering.Level);
+            block.Paragraph.Numbering.NumberFormat = "lowerRoman";
+            block.Paragraph.Numbering.Start = 5;
+            block.Paragraph.Numbering.LevelText = "%1.%2.%3.";
+        });
+        imported.Artifact.Document.Blocks[0].Paragraph.Text = "Edited grouped list title";
+        imported.Artifact.Document.Blocks[0].Paragraph.Runs[0].Text = "Edited grouped list title";
+
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var numbering = document.MainDocumentPart!.NumberingDefinitionsPart!.Numbering!;
+            var abstractLevel = numbering.Elements<W.AbstractNum>().Single().Elements<W.Level>().Single();
+            Assert.Equal(W.NumberFormatValues.UpperLetter, abstractLevel.NumberingFormat!.Val!.Value);
+            Assert.Equal(3, abstractLevel.StartNumberingValue!.Val!.Value);
+            Assert.Equal("%1)", abstractLevel.LevelText!.Val!.Value);
+            var levelOverride = numbering.Elements<W.NumberingInstance>().Single().Elements<W.LevelOverride>().Single();
+            var localLevel = levelOverride.Elements<W.Level>().Single();
+            Assert.Equal(2, levelOverride.LevelIndex!.Value);
+            Assert.Equal(W.NumberFormatValues.LowerRoman, localLevel.NumberingFormat!.Val!.Value);
+            Assert.Equal(5, localLevel.StartNumberingValue!.Val!.Value);
+            Assert.Equal("%1.%2.%3.", localLevel.LevelText!.Val!.Value);
+            Assert.Equal("Edited grouped list title", document.MainDocumentPart.Document!.Body!.Elements<W.Paragraph>().First().InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.All(roundTrip.Artifact.Document.Blocks, block =>
+        {
+            Assert.Equal("lowerRoman", block.Paragraph.Numbering.NumberFormat);
+            Assert.Equal(5u, block.Paragraph.Numbering.Start);
+            Assert.Equal("%1.%2.%3.", block.Paragraph.Numbering.LevelText);
+        });
+    }
+
+    [Fact]
+    public void NumberingDefinitionEditRejectsPartialGroupAndStyleInheritedGraph()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var grouped = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddDirectNumbering(authored.File.ToByteArray(), numberAllParagraphs: true)),
+        });
+        grouped.Artifact.Document.Blocks[0].Paragraph.Numbering.Start = 11;
+        var partial = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = grouped.Artifact,
+        });
+        Assert.False(partial.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(partial.Diagnostics).Code);
+
+        var inherited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddStyleInheritedNumbering(authored.File.ToByteArray())),
+        });
+        inherited.Artifact.Document.Blocks[1].Paragraph.Numbering.Start = 12;
+        var styleLinked = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = inherited.Artifact,
+        });
+        Assert.False(styleLinked.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(styleLinked.Diagnostics).Code);
+
+        var crossPart = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddUnusedStyleNumberingReference(AddDirectNumbering(authored.File.ToByteArray()))),
+        });
+        crossPart.Artifact.Document.Blocks[1].Paragraph.Numbering.Start = 13;
+        var crossPartRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = crossPart.Artifact,
+        });
+        Assert.False(crossPartRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(crossPartRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NumberedParagraphSlicePreservesButRejectsComplexTopologyEdits()
     {
         var authored = Invoke(ExportRequest(includeSecondParagraph: true));
@@ -1303,7 +1429,7 @@ public sealed class DocxCodecTests
         return stream.ToArray();
     }
 
-    private static byte[] AddDirectNumbering(byte[] bytes, bool addSecondRun = false)
+    private static byte[] AddDirectNumbering(byte[] bytes, bool addSecondRun = false, bool numberAllParagraphs = false, int level = 0)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -1311,13 +1437,19 @@ public sealed class DocxCodecTests
         using (var document = WordprocessingDocument.Open(stream, true))
         {
             var mainPart = document.MainDocumentPart!;
-            var paragraph = mainPart.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
-            paragraph.ParagraphProperties = new W.ParagraphProperties(
-                new W.NumberingProperties(
-                    new W.NumberingLevelReference { Val = 0 },
-                    new W.NumberingId { Val = 77 }));
-            paragraph.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Italic()));
-            if (addSecondRun) paragraph.Append(new W.Run(new W.Text(" detail")));
+            var paragraphs = mainPart.Document!.Body!.Elements<W.Paragraph>().ToArray();
+            var targets = numberAllParagraphs ? paragraphs : [paragraphs[1]];
+            foreach (var paragraph in targets)
+            {
+                paragraph.ParagraphProperties = new W.ParagraphProperties(
+                    new W.NumberingProperties(
+                        new W.NumberingLevelReference { Val = level },
+                        new W.NumberingId { Val = 77 }));
+                var run = paragraph.Elements<W.Run>().Single();
+                if (run.RunProperties is null) run.PrependChild(new W.RunProperties(new W.Italic()));
+                else run.RunProperties.Append(new W.Italic());
+            }
+            if (addSecondRun) paragraphs[1].Append(new W.Run(new W.Text(" detail")));
 
             var numberingPart = mainPart.AddNewPart<NumberingDefinitionsPart>();
             numberingPart.Numbering = new W.Numbering(
@@ -1325,7 +1457,7 @@ public sealed class DocxCodecTests
                     new W.Level(
                         new W.StartNumberingValue { Val = 3 },
                         new W.NumberingFormat { Val = W.NumberFormatValues.UpperLetter },
-                        new W.LevelText { Val = "%1)" }) { LevelIndex = 0 }) { AbstractNumberId = 9 },
+                        new W.LevelText { Val = "%1)" }) { LevelIndex = level }) { AbstractNumberId = 9 },
                 new W.NumberingInstance(new W.AbstractNumId { Val = 9 }) { NumberID = 77 });
             mainPart.Document.Save();
             numberingPart.Numbering.Save();
@@ -1376,6 +1508,26 @@ public sealed class DocxCodecTests
             mainPart.Document.Save();
             stylesPart.Styles.Save();
             numberingPart.Numbering.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnusedStyleNumberingReference(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var stylesPart = mainPart.StyleDefinitionsPart ?? mainPart.AddNewPart<StyleDefinitionsPart>();
+            stylesPart.Styles ??= new W.Styles();
+            stylesPart.Styles.Append(new W.Style(
+                new W.StyleName { Val = "Unused shared numbering reference" },
+                new W.StyleParagraphProperties(
+                    new W.NumberingProperties(new W.NumberingId { Val = 77 })))
+            { Type = W.StyleValues.Paragraph, StyleId = "UnusedSharedList" });
+            stylesPart.Styles.Save();
         }
         return stream.ToArray();
     }

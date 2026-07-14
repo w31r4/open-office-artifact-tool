@@ -1,0 +1,59 @@
+{
+  "name": "open-chestnut-numbering-edit",
+  "outputName": "open-chestnut-numbering-edit.docx",
+  "initialCodec": "js",
+  "roundtripCodec": "open-chestnut",
+  "openChestnutEdits": [
+    {
+      "kind": "listItem",
+      "matchText": "First grouped item",
+      "text": "Edited first grouped item",
+      "numberFormat": "lowerRoman",
+      "start": 5,
+      "levelText": "%1.",
+      "listType": "number"
+    },
+    {
+      "kind": "listItem",
+      "matchText": "Second grouped item",
+      "numberFormat": "lowerRoman",
+      "start": 5,
+      "levelText": "%1.",
+      "listType": "number"
+    }
+  ],
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "text": "OpenChestnut bounded numbering-definition edit",
+      "styleId": "Title"
+    },
+    {
+      "kind": "listItem",
+      "text": "First grouped item",
+      "listType": "number",
+      "numberFormat": "upperLetter",
+      "start": 3,
+      "levelText": "%1)",
+      "numberingId": 88
+    },
+    {
+      "kind": "listItem",
+      "text": "Second grouped item",
+      "listType": "number",
+      "numberFormat": "upperLetter",
+      "start": 3,
+      "levelText": "%1)",
+      "numberingId": 88
+    }
+  ],
+  "expectInspect": [
+    { "kind": "listItem", "pattern": "First grouped item" },
+    { "kind": "listItem", "pattern": "upperLetter" }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "required",
+    "inspectKind": "document,paragraph,listItem,layout"
+  }
+}

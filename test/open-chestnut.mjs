@@ -366,6 +366,37 @@ assert.equal(numberedSourceRoundTrip.blocks[0].kind, "listItem");
 assert.equal(numberedSourceRoundTrip.blocks[0].text, "Edited numbered source text");
 assert.equal(numberedSourceRoundTrip.blocks[0].numberFormat, "upperLetter");
 
+const groupedNumberingDocument = DocumentModel.create({ blocks: [] });
+groupedNumberingDocument.addListItem("First grouped item", {
+  listType: "number", numberFormat: "upperLetter", start: 3, levelText: "%1)", numberingId: 88,
+});
+groupedNumberingDocument.addListItem("Second grouped item", {
+  listType: "number", numberFormat: "upperLetter", start: 3, levelText: "%1)", numberingId: 88,
+});
+const groupedNumberingSource = await DocumentFile.exportDocx(groupedNumberingDocument);
+const groupedNumberingImported = await importDocxWithOpenChestnut(groupedNumberingSource);
+for (const block of groupedNumberingImported.blocks) {
+  block.numberFormat = "lowerRoman";
+  block.start = 5;
+  block.levelText = "%1.";
+}
+groupedNumberingImported.blocks[0].text = "Edited first grouped item";
+const groupedNumberingEdited = await exportDocxWithOpenChestnut(groupedNumberingImported);
+const groupedNumberingZip = await JSZip.loadAsync(groupedNumberingEdited.bytes);
+const groupedNumberingXml = await groupedNumberingZip.file("word/numbering.xml").async("text");
+assert.match(groupedNumberingXml, /<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0">[\s\S]*?<w:start w:val="5"\s*\/>[\s\S]*?<w:numFmt w:val="lowerRoman"\s*\/>[\s\S]*?<w:lvlText w:val="%1\."\s*\/>/);
+const groupedNumberingRoundTrip = await importDocxWithOpenChestnut(groupedNumberingEdited);
+assert.equal(groupedNumberingRoundTrip.blocks[0].text, "Edited first grouped item");
+assert.equal(groupedNumberingRoundTrip.blocks[1].text, "Second grouped item");
+assert.equal(groupedNumberingRoundTrip.blocks.every((block) => block.numberFormat === "lowerRoman" && block.start === 5 && block.levelText === "%1."), true);
+
+const partialNumberingImported = await importDocxWithOpenChestnut(groupedNumberingSource);
+partialNumberingImported.blocks[0].start = 9;
+await assert.rejects(
+  exportDocxWithOpenChestnut(partialNumberingImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit" && /coherently/.test(error.message),
+);
+
 const inheritedNumberingZip = await JSZip.loadAsync(numberedSourceDocx.bytes);
 const inheritedDocumentXml = await inheritedNumberingZip.file("word/document.xml").async("text");
 inheritedNumberingZip.file("word/document.xml", inheritedDocumentXml.replace(
@@ -396,6 +427,11 @@ const inheritedNumberingRoundTrip = await DocumentFile.importDocx(inheritedNumbe
 assert.equal(inheritedNumberingRoundTrip.blocks[0].kind, "listItem");
 assert.equal(inheritedNumberingRoundTrip.blocks[0].text, "Edited inherited numbering text");
 assert.equal(inheritedNumberingRoundTrip.blocks[0].styleId, "DerivedList");
+inheritedNumberingImported.blocks[0].start = 12;
+await assert.rejects(
+  exportDocxWithOpenChestnut(inheritedNumberingImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
+);
 
 const styleLinkedNumberingZip = await JSZip.loadAsync(numberedSourceDocx.bytes);
 const styleLinkedDocumentXml = (await styleLinkedNumberingZip.file("word/document.xml").async("text")).replace(

@@ -211,6 +211,24 @@ try {
   assert.match(authoredMergedXml, /<w:vMerge w:val="restart"\s*\/>/);
   assert.match(authoredMergedXml, /<w:vMerge w:val="continue"\s*\/>/);
 
+  const numberingEdit = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "open-chestnut-numbering-edit.json"), {
+    outputDir: path.join(outputDir, "open-chestnut-numbering-edit"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(numberingEdit.initialCodec, "js");
+  assert.equal(numberingEdit.roundtripCodec, "open-chestnut");
+  assert.equal(numberingEdit.qa.summary.packageOk, true);
+  assert.equal(numberingEdit.qa.summary.verifyOk, true);
+  assert.equal(numberingEdit.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  const numberingEditDocument = await importDocxWithOpenChestnut(await FileBlob.load(numberingEdit.docxPath));
+  const numberingEditItems = numberingEditDocument.blocks.filter((block) => block.kind === "listItem");
+  assert.equal(numberingEditItems.length, 2);
+  assert.equal(numberingEditItems[0].text, "Edited first grouped item");
+  assert.equal(numberingEditItems.every((block) => block.numberFormat === "lowerRoman" && block.start === 5 && block.levelText === "%1."), true);
+  const numberingEditZip = await JSZip.loadAsync(await fs.readFile(numberingEdit.docxPath));
+  const numberingEditXml = await numberingEditZip.file("word/numbering.xml").async("text");
+  assert.match(numberingEditXml, /<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0">[\s\S]*?<w:start w:val="5"\s*\/>[\s\S]*?<w:numFmt w:val="lowerRoman"\s*\/>[\s\S]*?<w:lvlText w:val="%1\."\s*\/>/);
+
   const packageComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-comments.json"), {
     outputDir: path.join(outputDir, "package-comments"),
     nativeRender: nativeStatus.available ? "required" : "auto",

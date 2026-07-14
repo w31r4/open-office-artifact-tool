@@ -205,13 +205,16 @@ internal static class PackageGuards
         OpaqueOpcGraph expected,
         OpaqueOpcGraph actual,
         string code,
-        Func<OpaqueOpcRelationship, bool>? ignoreRelationship = null)
+        Func<OpaqueOpcRelationship, bool>? ignoreRelationship = null,
+        Func<OpaqueOpcPart, bool>? ignorePart = null)
     {
         var expectedParts = expected.Parts
+            .Where(item => ignorePart?.Invoke(item) != true)
             .Select(PartSignature)
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
         var actualParts = actual.Parts
+            .Where(item => ignorePart?.Invoke(item) != true)
             .Select(PartSignature)
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
@@ -228,8 +231,8 @@ internal static class PackageGuards
         if (!expectedParts.SequenceEqual(actualParts, StringComparer.Ordinal) ||
             !expectedRelationships.SequenceEqual(actualRelationships, StringComparer.Ordinal))
         {
-            var expectedPartPaths = expected.Parts.ToDictionary(item => item.Path, PartSignature, StringComparer.OrdinalIgnoreCase);
-            var actualPartPaths = actual.Parts.ToDictionary(item => item.Path, PartSignature, StringComparer.OrdinalIgnoreCase);
+            var expectedPartPaths = expected.Parts.Where(item => ignorePart?.Invoke(item) != true).ToDictionary(item => item.Path, PartSignature, StringComparer.OrdinalIgnoreCase);
+            var actualPartPaths = actual.Parts.Where(item => ignorePart?.Invoke(item) != true).ToDictionary(item => item.Path, PartSignature, StringComparer.OrdinalIgnoreCase);
             var changedParts = expectedPartPaths.Keys.Concat(actualPartPaths.Keys).Distinct(StringComparer.OrdinalIgnoreCase)
                 .Where(path => !expectedPartPaths.TryGetValue(path, out var left) || !actualPartPaths.TryGetValue(path, out var right) || left != right)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)

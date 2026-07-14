@@ -47,8 +47,8 @@ internal static class DocxNumberedParagraphCodec
     {
         Validate(requested);
         if (!IsEditableTopology(paragraph)) throw Unsupported("Source-preserving DOCX export cannot edit this numbered paragraph topology.");
-        if (!SameNumbering(requested.Numbering, original.Numbering))
-            throw Unsupported("Numbering identity, level, and shared definition metadata are source-bound in this codec slice.");
+        if (!SameIdentity(requested.Numbering, original.Numbering))
+            throw Unsupported("Numbering identity, level, and style linkage are source-bound in this codec slice.");
         if (requested.Runs.Count != 1 || requested.Text != requested.Runs[0].Text)
             throw Unsupported("Source-preserving numbered paragraphs require one modeled run whose text matches the paragraph text.");
 
@@ -72,9 +72,11 @@ internal static class DocxNumberedParagraphCodec
     {
         if (paragraph.Numbering is null) throw Invalid("Numbered paragraph metadata is missing.");
         if (paragraph.Numbering.NumberingId == 0) throw Invalid("Numbered paragraph numbering_id must be greater than zero.");
+        if (paragraph.Numbering.NumberingId > int.MaxValue) throw Invalid("Numbered paragraph numbering_id exceeds the WordprocessingML signed integer range.");
         if (paragraph.Numbering.Level > 8) throw Invalid("Numbered paragraph level must be between 0 and 8.");
         if (paragraph.Numbering.NumberFormat.Length > 128) throw Invalid("Numbered paragraph number_format exceeds 128 characters.");
         if (paragraph.Numbering.LevelText.Length > 1024) throw Invalid("Numbered paragraph level_text exceeds 1024 characters.");
+        if (paragraph.Numbering.Start > int.MaxValue) throw Invalid("Numbered paragraph start exceeds the WordprocessingML signed integer range.");
         if (paragraph.Numbering.NumberingStyleId.Length > 253) throw Invalid("Numbered paragraph numbering_style_id exceeds 253 characters.");
         if (paragraph.Text.Length > 1_000_000) throw Invalid("Numbered paragraph text exceeds 1,000,000 characters.");
     }
@@ -176,8 +178,11 @@ internal static class DocxNumberedParagraphCodec
             child is W.RunStyle or W.Bold or W.Italic or W.Underline) ?? true;
     }
 
-    private static bool SameNumbering(DocumentNumbering? left, DocumentNumbering? right) =>
-        left is not null && right is not null && left.Equals(right);
+    private static bool SameIdentity(DocumentNumbering? left, DocumentNumbering? right) =>
+        left is not null && right is not null &&
+        left.NumberingId == right.NumberingId && left.Level == right.Level &&
+        left.AbstractNumberingId == right.AbstractNumberingId &&
+        left.NumberingStyleId.Equals(right.NumberingStyleId, StringComparison.Ordinal);
 
     private static bool IsOn(W.OnOffType? value) => value is not null && value.Val?.Value != false;
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();

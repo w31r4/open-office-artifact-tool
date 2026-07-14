@@ -429,6 +429,10 @@ export async function runDocumentFixture(fixturePath, options = {}) {
           assert.equal(listItem.level, edit.expectLevel, `Unexpected OpenChestnut numbering level for ${edit.matchText || listItem.id}.`);
         }
         if (Object.prototype.hasOwnProperty.call(edit, "text")) listItem.text = String(edit.text);
+        if (Object.prototype.hasOwnProperty.call(edit, "numberFormat")) listItem.numberFormat = String(edit.numberFormat);
+        if (Object.prototype.hasOwnProperty.call(edit, "start")) listItem.start = Number(edit.start);
+        if (Object.prototype.hasOwnProperty.call(edit, "levelText")) listItem.levelText = String(edit.levelText);
+        if (Object.prototype.hasOwnProperty.call(edit, "listType")) listItem.listType = String(edit.listType);
         continue;
       }
       throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);

@@ -11,7 +11,7 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 const maxPackedBytes = 8_000_000;
-const maxUnpackedBytes = 16_000_000;
+const maxUnpackedBytes = 16_250_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
@@ -39,6 +39,7 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxTableCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxTableGeometry.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxNumberingResolver.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/DocxNumberingEditPlanner.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxNumberedParagraphCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/PptxCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/PptxAssetCatalog.cs",
@@ -117,6 +118,7 @@ for (const required of [
   "skills/documents/scripts/verify-document.mjs",
   "skills/documents/fixtures/business-brief.json",
   "skills/documents/fixtures/open-chestnut-merged-table.json",
+  "skills/documents/fixtures/open-chestnut-numbering-edit.json",
   "skills/documents/fixtures/package-comments.json",
   "skills/documents/fixtures/package-numbering.json",
   "skills/documents/fixtures/package-settings.json",

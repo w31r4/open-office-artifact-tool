@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenChestnut.Runtime.dll",
   "resources": {
-    "hash": "sha256-mhV9vL5JhP0H6eo0VsjrfoGEcRh2oGuSz6M9Od8s2X0=",
+    "hash": "sha256-tOzVlkVLnXPEd3c6CZaFr52HJDeOUpJaJwqKzx9iaOo=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -16,8 +16,8 @@
       "DocumentFormat.OpenXml.wasm": "sha256-qyBwRXgceJUjislBAKVtbB+5NoeMp58c5jnlef1GDYg=",
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-vONbnq/Ze2Lv/7lASIiLJOElOYbr5fMi2VP5Pwndngw=",
       "Google.Protobuf.wasm": "sha256-08KDlUutTAy8j48yJSrIONL2C1659sayIKkTUk6/U20=",
-      "OpenChestnut.Codec.wasm": "sha256-Z6gdZUsUBF3lIrwPlH8uPdH3TfgHZlAwplnKxdg+wMc=",
-      "OpenChestnut.Runtime.wasm": "sha256-stm84OVATmWRNWa4QHxC4wdGyInAZA7EsL7WjfrOnYY=",
+      "OpenChestnut.Codec.wasm": "sha256-UIQM3PjCSJ90mI8qMPiaW2oLSJg+aiXdMi4HqRgXhHk=",
+      "OpenChestnut.Runtime.wasm": "sha256-VyDHq6BTow1sEy164h6IoyzcE02DdvJjoFrcsF9nsLY=",
       "System.Collections.Concurrent.wasm": "sha256-PjS0IHC3cqACW1NWl9PL//B936Cs32qXpBxz+YgUeGk=",
       "System.Collections.wasm": "sha256-NvEgLhMXGeFbcj0jpv0zFgVBPmV1dpQoD+lRlbjWsbo=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
@@ -34,7 +34,7 @@
       "System.Private.CoreLib.wasm": "sha256-miYIErmoB5HFN4Aa9YZ77TUkUhXiX5ZviVh1RyjIpIE=",
       "System.Private.Uri.wasm": "sha256-z28dHIijd47i4JFv6tDu1F6JsZuBi8PVyfEOutrqjVg=",
       "System.Private.Xml.wasm": "sha256-kbUJ7WtNjQP3PYv0RDxzIu9wM/5kT0bb3YR6nCyxeg8=",
-      "System.Private.Xml.Linq.wasm": "sha256-jAbnoG+j08auBb3lY4NyZo+rIvuiKExKk+FtCqy2Zr0=",
+      "System.Private.Xml.Linq.wasm": "sha256-WufQ4h/LejA447slgl9r1Ukszh431nWaLbF3E9HcHgM=",
       "System.Runtime.InteropServices.JavaScript.wasm": "sha256-FUm8fwFoVd+a6NbqGbY9yTh1tPSH4kFqVtOxD4aJgtE=",
       "System.Security.Cryptography.wasm": "sha256-nlUqT5YPQbM5QeKaTFXzMUFIMmdhPA1TzTXCpTc6278=",
       "System.Text.RegularExpressions.wasm": "sha256-GbUrG7AUS+039D8N+S8vypK0n3ajJ7rHuFGpuTPDS5A=",

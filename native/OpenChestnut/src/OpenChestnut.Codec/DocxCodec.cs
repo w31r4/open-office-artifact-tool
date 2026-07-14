@@ -11,6 +11,12 @@ namespace OpenChestnut.Codec;
 
 internal sealed record DocxImportResult(ArtifactEnvelope Artifact, IReadOnlyList<Diagnostic> Diagnostics);
 internal sealed record DocxExportResult(byte[] File, IReadOnlyList<Diagnostic> Diagnostics);
+internal sealed record DocxSourceBlock(
+    int Ordinal,
+    OpenXmlElement Element,
+    DocumentBlock Requested,
+    DocumentBlock Original,
+    DocumentSourceBinding Binding);
 
 internal static class DocxCodec
 {
@@ -124,6 +130,7 @@ internal static class DocxCodec
                     "word/document.xml");
 
             ulong semanticItems = 0;
+            var sourceBlocks = new List<DocxSourceBlock>(envelope.Document.Blocks.Count);
             for (var ordinal = 0; ordinal < envelope.Document.Blocks.Count; ordinal++)
             {
                 var block = envelope.Document.Blocks[ordinal];
@@ -156,6 +163,30 @@ internal static class DocxCodec
                         "document_source_binding_mismatch",
                         $"Document hyperlink block {ordinal} relationship locator does not match its source element.",
                         "word/document.xml");
+
+                sourceBlocks.Add(new DocxSourceBlock(ordinal, element, block, original, binding));
+            }
+
+            DocxNumberingEditPlanner.Apply(context, sourceBlocks
+                .Where(item => item.Element is W.Paragraph &&
+                               item.Original.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+                               item.Original.Paragraph.Numbering is not null &&
+                               item.Requested.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+                               item.Requested.Paragraph.Numbering is not null)
+                .Select(item => new DocxNumberingEditPlanner.Candidate(
+                    (W.Paragraph)item.Element,
+                    item.Requested.Paragraph.Numbering,
+                    item.Original.Paragraph.Numbering,
+                    item.Binding.Editable))
+                .ToArray());
+
+            foreach (var sourceBlock in sourceBlocks)
+            {
+                var ordinal = sourceBlock.Ordinal;
+                var element = sourceBlock.Element;
+                var block = sourceBlock.Requested;
+                var original = sourceBlock.Original;
+                var binding = sourceBlock.Binding;
 
                 if (SemanticHash(block).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!binding.Editable || block.ContentCase != original.ContentCase || block.ContentCase == DocumentBlock.ContentOneofCase.Opaque)
@@ -293,7 +324,8 @@ internal static class DocxCodec
             envelope.OpaqueOpc,
             outputOpaque,
             "opaque_content_not_preserved",
-            context is null ? null : context.IgnoresModeledRelationship);
+            context is null ? null : context.IgnoresModeledRelationship,
+            context is null ? null : context.IgnoresModeledPart);
         var diagnostics = new List<Diagnostic>();
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning(
