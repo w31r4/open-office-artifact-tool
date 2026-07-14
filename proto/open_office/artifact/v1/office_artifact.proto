@@ -200,11 +200,11 @@ message SpreadsheetTableArtifact {
   // from this message.
   repeated SpreadsheetTableColumnArtifact columns = 14;
   // Bounded AutoFilter criteria keyed by zero-based table column index.
-  // Exact/grouped-date values, custom comparisons, dynamic, and Top10 filters
-  // are modeled; color/icon profiles remain source-bound residual content.
+  // Exact/grouped-date values, custom comparisons, dynamic, Top10, and icon
+  // filters are modeled; color profiles remain source-bound residual content.
   repeated SpreadsheetTableFilterArtifact filters = 15;
-  // Bounded AutoFilter sort state. Only ordinary value sorts are modeled;
-  // color/icon/custom-list and locale-specific sort profiles remain opaque.
+  // Bounded AutoFilter sort state. Ordinary value and icon sorts are modeled;
+  // color/custom-list and locale-specific sort profiles remain opaque.
   SpreadsheetTableSortStateArtifact sort_state = 16;
 }
 
@@ -229,6 +229,7 @@ message SpreadsheetTableFilterArtifact {
     SpreadsheetTableCustomFilterArtifact custom = 3;
     SpreadsheetTableDynamicFilterArtifact dynamic = 4;
     SpreadsheetTableTop10FilterArtifact top10 = 5;
+    SpreadsheetTableIconArtifact icon = 6;
   }
 }
 
@@ -278,8 +279,15 @@ message SpreadsheetTableTop10FilterArtifact {
   optional double filter_value = 4;
 }
 
-// Sort range plus ordered value-sort conditions. A condition reference is one
-// column contained in the sort range; condition order is significant.
+// A standard SpreadsheetML icon-set selector shared by icon filters and icon
+// sort conditions. icon_id is optional because its absence means "no icon".
+message SpreadsheetTableIconArtifact {
+  string icon_set = 1;
+  optional uint32 icon_id = 2;
+}
+
+// Sort range plus ordered value/icon-sort conditions. A condition reference is
+// one column contained in the sort range; condition order is significant.
 message SpreadsheetTableSortStateArtifact {
   string reference = 1;
   bool case_sensitive = 2;
@@ -289,6 +297,8 @@ message SpreadsheetTableSortStateArtifact {
 message SpreadsheetTableSortConditionArtifact {
   string reference = 1;
   bool descending = 2;
+  // Absent means the backward-compatible ordinary value sort.
+  SpreadsheetTableIconArtifact icon = 3;
 }
 
 message SpreadsheetTableSourceBinding {

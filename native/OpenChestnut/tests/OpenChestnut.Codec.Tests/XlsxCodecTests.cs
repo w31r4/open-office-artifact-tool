@@ -879,10 +879,94 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void UnsupportedIconWorksheetTableFilterRemainsByteExactAndReadOnly()
+    public void ProtocolAuthorsAndImportsWorksheetTableIconFiltersAndSorts()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(IconTableExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/tables/table1.xml"));
+        Assert.Contains("<x:iconFilter iconSet=\"3Arrows\" iconId=\"0\" />", xml);
+        Assert.Contains("<x:iconFilter iconSet=\"3Flags\" />", xml);
+        Assert.Contains("<x:sortCondition ref=\"B2:B3\" descending=\"1\" sortBy=\"icon\" iconSet=\"5Rating\" iconId=\"4\" />", xml);
+        Assert.Contains("<x:sortCondition ref=\"A2:A3\" sortBy=\"icon\" iconSet=\"3Symbols2\" />", xml);
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.True(table.Source.Editable);
+        Assert.Equal(2, table.Filters.Count);
+        Assert.Equal(SpreadsheetTableFilterArtifact.CriteriaOneofCase.Icon, table.Filters[0].CriteriaCase);
+        Assert.Equal("3Arrows", table.Filters[0].Icon.IconSet);
+        Assert.True(table.Filters[0].Icon.HasIconId);
+        Assert.Equal(0U, table.Filters[0].Icon.IconId);
+        Assert.Equal("3Flags", table.Filters[1].Icon.IconSet);
+        Assert.False(table.Filters[1].Icon.HasIconId);
+        Assert.Equal("5Rating", table.SortState.Conditions[0].Icon.IconSet);
+        Assert.Equal(4U, table.SortState.Conditions[0].Icon.IconId);
+        Assert.Equal("3Symbols2", table.SortState.Conditions[1].Icon.IconSet);
+        Assert.False(table.SortState.Conditions[1].Icon.HasIconId);
+    }
+
+    [Fact]
+    public void SourcePreservingWorksheetTableIconEditKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(IconTableExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.Filters[0].Icon.IconId = 2;
+        table.Filters[1].Icon.IconId = 1;
+        table.SortState.Conditions[0].Icon.IconSet = "4Rating";
+        table.SortState.Conditions[0].Icon.IconId = 3;
+        table.SortState.Conditions[1].Icon.IconId = 2;
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal(2U, edited.Filters[0].Icon.IconId);
+        Assert.Equal(1U, edited.Filters[1].Icon.IconId);
+        Assert.Equal("4Rating", edited.SortState.Conditions[0].Icon.IconSet);
+        Assert.Equal(3U, edited.SortState.Conditions[0].Icon.IconId);
+        Assert.Equal(2U, edited.SortState.Conditions[1].Icon.IconId);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetTableIconProfiles()
+    {
+        var request = IconTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].Icon.IconSet = "3Stars";
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = IconTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].Icon.IconId = 3;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = IconTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Conditions[0].Icon.IconId = 5;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void UnsupportedColorWorksheetTableFilterRemainsByteExactAndReadOnly()
     {
         var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
-        var bytes = MutateTableWithIconFilter(first.File.ToByteArray());
+        var bytes = MutateTableWithColorFilter(first.File.ToByteArray());
         var imported = Import(bytes);
         var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
         Assert.False(table.Source.Editable);
@@ -1323,6 +1407,35 @@ public sealed class XlsxCodecTests
         return request;
     }
 
+    private static CodecRequest IconTableExportRequest()
+    {
+        var request = TableExportRequest();
+        var table = request.Artifact.Workbook.Worksheets[0].Tables[0];
+        table.Filters.Add(new SpreadsheetTableFilterArtifact
+        {
+            ColumnIndex = 0,
+            Icon = new SpreadsheetTableIconArtifact { IconSet = "3Arrows", IconId = 0 },
+        });
+        table.Filters.Add(new SpreadsheetTableFilterArtifact
+        {
+            ColumnIndex = 1,
+            Icon = new SpreadsheetTableIconArtifact { IconSet = "3Flags" },
+        });
+        var sort = new SpreadsheetTableSortStateArtifact { Reference = "A2:B3" };
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact
+        {
+            Reference = "B2:B3", Descending = true,
+            Icon = new SpreadsheetTableIconArtifact { IconSet = "5Rating", IconId = 4 },
+        });
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact
+        {
+            Reference = "A2:A3",
+            Icon = new SpreadsheetTableIconArtifact { IconSet = "3Symbols2" },
+        });
+        table.SortState = sort;
+        return request;
+    }
+
     private static SpreadsheetTableArtifact TableArtifact()
     {
         var table = new SpreadsheetTableArtifact
@@ -1359,26 +1472,6 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
-    private static byte[] MutateTableWithIconFilter(byte[] bytes)
-    {
-        using var stream = new MemoryStream();
-        stream.Write(bytes);
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
-        {
-            var entry = archive.GetEntry("xl/tables/table1.xml") ?? throw new InvalidOperationException("Worksheet table is missing.");
-            XDocument table;
-            using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
-            var spreadsheet = table.Root!.Name.Namespace;
-            table.Root.Element(spreadsheet + "autoFilter")!.Add(new XElement(spreadsheet + "filterColumn", new XAttribute("colId", 0),
-                new XElement(spreadsheet + "iconFilter", new XAttribute("iconSet", "3Arrows"), new XAttribute("iconId", 0))));
-            entry.Delete();
-            var replacement = archive.CreateEntry("xl/tables/table1.xml");
-            using var writer = new StreamWriter(replacement.Open());
-            writer.Write(table.ToString(SaveOptions.DisableFormatting));
-        }
-        return stream.ToArray();
-    }
-
     private static byte[] MutateTableWithColorSort(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -1392,6 +1485,26 @@ public sealed class XlsxCodecTests
             var condition = table.Root.Element(spreadsheet + "autoFilter")!.Element(spreadsheet + "sortState")!.Elements(spreadsheet + "sortCondition").First();
             condition.SetAttributeValue("sortBy", "cellColor");
             condition.SetAttributeValue("dxfId", 0);
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/tables/table1.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(table.ToString(SaveOptions.DisableFormatting));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MutateTableWithColorFilter(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/tables/table1.xml") ?? throw new InvalidOperationException("Worksheet table is missing.");
+            XDocument table;
+            using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
+            var spreadsheet = table.Root!.Name.Namespace;
+            table.Root.Element(spreadsheet + "autoFilter")!.Add(new XElement(spreadsheet + "filterColumn", new XAttribute("colId", 0),
+                new XElement(spreadsheet + "colorFilter", new XAttribute("dxfId", 0), new XAttribute("cellColor", 1))));
             entry.Delete();
             var replacement = archive.CreateEntry("xl/tables/table1.xml");
             using var writer = new StreamWriter(replacement.Open());

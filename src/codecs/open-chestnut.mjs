@@ -542,6 +542,18 @@ function tableFilters(table) {
         },
       };
     }
+    if (filter?.kind === "icon") {
+      return {
+        columnIndex,
+        criteria: {
+          case: "icon",
+          value: {
+            iconSet: String(filter.iconSet ?? ""),
+            iconId: filter.iconId == null ? undefined : Number(filter.iconId),
+          },
+        },
+      };
+    }
     return {
       columnIndex,
       criteria: {
@@ -593,6 +605,14 @@ function publicTableFilter(filter) {
       ...(filter.criteria.value?.filterValue == null ? {} : { filterValue: filter.criteria.value.filterValue }),
     };
   }
+  if (filter?.criteria?.case === "icon") {
+    return {
+      columnIndex: Number(filter.columnIndex ?? 0),
+      kind: "icon",
+      iconSet: filter.criteria.value?.iconSet || "",
+      ...(filter.criteria.value?.iconId == null ? {} : { iconId: filter.criteria.value.iconId }),
+    };
+  }
   return {
     columnIndex: Number(filter?.columnIndex ?? 0),
     kind: "values",
@@ -620,7 +640,16 @@ function tableSortState(table) {
     reference: String(sort.reference ?? ""),
     caseSensitive: Boolean(sort.caseSensitive),
     conditions: Array.isArray(sort.conditions)
-      ? sort.conditions.map((condition) => ({ reference: String(condition?.reference ?? ""), descending: Boolean(condition?.descending) }))
+      ? sort.conditions.map((condition) => ({
+          reference: String(condition?.reference ?? ""),
+          descending: Boolean(condition?.descending),
+          ...((condition?.kind === "icon" || condition?.iconSet) ? {
+            icon: {
+              iconSet: String(condition.iconSet ?? ""),
+              iconId: condition.iconId == null ? undefined : Number(condition.iconId),
+            },
+          } : {}),
+        }))
       : [],
   };
 }
@@ -630,7 +659,15 @@ function publicTableSortState(sort) {
   return {
     reference: sort.reference,
     caseSensitive: Boolean(sort.caseSensitive),
-    conditions: (sort.conditions || []).map((condition) => ({ reference: condition.reference, descending: Boolean(condition.descending) })),
+    conditions: (sort.conditions || []).map((condition) => ({
+      reference: condition.reference,
+      descending: Boolean(condition.descending),
+      ...(condition.icon ? {
+        kind: "icon",
+        iconSet: condition.icon.iconSet,
+        ...(condition.icon.iconId == null ? {} : { iconId: condition.icon.iconId }),
+      } : {}),
+    })),
   };
 }
 

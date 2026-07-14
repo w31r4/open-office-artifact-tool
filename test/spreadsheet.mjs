@@ -1668,6 +1668,32 @@ assert.match(advancedFilterXml, /<top10 top="1" percent="1" val="10" filterVal="
 assert.deepEqual((await SpreadsheetFile.importXlsx(advancedFilterXlsx)).worksheets.getItem("AdvancedFilters").tables.items[0].filters, javascriptAdvancedFilterTable.filters);
 javascriptAdvancedFilterTable.filters[0].values = ["2026-07-15"];
 await assert.rejects(SpreadsheetFile.exportXlsx(advancedFilterWorkbook), /cannot mix exact values and grouped dates/i);
+const iconRuleWorkbook = Workbook.create();
+const iconRuleSheet = iconRuleWorkbook.worksheets.add("IconRules");
+iconRuleSheet.getRange("A1:B3").values = [["Trend", "Rating"], [1, 5], [2, 3]];
+const javascriptIconTable = iconRuleSheet.tables.add({ range: "A1:B3", name: "IconRuleTable" });
+javascriptIconTable.filters = [
+  { columnIndex: 0, kind: "icon", iconSet: "3Arrows", iconId: 0 },
+  { columnIndex: 1, kind: "icon", iconSet: "3Flags" },
+];
+javascriptIconTable.sortState = {
+  reference: "A2:B3",
+  caseSensitive: false,
+  conditions: [
+    { reference: "B2:B3", descending: true, kind: "icon", iconSet: "5Rating", iconId: 4 },
+    { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Symbols2" },
+  ],
+};
+const iconRuleXlsx = await SpreadsheetFile.exportXlsx(iconRuleWorkbook);
+const iconRuleZip = await JSZip.loadAsync(new Uint8Array(await iconRuleXlsx.arrayBuffer()));
+const iconRuleXml = await iconRuleZip.file("xl/tables/table1.xml").async("text");
+assert.match(iconRuleXml, /<iconFilter iconSet="3Arrows" iconId="0"\/>/);
+assert.match(iconRuleXml, /<iconFilter iconSet="3Flags"\/>/);
+assert.match(iconRuleXml, /<sortCondition ref="B2:B3" descending="1" sortBy="icon" iconSet="5Rating" iconId="4"\/>/);
+assert.match(iconRuleXml, /<sortCondition ref="A2:A3" sortBy="icon" iconSet="3Symbols2"\/>/);
+const javascriptIconImported = await SpreadsheetFile.importXlsx(iconRuleXlsx);
+assert.deepEqual(javascriptIconImported.worksheets.getItem("IconRules").tables.items[0].filters, javascriptIconTable.filters);
+assert.deepEqual(javascriptIconImported.worksheets.getItem("IconRules").tables.items[0].sortState, javascriptIconTable.sortState);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
 assert.equal(pivotPartNames.length, 3);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");

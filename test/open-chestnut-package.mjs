@@ -25,11 +25,12 @@ try {
     const packagedTable = sheet.tables.add({ range: "A1:D2", name: "PackagedTable", style: "TableStyleMedium4" });
     packagedTable.columnDefinitions = [{ name: "Label" }, { name: "Date" }, { name: "Status" }, { name: "Value", calculatedColumnFormula: "=LEN([@Label])" }];
     packagedTable.filters = [
+      { columnIndex: 0, kind: "icon", iconSet: "3Arrows", iconId: 0 },
       { columnIndex: 1, kind: "values", values: [], includeBlank: false, calendarType: "gregorian", dateGroups: [{ grouping: "day", year: 2026, month: 7, day: 15 }] },
       { columnIndex: 2, kind: "dynamic", type: "today", value: 45853, maxValue: 45854 },
       { columnIndex: 3, kind: "top10", top: true, percent: false, value: 5, filterValue: 7 },
     ];
-    packagedTable.sortState = { reference: "A2:D2", caseSensitive: false, conditions: [{ reference: "D2:D2", descending: true }] };
+    packagedTable.sortState = { reference: "A2:D2", caseSensitive: false, conditions: [{ reference: "D2:D2", descending: true, kind: "icon", iconSet: "5Rating", iconId: 4 }] };
     const file = await exportXlsxWithOpenChestnut(workbook);
     const imported = await importXlsxWithOpenChestnut(file);
     if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
@@ -37,8 +38,8 @@ try {
     const importedTable = imported.worksheets.getItem("Packaged").tables.getItemOrNullObject("PackagedTable");
     if (importedTable.style !== "TableStyleMedium4") process.exit(11);
     if (importedTable.columnDefinitions[3].calculatedColumnFormula !== "=LEN([@Label])") process.exit(12);
-    if (importedTable.filters[0]?.dateGroups[0]?.day !== 15 || importedTable.filters[1]?.type !== "today" || importedTable.filters[2]?.filterValue !== 7) process.exit(13);
-    if (!importedTable.sortState?.conditions[0]?.descending) process.exit(14);
+    if (importedTable.filters[0]?.iconSet !== "3Arrows" || importedTable.filters[0]?.iconId !== 0 || importedTable.filters[1]?.dateGroups[0]?.day !== 15 || importedTable.filters[2]?.type !== "today" || importedTable.filters[3]?.filterValue !== 7) process.exit(13);
+    if (!importedTable.sortState?.conditions[0]?.descending || importedTable.sortState.conditions[0]?.iconSet !== "5Rating" || importedTable.sortState.conditions[0]?.iconId !== 4) process.exit(14);
     const legacyFile = await exportXlsxWithOpenXmlWasm(workbook);
     if (legacyFile.metadata.codec !== "open-chestnut") process.exit(10);
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });

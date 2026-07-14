@@ -949,7 +949,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10 filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and value/icon-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
@@ -2338,8 +2338,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     style: { type: "string", description: "Table style name." },
     columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
     columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
-    filters: { type: "object[]", description: "Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, or top/bottom item/percent AutoFilters." },
-    sortState: { type: "object", description: "Bounded value-sort state with reference, caseSensitive, and ordered single-column { reference, descending } conditions." },
+    filters: { type: "object[]", description: "Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, or standard icon-set AutoFilters; omitted iconId means no icon." },
+    sortState: { type: "object", description: "Bounded value/icon-sort state with reference, caseSensitive, and ordered single-column conditions; icon conditions add kind='icon', iconSet, and optional iconId." },
     showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
   "sheet.pivotTables.add": helpSchema({
@@ -3016,6 +3016,12 @@ class WorksheetTable {
         value: Number(filter.value ?? 0),
         ...(filter.filterValue == null ? {} : { filterValue: Number(filter.filterValue) }),
       };
+      if (filter?.kind === "icon") return {
+        columnIndex,
+        kind: "icon",
+        iconSet: String(filter.iconSet ?? ""),
+        ...(filter.iconId == null ? {} : { iconId: Number(filter.iconId) }),
+      };
       return {
         columnIndex,
         kind: "values",
@@ -3039,7 +3045,15 @@ class WorksheetTable {
       reference: String(config.sortState.reference ?? ""),
       caseSensitive: Boolean(config.sortState.caseSensitive),
       conditions: Array.isArray(config.sortState.conditions)
-        ? config.sortState.conditions.map((condition) => ({ reference: String(condition?.reference ?? ""), descending: Boolean(condition?.descending) }))
+        ? config.sortState.conditions.map((condition) => ({
+            reference: String(condition?.reference ?? ""),
+            descending: Boolean(condition?.descending),
+            ...((condition?.kind === "icon" || condition?.iconSet) ? {
+              kind: "icon",
+              iconSet: String(condition.iconSet ?? ""),
+              ...(condition.iconId == null ? {} : { iconId: Number(condition.iconId) }),
+            } : {}),
+          }))
         : [],
     } : undefined;
     this.rows = new WorksheetTableRowsFacade(this);
@@ -6805,6 +6819,10 @@ function tableFilterXml(filter) {
     const filterValue = filter.filterValue == null ? "" : ` filterVal="${attrEscape(filter.filterValue)}"`;
     return `<filterColumn colId="${columnIndex}"><top10 top="${filter.top === false ? 0 : 1}" percent="${filter.percent ? 1 : 0}" val="${attrEscape(filter.value ?? 0)}"${filterValue}/></filterColumn>`;
   }
+  if (filter?.kind === "icon") {
+    const iconId = filter.iconId == null ? "" : ` iconId="${attrEscape(filter.iconId)}"`;
+    return `<filterColumn colId="${columnIndex}"><iconFilter iconSet="${attrEscape(filter.iconSet ?? "")}"${iconId}/></filterColumn>`;
+  }
   const selectedValues = filter?.values || [];
   const selectedDateGroups = filter?.dateGroups || [];
   if (selectedValues.length && selectedDateGroups.length) throw new Error("Worksheet table <filters> cannot mix exact values and grouped dates.");
@@ -6820,7 +6838,7 @@ function tableFilterXml(filter) {
 function tableSortStateXml(sortState) {
   if (!sortState) return "";
   const conditions = (sortState.conditions || []).map((condition) =>
-    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}/>`).join("");
+    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : ""}/>`).join("");
   return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}>${conditions}</sortState>`;
 }
 
@@ -7188,6 +7206,13 @@ function parseNativeTableFilters(xml) {
         ...(filterValue == null ? {} : { filterValue }),
       }];
     }
+    const iconMatch = /<(?:[A-Za-z_][\w.-]*:)?iconFilter\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?iconFilter\s*>)/.exec(match[2]);
+    if (iconMatch) {
+      const icon = ooxmlXmlAttributes(iconMatch[1] || "");
+      const iconId = icon.iconId == null ? undefined : Number(icon.iconId);
+      if (!icon.iconSet || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return [];
+      return [{ columnIndex, kind: "icon", iconSet: icon.iconSet, ...(iconId == null ? {} : { iconId }) }];
+    }
     const customMatch = /<(?:[A-Za-z_][\w.-]*:)?customFilters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?customFilters\s*>)/.exec(match[2]);
     if (!customMatch) return [];
     const customAttrs = ooxmlXmlAttributes(customMatch[1] || "");
@@ -7208,8 +7233,15 @@ function parseNativeTableSortState(xml) {
   if (!attrs.ref || attrs.columnSort != null || attrs.sortMethod != null) return undefined;
   const conditions = [...match[2].matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g)].map((conditionMatch) => {
     const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
-    if (!condition.ref || (condition.sortBy != null && condition.sortBy !== "value") || condition.customList != null || condition.dxfId != null || condition.iconId != null || condition.iconSet != null) return undefined;
-    return { reference: condition.ref, descending: condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase()) };
+    if (!condition.ref || condition.customList != null || condition.dxfId != null) return undefined;
+    const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
+    if (condition.sortBy === "icon") {
+      const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
+      if (!condition.iconSet || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
+      return { reference: condition.ref, descending, kind: "icon", iconSet: condition.iconSet, ...(iconId == null ? {} : { iconId }) };
+    }
+    if ((condition.sortBy != null && condition.sortBy !== "value") || condition.iconId != null || condition.iconSet != null) return undefined;
+    return { reference: condition.ref, descending };
   });
   if (!conditions.length || conditions.some((condition) => condition == null)) return undefined;
   return {
