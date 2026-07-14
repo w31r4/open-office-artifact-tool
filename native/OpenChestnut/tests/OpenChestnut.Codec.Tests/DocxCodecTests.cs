@@ -359,6 +359,27 @@ public sealed class DocxCodecTests
         var invalidBorderResponse = Invoke(invalidBorder);
         Assert.False(invalidBorderResponse.Ok);
         Assert.Equal("invalid_document_table", Assert.Single(invalidBorderResponse.Diagnostics).Code);
+
+        var noBorder = MergedTableExportRequest();
+        noBorder.Artifact.Document.Blocks[0].Table.Formatting.BorderSize = 0;
+        var noBorderResponse = Invoke(noBorder);
+        Assert.True(noBorderResponse.Ok, Diagnostics(noBorderResponse));
+        using (var stream = new MemoryStream(noBorderResponse.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            Assert.All(
+                document.MainDocumentPart!.Document!.Body!.Descendants<W.TableBorders>().Single().ChildElements,
+                border => Assert.Equal("nil", border.GetAttribute("val", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+        var noBorderImported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = noBorderResponse.File,
+        });
+        Assert.Equal(0u, noBorderImported.Artifact.Document.Blocks[0].Table.Formatting.BorderSize);
     }
 
     [Fact]

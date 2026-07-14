@@ -21,7 +21,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addListItem` | api | Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
-| `document.addTable` | api | Append a Word-style table with physical cell values plus optional logical grid, horizontal-span, and vertical-merge geometry. |
+| `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
 | `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
@@ -298,7 +298,7 @@ Append a DOCX section break with page size, orientation, margin, and break-type 
 
 #### `document.addTable`
 
-Append a Word-style table with physical cell values plus optional logical grid, horizontal-span, and vertical-merge geometry.
+Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting.
 
 **Schema parameters:**
 
@@ -308,9 +308,11 @@ Append a Word-style table with physical cell values plus optional logical grid, 
 - `name` (string) — Inspectable table name.
 - `styleId` (string) — Table style ID.
 - `widthDxa` (number) — Table width in twentieths of a point.
-- `columnWidthsDxa` (number[]) — Column widths in twentieths of a point.
+- `indentDxa` (number) — Leading table indent in twentieths of a point.
+- `columnWidthsDxa` (number[]) — One width per logical table-grid column in twentieths of a point; values must sum to widthDxa.
 - `cellMarginsDxa` (object) — Cell margins in twentieths of a point.
 - `borderColor` (string) — Table border color.
+- `borderSize` (number) — Uniform border width in eighths of a point; zero disables borders.
 - `headerFill` (string) — Header-row fill color.
 
 **Schema returns:**
