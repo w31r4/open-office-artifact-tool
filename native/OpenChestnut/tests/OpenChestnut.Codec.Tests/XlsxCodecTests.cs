@@ -675,7 +675,7 @@ public sealed class XlsxCodecTests
         refresh.MinimumVersion = 1;
         refresh.Fields[0].Name = "Territory";
         refresh.Fields[0].DataBound = false;
-        refresh.Fields[1].FillFormulas = true;
+        refresh.Fields[0].FillFormulas = true;
         refresh.Fields[1].Clipped = true;
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
@@ -698,8 +698,8 @@ public sealed class XlsxCodecTests
         Assert.Contains("preserveSortFilterLayout=\"0\"", queryXml);
         Assert.Contains("headersInLastRefresh=\"0\"", queryXml);
         Assert.Contains("minimumVersion=\"1\"", queryXml);
-        Assert.Contains("id=\"1\" name=\"Territory\" dataBound=\"0\"", queryXml);
-        Assert.Contains("id=\"2\" name=\"Revenue\" dataBound=\"1\" tableColumnId=\"2\" fillFormulas=\"1\" clipped=\"1\"", queryXml);
+        Assert.Contains("id=\"1\" name=\"Territory\" dataBound=\"0\" tableColumnId=\"1\" fillFormulas=\"1\" clipped=\"0\"", queryXml);
+        Assert.Contains("id=\"2\" name=\"Revenue\" dataBound=\"1\" tableColumnId=\"2\" clipped=\"1\"", queryXml);
         Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
         Assert.Contains("<fixture:fieldOpaque value=\"kept\"", queryXml);
         Assert.Contains("<fixture:opaque value=\"kept\"", queryXml);
@@ -717,7 +717,8 @@ public sealed class XlsxCodecTests
         Assert.Equal(1U, edited.QueryTable.Refresh.MinimumVersion);
         Assert.Equal("Territory", edited.QueryTable.Refresh.Fields[0].Name);
         Assert.False(edited.QueryTable.Refresh.Fields[0].DataBound);
-        Assert.True(edited.QueryTable.Refresh.Fields[1].FillFormulas);
+        Assert.True(edited.QueryTable.Refresh.Fields[0].FillFormulas);
+        Assert.True(edited.QueryTable.Refresh.Fields[1].DataBound);
         Assert.True(edited.QueryTable.Refresh.Fields[1].Clipped);
         Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
         Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
@@ -752,6 +753,19 @@ public sealed class XlsxCodecTests
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
         Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].FillFormulas = true;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("explicitly unbound", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].DataBound = false;
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].Clipped = true;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("explicitly bound", Assert.Single(response.Diagnostics).Message);
     }
 
     [Fact]

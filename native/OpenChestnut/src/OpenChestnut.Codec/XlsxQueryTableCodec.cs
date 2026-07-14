@@ -198,6 +198,10 @@ internal sealed class XlsxQueryTableCodec
                 throw Invalid("Worksheet query refresh has an invalid or duplicate field profile.", location);
             if (field.HasRowNumbers && field.RowNumbers && ++rowNumberFields > 1)
                 throw Invalid("Worksheet query refresh cannot identify more than one row-number field.", location);
+            if (field.HasFillFormulas && field.FillFormulas && (!field.HasDataBound || field.DataBound))
+                throw Invalid("Worksheet query refresh formula fields must be explicitly unbound from external data.", location);
+            if (field.HasClipped && field.Clipped && (!field.HasDataBound || !field.DataBound))
+                throw Invalid("Worksheet query refresh clipped fields must be explicitly bound to external data.", location);
         }
         if (refresh.HasNextId && (refresh.NextId == 0 || ids.Contains(refresh.NextId)))
             throw Invalid("Worksheet query refresh next_id must identify an unused positive field ID.", location);

@@ -7414,6 +7414,8 @@ function parseNativeQueryTableRefresh(xml) {
         field[name] = value === "1" || value === "true";
       }
       if (field.rowNumbers === true && ++rowNumberFields > 1) return undefined;
+      if (field.fillFormulas === true && field.dataBound !== false) return undefined;
+      if (field.clipped === true && field.dataBound !== true) return undefined;
       if (fieldAttrs.tableColumnId != null) {
         const tableColumnId = Number(fieldAttrs.tableColumnId);
         if (!Number.isInteger(tableColumnId) || tableColumnId <= 0 || tableColumnIds.has(tableColumnId)) return undefined;

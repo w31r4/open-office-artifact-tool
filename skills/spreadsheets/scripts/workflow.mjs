@@ -61,7 +61,9 @@ async function attachSourceQueryTableFixture(file, config = {}) {
   ));
   zip.file(tableRelationshipPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="${fixtureXmlEscape(queryTarget)}"/></Relationships>`);
   zip.file("xl/connections.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:connection id="${connectionId}" name="${fixtureXmlEscape(config.connectionName || "Fixture connection")}" type="5" refreshedVersion="8" background="1" refreshOnLoad="0" saveData="1"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT fixture fields" commandType="2"/></x:connection></x:connections>`);
-  const queryFields = fields.map((name, index) => `<x:queryTableField id="${index + 1}" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="${index + 1}"/>`).join("");
+  const queryFields = fields.map((name, index) => index === 0
+    ? `<x:queryTableField id="1" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField>`
+    : `<x:queryTableField id="${index + 1}" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="${index + 1}"/>`).join("");
   zip.file(queryPartPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="${fixtureXmlEscape(config.queryName || "Fixture query")}" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="${connectionId}"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="${fields.length + 1}" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="${fields.length}">${queryFields}</x:queryTableFields></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>`);
   return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: XLSX_MIME, name: "source-query-table-fixture.xlsx" });
 }
@@ -425,8 +427,23 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     if (!sheet || !table || table.isNullObject || !table.queryTable)
       throw new Error(`sourceQueryTableFixture could not resolve ${sourceQuery.sheet}!${sourceQuery.table}.`);
     Object.assign(table.queryTable, sourceQuery.edit || {});
+    if (sourceQuery.refreshEdit) {
+      if (!table.queryTable.refresh) throw new Error("sourceQueryTableFixture.refreshEdit requires a recognized queryTableRefresh profile.");
+      const { fields: fieldEdits = [], ...refreshEdit } = sourceQuery.refreshEdit;
+      Object.assign(table.queryTable.refresh, refreshEdit);
+      const editedIds = new Set();
+      for (const patch of fieldEdits) {
+        const id = Number(patch?.id);
+        if (!Number.isInteger(id) || id <= 0 || editedIds.has(id)) throw new Error("sourceQueryTableFixture.refreshEdit fields require unique positive source IDs.");
+        editedIds.add(id);
+        const field = table.queryTable.refresh.fields.find((candidate) => candidate.id === id);
+        if (!field) throw new Error(`sourceQueryTableFixture.refreshEdit cannot resolve query field ${id}.`);
+        const { id: _identity, tableColumnId: _binding, ...changes } = patch;
+        Object.assign(field, changes);
+      }
+    }
     file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
-    sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: { ...table.queryTable } };
+    sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: structuredClone(table.queryTable) };
   }
   const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);

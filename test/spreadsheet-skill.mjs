@@ -301,6 +301,13 @@ try {
   assert.equal(queryResult.sourceQueryTable.query.name, "Warehouse sales refreshed");
   assert.equal(queryResult.sourceQueryTable.query.disableRefresh, true);
   assert.equal(queryResult.sourceQueryTable.query.backgroundRefresh, false);
+  assert.equal(queryResult.sourceQueryTable.query.refresh.preserveSortFilterLayout, false);
+  assert.equal(queryResult.sourceQueryTable.query.refresh.headersInLastRefresh, false);
+  assert.equal(queryResult.sourceQueryTable.query.refresh.minimumVersion, 1);
+  assert.deepEqual(queryResult.sourceQueryTable.query.refresh.fields, [
+    { id: 1, name: "Territory", dataBound: false, fillFormulas: true, clipped: false, tableColumnId: 1 },
+    { id: 2, name: "Revenue", dataBound: true, clipped: true, tableColumnId: 2 },
+  ]);
   assert.equal(queryResult.qa.summary.packageOk, true);
   assert.equal(queryResult.qa.summary.verifyOk, true);
   assert.equal(queryResult.qa.summary.visualQaOk, true);
@@ -325,12 +332,31 @@ try {
     intermediate: false,
     autoFormatId: 3,
     applyFontFormats: true,
+    refresh: {
+      preserveSortFilterLayout: false,
+      fieldIdWrapped: false,
+      headersInLastRefresh: false,
+      minimumVersion: 1,
+      nextId: 3,
+      unboundColumnsLeft: 0,
+      unboundColumnsRight: 0,
+      fields: [
+        { id: 1, name: "Territory", dataBound: false, fillFormulas: true, clipped: false, tableColumnId: 1 },
+        { id: 2, name: "Revenue", dataBound: true, clipped: true, tableColumnId: 2 },
+      ],
+    },
   });
   const queryZip = await JSZip.loadAsync(await fs.readFile(queryResult.workbookPath));
   const runnableQueryXml = await queryZip.file("xl/queryTables/queryTable1.xml").async("text");
   assert.match(runnableQueryXml, /disableRefresh="1"/);
   assert.match(runnableQueryXml, /backgroundRefresh="0"/);
+  assert.match(runnableQueryXml, /preserveSortFilterLayout="0"/);
+  assert.match(runnableQueryXml, /headersInLastRefresh="0"/);
+  assert.match(runnableQueryXml, /minimumVersion="1"/);
+  assert.match(runnableQueryXml, /id="1" name="Territory" dataBound="0" tableColumnId="1" fillFormulas="1" clipped="0"/);
+  assert.match(runnableQueryXml, /id="2" name="Revenue" dataBound="1" tableColumnId="2" clipped="1"/);
   assert.match(runnableQueryXml, /<x:queryTableFields count="2">/);
+  assert.match(runnableQueryXml, /<fixture:fieldOpaque value="kept"/);
   assert.match(runnableQueryXml, /<fixture:opaque value="kept"/);
   assert.match(await fs.readFile(queryResult.qa.summary.files.packageInspect, "utf8"), /xl\/queryTables\/queryTable1\.xml/);
 

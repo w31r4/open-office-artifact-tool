@@ -49,6 +49,15 @@
       "refreshOnLoad": false,
       "autoFormatId": 3,
       "applyFontFormats": true
+    },
+    "refreshEdit": {
+      "preserveSortFilterLayout": false,
+      "headersInLastRefresh": false,
+      "minimumVersion": 1,
+      "fields": [
+        { "id": 1, "name": "Territory", "dataBound": false, "fillFormulas": true },
+        { "id": 2, "clipped": true }
+      ]
     }
   },
   "expectations": [
