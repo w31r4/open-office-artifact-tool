@@ -965,7 +965,9 @@ public sealed class XlsxCodecTests
     [Fact]
     public void UnsupportedColorWorksheetTableFilterRemainsByteExactAndReadOnly()
     {
-        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var request = TableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Cells[3].NumberFormatCode = "0";
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         var bytes = MutateTableWithColorFilter(first.File.ToByteArray());
         var imported = Import(bytes);
         var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
@@ -1497,6 +1499,20 @@ public sealed class XlsxCodecTests
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var stylesheet = document.WorkbookPart?.WorkbookStylesPart?.Stylesheet
+                ?? throw new InvalidOperationException("Color-filter fixture requires a stylesheet.");
+            var differentialFormats = stylesheet.DifferentialFormats;
+            if (differentialFormats is null)
+            {
+                differentialFormats = new DifferentialFormats();
+                stylesheet.InsertBefore(differentialFormats, stylesheet.TableStyles);
+            }
+            differentialFormats.Append(new DifferentialFormat());
+            differentialFormats.Count = checked((uint)differentialFormats.ChildElements.Count);
+            stylesheet.Save();
+        }
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
         {
             var entry = archive.GetEntry("xl/tables/table1.xml") ?? throw new InvalidOperationException("Worksheet table is missing.");
