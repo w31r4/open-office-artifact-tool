@@ -515,6 +515,33 @@ function tableFilters(table) {
         },
       };
     }
+    if (filter?.kind === "dynamic") {
+      return {
+        columnIndex,
+        criteria: {
+          case: "dynamic",
+          value: {
+            type: String(filter.type ?? ""),
+            value: filter.value == null ? undefined : Number(filter.value),
+            maxValue: filter.maxValue == null ? undefined : Number(filter.maxValue),
+          },
+        },
+      };
+    }
+    if (filter?.kind === "top10") {
+      return {
+        columnIndex,
+        criteria: {
+          case: "top10",
+          value: {
+            top: filter.top ?? true,
+            percent: Boolean(filter.percent),
+            value: Number(filter.value ?? 0),
+            filterValue: filter.filterValue == null ? undefined : Number(filter.filterValue),
+          },
+        },
+      };
+    }
     return {
       columnIndex,
       criteria: {
@@ -522,6 +549,16 @@ function tableFilters(table) {
         value: {
           values: Array.isArray(filter?.values) ? filter.values.map((value) => String(value)) : [],
           includeBlank: Boolean(filter?.includeBlank),
+          dateGroups: Array.isArray(filter?.dateGroups) ? filter.dateGroups.map((group) => ({
+            grouping: String(group?.grouping ?? ""),
+            year: Number(group?.year ?? 0),
+            month: group?.month == null ? undefined : Number(group.month),
+            day: group?.day == null ? undefined : Number(group.day),
+            hour: group?.hour == null ? undefined : Number(group.hour),
+            minute: group?.minute == null ? undefined : Number(group.minute),
+            second: group?.second == null ? undefined : Number(group.second),
+          })) : [],
+          calendarType: filter?.calendarType ? String(filter.calendarType) : "",
         },
       },
     };
@@ -537,11 +574,42 @@ function publicTableFilter(filter) {
       criteria: (filter.criteria.value?.criteria || []).map((criterion) => ({ operator: criterion.operator, value: criterion.value })),
     };
   }
+  if (filter?.criteria?.case === "dynamic") {
+    return {
+      columnIndex: Number(filter.columnIndex ?? 0),
+      kind: "dynamic",
+      type: filter.criteria.value?.type || "",
+      ...(filter.criteria.value?.value == null ? {} : { value: filter.criteria.value.value }),
+      ...(filter.criteria.value?.maxValue == null ? {} : { maxValue: filter.criteria.value.maxValue }),
+    };
+  }
+  if (filter?.criteria?.case === "top10") {
+    return {
+      columnIndex: Number(filter.columnIndex ?? 0),
+      kind: "top10",
+      top: Boolean(filter.criteria.value?.top),
+      percent: Boolean(filter.criteria.value?.percent),
+      value: Number(filter.criteria.value?.value ?? 0),
+      ...(filter.criteria.value?.filterValue == null ? {} : { filterValue: filter.criteria.value.filterValue }),
+    };
+  }
   return {
     columnIndex: Number(filter?.columnIndex ?? 0),
     kind: "values",
     values: [...(filter?.criteria?.value?.values || [])],
     includeBlank: Boolean(filter?.criteria?.value?.includeBlank),
+    ...((filter?.criteria?.value?.dateGroups || []).length ? {
+      dateGroups: filter.criteria.value.dateGroups.map((group) => ({
+        grouping: group.grouping,
+        year: Number(group.year ?? 0),
+        ...(group.month == null ? {} : { month: group.month }),
+        ...(group.day == null ? {} : { day: group.day }),
+        ...(group.hour == null ? {} : { hour: group.hour }),
+        ...(group.minute == null ? {} : { minute: group.minute }),
+        ...(group.second == null ? {} : { second: group.second }),
+      })),
+    } : {}),
+    ...(filter?.criteria?.value?.calendarType ? { calendarType: filter.criteria.value.calendarType } : {}),
   };
 }
 

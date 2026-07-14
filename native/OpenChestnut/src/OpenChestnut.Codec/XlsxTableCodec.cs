@@ -267,6 +267,7 @@ internal sealed class XlsxTableCodec
                 if (filter.Values.Values.Count == 0 && filter.Values.DateGroups.Count == 0 && !filter.Values.IncludeBlank)
                     throw Invalid($"Worksheet table {table.Name} value filter must select a value, grouped date, or blanks.", location);
                 if (filter.Values.Values.Count + filter.Values.DateGroups.Count > 10_000 ||
+                    filter.Values.Values.Count > 0 && filter.Values.DateGroups.Count > 0 ||
                     filter.Values.Values.Any(value => value.Length > 32_767 || value.Any(char.IsControl)) ||
                     filter.Values.Values.Distinct(StringComparer.Ordinal).Count() != filter.Values.Values.Count)
                     throw Invalid($"Worksheet table {table.Name} has an invalid value filter.", location);
@@ -512,6 +513,7 @@ internal sealed class XlsxTableCodec
                 values.DateGroups.Add(group!);
             }
             if (values.Values.Count + values.DateGroups.Count > 10_000 || values.Values.Count == 0 && values.DateGroups.Count == 0 && !includeBlank ||
+                values.Values.Count > 0 && values.DateGroups.Count > 0 ||
                 values.Values.Any(value => value.Length > 32_767 || value.Any(char.IsControl)) ||
                 values.Values.Distinct(StringComparer.Ordinal).Count() != values.Values.Count ||
                 values.DateGroups.Select(DateGroupSemantics).Distinct(StringComparer.Ordinal).Count() != values.DateGroups.Count ||

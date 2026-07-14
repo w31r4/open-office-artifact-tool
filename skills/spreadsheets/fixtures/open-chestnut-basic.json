@@ -135,6 +135,42 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Advanced Filters",
+      "ranges": [
+        {
+          "range": "A1:C3",
+          "values": [
+            ["Date", "Status", "Score"],
+            [45853, "ready", 95],
+            [45854, "pending", 80]
+          ]
+        },
+        {
+          "range": "A2:A3",
+          "format": { "numberFormat": "yyyy-mm-dd" }
+        }
+      ],
+      "tables": [
+        {
+          "range": "A1:C3",
+          "name": "AdvancedFilterTable",
+          "style": "TableStyleMedium6",
+          "filters": [
+            {
+              "columnIndex": 0,
+              "kind": "values",
+              "values": [],
+              "includeBlank": false,
+              "calendarType": "gregorian",
+              "dateGroups": [{ "grouping": "day", "year": 2026, "month": 7, "day": 15 }]
+            },
+            { "columnIndex": 1, "kind": "dynamic", "type": "today", "value": 45853, "maxValue": 45854 },
+            { "columnIndex": 2, "kind": "top10", "top": true, "percent": true, "value": 10, "filterValue": 95 }
+          ]
+        }
+      ]
     }
   ],
   "expectations": [

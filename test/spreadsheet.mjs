@@ -1650,6 +1650,24 @@ assert.deepEqual(importedFormulaTable.sortState, {
   caseSensitive: true,
   conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
 });
+const advancedFilterWorkbook = Workbook.create();
+const advancedFilterSheet = advancedFilterWorkbook.worksheets.add("AdvancedFilters");
+advancedFilterSheet.getRange("A1:C3").values = [["Date", "Status", "Score"], [45853, "ready", 95], [45854, "pending", 80]];
+const javascriptAdvancedFilterTable = advancedFilterSheet.tables.add({ range: "A1:C3", name: "AdvancedFilterTable" });
+javascriptAdvancedFilterTable.filters = [
+  { columnIndex: 0, kind: "values", values: [], includeBlank: false, calendarType: "gregorian", dateGroups: [{ grouping: "day", year: 2026, month: 7, day: 15 }] },
+  { columnIndex: 1, kind: "dynamic", type: "today", value: 45853, maxValue: 45854 },
+  { columnIndex: 2, kind: "top10", top: true, percent: true, value: 10, filterValue: 95 },
+];
+const advancedFilterXlsx = await SpreadsheetFile.exportXlsx(advancedFilterWorkbook);
+const advancedFilterZip = await JSZip.loadAsync(new Uint8Array(await advancedFilterXlsx.arrayBuffer()));
+const advancedFilterXml = await advancedFilterZip.file("xl/tables/table1.xml").async("text");
+assert.match(advancedFilterXml, /<filters calendarType="gregorian"><dateGroupItem year="2026" month="7" day="15" dateTimeGrouping="day"\/><\/filters>/);
+assert.match(advancedFilterXml, /<dynamicFilter type="today" val="45853" maxVal="45854"\/>/);
+assert.match(advancedFilterXml, /<top10 top="1" percent="1" val="10" filterVal="95"\/>/);
+assert.deepEqual((await SpreadsheetFile.importXlsx(advancedFilterXlsx)).worksheets.getItem("AdvancedFilters").tables.items[0].filters, javascriptAdvancedFilterTable.filters);
+javascriptAdvancedFilterTable.filters[0].values = ["2026-07-15"];
+await assert.rejects(SpreadsheetFile.exportXlsx(advancedFilterWorkbook), /cannot mix exact values and grouped dates/i);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
 assert.equal(pivotPartNames.length, 3);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");

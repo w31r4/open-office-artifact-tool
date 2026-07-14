@@ -2033,7 +2033,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
-| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded value/custom filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
+| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10 filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
@@ -3812,7 +3812,7 @@ Create line/column/stacked sparklines from sourceData into a targetRange; range.
 
 #### `sheet.tables.add`
 
-Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded value/custom filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
+Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10 filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
 
 **Schema parameters:**
 
@@ -3822,7 +3822,7 @@ Create an inspectable worksheet table over an A1 range with rich calculated-colu
 - `style` (string) — Table style name.
 - `columnNames` (string[]) — Compatibility projection of table-column names.
 - `columnDefinitions` (object[]) — Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata.
-- `filters` (object[]) — Zero-based table-column value or one/two-criterion custom AutoFilters.
+- `filters` (object[]) — Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, or top/bottom item/percent AutoFilters.
 - `sortState` (object) — Bounded value-sort state with reference, caseSensitive, and ordered single-column { reference, descending } conditions.
 - `showTotals` (boolean) — Expose the totals row required by totals metadata.
 

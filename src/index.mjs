@@ -949,7 +949,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded value/custom filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10 filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
@@ -2338,7 +2338,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     style: { type: "string", description: "Table style name." },
     columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
     columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
-    filters: { type: "object[]", description: "Zero-based table-column value or one/two-criterion custom AutoFilters." },
+    filters: { type: "object[]", description: "Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, or top/bottom item/percent AutoFilters." },
     sortState: { type: "object", description: "Bounded value-sort state with reference, caseSensitive, and ordered single-column { reference, descending } conditions." },
     showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
@@ -3001,11 +3001,38 @@ class WorksheetTable {
           ? filter.criteria.map((criterion) => ({ operator: String(criterion?.operator ?? ""), value: String(criterion?.value ?? "") }))
           : [],
       };
+      if (filter?.kind === "dynamic") return {
+        columnIndex,
+        kind: "dynamic",
+        type: String(filter.type ?? ""),
+        ...(filter.value == null ? {} : { value: Number(filter.value) }),
+        ...(filter.maxValue == null ? {} : { maxValue: Number(filter.maxValue) }),
+      };
+      if (filter?.kind === "top10") return {
+        columnIndex,
+        kind: "top10",
+        top: filter.top ?? true,
+        percent: Boolean(filter.percent),
+        value: Number(filter.value ?? 0),
+        ...(filter.filterValue == null ? {} : { filterValue: Number(filter.filterValue) }),
+      };
       return {
         columnIndex,
         kind: "values",
         values: Array.isArray(filter?.values) ? filter.values.map((value) => String(value)) : [],
         includeBlank: Boolean(filter?.includeBlank),
+        ...(Array.isArray(filter?.dateGroups) && filter.dateGroups.length ? {
+          dateGroups: filter.dateGroups.map((group) => ({
+            grouping: String(group?.grouping ?? ""),
+            year: Number(group?.year ?? 0),
+            ...(group?.month == null ? {} : { month: Number(group.month) }),
+            ...(group?.day == null ? {} : { day: Number(group.day) }),
+            ...(group?.hour == null ? {} : { hour: Number(group.hour) }),
+            ...(group?.minute == null ? {} : { minute: Number(group.minute) }),
+            ...(group?.second == null ? {} : { second: Number(group.second) }),
+          })),
+        } : {}),
+        ...(filter?.calendarType ? { calendarType: String(filter.calendarType) } : {}),
       };
     }) : [];
     this.sortState = config.sortState ? {
@@ -6769,8 +6796,25 @@ function tableFilterXml(filter) {
     const criteria = (filter.criteria || []).map((criterion) => `<customFilter operator="${attrEscape(criterion?.operator || "equal")}" val="${attrEscape(criterion?.value ?? "")}"/>`).join("");
     return `<filterColumn colId="${columnIndex}"><customFilters${filter.matchAll ? ' and="1"' : ""}>${criteria}</customFilters></filterColumn>`;
   }
-  const values = (filter?.values || []).map((value) => `<filter val="${attrEscape(value)}"/>`).join("");
-  return `<filterColumn colId="${columnIndex}"><filters${filter?.includeBlank ? ' blank="1"' : ""}>${values}</filters></filterColumn>`;
+  if (filter?.kind === "dynamic") {
+    const value = filter.value == null ? "" : ` val="${attrEscape(filter.value)}"`;
+    const maxValue = filter.maxValue == null ? "" : ` maxVal="${attrEscape(filter.maxValue)}"`;
+    return `<filterColumn colId="${columnIndex}"><dynamicFilter type="${attrEscape(filter.type ?? "")}"${value}${maxValue}/></filterColumn>`;
+  }
+  if (filter?.kind === "top10") {
+    const filterValue = filter.filterValue == null ? "" : ` filterVal="${attrEscape(filter.filterValue)}"`;
+    return `<filterColumn colId="${columnIndex}"><top10 top="${filter.top === false ? 0 : 1}" percent="${filter.percent ? 1 : 0}" val="${attrEscape(filter.value ?? 0)}"${filterValue}/></filterColumn>`;
+  }
+  const selectedValues = filter?.values || [];
+  const selectedDateGroups = filter?.dateGroups || [];
+  if (selectedValues.length && selectedDateGroups.length) throw new Error("Worksheet table <filters> cannot mix exact values and grouped dates.");
+  const values = selectedValues.map((value) => `<filter val="${attrEscape(value)}"/>`).join("");
+  const groups = selectedDateGroups.map((group) => {
+    const fields = ["month", "day", "hour", "minute", "second"].map((name) => group?.[name] == null ? "" : ` ${name}="${attrEscape(group[name])}"`).join("");
+    return `<dateGroupItem year="${attrEscape(group?.year ?? "")}"${fields} dateTimeGrouping="${attrEscape(group?.grouping ?? "")}"/>`;
+  }).join("");
+  const calendarType = filter?.calendarType ? ` calendarType="${attrEscape(filter.calendarType)}"` : "";
+  return `<filterColumn colId="${columnIndex}"><filters${filter?.includeBlank ? ' blank="1"' : ""}${calendarType}>${values}${groups}</filters></filterColumn>`;
 }
 
 function tableSortStateXml(sortState) {
@@ -7104,7 +7148,45 @@ function parseNativeTableFilters(xml) {
       const values = [...(valuesMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?filter\b([^>]*?)\/\s*>/g)]
         .map((valueMatch) => ooxmlXmlAttributes(valueMatch[1] || "").val)
         .filter((value) => value != null);
-      return [{ columnIndex, kind: "values", values, includeBlank: filterAttrs.blank != null && !["0", "false", "off"].includes(String(filterAttrs.blank).toLowerCase()) }];
+      const dateGroups = [...(valuesMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?dateGroupItem\b([^>]*?)\/\s*>/g)].map((groupMatch) => {
+        const group = ooxmlXmlAttributes(groupMatch[1] || "");
+        if (!group.year || !group.dateTimeGrouping) return undefined;
+        const output = { grouping: group.dateTimeGrouping, year: Number(group.year) };
+        for (const name of ["month", "day", "hour", "minute", "second"]) if (group[name] != null) output[name] = Number(group[name]);
+        return Object.values(output).some((value) => typeof value === "number" && !Number.isInteger(value)) ? undefined : output;
+      });
+      if (dateGroups.some((group) => !group)) return [];
+      return [{
+        columnIndex,
+        kind: "values",
+        values,
+        includeBlank: filterAttrs.blank != null && !["0", "false", "off"].includes(String(filterAttrs.blank).toLowerCase()),
+        ...(dateGroups.length ? { dateGroups } : {}),
+        ...(filterAttrs.calendarType ? { calendarType: filterAttrs.calendarType } : {}),
+      }];
+    }
+    const dynamicMatch = /<(?:[A-Za-z_][\w.-]*:)?dynamicFilter\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?dynamicFilter\s*>)/.exec(match[2]);
+    if (dynamicMatch) {
+      const dynamic = ooxmlXmlAttributes(dynamicMatch[1] || "");
+      const value = dynamic.val == null ? undefined : Number(dynamic.val);
+      const maxValue = dynamic.maxVal == null ? undefined : Number(dynamic.maxVal);
+      if (!dynamic.type || value != null && !Number.isFinite(value) || maxValue != null && !Number.isFinite(maxValue)) return [];
+      return [{ columnIndex, kind: "dynamic", type: dynamic.type, ...(value == null ? {} : { value }), ...(maxValue == null ? {} : { maxValue }) }];
+    }
+    const top10Match = /<(?:[A-Za-z_][\w.-]*:)?top10\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?top10\s*>)/.exec(match[2]);
+    if (top10Match) {
+      const top10 = ooxmlXmlAttributes(top10Match[1] || "");
+      const value = Number(top10.val);
+      const filterValue = top10.filterVal == null ? undefined : Number(top10.filterVal);
+      if (top10.val == null || !Number.isFinite(value) || filterValue != null && !Number.isFinite(filterValue)) return [];
+      return [{
+        columnIndex,
+        kind: "top10",
+        top: top10.top == null || !["0", "false", "off"].includes(String(top10.top).toLowerCase()),
+        percent: top10.percent != null && !["0", "false", "off"].includes(String(top10.percent).toLowerCase()),
+        value,
+        ...(filterValue == null ? {} : { filterValue }),
+      }];
     }
     const customMatch = /<(?:[A-Za-z_][\w.-]*:)?customFilters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?customFilters\s*>)/.exec(match[2]);
     if (!customMatch) return [];

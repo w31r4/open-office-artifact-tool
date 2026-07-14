@@ -789,10 +789,100 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void UnsupportedDynamicWorksheetTableFilterRemainsByteExactAndReadOnly()
+    public void ProtocolAuthorsAndImportsWorksheetTableDateDynamicAndTop10Filters()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(AdvancedFilterTableExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/tables/table1.xml"));
+        Assert.Contains("calendarType=\"gregorian\"", xml);
+        Assert.Contains("<x:dateGroupItem year=\"2026\" dateTimeGrouping=\"day\" month=\"7\" day=\"15\" />", xml);
+        Assert.Contains("<x:dynamicFilter type=\"today\" val=\"45853\" maxVal=\"45854\" />", xml);
+        Assert.Contains("<x:top10 top=\"1\" percent=\"1\" val=\"10\" filterVal=\"95\" />", xml);
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var filters = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).Filters;
+        Assert.Equal(3, filters.Count);
+        Assert.Equal("gregorian", filters[0].Values.CalendarType);
+        Assert.Empty(filters[0].Values.Values);
+        var group = Assert.Single(filters[0].Values.DateGroups);
+        Assert.Equal("day", group.Grouping);
+        Assert.Equal(2026U, group.Year);
+        Assert.Equal(7U, group.Month);
+        Assert.Equal(15U, group.Day);
+        Assert.Equal("today", filters[1].Dynamic.Type);
+        Assert.Equal(45853, filters[1].Dynamic.Value);
+        Assert.Equal(45854, filters[1].Dynamic.MaxValue);
+        Assert.True(filters[2].Top10.Top);
+        Assert.True(filters[2].Top10.Percent);
+        Assert.Equal(10, filters[2].Top10.Value);
+        Assert.Equal(95, filters[2].Top10.FilterValue);
+    }
+
+    [Fact]
+    public void SourcePreservingAdvancedWorksheetTableFilterEditKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(AdvancedFilterTableExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.Filters[0].Values.DateGroups[0].Day = 16;
+        table.Filters[1].Dynamic.Type = "yesterday";
+        table.Filters[1].Dynamic.Value = 45852;
+        table.Filters[1].Dynamic.MaxValue = 45853;
+        table.Filters[2].Top10.Top = false;
+        table.Filters[2].Top10.Percent = false;
+        table.Filters[2].Top10.Value = 5;
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal(16U, edited.Filters[0].Values.DateGroups[0].Day);
+        Assert.Equal("yesterday", edited.Filters[1].Dynamic.Type);
+        Assert.False(edited.Filters[2].Top10.Top);
+        Assert.False(edited.Filters[2].Top10.Percent);
+        Assert.Equal(5, edited.Filters[2].Top10.Value);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidAdvancedWorksheetTableFilterProfiles()
+    {
+        var request = AdvancedFilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].Values.DateGroups[0] = new SpreadsheetTableDateGroupItemArtifact
+            { Year = 2026, Day = 15, Grouping = "day" };
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = AdvancedFilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[1].Dynamic.Type = "thisDecade";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = AdvancedFilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[2].Top10.Value = 101;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void UnsupportedIconWorksheetTableFilterRemainsByteExactAndReadOnly()
     {
         var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
-        var bytes = MutateTableWithDynamicFilter(first.File.ToByteArray());
+        var bytes = MutateTableWithIconFilter(first.File.ToByteArray());
         var imported = Import(bytes);
         var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
         Assert.False(table.Source.Editable);
@@ -1187,6 +1277,42 @@ public sealed class XlsxCodecTests
         return request;
     }
 
+    private static CodecRequest AdvancedFilterTableExportRequest()
+    {
+        var request = ExportRequest();
+        var sheet = request.Artifact.Workbook.Worksheets[0];
+        sheet.Cells.Clear();
+        foreach (var (column, value) in new[] { "Date", "Status", "Score" }.Select((value, column) => (column, value)))
+            sheet.Cells.Add(new CellArtifact { Row = 0, Column = (uint)column, StringValue = value });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 0, NumberValue = 45853, NumberFormatCode = "yyyy-mm-dd" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, StringValue = "ready" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 2, NumberValue = 95 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 0, NumberValue = 45854, NumberFormatCode = "yyyy-mm-dd" });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 1, StringValue = "pending" });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 2, NumberValue = 80 });
+        var table = new SpreadsheetTableArtifact
+        {
+            Id = "table/advanced-filters", Name = "AdvancedFilterTable", Reference = "A1:C3", HasHeaders = true,
+            ShowFilterButton = true, StyleName = "TableStyleMedium4", ShowRowStripes = true,
+        };
+        table.ColumnNames.Add(["Date", "Status", "Score"]);
+        var values = new SpreadsheetTableValueFilterArtifact { CalendarType = "gregorian" };
+        values.DateGroups.Add(new SpreadsheetTableDateGroupItemArtifact { Year = 2026, Month = 7, Day = 15, Grouping = "day" });
+        table.Filters.Add(new SpreadsheetTableFilterArtifact { ColumnIndex = 0, Values = values });
+        table.Filters.Add(new SpreadsheetTableFilterArtifact
+        {
+            ColumnIndex = 1,
+            Dynamic = new SpreadsheetTableDynamicFilterArtifact { Type = "today", Value = 45853, MaxValue = 45854 },
+        });
+        table.Filters.Add(new SpreadsheetTableFilterArtifact
+        {
+            ColumnIndex = 2,
+            Top10 = new SpreadsheetTableTop10FilterArtifact { Top = true, Percent = true, Value = 10, FilterValue = 95 },
+        });
+        sheet.Tables.Add(table);
+        return request;
+    }
+
     private static CodecRequest SortTableExportRequest()
     {
         var request = FilterTableExportRequest();
@@ -1233,7 +1359,7 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
-    private static byte[] MutateTableWithDynamicFilter(byte[] bytes)
+    private static byte[] MutateTableWithIconFilter(byte[] bytes)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -1244,7 +1370,7 @@ public sealed class XlsxCodecTests
             using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
             var spreadsheet = table.Root!.Name.Namespace;
             table.Root.Element(spreadsheet + "autoFilter")!.Add(new XElement(spreadsheet + "filterColumn", new XAttribute("colId", 0),
-                new XElement(spreadsheet + "dynamicFilter", new XAttribute("type", "today"))));
+                new XElement(spreadsheet + "iconFilter", new XAttribute("iconSet", "3Arrows"), new XAttribute("iconId", 0))));
             entry.Delete();
             var replacement = archive.CreateEntry("xl/tables/table1.xml");
             using var writer = new StreamWriter(replacement.Open());

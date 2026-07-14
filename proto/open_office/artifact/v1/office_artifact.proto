@@ -200,8 +200,8 @@ message SpreadsheetTableArtifact {
   // from this message.
   repeated SpreadsheetTableColumnArtifact columns = 14;
   // Bounded AutoFilter criteria keyed by zero-based table column index.
-  // Dynamic/date-group/color/icon/Top10 filters remain source-bound residual
-  // content until modeled independently.
+  // Exact/grouped-date values, custom comparisons, dynamic, and Top10 filters
+  // are modeled; color/icon profiles remain source-bound residual content.
   repeated SpreadsheetTableFilterArtifact filters = 15;
   // Bounded AutoFilter sort state. Only ordinary value sorts are modeled;
   // color/icon/custom-list and locale-specific sort profiles remain opaque.
@@ -232,8 +232,8 @@ message SpreadsheetTableFilterArtifact {
   }
 }
 
-// The native <filters> branch. Exact strings and grouped dates may coexist;
-// blanks and one calendar interpretation apply to the complete branch.
+// The native <filters> branch. It contains either exact strings or grouped
+// dates; blanks and one calendar interpretation apply to the branch.
 message SpreadsheetTableValueFilterArtifact {
   repeated string values = 1;
   bool include_blank = 2;

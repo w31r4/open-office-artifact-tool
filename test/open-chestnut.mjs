@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableSortStateArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -32,6 +32,10 @@ assert.deepEqual([...toBinary(SpreadsheetTableArtifactSchema, create(Spreadsheet
 assert.equal(toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { conditions: [{ reference: "B2:B3" }] }))[0], 0x1a, "Spreadsheet sort conditions must use sort-state field 3.");
 assert.equal(toBinary(SpreadsheetTableColumnArtifactSchema, create(SpreadsheetTableColumnArtifactSchema, { totalsRowFormulaArray: true }))[0], 0x38, "Spreadsheet table totals-formula array state must use column field 7.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "values", value: { values: ["x"] } } }))[0], 0x12, "Spreadsheet value-filter criteria must use filter field 2.");
+assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "dynamic", value: { type: "today" } } }))[0], 0x22, "Spreadsheet dynamic-filter criteria must use additive filter field 4.");
+assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "top10", value: { top: true, value: 10 } } }))[0], 0x2a, "Spreadsheet Top10-filter criteria must use additive filter field 5.");
+assert.equal(toBinary(SpreadsheetTableValueFilterArtifactSchema, create(SpreadsheetTableValueFilterArtifactSchema, { dateGroups: [{ year: 2026, month: 7, grouping: "month" }] }))[0], 0x1a, "Spreadsheet grouped-date criteria must use additive value-filter field 3.");
+assert.equal(toBinary(SpreadsheetTableValueFilterArtifactSchema, create(SpreadsheetTableValueFilterArtifactSchema, { calendarType: "gregorian" }))[0], 0x22, "Spreadsheet grouped-date calendar must use additive value-filter field 4.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
@@ -205,6 +209,19 @@ detailsTable.sortState = {
   caseSensitive: true,
   conditions: [{ reference: "B2:B3", descending: true }, { reference: "A2:A3", descending: false }],
 };
+const advancedFilters = workbook.worksheets.add("Advanced Filters");
+advancedFilters.getRange("A1:C3").values = [
+  ["Date", "Status", "Score"],
+  [45853, "ready", 95],
+  [45854, "pending", 80],
+];
+advancedFilters.getRange("A2:A3").format.numberFormat = "yyyy-mm-dd";
+const advancedFilterTable = advancedFilters.tables.add({ range: "A1:C3", name: "AdvancedFilterTable", hasHeaders: true, style: "TableStyleMedium6" });
+advancedFilterTable.filters = [
+  { columnIndex: 0, kind: "values", values: [], includeBlank: false, calendarType: "gregorian", dateGroups: [{ grouping: "day", year: 2026, month: 7, day: 15 }] },
+  { columnIndex: 1, kind: "dynamic", type: "today", value: 45853, maxValue: 45854 },
+  { columnIndex: 2, kind: "top10", top: true, percent: true, value: 10, filterValue: 95 },
+];
 
 const concurrentWorkbook = Workbook.create();
 concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
@@ -223,12 +240,16 @@ assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:c
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:filterColumn colId="0"><x:filters blank="1"><x:filter val="ready"\s*\/><\/x:filters><\/x:filterColumn>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="1"\s*\/><x:customFilter operator="lessThanOrEqual" val="2"\s*\/><\/x:customFilters>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:sortState ref="A2:B3" caseSensitive="1"><x:sortCondition ref="B2:B3" descending="1"\s*\/><x:sortCondition ref="A2:A3"\s*\/><\/x:sortState>/);
+const advancedFilterXml = await exportedZip.file("xl/tables/table2.xml").async("text");
+assert.match(advancedFilterXml, /<x:filters calendarType="gregorian"><x:dateGroupItem year="2026" dateTimeGrouping="day" month="7" day="15"\s*\/><\/x:filters>/);
+assert.match(advancedFilterXml, /<x:dynamicFilter type="today" val="45853" maxVal="45854"\s*\/>/);
+assert.match(advancedFilterXml, /<x:top10 top="1" percent="1" val="10" filterVal="95"\s*\/>/);
 
 const imported = await importXlsxWithOpenChestnut(exported);
 assert.equal(imported.dateSystem, "1904");
 assert.equal(imported.theme.name, "OpenChestnut Theme");
 assert.equal(imported.theme.colors.accent1, "#0F766E");
-assert.equal(imported.worksheets.items.length, 2);
+assert.equal(imported.worksheets.items.length, 3);
 const importedTable = imported.worksheets.getItem("Details").tables.getItemOrNullObject("StatusTable");
 assert.equal(importedTable.isNullObject, undefined);
 assert.equal(importedTable.range, "A1:B3");
@@ -243,6 +264,8 @@ assert.deepEqual(importedTable.sortState, {
   caseSensitive: true,
   conditions: [{ reference: "B2:B3", descending: true }, { reference: "A2:A3", descending: false }],
 });
+const importedAdvancedFilterTable = imported.worksheets.getItem("Advanced Filters").tables.getItemOrNullObject("AdvancedFilterTable");
+assert.deepEqual(importedAdvancedFilterTable.filters, advancedFilterTable.filters);
 assert.equal(importedTable.style, "TableStyleMedium4");
 assert.equal(importedTable.showFirstColumn, true);
 assert.equal(importedTable.showBandedColumns, true);
@@ -270,12 +293,13 @@ const javascriptImported = await SpreadsheetFile.importXlsx(exported);
 assert.equal(javascriptImported.dateSystem, "1904");
 assert.equal(javascriptImported.theme.name, "OpenChestnut Theme");
 assert.equal(javascriptImported.theme.colors.accent1, "#0F766E");
-assert.equal(javascriptImported.worksheets.items.length, 2);
+assert.equal(javascriptImported.worksheets.items.length, 3);
 assert.equal(javascriptImported.worksheets.getItem("Details").tables.items[0].name, "StatusTable");
 assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0].columnNames, ["Status", "Value"]);
 assert.equal(javascriptImported.worksheets.getItem("Details").tables.items[0].columnDefinitions[1].calculatedColumnFormula, "=LEN([@Status])");
 assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0].filters, detailsTable.filters);
 assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0].sortState, detailsTable.sortState);
+assert.deepEqual(javascriptImported.worksheets.getItem("Advanced Filters").tables.items[0].filters, advancedFilterTable.filters);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
@@ -305,6 +329,13 @@ importedTable.filters[1].criteria[0].value = "0";
 importedTable.sortState.caseSensitive = false;
 importedTable.sortState.conditions[0].descending = false;
 importedTable.sortState.conditions[1].descending = true;
+importedAdvancedFilterTable.filters[0].dateGroups[0].day = 16;
+importedAdvancedFilterTable.filters[1].type = "yesterday";
+importedAdvancedFilterTable.filters[1].value = 45852;
+importedAdvancedFilterTable.filters[1].maxValue = 45853;
+importedAdvancedFilterTable.filters[2].top = false;
+importedAdvancedFilterTable.filters[2].percent = false;
+importedAdvancedFilterTable.filters[2].value = 5;
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
 const secondImported = await importXlsxWithOpenChestnut(secondExport);
@@ -328,6 +359,11 @@ assert.deepEqual(secondTable.sortState, {
   caseSensitive: false,
   conditions: [{ reference: "B2:B3", descending: false }, { reference: "A2:A3", descending: true }],
 });
+assert.deepEqual(secondImported.worksheets.getItem("Advanced Filters").tables.getItemOrNullObject("AdvancedFilterTable").filters, [
+  { columnIndex: 0, kind: "values", values: [], includeBlank: false, calendarType: "gregorian", dateGroups: [{ grouping: "day", year: 2026, month: 7, day: 16 }] },
+  { columnIndex: 1, kind: "dynamic", type: "yesterday", value: 45852, maxValue: 45853 },
+  { columnIndex: 2, kind: "top10", top: false, percent: false, value: 5, filterValue: 95 },
+]);
 secondTable.delete();
 await assert.rejects(
   exportXlsxWithOpenChestnut(secondImported, { recalculate: false }),

@@ -213,6 +213,12 @@ try {
     caseSensitive: true,
     conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
   });
+  const wasmAdvancedFilterTable = wasmWorkbook.worksheets.getItem("Advanced Filters").tables.getItemOrNullObject("AdvancedFilterTable");
+  assert.deepEqual(wasmAdvancedFilterTable.filters, [
+    { columnIndex: 0, kind: "values", values: [], includeBlank: false, calendarType: "gregorian", dateGroups: [{ grouping: "day", year: 2026, month: 7, day: 15 }] },
+    { columnIndex: 1, kind: "dynamic", type: "today", value: 45853, maxValue: 45854 },
+    { columnIndex: 2, kind: "top10", top: true, percent: true, value: 10, filterValue: 95 },
+  ]);
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
   const wasmThemeXml = await wasmZip.file("xl/theme/theme1.xml").async("text");
   assert.match(wasmThemeXml, /name="OpenChestnut Fixture"/);
@@ -239,8 +245,13 @@ try {
   assert.match(wasmTableXml, /showFirstColumn="1"/);
   assert.match(wasmTableXml, /showRowStripes="0"/);
   assert.match(wasmTableXml, /showColumnStripes="1"/);
+  const wasmAdvancedFilterXml = await wasmZip.file("xl/tables/table2.xml").async("text");
+  assert.match(wasmAdvancedFilterXml, /<x:filters calendarType="gregorian"><x:dateGroupItem year="2026" dateTimeGrouping="day" month="7" day="15"\s*\/><\/x:filters>/);
+  assert.match(wasmAdvancedFilterXml, /<x:dynamicFilter type="today" val="45853" maxVal="45854"\s*\/>/);
+  assert.match(wasmAdvancedFilterXml, /<x:top10 top="1" percent="1" val="10" filterVal="95"\s*\/>/);
   assert.match(await wasmZip.file("xl/worksheets/sheet2.xml").async("text"), /<x:tableParts count="1"><x:tablePart\b[^>]*r:id="rIdTable1"\s*\/><\/x:tableParts>/);
   assert.match(await wasmZip.file("xl/worksheets/_rels/sheet2.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table1\.xml"/);
+  assert.match(await wasmZip.file("xl/worksheets/_rels/sheet3.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table2\.xml"/);
   if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {
