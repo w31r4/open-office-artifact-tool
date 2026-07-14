@@ -2025,7 +2025,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     name: { type: "string", description: "Native Slide Master name." },
     background: { type: "string|object", description: "Solid RGB/scheme background or native background reference with index." },
     theme: { type: "object", description: "Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship." },
-    placeholders: { type: "object[]", description: "Typed placeholder defaults with unique type/idx, position, text, required flag, text style, and paragraphStyles; picture bullets own master-part image relationships." },
+    placeholders: { type: "object[]", description: "Typed placeholder defaults with unique type/unsigned idx (including native default 0), position, text, required flag, text style, paragraphStyles, and textBodyProperties; picture bullets and links own master-part relationships." },
     textParagraphStyles: { type: "object", description: "title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values." },
   }, "master", "PresentationSlideMaster", "Mutable first Slide Master facade."),
   "presentation.masters.add": helpSchema({
@@ -2033,7 +2033,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     name: { type: "string", description: "Native Slide Master name." },
     background: { type: "string|object", description: "Solid RGB/scheme background or native background reference with index." },
     theme: { type: "object", description: "Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship." },
-    placeholders: { type: "object[]", description: "Typed placeholder defaults with unique type/idx, position, text, required flag, text style, and paragraphStyles; picture bullets own master-part image relationships." },
+    placeholders: { type: "object[]", description: "Typed placeholder defaults with unique type/unsigned idx (including native default 0), position, text, required flag, text style, paragraphStyles, and textBodyProperties; picture bullets and links own master-part relationships." },
     textParagraphStyles: { type: "object", description: "title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values." },
   }, "master", "PresentationSlideMaster", "Appended Slide Master facade."),
   "presentation.masters.getItem": helpSchema({
@@ -2047,7 +2047,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     type: { type: "string", description: "Layout type." },
     masterId: { type: "string", description: "Master identity." },
     background: { type: "string|object", description: "Optional layout background overriding the linked master background." },
-    placeholders: { type: "object[]", description: "Placeholder type/idx/name/frame/text/required/style/paragraphStyles definitions merged over matching master defaults; picture bullets own layout-part image relationships." },
+    placeholders: { type: "object[]", description: "Placeholder type/unsigned idx/name/frame/text/required/style/paragraphStyles/textBodyProperties definitions merged over matching master defaults; picture bullets and links own layout-part relationships." },
   }, "layout", "SlideLayoutTemplate", "Appended reusable layout facade."),
   "slide.applyLayout": helpSchema({
     layout: { type: "string|SlideLayoutTemplate", required: true, description: "Layout name/ID or layout facade." },
@@ -7236,8 +7236,9 @@ function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder",
     required: Boolean(placeholder.required),
     style: { ...(placeholder.style || {}) },
     paragraphStyles: normalizePresentationParagraphStyles(placeholder.paragraphStyles || placeholder.listStyles || {}),
+    textBodyProperties: normalizePresentationTextBodyProperties(placeholder.textBodyProperties || placeholder.bodyProperties || {}),
   }));
-  if (placeholders.some((placeholder) => !Number.isInteger(placeholder.idx) || placeholder.idx < 1 || placeholder.idx > 4_294_967_295)) throw new RangeError("Presentation placeholder idx must be an unsigned positive 32-bit integer.");
+  if (placeholders.some((placeholder) => !Number.isInteger(placeholder.idx) || placeholder.idx < 0 || placeholder.idx > 4_294_967_295)) throw new RangeError("Presentation placeholder idx must be an unsigned 32-bit integer.");
   if (new Set(placeholders.map((placeholder) => `${placeholder.type}:${placeholder.idx}`)).size !== placeholders.length) throw new Error("Presentation placeholder type/idx pairs must be unique.");
   return placeholders;
 }
@@ -7359,6 +7360,7 @@ class SlideLayoutTemplate {
         fill: "transparent",
         line: { fill: "transparent", width: 0 },
         text: placeholder.text,
+        textBodyProperties: placeholder.textBodyProperties,
         placeholder: { layoutId: this.id, type: placeholder.type, name: placeholder.name, required: placeholder.required, idx: placeholder.idx },
       });
       shape.text.style = { ...placeholder.style };
@@ -8535,7 +8537,7 @@ export class PresentationFile {
       const masterPictureBulletPlan = pictureBulletPlan.byOwner.get(`master:${masterPart.masterPartId}`);
       const masterHyperlinkPlan = hyperlinkPlan.byOwner.get(`master:${masterPart.masterPartId}`);
       const masterPictureBulletRelIds = masterPictureBulletPlan.relationshipIds;
-      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkCustomShowIds: masterHyperlinkPlan.customShowIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
+      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkCustomShowIds: masterHyperlinkPlan.customShowIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
       zip.file(`ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`, presentationSlideMasterXml(masterPart.layoutParts, masterPart.master.effectiveTheme(), { name: masterPart.master.name, backgroundXml: presentationBackgroundXml(masterPart.master.background), placeholdersXml: masterPlaceholders, textParagraphStyles: masterPart.master.textParagraphStyles, pictureBulletRelationshipId: (bulletImage) => masterPictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) }));
       zip.file(`ppt/slideMasters/_rels/slideMaster${masterPart.masterPartId}.xml.rels`, pptxSlideMasterRelsXml(masterPart.layoutParts, masterPart.themePartId, masterPictureBulletPlan.relationships, masterHyperlinkPlan.relationships));
       for (const part of masterPart.layoutParts) {
@@ -8907,7 +8909,7 @@ function pptxSlideLayoutRelsXml(masterPartId, pictureBulletRelationships = [], h
 }
 
 function pptxSlideLayoutXml(layout, pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkCustomShowIds = new Map(), hyperlinkSlideParts = new Map()) {
-  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts })).join("");
+  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" type="${attrEscape(layout.type)}" preserve="1"><p:cSld name="${attrEscape(layout.name)}">${presentationBackgroundXml(layout.background)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${placeholders}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
 }
 
@@ -9030,7 +9032,7 @@ function pptxTextShapeXml(index, name, geometry, position, text = "", placeholde
   });
   const listStyle = presentationListStyleXml(options.paragraphStyles || options.inheritedParagraphStyles || {}, { pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) });
   const bodyProperties = presentationTextBodyPropertiesXml(options.bodyProperties, { defaults: options.bodyProperties === undefined });
-  const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx || 1)}"/>` : "";
+  const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx ?? 1)}"/>` : "";
   const shapeProperties = transform ? `<p:spPr>${transform}<a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr>` : "<p:spPr/>";
   return `<p:sp><p:nvSpPr>${pptxNonVisualPropertiesXml(index, name, "", options)}<p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr>${shapeProperties}<p:txBody>${bodyProperties}${listStyle}${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
 }
@@ -9179,11 +9181,11 @@ async function parsePptxPlaceholderShapes(xml = "", options = {}) {
     const phTag = /<(?:[A-Za-z_][\w.-]*:)?ph\b[^>]*\/?\s*>/.exec(part)?.[0];
     if (!phTag) return [];
     const ph = ooxmlXmlAttributes(phTag);
-    const type = ph.type || "body";
-    const idx = Number(ph.idx || index + 1);
+    const type = ph.type || "obj";
+    const idx = Number(ph.idx ?? 0);
     const name = decodeXml(ooxmlXmlAttributes(/<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*\/?\s*>/.exec(part)?.[0]).name || `${type} placeholder`);
     const hasPosition = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(part);
-    return [{ type, idx, name, part, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, style: parsePresentationPlaceholderStyleXml(part) }];
+    return [{ type, idx, name, part, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, style: parsePresentationPlaceholderStyleXml(part), textBodyProperties: parsePresentationTextBodyPropertiesXml(part) }];
   });
   const relationshipContext = presentationPictureBulletImportContext(options.relationshipContext || {});
   return Promise.all(placeholders.map(async ({ part, ...placeholder }) => {

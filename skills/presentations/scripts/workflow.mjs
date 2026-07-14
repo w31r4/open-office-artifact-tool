@@ -334,6 +334,18 @@ export async function runPresentationFixture(fixturePath, options = {}) {
     if (edit) {
       if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
       if (edit.layoutBackground) imported.layouts.items[0].background = edit.layoutBackground;
+      if (edit.masterPlaceholder) {
+        const placeholder = imported.master.placeholders.find((item) => item.type === edit.masterPlaceholder.type && item.idx === Number(edit.masterPlaceholder.idx));
+        assert.ok(placeholder, `Missing OpenXML WASM master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);
+        if (Object.hasOwn(edit.masterPlaceholder, "text")) placeholder.text = edit.masterPlaceholder.text;
+        if (edit.masterPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.masterPlaceholder.textBodyProperties;
+      }
+      if (edit.layoutPlaceholder) {
+        const placeholder = imported.layouts.items[0].placeholders.find((item) => item.type === edit.layoutPlaceholder.type && item.idx === Number(edit.layoutPlaceholder.idx));
+        assert.ok(placeholder, `Missing OpenXML WASM layout placeholder ${edit.layoutPlaceholder.type}:${edit.layoutPlaceholder.idx}`);
+        if (Object.hasOwn(edit.layoutPlaceholder, "text")) placeholder.text = edit.layoutPlaceholder.text;
+        if (edit.layoutPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.layoutPlaceholder.textBodyProperties;
+      }
       if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);

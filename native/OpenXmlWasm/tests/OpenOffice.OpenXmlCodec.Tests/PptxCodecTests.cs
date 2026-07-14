@@ -244,6 +244,73 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void MasterAndLayoutPlaceholderTextRoundTripsWithOwnerLocalBindings()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddTemplatePlaceholders(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var master = Assert.Single(imported.Artifact.Presentation.Masters);
+        var layout = Assert.Single(imported.Artifact.Presentation.Layouts);
+        var masterPlaceholder = Assert.Single(master.Placeholders);
+        var layoutPlaceholder = Assert.Single(layout.Placeholders);
+        Assert.Equal("title", masterPlaceholder.Type);
+        Assert.Equal(0U, masterPlaceholder.Index);
+        Assert.Equal("Master prompt", PptxTextCodec.Flatten(masterPlaceholder.TextBody));
+        Assert.True(masterPlaceholder.Source.Editable);
+        Assert.Equal("body", layoutPlaceholder.Type);
+        Assert.Equal(2U, layoutPlaceholder.Index);
+        Assert.Equal("Layout prompt", PptxTextCodec.Flatten(layoutPlaceholder.TextBody));
+        Assert.True(layoutPlaceholder.Source.Editable);
+        Assert.NotEqual(uint.MaxValue, masterPlaceholder.Source.ShapeTreeIndex);
+
+        masterPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited master prompt";
+        layoutPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited layout prompt";
+        layoutPlaceholder.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink
+        {
+            Uri = "https://example.com/layout-help",
+            Tooltip = "Layout help",
+        };
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var masterPart = package.PresentationPart!.SlideMasterParts.Single();
+            var nativeMaster = masterPart.SlideMaster!.CommonSlideData!.ShapeTree!.Elements<P.Shape>().Single();
+            Assert.Equal("Edited master prompt", nativeMaster.Descendants<A.Text>().Single().Text);
+            Assert.True(nativeMaster.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.HasCustomPrompt!.Value);
+            Assert.Equal(60_000, nativeMaster.ShapeProperties!.Transform2D!.Rotation!.Value);
+            var layoutPart = masterPart.SlideLayoutParts.Single();
+            var nativeLayout = layoutPart.SlideLayout!.CommonSlideData!.ShapeTree!.Elements<P.Shape>().Single();
+            Assert.Equal("Edited layout prompt", nativeLayout.Descendants<A.Text>().Single().Text);
+            Assert.Contains(layoutPart.HyperlinkRelationships, relationship =>
+                relationship.Uri.OriginalString == "https://example.com/layout-help");
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.Equal("Edited master prompt", PptxTextCodec.Flatten(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders).TextBody));
+        var roundTripLayoutRun = Assert.Single(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders).TextBody.Paragraphs).Runs.Single();
+        Assert.Equal("Edited layout prompt", roundTripLayoutRun.Text);
+        Assert.Equal("https://example.com/layout-help", roundTripLayoutRun.RunHyperlink.Uri);
+
+        var topology = Import(source);
+        Assert.Single(topology.Artifact.Presentation.Layouts).Placeholders.Clear();
+        var topologyRejected = Export(topology.Artifact);
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("presentation_placeholder_topology_changed", Assert.Single(topologyRejected.Diagnostics).Code);
+
+        var unsupported = Import(AddUnsupportedPlaceholderRun(source));
+        var unsupportedPlaceholder = Assert.Single(Assert.Single(unsupported.Artifact.Presentation.Layouts).Placeholders);
+        Assert.False(unsupportedPlaceholder.Source.Editable);
+        unsupportedPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Unsafe edit";
+        var unsupportedRejected = Export(unsupported.Artifact);
+        Assert.False(unsupportedRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(unsupportedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportEditsSimpleShapeAndKeepsPictureGraph()
     {
         var first = Invoke(ExportRequest());
@@ -1844,6 +1911,73 @@ public sealed class PptxCodecTests
         }
         return stream.ToArray();
     }
+
+    private static byte[] AddTemplatePlaceholders(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var masterPart = package.PresentationPart!.SlideMasterParts.Single();
+            masterPart.SlideMaster!.CommonSlideData!.ShapeTree!.Append(TemplatePlaceholder(
+                2U,
+                "Master Title",
+                P.PlaceholderValues.Title,
+                0U,
+                "Master prompt",
+                hasCustomPrompt: true,
+                rotation: 60_000));
+            var layoutPart = masterPart.SlideLayoutParts.Single();
+            layoutPart.SlideLayout!.CommonSlideData!.ShapeTree!.Append(TemplatePlaceholder(
+                2U,
+                "Layout Body",
+                P.PlaceholderValues.Body,
+                2U,
+                "Layout prompt"));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnsupportedPlaceholderRun(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var layout = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+            var textBody = layout.Descendants<P.TextBody>().Single();
+            textBody.PrependChild(new A.BodyProperties());
+        }
+        return stream.ToArray();
+    }
+
+    private static P.Shape TemplatePlaceholder(
+        uint id,
+        string name,
+        P.PlaceholderValues type,
+        uint index,
+        string text,
+        bool hasCustomPrompt = false,
+        int? rotation = null) => new(
+        new P.NonVisualShapeProperties(
+            new P.NonVisualDrawingProperties { Id = id, Name = name },
+            new P.NonVisualShapeDrawingProperties(new A.ShapeLocks { NoGrouping = true }),
+            new P.ApplicationNonVisualDrawingProperties(
+                new P.PlaceholderShape { Type = type, Index = index, HasCustomPrompt = hasCustomPrompt })),
+        new P.ShapeProperties(
+            new A.Transform2D(
+                new A.Offset { X = 762_000L, Y = 571_500L },
+                new A.Extents { Cx = 6_858_000L, Cy = 1_143_000L }) { Rotation = rotation },
+            new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle },
+            new A.NoFill()),
+        new P.TextBody(
+            new A.BodyProperties(),
+            new A.ListStyle(),
+            new A.Paragraph(
+                new A.Run(new A.RunProperties { Language = "en-US" }, new A.Text(text)),
+                new A.EndParagraphRunProperties { Language = "en-US" })));
 
     private static byte[] AddPicture(byte[] bytes)
     {

@@ -64,6 +64,8 @@ internal static class PptxCodec
                 throw new CodecException("missing_slide_master_root", $"Presentation master {master.Index + 1} has no slide master root.", PartPath(master.Part));
             var masterCommon = masterRoot.CommonSlideData ??
                 throw new CodecException("missing_common_slide_data", $"Presentation master {master.Index + 1} has no common slide data.", PartPath(master.Part));
+            var masterShapeTree = masterCommon.ShapeTree ??
+                throw new CodecException("missing_shape_tree", $"Presentation master {master.Index + 1} has no shape tree.", PartPath(master.Part));
             var masterContext = new PptxPartContext(master.Part, slideIdByPartPath, assets: assetCatalog);
             var textStyles = PptxMasterTextStylesCodec.Read(masterRoot, masterContext);
             var background = PptxBackgroundCodec.Read(masterCommon);
@@ -85,6 +87,7 @@ internal static class PptxCodec
                 },
             };
             if (background is not null) masterArtifact.Background = background;
+            masterArtifact.Placeholders.Add(PptxPlaceholderCodec.Read(masterShapeTree, master.Id, masterContext));
             artifact.Masters.Add(masterArtifact);
             foreach (var layout in master.Layouts)
             {
@@ -92,6 +95,9 @@ internal static class PptxCodec
                     throw new CodecException("missing_slide_layout_root", $"Presentation layout {layout.Index + 1} under master {master.Index + 1} has no slide layout root.", PartPath(layout.Part));
                 var layoutCommon = layoutRoot.CommonSlideData ??
                     throw new CodecException("missing_common_slide_data", $"Presentation layout {layout.Index + 1} under master {master.Index + 1} has no common slide data.", PartPath(layout.Part));
+                var layoutShapeTree = layoutCommon.ShapeTree ??
+                    throw new CodecException("missing_shape_tree", $"Presentation layout {layout.Index + 1} under master {master.Index + 1} has no shape tree.", PartPath(layout.Part));
+                var layoutContext = new PptxPartContext(layout.Part, slideIdByPartPath, assets: assetCatalog);
                 var layoutBackground = PptxBackgroundCodec.Read(layoutCommon);
                 var layoutArtifact = new PresentationLayout
                 {
@@ -110,6 +116,7 @@ internal static class PptxCodec
                     },
                 };
                 if (layoutBackground is not null) layoutArtifact.Background = layoutBackground;
+                layoutArtifact.Placeholders.Add(PptxPlaceholderCodec.Read(layoutShapeTree, layout.Id, layoutContext));
                 artifact.Layouts.Add(layoutArtifact);
             }
         }
@@ -246,6 +253,8 @@ internal static class PptxCodec
                     throw new CodecException("missing_slide_master_root", $"Presentation master {masterIndex + 1} has no slide master root.", PartPath(graph.Part));
                 var masterCommon = masterRoot.CommonSlideData ??
                     throw new CodecException("missing_common_slide_data", $"Presentation master {masterIndex + 1} has no common slide data.", PartPath(graph.Part));
+                var masterShapeTree = masterCommon.ShapeTree ??
+                    throw new CodecException("missing_shape_tree", $"Presentation master {masterIndex + 1} has no shape tree.", PartPath(graph.Part));
                 var target = envelope.Presentation.Masters[masterIndex];
                 var binding = target.Source ?? throw new CodecException(
                     "missing_presentation_master_binding",
@@ -297,6 +306,11 @@ internal static class PptxCodec
                     masterRoot.Save();
                     changedParts.Add(PartPath(graph.Part));
                 }
+                if (ApplyPlaceholders(masterShapeTree, graph.Id, target.Placeholders, masterContext, PartPath(graph.Part)))
+                {
+                    masterRoot.Save();
+                    changedParts.Add(PartPath(graph.Part));
+                }
                 TrackContextChanges(graph.Part, masterContext, changedParts, addedRelationshipIds, addedPartPaths);
             }
 
@@ -307,6 +321,8 @@ internal static class PptxCodec
                     throw new CodecException("missing_slide_layout_root", $"Presentation layout {layoutIndex + 1} has no slide layout root.", PartPath(graph.Part));
                 var layoutCommon = layoutRoot.CommonSlideData ??
                     throw new CodecException("missing_common_slide_data", $"Presentation layout {layoutIndex + 1} has no common slide data.", PartPath(graph.Part));
+                var layoutShapeTree = layoutCommon.ShapeTree ??
+                    throw new CodecException("missing_shape_tree", $"Presentation layout {layoutIndex + 1} has no shape tree.", PartPath(graph.Part));
                 var target = envelope.Presentation.Layouts[layoutIndex];
                 var binding = target.Source ?? throw new CodecException(
                     "missing_presentation_layout_binding",
@@ -322,6 +338,7 @@ internal static class PptxCodec
                         "presentation_layout_binding_mismatch",
                         $"Presentation layout {layoutIndex + 1} does not match its hash-bound read-only source layout.",
                         PartPath(graph.Part));
+                var layoutContext = new PptxPartContext(graph.Part, slideIdByPartPath, slidePartById, assetCatalog);
                 var originalBackground = PptxBackgroundCodec.Read(layoutCommon);
                 var originalBackgroundHash = BackgroundSemanticHash(originalBackground);
                 if (!binding.BackgroundSemanticSha256.Equals(originalBackgroundHash, StringComparison.OrdinalIgnoreCase))
@@ -339,6 +356,12 @@ internal static class PptxCodec
                     layoutRoot.Save();
                     changedParts.Add(PartPath(graph.Part));
                 }
+                if (ApplyPlaceholders(layoutShapeTree, graph.Id, target.Placeholders, layoutContext, PartPath(graph.Part)))
+                {
+                    layoutRoot.Save();
+                    changedParts.Add(PartPath(graph.Part));
+                }
+                TrackContextChanges(graph.Part, layoutContext, changedParts, addedRelationshipIds, addedPartPaths);
             }
 
             ulong semanticItems = 0;
@@ -576,10 +599,12 @@ internal static class PptxCodec
 
     private static void BuildPresentation(PresentationDocument package, PresentationArtifact artifact, PptxAssetCatalog assetCatalog)
     {
-        if (artifact.Masters.Count > 1 || artifact.Layouts.Count > 0 || artifact.Slides.Any(slide => !string.IsNullOrWhiteSpace(slide.LayoutId)))
+        if (artifact.Masters.Count > 1 || artifact.Layouts.Count > 0 ||
+            artifact.Masters.Any(master => master.Placeholders.Count > 0) ||
+            artifact.Slides.Any(slide => !string.IsNullOrWhiteSpace(slide.LayoutId)))
             throw new CodecException(
                 "unsupported_presentation_features",
-                "New PPTX authoring currently supports one canonical master, its internal blank layout, and bounded master text styles; custom master/layout graphs require a validated source package.");
+                "New PPTX authoring currently supports one canonical master, its internal blank layout, bounded master text styles/backgrounds, and no template placeholders; custom master/layout graphs require a validated source package.");
         var authoredMaster = artifact.Masters.FirstOrDefault();
         var presentationPart = package.AddPresentationPart();
         var masterPart = presentationPart.AddNewPart<SlideMasterPart>("rIdMaster1");
@@ -811,6 +836,7 @@ internal static class PptxCodec
             throw new CodecException("presentation_master_budget_exceeded", "Presentation cannot contain more than 64 slide masters.");
         if ((uint)envelope.Presentation.Layouts.Count > limits.MaxSheets)
             throw new CodecException("presentation_layout_budget_exceeded", $"Presentation has {envelope.Presentation.Layouts.Count} layouts and exceeds max_sheets ({limits.MaxSheets}).");
+        ulong items = 0;
         var masterIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var master in envelope.Presentation.Masters)
         {
@@ -820,6 +846,7 @@ internal static class PptxCodec
                 throw new CodecException("invalid_presentation_master", $"Presentation master {master.Id} name exceeds 1024 characters.");
             PptxMasterTextStylesCodec.Validate(master.TextStyles);
             PptxBackgroundCodec.Validate(master.Background);
+            ValidatePlaceholders(master.Id, master.Placeholders, assetCatalog, limits, ref items);
             foreach (var paragraph in MasterStyleParagraphs(master.TextStyles))
                 if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
                     paragraph.PictureBullet.SourceCase == PresentationPictureBullet.SourceOneofCase.AssetId)
@@ -835,9 +862,9 @@ internal static class PptxCodec
             if (layout.Name.Length > 1_024 || layout.Type.Length > 128)
                 throw new CodecException("invalid_presentation_layout", $"Presentation layout {layout.Id} has invalid name or type metadata.");
             PptxBackgroundCodec.Validate(layout.Background);
+            ValidatePlaceholders(layout.Id, layout.Placeholders, assetCatalog, limits, ref items);
         }
 
-        ulong items = 0;
         foreach (var slide in envelope.Presentation.Slides)
         {
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
@@ -866,6 +893,31 @@ internal static class PptxCodec
             }
         }
         return assetCatalog;
+    }
+
+    private static void ValidatePlaceholders(
+        string ownerId,
+        IList<PresentationPlaceholder> placeholders,
+        PptxAssetCatalog assetCatalog,
+        EffectiveCodecLimits limits,
+        ref ulong items)
+    {
+        if (placeholders.Count > 128)
+            throw new CodecException("presentation_placeholder_budget_exceeded", $"Presentation owner {ownerId} exceeds the 128-placeholder budget.");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var placeholder in placeholders)
+        {
+            items++;
+            if (items > limits.MaxCells)
+                throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
+            if (!ids.Add(placeholder.Id))
+                throw new CodecException("invalid_presentation_placeholder", $"Presentation owner {ownerId} contains duplicate placeholder ID {placeholder.Id}.");
+            PptxPlaceholderCodec.Validate(placeholder);
+            foreach (var paragraph in (placeholder.TextBody?.Paragraphs ?? []).Concat(placeholder.TextBody?.ListStyles ?? []))
+                if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
+                    paragraph.PictureBullet.SourceCase == PresentationPictureBullet.SourceOneofCase.AssetId)
+                    _ = assetCatalog.Get(paragraph.PictureBullet.AssetId);
+        }
     }
 
     private static void AssertPackagePartsUnchangedExcept(byte[] sourceBytes, byte[] outputBytes, HashSet<string> allowedPaths)
@@ -905,8 +957,9 @@ internal static class PptxCodec
                               !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase);
             var isImage = relationship.Type.EndsWith("/image", StringComparison.Ordinal);
             var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
-            var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && isImage;
-            if (!allowedFromSlide && !allowedFromMaster)
+            var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
+            var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
+            if (!allowedFromSlide && !allowedFromMaster && !allowedFromLayout)
                 throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX edit added unsupported relationship {relationship.Id} from {relationship.SourcePath}.");
             guarded.PackageRelationships.Remove(relationship);
             removed.Add(key);
@@ -940,6 +993,16 @@ internal static class PptxCodec
     private static bool IsNumberedMasterPath(string path)
     {
         const string prefix = "ppt/slideMasters/slideMaster";
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsNumberedLayoutPath(string path)
+    {
+        const string prefix = "ppt/slideLayouts/slideLayout";
         const string suffix = ".xml";
         return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
                path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
@@ -1020,7 +1083,12 @@ internal static class PptxCodec
         var outputGraph = ReadMasterGraph(outputPresentationPart);
         if (sourceGraph.Length != requested.Masters.Count || outputGraph.Length != requested.Masters.Count)
             throw new CodecException("presentation_postwrite_master_topology_changed", "PPTX master topology changed during source-preserving export.");
-        var emptySlideMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var sourceSlides = OrderedSlideParts(sourcePackage);
+        var outputSlides = OrderedSlideParts(outputPackage);
+        var sourceSlideMap = sourceSlides.Select((part, index) => (Path: PartPath(part), Id: requested.Slides[index].Id))
+            .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
+        var outputSlideMap = outputSlides.Select((part, index) => (Path: PartPath(part), Id: requested.Slides[index].Id))
+            .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
         var sourceAssets = new PptxAssetCatalog([], limits);
         var outputAssets = new PptxAssetCatalog([], limits);
         for (var masterIndex = 0; masterIndex < requested.Masters.Count; masterIndex++)
@@ -1029,8 +1097,8 @@ internal static class PptxCodec
                 throw new CodecException("missing_slide_master_root", $"PPTX source master {masterIndex + 1} has no root.");
             var after = outputGraph[masterIndex].Part.SlideMaster ??
                 throw new CodecException("missing_slide_master_root", $"PPTX output master {masterIndex + 1} has no root.");
-            var sourceContext = new PptxPartContext(sourceGraph[masterIndex].Part, emptySlideMap, assets: sourceAssets);
-            var outputContext = new PptxPartContext(outputGraph[masterIndex].Part, emptySlideMap, assets: outputAssets);
+            var sourceContext = new PptxPartContext(sourceGraph[masterIndex].Part, sourceSlideMap, assets: sourceAssets);
+            var outputContext = new PptxPartContext(outputGraph[masterIndex].Part, outputSlideMap, assets: outputAssets);
             if (!MasterResidualHash(before, sourceContext).Equals(MasterResidualHash(after, outputContext), StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "presentation_unmodeled_master_content_changed",
@@ -1047,6 +1115,14 @@ internal static class PptxCodec
                     "presentation_postwrite_master_background_mismatch",
                     $"PPTX master {masterIndex + 1} background does not match requested semantics after export.",
                     PartPath(outputGraph[masterIndex].Part));
+            ValidatePlaceholderOutput(
+                before.CommonSlideData?.ShapeTree,
+                after.CommonSlideData?.ShapeTree,
+                requested.Masters[masterIndex].Placeholders,
+                requested.Masters[masterIndex].Id,
+                sourceContext,
+                outputContext,
+                PartPath(outputGraph[masterIndex].Part));
         }
         var sourceLayouts = sourceGraph.SelectMany(master => master.Layouts).ToArray();
         var outputLayouts = outputGraph.SelectMany(master => master.Layouts).ToArray();
@@ -1058,7 +1134,9 @@ internal static class PptxCodec
                 throw new CodecException("missing_slide_layout_root", $"PPTX source layout {layoutIndex + 1} has no root.");
             var after = outputLayouts[layoutIndex].Part.SlideLayout ??
                 throw new CodecException("missing_slide_layout_root", $"PPTX output layout {layoutIndex + 1} has no root.");
-            if (!LayoutResidualHash(before).Equals(LayoutResidualHash(after), StringComparison.OrdinalIgnoreCase))
+            var sourceContext = new PptxPartContext(sourceLayouts[layoutIndex].Part, sourceSlideMap, assets: sourceAssets);
+            var outputContext = new PptxPartContext(outputLayouts[layoutIndex].Part, outputSlideMap, assets: outputAssets);
+            if (!LayoutResidualHash(before, sourceContext).Equals(LayoutResidualHash(after, outputContext), StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "presentation_unmodeled_layout_content_changed",
                     $"PPTX layout {layoutIndex + 1} edit changed unmodeled native content.",
@@ -1068,6 +1146,48 @@ internal static class PptxCodec
                     "presentation_postwrite_layout_background_mismatch",
                     $"PPTX layout {layoutIndex + 1} background does not match requested semantics after export.",
                     PartPath(outputLayouts[layoutIndex].Part));
+            ValidatePlaceholderOutput(
+                before.CommonSlideData?.ShapeTree,
+                after.CommonSlideData?.ShapeTree,
+                requested.Layouts[layoutIndex].Placeholders,
+                requested.Layouts[layoutIndex].Id,
+                sourceContext,
+                outputContext,
+                PartPath(outputLayouts[layoutIndex].Part));
+        }
+    }
+
+    private static void ValidatePlaceholderOutput(
+        P.ShapeTree? sourceTree,
+        P.ShapeTree? outputTree,
+        IList<PresentationPlaceholder> requested,
+        string ownerId,
+        PptxPartContext sourceContext,
+        PptxPartContext outputContext,
+        string partPath)
+    {
+        if (sourceTree is null || outputTree is null)
+            throw new CodecException("missing_shape_tree", $"Presentation owner {ownerId} has no shape tree.", partPath);
+        var before = PptxPlaceholderCodec.Read(sourceTree, ownerId, sourceContext);
+        var after = PptxPlaceholderCodec.Read(outputTree, ownerId, outputContext);
+        if (before.Count != requested.Count || after.Count != requested.Count)
+            throw new CodecException("presentation_postwrite_placeholder_topology_changed", $"Presentation owner {ownerId} placeholder topology changed during export.", partPath);
+        for (var index = 0; index < requested.Count; index++)
+        {
+            var request = requested[index];
+            var binding = request.Source ?? throw new CodecException("missing_presentation_placeholder_binding", $"Presentation placeholder {index + 1} under {ownerId} is missing its source binding.", partPath);
+            var changed = !PptxPlaceholderCodec.SemanticHash(request).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase);
+            if (!changed)
+            {
+                var sourceShape = PptxPlaceholderCodec.BoundShape(sourceTree, before[index]);
+                var outputShape = PptxPlaceholderCodec.BoundShape(outputTree, after[index]);
+                if (sourceShape is null || outputShape is null ||
+                    !PptxPlaceholderCodec.ElementHash(sourceShape).Equals(PptxPlaceholderCodec.ElementHash(outputShape), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unchanged_placeholder_modified", $"Presentation placeholder {index + 1} under {ownerId} was modified during export.", partPath);
+            }
+            if (after[index].Id != request.Id ||
+                !PptxPlaceholderCodec.SemanticHash(after[index]).Equals(PptxPlaceholderCodec.SemanticHash(request), StringComparison.OrdinalIgnoreCase))
+                throw new CodecException("presentation_postwrite_placeholder_semantics_mismatch", $"Presentation placeholder {index + 1} under {ownerId} does not match requested semantics after export.", partPath);
         }
     }
 
@@ -1127,6 +1247,57 @@ internal static class PptxCodec
     private static string BackgroundSemanticHash(PresentationBackground? source) =>
         Hash((source ?? new PresentationBackground()).ToByteArray());
 
+    private static bool ApplyPlaceholders(
+        P.ShapeTree shapeTree,
+        string ownerId,
+        IList<PresentationPlaceholder> requested,
+        PptxPartContext partContext,
+        string partPath)
+    {
+        var originals = PptxPlaceholderCodec.Read(shapeTree, ownerId, partContext);
+        if (originals.Count != requested.Count)
+            throw new CodecException(
+                "presentation_placeholder_topology_changed",
+                $"Source-preserving PPTX export requires {ownerId}'s original {originals.Count}-placeholder topology; the artifact contains {requested.Count} placeholders.",
+                partPath);
+        var changed = false;
+        for (var index = 0; index < originals.Count; index++)
+        {
+            var original = originals[index];
+            var target = requested[index];
+            var sourceBinding = original.Source!;
+            var binding = target.Source ?? throw new CodecException(
+                "missing_presentation_placeholder_binding",
+                $"Presentation placeholder {index + 1} under {ownerId} is missing its source binding.",
+                partPath);
+            var sourceShape = PptxPlaceholderCodec.BoundShape(shapeTree, original);
+            if (sourceShape is null || target.Id != original.Id ||
+                binding.ShapeTreeIndex != sourceBinding.ShapeTreeIndex ||
+                !binding.ElementSha256.Equals(sourceBinding.ElementSha256, StringComparison.OrdinalIgnoreCase) ||
+                !binding.SemanticSha256.Equals(sourceBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
+                binding.Editable != sourceBinding.Editable ||
+                !binding.ElementSha256.Equals(PptxPlaceholderCodec.ElementHash(sourceShape), StringComparison.OrdinalIgnoreCase))
+                throw new CodecException(
+                    "presentation_placeholder_binding_mismatch",
+                    $"Presentation placeholder {index + 1} under {ownerId} does not match its hash-bound source element.",
+                    partPath);
+            if (!PptxPlaceholderCodec.SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
+                throw new CodecException(
+                    "presentation_placeholder_source_semantics_mismatch",
+                    $"Presentation placeholder {index + 1} under {ownerId} does not match its source semantic binding.",
+                    partPath);
+            if (PptxPlaceholderCodec.SemanticHash(target).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!binding.Editable)
+                throw new CodecException(
+                    "unsupported_presentation_edit",
+                    $"Presentation placeholder {index + 1} under {ownerId} is preserved but its text is not safely editable by this codec slice.",
+                    partPath);
+            PptxPlaceholderCodec.Apply(sourceShape, target, partContext);
+            changed = true;
+        }
+        return changed;
+    }
+
     private static IEnumerable<PresentationTextParagraph> MasterStyleParagraphs(PresentationMasterTextStyles? source) =>
         source is null
             ? []
@@ -1181,13 +1352,15 @@ internal static class PptxCodec
         var master = (P.SlideMaster)source.CloneNode(true);
         PptxMasterTextStylesCodec.ScrubModeledContent(master, partContext);
         PptxBackgroundCodec.ScrubModeledContent(master.CommonSlideData);
+        PptxPlaceholderCodec.ScrubModeledContent(master.CommonSlideData?.ShapeTree, partContext);
         return HashElement(master);
     }
 
-    private static string LayoutResidualHash(P.SlideLayout source)
+    private static string LayoutResidualHash(P.SlideLayout source, PptxPartContext partContext)
     {
         var layout = (P.SlideLayout)source.CloneNode(true);
         PptxBackgroundCodec.ScrubModeledContent(layout.CommonSlideData);
+        PptxPlaceholderCodec.ScrubModeledContent(layout.CommonSlideData?.ShapeTree, partContext);
         return HashElement(layout);
     }
 

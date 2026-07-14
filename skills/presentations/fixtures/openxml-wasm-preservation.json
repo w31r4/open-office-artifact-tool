@@ -7,7 +7,16 @@
     "id": "master/openxml-wasm",
     "name": "OpenXML WASM Master",
     "background": "#FFFFFF",
-    "placeholders": [],
+    "placeholders": [
+      {
+        "type": "title",
+        "idx": 0,
+        "name": "Master WASM Prompt",
+        "position": { "left": 48, "top": 20, "width": 1184, "height": 80 },
+        "text": "Before master placeholder",
+        "textBodyProperties": { "anchor": "center" }
+      }
+    ],
     "textParagraphStyles": {
       "title": {
         "0": { "alignment": "center", "style": { "fontSize": 40, "bold": true, "fontFamily": "Aptos Display", "color": "accent1" } }
@@ -17,9 +26,28 @@
       }
     }
   },
+  "layouts": [
+    {
+      "id": "layout/openxml-wasm",
+      "name": "OpenXML WASM Layout",
+      "type": "blank",
+      "masterId": "master/openxml-wasm",
+      "placeholders": [
+        {
+          "type": "body",
+          "idx": 2,
+          "name": "Layout WASM Prompt",
+          "position": { "left": 48, "top": 560, "width": 1184, "height": 44 },
+          "text": "Before layout placeholder",
+          "textBodyProperties": { "anchor": "top" }
+        }
+      ]
+    }
+  ],
   "slides": [
     {
       "name": "Loss-aware preservation",
+      "layoutId": "layout/openxml-wasm",
       "notes": "The chart, image, notes, master, theme, parts, and relationships must survive the C# Open XML SDK WebAssembly roundtrip.",
       "shapes": [
         {
@@ -87,6 +115,15 @@
       "shapeName": "wasm-title",
       "masterBackground": { "fill": "accent4", "mode": "reference", "index": 1003 },
       "layoutBackground": { "fill": "#F0FDF4", "mode": "solid" },
+      "masterPlaceholder": { "type": "title", "idx": 0, "text": "After master placeholder" },
+      "layoutPlaceholder": {
+        "type": "body",
+        "idx": 2,
+        "textBodyProperties": { "anchor": "bottom" },
+        "text": [
+          { "runs": [{ "text": "After layout placeholder", "link": { "uri": "https://example.com/layout-placeholder", "tooltip": "Layout-owned link" } }] }
+        ]
+      },
       "masterTextParagraphStyles": {
         "title": {
           "0": { "alignment": "right", "style": { "fontSize": 42, "bold": true, "fontFamily": "Georgia", "color": "accent2" } }

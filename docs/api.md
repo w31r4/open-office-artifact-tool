@@ -1221,7 +1221,7 @@ Create a reusable slide layout with background and typed placeholder overrides, 
 - `type` (string) — Layout type.
 - `masterId` (string) — Master identity.
 - `background` (string|object) — Optional layout background overriding the linked master background.
-- `placeholders` (object[]) — Placeholder type/idx/name/frame/text/required/style/paragraphStyles definitions merged over matching master defaults; picture bullets own layout-part image relationships.
+- `placeholders` (object[]) — Placeholder type/unsigned idx/name/frame/text/required/style/paragraphStyles/textBodyProperties definitions merged over matching master defaults; picture bullets and links own layout-part relationships.
 
 **Schema returns:**
 
@@ -1237,7 +1237,7 @@ Backward-compatible alias for the first Slide Master; configure identity, backgr
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, text style, and paragraphStyles; picture bullets own master-part image relationships.
+- `placeholders` (object[]) — Typed placeholder defaults with unique type/unsigned idx (including native default 0), position, text, required flag, text style, paragraphStyles, and textBodyProperties; picture bullets and links own master-part relationships.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**
@@ -1266,7 +1266,7 @@ Add a Slide Master with stable identity, native background, inherited theme over
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Typed placeholder defaults with unique type/idx, position, text, required flag, text style, and paragraphStyles; picture bullets own master-part image relationships.
+- `placeholders` (object[]) — Typed placeholder defaults with unique type/unsigned idx (including native default 0), position, text, required flag, text style, paragraphStyles, and textBodyProperties; picture bullets and links own master-part relationships.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**

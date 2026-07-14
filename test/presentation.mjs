@@ -165,7 +165,7 @@ assert.equal(titlePlaceholder.text.style.fontSize, 28);
 assert.equal(titlePlaceholder.text.style.bold, true);
 assert.equal(titlePlaceholder.text.style.color, "accent2");
 assert.equal(titleLayout.effectivePlaceholders()[1].style.fontSize, 20);
-assert.throws(() => presentation.layouts.add({ name: "Invalid Placeholder", placeholders: [{ type: "title", idx: 0 }] }), /unsigned positive 32-bit/);
+assert.throws(() => presentation.layouts.add({ name: "Invalid Placeholder", placeholders: [{ type: "title", idx: -1 }] }), /unsigned 32-bit/);
 assert.throws(() => presentation.master.setBackground("transparent"), /scheme color, six-digit RGB/);
 const themeLayoutSnapshot = presentation.inspect({ kind: "theme,layout,textbox", maxChars: 8000 }).ndjson;
 assert.match(themeLayoutSnapshot, /Open Office Clean Room/);

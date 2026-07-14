@@ -212,9 +212,9 @@ message PresentationSlideSourceBinding {
 }
 
 // The first bounded package-level PresentationML slice exposes every source
-// master and layout as a hash-bound locator while keeping layout content and
-// graph topology read-only. Only master p:txStyles level defaults are modeled
-// for source-preserving edits.
+// master and layout as a hash-bound locator while keeping graph topology
+// read-only. Master p:txStyles defaults, direct backgrounds, and owner-local
+// placeholder text are modeled for source-preserving edits.
 message PresentationMaster {
   string id = 1;
   string name = 2;
@@ -223,6 +223,9 @@ message PresentationMaster {
   // Direct p:bg only. Absence preserves source state and does not flatten
   // theme or layout inheritance into a computed color.
   PresentationBackground background = 5;
+  // Direct p:sp/p:nvSpPr/p:nvPr/p:ph entries in master shape-tree order.
+  // Position, geometry, fill, and effective inherited style remain source XML.
+  repeated PresentationPlaceholder placeholders = 6;
 }
 
 message PresentationMasterSourceBinding {
@@ -244,6 +247,9 @@ message PresentationLayout {
   PresentationLayoutSourceBinding source = 5;
   // Direct layout p:bg only; absence inherits from the linked master.
   PresentationBackground background = 6;
+  // Direct layout placeholders only; inherited master placeholders are not
+  // duplicated into this owner-local list.
+  repeated PresentationPlaceholder placeholders = 7;
 }
 
 message PresentationLayoutSourceBinding {
@@ -267,6 +273,19 @@ message PresentationBackground {
     bool solid = 3;
     uint32 style_reference_index = 4;
   }
+}
+
+// Bounded owner-local placeholder semantics. Type/index/name are identity and
+// remain read-only for a source-bound package. Only text_body participates in
+// the initial edit slice; all shape-level and unmodeled p:ph attributes stay
+// behind the element and residual hashes.
+message PresentationPlaceholder {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  uint32 index = 4;
+  PresentationTextBody text_body = 5;
+  PresentationElementSourceBinding source = 6;
 }
 
 message PresentationMasterTextStyles {

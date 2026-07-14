@@ -2,7 +2,7 @@ import { Presentation } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
-import { isPresentationAutoNumberType } from "../presentation/text-paragraphs.mjs";
+import { isPresentationAutoNumberType, normalizePresentationParagraphs, normalizePresentationParagraphStyles } from "../presentation/text-paragraphs.mjs";
 import { createPresentationAssetCatalog, validatePictureBulletUri } from "./openxml-wasm-assets.mjs";
 import { OpenXmlWasmCodecError } from "./openxml-wasm-error.mjs";
 
@@ -557,17 +557,57 @@ function sourceBackground(model, entry, ownerId) {
   return wireBackground(current, ownerId);
 }
 
+function placeholderShape(placeholder) {
+  return {
+    id: placeholder.id,
+    text: {
+      paragraphs: normalizePresentationParagraphs(placeholder.text ?? ""),
+      style: { ...(placeholder.style || {}) },
+      inheritedParagraphStyles: normalizePresentationParagraphStyles(placeholder.paragraphStyles || {}),
+      bodyProperties: normalizePresentationTextBodyProperties(placeholder.textBodyProperties || {}),
+    },
+  };
+}
+
+function wirePlaceholder(placeholder, original, assetCatalog) {
+  const shape = placeholderShape(placeholder);
+  return {
+    id: original.id,
+    name: original.name,
+    type: original.type,
+    index: original.index,
+    textBody: presentationTextBody(shape, { textBody: original.textBody }, assetCatalog),
+    source: original.source,
+  };
+}
+
+function placeholderReadOnlySnapshot(placeholder) {
+  const { text: _text, paragraphStyles: _paragraphStyles, textBodyProperties: _textBodyProperties, ...readOnly } = placeholder;
+  return JSON.stringify(readOnly);
+}
+
+function sourcePlaceholders(placeholders, entries, ownerId, assetCatalog) {
+  if (placeholders.length !== entries.length || entries.some((entry, index) => placeholders[index] !== entry.model)) {
+    throw new OpenXmlWasmCodecError(`Source-preserving PPTX export requires ${ownerId}'s original ${entries.length}-placeholder topology.`, [], { code: "presentation_placeholder_topology_changed" });
+  }
+  return entries.map((entry) => {
+    if (placeholderReadOnlySnapshot(entry.model) !== entry.snapshot) {
+      throw new OpenXmlWasmCodecError(`Presentation placeholder ${entry.model.id} can edit only local text and paragraph/body properties in this codec slice.`, [], { code: "unsupported_presentation_edit" });
+    }
+    return wirePlaceholder(entry.model, entry.wire, assetCatalog);
+  });
+}
+
 function masterReadOnlySnapshot(master) {
   return JSON.stringify({
     id: master.id,
     name: master.name,
     theme: master.theme?.toJSON(),
-    placeholders: master.placeholders,
   });
 }
 
 function layoutReadOnlySnapshot(layout) {
-  const { background: _background, ...readOnly } = layout.toJSON();
+  const { background: _background, placeholders: _placeholders, ...readOnly } = layout.toJSON();
   return JSON.stringify(readOnly);
 }
 
@@ -586,6 +626,7 @@ function presentationMasters(presentation, state, assetCatalog) {
         source: entry.wire.source,
         textStyles: wireMasterTextStyles(entry.model, entry.wire, assetCatalog),
         background: sourceBackground(entry.model, entry, `master ${entry.model.id}`),
+        placeholders: sourcePlaceholders(entry.model.placeholders, entry.placeholders, `master ${entry.model.id}`, assetCatalog),
       };
     });
   }
@@ -593,7 +634,7 @@ function presentationMasters(presentation, state, assetCatalog) {
   return master ? [{ id: master.id, name: master.name, textStyles: wireMasterTextStyles(master, undefined, assetCatalog), background: wireBackground(master.background, `master ${master.id}`) }] : [];
 }
 
-function presentationLayouts(presentation, state) {
+function presentationLayouts(presentation, state, assetCatalog) {
   if (!state) return [];
   if (presentation.layouts.items.length !== state.layouts.length || state.layouts.some((entry, index) => presentation.layouts.items[index] !== entry.model)) {
     throw new OpenXmlWasmCodecError(`Source-preserving PPTX export requires the original ${state.layouts.length}-layout topology.`, [], { code: "presentation_layout_topology_changed" });
@@ -609,6 +650,7 @@ function presentationLayouts(presentation, state) {
       type: entry.wire.type,
       source: entry.wire.source,
       background: sourceBackground(entry.model, entry, `layout ${entry.model.id}`),
+      placeholders: sourcePlaceholders(entry.model.placeholders, entry.placeholders, `layout ${entry.model.id}`, assetCatalog),
     };
   });
 }
@@ -703,7 +745,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
 
   const assetCatalog = createPresentationAssetCatalog();
   const masters = presentationMasters(presentation, state, assetCatalog);
-  const layouts = presentationLayouts(presentation, state);
+  const layouts = presentationLayouts(presentation, state, assetCatalog);
   const slides = presentation.slides.items.map((slide, slideIndex) => {
     const sourceState = state?.slides[slideIndex];
     if (sourceState) {
@@ -903,6 +945,19 @@ function modelMasterTextStyles(source, assetCatalog) {
   ]));
 }
 
+function modelPlaceholder(source, assetCatalog) {
+  const shape = { textBody: source.textBody };
+  return {
+    id: source.id,
+    name: source.name,
+    type: source.type,
+    idx: source.index,
+    text: modelText(shape, assetCatalog),
+    paragraphStyles: modelListStyles(shape, assetCatalog),
+    textBodyProperties: modelTextBodyProperties(shape),
+  };
+}
+
 export function presentationFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.PRESENTATION || envelope.payload.case !== "presentation") {
     throw new OpenXmlWasmCodecError("OpenXML WebAssembly response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
@@ -921,9 +976,16 @@ export function presentationFromEnvelope(envelope) {
         id: sourceMaster.id,
         name: sourceMaster.name,
         ...(sourceMaster.background ? { background: modelBackground(sourceMaster.background) } : {}),
+        placeholders: (sourceMaster.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
         textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
       });
-      masterStates.push({ wire: sourceMaster, model, snapshot: masterReadOnlySnapshot(model), backgroundSnapshot: JSON.stringify(model.background) });
+      masterStates.push({
+        wire: sourceMaster,
+        model,
+        snapshot: masterReadOnlySnapshot(model),
+        backgroundSnapshot: JSON.stringify(model.background),
+        placeholders: (sourceMaster.placeholders || []).map((wire, index) => ({ wire, model: model.placeholders[index], snapshot: placeholderReadOnlySnapshot(model.placeholders[index]) })),
+      });
     }
   }
   const layoutStates = [];
@@ -934,8 +996,15 @@ export function presentationFromEnvelope(envelope) {
       type: sourceLayout.type,
       masterId: sourceLayout.masterId,
       ...(sourceLayout.background ? { background: modelBackground(sourceLayout.background) } : {}),
+      placeholders: (sourceLayout.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
     });
-    layoutStates.push({ wire: sourceLayout, model, snapshot: layoutReadOnlySnapshot(model), backgroundSnapshot: JSON.stringify(model.background) });
+    layoutStates.push({
+      wire: sourceLayout,
+      model,
+      snapshot: layoutReadOnlySnapshot(model),
+      backgroundSnapshot: JSON.stringify(model.background),
+      placeholders: (sourceLayout.placeholders || []).map((wire, index) => ({ wire, model: model.placeholders[index], snapshot: placeholderReadOnlySnapshot(model.placeholders[index]) })),
+    });
   }
   const slideStates = [];
   for (const sourceSlide of source.slides) {

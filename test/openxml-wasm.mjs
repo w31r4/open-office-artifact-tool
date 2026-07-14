@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenXmlWasmCodecError,
   exportDocxWithOpenXmlWasm,
@@ -121,6 +121,9 @@ assert.equal(
 );
 assert.equal(toBinary(PresentationMasterSchema, create(PresentationMasterSchema, { background: { color: { case: "colorScheme", value: "accent1" }, kind: { case: "solid", value: true } } }))[0], 0x2a, "Presentation master backgrounds must use additive field 5.");
 assert.equal(toBinary(PresentationLayoutSchema, create(PresentationLayoutSchema, { background: { color: { case: "colorRgb", value: "FFFFFF" }, kind: { case: "solid", value: true } } }))[0], 0x32, "Presentation layout backgrounds must use additive field 6.");
+assert.equal(toBinary(PresentationMasterSchema, create(PresentationMasterSchema, { placeholders: [{ id: "master/1/placeholder/1" }] }))[0], 0x32, "Presentation master placeholders must use additive field 6.");
+assert.equal(toBinary(PresentationLayoutSchema, create(PresentationLayoutSchema, { placeholders: [{ id: "layout/1/placeholder/1" }] }))[0], 0x3a, "Presentation layout placeholders must use additive field 7.");
+assert.equal(toBinary(PresentationPlaceholderSchema, create(PresentationPlaceholderSchema, { textBody: { paragraphs: [] } }))[0], 0x2a, "Presentation placeholder text bodies must use field 5.");
 assert.equal(toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x3a, "Presentation master background hashes must use additive field 7.");
 assert.deepEqual([...toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundEditable: true }))], [0x40, 0x01], "Presentation master background editability must use additive field 8.");
 assert.equal(toBinary(PresentationLayoutSourceBindingSchema, create(PresentationLayoutSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x2a, "Presentation layout background hashes must use additive field 5.");
@@ -309,10 +312,16 @@ const masterStyleAuthoredXml = await masterStyleSourceZip.file(masterPartPath).a
 assert.match(masterStyleAuthoredXml, /<p:bg><p:bgRef idx="1001"><a:schemeClr\b[^>]*val="accent1"[^>]*\/><\/p:bgRef><\/p:bg>/);
 assert.match(masterStyleAuthoredXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="ctr"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3000"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent1"\s*\/>[\s\S]*?<a:latin typeface="Aptos Display"\s*\/>/);
 assert.match(masterStyleAuthoredXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr[^>]*marL="685800"[^>]*indent="-228600"[^>]*>[\s\S]*?<a:buChar char="•"\s*\/>/);
-masterStyleSourceZip.file(masterPartPath, masterStyleAuthoredXml.replace(/<a:lvl1pPr\b/, '<a:lvl1pPr marR="123456"'));
+const masterPlaceholderXml = '<p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:nvSpPr><p:cNvPr id="2" name="Master Prompt"/><p:cNvSpPr/><p:nvPr><p:ph type="title" idx="0" hasCustomPrompt="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm rot="60000"><a:off x="762000" y="571500"/><a:ext cx="6858000" cy="1143000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>Master prompt</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>';
+masterStyleSourceZip.file(masterPartPath, masterStyleAuthoredXml
+  .replace(/<a:lvl1pPr\b/, '<a:lvl1pPr marR="123456"')
+  .replace("</p:spTree>", `${masterPlaceholderXml}</p:spTree>`));
 const layoutPartPath = "ppt/slideLayouts/slideLayout1.xml";
 const masterStyleLayoutXml = await masterStyleSourceZip.file(layoutPartPath).async("text");
-masterStyleSourceZip.file(layoutPartPath, masterStyleLayoutXml.replace(/(<p:cSld\b[^>]*>)/, '$1<p:bg><p:bgPr><a:solidFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:srgbClr val="FFF7ED"/></a:solidFill><a:effectLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/></p:bgPr></p:bg>'));
+const layoutPlaceholderXml = '<p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:nvSpPr><p:cNvPr id="2" name="Layout Prompt"/><p:cNvSpPr/><p:nvPr><p:ph type="body" idx="2"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="762000" y="1905000"/><a:ext cx="6858000" cy="1143000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr anchor="t"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>Layout prompt</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>';
+masterStyleSourceZip.file(layoutPartPath, masterStyleLayoutXml
+  .replace(/(<p:cSld\b[^>]*>)/, '$1<p:bg><p:bgPr><a:solidFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:srgbClr val="FFF7ED"/></a:solidFill><a:effectLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/></p:bgPr></p:bg>')
+  .replace("</p:spTree>", `${layoutPlaceholderXml}</p:spTree>`));
 const masterStyleSource = await masterStyleSourceZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 const masterStyleImported = await importPptxWithOpenXmlWasm(masterStyleSource);
 assert.equal(masterStyleImported.masters.count, 1);
@@ -327,6 +336,18 @@ assert.equal(masterStyleImported.layouts.items[0].masterId, masterStyleImported.
 assert.equal(masterStyleImported.layouts.items[0].type, "blank");
 assert.deepEqual(masterStyleImported.layouts.items[0].background, { fill: "#fff7ed", mode: "solid" });
 assert.equal(masterStyleImported.slides.getItem(0).layoutId, masterStyleImported.layouts.items[0].id);
+const importedMasterPlaceholder = masterStyleImported.master.placeholders[0];
+const importedLayoutPlaceholder = masterStyleImported.layouts.items[0].placeholders[0];
+assert.equal(importedMasterPlaceholder.type, "title");
+assert.equal(importedMasterPlaceholder.idx, 0);
+assert.equal(importedMasterPlaceholder.text[0].runs[0].text, "Master prompt");
+assert.equal(importedMasterPlaceholder.textBodyProperties.anchor, "center");
+assert.equal(importedLayoutPlaceholder.type, "body");
+assert.equal(importedLayoutPlaceholder.idx, 2);
+assert.equal(importedLayoutPlaceholder.text[0].runs[0].text, "Layout prompt");
+importedMasterPlaceholder.text[0].runs[0].text = "Edited master prompt";
+importedLayoutPlaceholder.text[0].runs[0] = { text: "Edited layout prompt", style: {}, link: { uri: "https://example.com/layout-help", tooltip: "Layout help" } };
+importedLayoutPlaceholder.textBodyProperties.anchor = "bottom";
 masterStyleImported.master.textParagraphStyles.title[0].alignment = "right";
 delete masterStyleImported.master.textParagraphStyles.body[1];
 masterStyleImported.master.textParagraphStyles.other[2] = {
@@ -346,13 +367,37 @@ assert.doesNotMatch(masterStyleEditedXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr/);
 assert.match(masterStyleEditedXml, /<p:otherStyle>[\s\S]*?<a:lvl3pPr>[\s\S]*?<a:buClr><a:schemeClr val="accent3"\s*\/><\/a:buClr>[\s\S]*?<a:buBlip><a:blip r:link="[^"]+"\s*\/><\/a:buBlip>/);
 const masterRelationships = await masterStyleEditedZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
 assert.match(masterRelationships, /Type="[^"]+\/image" Target="https:\/\/example\.com\/master-marker\.png" TargetMode="External"/);
-assert.match(await masterStyleEditedZip.file(layoutPartPath).async("text"), /<p:bg><p:bgRef idx="1002"><a:schemeClr\b[^>]*val="accent2"[^>]*\/><\/p:bgRef><\/p:bg>/);
+const masterPlaceholderEditedXml = await masterStyleEditedZip.file(masterPartPath).async("text");
+assert.match(masterPlaceholderEditedXml, /<p:ph\b[^>]*type="title"[^>]*idx="0"[^>]*hasCustomPrompt="1"/);
+assert.match(masterPlaceholderEditedXml, /<a:xfrm\b[^>]*rot="60000"/);
+assert.match(masterPlaceholderEditedXml, /<a:t>Edited master prompt<\/a:t>/);
+const layoutEditedXml = await masterStyleEditedZip.file(layoutPartPath).async("text");
+assert.match(layoutEditedXml, /<p:bg><p:bgRef idx="1002"><a:schemeClr\b[^>]*val="accent2"[^>]*\/><\/p:bgRef><\/p:bg>/);
+assert.match(layoutEditedXml, /<a:bodyPr\b[^>]*anchor="b"/);
+assert.match(layoutEditedXml, /<a:t>Edited layout prompt<\/a:t>/);
+assert.match(await masterStyleEditedZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /Type="[^"]+\/hyperlink" Target="https:\/\/example\.com\/layout-help" TargetMode="External"/);
 const masterStyleRoundTrip = await importPptxWithOpenXmlWasm(masterStyleEdited);
 assert.equal(masterStyleRoundTrip.master.textParagraphStyles.title[0].alignment, "right");
 assert.equal(masterStyleRoundTrip.master.textParagraphStyles.body[1], undefined);
 assert.equal(masterStyleRoundTrip.master.textParagraphStyles.other[2].bulletImage.uri, "https://example.com/master-marker.png");
 assert.deepEqual(masterStyleRoundTrip.master.background, { fill: "#112233", mode: "solid" });
 assert.deepEqual(masterStyleRoundTrip.layouts.items[0].background, { fill: "accent2", mode: "reference", index: 1002 });
+assert.equal(masterStyleRoundTrip.master.placeholders[0].text[0].runs[0].text, "Edited master prompt");
+assert.equal(masterStyleRoundTrip.layouts.items[0].placeholders[0].text[0].runs[0].link.uri, "https://example.com/layout-help");
+assert.equal(masterStyleRoundTrip.layouts.items[0].placeholders[0].textBodyProperties.anchor, "bottom");
+const retainedPlaceholderName = importedLayoutPlaceholder.name;
+importedLayoutPlaceholder.name = "Unsafe placeholder rename";
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(masterStyleImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_edit" && /placeholder/.test(error.message),
+);
+importedLayoutPlaceholder.name = retainedPlaceholderName;
+masterStyleImported.layouts.items[0].placeholders.pop();
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(masterStyleImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "presentation_placeholder_topology_changed",
+);
+masterStyleImported.layouts.items[0].placeholders.push(importedLayoutPlaceholder);
 const retainedMasterBackground = masterStyleImported.master.background;
 masterStyleImported.master.background = undefined;
 await assert.rejects(
@@ -381,6 +426,16 @@ unsupportedBackgroundImported.layouts.items[0].background = { fill: "#ffffff", m
 await assert.rejects(
   exportPptxWithOpenXmlWasm(unsupportedBackgroundImported),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_edit" && /background is preserved/.test(error.message),
+);
+
+const unsupportedPlaceholderZip = await JSZip.loadAsync(masterStyleSource);
+const unsupportedPlaceholderLayoutXml = await unsupportedPlaceholderZip.file(layoutPartPath).async("text");
+unsupportedPlaceholderZip.file(layoutPartPath, unsupportedPlaceholderLayoutXml.replace("<p:txBody><a:bodyPr", "<p:txBody><a:bodyPr/><a:bodyPr"));
+const unsupportedPlaceholderImported = await importPptxWithOpenXmlWasm(await unsupportedPlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+unsupportedPlaceholderImported.layouts.items[0].placeholders[0].text[0].runs[0].text = "Unsafe placeholder text";
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(unsupportedPlaceholderImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_edit" && /placeholder/.test(error.message),
 );
 
 const multiMasterPresentation = Presentation.create({
