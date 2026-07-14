@@ -8,29 +8,27 @@ namespace OpenChestnut.Codec;
 
 // Owns cell text only for a fixed, deliberately narrow table topology. Table,
 // row, cell, paragraph, and run formatting stay in source XML and are guarded
-// by the residual hash. Merged, nested, multi-paragraph, or multi-run cells are
-// preserved but remain read-only.
+// by the residual hash. The companion geometry codec exposes gridSpan/vMerge;
+// horizontal and restart cells with simple text are editable, while vertical
+// continuations and complex cell content remain source-preserved and read-only.
 internal static class DocxTableCodec
 {
     internal static DocumentTable Read(W.Table table, out bool editable)
     {
-        var artifact = new DocumentTable();
-        foreach (var row in table.Elements<W.TableRow>())
-        {
-            var targetRow = new DocumentTableRow();
-            foreach (var cell in row.Elements<W.TableCell>())
-                targetRow.Cells.Add(string.Concat(cell.Descendants<W.Text>().Select(text => text.Text)));
-            artifact.Rows.Add(targetRow);
-        }
-        editable = IsEditable(table);
+        var artifact = DocxTableGeometry.Read(table, out var validGeometry);
+        editable = validGeometry && HasSafeContainerTopology(table) &&
+                   table.Descendants<W.TableCell>().All(DocxTableGeometry.IsSimpleCell) &&
+                   artifact.Rows.SelectMany(row => row.RichCells).Any(cell => cell.Editable);
         return artifact;
     }
 
     internal static void Apply(W.Table table, DocumentTable requested)
     {
         Validate(requested);
-        if (!IsEditable(table))
-            throw Unsupported("Source-preserving DOCX export cannot edit this table topology.");
+        var source = Read(table, out var editable);
+        if (!editable) throw Unsupported("Source-preserving DOCX export cannot edit this table topology.");
+        if (!DocxTableGeometry.SameTopology(requested, source))
+            throw Unsupported("Source-preserving DOCX table grid, span, and merge topology cannot be changed.");
 
         var rows = table.Elements<W.TableRow>().ToArray();
         if (rows.Length != requested.Rows.Count)
@@ -43,6 +41,9 @@ internal static class DocxTableCodec
             for (var cellIndex = 0; cellIndex < cells.Length; cellIndex++)
             {
                 var value = requested.Rows[rowIndex].Cells[cellIndex];
+                if (value == source.Rows[rowIndex].Cells[cellIndex]) continue;
+                if (!source.Rows[rowIndex].RichCells[cellIndex].Editable)
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} is a continuation or complex cell and cannot be edited.");
                 var text = cells[cellIndex].Descendants<W.Text>().Single();
                 text.Text = value;
                 text.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
@@ -72,10 +73,28 @@ internal static class DocxTableCodec
                 if (row.Cells[cellIndex].Length > 1_000_000)
                     throw Invalid($"Document table cell {rowIndex},{cellIndex} exceeds 1,000,000 characters.");
             }
+            if (row.RichCells.Count == 0)
+            {
+                if (row.GridBefore != 0 || row.GridAfter != 0)
+                    throw Invalid($"Document table row {rowIndex} cannot declare grid offsets without rich_cells.");
+                continue;
+            }
+            for (var cellIndex = 0; cellIndex < row.RichCells.Count; cellIndex++)
+            {
+                var cell = row.RichCells[cellIndex];
+                if (cell.ColumnSpan is 0 or > 4_096 || cell.GridColumn > 4_096 || cell.RowSpan > 4_096)
+                    throw Invalid($"Document table cell {rowIndex},{cellIndex} has invalid bounded grid geometry.");
+                if (cell.VerticalMerge == DocumentTableVerticalMerge.Continue && (cell.RowSpan != 0 || cell.Editable))
+                    throw Invalid($"Document table continuation cell {rowIndex},{cellIndex} must be read-only with row_span zero.");
+                if (cell.VerticalMerge != DocumentTableVerticalMerge.Continue && cell.RowSpan == 0)
+                    throw Invalid($"Document table origin cell {rowIndex},{cellIndex} must have a positive row_span.");
+            }
         }
+        if (table.Rows.Any(row => row.RichCells.Count > 0) && table.GridColumns is 0 or > 4_096)
+            throw Invalid("Document table grid_columns must be between 1 and 4096 when rich cell geometry is present.");
     }
 
-    private static bool IsEditable(W.Table table)
+    private static bool HasSafeContainerTopology(W.Table table)
     {
         if (table.ChildElements.Any(child => child is not W.TableProperties and not W.TableGrid and not W.TableRow)) return false;
         var rows = table.Elements<W.TableRow>().ToArray();
@@ -85,19 +104,6 @@ internal static class DocxTableCodec
             if (row.ChildElements.Any(child => child is not W.TableRowProperties and not W.TableCell)) return false;
             var cells = row.Elements<W.TableCell>().ToArray();
             if (cells.Length == 0) return false;
-            foreach (var cell in cells)
-            {
-                if (cell.ChildElements.Any(child => child is not W.TableCellProperties and not W.Paragraph)) return false;
-                var paragraphs = cell.Elements<W.Paragraph>().ToArray();
-                if (paragraphs.Length != 1) return false;
-                var paragraph = paragraphs[0];
-                if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
-                var runs = paragraph.Elements<W.Run>().ToArray();
-                if (runs.Length != 1) return false;
-                var run = runs[0];
-                if (run.ChildElements.Any(child => child is not W.RunProperties and not W.Text)) return false;
-                if (run.Elements<W.Text>().Count() != 1) return false;
-            }
         }
         return true;
     }

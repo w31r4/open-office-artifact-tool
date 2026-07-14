@@ -168,6 +168,133 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportExposesAndEditsMergedTableOrigins()
+    {
+        var authored = Invoke(ExportRequest());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddMergedTableGeometry(authored.File.ToByteArray())),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.True(block.Source.Editable);
+        Assert.Equal(3u, block.Table.GridColumns);
+        Assert.Equal(3, block.Table.Rows.Count);
+
+        var horizontal = block.Table.Rows[0].RichCells[0];
+        Assert.Equal(0u, horizontal.GridColumn);
+        Assert.Equal(2u, horizontal.ColumnSpan);
+        Assert.Equal(1u, horizontal.RowSpan);
+        Assert.Equal(DocumentTableVerticalMerge.None, horizontal.VerticalMerge);
+        Assert.True(horizontal.Editable);
+
+        var vertical = block.Table.Rows[0].RichCells[1];
+        Assert.Equal(2u, vertical.GridColumn);
+        Assert.Equal(1u, vertical.ColumnSpan);
+        Assert.Equal(3u, vertical.RowSpan);
+        Assert.Equal(DocumentTableVerticalMerge.Restart, vertical.VerticalMerge);
+        Assert.True(vertical.Editable);
+        var continuation = block.Table.Rows[1].RichCells[2];
+        Assert.Equal(DocumentTableVerticalMerge.Continue, continuation.VerticalMerge);
+        Assert.Equal(0u, continuation.RowSpan);
+        Assert.False(continuation.Editable);
+
+        block.Table.Rows[0].Cells[0] = "Edited horizontal origin";
+        block.Table.Rows[0].Cells[1] = "Edited vertical origin";
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var table = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            var firstRow = table.Elements<W.TableRow>().First().Elements<W.TableCell>().ToArray();
+            Assert.Equal("Edited horizontal origin", firstRow[0].InnerText);
+            Assert.Equal(2, firstRow[0].TableCellProperties!.GridSpan!.Val!.Value);
+            Assert.Equal("Edited vertical origin", firstRow[1].InnerText);
+            Assert.Equal(W.MergedCellValues.Restart, firstRow[1].TableCellProperties!.VerticalMerge!.Val!.Value);
+            Assert.Equal(2, table.Descendants<W.VerticalMerge>().Count(item => item.Val?.Value == W.MergedCellValues.Continue));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.Equal(3u, roundTrip.Artifact.Document.Blocks[1].Table.Rows[0].RichCells[1].RowSpan);
+
+        block.Table.Rows[1].Cells[2] = "Unsafe continuation edit";
+        var continuationRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(continuationRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(continuationRejected.Diagnostics).Code);
+
+        block.Table.Rows[1].Cells[2] = string.Empty;
+        block.Table.Rows[0].RichCells[0].ColumnSpan = 1;
+        var topologyRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(topologyRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void NonconformantVerticalMergeRemainsSourcePreservedAndReadOnly()
+    {
+        var authored = Invoke(ExportRequest());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddMergedTableGeometry(authored.File.ToByteArray(), mismatchContinuation: true)),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.False(block.Source.Editable);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+
+        block.Table.Rows[0].Cells[0] = "Unsafe malformed merge edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportEditsDirectNumberedParagraphTextAndKeepsDefinition()
     {
         var authored = Invoke(ExportRequest(includeSecondParagraph: true));
@@ -1014,6 +1141,42 @@ public sealed class DocxCodecTests
         {
             var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Descendants<W.TableCell>().First();
             cell.Append(new W.Paragraph(new W.Run(new W.Text(" detail"))));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddMergedTableGeometry(byte[] bytes, bool mismatchContinuation = false)
+    {
+        static W.TableCell Cell(string text, int span = 1, W.MergedCellValues? merge = null)
+        {
+            var properties = new W.TableCellProperties();
+            if (span > 1) properties.Append(new W.GridSpan { Val = span });
+            if (merge is not null) properties.Append(new W.VerticalMerge { Val = merge });
+            return new W.TableCell(properties, new W.Paragraph(new W.Run(new W.Text(text))));
+        }
+
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var table = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            var replacement = new W.Table();
+            if (table.TableProperties is not null)
+                replacement.Append(table.TableProperties.CloneNode(true));
+            replacement.Append(new W.TableGrid(new W.GridColumn(), new W.GridColumn(), new W.GridColumn()));
+            replacement.Append(new W.TableRow(
+                Cell("Horizontal origin", span: 2),
+                Cell("Vertical origin", merge: W.MergedCellValues.Restart)));
+            replacement.Append(mismatchContinuation
+                ? new W.TableRow(Cell("A"), Cell(string.Empty, span: 2, merge: W.MergedCellValues.Continue))
+                : new W.TableRow(Cell("A"), Cell("B"), Cell(string.Empty, merge: W.MergedCellValues.Continue)));
+            replacement.Append(new W.TableRow(
+                Cell("Footer", span: 2),
+                Cell(string.Empty, merge: W.MergedCellValues.Continue)));
+            table.InsertBeforeSelf(replacement);
+            table.Remove();
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

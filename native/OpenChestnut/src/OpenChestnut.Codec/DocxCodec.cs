@@ -451,6 +451,11 @@ internal static class DocxCodec
 
     private static W.Table BuildTable(DocumentBlock block)
     {
+        if (block.Table.GridColumns != 0 || block.Table.Rows.Any(row =>
+                row.RichCells.Count > 0 || row.GridBefore != 0 || row.GridAfter != 0))
+            throw new CodecException(
+                "unsupported_document_features",
+                "Direct authoring of source-bound DOCX table grid, span, or merge geometry is outside the current codec slice.");
         var table = new W.Table();
         if (!string.IsNullOrWhiteSpace(block.StyleId))
             table.Append(new W.TableProperties(new W.TableStyle { Val = block.StyleId }));

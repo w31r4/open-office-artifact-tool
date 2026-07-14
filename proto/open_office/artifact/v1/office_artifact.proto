@@ -668,10 +668,33 @@ message DocumentField {
 
 message DocumentTable {
   repeated DocumentTableRow rows = 1;
+  // Effective logical grid width after applying row offsets and grid spans.
+  // Imported source-preserving tables expose this as read-only topology.
+  uint32 grid_columns = 2;
 }
 
 message DocumentTableRow {
+  // Physical cell texts retained for backwards-compatible table consumers.
   repeated string cells = 1;
+  // One entry per physical cell, in the same order as cells. Geometry is
+  // source-bound; only entries marked editable permit text changes.
+  repeated DocumentTableCell rich_cells = 2;
+  uint32 grid_before = 3;
+  uint32 grid_after = 4;
+}
+
+enum DocumentTableVerticalMerge {
+  DOCUMENT_TABLE_VERTICAL_MERGE_NONE = 0;
+  DOCUMENT_TABLE_VERTICAL_MERGE_RESTART = 1;
+  DOCUMENT_TABLE_VERTICAL_MERGE_CONTINUE = 2;
+}
+
+message DocumentTableCell {
+  uint32 grid_column = 1;
+  uint32 column_span = 2;
+  uint32 row_span = 3;
+  DocumentTableVerticalMerge vertical_merge = 4;
+  bool editable = 5;
 }
 
 message DocumentOpaqueBlock {

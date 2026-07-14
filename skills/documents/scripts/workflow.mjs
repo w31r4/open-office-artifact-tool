@@ -52,6 +52,42 @@ async function inheritFixtureListNumberingFromStyle(docx, texts = []) {
   return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
 }
 
+async function mergeFixtureTableCells(docx, merges = []) {
+  if (!merges.length) return docx;
+  const zip = await JSZip.loadAsync(docx.bytes);
+  const part = zip.file("word/document.xml");
+  assert.ok(part, "OpenChestnut merged-table fixture requires word/document.xml.");
+  let xml = await part.async("text");
+  const addProperty = (cell, property) => {
+    if (!/<w:tcPr>/.test(cell)) return cell.replace("<w:tc>", `<w:tc><w:tcPr>${property}</w:tcPr>`);
+    const boundary = /<w:(?:tcBorders|shd|noWrap|tcMar|textDirection|tcFitText|vAlign|hideMark|headers)\b/.exec(cell);
+    if (boundary) return `${cell.slice(0, boundary.index)}${property}${cell.slice(boundary.index)}`;
+    return cell.replace("</w:tcPr>", `${property}</w:tcPr>`);
+  };
+  for (const merge of merges) {
+    const tables = [...xml.matchAll(/<w:tbl>[\s\S]*?<\/w:tbl>/g)];
+    const tableMatch = tables.find((item) => item[0].includes(`<w:t>${xmlEscape(merge.matchText)}</w:t>`));
+    assert.ok(tableMatch, `Missing merged-table fixture target ${merge.matchText}.`);
+    const rows = [...tableMatch[0].matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((item) => item[0]);
+    const startRow = Number(merge.row || 0);
+    const column = Number(merge.column || 0);
+    const rowCount = Number(merge.rows || 2);
+    assert.ok(Number.isInteger(startRow) && Number.isInteger(column) && Number.isInteger(rowCount) && startRow >= 0 && column >= 0 && rowCount >= 2 && startRow + rowCount <= rows.length, `Invalid merged-table fixture range for ${merge.matchText}.`);
+    let updatedTable = tableMatch[0];
+    for (let offset = 0; offset < rowCount; offset += 1) {
+      const row = rows[startRow + offset];
+      const cells = [...row.matchAll(/<w:tc>[\s\S]*?<\/w:tc>/g)].map((item) => item[0]);
+      assert.ok(column < cells.length, `Merged-table fixture column ${column} is outside row ${startRow + offset}.`);
+      const value = offset === 0 ? "restart" : "continue";
+      const updatedCell = addProperty(cells[column], `<w:vMerge w:val="${value}"/>`);
+      updatedTable = updatedTable.replace(cells[column], updatedCell);
+    }
+    xml = `${xml.slice(0, tableMatch.index)}${updatedTable}${xml.slice(tableMatch.index + tableMatch[0].length)}`;
+  }
+  zip.file("word/document.xml", xml);
+  return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
+}
+
 function packageCommentsXml(comments = []) {
   const body = comments.map((comment) => `<w:comment w:id="${xmlEscape(comment.commentId)}" w:author="${xmlEscape(comment.author || "User")}" w:initials="${xmlEscape(comment.initials || "")}"${comment.date ? ` w:date="${xmlEscape(comment.date)}"` : ""}><w:p${comment.paraId ? ` w14:paraId="${xmlEscape(comment.paraId)}"` : ""}><w:r><w:t>${xmlEscape(comment.text || "")}</w:t></w:r></w:p></w:comment>`).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">${body}</w:comments>`;
@@ -340,6 +376,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
   if (roundtripCodec === "open-chestnut") {
     docx = await inheritFixtureListNumberingFromStyle(docx, fixture.openChestnutStyleInheritedLists || []);
+    docx = await mergeFixtureTableCells(docx, fixture.openChestnutMergedTables || []);
     const imported = await importDocxWithOpenChestnut(docx);
     for (const edit of documentOpenChestnutEdits(fixture)) {
       if (edit.kind === "hyperlink") {
@@ -370,6 +407,11 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         assert.ok(table, `Missing source-bound table fixture target ${edit.matchText || "(unspecified)"}.`);
         assert.ok(Number.isInteger(edit.row) && edit.row >= 0 && edit.row < table.values.length, `Invalid source-bound table row ${edit.row}.`);
         assert.ok(Number.isInteger(edit.column) && edit.column >= 0 && edit.column < table.values[edit.row].length, `Invalid source-bound table column ${edit.column}.`);
+        const cell = table.getCell(edit.row, edit.column);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectColumnSpan")) assert.equal(cell.columnSpan, edit.expectColumnSpan, `Unexpected OpenChestnut column span for ${edit.matchText || cell.id}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectRowSpan")) assert.equal(cell.rowSpan, edit.expectRowSpan, `Unexpected OpenChestnut row span for ${edit.matchText || cell.id}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectVerticalMerge")) assert.equal(cell.verticalMerge, edit.expectVerticalMerge, `Unexpected OpenChestnut vertical merge for ${edit.matchText || cell.id}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectEditable")) assert.equal(cell.editable, edit.expectEditable, `Unexpected OpenChestnut editability for ${edit.matchText || cell.id}.`);
         table.values[edit.row][edit.column] = String(edit.value ?? "");
         continue;
       }

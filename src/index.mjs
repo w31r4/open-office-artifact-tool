@@ -1779,6 +1779,7 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "change", "DocumentChangeBlock", "Appended tracked deletion."),
   "document.addTable": helpSchema({
     values: { type: "unknown[][]", required: true, description: "Table cell value matrix." },
+    cells: { type: "object[]", description: "Imported source-bound physical-cell geometry with gridColumn, columnSpan, rowSpan, verticalMerge, and editable evidence." },
     name: { type: "string", description: "Inspectable table name." },
     styleId: { type: "string", description: "Table style ID." },
     widthDxa: { type: "number", description: "Table width in twentieths of a point." },
@@ -9385,9 +9386,15 @@ class DocumentTableCell {
     this.column = Number(column);
     this.id = `${table.id}/cell/${this.row}/${this.column}`;
   }
+  _record() { return this.table.cells?.find((cell) => cell.row === this.row && cell.column === this.column); }
   get value() { return this.table.values[this.row]?.[this.column] ?? ""; }
   set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
-  inspectRecord() { return { kind: this.kind, id: this.id, tableId: this.tableId, row: this.row, column: this.column, value: this.value }; }
+  get gridColumn() { return this._record()?.gridColumn ?? this.column; }
+  get columnSpan() { return this._record()?.columnSpan ?? 1; }
+  get rowSpan() { return this._record()?.rowSpan ?? 1; }
+  get verticalMerge() { return this._record()?.verticalMerge ?? "none"; }
+  get editable() { return this._record()?.editable ?? true; }
+  inspectRecord() { return { kind: this.kind, id: this.id, tableId: this.tableId, row: this.row, column: this.column, gridColumn: this.gridColumn, columnSpan: this.columnSpan, rowSpan: this.rowSpan, verticalMerge: this.verticalMerge, editable: this.editable, value: this.value }; }
 }
 
 function documentTableDefaultColumnWidths(columns, widthDxa) {
@@ -9407,6 +9414,16 @@ class DocumentTableBlock {
     this.values = (config.values || Array.from({ length: config.rows || 1 }, () => Array.from({ length: config.columns || 1 }, () => ""))).map((row) => [...row]);
     this.rows = this.values.length;
     this.columns = Math.max(0, ...this.values.map((row) => row.length));
+    this.gridColumns = Math.max(0, Math.round(Number(config.gridColumns ?? this.columns)));
+    this.cells = Array.isArray(config.cells) ? config.cells.map((cell) => ({
+      row: Math.max(0, Math.round(Number(cell.row) || 0)),
+      column: Math.max(0, Math.round(Number(cell.column) || 0)),
+      gridColumn: Math.max(0, Math.round(Number(cell.gridColumn) || 0)),
+      columnSpan: Math.max(1, Math.round(Number(cell.columnSpan) || 1)),
+      rowSpan: Math.max(0, Math.round(Number(cell.rowSpan) || 0)),
+      verticalMerge: String(cell.verticalMerge || "none"),
+      editable: cell.editable !== false,
+    })) : undefined;
     this.widthDxa = Math.round(Number(config.widthDxa ?? 9360));
     this.indentDxa = Math.round(Number(config.indentDxa ?? 120));
     this.columnWidthsDxa = Array.isArray(config.columnWidthsDxa)
@@ -9425,8 +9442,8 @@ class DocumentTableBlock {
 
   ensureCell(row, column) { while (this.values.length <= row) this.values.push([]); while (this.values[row].length <= column) this.values[row].push(""); this.rows = this.values.length; this.columns = Math.max(this.columns, column + 1); }
   getCell(row, column) { return new DocumentTableCell(this, row, column); }
-  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
-  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
+  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, gridColumns: this.gridColumns, cells: this.cells, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
+  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, gridColumns: this.gridColumns, cells: this.cells, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
 }
 
 function normalizeDocumentRuns(text, config = {}, theme = {}) {

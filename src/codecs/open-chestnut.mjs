@@ -6,6 +6,7 @@ import {
   CodecOperation,
   CodecRequestSchema,
   CodecResponseSchema,
+  DocumentTableVerticalMerge,
   WorkbookDateSystem,
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
@@ -295,6 +296,34 @@ function sameTableValues(block, original) {
   return JSON.stringify(block.values || []) === JSON.stringify((original.content.value.rows || []).map((row) => [...row.cells]));
 }
 
+function documentTableCells(table) {
+  const mergeName = (value) => value === DocumentTableVerticalMerge.RESTART
+    ? "restart"
+    : value === DocumentTableVerticalMerge.CONTINUE ? "continue" : "none";
+  return table.rows.flatMap((row, rowIndex) => row.richCells.map((cell, column) => ({
+    row: rowIndex,
+    column,
+    gridColumn: cell.gridColumn,
+    columnSpan: cell.columnSpan || 1,
+    rowSpan: cell.rowSpan,
+    verticalMerge: mergeName(cell.verticalMerge),
+    editable: cell.editable,
+  })));
+}
+
+function sameDocumentTableGeometry(block, table) {
+  if (block.gridColumns !== table.gridColumns) return false;
+  const sourceCells = documentTableCells(table);
+  if (!Array.isArray(block.cells) || block.cells.length !== sourceCells.length) return false;
+  return block.cells.every((cell, index) => {
+    const source = sourceCells[index];
+    return cell.row === source.row && cell.column === source.column &&
+      cell.gridColumn === source.gridColumn && cell.columnSpan === source.columnSpan &&
+      cell.rowSpan === source.rowSpan && cell.verticalMerge === source.verticalMerge &&
+      cell.editable === source.editable;
+  });
+}
+
 function sameDocumentNumbering(block, paragraph) {
   const numbering = paragraph.numbering;
   if (!numbering || block.kind !== "listItem") return false;
@@ -386,7 +415,7 @@ function unchangedSourceBlock(block, original) {
       return block.runs.every((run) => Object.keys(run.style || {}).length === 0);
     }
     case "table": {
-      if (block.kind !== "table" || !sameTableValues(block, original)) return false;
+      if (block.kind !== "table" || !sameTableValues(block, original) || !sameDocumentTableGeometry(block, original.content.value)) return false;
       return block.styleId === original.styleId || (!original.styleId && block.styleId === "TableGrid");
     }
     case "hyperlink":
@@ -443,11 +472,38 @@ function documentBlock(block, original) {
     };
   }
   if (block.kind === "table") {
+    const source = original?.content.case === "table" ? original.content.value : undefined;
+    if (!source && Array.isArray(block.cells)) {
+      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author table grid, span, or merge geometry for ${block.id}.`, [], { code: "unsupported_document_features" });
+    }
+    if (source && !sameDocumentTableGeometry(block, source)) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} grid, span, merge, and per-cell editability metadata are source-bound.`, [], { code: "unsupported_document_edit" });
+    }
+    if (source) {
+      for (let rowIndex = 0; rowIndex < source.rows.length; rowIndex += 1) {
+        for (let cellIndex = 0; cellIndex < source.rows[rowIndex].cells.length; cellIndex += 1) {
+          if (String(block.values?.[rowIndex]?.[cellIndex] ?? "") !== source.rows[rowIndex].cells[cellIndex] &&
+              source.rows[rowIndex].richCells[cellIndex]?.editable === false) {
+            throw new OpenChestnutCodecError(`Document table ${block.id} cell ${rowIndex},${cellIndex} is a vertical continuation or complex source cell and cannot be edited.`, [], { code: "unsupported_document_edit" });
+          }
+        }
+      }
+    }
     return {
       ...common,
       content: {
         case: "table",
-        value: { rows: (block.values || []).map((cells) => ({ cells: cells.map((value) => String(value ?? "")) })) },
+        value: {
+          ...(source ? { gridColumns: source.gridColumns } : {}),
+          rows: (block.values || []).map((cells, rowIndex) => ({
+            cells: cells.map((value) => String(value ?? "")),
+            ...(source ? {
+              richCells: source.rows[rowIndex]?.richCells.map((cell) => ({ ...cell })) || [],
+              gridBefore: source.rows[rowIndex]?.gridBefore || 0,
+              gridAfter: source.rows[rowIndex]?.gridAfter || 0,
+            } : {}),
+          })),
+        },
       },
     };
   }
@@ -586,6 +642,8 @@ function documentFromEnvelope(envelope) {
           name: block.name,
           styleId: block.styleId || "TableGrid",
           values: block.content.value.rows.map((row) => [...row.cells]),
+          gridColumns: block.content.value.gridColumns,
+          cells: documentTableCells(block.content.value),
         };
       case "hyperlink": {
         const hyperlink = block.content.value;

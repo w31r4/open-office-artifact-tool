@@ -55,7 +55,7 @@ try {
   assert.equal(nativePreferred.summary.verifyOk, true);
   assert.match(nativePreferred.inspect.ndjson, /Office artifact readiness brief/);
   const nativePreferredDocument = await DocumentFile.importDocx(await FileBlob.load(result.docxPath), { preferNative: true });
-  assert.equal(nativePreferredDocument.blocks.find((block) => block.kind === "table" && block.values.flat().includes("OpenChestnut table"))?.values[0][1], "Pass");
+  assert.equal(nativePreferredDocument.blocks.find((block) => block.kind === "table" && block.values.flat().includes("OpenChestnut merged table"))?.values[0][1], "Pass");
   assert.equal(nativePreferredDocument.theme.name, "Business Brief Theme");
   assert.equal(nativePreferredDocument.theme.fonts.majorEastAsia, "Arial Unicode MS");
   const themeRuns = nativePreferredDocument.blocks.find((item) => item.text === "Theme fidelity East Asia")?.runs;
@@ -123,6 +123,8 @@ try {
   assert.match(businessBriefDocumentXml, /<w:hyperlink\b(?=[^>]*w:anchor="ReadinessEvidence")(?=[^>]*w:history="0")(?=[^>]*w:tooltip="Open the readiness table evidence")[^>]*>/);
   assert.match(businessBriefDocumentXml, /w:instr="CITATION ECMA376"/);
   assert.match(businessBriefDocumentXml, /<w:fldSimple\b[^>]*w:instr="NUMPAGES"[^>]*>[\s\S]*?<w:t>2<\/w:t>[\s\S]*?<\/w:fldSimple>/);
+  assert.match(businessBriefDocumentXml, /<w:vMerge w:val="restart"\s*\/>[\s\S]*?<w:t>OpenChestnut merged table<\/w:t>/);
+  assert.match(businessBriefDocumentXml, /<w:vMerge w:val="continue"\s*\/>/);
   const businessBriefRels = await businessBriefZip.file("word/_rels/document.xml.rels").async("text");
   assert.match(businessBriefRels, /Target="https:\/\/learn\.microsoft\.com\/office\/open-xml\/word-processing"[^>]*TargetMode="External"/);
   assert.match(businessBriefRels, /relationships\/commentsExtended/);
