@@ -11,8 +11,9 @@ namespace OpenChestnut.Codec;
 
 // Owns the bounded worksheet TableParts -> TableDefinitionPart graph. Cell
 // values/formulas remain owned by XlsxCodec; this module owns the table-level
-// calculated-column/totals metadata. Query tables, filter columns, extensions,
-// differential styles, and other complex profiles remain opaque and uneditable.
+// calculated-column/totals metadata plus bounded value/custom AutoFilters.
+// Query tables, dynamic/date-group/color/icon/Top10 filters, sort state,
+// extensions, differential styles, and other complex profiles remain opaque.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -29,6 +30,10 @@ internal sealed class XlsxTableCodec
     private static readonly HashSet<string> TotalsRowFunctions = new(StringComparer.Ordinal)
     {
         "none", "sum", "min", "max", "average", "count", "countNums", "stdDev", "var", "custom",
+    };
+    private static readonly HashSet<string> CustomFilterOperators = new(StringComparer.Ordinal)
+    {
+        "equal", "notEqual", "lessThan", "lessThanOrEqual", "greaterThan", "greaterThanOrEqual",
     };
     private readonly WorksheetPart _worksheetPart;
     private readonly string _worksheetPath;
@@ -228,6 +233,37 @@ internal sealed class XlsxTableCodec
         if (string.IsNullOrWhiteSpace(table.StyleName) || table.StyleName.Length > 255 || table.StyleName.Any(char.IsControl))
             throw Invalid($"Worksheet table {table.Name} has an invalid style name.", location);
         if (table.ShowFilterButton && !table.HasHeaders) throw Invalid($"Worksheet table {table.Name} cannot show filter buttons without headers.", location);
+        if (table.Filters.Count > 0 && !table.ShowFilterButton) throw Invalid($"Worksheet table {table.Name} cannot define filter criteria while filter buttons are hidden.", location);
+        var filterColumns = new HashSet<uint>();
+        foreach (var filter in table.Filters)
+        {
+            if (filter.ColumnIndex >= columns || !filterColumns.Add(filter.ColumnIndex))
+                throw Invalid($"Worksheet table {table.Name} has an invalid or duplicate filter column index.", location);
+            ValidateFilter(table, filter, location);
+        }
+    }
+
+    private static void ValidateFilter(SpreadsheetTableArtifact table, SpreadsheetTableFilterArtifact filter, string location)
+    {
+        switch (filter.CriteriaCase)
+        {
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Values:
+                if (filter.Values.Values.Count == 0 && !filter.Values.IncludeBlank)
+                    throw Invalid($"Worksheet table {table.Name} value filter must select a value or blanks.", location);
+                if (filter.Values.Values.Count > 10_000 || filter.Values.Values.Any(value => value.Length > 32_767 || value.Any(char.IsControl)) ||
+                    filter.Values.Values.Distinct(StringComparer.Ordinal).Count() != filter.Values.Values.Count)
+                    throw Invalid($"Worksheet table {table.Name} has an invalid value filter.", location);
+                break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Custom:
+                if (filter.Custom.Criteria.Count is < 1 or > 2)
+                    throw Invalid($"Worksheet table {table.Name} custom filter must provide one or two criteria.", location);
+                foreach (var criterion in filter.Custom.Criteria)
+                    if (!CustomFilterOperators.Contains(criterion.Operator) || criterion.Value.Length > 32_767 || criterion.Value.Any(char.IsControl))
+                        throw Invalid($"Worksheet table {table.Name} has an invalid custom filter criterion.", location);
+                break;
+            default:
+                throw Invalid($"Worksheet table {table.Name} filter must provide exactly one supported criteria type.", location);
+        }
     }
 
     private static void ValidateColumn(SpreadsheetTableArtifact table, SpreadsheetTableColumnArtifact column, string location)
@@ -290,7 +326,16 @@ internal sealed class XlsxTableCodec
             richColumns.Add(richColumn!);
         }
         var filter = root.Element(Spreadsheet + "autoFilter");
-        if (filter is not null && (filter.Elements().Any() || filter.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "ref")) || filter.Attribute("ref")?.Value != reference)) return false;
+        var tableFilters = new List<SpreadsheetTableFilterArtifact>();
+        if (filter is not null)
+        {
+            if (filter.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "ref")) || filter.Attribute("ref")?.Value != reference) return false;
+            foreach (var filterColumn in filter.Elements())
+            {
+                if (!TryReadFilter(filterColumn, out var tableFilter)) return false;
+                tableFilters.Add(tableFilter!);
+            }
+        }
         var style = root.Element(Spreadsheet + "tableStyleInfo");
         if (style is null || style.Elements().Any() || style.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName is not ("name" or "showFirstColumn" or "showLastColumn" or "showRowStripes" or "showColumnStripes")))) return false;
         var styleName = style.Attribute("name")?.Value;
@@ -315,6 +360,7 @@ internal sealed class XlsxTableCodec
         };
         artifact.ColumnNames.Add(richColumns.Select(item => item.Name));
         artifact.Columns.Add(richColumns);
+        artifact.Filters.Add(tableFilters);
         try { Validate(artifact, artifact.Name); }
         catch (CodecException) { artifact = null; return false; }
         return true;
@@ -357,6 +403,48 @@ internal sealed class XlsxTableCodec
         return true;
     }
 
+    private static bool TryReadFilter(XElement element, out SpreadsheetTableFilterArtifact? artifact)
+    {
+        artifact = null;
+        if (element.Name != Spreadsheet + "filterColumn" || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "colId")) ||
+            !uint.TryParse(element.Attribute("colId")?.Value, out var columnIndex)) return false;
+        var children = element.Elements().ToArray();
+        if (children.Length != 1) return false;
+        var child = children[0];
+        if (child.Name == Spreadsheet + "filters")
+        {
+            if (child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "blank")) ||
+                !TryBool(child.Attribute("blank")?.Value, defaultValue: false, out var includeBlank)) return false;
+            var values = new SpreadsheetTableValueFilterArtifact { IncludeBlank = includeBlank };
+            foreach (var value in child.Elements())
+            {
+                if (value.Name != Spreadsheet + "filter" || value.Elements().Any() || value.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                    (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "val")) || value.Attribute("val") is null) return false;
+                values.Values.Add(value.Attribute("val")!.Value);
+            }
+            artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Values = values };
+            return true;
+        }
+        if (child.Name != Spreadsheet + "customFilters" || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "and")) ||
+            !TryBool(child.Attribute("and")?.Value, defaultValue: false, out var matchAll)) return false;
+        var custom = new SpreadsheetTableCustomFilterArtifact { MatchAll = matchAll };
+        foreach (var criterion in child.Elements())
+        {
+            if (criterion.Name != Spreadsheet + "customFilter" || criterion.Elements().Any() || criterion.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("operator" or "val"))) || criterion.Attribute("val") is null) return false;
+            custom.Criteria.Add(new SpreadsheetTableCustomFilterCriterionArtifact
+            {
+                Operator = criterion.Attribute("operator")?.Value ?? "equal",
+                Value = criterion.Attribute("val")!.Value,
+            });
+        }
+        artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Custom = custom };
+        return true;
+    }
+
     private static void ValidateBinding(SpreadsheetTableSourceBinding? binding, Entry entry)
     {
         if (binding is null || !binding.WorksheetPartPath.Equals(entry.Artifact.Source.WorksheetPartPath, StringComparison.OrdinalIgnoreCase) ||
@@ -377,7 +465,7 @@ internal sealed class XlsxTableCodec
         root.Element(Spreadsheet + "autoFilter")?.Remove();
         var columns = root.Element(Spreadsheet + "tableColumns")!;
         var style = root.Element(Spreadsheet + "tableStyleInfo")!;
-        if (table.ShowFilterButton) columns.AddBeforeSelf(new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference)));
+        if (table.ShowFilterButton) columns.AddBeforeSelf(CreateAutoFilter(table));
         foreach (var pair in columns.Elements().Zip(EffectiveColumns(table))) ApplyColumn(pair.First, pair.Second);
         style.SetAttributeValue("name", table.StyleName);
         style.SetAttributeValue("showFirstColumn", table.ShowFirstColumn ? 1 : 0);
@@ -394,7 +482,7 @@ internal sealed class XlsxTableCodec
             new XAttribute(XNamespace.Xmlns + "x", Spreadsheet), new XAttribute("id", tableId), new XAttribute("name", table.Name),
             new XAttribute("displayName", table.Name), new XAttribute("ref", table.Reference),
             new XAttribute("headerRowCount", table.HasHeaders ? 1 : 0), new XAttribute("totalsRowShown", table.ShowTotals ? 1 : 0));
-        if (table.ShowFilterButton) root.Add(new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference)));
+        if (table.ShowFilterButton) root.Add(CreateAutoFilter(table));
         root.Add(new XElement(Spreadsheet + "tableColumns", new XAttribute("count", table.ColumnNames.Count),
             EffectiveColumns(table).Select((column, index) => CreateColumn(column, index + 1))));
         root.Add(new XElement(Spreadsheet + "tableStyleInfo", new XAttribute("name", table.StyleName),
@@ -407,6 +495,39 @@ internal sealed class XlsxTableCodec
     {
         var element = new XElement(Spreadsheet + "tableColumn", new XAttribute("id", id));
         ApplyColumn(element, column);
+        return element;
+    }
+
+    private static XElement CreateAutoFilter(SpreadsheetTableArtifact table)
+    {
+        var element = new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference));
+        element.Add(table.Filters.Select(CreateFilter));
+        return element;
+    }
+
+    private static XElement CreateFilter(SpreadsheetTableFilterArtifact filter)
+    {
+        var element = new XElement(Spreadsheet + "filterColumn", new XAttribute("colId", filter.ColumnIndex));
+        switch (filter.CriteriaCase)
+        {
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Values:
+            {
+                var values = new XElement(Spreadsheet + "filters");
+                if (filter.Values.IncludeBlank) values.SetAttributeValue("blank", 1);
+                values.Add(filter.Values.Values.Select(value => new XElement(Spreadsheet + "filter", new XAttribute("val", value))));
+                element.Add(values);
+                break;
+            }
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Custom:
+            {
+                var custom = new XElement(Spreadsheet + "customFilters");
+                if (filter.Custom.MatchAll) custom.SetAttributeValue("and", 1);
+                custom.Add(filter.Custom.Criteria.Select(criterion => new XElement(Spreadsheet + "customFilter",
+                    new XAttribute("operator", criterion.Operator), new XAttribute("val", criterion.Value))));
+                element.Add(custom);
+                break;
+            }
+        }
         return element;
     }
 
@@ -439,7 +560,29 @@ internal sealed class XlsxTableCodec
             column.Name, column.CalculatedColumnFormula, column.CalculatedColumnFormulaArray.ToString(), column.TotalsRowFunction,
             column.TotalsRowLabel, column.TotalsRowFormula, column.TotalsRowFormulaArray.ToString(),
         }),
+        .. table.Filters.SelectMany(filter => FilterSemantics(filter)),
     ])));
+
+    private static IEnumerable<string> FilterSemantics(SpreadsheetTableFilterArtifact filter)
+    {
+        yield return filter.ColumnIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        yield return filter.CriteriaCase.ToString();
+        switch (filter.CriteriaCase)
+        {
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Values:
+                yield return filter.Values.IncludeBlank.ToString();
+                foreach (var value in filter.Values.Values) yield return value;
+                break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Custom:
+                yield return filter.Custom.MatchAll.ToString();
+                foreach (var criterion in filter.Custom.Criteria)
+                {
+                    yield return criterion.Operator;
+                    yield return criterion.Value;
+                }
+                break;
+        }
+    }
 
     private static (uint Top, uint Left, uint Bottom, uint Right) Range(string reference, string location)
     {
