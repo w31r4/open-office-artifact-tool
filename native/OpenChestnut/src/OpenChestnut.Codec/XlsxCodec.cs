@@ -163,9 +163,10 @@ internal static class XlsxCodec
     private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {source.Name} has no Worksheet root element.");
+        var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, source.Name);
         PatchSheetView(worksheet, source);
         PatchColumnDimensions(worksheet, source);
-        PatchRowsAndCells(worksheet, source, sharedStrings, numberFormats);
+        PatchRowsAndCells(worksheet, source, sharedStrings, numberFormats, formulas);
         PatchMergedRanges(worksheet, source);
         worksheet.Save();
     }
@@ -257,7 +258,7 @@ internal static class XlsxCodec
         else worksheet.InsertBefore(replacement, sheetData);
     }
 
-    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats)
+    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats, XlsxFormulaCodec formulas)
     {
         var sheetData = worksheet.GetFirstChild<SheetData>();
         if (sheetData is null)
@@ -282,7 +283,8 @@ internal static class XlsxCodec
             var row = GetOrCreateRow(sheetData, rows, sourceCell.Row);
             var reference = CellReference(sourceCell.Row, sourceCell.Column);
             var cell = row.Elements<Cell>().FirstOrDefault(item => string.Equals(item.CellReference?.Value, reference, StringComparison.OrdinalIgnoreCase));
-            if (cell is not null && CellSemanticallyEqual(ReadCell(cell, sourceCell.Row, sharedStrings, numberFormats), sourceCell)) continue;
+            var current = cell is null ? null : ReadCell(cell, sourceCell.Row, sharedStrings, numberFormats, formulas);
+            if (current is not null && CellSemanticallyEqual(current, sourceCell)) continue;
             if (cell is null)
             {
                 cell = BuildCell(sourceCell, numberFormats);
@@ -293,7 +295,7 @@ internal static class XlsxCodec
             else
             {
                 var replacement = BuildCell(sourceCell, numberFormats: null);
-                cell.CellFormula = replacement.CellFormula?.CloneNode(true) as CellFormula;
+                if (!XlsxFormulaCodec.SemanticallyEqual(current!, sourceCell)) formulas.Apply(cell, sourceCell);
                 cell.CellValue = replacement.CellValue?.CloneNode(true) as CellValue;
                 cell.InlineString = replacement.InlineString?.CloneNode(true) as InlineString;
                 cell.DataType = replacement.DataType;
@@ -315,7 +317,7 @@ internal static class XlsxCodec
 
     private static bool CellSemanticallyEqual(CellArtifact left, CellArtifact right)
     {
-        if (!string.Equals(left.Formula, right.Formula, StringComparison.Ordinal) ||
+        if (!XlsxFormulaCodec.SemanticallyEqual(left, right) ||
             !string.Equals(left.NumberFormatCode, right.NumberFormatCode, StringComparison.Ordinal) ||
             left.ValueCase != right.ValueCase) return false;
         return left.ValueCase switch
@@ -426,7 +428,7 @@ internal static class XlsxCodec
     private static Cell BuildCell(CellArtifact source, XlsxNumberFormatCodec? numberFormats)
     {
         var cell = new Cell { CellReference = CellReference(source.Row, source.Column) };
-        if (!string.IsNullOrWhiteSpace(source.Formula)) cell.CellFormula = new CellFormula(source.Formula.TrimStart('='));
+        cell.CellFormula = XlsxFormulaCodec.Build(source);
         switch (source.ValueCase)
         {
             case CellArtifact.ValueOneofCase.StringValue:
@@ -461,6 +463,7 @@ internal static class XlsxCodec
     private static WorksheetArtifact ReadWorksheet(WorksheetPart worksheetPart, string name, int index, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats, ref ulong cellCount, EffectiveCodecLimits limits)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {name} has no Worksheet root element.");
+        var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, name);
         var target = new WorksheetArtifact { Id = $"worksheet/{index + 1}", Name = name, ShowGridLines = true };
         var view = worksheet.SheetViews?.Elements<SheetView>().FirstOrDefault();
         if (view?.ShowGridLines?.HasValue == true) target.ShowGridLines = view.ShowGridLines.Value;
@@ -503,7 +506,7 @@ internal static class XlsxCodec
             {
                 cellCount++;
                 if (cellCount > limits.MaxCells) throw new CodecException("cell_budget_exceeded", $"XLSX workbook exceeds max_cells ({limits.MaxCells}).", name);
-                target.Cells.Add(ReadCell(cell, rowIndex, sharedStrings, numberFormats));
+                target.Cells.Add(ReadCell(cell, rowIndex, sharedStrings, numberFormats, formulas));
             }
         }
         foreach (var merge in worksheet.Elements<MergeCells>().SelectMany(item => item.Elements<MergeCell>()))
@@ -511,11 +514,11 @@ internal static class XlsxCodec
         return target;
     }
 
-    private static CellArtifact ReadCell(Cell cell, uint fallbackRow, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats)
+    private static CellArtifact ReadCell(Cell cell, uint fallbackRow, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats, XlsxFormulaCodec formulas)
     {
         var (row, column) = ParseCellReference(cell.CellReference?.Value, fallbackRow);
         var target = new CellArtifact { Row = row, Column = column, NumberFormatCode = numberFormats.Read(cell) };
-        if (cell.CellFormula?.Text is { Length: > 0 } formula) target.Formula = $"={formula}";
+        formulas.Populate(target);
         var text = cell.CellValue?.Text ?? cell.InnerText ?? string.Empty;
         var dataType = cell.DataType?.Value;
         if (dataType == CellValues.SharedString)
@@ -553,6 +556,7 @@ internal static class XlsxCodec
                 if (cell.Row >= 1_048_576 || cell.Column >= 16_384) throw new CodecException("cell_out_of_range", $"Cell at row {cell.Row}, column {cell.Column} exceeds XLSX limits.", sheet.Name);
                 XlsxNumberFormatCodec.Canonicalize(cell.NumberFormatCode, $"{sheet.Name}!{CellReference(cell.Row, cell.Column)}");
             }
+            XlsxFormulaCodec.ValidateArtifact(sheet);
         }
     }
 

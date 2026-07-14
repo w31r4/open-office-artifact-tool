@@ -4143,6 +4143,38 @@ function cloneCellForFill(source, sourceAddress, targetAddress) {
   return cell;
 }
 
+function detachNativeFormulaTopology(sheet, address) {
+  let target;
+  try { target = parseCellAddress(address); } catch { return; }
+  const current = sheet.store.cells.get(address);
+  const sharedIndex = current?.formulaType === "shared" ? current.sharedIndex : undefined;
+  const sharedRef = current?.formulaType === "shared" ? current.sharedRef : undefined;
+  for (const [candidateAddress, candidate] of sheet.store.entries()) {
+    let detachShared = false;
+    if (sharedIndex != null && candidate.formulaType === "shared" && candidate.sharedIndex === sharedIndex) {
+      detachShared = !sharedRef || !candidate.sharedRef || String(candidate.sharedRef).toUpperCase() === String(sharedRef).toUpperCase();
+    }
+    let detachArray = false;
+    if (candidate.formulaType === "array" && candidate.arrayRef) {
+      try {
+        const bounds = parseRangeAddress(candidate.arrayRef);
+        detachArray = target.row >= bounds.top && target.row <= bounds.bottom && target.col >= bounds.left && target.col <= bounds.right;
+      } catch {
+        detachArray = candidateAddress === address;
+      }
+    }
+    if (detachShared) {
+      delete candidate.formulaType;
+      delete candidate.sharedIndex;
+      delete candidate.sharedRef;
+    }
+    if (detachArray) {
+      delete candidate.formulaType;
+      delete candidate.arrayRef;
+    }
+  }
+}
+
 export class Worksheet {
   constructor(workbook, name) {
     this.workbook = workbook;
@@ -4619,6 +4651,7 @@ export class Range {
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < (rows[r]?.length ?? 0); c++) {
         const address = makeCellAddress(this.bounds.top + r, this.bounds.left + c);
+        if (field === "formula") detachNativeFormulaTopology(this.worksheet, address);
         const cell = this.worksheet.store.get(address);
         delete cell.spillParent;
         delete cell.spillAnchor;
@@ -6928,7 +6961,7 @@ function parseWorksheetXml(sheet, xml, options = {}) {
     const attrs = match[1];
     const body = match[2] || "";
     const address = /r="([^"]+)"/.exec(attrs)?.[1];
-    const formulaMatch = /<(?:[A-Za-z_][\w.-]*:)?f\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?f>/.exec(body);
+    const formulaMatch = /<(?:[A-Za-z_][\w.-]*:)?f\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?f>)/.exec(body);
     return { attrs, body, address, formulaAttrs: parseAttrs(formulaMatch?.[1] || ""), formulaBody: formulaMatch ? decodeXml(formulaMatch[2] || "") : undefined };
   }).filter((item) => item.address);
   const sharedFormulas = new Map();

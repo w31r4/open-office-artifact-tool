@@ -154,6 +154,8 @@ message CellArtifact {
   string formula = 3;
   // Effective SpreadsheetML number-format code. Empty means General.
   string number_format_code = 4;
+  // Native formula topology for shared and legacy array formulas.
+  CellFormulaMetadata formula_metadata = 5;
 
   oneof value {
     string string_value = 10;
@@ -161,6 +163,18 @@ message CellArtifact {
     bool bool_value = 12;
     string error_value = 13;
   }
+}
+
+enum CellFormulaKind {
+  CELL_FORMULA_KIND_UNSPECIFIED = 0;
+  CELL_FORMULA_KIND_SHARED = 1;
+  CELL_FORMULA_KIND_ARRAY = 2;
+}
+
+message CellFormulaMetadata {
+  CellFormulaKind kind = 1;
+  uint32 shared_index = 2;
+  string reference = 3;
 }
 
 message FreezePane {

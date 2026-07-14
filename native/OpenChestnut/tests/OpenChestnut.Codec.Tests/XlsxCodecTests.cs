@@ -272,6 +272,128 @@ public sealed class XlsxCodecTests
         Assert.Equal("invalid_cell_number_format", Assert.Single(response.Diagnostics).Code);
     }
 
+    [Fact]
+    public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var cells = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().ToDictionary(item => item.CellReference!.Value!);
+            Assert.Equal(CellFormulaValues.Shared, cells["C1"].CellFormula!.FormulaType!.Value);
+            Assert.Equal(7U, cells["C1"].CellFormula!.SharedIndex!.Value);
+            Assert.Equal("C1:C2", cells["C1"].CellFormula!.Reference!.Value);
+            Assert.Equal("A1+B1", cells["C1"].CellFormula!.Text);
+            Assert.Equal(CellFormulaValues.Shared, cells["C2"].CellFormula!.FormulaType!.Value);
+            Assert.Equal(7U, cells["C2"].CellFormula!.SharedIndex!.Value);
+            Assert.Null(cells["C2"].CellFormula!.Reference);
+            Assert.Empty(cells["C2"].CellFormula!.Text);
+            Assert.Equal(CellFormulaValues.Array, cells["E1"].CellFormula!.FormulaType!.Value);
+            Assert.Equal("E1:E2", cells["E1"].CellFormula!.Reference!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var cellsByAddress = imported.Artifact.Workbook.Worksheets[0].Cells.ToDictionary(cell => $"{cell.Row}:{cell.Column}");
+        Assert.Equal("=A1+B1", cellsByAddress["0:2"].Formula);
+        Assert.Equal(CellFormulaKind.Shared, cellsByAddress["0:2"].FormulaMetadata.Kind);
+        Assert.Equal(7U, cellsByAddress["0:2"].FormulaMetadata.SharedIndex);
+        Assert.Equal("C1:C2", cellsByAddress["0:2"].FormulaMetadata.Reference);
+        Assert.Equal("=A2+B2", cellsByAddress["1:2"].Formula);
+        Assert.Equal(CellFormulaKind.Shared, cellsByAddress["1:2"].FormulaMetadata.Kind);
+        Assert.Equal("=A1:A2*B1:B2", cellsByAddress["0:4"].Formula);
+        Assert.Equal(CellFormulaKind.Array, cellsByAddress["0:4"].FormulaMetadata.Kind);
+        Assert.Equal("E1:E2", cellsByAddress["0:4"].FormulaMetadata.Reference);
+    }
+
+    [Fact]
+    public void SourcePreservingCachedValueAndNumberFormatEditsKeepFormulaXmlExact()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
+        var before = ReadFormulaXml(first.File.ToByteArray());
+        var imported = Import(first.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var cells = imported.Artifact.Workbook.Worksheets[0].Cells.ToDictionary(cell => $"{cell.Row}:{cell.Column}");
+        cells["1:2"].NumberValue = 99;
+        cells["0:2"].NumberFormatCode = "0.00";
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var after = ReadFormulaXml(exported.File.ToByteArray());
+        Assert.Equal(before["C1"], after["C1"]);
+        Assert.Equal(before["C2"], after["C2"]);
+        Assert.Equal(before["E1"], after["E1"]);
+    }
+
+    [Fact]
+    public void SourcePreservingExportCanDetachACompleteSharedGroupToNormalFormulas()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        Assert.True(imported.Ok);
+        foreach (var cell in imported.Artifact.Workbook.Worksheets[0].Cells.Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Shared))
+            cell.FormulaMetadata = null;
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        using var stream = new MemoryStream(exported.File.ToByteArray());
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var cells = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().ToDictionary(item => item.CellReference!.Value!);
+        Assert.Null(cells["C1"].CellFormula!.FormulaType);
+        Assert.Equal("A1+B1", cells["C1"].CellFormula!.Text);
+        Assert.Null(cells["C2"].CellFormula!.FormulaType);
+        Assert.Equal("A2+B2", cells["C2"].CellFormula!.Text);
+    }
+
+    [Fact]
+    public void ProtocolRejectsIncompleteSharedFormulaGroup()
+    {
+        var request = FormulaExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Cells.Remove(request.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 1 && cell.Column == 2));
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_cell_formula", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportRejectsDataTableFormulaAndFormulaEditRejectsUnmodeledAttributes()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
+        var dataTable = Import(SetFormulaType(first.File.ToByteArray(), "C1", CellFormulaValues.DataTable));
+        Assert.False(dataTable.Ok);
+        Assert.Equal("unsupported_cell_formula", Assert.Single(dataTable.Diagnostics).Code);
+
+        var attributed = Import(SetFormulaCalculateCell(first.File.ToByteArray(), "C1"));
+        Assert.True(attributed.Ok, string.Join("\n", attributed.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var cells = attributed.Artifact.Workbook.Worksheets[0].Cells.ToDictionary(cell => $"{cell.Row}:{cell.Column}");
+        cells["0:2"].Formula = "=A1-B1";
+        cells["1:2"].Formula = "=A2-B2";
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = attributed.Artifact,
+        }.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_cell_formula_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
     private static CodecRequest ExportRequest()
     {
         var sheet = new WorksheetArtifact
@@ -288,6 +410,44 @@ public sealed class XlsxCodecTests
         sheet.RowDimensions.Add(new RowDimension { Row = 0, Height = 24 });
         sheet.MergedRanges.Add("A3:B3");
         var workbook = new WorkbookArtifact { Id = "workbook/test", DateSystem = WorkbookDateSystem._1904 };
+        workbook.Worksheets.Add(sheet);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Workbook,
+                Workbook = workbook,
+            },
+        };
+    }
+
+    private static CodecRequest FormulaExportRequest()
+    {
+        var sheet = new WorksheetArtifact { Id = "worksheet/formulas", Name = "Formulas", ShowGridLines = true };
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 0, NumberValue = 2 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, NumberValue = 3 });
+        sheet.Cells.Add(new CellArtifact
+        {
+            Row = 0, Column = 2, Formula = "=A1+B1", NumberValue = 5,
+            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.Shared, SharedIndex = 7, Reference = "C1:C2" },
+        });
+        sheet.Cells.Add(new CellArtifact
+        {
+            Row = 0, Column = 4, Formula = "=A1:A2*B1:B2", NumberValue = 6,
+            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.Array, Reference = "E1:E2" },
+        });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 0, NumberValue = 4 });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, NumberValue = 5 });
+        sheet.Cells.Add(new CellArtifact
+        {
+            Row = 1, Column = 2, Formula = "=A2+B2", NumberValue = 9,
+            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.Shared, SharedIndex = 7, Reference = "C1:C2" },
+        });
+        var workbook = new WorkbookArtifact { Id = "workbook/formulas", DateSystem = WorkbookDateSystem._1900 };
         workbook.Worksheets.Add(sheet);
         return new CodecRequest
         {
@@ -357,6 +517,45 @@ public sealed class XlsxCodecTests
             format.NumberFormatId = numberFormatId;
             format.ApplyNumberFormat = true;
             document.WorkbookPart.WorkbookStylesPart.Stylesheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static Dictionary<string, string> ReadFormulaXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>()
+            .Where(cell => cell.CellFormula is not null)
+            .ToDictionary(cell => cell.CellReference!.Value!, cell => cell.CellFormula!.OuterXml);
+    }
+
+    private static byte[] SetFormulaType(byte[] bytes, string reference, CellFormulaValues type)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            var formula = worksheet.Descendants<Cell>().Single(cell => cell.CellReference?.Value == reference).CellFormula!;
+            formula.FormulaType = type;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetFormulaCalculateCell(byte[] bytes, string reference)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            var formula = worksheet.Descendants<Cell>().Single(cell => cell.CellReference?.Value == reference).CellFormula!;
+            formula.CalculateCell = true;
+            worksheet.Save();
         }
         return stream.ToArray();
     }

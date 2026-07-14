@@ -21,6 +21,7 @@ const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(Presentat
   tabStops: [{ positionEmu: 120n, alignment: "left" }],
 }));
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { numberFormatCode: "0.00%" }))[0], 0x22, "Spreadsheet number-format codes must use additive cell field 4.");
+assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { formulaMetadata: { kind: 1, sharedIndex: 7, reference: "C1:C2" } }))[0], 0x2a, "Spreadsheet formula topology must use additive cell field 5.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
@@ -247,6 +248,75 @@ invalidNumberFormat.worksheets.getItem("Sheet1").getRange("A1").format.numberFor
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidNumberFormat),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_number_format",
+);
+
+const formulaWorkbook = Workbook.create();
+const formulaSheet = formulaWorkbook.worksheets.add("FormulaTopology");
+formulaSheet.getRange("A1:B2").values = [[2, 3], [4, 5]];
+formulaSheet.getRange("C1:C2").formulas = [["=A1+B1"], ["=A2+B2"]];
+formulaSheet.getRange("E1").formulas = [["=SUM(A1:A2)"]];
+formulaSheet.getRange("E1").values = [[6]];
+for (const address of ["C1", "C2"]) {
+  const cell = formulaSheet.store.get(address);
+  cell.formulaType = "shared";
+  cell.sharedIndex = 7;
+  cell.sharedRef = "C1:C2";
+}
+const arrayCell = formulaSheet.store.get("E1");
+arrayCell.formulaType = "array";
+arrayCell.arrayRef = "E1:E2";
+const formulaExported = await exportXlsxWithOpenChestnut(formulaWorkbook, { recalculate: false });
+const formulaZip = await JSZip.loadAsync(formulaExported.bytes);
+const formulaXml = await formulaZip.file("xl/worksheets/sheet1.xml").async("text");
+assert.match(formulaXml, /<x:f t="shared" ref="C1:C2" si="7">A1\+B1<\/x:f>/);
+assert.match(formulaXml, /<x:f t="shared" si="7"\s*\/>/);
+assert.match(formulaXml, /<x:f t="array" ref="E1:E2">SUM\(A1:A2\)<\/x:f>/);
+
+const formulaImported = await importXlsxWithOpenChestnut(formulaExported);
+const importedFormulaSheet = formulaImported.worksheets.getItem("FormulaTopology");
+assert.deepEqual(importedFormulaSheet.getRange("C1:C2").formulas, [["=A1+B1"], ["=A2+B2"]]);
+assert.deepEqual(
+  ["C1", "C2"].map((address) => {
+    const cell = importedFormulaSheet.store.get(address);
+    return { formulaType: cell.formulaType, sharedIndex: cell.sharedIndex, sharedRef: cell.sharedRef };
+  }),
+  [
+    { formulaType: "shared", sharedIndex: 7, sharedRef: "C1:C2" },
+    { formulaType: "shared", sharedIndex: 7, sharedRef: "C1:C2" },
+  ],
+);
+assert.equal(importedFormulaSheet.store.get("E1").formulaType, "array");
+assert.equal(importedFormulaSheet.store.get("E1").arrayRef, "E1:E2");
+
+const formulaJavaScriptImported = await SpreadsheetFile.importXlsx(formulaExported);
+assert.deepEqual(formulaJavaScriptImported.worksheets.getItem("FormulaTopology").getRange("C1:C2").formulas, [["=A1+B1"], ["=A2+B2"]]);
+assert.equal(formulaJavaScriptImported.worksheets.getItem("FormulaTopology").store.get("C2").sharedRef, "C1:C2");
+
+importedFormulaSheet.getRange("C2").values = [[99]];
+importedFormulaSheet.getRange("C1").format.numberFormat = "0.00";
+const cachedFormulaEdit = await exportXlsxWithOpenChestnut(formulaImported, { recalculate: false });
+const cachedFormulaXml = await (await JSZip.loadAsync(cachedFormulaEdit.bytes)).file("xl/worksheets/sheet1.xml").async("text");
+assert.match(cachedFormulaXml, /<x:f t="shared" ref="C1:C2" si="7">A1\+B1<\/x:f>/);
+assert.match(cachedFormulaXml, /<x:f t="shared" si="7"\s*\/>/);
+assert.equal((await importXlsxWithOpenChestnut(cachedFormulaEdit)).worksheets.getItem("FormulaTopology").store.get("C2").sharedIndex, 7);
+
+importedFormulaSheet.getRange("C2").formulas = [["=A2-B2"]];
+assert.equal(importedFormulaSheet.store.get("C1").formulaType, undefined, "Editing one shared member must detach the complete native group.");
+assert.equal(importedFormulaSheet.store.get("C2").formulaType, undefined);
+const detachedFormulaExport = await exportXlsxWithOpenChestnut(formulaImported, { recalculate: false });
+const detachedFormulaXml = await (await JSZip.loadAsync(detachedFormulaExport.bytes)).file("xl/worksheets/sheet1.xml").async("text");
+assert.doesNotMatch(detachedFormulaXml, /t="shared"/);
+const detachedFormulaRoundTrip = await importXlsxWithOpenChestnut(detachedFormulaExport);
+assert.deepEqual(detachedFormulaRoundTrip.worksheets.getItem("FormulaTopology").getRange("C1:C2").formulas, [["=A1+B1"], ["=A2-B2"]]);
+assert.equal(detachedFormulaRoundTrip.worksheets.getItem("FormulaTopology").store.get("C1").formulaType, undefined);
+
+const invalidSharedWorkbook = Workbook.create();
+const invalidSharedSheet = invalidSharedWorkbook.worksheets.add("InvalidShared");
+invalidSharedSheet.getRange("C1").formulas = [["=A1+B1"]];
+Object.assign(invalidSharedSheet.store.get("C1"), { formulaType: "shared", sharedIndex: 1, sharedRef: "C1:C2" });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidSharedWorkbook, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_formula" && /contains 1 members/.test(error.message),
 );
 
 const minimalDocument = DocumentModel.create({

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { DocumentModel, FileBlob, Workbook } from "../index.mjs";
 import {
   ArtifactFamily,
+  CellFormulaKind,
   CodecOperation,
   CodecRequestSchema,
   CodecResponseSchema,
@@ -24,6 +25,8 @@ const MANIFEST_URL = new URL("../../runtime/open-chestnut/manifest.json", import
 const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-state");
 const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-document-state");
 const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
+const MAX_XLSX_FORMULA_LENGTH = 8192;
+const XLSX_FORMULA_METADATA_KEYS = new Set(["formulaType", "sharedIndex", "sharedRef", "arrayRef"]);
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
 const DEFAULT_THEME_COLORS = {
   dk1: "#000000", lt1: "#FFFFFF", dk2: "#1F497D", lt2: "#EEECE1",
@@ -119,6 +122,121 @@ function cellAddress(row, column) {
   return `${label}${Number(row) + 1}`;
 }
 
+function formulaRangeBounds(reference, location) {
+  const pieces = String(reference || "").split(":");
+  if (pieces.length < 1 || pieces.length > 2 || !pieces[0]) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference || "(empty)"} is not a bounded A1 range.`, [], { code: "invalid_cell_formula" });
+  const first = cellCoordinates(pieces[0].replaceAll("$", ""));
+  const second = pieces[1] ? cellCoordinates(pieces[1].replaceAll("$", "")) : first;
+  for (const coordinate of [first, second]) {
+    if (coordinate.row >= 1_048_576 || coordinate.column >= 16_384) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference} exceeds XLSX limits.`, [], { code: "invalid_cell_formula" });
+  }
+  if (first.row > second.row || first.column > second.column) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference} must be top-left to bottom-right.`, [], { code: "invalid_cell_formula" });
+  return { top: first.row, left: first.column, bottom: second.row, right: second.column };
+}
+
+function normalizedFormula(value) {
+  const formula = String(value || "");
+  return formula && !formula.startsWith("=") ? `=${formula}` : formula;
+}
+
+function validateFormulaText(value, location, required = false) {
+  const formula = normalizedFormula(value);
+  const body = formula.startsWith("=") ? formula.slice(1) : formula;
+  if (required && !body.trim()) throw new OpenChestnutCodecError(`Cell ${location} requires non-empty formula text.`, [], { code: "invalid_cell_formula" });
+  if (body.length > MAX_XLSX_FORMULA_LENGTH || /\p{Cc}/u.test(body)) throw new OpenChestnutCodecError(`Cell ${location} formula is outside the bounded XLSX formula profile.`, [], { code: "invalid_cell_formula" });
+  return formula;
+}
+
+function translateSharedFormula(value, source, target) {
+  const formula = normalizedFormula(value);
+  const rowOffset = target.row - source.row;
+  const columnOffset = target.column - source.column;
+  const protectedParts = [];
+  const protectedFormula = formula.replace(/"(?:[^"]|"")*"|\[[^\]]*\]/g, (part) => {
+    const token = `\uE000${protectedParts.length}\uE001`;
+    protectedParts.push(part);
+    return token;
+  });
+  const shifted = protectedFormula.replace(/(?<![A-Za-z0-9_.])(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_. ]*))!)?(\$?)([A-Za-z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_])/g, (match, quotedSheet, bareSheet, absoluteColumn, columnText, absoluteRow, rowText) => {
+    const coordinate = cellCoordinates(`${columnText}${rowText}`);
+    const column = absoluteColumn ? coordinate.column : coordinate.column + columnOffset;
+    const row = absoluteRow ? coordinate.row : coordinate.row + rowOffset;
+    const prefix = quotedSheet != null ? `'${quotedSheet}'!` : bareSheet != null ? `${bareSheet}!` : "";
+    if (column < 0 || column >= 16_384 || row < 0 || row >= 1_048_576) return `${prefix}#REF!`;
+    return `${prefix}${absoluteColumn || ""}${cellAddress(row, column).replace(/\d+$/, `${absoluteRow || ""}${row + 1}`)}`;
+  });
+  return shifted.replace(/\uE000(\d+)\uE001/g, (_match, index) => protectedParts[Number(index)] || "");
+}
+
+function cellFormulaMetadata(address, cell) {
+  const location = address;
+  const type = cell.formulaType == null ? "" : String(cell.formulaType);
+  if (!type && [cell.sharedIndex, cell.sharedRef, cell.arrayRef].every((value) => value == null || value === "")) return undefined;
+  if (type === "shared") {
+    if (!Number.isInteger(cell.sharedIndex) || cell.sharedIndex < 0 || cell.sharedIndex > 0xffff_ffff) throw new OpenChestnutCodecError(`Cell ${location} shared formula requires an unsigned sharedIndex.`, [], { code: "invalid_cell_formula" });
+    const reference = String(cell.sharedRef || "");
+    formulaRangeBounds(reference, location);
+    validateFormulaText(cell.formula, location, true);
+    if (cell.arrayRef != null) throw new OpenChestnutCodecError(`Cell ${location} shared formula must not set arrayRef.`, [], { code: "invalid_cell_formula" });
+    return { kind: CellFormulaKind.SHARED, sharedIndex: cell.sharedIndex, reference };
+  }
+  if (type === "array") {
+    const reference = String(cell.arrayRef || "");
+    formulaRangeBounds(reference, location);
+    validateFormulaText(cell.formula, location, true);
+    if (cell.sharedIndex != null || cell.sharedRef != null) throw new OpenChestnutCodecError(`Cell ${location} legacy array formula must not set shared metadata.`, [], { code: "invalid_cell_formula" });
+    return { kind: CellFormulaKind.ARRAY, sharedIndex: 0, reference };
+  }
+  throw new OpenChestnutCodecError(`Cell ${location} formula type ${type || "unspecified"} is outside the OpenChestnut XLSX formula slice.`, [], { code: "unsupported_cell_formula" });
+}
+
+function validateFormulaTopology(cells, sheetName) {
+  const byCoordinate = new Map(cells.map((cell) => [`${cell.row}:${cell.column}`, cell]));
+  if (byCoordinate.size !== cells.length) throw new OpenChestnutCodecError(`Worksheet ${sheetName} contains duplicate cell coordinates.`, [], { code: "duplicate_cell" });
+  const sharedGroups = new Map();
+  for (const cell of cells) {
+    validateFormulaText(cell.formula, `${sheetName}!${cellAddress(cell.row, cell.column)}`, Boolean(cell.formulaMetadata));
+    if (cell.formulaMetadata?.kind === CellFormulaKind.SHARED) {
+      const key = cell.formulaMetadata.sharedIndex;
+      if (!sharedGroups.has(key)) sharedGroups.set(key, []);
+      sharedGroups.get(key).push(cell);
+    }
+  }
+  for (const [index, members] of sharedGroups) {
+    const references = new Set(members.map((cell) => cell.formulaMetadata.reference.toUpperCase()));
+    if (references.size !== 1) throw new OpenChestnutCodecError(`Worksheet ${sheetName} shared formula si=${index} has inconsistent references.`, [], { code: "invalid_cell_formula" });
+    const reference = members[0].formulaMetadata.reference;
+    const bounds = formulaRangeBounds(reference, `${sheetName}!${cellAddress(members[0].row, members[0].column)}`);
+    const memberMap = new Map(members.map((cell) => [`${cell.row}:${cell.column}`, cell]));
+    const expectedCount = (bounds.bottom - bounds.top + 1) * (bounds.right - bounds.left + 1);
+    if (memberMap.size !== expectedCount) throw new OpenChestnutCodecError(`Worksheet ${sheetName} shared formula si=${index} declares ${reference} with ${expectedCount} cells but contains ${memberMap.size} members.`, [], { code: "invalid_cell_formula" });
+    const master = memberMap.get(`${bounds.top}:${bounds.left}`);
+    if (!master) throw new OpenChestnutCodecError(`Worksheet ${sheetName} shared formula si=${index} is missing its top-left master.`, [], { code: "invalid_cell_formula" });
+    for (let row = bounds.top; row <= bounds.bottom; row += 1) {
+      for (let column = bounds.left; column <= bounds.right; column += 1) {
+        const member = memberMap.get(`${row}:${column}`);
+        if (!member) throw new OpenChestnutCodecError(`Worksheet ${sheetName} shared formula si=${index} is missing ${cellAddress(row, column)}.`, [], { code: "invalid_cell_formula" });
+        const expected = translateSharedFormula(master.formula, { row: bounds.top, column: bounds.left }, { row, column });
+        if (normalizedFormula(member.formula) !== expected) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(row, column)} expanded shared formula must be ${expected}.`, [], { code: "invalid_cell_formula" });
+      }
+    }
+  }
+  const occupied = new Map();
+  for (const cell of cells.filter((item) => item.formulaMetadata)) {
+    const metadata = cell.formulaMetadata;
+    const bounds = formulaRangeBounds(metadata.reference, `${sheetName}!${cellAddress(cell.row, cell.column)}`);
+    const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `array:${cell.row}:${cell.column}`;
+    if (metadata.kind === CellFormulaKind.ARRAY && (cell.row !== bounds.top || cell.column !== bounds.left)) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} legacy array formula must be the top-left anchor of ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
+    for (let row = bounds.top; row <= bounds.bottom; row += 1) {
+      for (let column = bounds.left; column <= bounds.right; column += 1) {
+        const key = `${row}:${column}`;
+        if (occupied.has(key) && occupied.get(key) !== owner) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} formula range ${metadata.reference} overlaps another native formula range.`, [], { code: "invalid_cell_formula" });
+        occupied.set(key, owner);
+      }
+    }
+  }
+}
+
 function itemCount(collection) {
   return Array.isArray(collection?.items) ? collection.items.length : 0;
 }
@@ -151,7 +269,7 @@ function unsupportedWorkbookFeatures(workbook) {
     for (const [address, cell] of sheet.store?.entries?.() || []) {
       const styleKeys = Object.keys(cell.style || {}).filter((key) => cell.style[key] != null);
       if (styleKeys.some((key) => key !== "numberFormat")) unsupported.push(`${prefix} styled cell ${address}`);
-      const metadata = Object.keys(cell).filter((key) => !["value", "formula", "style"].includes(key));
+      const metadata = Object.keys(cell).filter((key) => !["value", "formula", "style"].includes(key) && !XLSX_FORMULA_METADATA_KEYS.has(key));
       if (metadata.length) unsupported.push(`${prefix} advanced formula metadata at ${address}`);
     }
   }
@@ -164,6 +282,7 @@ function wireCell(address, cell) {
     row: coordinates.row,
     column: coordinates.column,
     formula: cell.formula ? String(cell.formula) : "",
+    formulaMetadata: cellFormulaMetadata(address, cell),
     numberFormatCode: numberFormatCode(cell.style?.numberFormat, address),
     value: { case: undefined },
   };
@@ -213,7 +332,11 @@ function workbookEnvelope(workbook) {
           columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
           rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
           mergedRanges: [...(sheet.mergedRanges || [])],
-          cells: (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || numberFormatCode(cell.style?.numberFormat, "formatted cell")).map(([address, cell]) => wireCell(address, cell)),
+          cells: (() => {
+            const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || numberFormatCode(cell.style?.numberFormat, "formatted cell")).map(([address, cell]) => wireCell(address, cell));
+            validateFormulaTopology(cells, sheet.name);
+            return cells;
+          })(),
         })),
       },
     },
@@ -258,6 +381,14 @@ function workbookFromEnvelope(envelope) {
     for (const sourceCell of sourceSheet.cells) {
       const cell = sheet.store.get(cellAddress(sourceCell.row, sourceCell.column));
       cell.formula = sourceCell.formula || null;
+      if (sourceCell.formulaMetadata?.kind === CellFormulaKind.SHARED) {
+        cell.formulaType = "shared";
+        cell.sharedIndex = sourceCell.formulaMetadata.sharedIndex;
+        cell.sharedRef = sourceCell.formulaMetadata.reference;
+      } else if (sourceCell.formulaMetadata?.kind === CellFormulaKind.ARRAY) {
+        cell.formulaType = "array";
+        cell.arrayRef = sourceCell.formulaMetadata.reference;
+      }
       if (sourceCell.numberFormatCode) cell.style = { ...cell.style, numberFormat: sourceCell.numberFormatCode };
       switch (sourceCell.value.case) {
         case "stringValue": cell.value = sourceCell.value.value; break;
