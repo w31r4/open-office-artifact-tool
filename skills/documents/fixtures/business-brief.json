@@ -4,7 +4,8 @@
   "roundtripCodec": "open-chestnut",
   "openChestnutEdits": [
     { "kind": "hyperlink", "matchText": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/word-processing", "tooltip": "Edited through the source-built OpenChestnut codec", "history": false },
-    { "kind": "field", "matchInstruction": "PAGE", "instruction": "NUMPAGES", "display": "2" }
+    { "kind": "field", "matchInstruction": "PAGE", "instruction": "NUMPAGES", "display": "2" },
+    { "kind": "tableCell", "matchText": "OpenChestnut table", "row": 0, "column": 1, "value": "Pass" }
   ],
   "designPreset": "report",
   "theme": {
@@ -69,6 +70,15 @@
         ["Visual", "page PNG", "Required"]
       ]
     },
+    {
+      "kind": "table",
+      "name": "open-chestnut-table",
+      "styleId": "TableGrid",
+      "values": [
+        ["OpenChestnut table", "Pending"],
+        ["Fixed topology", "Preserved"]
+      ]
+    },
     { "kind": "hyperlink", "name": "readiness-jump", "styleId": "Normal", "text": "Jump to readiness evidence", "url": "#ReadinessEvidence", "tooltip": "Open the readiness table evidence", "history": false },
     { "kind": "hyperlink", "name": "standards-link", "styleId": "Normal", "text": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk" },
     { "kind": "citation", "name": "source-note", "styleId": "Normal", "text": "Source: ECMA-376 Office Open XML", "metadata": { "tag": "ECMA376", "source": "ECMA-376", "sourceType": "DocumentFromInternetSite", "title": "Office Open XML File Formats", "corporateAuthor": "Ecma International", "year": "2021", "standardNumber": "ECMA-376", "url": "https://ecma-international.org/publications-and-standards/standards/ecma-376/" } },
@@ -97,6 +107,7 @@
     { "kind": "listItem", "pattern": "Green readiness marker" },
     { "kind": "listItem", "pattern": "nested numbering levels" },
     { "kind": "table", "pattern": "readiness-table" },
+    { "kind": "table", "pattern": "OpenChestnut table" },
     { "kind": "comment", "pattern": "native render review" },
     { "kind": "comment", "pattern": "wording is approved" },
     { "kind": "header", "pattern": "Clean-room document workflow" },

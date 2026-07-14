@@ -219,6 +219,34 @@ internal static class DocxCodec
                             $"Document field block {ordinal} does not match the requested modeled semantics after editing.",
                             "word/document.xml");
                 }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Table)
+                {
+                    if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document table block {ordinal} style is source-bound and cannot be edited by this codec slice.",
+                            "word/document.xml");
+                    if (element is not W.Table sourceTable ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxTableCodec.ResidualHash(sourceTable).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document table block {ordinal} unmodeled source formatting does not match its binding.",
+                            "word/document.xml");
+                    DocxTableCodec.Apply(sourceTable, block.Table);
+                    if (!DocxTableCodec.ResidualHash(sourceTable).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document table block {ordinal} changed unmodeled table, row, cell, paragraph, or run formatting.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(sourceTable, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document table block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
                 else
                 {
                     element.InsertBeforeSelf(BuildBlock(block, context));
@@ -282,18 +310,8 @@ internal static class DocxCodec
                 break;
             case W.Table table:
                 block.StyleId = table.TableProperties?.TableStyle?.Val?.Value ?? string.Empty;
-                var tableArtifact = new DocumentTable();
-                foreach (var row in table.Elements<W.TableRow>())
-                {
-                    var targetRow = new DocumentTableRow();
-                    foreach (var cell in row.Elements<W.TableCell>())
-                    {
-                        targetRow.Cells.Add(DescendantText(cell));
-                        semanticItems++;
-                    }
-                    tableArtifact.Rows.Add(targetRow);
-                }
-                block.Table = tableArtifact;
+                block.Table = DocxTableCodec.Read(table, out editable);
+                semanticItems += checked((ulong)block.Table.Rows.Sum(row => row.Cells.Count));
                 break;
             default:
                 block.Opaque = new DocumentOpaqueBlock
@@ -322,6 +340,10 @@ internal static class DocxCodec
                 block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
                 block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
+        }
+        else if (element is W.Table sourceTable && block.ContentCase == DocumentBlock.ContentOneofCase.Table && editable)
+        {
+            block.Source.ResidualSha256 = DocxTableCodec.ResidualHash(sourceTable);
         }
         block.Source.SemanticSha256 = SemanticHash(block);
         return block;
@@ -456,6 +478,7 @@ internal static class DocxCodec
                     semanticItems += checked((ulong)Math.Max(1, block.Paragraph.Runs.Count));
                     break;
                 case DocumentBlock.ContentOneofCase.Table:
+                    DocxTableCodec.Validate(block.Table);
                     semanticItems += checked((ulong)block.Table.Rows.Sum(row => row.Cells.Count));
                     break;
                 case DocumentBlock.ContentOneofCase.Hyperlink:

@@ -341,6 +341,14 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         if (Object.prototype.hasOwnProperty.call(edit, "display")) field.display = String(edit.display);
         continue;
       }
+      if (edit.kind === "tableCell") {
+        const table = imported.blocks.find((block) => block.kind === "table" && (!edit.matchText || block.values?.some((row) => row.some((value) => String(value) === edit.matchText))));
+        assert.ok(table, `Missing source-bound table fixture target ${edit.matchText || "(unspecified)"}.`);
+        assert.ok(Number.isInteger(edit.row) && edit.row >= 0 && edit.row < table.values.length, `Invalid source-bound table row ${edit.row}.`);
+        assert.ok(Number.isInteger(edit.column) && edit.column >= 0 && edit.column < table.values[edit.row].length, `Invalid source-bound table column ${edit.column}.`);
+        table.values[edit.row][edit.column] = String(edit.value ?? "");
+        continue;
+      }
       throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);
     }
     docx = await exportDocxWithOpenChestnut(imported);

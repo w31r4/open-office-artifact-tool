@@ -241,6 +241,16 @@ assert.equal(docxImported.blocks[0].text, "Quarterly brief");
 assert.equal(docxImported.blocks[0].runs[0].style.bold, true);
 assert.deepEqual(docxImported.blocks[1].values, [["Revenue", "42"], ["Status", "Ready"]]);
 assert.equal(docxImported.verify().ok, true);
+docxImported.blocks[1].values[0][1] = "84";
+const tableEditedDocx = await exportDocxWithOpenChestnut(docxImported);
+const tableEditedRoundTrip = await DocumentFile.importDocx(tableEditedDocx, { preferNative: true });
+assert.equal(tableEditedRoundTrip.blocks[1].values[0][1], "84");
+const tableTopologyImported = await importDocxWithOpenChestnut(docxExported);
+tableTopologyImported.blocks[1].values[0].pop();
+await assert.rejects(
+  exportDocxWithOpenChestnut(tableTopologyImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
+);
 
 const richDocument = DocumentModel.create({ name: "Source preservation", blocks: [] });
 richDocument.addParagraph("Editable lead", { styleId: "Normal" });
@@ -258,13 +268,13 @@ richImported.blocks[0].text = "Edited lead";
 richImported.blocks[0].runs[0].text = "Edited lead";
 richImported.blocks[1].text = "Edited link";
 richImported.blocks[1].url = "https://example.invalid/updated";
-richImported.blocks[1].tooltip = "Updated by the WASM codec";
+richImported.blocks[1].tooltip = "Updated by the OpenChestnut codec";
 richImported.blocks[1].history = false;
 const richPreserved = await exportDocxWithOpenChestnut(richImported);
 assert.equal(richPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
 const richRoundTrip = await DocumentFile.importDocx(richPreserved, { preferNative: true });
 assert.equal(richRoundTrip.blocks[0].text, "Edited lead");
-assert.equal(richRoundTrip.blocks.some((block) => block.kind === "hyperlink" && block.text === "Edited link" && block.url === "https://example.invalid/updated" && block.tooltip === "Updated by the WASM codec" && block.history === false), true);
+assert.equal(richRoundTrip.blocks.some((block) => block.kind === "hyperlink" && block.text === "Edited link" && block.url === "https://example.invalid/updated" && block.tooltip === "Updated by the OpenChestnut codec" && block.history === false), true);
 assert.equal(richRoundTrip.headers.some((header) => header.text === "Preserved header"), true);
 const internalRichImported = await importDocxWithOpenChestnut(richSource);
 internalRichImported.blocks[1].text = "Jump to lead";

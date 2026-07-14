@@ -40,10 +40,131 @@ public sealed class DocxCodecTests
             },
             table =>
             {
-                Assert.False(table.Source.Editable);
+                Assert.True(table.Source.Editable);
+                Assert.NotEmpty(table.Source.ResidualSha256);
                 Assert.Equal("Revenue", table.Table.Rows[0].Cells[0]);
                 Assert.Equal("42", table.Table.Rows[0].Cells[1]);
             });
+    }
+
+    [Fact]
+    public void SourcePreservingExportEditsFixedTopologyTableTextAndKeepsFormatting()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddTableFormatting(authored.File.ToByteArray())),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.Equal(DocumentBlock.ContentOneofCase.Table, block.ContentCase);
+        Assert.True(block.Source.Editable);
+        Assert.NotEmpty(block.Source.ResidualSha256);
+
+        block.Table.Rows[0].Cells[0] = "Net revenue";
+        block.Table.Rows[0].Cells[1] = "84";
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var table = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            var cells = table.Descendants<W.TableCell>().ToArray();
+            Assert.Equal("Net revenue", cells[0].InnerText);
+            Assert.Equal("84", cells[1].InnerText);
+            Assert.Equal(W.JustificationValues.Center, cells[0].Descendants<W.Justification>().Single().Val?.Value);
+            Assert.Equal("F2F4F7", cells[0].Descendants<W.Shading>().Single().Fill?.Value);
+            Assert.NotNull(cells[0].Descendants<W.Italic>().SingleOrDefault());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.Equal("Net revenue", roundTrip.Artifact.Document.Blocks[1].Table.Rows[0].Cells[0]);
+        Assert.Equal("84", roundTrip.Artifact.Document.Blocks[1].Table.Rows[0].Cells[1]);
+    }
+
+    [Fact]
+    public void TableSliceRejectsComplexOrChangedTopologyAndSourceStyle()
+    {
+        var authored = Invoke(ExportRequest());
+        var complex = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddSecondTableParagraph(authored.File.ToByteArray())),
+        });
+        Assert.True(complex.Ok, Diagnostics(complex));
+        Assert.False(complex.Artifact.Document.Blocks[1].Source.Editable);
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        complex.Artifact.Document.Blocks[1].Table.Rows[0].Cells[0] = "Unsafe complex edit";
+        var complexRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.False(complexRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(complexRejected.Diagnostics).Code);
+
+        var topology = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        topology.Artifact.Document.Blocks[1].Table.Rows[0].Cells.RemoveAt(1);
+        var topologyRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = topology.Artifact,
+        });
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(topologyRejected.Diagnostics).Code);
+
+        var style = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        style.Artifact.Document.Blocks[1].StyleId = "LightShading";
+        var styleRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = style.Artifact,
+        });
+        Assert.False(styleRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(styleRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -560,6 +681,37 @@ public sealed class DocxCodecTests
             var field = document.MainDocumentPart!.Document!.Descendants<W.SimpleField>().Single();
             field.Dirty = true;
             field.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Bold()));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddTableFormatting(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Descendants<W.TableCell>().First();
+            cell.PrependChild(new W.TableCellProperties(new W.Shading { Val = W.ShadingPatternValues.Clear, Fill = "F2F4F7" }));
+            var paragraph = cell.Elements<W.Paragraph>().Single();
+            paragraph.PrependChild(new W.ParagraphProperties(new W.Justification { Val = W.JustificationValues.Center }));
+            paragraph.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Italic()));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSecondTableParagraph(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Descendants<W.TableCell>().First();
+            cell.Append(new W.Paragraph(new W.Run(new W.Text(" detail"))));
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

@@ -55,6 +55,7 @@ try {
   assert.equal(nativePreferred.summary.verifyOk, true);
   assert.match(nativePreferred.inspect.ndjson, /Office artifact readiness brief/);
   const nativePreferredDocument = await DocumentFile.importDocx(await FileBlob.load(result.docxPath), { preferNative: true });
+  assert.equal(nativePreferredDocument.blocks.find((block) => block.kind === "table" && block.values.flat().includes("OpenChestnut table"))?.values[0][1], "Pass");
   assert.equal(nativePreferredDocument.theme.name, "Business Brief Theme");
   assert.equal(nativePreferredDocument.theme.fonts.majorEastAsia, "Arial Unicode MS");
   const themeRuns = nativePreferredDocument.blocks.find((item) => item.text === "Theme fidelity East Asia")?.runs;

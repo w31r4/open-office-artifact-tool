@@ -35,6 +35,7 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxFieldCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxHyperlinkCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxPartContext.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/DocxTableCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/PptxCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/PptxAssetCatalog.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/PptxBackgroundCodec.cs",
