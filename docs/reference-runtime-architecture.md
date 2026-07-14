@@ -155,7 +155,7 @@ The placeholder slice passes 34 codec tests, a reproducible 38-file/12,864,199-b
 
 The subsequent DOCX hyperlink slice passes hosted Linux run [`29299603126`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29299603126). The bounded simple-field slice raises the gate to 39 codec tests, a reproducible 38-file/12,886,215-byte runtime build, the 195-file clean-install package, and real Chromium/LibreOffice/Poppler-backed document checks. Hosted Linux run [`29301993212`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29301993212) passes that complete milestone on `main`.
 
-The current OpenChestnut numbered-paragraph milestone passes hosted Linux run [`29313871129`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29313871129): canonical and compatibility APIs, 43 C# tests, the 201-file no-local-dotnet clean install, Chromium/LibreOffice/Poppler, OfficeBridge, and two byte-identical 38-file/12,902,590-byte runtime builds all pass on `main`.
+The current OpenChestnut style-inherited numbered-paragraph milestone passes hosted Linux run [`29318756487`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29318756487): canonical and compatibility APIs, 45 C# tests, the 201-file no-local-dotnet clean install, Chromium/LibreOffice/Poppler, OfficeBridge, and two byte-identical 38-file/12,904,638-byte runtime builds all pass on `main`.
 
 The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
