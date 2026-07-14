@@ -51,7 +51,7 @@ internal static class XlsxCodec
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 worksheetPart.Worksheet = BuildWorksheet(source, styles);
-                var tables = new XlsxTableCodec(worksheetPart);
+                var tables = new XlsxTableCodec(worksheetPart, styles);
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
                 worksheetPart.Worksheet.Save();
@@ -105,7 +105,7 @@ internal static class XlsxCodec
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
             var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, ref cellCount, limits);
-            var tables = new XlsxTableCodec(worksheetPart);
+            var tables = new XlsxTableCodec(worksheetPart, styles);
             target.Tables.Add(tables.Read());
             workbook.Worksheets.Add(target);
         }
@@ -160,7 +160,7 @@ internal static class XlsxCodec
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
                 sheet.Name = source.Name;
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles);
-                var tables = new XlsxTableCodec(worksheetPart);
+                var tables = new XlsxTableCodec(worksheetPart, styles);
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
                 tables.Save();
                 dirtyTablePartPaths.UnionWith(tables.DirtyPartPaths);

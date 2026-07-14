@@ -5,9 +5,9 @@ using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
-// Owns the complete bounded static cell-style projection. Existing resources
-// and XF records are immutable: edits clone the current records, preserve
-// unmodeled residual XML, and append a derived record used only by the cell.
+// Owns the bounded stylesheet projections. Existing resources, XF records,
+// and differential formats are immutable: edits append derived records and
+// preserve every pre-existing record plus unmodeled stylesheet content.
 internal sealed class XlsxCellStyleCodec
 {
     private static readonly HashSet<string> PatternTypes = new(StringComparer.Ordinal)
@@ -45,15 +45,18 @@ internal sealed class XlsxCellStyleCodec
     private List<Fill> _fills = [];
     private List<Border> _borders = [];
     private List<CellFormat> _cellFormats = [];
+    private List<DifferentialFormat> _differentialFormats = [];
     private Dictionary<string, uint> _fontIds = new(StringComparer.Ordinal);
     private Dictionary<string, uint> _fillIds = new(StringComparer.Ordinal);
     private Dictionary<string, uint> _borderIds = new(StringComparer.Ordinal);
     private Dictionary<string, uint> _cellFormatIds = new(StringComparer.Ordinal);
+    private Dictionary<string, uint> _differentialFormatIds = new(StringComparer.Ordinal);
     private string[] _originalNumberingFormats = [];
     private string[] _originalFonts = [];
     private string[] _originalFills = [];
     private string[] _originalBorders = [];
     private string[] _originalCellFormats = [];
+    private string[] _originalDifferentialFormats = [];
     private string[] _originalOtherChildren = [];
     private bool _dirty;
 
@@ -92,6 +95,87 @@ internal sealed class XlsxCellStyleCodec
         if (!Equals(current.Alignment, baseline.Alignment)) result.Alignment = current.Alignment;
         if (!Equals(current.Protection, baseline.Protection)) result.Protection = current.Protection;
         return HasStyle(result) ? result : null;
+    }
+
+    internal bool TryReadTableColor(uint differentialFormatId, bool cellColor, out SpreadsheetTableColorArtifact? artifact)
+    {
+        artifact = null;
+        if (differentialFormatId >= _differentialFormats.Count) return false;
+        try
+        {
+            var differential = _differentialFormats[checked((int)differentialFormatId)];
+            if (differential.ChildElements.Count != 1) return false;
+            SpreadsheetColor? color;
+            if (cellColor)
+            {
+                if (differential.ChildElements[0] is not Fill fill || fill.ChildElements.Count != 1 || fill.PatternFill is not { } pattern ||
+                    pattern.PatternType?.Value != PatternValues.Solid || pattern.ForegroundColor is null) return false;
+                var children = pattern.ChildElements.ToArray();
+                if (children.Length is < 1 or > 2 || children[0] is not ForegroundColor) return false;
+                if (children.Length == 2 && (children[1] is not BackgroundColor background || !IsAutomaticPatternBackground(background))) return false;
+                color = ReadColor(pattern.ForegroundColor);
+            }
+            else
+            {
+                if (differential.ChildElements[0] is not Font font || font.ChildElements.Count != 1 ||
+                    font.ChildElements[0] is not DocumentFormat.OpenXml.Spreadsheet.Color fontColor) return false;
+                color = ReadColor(fontColor);
+            }
+            if (color is null) return false;
+            artifact = new SpreadsheetTableColorArtifact { Color = color };
+            if (cellColor) artifact.CellColor = true;
+            else artifact.FontColor = true;
+            return true;
+        }
+        catch (CodecException)
+        {
+            return false;
+        }
+    }
+
+    internal uint FindOrCreateTableColor(SpreadsheetTableColorArtifact source, string location)
+    {
+        ValidateTableColor(source, location);
+        EnsureWritableStylesheet();
+        var differential = new DifferentialFormat();
+        if (source.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.CellColor)
+        {
+            var pattern = new PatternFill { PatternType = PatternValues.Solid };
+            pattern.Append(ApplyColor(new ForegroundColor(), source.Color));
+            pattern.Append(new BackgroundColor { Indexed = 64U });
+            differential.Append(new Fill(pattern));
+        }
+        else
+        {
+            differential.Append(new Font(ApplyColor(new DocumentFormat.OpenXml.Spreadsheet.Color(), source.Color)));
+        }
+        var key = differential.OuterXml;
+        if (_differentialFormatIds.TryGetValue(key, out var existing)) return existing;
+        var collection = _stylesheet!.DifferentialFormats;
+        if (collection is null)
+        {
+            collection = new DifferentialFormats();
+            var before = _stylesheet.ChildElements.FirstOrDefault(item => item.LocalName is "tableStyles" or "colors" or "extLst");
+            if (before is null) _stylesheet.Append(collection);
+            else _stylesheet.InsertBefore(collection, before);
+        }
+        collection.Append(differential);
+        _differentialFormats.Add(differential);
+        collection.Count = checked((uint)_differentialFormats.Count);
+        var id = checked((uint)_differentialFormats.Count - 1);
+        _differentialFormatIds[key] = id;
+        _dirty = true;
+        return id;
+    }
+
+    internal static void ValidateTableColor(SpreadsheetTableColorArtifact? source, string location)
+    {
+        if (source is null || source.Color is null ||
+            source.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.None ||
+            source.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.CellColor && !source.CellColor ||
+            source.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.FontColor && !source.FontColor)
+            throw InvalidTableColor($"Worksheet table {location} color selector must provide exactly one true target and one color.");
+        ValidateColor(source.Color, location, "table");
     }
 
     internal void Apply(Cell cell, CellArtifact source)
@@ -524,16 +608,19 @@ internal sealed class XlsxCellStyleCodec
         _fills = stylesheet.Fills?.Elements<Fill>().ToList() ?? [];
         _borders = stylesheet.Borders?.Elements<Border>().ToList() ?? [];
         _cellFormats = stylesheet.CellFormats?.Elements<CellFormat>().ToList() ?? [];
+        _differentialFormats = stylesheet.DifferentialFormats?.Elements<DifferentialFormat>().ToList() ?? [];
         _fontIds = IndexByXml(_fonts);
         _fillIds = IndexByXml(_fills);
         _borderIds = IndexByXml(_borders);
         _cellFormatIds = IndexByXml(_cellFormats);
+        _differentialFormatIds = IndexByXml(_differentialFormats);
         _originalNumberingFormats = stylesheet.NumberingFormats?.Elements<NumberingFormat>().Select(item => item.OuterXml).ToArray() ?? [];
         _originalFonts = _fonts.Select(item => item.OuterXml).ToArray();
         _originalFills = _fills.Select(item => item.OuterXml).ToArray();
         _originalBorders = _borders.Select(item => item.OuterXml).ToArray();
         _originalCellFormats = _cellFormats.Select(item => item.OuterXml).ToArray();
-        _originalOtherChildren = stylesheet.ChildElements.Where(item => item is not NumberingFormats and not Fonts and not Fills and not Borders and not CellFormats).Select(item => item.OuterXml).ToArray();
+        _originalDifferentialFormats = _differentialFormats.Select(item => item.OuterXml).ToArray();
+        _originalOtherChildren = stylesheet.ChildElements.Where(item => item is not NumberingFormats and not Fonts and not Fills and not Borders and not CellFormats and not DifferentialFormats).Select(item => item.OuterXml).ToArray();
     }
 
     private static Dictionary<string, uint> IndexByXml<T>(IReadOnlyList<T> items) where T : OpenXmlElement
@@ -550,12 +637,14 @@ internal sealed class XlsxCellStyleCodec
         var fills = _stylesheet.Fills?.Elements<Fill>().Select(item => item.OuterXml).ToArray() ?? [];
         var borders = _stylesheet.Borders?.Elements<Border>().Select(item => item.OuterXml).ToArray() ?? [];
         var cellFormats = _stylesheet.CellFormats?.Elements<CellFormat>().Select(item => item.OuterXml).ToArray() ?? [];
-        var otherChildren = _stylesheet.ChildElements.Where(item => item is not NumberingFormats and not Fonts and not Fills and not Borders and not CellFormats).Select(item => item.OuterXml).ToArray();
+        var differentialFormats = _stylesheet.DifferentialFormats?.Elements<DifferentialFormat>().Select(item => item.OuterXml).ToArray() ?? [];
+        var otherChildren = _stylesheet.ChildElements.Where(item => item is not NumberingFormats and not Fonts and not Fills and not Borders and not CellFormats and not DifferentialFormats).Select(item => item.OuterXml).ToArray();
         if (!numberingFormats.Take(_originalNumberingFormats.Length).SequenceEqual(_originalNumberingFormats, StringComparer.Ordinal) ||
             !fonts.Take(_originalFonts.Length).SequenceEqual(_originalFonts, StringComparer.Ordinal) ||
             !fills.Take(_originalFills.Length).SequenceEqual(_originalFills, StringComparer.Ordinal) ||
             !borders.Take(_originalBorders.Length).SequenceEqual(_originalBorders, StringComparer.Ordinal) ||
             !cellFormats.Take(_originalCellFormats.Length).SequenceEqual(_originalCellFormats, StringComparer.Ordinal) ||
+            !differentialFormats.Take(_originalDifferentialFormats.Length).SequenceEqual(_originalDifferentialFormats, StringComparer.Ordinal) ||
             !otherChildren.SequenceEqual(_originalOtherChildren, StringComparer.Ordinal))
             throw new CodecException("style_preservation_failed", "Existing workbook style resources changed while applying a cell style.", "xl/styles.xml");
     }
@@ -579,6 +668,9 @@ internal sealed class XlsxCellStyleCodec
         if (color.HasTint && (!double.IsFinite(color.Tint) || color.Tint < -1 || color.Tint > 1)) throw Invalid($"Cell {location} {component} tint must be between -1 and 1.");
     }
 
+    private static bool IsAutomaticPatternBackground(BackgroundColor color) =>
+        color.Indexed?.Value == 64U && color.Rgb is null && color.Theme is null && color.Auto is null && color.Tint is null;
+
     private static IEnumerable<(string Name, SpreadsheetBorderEdgeStyle? Edge)> BorderEdges(SpreadsheetBorderStyle border)
     {
         yield return ("left", border.Left); yield return ("right", border.Right); yield return ("top", border.Top); yield return ("bottom", border.Bottom);
@@ -591,4 +683,5 @@ internal sealed class XlsxCellStyleCodec
     private static bool HasBorder(SpreadsheetBorderStyle border) => BorderEdges(border).Any(item => item.Edge is not null) || border.HasDiagonalUp || border.HasDiagonalDown || border.HasOutline;
     private static bool HasAlignment(SpreadsheetAlignmentStyle alignment) => alignment.HasHorizontal || alignment.HasVertical || alignment.HasWrapText || alignment.HasTextRotation || alignment.HasIndent || alignment.HasShrinkToFit || alignment.HasReadingOrder;
     private static CodecException Invalid(string message) => new("invalid_cell_style", message, "xl/styles.xml");
+    private static CodecException InvalidTableColor(string message) => new("invalid_worksheet_table", message, "xl/styles.xml");
 }

@@ -200,11 +200,12 @@ message SpreadsheetTableArtifact {
   // from this message.
   repeated SpreadsheetTableColumnArtifact columns = 14;
   // Bounded AutoFilter criteria keyed by zero-based table column index.
-  // Exact/grouped-date values, custom comparisons, dynamic, Top10, and icon
-  // filters are modeled; color profiles remain source-bound residual content.
+  // Exact/grouped-date values, custom comparisons, dynamic, Top10, icon, and
+  // bounded cell-fill/font-color filters are modeled.
   repeated SpreadsheetTableFilterArtifact filters = 15;
-  // Bounded AutoFilter sort state. Ordinary value and icon sorts are modeled;
-  // color/custom-list and locale-specific sort profiles remain opaque.
+  // Bounded AutoFilter sort state. Ordinary value, icon, and bounded
+  // cell-fill/font-color sorts are modeled; custom-list and locale-specific
+  // sort profiles remain opaque.
   SpreadsheetTableSortStateArtifact sort_state = 16;
 }
 
@@ -230,6 +231,7 @@ message SpreadsheetTableFilterArtifact {
     SpreadsheetTableDynamicFilterArtifact dynamic = 4;
     SpreadsheetTableTop10FilterArtifact top10 = 5;
     SpreadsheetTableIconArtifact icon = 6;
+    SpreadsheetTableColorArtifact color = 7;
   }
 }
 
@@ -286,8 +288,21 @@ message SpreadsheetTableIconArtifact {
   optional uint32 icon_id = 2;
 }
 
-// Sort range plus ordered value/icon-sort conditions. A condition reference is
-// one column contained in the sort range; condition order is significant.
+// A stable color semantic shared by table filters and sort conditions. The
+// target is explicit so protobuf's scalar defaults cannot silently turn an
+// omitted choice into a font-color request. The codec resolves/allocates the
+// package-local dxfId without exposing that address through the public wire.
+message SpreadsheetTableColorArtifact {
+  oneof target {
+    bool cell_color = 1;
+    bool font_color = 2;
+  }
+  SpreadsheetColor color = 3;
+}
+
+// Sort range plus ordered value/icon/color-sort conditions. A condition
+// reference is one column contained in the sort range; condition order is
+// significant.
 message SpreadsheetTableSortStateArtifact {
   string reference = 1;
   bool case_sensitive = 2;
@@ -299,6 +314,8 @@ message SpreadsheetTableSortConditionArtifact {
   bool descending = 2;
   // Absent means the backward-compatible ordinary value sort.
   SpreadsheetTableIconArtifact icon = 3;
+  // Mutually exclusive with icon; absence of both means value sort.
+  SpreadsheetTableColorArtifact color = 4;
 }
 
 message SpreadsheetTableSourceBinding {

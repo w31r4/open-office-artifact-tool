@@ -963,6 +963,101 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsAndImportsWorksheetTableColorFiltersAndSorts()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ColorTableExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var bytes = exported.File.ToByteArray();
+        var tableXml = System.Text.Encoding.UTF8.GetString(ReadEntry(bytes, "xl/tables/table1.xml"));
+        Assert.Contains("<x:colorFilter dxfId=\"0\" cellColor=\"1\" />", tableXml);
+        Assert.Contains("<x:colorFilter dxfId=\"1\" cellColor=\"0\" />", tableXml);
+        Assert.Contains("<x:sortCondition ref=\"B2:B3\" descending=\"1\" sortBy=\"fontColor\" dxfId=\"1\" />", tableXml);
+        Assert.Contains("<x:sortCondition ref=\"A2:A3\" sortBy=\"cellColor\" dxfId=\"0\" />", tableXml);
+        using (var stream = new MemoryStream(bytes))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+            var formats = document.WorkbookPart!.WorkbookStylesPart!.Stylesheet!.DifferentialFormats!.Elements<DifferentialFormat>().ToArray();
+            Assert.Equal(2, formats.Length);
+            Assert.Equal("FFE11D48", formats[0].Fill!.PatternFill!.ForegroundColor!.Rgb!.Value);
+            Assert.Equal(4U, formats[1].Font!.Color!.Theme!.Value);
+            Assert.Equal(-0.25D, formats[1].Font!.Color!.Tint!.Value);
+        }
+
+        var imported = Import(bytes);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.True(table.Source.Editable);
+        Assert.Equal(SpreadsheetTableColorArtifact.TargetOneofCase.CellColor, table.Filters[0].Color.TargetCase);
+        Assert.Equal("E11D48", table.Filters[0].Color.Color.Rgb);
+        Assert.Equal(SpreadsheetTableColorArtifact.TargetOneofCase.FontColor, table.Filters[1].Color.TargetCase);
+        Assert.Equal(4U, table.Filters[1].Color.Color.Theme);
+        Assert.Equal(-0.25D, table.Filters[1].Color.Color.Tint);
+        Assert.Equal(SpreadsheetTableColorArtifact.TargetOneofCase.FontColor, table.SortState.Conditions[0].Color.TargetCase);
+        Assert.Equal(SpreadsheetTableColorArtifact.TargetOneofCase.CellColor, table.SortState.Conditions[1].Color.TargetCase);
+    }
+
+    [Fact]
+    public void SourcePreservingWorksheetTableColorEditAppendsDifferentialFormatsAndKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ColorTableExportRequest().ToByteArray()));
+        var originalFormats = DifferentialFormatXml(first.File.ToByteArray());
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.Filters[0].Color.Color.Rgb = "22C55E";
+        table.SortState.Conditions[1].Color.Color.Rgb = "22C55E";
+        table.Filters[1].Color.Color.Rgb = "2563EB";
+        table.SortState.Conditions[0].Color.Color.Rgb = "2563EB";
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var formats = DifferentialFormatXml(exported.File.ToByteArray());
+        Assert.Equal(4, formats.Length);
+        Assert.Equal(originalFormats, formats[..originalFormats.Length]);
+        var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal("22C55E", edited.Filters[0].Color.Color.Rgb);
+        Assert.Equal("2563EB", edited.Filters[1].Color.Color.Rgb);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetTableColorProfiles()
+    {
+        var request = ColorTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].Color.ClearTarget();
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = ColorTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].Color.CellColor = false;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = ColorTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].Color.Color.Rgb = "xyz";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = ColorTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Conditions[0].Icon = new SpreadsheetTableIconArtifact { IconSet = "3Arrows" };
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
     public void UnsupportedColorWorksheetTableFilterRemainsByteExactAndReadOnly()
     {
         var request = TableExportRequest();
@@ -1436,6 +1531,45 @@ public sealed class XlsxCodecTests
         });
         table.SortState = sort;
         return request;
+    }
+
+    private static CodecRequest ColorTableExportRequest()
+    {
+        var request = TableExportRequest();
+        var table = request.Artifact.Workbook.Worksheets[0].Tables[0];
+        table.Filters.Add(new SpreadsheetTableFilterArtifact
+        {
+            ColumnIndex = 0,
+            Color = CellTableColor(new SpreadsheetColor { Rgb = "E11D48" }),
+        });
+        table.Filters.Add(new SpreadsheetTableFilterArtifact
+        {
+            ColumnIndex = 1,
+            Color = FontTableColor(new SpreadsheetColor { Theme = 4, Tint = -0.25D }),
+        });
+        var sort = new SpreadsheetTableSortStateArtifact { Reference = "A2:B3" };
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact
+        {
+            Reference = "B2:B3", Descending = true,
+            Color = FontTableColor(new SpreadsheetColor { Theme = 4, Tint = -0.25D }),
+        });
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact
+        {
+            Reference = "A2:A3",
+            Color = CellTableColor(new SpreadsheetColor { Rgb = "E11D48" }),
+        });
+        table.SortState = sort;
+        return request;
+    }
+
+    private static SpreadsheetTableColorArtifact CellTableColor(SpreadsheetColor color) => new() { CellColor = true, Color = color };
+    private static SpreadsheetTableColorArtifact FontTableColor(SpreadsheetColor color) => new() { FontColor = true, Color = color };
+
+    private static string[] DifferentialFormatXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart?.WorkbookStylesPart?.Stylesheet?.DifferentialFormats?.Elements<DifferentialFormat>().Select(item => item.OuterXml).ToArray() ?? [];
     }
 
     private static SpreadsheetTableArtifact TableArtifact()

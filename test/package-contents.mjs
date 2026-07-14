@@ -62,9 +62,6 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxThemeCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxTableCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Runtime/Program.cs",
-  "native/OpenChestnut/tests/OpenChestnut.Codec.Tests/DocxCodecTests.cs",
-  "native/OpenChestnut/tests/OpenChestnut.Codec.Tests/PptxCodecTests.cs",
-  "native/OpenChestnut/tests/OpenChestnut.Codec.Tests/XlsxCodecTests.cs",
   "scripts/build-open-chestnut.mjs",
   "scripts/build-openxml-wasm.mjs",
   "scripts/verify-open-chestnut-build.mjs",
@@ -111,7 +108,6 @@ for (const required of [
   "src/spreadsheet/pivots.mjs",
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
-  "native/OfficeBridge/tests/BridgeProtocolTests.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxDirectNumbering.cs",
   "skills/spreadsheets/SKILL.md",
   "skills/shared/open-chestnut-compat.mjs",
@@ -142,6 +138,7 @@ for (const required of [
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
+assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
 assert.ok(report.size < maxPackedBytes, `npm package archive unexpectedly large: ${report.size} (limit ${maxPackedBytes})`);
 assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);

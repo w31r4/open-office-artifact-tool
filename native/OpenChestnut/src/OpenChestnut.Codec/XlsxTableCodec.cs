@@ -13,9 +13,10 @@ namespace OpenChestnut.Codec;
 // Owns the bounded worksheet TableParts -> TableDefinitionPart graph. Cell
 // values/formulas remain owned by XlsxCodec; this module owns the table-level
 // calculated-column/totals metadata plus bounded value/custom/dynamic/date-group/
-// Top10/icon AutoFilters and ordinary cell-value/icon sort state. Query tables,
-// color filters, custom-list/color sorts, extensions, differential styles, and
-// other complex profiles remain opaque.
+// Top10/icon/color AutoFilters and ordinary cell-value/icon/color sort state.
+// Stable color semantics resolve through the workbook stylesheet without
+// exposing or mutating shared dxf indexes. Query tables, custom-list sorts,
+// extensions, and other complex differential-style profiles remain opaque.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -61,6 +62,7 @@ internal sealed class XlsxTableCodec
     };
     private static readonly string[] DateGroupings = ["year", "month", "day", "hour", "minute", "second"];
     private readonly WorksheetPart _worksheetPart;
+    private readonly XlsxCellStyleCodec _styles;
     private readonly string _worksheetPath;
     private readonly List<Entry> _entries = [];
 
@@ -75,9 +77,10 @@ internal sealed class XlsxTableCodec
         internal bool Dirty { get; set; }
     }
 
-    internal XlsxTableCodec(WorksheetPart worksheetPart)
+    internal XlsxTableCodec(WorksheetPart worksheetPart, XlsxCellStyleCodec styles)
     {
         _worksheetPart = worksheetPart;
+        _styles = styles;
         _worksheetPath = worksheetPart.Uri.OriginalString.TrimStart('/');
         var tableParts = worksheetPart.Worksheet?.Elements<TableParts>().ToArray() ?? [];
         if (tableParts.Length > 1) throw Invalid("Worksheet contains more than one tableParts collection.", _worksheetPath);
@@ -310,6 +313,9 @@ internal sealed class XlsxTableCodec
                 if (!ValidIcon(filter.Icon))
                     throw Invalid($"Worksheet table {table.Name} has an invalid icon filter.", location);
                 break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Color:
+                XlsxCellStyleCodec.ValidateTableColor(filter.Color, table.Name);
+                break;
             default:
                 throw Invalid($"Worksheet table {table.Name} filter must provide exactly one supported criteria type.", location);
         }
@@ -350,6 +356,9 @@ internal sealed class XlsxTableCodec
                 throw Invalid($"Worksheet table {table.Name} has an invalid or duplicate sort condition.", location);
             if (condition.Icon is not null && !ValidIcon(condition.Icon))
                 throw Invalid($"Worksheet table {table.Name} has an invalid icon-sort condition.", location);
+            if (condition.Icon is not null && condition.Color is not null)
+                throw Invalid($"Worksheet table {table.Name} sort condition cannot combine icon and color selectors.", location);
+            if (condition.Color is not null) XlsxCellStyleCodec.ValidateTableColor(condition.Color, table.Name);
         }
     }
 
@@ -384,7 +393,7 @@ internal sealed class XlsxTableCodec
 
     private static bool ValidFormula(string formula) => formula.Length is > 1 and <= 8193 && formula[0] == '=' && !formula.Any(char.IsControl);
 
-    private static bool TryRead(XDocument document, out SpreadsheetTableArtifact? artifact)
+    private bool TryRead(XDocument document, out SpreadsheetTableArtifact? artifact)
     {
         artifact = null;
         var root = document.Root;
@@ -502,7 +511,7 @@ internal sealed class XlsxTableCodec
         return true;
     }
 
-    private static bool TryReadFilter(XElement element, out SpreadsheetTableFilterArtifact? artifact)
+    private bool TryReadFilter(XElement element, out SpreadsheetTableFilterArtifact? artifact)
     {
         artifact = null;
         if (element.Name != Spreadsheet + "filterColumn" || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
@@ -583,6 +592,16 @@ internal sealed class XlsxTableCodec
             artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Icon = icon };
             return true;
         }
+        if (child.Name == Spreadsheet + "colorFilter")
+        {
+            if (child.Elements().Any() || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("dxfId" or "cellColor"))) ||
+                !uint.TryParse(child.Attribute("dxfId")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var differentialFormatId) ||
+                !TryBool(child.Attribute("cellColor")?.Value, defaultValue: true, out var cellColor) ||
+                !_styles.TryReadTableColor(differentialFormatId, cellColor, out var color)) return false;
+            artifact = new SpreadsheetTableFilterArtifact { ColumnIndex = columnIndex, Color = color };
+            return true;
+        }
         if (child.Name != Spreadsheet + "top10" || child.Elements().Any() || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
             (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("top" or "percent" or "val" or "filterVal"))) ||
             !TryBool(child.Attribute("top")?.Value, defaultValue: true, out var top) ||
@@ -616,7 +635,7 @@ internal sealed class XlsxTableCodec
         return true;
     }
 
-    private static bool TryReadSortState(XElement element, out SpreadsheetTableSortStateArtifact? artifact)
+    private bool TryReadSortState(XElement element, out SpreadsheetTableSortStateArtifact? artifact)
     {
         artifact = null;
         if (element.Name != Spreadsheet + "sortState" || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
@@ -629,12 +648,12 @@ internal sealed class XlsxTableCodec
         foreach (var condition in conditions)
         {
             if (condition.Name != Spreadsheet + "sortCondition" || condition.Elements().Any() || condition.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "descending" or "sortBy" or "iconSet" or "iconId"))) ||
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "descending" or "sortBy" or "iconSet" or "iconId" or "dxfId"))) ||
                 condition.Attribute("ref") is not XAttribute conditionReference ||
                 !TryBool(condition.Attribute("descending")?.Value, defaultValue: false, out var descending)) return false;
             var sortBy = condition.Attribute("sortBy")?.Value ?? "value";
             var iconSet = condition.Attribute("iconSet")?.Value;
-            if (!TryOptionalUInt(condition.Attribute("iconId")?.Value, out var iconId)) return false;
+            if (!TryOptionalUInt(condition.Attribute("iconId")?.Value, out var iconId) || !TryOptionalUInt(condition.Attribute("dxfId")?.Value, out var differentialFormatId)) return false;
             var artifactCondition = new SpreadsheetTableSortConditionArtifact { Reference = conditionReference.Value, Descending = descending };
             if (sortBy == "icon")
             {
@@ -644,7 +663,13 @@ internal sealed class XlsxTableCodec
                 if (!ValidIcon(icon)) return false;
                 artifactCondition.Icon = icon;
             }
-            else if (sortBy != "value" || iconSet is not null || iconId is not null) return false;
+            else if (sortBy is "cellColor" or "fontColor")
+            {
+                if (iconSet is not null || iconId is not null || differentialFormatId is null ||
+                    !_styles.TryReadTableColor(differentialFormatId.Value, sortBy == "cellColor", out var color)) return false;
+                artifactCondition.Color = color;
+            }
+            else if (sortBy != "value" || iconSet is not null || iconId is not null || differentialFormatId is not null) return false;
             sort.Conditions.Add(artifactCondition);
         }
         artifact = sort;
@@ -660,7 +685,7 @@ internal sealed class XlsxTableCodec
             throw Invalid("Worksheet table source binding does not match the validated source package.", entry.Path);
     }
 
-    private static void Patch(Entry entry, SpreadsheetTableArtifact table)
+    private void Patch(Entry entry, SpreadsheetTableArtifact table)
     {
         var root = entry.Document.Root!;
         root.SetAttributeValue("name", table.Name);
@@ -682,7 +707,7 @@ internal sealed class XlsxTableCodec
         entry.Dirty = true;
     }
 
-    private static XDocument Create(SpreadsheetTableArtifact table, uint tableId)
+    private XDocument Create(SpreadsheetTableArtifact table, uint tableId)
     {
         var root = new XElement(Spreadsheet + "table",
             new XAttribute(XNamespace.Xmlns + "x", Spreadsheet), new XAttribute("id", tableId), new XAttribute("name", table.Name),
@@ -704,7 +729,7 @@ internal sealed class XlsxTableCodec
         return element;
     }
 
-    private static XElement CreateAutoFilter(SpreadsheetTableArtifact table)
+    private XElement CreateAutoFilter(SpreadsheetTableArtifact table)
     {
         var element = new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference));
         element.Add(table.Filters.Select(CreateFilter));
@@ -712,7 +737,7 @@ internal sealed class XlsxTableCodec
         return element;
     }
 
-    private static XElement CreateSortState(SpreadsheetTableSortStateArtifact sort)
+    private XElement CreateSortState(SpreadsheetTableSortStateArtifact sort)
     {
         var element = new XElement(Spreadsheet + "sortState", new XAttribute("ref", sort.Reference));
         if (sort.CaseSensitive) element.SetAttributeValue("caseSensitive", 1);
@@ -726,12 +751,17 @@ internal sealed class XlsxTableCodec
                 child.SetAttributeValue("iconSet", condition.Icon.IconSet);
                 if (condition.Icon.HasIconId) child.SetAttributeValue("iconId", condition.Icon.IconId);
             }
+            else if (condition.Color is not null)
+            {
+                child.SetAttributeValue("sortBy", condition.Color.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.CellColor ? "cellColor" : "fontColor");
+                child.SetAttributeValue("dxfId", _styles.FindOrCreateTableColor(condition.Color, condition.Reference));
+            }
             return child;
         }));
         return element;
     }
 
-    private static XElement CreateFilter(SpreadsheetTableFilterArtifact filter)
+    private XElement CreateFilter(SpreadsheetTableFilterArtifact filter)
     {
         var element = new XElement(Spreadsheet + "filterColumn", new XAttribute("colId", filter.ColumnIndex));
         switch (filter.CriteriaCase)
@@ -776,6 +806,13 @@ internal sealed class XlsxTableCodec
                 var icon = new XElement(Spreadsheet + "iconFilter", new XAttribute("iconSet", filter.Icon.IconSet));
                 if (filter.Icon.HasIconId) icon.SetAttributeValue("iconId", filter.Icon.IconId);
                 element.Add(icon);
+                break;
+            }
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Color:
+            {
+                element.Add(new XElement(Spreadsheet + "colorFilter",
+                    new XAttribute("dxfId", _styles.FindOrCreateTableColor(filter.Color, $"column {filter.ColumnIndex}")),
+                    new XAttribute("cellColor", filter.Color.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.CellColor ? 1 : 0)));
                 break;
             }
         }
@@ -861,6 +898,9 @@ internal sealed class XlsxTableCodec
                 yield return filter.Icon.IconSet;
                 yield return filter.Icon.HasIconId ? filter.Icon.IconId.ToString(CultureInfo.InvariantCulture) : "no-icon";
                 break;
+            case SpreadsheetTableFilterArtifact.CriteriaOneofCase.Color:
+                foreach (var value in ColorSemantics(filter.Color)) yield return value;
+                break;
         }
     }
 
@@ -885,7 +925,24 @@ internal sealed class XlsxTableCodec
             yield return condition.Descending.ToString();
             yield return condition.Icon?.IconSet ?? "value";
             yield return condition.Icon is { HasIconId: true } ? condition.Icon.IconId.ToString(CultureInfo.InvariantCulture) : "no-icon-id";
+            foreach (var value in ColorSemantics(condition.Color)) yield return value;
         }
+    }
+
+    private static IEnumerable<string> ColorSemantics(SpreadsheetTableColorArtifact? color)
+    {
+        if (color is null) { yield return "no-color"; yield break; }
+        yield return color.TargetCase.ToString();
+        yield return color.Color?.SourceCase.ToString() ?? "no-source";
+        yield return color.Color?.SourceCase switch
+        {
+            SpreadsheetColor.SourceOneofCase.Rgb => color.Color.Rgb,
+            SpreadsheetColor.SourceOneofCase.Theme => color.Color.Theme.ToString(CultureInfo.InvariantCulture),
+            SpreadsheetColor.SourceOneofCase.Indexed => color.Color.Indexed.ToString(CultureInfo.InvariantCulture),
+            SpreadsheetColor.SourceOneofCase.Automatic => color.Color.Automatic.ToString(),
+            _ => string.Empty,
+        };
+        yield return color.Color is { HasTint: true } ? FormatDouble(color.Color.Tint) : "no-tint";
     }
 
     private static (uint Top, uint Left, uint Bottom, uint Right) Range(string reference, string location)
