@@ -26,6 +26,7 @@ const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-state
 const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-document-state");
 const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const MAX_XLSX_FORMULA_LENGTH = 8192;
+const MAX_XLSX_FORMULA_TOPOLOGY_CELLS = 1_048_576;
 const XLSX_FORMULA_METADATA_KEYS = new Set(["formulaType", "sharedIndex", "sharedRef", "arrayRef"]);
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
 const DEFAULT_THEME_COLORS = {
@@ -137,7 +138,7 @@ function formulaRangeBounds(reference, location) {
     if (coordinate.row >= 1_048_576 || coordinate.column >= 16_384) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference} exceeds XLSX limits.`, [], { code: "invalid_cell_formula" });
   }
   if (first.row > second.row || first.column > second.column) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference} must be top-left to bottom-right.`, [], { code: "invalid_cell_formula" });
-  return { top: first.row, left: first.column, bottom: second.row, right: second.column };
+  return { top: first.row, left: first.column, bottom: second.row, right: second.column, cellCount: (second.row - first.row + 1) * (second.column - first.column + 1) };
 }
 
 function normalizedFormula(value) {
@@ -231,9 +232,12 @@ function validateFormulaTopology(cells, sheetName) {
   const occupied = new Map();
   const sharedRoots = [...sharedGroups.values()].map((members) => members[0]);
   const topologyRoots = [...sharedRoots, ...cells.filter((item) => item.formulaMetadata?.kind === CellFormulaKind.ARRAY)];
+  let topologyCellCount = 0;
   for (const cell of topologyRoots) {
     const metadata = cell.formulaMetadata;
     const bounds = formulaRangeBounds(metadata.reference, `${sheetName}!${cellAddress(cell.row, cell.column)}`);
+    topologyCellCount += bounds.cellCount;
+    if (topologyCellCount > MAX_XLSX_FORMULA_TOPOLOGY_CELLS) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} native formula topology exceeds ${MAX_XLSX_FORMULA_TOPOLOGY_CELLS} cells.`, [], { code: "invalid_cell_formula" });
     const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `array:${cell.row}:${cell.column}`;
     if (metadata.kind === CellFormulaKind.ARRAY && (cell.row !== bounds.top || cell.column !== bounds.left)) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} legacy array formula must be the top-left anchor of ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
     for (let row = bounds.top; row <= bounds.bottom; row += 1) {
@@ -241,6 +245,8 @@ function validateFormulaTopology(cells, sheetName) {
         const key = `${row}:${column}`;
         if (occupied.has(key) && occupied.get(key) !== owner) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} formula range ${metadata.reference} overlaps another native formula range.`, [], { code: "invalid_cell_formula" });
         occupied.set(key, owner);
+        const nested = byCoordinate.get(key);
+        if (metadata.kind === CellFormulaKind.ARRAY && (row !== cell.row || column !== cell.column) && nested?.formula) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(row, column)} must not contain another formula inside legacy array range ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
       }
     }
   }

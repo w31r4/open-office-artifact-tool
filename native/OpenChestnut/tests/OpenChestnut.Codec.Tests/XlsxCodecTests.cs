@@ -368,6 +368,18 @@ public sealed class XlsxCodecTests
         var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.False(response.Ok);
         Assert.Equal("invalid_cell_formula", Assert.Single(response.Diagnostics).Code);
+
+        var nested = FormulaExportRequest();
+        nested.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 1, Column = 4, Formula = "=1+1", NumberValue = 2 });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(nested.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_cell_formula", Assert.Single(response.Diagnostics).Code);
+
+        var oversized = FormulaExportRequest();
+        oversized.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Array).FormulaMetadata.Reference = "A1:XFD1048576";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(oversized.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_cell_formula", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -377,6 +389,10 @@ public sealed class XlsxCodecTests
         var dataTable = Import(SetFormulaType(first.File.ToByteArray(), "C1", CellFormulaValues.DataTable));
         Assert.False(dataTable.Ok);
         Assert.Equal("unsupported_cell_formula", Assert.Single(dataTable.Diagnostics).Code);
+
+        var nestedArrayFormula = Import(AddFormulaCell(first.File.ToByteArray(), "E2", "1+1"));
+        Assert.False(nestedArrayFormula.Ok);
+        Assert.Equal("invalid_cell_formula", Assert.Single(nestedArrayFormula.Diagnostics).Code);
 
         var attributed = Import(SetFormulaCalculateCell(first.File.ToByteArray(), "C1"));
         Assert.True(attributed.Ok, string.Join("\n", attributed.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
@@ -555,6 +571,22 @@ public sealed class XlsxCodecTests
             var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
             var formula = worksheet.Descendants<Cell>().Single(cell => cell.CellReference?.Value == reference).CellFormula!;
             formula.CalculateCell = true;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddFormulaCell(byte[] bytes, string reference, string formulaText)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            var rowIndex = uint.Parse(new string(reference.SkipWhile(char.IsLetter).ToArray()));
+            var row = worksheet.Descendants<Row>().Single(item => item.RowIndex?.Value == rowIndex);
+            row.Append(new Cell { CellReference = reference, CellFormula = new CellFormula(formulaText), CellValue = new CellValue("2") });
             worksheet.Save();
         }
         return stream.ToArray();

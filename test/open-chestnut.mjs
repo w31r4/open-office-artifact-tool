@@ -319,6 +319,24 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_formula" && /contains 1 members/.test(error.message),
 );
 
+const invalidArrayWorkbook = Workbook.create();
+const invalidArraySheet = invalidArrayWorkbook.worksheets.add("InvalidArray");
+invalidArraySheet.getRange("D1:D2").formulas = [["=1+1"], ["=2+2"]];
+Object.assign(invalidArraySheet.store.get("D1"), { formulaType: "array", arrayRef: "D1:D2" });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidArrayWorkbook, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_formula" && /another formula inside legacy array range/.test(error.message),
+);
+
+const oversizedArrayWorkbook = Workbook.create();
+const oversizedArraySheet = oversizedArrayWorkbook.worksheets.add("OversizedArray");
+oversizedArraySheet.getRange("A1").formulas = [["=1+1"]];
+Object.assign(oversizedArraySheet.store.get("A1"), { formulaType: "array", arrayRef: "A1:XFD1048576" });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(oversizedArrayWorkbook, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_formula" && /topology exceeds 1048576 cells/.test(error.message),
+);
+
 const digitFunctionWorkbook = Workbook.create();
 const digitFunctionSheet = digitFunctionWorkbook.worksheets.add("DigitFunction");
 digitFunctionSheet.getRange("A1:A2").values = [[10], [100]];

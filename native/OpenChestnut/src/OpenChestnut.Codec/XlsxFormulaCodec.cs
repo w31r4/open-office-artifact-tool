@@ -13,6 +13,7 @@ namespace OpenChestnut.Codec;
 internal sealed class XlsxFormulaCodec
 {
     private const int MaxFormulaLength = 8_192;
+    private const ulong MaxFormulaTopologyCells = 1_048_576;
     private static readonly Regex CellReferencePattern = new(
         @"(?<![A-Za-z0-9_.])(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_. ]*))!)?(\$?)([A-Za-z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_])",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -43,6 +44,11 @@ internal sealed class XlsxFormulaCodec
             })
             .ToArray() ?? [];
         var records = new Dictionary<(uint Row, uint Column), FormulaRecord>();
+        var duplicate = formulas.GroupBy(item => item.Coordinate).FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} contains duplicate formula cell {CellReference(duplicate.Key.Row, duplicate.Key.Column)}.", sheetName);
+        var formulasByCoordinate = formulas.ToDictionary(item => item.Coordinate);
+        var topologyRanges = new List<(RangeBounds Bounds, string Owner, (uint Row, uint Column) Anchor, CellFormulaKind Kind)>();
 
         foreach (var entry in formulas.Where(item => FormulaType(item.Formula) != CellFormulaValues.Shared && FormulaType(item.Formula) != CellFormulaValues.Array))
         {
@@ -65,6 +71,7 @@ internal sealed class XlsxFormulaCodec
             if (string.IsNullOrWhiteSpace(master.Formula.Text) || master.Formula.Reference?.Value is not { Length: > 0 } reference)
                 throw Invalid(master.Cell, sheetName, "shared formula master requires both formula text and ref");
             var bounds = ParseRange(reference, sheetName);
+            topologyRanges.Add((bounds, $"shared si={group.Key}", master.Coordinate, CellFormulaKind.Shared));
             if (master.Coordinate != (bounds.Top, bounds.Left))
                 throw Invalid(master.Cell, sheetName, $"shared formula master must be the top-left cell of {reference}");
             var members = group.ToDictionary(item => item.Coordinate);
@@ -95,6 +102,7 @@ internal sealed class XlsxFormulaCodec
             if (entry.Formula.Reference?.Value is not { Length: > 0 } reference)
                 throw Invalid(entry.Cell, sheetName, "legacy array formula requires ref");
             var bounds = ParseRange(reference, sheetName);
+            topologyRanges.Add((bounds, $"array {CellReference(entry.Coordinate.Row, entry.Coordinate.Column)}", entry.Coordinate, CellFormulaKind.Array));
             if (entry.Coordinate != (bounds.Top, bounds.Left))
                 throw Invalid(entry.Cell, sheetName, $"legacy array formula must be anchored at the top-left cell of {reference}");
             var body = ValidateFormulaBody(entry.Formula.Text, entry.Cell.CellReference?.Value ?? "cell", required: true);
@@ -103,6 +111,27 @@ internal sealed class XlsxFormulaCodec
                 Kind = CellFormulaKind.Array,
                 Reference = reference,
             }, entry.Formula));
+        }
+
+        var occupied = new Dictionary<(uint Row, uint Column), string>();
+        ulong topologyCellCount = 0;
+        foreach (var topology in topologyRanges)
+        {
+            topologyCellCount = checked(topologyCellCount + topology.Bounds.CellCount);
+            if (topologyCellCount > MaxFormulaTopologyCells)
+                throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} native formula topology exceeds {MaxFormulaTopologyCells} cells.", sheetName);
+            for (var row = topology.Bounds.Top; row <= topology.Bounds.Bottom; row++)
+            {
+                for (var column = topology.Bounds.Left; column <= topology.Bounds.Right; column++)
+                {
+                    var coordinate = (row, column);
+                    if (occupied.TryGetValue(coordinate, out var previous) && previous != topology.Owner)
+                        throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} formula range owned by {topology.Owner} overlaps {previous} at {CellReference(row, column)}.", sheetName);
+                    occupied[coordinate] = topology.Owner;
+                    if (topology.Kind == CellFormulaKind.Array && coordinate != topology.Anchor && formulasByCoordinate.TryGetValue(coordinate, out var nested))
+                        throw Invalid(nested.Cell, sheetName, $"must not contain another formula inside legacy array range owned by {topology.Owner}");
+                }
+            }
         }
 
         return new XlsxFormulaCodec(sheetName, records);
@@ -122,6 +151,7 @@ internal sealed class XlsxFormulaCodec
             if (string.IsNullOrWhiteSpace(cell.FormulaMetadata.Reference))
                 throw Invalid(cell, sheet.Name, "formula metadata requires reference");
         }
+        var cellsByCoordinate = sheet.Cells.ToDictionary(cell => (cell.Row, cell.Column));
 
         foreach (var group in sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Shared)
                      .GroupBy(cell => cell.FormulaMetadata!.SharedIndex))
@@ -156,10 +186,14 @@ internal sealed class XlsxFormulaCodec
             .GroupBy(cell => cell.FormulaMetadata!.SharedIndex)
             .Select(group => group.First())
             .Concat(sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Array));
+        ulong topologyCellCount = 0;
         foreach (var cell in topologyRoots)
         {
             var metadata = cell.FormulaMetadata!;
             var bounds = ParseRange(metadata.Reference, sheet.Name);
+            topologyCellCount = checked(topologyCellCount + bounds.CellCount);
+            if (topologyCellCount > MaxFormulaTopologyCells)
+                throw Invalid(cell, sheet.Name, $"native formula topology exceeds {MaxFormulaTopologyCells} cells");
             var owner = metadata.Kind == CellFormulaKind.Shared ? $"shared si={metadata.SharedIndex}" : $"array {CellReference(cell.Row, cell.Column)}";
             if (metadata.Kind == CellFormulaKind.Array && (cell.Row != bounds.Top || cell.Column != bounds.Left))
                 throw Invalid(cell, sheet.Name, $"legacy array formula must be anchored at the top-left cell of {metadata.Reference}");
@@ -172,6 +206,9 @@ internal sealed class XlsxFormulaCodec
                     if (topology.TryGetValue((row, column), out var previous) && previous != owner)
                         throw Invalid(cell, sheet.Name, $"formula range {metadata.Reference} overlaps {previous}");
                     topology[(row, column)] = owner;
+                    if (metadata.Kind == CellFormulaKind.Array && (row != cell.Row || column != cell.Column) &&
+                        cellsByCoordinate.TryGetValue((row, column), out var nested) && !string.IsNullOrWhiteSpace(nested.Formula))
+                        throw Invalid(nested, sheet.Name, $"must not contain another formula inside legacy array range {metadata.Reference}");
                 }
             }
         }
