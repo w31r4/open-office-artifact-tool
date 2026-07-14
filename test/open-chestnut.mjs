@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -44,7 +44,7 @@ async function addQueryTableGraph(bytes) {
     '<Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="connections.xml"/></Relationships>',
   ));
   zip.file("xl/tables/_rels/table1.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/></Relationships>');
-  zip.file("xl/connections.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:connection id="7" name="Fixture warehouse" type="5" refreshedVersion="8" background="1" refreshOnLoad="0" saveData="1"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Status, Value FROM Metrics" commandType="2"/></x:connection></x:connections>');
+  zip.file("xl/connections.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture"><x:connection id="7" name="Fixture warehouse" description="Read-only warehouse source" type="5" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="0" saveData="1" savePassword="0" credentials="integrated"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Status, Value FROM Metrics" commandType="2"/><x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst></x:connection><x:connection id="8" name="Opaque companion" type="1" refreshedVersion="8"><x:dbPr connection="Provider=Opaque.Provider;Data Source=opaque.invalid" command="SELECT 1" commandType="2"/></x:connection></x:connections>');
   zip.file("xl/queryTables/queryTable1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse metrics" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Status" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField><x:queryTableField id="2" name="Value" dataBound="1" tableColumnId="2"/></x:queryTableFields><x:queryTableDeletedFields count="2"><x:deletedField name="Legacy Status"/><x:deletedField name="Legacy Value"/></x:queryTableDeletedFields><x:sortState ref="A2:B3" caseSensitive="1"><x:sortCondition ref="B2:B3" descending="1"/><x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/><x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>');
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
@@ -56,6 +56,8 @@ assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { numberFor
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { formulaMetadata: { kind: 1, sharedIndex: 7, reference: "C1:C2" } }))[0], 0x2a, "Spreadsheet formula topology must use additive cell field 5.");
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { style: { font: { bold: true } } }))[0], 0x32, "Spreadsheet static styles must use additive cell field 6.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { theme: { accent1Rgb: "0F766E" } }))[0], 0x22, "Spreadsheet workbook themes must use additive workbook field 4.");
+assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { connections: [{ connectionId: 7, name: "Warehouse", type: 5, refreshedVersion: 8 }] }))[0], 0x2a, "Spreadsheet workbook connections must use additive workbook field 5.");
+assert.deepEqual([...toBinary(SpreadsheetConnectionArtifactSchema, create(SpreadsheetConnectionArtifactSchema, { keepAlive: false }))], [0x30, 0x00], "Spreadsheet connection booleans must preserve explicit false values.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { tables: [{ name: "Sales" }] }))[0], 0x4a, "Spreadsheet worksheet tables must use additive worksheet field 9.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { source: { tablePartPath: "xl/tables/table1.xml" } }))[0], 0x6a, "Spreadsheet table source bindings must use additive table field 13.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { columns: [{ name: "Revenue" }] }))[0], 0x72, "Spreadsheet rich table columns must use additive table field 14.");
@@ -332,9 +334,22 @@ assert.match(colorRuleXml, /<x:sortCondition ref="A2:A3" sortBy="cellColor" dxfI
 
 const querySourceBytes = await addQueryTableGraph(exported.bytes);
 const querySourceZip = await JSZip.loadAsync(querySourceBytes);
-const queryConnectionXml = await querySourceZip.file("xl/connections.xml").async("uint8array");
 const queryRelationshipXml = await querySourceZip.file("xl/tables/_rels/table1.xml.rels").async("uint8array");
 const queryImported = await importXlsxWithOpenChestnut(querySourceBytes);
+assert.deepEqual(queryImported.connections, [{
+  connectionId: 7,
+  name: "Fixture warehouse",
+  type: 5,
+  refreshedVersion: 8,
+  description: "Read-only warehouse source",
+  keepAlive: false,
+  intervalMinutes: 30,
+  background: true,
+  refreshOnLoad: false,
+  saveData: true,
+}]);
+assert.equal(queryImported.resolve("connection/7"), queryImported.connections[0]);
+assert.match(queryImported.inspect({ kind: "connection" }).ndjson, /"name":"Fixture warehouse"/);
 const queryTable = queryImported.worksheets.getItem("Details").tables.getItemOrNullObject("StatusTable");
 assert.deepEqual(queryTable.queryTable, {
   name: "Warehouse metrics",
@@ -393,10 +408,33 @@ queryTable.queryTable.refresh.deletedFieldNames[0] = "Legacy State";
 queryTable.queryTable.refresh.sortState.caseSensitive = false;
 queryTable.queryTable.refresh.sortState.conditions[0].descending = false;
 queryTable.queryTable.refresh.sortState.conditions[1].iconId = 1;
+Object.assign(queryImported.connections[0], {
+  name: "Fixture warehouse curated",
+  description: "Curated without executing the source",
+  keepAlive: true,
+  intervalMinutes: 45,
+  background: false,
+  refreshOnLoad: true,
+  saveData: false,
+});
 const queryExported = await exportXlsxWithOpenChestnut(queryImported, { recalculate: false });
 const queryOutputZip = await JSZip.loadAsync(queryExported.bytes);
-assert.deepEqual(await queryOutputZip.file("xl/connections.xml").async("uint8array"), queryConnectionXml, "connection definitions must remain byte-exact");
 assert.deepEqual(await queryOutputZip.file("xl/tables/_rels/table1.xml.rels").async("uint8array"), queryRelationshipXml, "the table/query relationship must retain its source identity");
+const queryOutputConnectionXml = await queryOutputZip.file("xl/connections.xml").async("text");
+assert.match(queryOutputConnectionXml, /name="Fixture warehouse curated"/);
+assert.match(queryOutputConnectionXml, /description="Curated without executing the source"/);
+assert.match(queryOutputConnectionXml, /keepAlive="1"/);
+assert.match(queryOutputConnectionXml, /interval="45"/);
+assert.match(queryOutputConnectionXml, /background="0"/);
+assert.match(queryOutputConnectionXml, /refreshOnLoad="1"/);
+assert.match(queryOutputConnectionXml, /saveData="0"/);
+assert.match(queryOutputConnectionXml, /Provider=Fixture.Provider;Data Source=fixture.invalid/);
+assert.match(queryOutputConnectionXml, /SELECT Status, Value FROM Metrics/);
+assert.match(queryOutputConnectionXml, /savePassword="0"/);
+assert.match(queryOutputConnectionXml, /credentials="integrated"/);
+assert.match(queryOutputConnectionXml, /<fixture:connectionOpaque value="kept"/);
+assert.match(queryOutputConnectionXml, /id="8" name="Opaque companion" type="1"/);
+assert.match(queryOutputConnectionXml, /Provider=Opaque.Provider;Data Source=opaque.invalid/);
 const queryOutputXml = await queryOutputZip.file("xl/queryTables/queryTable1.xml").async("text");
 assert.match(queryOutputXml, /name="Warehouse metrics refreshed"/);
 assert.match(queryOutputXml, /backgroundRefresh="0"/);
@@ -418,6 +456,18 @@ assert.match(queryOutputXml, /<fixture:fieldOpaque value="kept"/);
 assert.match(queryOutputXml, /<fixture:sortOpaque value="kept"/);
 assert.match(queryOutputXml, /<fixture:opaque value="kept"/);
 const queryReimported = await importXlsxWithOpenChestnut(queryExported);
+assert.deepEqual(queryReimported.connections, [{
+  connectionId: 7,
+  name: "Fixture warehouse curated",
+  type: 5,
+  refreshedVersion: 8,
+  description: "Curated without executing the source",
+  keepAlive: true,
+  intervalMinutes: 45,
+  background: false,
+  refreshOnLoad: true,
+  saveData: false,
+}]);
 const queryReimportedTable = queryReimported.worksheets.getItem("Details").tables.getItemOrNullObject("QueriedStatusTable");
 assert.equal(queryReimportedTable.queryTable.name, "Warehouse metrics refreshed");
 assert.equal(queryReimportedTable.queryTable.backgroundRefresh, false);
@@ -441,6 +491,8 @@ assert.deepEqual(queryReimportedTable.queryTable.refresh.sortState, {
   ],
 });
 const queryJavaScriptFallback = await SpreadsheetFile.importXlsx(queryExported);
+assert.deepEqual(queryJavaScriptFallback.connections, queryReimported.connections);
+assert.match(queryJavaScriptFallback.inspect({ kind: "connection" }).ndjson, /"intervalMinutes":45/);
 assert.equal(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.name, "Warehouse metrics refreshed");
 assert.deepEqual(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.refresh.fields, queryReimportedTable.queryTable.refresh.fields);
 assert.deepEqual(queryJavaScriptFallback.worksheets.getItem("Details").tables.items[0].queryTable.refresh.deletedFieldNames, queryReimportedTable.queryTable.refresh.deletedFieldNames);
@@ -455,6 +507,24 @@ invalidQueryConnection.worksheets.getItem("Details").tables.items[0].queryTable.
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidQueryConnection, { recalculate: false }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /does not identify a connection/i.test(error.message),
+);
+const reboundWorkbookConnection = await importXlsxWithOpenChestnut(querySourceBytes);
+reboundWorkbookConnection.connections[0].connectionId = 8;
+await assert.rejects(
+  exportXlsxWithOpenChestnut(reboundWorkbookConnection, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_connection" && /id\/type\/version identity/i.test(error.message),
+);
+const removedWorkbookConnection = await importXlsxWithOpenChestnut(querySourceBytes);
+removedWorkbookConnection.connections.pop();
+await assert.rejects(
+  exportXlsxWithOpenChestnut(removedWorkbookConnection, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_connection" && /cannot remove imported connection/i.test(error.message),
+);
+const invalidWorkbookConnectionInterval = await importXlsxWithOpenChestnut(querySourceBytes);
+invalidWorkbookConnectionInterval.connections[0].intervalMinutes = 32_768;
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidWorkbookConnectionInterval, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_connection" && /bounded source-editable profile/i.test(error.message),
 );
 const removedQuery = await importXlsxWithOpenChestnut(querySourceBytes);
 removedQuery.worksheets.getItem("Details").tables.items[0].queryTable = undefined;
@@ -505,6 +575,12 @@ fabricatedQuerySheet.tables.add({ range: "A1:B2", name: "FabricatedQuery", query
 await assert.rejects(
   exportXlsxWithOpenChestnut(fabricatedQueryWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /cannot fabricate/i.test(error.message),
+);
+const fabricatedConnectionWorkbook = Workbook.create({ connections: [{ connectionId: 7, name: "Unsafe", type: 5, refreshedVersion: 8 }] });
+fabricatedConnectionWorkbook.worksheets.add("Connection").getRange("A1").values = [["x"]];
+await assert.rejects(
+  exportXlsxWithOpenChestnut(fabricatedConnectionWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_connection" && /cannot fabricate/i.test(error.message),
 );
 
 const imported = await importXlsxWithOpenChestnut(exported);

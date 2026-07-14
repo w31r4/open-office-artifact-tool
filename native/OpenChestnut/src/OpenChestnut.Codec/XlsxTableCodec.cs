@@ -16,9 +16,10 @@ namespace OpenChestnut.Codec;
 // Top10/icon/color AutoFilters, ordinary cell-value/icon/color sort state, and
 // a source-bound QueryTable root policy.
 // Stable color semantics resolve through the workbook stylesheet without
-// exposing or mutating shared dxf indexes. Query refresh history/fields,
-// connection definitions, custom-list sorts, extensions, and other complex
-// differential-style profiles remain opaque.
+// exposing or mutating shared dxf indexes. Query refresh history/fields use
+// bounded sub-codecs; workbook connection roots are shared through
+// XlsxConnectionCodec, while provider/command child graphs, custom-list sorts,
+// extensions, and other complex differential-style profiles remain opaque.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -66,6 +67,7 @@ internal sealed class XlsxTableCodec
     private readonly WorksheetPart _worksheetPart;
     private readonly WorkbookPart _workbookPart;
     private readonly XlsxCellStyleCodec _styles;
+    private readonly XlsxConnectionCodec _connections;
     private readonly string _worksheetPath;
     private readonly List<Entry> _entries = [];
 
@@ -81,11 +83,12 @@ internal sealed class XlsxTableCodec
         internal bool Dirty { get; set; }
     }
 
-    internal XlsxTableCodec(WorksheetPart worksheetPart, WorkbookPart workbookPart, XlsxCellStyleCodec styles)
+    internal XlsxTableCodec(WorksheetPart worksheetPart, WorkbookPart workbookPart, XlsxCellStyleCodec styles, XlsxConnectionCodec connections)
     {
         _worksheetPart = worksheetPart;
         _workbookPart = workbookPart;
         _styles = styles;
+        _connections = connections;
         _worksheetPath = worksheetPart.Uri.OriginalString.TrimStart('/');
         var tableParts = worksheetPart.Worksheet?.Elements<TableParts>().ToArray() ?? [];
         if (tableParts.Length > 1) throw Invalid("Worksheet contains more than one tableParts collection.", _worksheetPath);
@@ -205,7 +208,7 @@ internal sealed class XlsxTableCodec
         }
         var path = part.Uri.OriginalString.TrimStart('/');
         var tableReadable = TryRead(document, out var semantic);
-        var queryReadable = XlsxQueryTableCodec.TryLoad(part, _workbookPart, _styles, out var query);
+        var queryReadable = XlsxQueryTableCodec.TryLoad(part, _connections, _styles, out var query);
         var editable = tableReadable && queryReadable && !part.ExternalRelationships.Any();
         if (!editable) semantic = null;
         else if (query is not null) semantic!.QueryTable = query.Artifact.Clone();

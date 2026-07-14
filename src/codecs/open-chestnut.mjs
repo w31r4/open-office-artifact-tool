@@ -470,6 +470,44 @@ function sameWorkbookTheme(left, right) {
   return a.name === b.name && XLSX_THEME_COLOR_NAMES.every((name) => a.colors[name] === b.colors[name]);
 }
 
+const WORKBOOK_CONNECTION_BOOLEAN_FIELDS = ["keepAlive", "background", "refreshOnLoad", "saveData"];
+
+function publicWorkbookConnection(value) {
+  const connection = {
+    connectionId: Number(value?.connectionId ?? 0),
+    name: String(value?.name ?? ""),
+    type: Number(value?.type ?? 0),
+    refreshedVersion: Number(value?.refreshedVersion ?? 0),
+  };
+  if (value?.description !== undefined) connection.description = String(value.description);
+  for (const field of WORKBOOK_CONNECTION_BOOLEAN_FIELDS) if (value?.[field] !== undefined) connection[field] = Boolean(value[field]);
+  if (value?.intervalMinutes !== undefined) connection.intervalMinutes = Number(value.intervalMinutes);
+  return connection;
+}
+
+function connectionSnapshot(value) {
+  return publicWorkbookConnection(value);
+}
+
+function wireWorkbookConnection(value, source) {
+  return { ...publicWorkbookConnection(value), source };
+}
+
+function wireWorkbookConnections(workbook, state) {
+  const remaining = new Set(workbook.connections || []);
+  const output = [];
+  for (const slot of state?.connectionSlots || []) {
+    if (!remaining.delete(slot.connection)) {
+      throw new OpenChestnutCodecError(`Workbook cannot remove imported connection ${slot.connection.connectionId} in the bounded OpenChestnut slice.`, [], { code: "invalid_workbook_connection" });
+    }
+    output.push(JSON.stringify(connectionSnapshot(slot.connection)) === JSON.stringify(slot.publicSnapshot)
+      ? slot.wire
+      : wireWorkbookConnection(slot.connection, slot.wire.source));
+  }
+  output.push(...[...remaining].map((connection) => wireWorkbookConnection(connection)));
+  return output;
+}
+
 function tableColumnNames(table) {
   let bounds;
   try {
@@ -857,6 +895,7 @@ function workbookEnvelope(workbook) {
         id: workbook.id,
         dateSystem: workbook.dateSystem === "1904" ? WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 : WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1900,
         theme,
+        connections: wireWorkbookConnections(workbook, state),
         worksheets: workbook.worksheets.items.map((sheet) => ({
           id: sheet.id,
           name: sheet.name,
@@ -905,12 +944,19 @@ function workbookFromEnvelope(envelope) {
   }
   const source = envelope.payload.value;
   const importedTheme = workbookThemeFromWire(source.theme);
+  const importedConnections = (source.connections || []).map(publicWorkbookConnection);
   const workbook = Workbook.create({
     dateSystem: source.dateSystem === WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 ? "1904" : "1900",
     ...(importedTheme ? { theme: importedTheme } : {}),
+    connections: importedConnections,
   });
   workbook.id = source.id || workbook.id;
   const tablesBySheet = new Map();
+  const connectionSlots = (source.connections || []).map((wire, index) => ({
+    wire,
+    connection: workbook.connections[index],
+    publicSnapshot: connectionSnapshot(workbook.connections[index]),
+  }));
   for (const sourceSheet of source.worksheets) {
     const sheet = workbook.worksheets.add(sourceSheet.name);
     sheet.id = sourceSheet.id || sheet.id;
@@ -982,6 +1028,7 @@ function workbookFromEnvelope(envelope) {
       diagnostics: envelope.diagnostics,
       themeWire: source.theme,
       publicTheme: normalizeXlsxThemeConfig(workbook.theme),
+      connectionSlots,
       tablesBySheet,
     },
     writable: true,

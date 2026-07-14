@@ -3773,12 +3773,29 @@ function normalizeExcelDateSystem(value, fallback = "1900") {
   throw new Error(`Unsupported Excel date system ${value}; expected 1900 or 1904.`);
 }
 
+const WORKBOOK_CONNECTION_BOOLEAN_FIELDS = ["keepAlive", "background", "refreshOnLoad", "saveData"];
+
+function normalizeWorkbookConnection(value = {}) {
+  const connectionId = Number(value.connectionId ?? (typeof value.id === "number" ? value.id : String(value.id || "").match(/^connection\/(\d+)$/)?.[1]));
+  const connection = {
+    connectionId,
+    name: String(value.name ?? ""),
+    type: Number(value.type ?? 0),
+    refreshedVersion: Number(value.refreshedVersion ?? 0),
+  };
+  if (value.description !== undefined) connection.description = String(value.description);
+  for (const field of WORKBOOK_CONNECTION_BOOLEAN_FIELDS) if (value[field] !== undefined) connection[field] = Boolean(value[field]);
+  if (value.intervalMinutes !== undefined) connection.intervalMinutes = Number(value.intervalMinutes);
+  return connection;
+}
+
 export class Workbook {
   constructor(options = {}) {
     this.id = aid("wb");
     this.dateSystem = normalizeExcelDateSystem(options.dateSystem ?? options.date1904);
     this.theme = normalizeXlsxThemeConfig(options.theme || {});
     this.indexedColors = Array.isArray(options.indexedColors) ? [...options.indexedColors] : undefined;
+    this.connections = Array.isArray(options.connections) ? options.connections.map(normalizeWorkbookConnection) : [];
     this.worksheets = new WorksheetCollection(this);
     this.comments = new CommentsCollection(this);
     this.definedNames = new DefinedNameCollection(this);
@@ -3880,6 +3897,7 @@ export class Workbook {
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
     if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904", theme: this.theme.name });
     if (kinds.has("theme")) records.push({ kind: "workbookTheme", id: `${this.id}/theme`, name: this.theme.name, colors: this.theme.colors });
+    if (kinds.has("connection") || kinds.has("externalConnection")) records.push(...this.connections.map((connection) => ({ kind: "connection", id: `connection/${connection.connectionId}`, ...connection })));
     for (const sheet of this.worksheets) {
       if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
@@ -3908,6 +3926,16 @@ export class Workbook {
     const issues = [];
     if (this.dateSystem !== "1900" && this.dateSystem !== "1904") issues.push(verificationIssue("workbook", "invalidDateSystem", `Workbook date system ${this.dateSystem} is invalid; expected 1900 or 1904.`, { dateSystem: this.dateSystem }));
     if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
+    const connectionIds = new Set();
+    for (const connection of this.connections) {
+      if (!Number.isInteger(connection.connectionId) || connection.connectionId <= 0 || connectionIds.has(connection.connectionId) ||
+          !String(connection.name || "").trim() || connection.type !== 5 ||
+          !Number.isInteger(connection.refreshedVersion) || connection.refreshedVersion < 0 || connection.refreshedVersion > 255 ||
+          connection.intervalMinutes != null && (!Number.isInteger(connection.intervalMinutes) || connection.intervalMinutes < 0 || connection.intervalMinutes > 32_767)) {
+        issues.push(verificationIssue("workbook", "invalidConnection", `Workbook connection ${connection.connectionId} has invalid bounded metadata.`, { connectionId: connection.connectionId, name: connection.name }));
+      }
+      connectionIds.add(connection.connectionId);
+    }
     for (const definedName of this.definedNames.items) {
       const refersTo = String(definedName.refersTo || "").replace(/^=/, "");
       if (!formulaRefParts(refersTo)) issues.push(verificationIssue("workbook", "invalidDefinedName", `Defined name ${definedName.name} does not reference a valid A1 range.`, { id: definedName.id, name: definedName.name, refersTo: definedName.refersTo }));
@@ -4065,6 +4093,8 @@ export class Workbook {
 
   resolve(id) {
     if (id === this.id) return this;
+    const connection = this.connections.find((item) => id === item.connectionId || id === `connection/${item.connectionId}` || id === item.name);
+    if (connection) return connection;
     const thread = this.comments.getItem(id);
     if (thread) return thread;
     const definedName = this.definedNames.items.find((item) => item.id === id || item.name === id);
@@ -6505,6 +6535,11 @@ export class SpreadsheetFile {
     }
     const workbookRelationshipRecords = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
     const workbookRelationships = new Map(workbookRelationshipRecords.map((relationship) => [relationship.id, relationship]));
+    const connectionRelationships = workbookRelationshipRecords.filter((relationship) => relationship.type.endsWith("/connections") && String(relationship.targetMode || "").toLowerCase() !== "external");
+    if (connectionRelationships.length === 1) {
+      const connectionPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", connectionRelationships[0].target);
+      workbook.connections = parseNativeWorkbookConnections(await zip.file(connectionPath)?.async("text"));
+    }
     const themeRelationship = workbookRelationshipRecords.find((relationship) => relationship.type.endsWith("/theme") && String(relationship.targetMode || "").toLowerCase() !== "external");
     const themePath = themeRelationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", themeRelationship.target) : undefined;
     const nativeThemeXml = themePath ? await zip.file(themePath)?.async("text") : "";
@@ -7501,6 +7536,38 @@ function parseNativeQueryTable(xml, styles) {
   const refresh = parseNativeQueryTableRefresh(xml, styles);
   if (refresh) query.refresh = refresh;
   return query;
+}
+
+function parseNativeWorkbookConnections(xml) {
+  const connections = [];
+  const ids = new Set();
+  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?connection\b([^>]*)>/g)) {
+    const attrs = ooxmlXmlAttributes(match[1] || "");
+    const connectionId = Number(attrs.id);
+    if (!Number.isInteger(connectionId) || connectionId <= 0 || ids.has(connectionId)) return [];
+    ids.add(connectionId);
+    const type = Number(attrs.type);
+    const refreshedVersion = Number(attrs.refreshedVersion);
+    if (!attrs.name || attrs.name.length > 255 || type !== 5 ||
+        !Number.isInteger(refreshedVersion) || refreshedVersion < 0 || refreshedVersion > 255) continue;
+    const connection = { connectionId, name: attrs.name, type, refreshedVersion };
+    if (attrs.description != null) connection.description = attrs.description;
+    let recognized = true;
+    for (const field of WORKBOOK_CONNECTION_BOOLEAN_FIELDS) {
+      if (attrs[field] == null) continue;
+      const value = String(attrs[field]).toLowerCase();
+      if (!["0", "1", "false", "true"].includes(value)) { recognized = false; break; }
+      connection[field] = value === "1" || value === "true";
+    }
+    if (!recognized) continue;
+    if (attrs.interval != null) {
+      const interval = Number(attrs.interval);
+      if (!Number.isInteger(interval) || interval < 0 || interval > 32_767) continue;
+      connection.intervalMinutes = interval;
+    }
+    connections.push(connection);
+  }
+  return connections;
 }
 
 async function importNativeTableQuery(zip, tablePartPath, styles) {

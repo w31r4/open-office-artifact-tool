@@ -12,7 +12,8 @@ namespace OpenChestnut.Codec;
 // Owns the narrow, source-bound QueryTablePart decision for one worksheet
 // table. The public model sees root query policy, a stable connection ID, and
 // one bounded refresh/field profile. The source package continues to own
-// connection definitions, extensions, and all other XML. This module never
+// connection child graphs, extensions, and all other XML. Workbook-level
+// connection metadata is owned once by XlsxConnectionCodec. This module never
 // authors a new external-data graph or changes field identity/topology.
 internal sealed class XlsxQueryTableCodec
 {
@@ -26,7 +27,7 @@ internal sealed class XlsxQueryTableCodec
     };
     private readonly QueryTablePart _part;
     private readonly XDocument _document;
-    private readonly HashSet<uint> _connectionIds;
+    private readonly XlsxConnectionCodec _connections;
     private readonly RefreshProfile _refreshProfile;
     private readonly XElement? _refreshElement;
     private readonly NestedProfile _deletedFieldsProfile;
@@ -40,9 +41,7 @@ internal sealed class XlsxQueryTableCodec
         string relationshipId,
         XDocument document,
         byte[] queryBytes,
-        string connectionPartPath,
-        byte[] connectionBytes,
-        HashSet<uint> connectionIds,
+        XlsxConnectionCodec connections,
         RefreshProfile refreshProfile,
         XElement? refreshElement,
         NestedProfile deletedFieldsProfile,
@@ -54,7 +53,7 @@ internal sealed class XlsxQueryTableCodec
         _part = part;
         RelationshipId = relationshipId;
         _document = document;
-        _connectionIds = connectionIds;
+        _connections = connections;
         _refreshProfile = refreshProfile;
         _refreshElement = refreshElement;
         _deletedFieldsProfile = deletedFieldsProfile;
@@ -68,8 +67,8 @@ internal sealed class XlsxQueryTableCodec
             RelationshipId = relationshipId,
             XmlSha256 = Sha256(queryBytes),
             SemanticSha256 = SemanticSha256(artifact),
-            ConnectionPartPath = connectionPartPath,
-            ConnectionXmlSha256 = Sha256(connectionBytes),
+            ConnectionPartPath = connections.Path,
+            ConnectionXmlSha256 = connections.PartXmlSha256,
             Editable = true,
         };
         _sourceArtifact = artifact.Clone();
@@ -84,7 +83,7 @@ internal sealed class XlsxQueryTableCodec
     // Returns true when the table owns either no child relationship or exactly
     // one recognized QueryTablePart. False keeps the parent table in its prior
     // opaque/read-only profile without flattening an unknown graph.
-    internal static bool TryLoad(TableDefinitionPart tablePart, WorkbookPart workbookPart, XlsxCellStyleCodec styles, out XlsxQueryTableCodec? codec)
+    internal static bool TryLoad(TableDefinitionPart tablePart, XlsxConnectionCodec connections, XlsxCellStyleCodec styles, out XlsxQueryTableCodec? codec)
     {
         codec = null;
         if (tablePart.ExternalRelationships.Any()) return false;
@@ -92,25 +91,18 @@ internal sealed class XlsxQueryTableCodec
         if (children.Length == 0) return true;
         if (children.Length != 1 || children[0].OpenXmlPart is not QueryTablePart queryPart ||
             queryPart.Parts.Any() || queryPart.ExternalRelationships.Any()) return false;
-        var connectionsPart = workbookPart.ConnectionsPart;
-        if (connectionsPart is null) return false;
-
         if (!TryReadTableIdentity(tablePart, out var tableColumnIds, out var tableBounds) ||
             !TryReadPart(queryPart, out var queryBytes, out var queryDocument) ||
-            !TryReadPart(connectionsPart, out var connectionBytes, out var connectionDocument) ||
-            !TryReadConnections(connectionDocument!, out var connectionIds) ||
             !TryReadQuery(queryDocument!, tableColumnIds, styles, tableBounds, out var artifact, out var refreshProfile, out var refreshElement,
                 out var deletedFieldsProfile, out var deletedFieldsElement, out var sortProfile, out var sort) ||
-            !connectionIds.Contains(artifact!.ConnectionId)) return false;
+            !connections.Contains(artifact!.ConnectionId)) return false;
 
         codec = new XlsxQueryTableCodec(
             queryPart,
             children[0].RelationshipId,
             queryDocument!,
             queryBytes!,
-            connectionsPart.Uri.OriginalString.TrimStart('/'),
-            connectionBytes!,
-            connectionIds,
+            connections,
             refreshProfile,
             refreshElement,
             deletedFieldsProfile,
@@ -142,7 +134,7 @@ internal sealed class XlsxQueryTableCodec
         Validate(desired, Path);
         ValidateBinding(desired.Source);
         ValidateRefreshShape(desired.Refresh);
-        if (!_connectionIds.Contains(desired.ConnectionId))
+        if (!_connections.Contains(desired.ConnectionId))
             throw Invalid($"Worksheet query table connection_id {desired.ConnectionId} does not identify a connection in the validated source ConnectionsPart.", Path);
         if (SemanticSha256(desired).Equals(_sourceArtifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return;
         Patch(desired);
@@ -507,19 +499,6 @@ internal sealed class XlsxQueryTableCodec
         }
         names = result;
         return true;
-    }
-
-    private static bool TryReadConnections(XDocument document, out HashSet<uint> connectionIds)
-    {
-        connectionIds = [];
-        var root = document.Root;
-        if (root?.Name != Spreadsheet + "connections") return false;
-        foreach (var connection in root.Elements(Spreadsheet + "connection"))
-        {
-            if (!uint.TryParse(connection.Attribute("id")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id == 0 || !connectionIds.Add(id))
-                return false;
-        }
-        return connectionIds.Count > 0;
     }
 
     private static bool TryReadPart(OpenXmlPart part, out byte[]? bytes, out XDocument? document)

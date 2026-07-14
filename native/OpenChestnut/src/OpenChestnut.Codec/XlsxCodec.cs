@@ -44,6 +44,8 @@ internal static class XlsxCodec
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: false);
             var styles = new XlsxCellStyleCodec(workbookPart);
+            var connections = new XlsxConnectionCodec(workbookPart);
+            connections.Apply(envelope.Workbook.Connections, sourceBound: false);
             var nextTableId = 1U;
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
@@ -51,7 +53,7 @@ internal static class XlsxCodec
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 worksheetPart.Worksheet = BuildWorksheet(source, styles);
-                var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles);
+                var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
                 worksheetPart.Worksheet.Save();
@@ -88,6 +90,8 @@ internal static class XlsxCodec
         };
         var theme = new XlsxThemeCodec(workbookPart);
         if (theme.Read() is { } importedTheme) workbook.Theme = importedTheme;
+        var connections = new XlsxConnectionCodec(workbookPart);
+        workbook.Connections.Add(connections.Read());
         var diagnostics = new List<Diagnostic>();
         var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
         if (opaqueCount > 0)
@@ -105,7 +109,7 @@ internal static class XlsxCodec
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
             var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, ref cellCount, limits);
-            var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles);
+            var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
             target.Tables.Add(tables.Read());
             workbook.Worksheets.Add(target);
         }
@@ -132,7 +136,7 @@ internal static class XlsxCodec
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
         var ownsTheme = false;
         string? themePartPath = null;
-        var dirtyTablePartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var dirtyModeledPartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -151,6 +155,8 @@ internal static class XlsxCodec
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: true);
             var styles = new XlsxCellStyleCodec(workbookPart);
+            var connections = new XlsxConnectionCodec(workbookPart);
+            connections.Apply(envelope.Workbook.Connections, sourceBound: true);
             var nextTableId = 1U;
             for (var index = 0; index < sheets.Length; index++)
             {
@@ -160,12 +166,14 @@ internal static class XlsxCodec
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
                 sheet.Name = source.Name;
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles);
-                var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles);
+                var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
                 tables.Save();
-                dirtyTablePartPaths.UnionWith(tables.DirtyPartPaths);
+                dirtyModeledPartPaths.UnionWith(tables.DirtyPartPaths);
                 worksheetPart.Worksheet!.Save();
             }
+            connections.Save();
+            if (connections.Dirty) dirtyModeledPartPaths.Add(connections.Path);
             theme.Save();
             ownsTheme = theme.OwnsOpaqueTheme;
             themePartPath = theme.PartPath;
@@ -183,8 +191,8 @@ internal static class XlsxCodec
             outputOpaque,
             "opaque_content_not_preserved",
             ignoreRelationship: ownsTheme ? XlsxThemeCodec.IsThemeRelationship : null,
-            ignorePart: ownsTheme || dirtyTablePartPaths.Count > 0
-                ? item => (ownsTheme && themePartPath is not null && item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)) || dirtyTablePartPaths.Contains(item.Path)
+            ignorePart: ownsTheme || dirtyModeledPartPaths.Count > 0
+                ? item => (ownsTheme && themePartPath is not null && item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)) || dirtyModeledPartPaths.Contains(item.Path)
                 : null);
         return new XlsxExportResult(bytes,
         [

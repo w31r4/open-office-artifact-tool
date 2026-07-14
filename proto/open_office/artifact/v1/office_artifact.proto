@@ -139,6 +139,41 @@ message WorkbookArtifact {
   // theme-index colors. Fonts, format schemes, transforms, and extensions
   // remain source-bound residual content.
   SpreadsheetThemeArtifact theme = 4;
+  // Bounded root metadata for existing workbook connections. OpenChestnut
+  // never authors a connection graph from scratch; source-bound export keeps
+  // count/order/id/type/version fixed and edits only the explicitly modeled
+  // non-secret refresh policy. Provider strings, commands, credentials,
+  // paths, child graphs, and extensions remain source-preserved.
+  repeated SpreadsheetConnectionArtifact connections = 5;
+}
+
+// One recognized <connection> root from the workbook ConnectionsPart.
+// connection_id, type, and refreshed_version are source identity. Optional
+// scalar presence retains native omission rather than silently writing schema
+// defaults during an unrelated edit.
+message SpreadsheetConnectionArtifact {
+  uint32 connection_id = 1;
+  string name = 2;
+  uint32 type = 3;
+  uint32 refreshed_version = 4;
+  optional string description = 5;
+  optional bool keep_alive = 6;
+  optional uint32 interval_minutes = 7;
+  optional bool background = 8;
+  optional bool refresh_on_load = 9;
+  optional bool save_data = 10;
+  SpreadsheetConnectionSourceBinding source = 11;
+}
+
+// Hash-bound locator for one recognized connection inside a shared
+// ConnectionsPart. The part hash proves all entries came from the same source;
+// the element and semantic hashes bind an in-place edit to one source entry.
+message SpreadsheetConnectionSourceBinding {
+  string part_path = 1;
+  string part_xml_sha256 = 2;
+  string connection_xml_sha256 = 3;
+  string semantic_sha256 = 4;
+  bool editable = 5;
 }
 
 message SpreadsheetThemeArtifact {

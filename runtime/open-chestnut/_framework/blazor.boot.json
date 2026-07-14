@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenChestnut.Runtime.dll",
   "resources": {
-    "hash": "sha256-Yh3pk/SRrEiyQnm9Yq+29D39eq5PFaoHx2NSITrilVI=",
+    "hash": "sha256-M8fwRXt3J6XiHxfwtzZldbTbRnifN8l0v6dDnDphKtw=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -16,8 +16,8 @@
       "DocumentFormat.OpenXml.wasm": "sha256-JJYoLC56ZGsFxQQN9i+/QP7ULDufcjS8f1ElM3iH6uU=",
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-82R/5an/dGLM5/EzwN2L2MgdrDAnYKPFlsHRPNIGMBY=",
       "Google.Protobuf.wasm": "sha256-08KDlUutTAy8j48yJSrIONL2C1659sayIKkTUk6/U20=",
-      "OpenChestnut.Codec.wasm": "sha256-CZR30uz0cpcIxfOXftvnBmocwMstYtKpcWENNNcHT+0=",
-      "OpenChestnut.Runtime.wasm": "sha256-Bqcbs4HI33UuNksDE5Fnek6T8GN2Kx3MPcaepntxxCY=",
+      "OpenChestnut.Codec.wasm": "sha256-g+ygdMrILeHH/XTIC4lPSFz82eU3Zo8Mcr5YF+WBPls=",
+      "OpenChestnut.Runtime.wasm": "sha256-ahd/3LYMjnSQMAl0tr3Sh9KJ5ogl1nzQxptnDQsWLU0=",
       "System.Collections.Concurrent.wasm": "sha256-PjS0IHC3cqACW1NWl9PL//B936Cs32qXpBxz+YgUeGk=",
       "System.Collections.wasm": "sha256-zWQh+9awRirAjopZmiOPwQi9SGIi5TXMbJ/bsxjcCiA=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
@@ -34,7 +34,7 @@
       "System.Private.CoreLib.wasm": "sha256-p5uPs9C2+tJVicmiHoDxcwaHUOqcSkZ74fbI81AkMYY=",
       "System.Private.Uri.wasm": "sha256-qn0MelLc4ooWasVg6sM9spSHs3PRZAEz+h8YUUW9iEk=",
       "System.Private.Xml.wasm": "sha256-kbUJ7WtNjQP3PYv0RDxzIu9wM/5kT0bb3YR6nCyxeg8=",
-      "System.Private.Xml.Linq.wasm": "sha256-TInTRcSWPpDofU4jd/d52WhCHFtZ5Vo8EhRUnlXFfEU=",
+      "System.Private.Xml.Linq.wasm": "sha256-ivqdC6U8Q9hkYyRU+hgdRQQTugYTy8vlac7IW49RbLM=",
       "System.Runtime.InteropServices.JavaScript.wasm": "sha256-FUm8fwFoVd+a6NbqGbY9yTh1tPSH4kFqVtOxD4aJgtE=",
       "System.Security.Cryptography.wasm": "sha256-nlUqT5YPQbM5QeKaTFXzMUFIMmdhPA1TzTXCpTc6278=",
       "System.Text.RegularExpressions.wasm": "sha256-UjblYa/AaC1OLVgOciQpn3au0VpPrFTvUGMJ4MgrKQs=",

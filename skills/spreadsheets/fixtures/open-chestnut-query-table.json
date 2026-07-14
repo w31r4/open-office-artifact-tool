@@ -59,6 +59,15 @@
       "autoFormatId": 3,
       "applyFontFormats": true
     },
+    "connectionEdit": {
+      "name": "Fixture warehouse curated",
+      "description": "Curated without executing the source",
+      "keepAlive": true,
+      "intervalMinutes": 45,
+      "background": false,
+      "refreshOnLoad": true,
+      "saveData": false
+    },
     "refreshEdit": {
       "preserveSortFilterLayout": false,
       "headersInLastRefresh": false,
@@ -85,7 +94,7 @@
     "sheetName": "External Data",
     "range": "A1:B3",
     "renderFormat": "png",
-    "inspectKind": "workbook,sheet,table,style,computedStyle",
+    "inspectKind": "workbook,connection,sheet,table,style,computedStyle",
     "maxChars": 16000,
     "nativeRender": "off"
   }

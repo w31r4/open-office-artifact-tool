@@ -317,11 +317,25 @@ try {
       { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
     ],
   });
+  assert.deepEqual(queryResult.sourceConnections, [{
+    connectionId: 7,
+    name: "Fixture warehouse curated",
+    type: 5,
+    refreshedVersion: 8,
+    description: "Curated without executing the source",
+    keepAlive: true,
+    intervalMinutes: 45,
+    background: false,
+    refreshOnLoad: true,
+    saveData: false,
+  }]);
   assert.equal(queryResult.qa.summary.packageOk, true);
   assert.equal(queryResult.qa.summary.verifyOk, true);
   assert.equal(queryResult.qa.summary.visualQaOk, true);
   assert.equal(queryResult.qa.summary.nativeRender.status, "skipped");
+  assert.match(queryResult.qa.inspect.ndjson, /"kind":"connection"/);
   const queryWorkbook = await importXlsxWithOpenChestnut(await FileBlob.load(queryResult.workbookPath));
+  assert.deepEqual(queryWorkbook.connections, queryResult.sourceConnections);
   const runnableQueryTable = queryWorkbook.worksheets.getItem("External Data").tables.getItemOrNullObject("ExternalSales");
   assert.deepEqual(runnableQueryTable.queryTable, {
     name: "Warehouse sales refreshed",
@@ -365,6 +379,18 @@ try {
     },
   });
   const queryZip = await JSZip.loadAsync(await fs.readFile(queryResult.workbookPath));
+  const runnableConnectionXml = await queryZip.file("xl/connections.xml").async("text");
+  assert.match(runnableConnectionXml, /name="Fixture warehouse curated"/);
+  assert.match(runnableConnectionXml, /description="Curated without executing the source"/);
+  assert.match(runnableConnectionXml, /keepAlive="1"/);
+  assert.match(runnableConnectionXml, /interval="45"/);
+  assert.match(runnableConnectionXml, /background="0"/);
+  assert.match(runnableConnectionXml, /refreshOnLoad="1"/);
+  assert.match(runnableConnectionXml, /saveData="0"/);
+  assert.match(runnableConnectionXml, /Provider=Fixture.Provider;Data Source=fixture.invalid/);
+  assert.match(runnableConnectionXml, /savePassword="0"/);
+  assert.match(runnableConnectionXml, /credentials="integrated"/);
+  assert.match(runnableConnectionXml, /<fixture:connectionOpaque value="kept"/);
   const runnableQueryXml = await queryZip.file("xl/queryTables/queryTable1.xml").async("text");
   assert.match(runnableQueryXml, /disableRefresh="1"/);
   assert.match(runnableQueryXml, /backgroundRefresh="0"/);

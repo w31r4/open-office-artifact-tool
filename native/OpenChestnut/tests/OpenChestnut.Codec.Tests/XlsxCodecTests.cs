@@ -618,12 +618,24 @@ public sealed class XlsxCodecTests
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var source = AddQueryTableGraph(authored.File.ToByteArray());
         AssertOffice2021Valid(source);
-        var connectionXml = ReadEntry(source, "xl/connections.xml");
         var relationshipXml = ReadEntry(source, "xl/tables/_rels/table1.xml.rels");
 
         var imported = Import(source);
         Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        var connection = Assert.Single(imported.Artifact.Workbook.Connections);
+        Assert.Equal(7U, connection.ConnectionId);
+        Assert.Equal("Fixture warehouse", connection.Name);
+        Assert.Equal("Read-only warehouse source", connection.Description);
+        Assert.Equal(5U, connection.Type);
+        Assert.Equal(8U, connection.RefreshedVersion);
+        Assert.False(connection.KeepAlive);
+        Assert.Equal(30U, connection.IntervalMinutes);
+        Assert.True(connection.Background);
+        Assert.False(connection.RefreshOnLoad);
+        Assert.True(connection.SaveData);
+        Assert.Equal("xl/connections.xml", connection.Source.PartPath);
+        Assert.True(connection.Source.Editable);
         Assert.True(table.Source.Editable);
         var query = Assert.IsType<SpreadsheetTableQueryArtifact>(table.QueryTable);
         Assert.Equal("Warehouse sales", query.Name);
@@ -698,6 +710,13 @@ public sealed class XlsxCodecTests
         refreshSort.CaseSensitive = false;
         refreshSort.Conditions[0].Descending = false;
         refreshSort.Conditions[1].Icon.IconId = 1;
+        connection.Name = "Fixture warehouse curated";
+        connection.Description = "Curated without executing the source";
+        connection.KeepAlive = true;
+        connection.IntervalMinutes = 45;
+        connection.Background = false;
+        connection.RefreshOnLoad = true;
+        connection.SaveData = false;
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -708,8 +727,20 @@ public sealed class XlsxCodecTests
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var output = exported.File.ToByteArray();
         AssertOffice2021Valid(output);
-        Assert.Equal(connectionXml, ReadEntry(output, "xl/connections.xml"));
         Assert.Equal(relationshipXml, ReadEntry(output, "xl/tables/_rels/table1.xml.rels"));
+        var editedConnectionXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, "xl/connections.xml"));
+        Assert.Contains("name=\"Fixture warehouse curated\"", editedConnectionXml);
+        Assert.Contains("description=\"Curated without executing the source\"", editedConnectionXml);
+        Assert.Contains("keepAlive=\"1\"", editedConnectionXml);
+        Assert.Contains("interval=\"45\"", editedConnectionXml);
+        Assert.Contains("background=\"0\"", editedConnectionXml);
+        Assert.Contains("refreshOnLoad=\"1\"", editedConnectionXml);
+        Assert.Contains("saveData=\"0\"", editedConnectionXml);
+        Assert.Contains("Provider=Fixture.Provider;Data Source=fixture.invalid", editedConnectionXml);
+        Assert.Contains("SELECT Region, Revenue FROM Sales", editedConnectionXml);
+        Assert.Contains("savePassword=\"0\"", editedConnectionXml);
+        Assert.Contains("credentials=\"integrated\"", editedConnectionXml);
+        Assert.Contains("<fixture:connectionOpaque value=\"kept\"", editedConnectionXml);
         var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, "xl/queryTables/queryTable1.xml"));
         Assert.Contains("name=\"Warehouse sales refreshed\"", queryXml);
         Assert.Contains("backgroundRefresh=\"0\"", queryXml);
@@ -733,6 +764,14 @@ public sealed class XlsxCodecTests
 
         var reimported = Import(output);
         var edited = Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Tables);
+        var editedConnection = Assert.Single(reimported.Artifact.Workbook.Connections);
+        Assert.Equal("Fixture warehouse curated", editedConnection.Name);
+        Assert.Equal("Curated without executing the source", editedConnection.Description);
+        Assert.True(editedConnection.KeepAlive);
+        Assert.Equal(45U, editedConnection.IntervalMinutes);
+        Assert.False(editedConnection.Background);
+        Assert.True(editedConnection.RefreshOnLoad);
+        Assert.False(editedConnection.SaveData);
         Assert.Equal("WarehouseTable", edited.Name);
         Assert.Equal("Warehouse sales refreshed", edited.QueryTable.Name);
         Assert.False(edited.QueryTable.BackgroundRefresh);
@@ -753,6 +792,92 @@ public sealed class XlsxCodecTests
         Assert.Equal(1U, edited.QueryTable.Refresh.SortState.Conditions[1].Icon.IconId);
         Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
         Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void WorkbookConnectionsRejectFabricationIdentityTopologyAndBindingTamper()
+    {
+        var sourceFree = TableExportRequest();
+        sourceFree.Artifact.Workbook.Connections.Add(new SpreadsheetConnectionArtifact
+        {
+            ConnectionId = 7,
+            Name = "Fabricated",
+            Type = 5,
+            RefreshedVersion = 8,
+        });
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(sourceFree.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray());
+
+        var imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].ConnectionId = 8;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("id/type/version identity", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].Type = 6;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].RefreshedVersion = 256;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections.Clear();
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("add or remove recognized workbook connections", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].IntervalMinutes = 32_768;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("bounded source-editable profile", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].Source.ConnectionXmlSha256 = new string('0', 64);
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("source binding", Assert.Single(response.Diagnostics).Message);
+    }
+
+    [Fact]
+    public void OpaqueWorkbookConnectionStaysHiddenAndByteExactDuringQueryEdit()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray(), opaqueConnection: true);
+        AssertOffice2021Valid(source);
+        var connectionXml = ReadEntry(source, "xl/connections.xml");
+        var imported = Import(source);
+        Assert.Empty(imported.Artifact.Workbook.Connections);
+        var query = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).QueryTable;
+        Assert.NotNull(query);
+        query.Name = "Opaque connection retained";
+
+        var response = Export(imported.Artifact);
+        Assert.True(response.Ok, string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(response.File.ToByteArray());
+        Assert.Equal(connectionXml, ReadEntry(response.File.ToByteArray(), "xl/connections.xml"));
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections.Add(new SpreadsheetConnectionArtifact
+        {
+            ConnectionId = 7,
+            Name = "Lossy replacement",
+            Type = 5,
+            RefreshedVersion = 8,
+        });
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -2233,7 +2358,8 @@ public sealed class XlsxCodecTests
         bool addUnsupportedRelationship = false,
         bool opaqueRefresh = false,
         bool opaqueDeletedFields = false,
-        bool opaqueSort = false)
+        bool opaqueSort = false,
+        bool opaqueConnection = false)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -2242,11 +2368,13 @@ public sealed class XlsxCodecTests
         {
             var workbookPart = document.WorkbookPart!;
             var connectionsPart = workbookPart.AddNewPart<ConnectionsPart>("rIdConnections");
-            WritePart(connectionsPart, """
+            var connectionType = opaqueConnection ? 1 : 5;
+            WritePart(connectionsPart, $$"""
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                  <x:connection id="7" name="Fixture warehouse" type="5" refreshedVersion="8" background="1" refreshOnLoad="0" saveData="1">
+                <x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture">
+                  <x:connection id="7" name="Fixture warehouse" description="Read-only warehouse source" type="{{connectionType}}" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="0" saveData="1" savePassword="0" credentials="integrated">
                     <x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Region, Revenue FROM Sales" commandType="2"/>
+                    <x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst>
                   </x:connection>
                 </x:connections>
                 """);
