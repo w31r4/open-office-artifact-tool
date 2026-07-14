@@ -85,6 +85,16 @@
           "range": "A1:B2",
           "values": [["Codec", "Open XML SDK"], ["Runtime", "WebAssembly"]]
         }
+      ],
+      "tables": [
+        {
+          "range": "A1:B2",
+          "name": "CodecTable",
+          "style": "TableStyleMedium4",
+          "showFirstColumn": true,
+          "showRowStripes": false,
+          "showBandedColumns": true
+        }
       ]
     }
   ],

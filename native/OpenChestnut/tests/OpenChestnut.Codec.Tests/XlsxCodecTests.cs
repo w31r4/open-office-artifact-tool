@@ -523,6 +523,112 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsAndImportsBoundedWorksheetTable()
+    {
+        var request = TableExportRequest();
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var worksheetPart = document.WorkbookPart!.WorksheetParts.Single();
+            Assert.Single(worksheetPart.TableDefinitionParts);
+            Assert.Single(worksheetPart.Worksheet!.GetFirstChild<TableParts>()!.Elements<TablePart>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal("SalesTable", table.Name);
+        Assert.Equal("A1:B3", table.Reference);
+        Assert.Equal(["Region", "Revenue"], table.ColumnNames);
+        Assert.Equal("TableStyleMedium4", table.StyleName);
+        Assert.True(table.Source.Editable);
+        Assert.Equal("xl/worksheets/sheet1.xml", table.Source.WorksheetPartPath);
+        Assert.Equal("xl/tables/table1.xml", table.Source.TablePartPath);
+    }
+
+    [Fact]
+    public void SourcePreservingWorksheetTableEditKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.Name = "RevenueTable";
+        table.StyleName = "TableStyleMedium9";
+        table.ShowFirstColumn = true;
+        table.ShowColumnStripes = true;
+        table.ColumnNames[1] = "Net Revenue";
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var reimported = Import(exported.File.ToByteArray());
+        var edited = Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal("RevenueTable", edited.Name);
+        Assert.Equal("TableStyleMedium9", edited.StyleName);
+        Assert.True(edited.ShowFirstColumn);
+        Assert.True(edited.ShowColumnStripes);
+        Assert.Equal("Net Revenue", edited.ColumnNames[1]);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void UnsupportedWorksheetTableIsPreservedAndReplacementFailsClosed()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var bytes = MutateTable(first.File.ToByteArray());
+        var imported = Import(bytes);
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.False(table.Source.Editable);
+        Assert.Empty(table.Name);
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(bytes, "xl/tables/table1.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/tables/table1.xml"));
+        var replacement = TableArtifact();
+        replacement.Source = table.Source.Clone();
+        imported.Artifact.Workbook.Worksheets[0].Tables[0] = replacement;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetTableProfiles()
+    {
+        var request = TableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].ColumnNames.RemoveAt(1);
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = TableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Name = "A1";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -727,6 +833,57 @@ public sealed class XlsxCodecTests
                 Workbook = workbook,
             },
         };
+    }
+
+    private static CodecRequest TableExportRequest()
+    {
+        var request = ExportRequest();
+        var sheet = request.Artifact.Workbook.Worksheets[0];
+        sheet.Cells.Clear();
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 0, StringValue = "Region" });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, StringValue = "Revenue" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 0, StringValue = "North" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, NumberValue = 120 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 0, StringValue = "South" });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 1, NumberValue = 80 });
+        sheet.Tables.Add(TableArtifact());
+        return request;
+    }
+
+    private static SpreadsheetTableArtifact TableArtifact()
+    {
+        var table = new SpreadsheetTableArtifact
+        {
+            Id = "table/sales",
+            Name = "SalesTable",
+            Reference = "A1:B3",
+            HasHeaders = true,
+            ShowTotals = false,
+            ShowFilterButton = true,
+            StyleName = "TableStyleMedium4",
+            ShowRowStripes = true,
+        };
+        table.ColumnNames.Add("Region");
+        table.ColumnNames.Add("Revenue");
+        return table;
+    }
+
+    private static byte[] MutateTable(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/tables/table1.xml") ?? throw new InvalidOperationException("Worksheet table is missing.");
+            XDocument table;
+            using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
+            table.Root!.SetAttributeValue("published", "0");
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/tables/table1.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(table.ToString(SaveOptions.DisableFormatting));
+        }
+        return stream.ToArray();
     }
 
     private static SpreadsheetThemeArtifact CustomTheme() => new()

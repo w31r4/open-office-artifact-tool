@@ -155,9 +155,13 @@ export function createWorkbookFromFixture(fixture = {}) {
     if (sheetFixture.freezePanes?.columns != null) sheet.freezePanes.freezeColumns(sheetFixture.freezePanes.columns);
     for (const operation of sheetFixture.ranges || []) applyRangeOperation(sheet, operation);
     for (const table of sheetFixture.tables || []) {
-      const created = sheet.tables.add(table.range, table.hasHeaders !== false, table.name);
+      const created = sheet.tables.add({ range: table.range, name: table.name, hasHeaders: table.hasHeaders !== false, columnNames: table.columnNames });
       if (table.style) created.style = table.style;
       if (table.showTotals != null) created.showTotals = table.showTotals;
+      if (table.showFilterButton != null) created.showFilterButton = table.showFilterButton;
+      if (table.showFirstColumn != null) created.showFirstColumn = table.showFirstColumn;
+      if (table.showLastColumn != null) created.showLastColumn = table.showLastColumn;
+      if (table.showRowStripes != null) created.showRowStripes = table.showRowStripes;
       if (table.showBandedColumns != null) created.showBandedColumns = table.showBandedColumns;
     }
     for (const pivotFixture of sheetFixture.pivots || sheetFixture.pivotTables || []) sheet.pivotTables.add(pivotFixture);

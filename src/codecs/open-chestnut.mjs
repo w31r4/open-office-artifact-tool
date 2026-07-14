@@ -24,6 +24,7 @@ const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.
 const RUNTIME_URL = new URL("../../runtime/open-chestnut/main.mjs", import.meta.url);
 const MANIFEST_URL = new URL("../../runtime/open-chestnut/manifest.json", import.meta.url);
 const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-state");
+const TABLE_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-table-state");
 const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-document-state");
 const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const MAX_XLSX_FORMULA_LENGTH = 8192;
@@ -423,7 +424,6 @@ function unsupportedWorkbookFeatures(workbook) {
   if (workbook.indexedColors?.length) unsupported.push("custom indexed colors");
   for (const sheet of workbook.worksheets?.items || []) {
     const prefix = `worksheet ${sheet.name}`;
-    if (itemCount(sheet.tables)) unsupported.push(`${prefix} tables`);
     if (itemCount(sheet.pivotTables)) unsupported.push(`${prefix} pivot tables`);
     if (itemCount(sheet.charts)) unsupported.push(`${prefix} charts`);
     if (itemCount(sheet.images)) unsupported.push(`${prefix} images`);
@@ -466,6 +466,61 @@ function sameWorkbookTheme(left, right) {
   const a = normalizeXlsxThemeConfig(left);
   const b = normalizeXlsxThemeConfig(right);
   return a.name === b.name && XLSX_THEME_COLOR_NAMES.every((name) => a.colors[name] === b.colors[name]);
+}
+
+function tableColumnNames(table) {
+  let bounds;
+  try {
+    bounds = formulaRangeBounds(table.range, table.name || "worksheet table");
+  } catch (cause) {
+    throw new OpenChestnutCodecError(`Worksheet table ${table.name || "(unnamed)"} has an invalid range: ${cause.message}`, [], { code: "invalid_worksheet_table", cause });
+  }
+  const count = bounds.right - bounds.left + 1;
+  if (Array.isArray(table.columnNames)) return table.columnNames.map((value) => String(value));
+  const headers = table.showHeaders !== false && table.values?.[0] ? table.values[0] : [];
+  return Array.from({ length: count }, (_value, index) => String(headers[index] ?? "").trim() || `Column${index + 1}`);
+}
+
+function tableSnapshot(table) {
+  return {
+    id: table.id,
+    name: table.name,
+    reference: table.range,
+    hasHeaders: table.showHeaders !== false,
+    showTotals: Boolean(table.showTotals),
+    showFilterButton: table.showFilterButton !== false,
+    styleName: table.style || "TableStyleMedium2",
+    showFirstColumn: Boolean(table.showFirstColumn),
+    showLastColumn: Boolean(table.showLastColumn),
+    showRowStripes: table.showRowStripes ?? table.showHeaders !== false,
+    showColumnStripes: Boolean(table.showBandedColumns),
+    columnNames: tableColumnNames(table),
+  };
+}
+
+function sameTableSnapshot(table, snapshot) {
+  return JSON.stringify(tableSnapshot(table)) === JSON.stringify(snapshot);
+}
+
+function wireWorksheetTable(table) {
+  return { ...tableSnapshot(table), source: table[TABLE_STATE]?.wire?.source };
+}
+
+function wireWorksheetTables(sheet, state) {
+  const remaining = new Set(sheet.tables?.items || []);
+  const output = [];
+  for (const slot of state?.slots || []) {
+    if (!slot.table) {
+      output.push(slot.wire);
+      continue;
+    }
+    if (!remaining.delete(slot.table)) {
+      throw new OpenChestnutCodecError(`Worksheet ${sheet.name} cannot remove imported table ${slot.table.name} in the bounded OpenChestnut slice.`, [], { code: "invalid_worksheet_table" });
+    }
+    output.push(sameTableSnapshot(slot.table, slot.publicSnapshot) ? slot.wire : wireWorksheetTable(slot.table));
+  }
+  output.push(...[...remaining].map(wireWorksheetTable));
+  return output;
 }
 
 function wireCell(address, cell) {
@@ -529,6 +584,7 @@ function workbookEnvelope(workbook) {
           columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
           rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
           mergedRanges: [...(sheet.mergedRanges || [])],
+          tables: wireWorksheetTables(sheet, state?.tablesBySheet?.get(sheet.id)),
           cells: (() => {
             const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
             validateFormulaTopology(cells, sheet.name);
@@ -568,6 +624,7 @@ function workbookFromEnvelope(envelope) {
     ...(importedTheme ? { theme: importedTheme } : {}),
   });
   workbook.id = source.id || workbook.id;
+  const tablesBySheet = new Map();
   for (const sourceSheet of source.worksheets) {
     const sheet = workbook.worksheets.add(sourceSheet.name);
     sheet.id = sourceSheet.id || sheet.id;
@@ -600,6 +657,32 @@ function workbookFromEnvelope(envelope) {
         default: cell.value = null;
       }
     }
+    const slots = [];
+    for (const sourceTable of sourceSheet.tables || []) {
+      if (!sourceTable.name || !sourceTable.reference || !sourceTable.columnNames?.length) {
+        slots.push({ wire: sourceTable });
+        continue;
+      }
+      const table = sheet.tables.add({
+        id: sourceTable.id,
+        range: sourceTable.reference,
+        name: sourceTable.name,
+        hasHeaders: sourceTable.hasHeaders,
+        showTotals: sourceTable.showTotals,
+        showFilterButton: sourceTable.showFilterButton,
+        showBandedColumns: sourceTable.showColumnStripes,
+        style: sourceTable.styleName,
+        columnNames: [...sourceTable.columnNames],
+      });
+      table.showHeaders = sourceTable.hasHeaders;
+      table.showFirstColumn = sourceTable.showFirstColumn;
+      table.showLastColumn = sourceTable.showLastColumn;
+      table.showRowStripes = sourceTable.showRowStripes;
+      const publicSnapshot = tableSnapshot(table);
+      Object.defineProperty(table, TABLE_STATE, { configurable: true, value: { wire: sourceTable }, writable: true });
+      slots.push({ wire: sourceTable, table, publicSnapshot });
+    }
+    tablesBySheet.set(sheet.id, { slots });
   }
   Object.defineProperty(workbook, WORKBOOK_STATE, {
     configurable: true,
@@ -609,6 +692,7 @@ function workbookFromEnvelope(envelope) {
       diagnostics: envelope.diagnostics,
       themeWire: source.theme,
       publicTheme: normalizeXlsxThemeConfig(workbook.theme),
+      tablesBySheet,
     },
     writable: true,
   });

@@ -11,7 +11,7 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 const maxPackedBytes = 8_000_000;
-const maxUnpackedBytes = 16_500_000;
+const maxUnpackedBytes = 16_600_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
@@ -60,6 +60,7 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxCellStyleCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxNumberFormatCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxThemeCodec.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/XlsxTableCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Runtime/Program.cs",
   "native/OpenChestnut/tests/OpenChestnut.Codec.Tests/DocxCodecTests.cs",
   "native/OpenChestnut/tests/OpenChestnut.Codec.Tests/PptxCodecTests.cs",

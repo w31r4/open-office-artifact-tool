@@ -192,6 +192,14 @@ try {
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedRef, "C2:C3");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").formulaType, "array");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").arrayRef, "D2:D3");
+  const wasmTable = wasmWorkbook.worksheets.getItem("Details").tables.getItemOrNullObject("CodecTable");
+  assert.equal(wasmTable.isNullObject, undefined);
+  assert.equal(wasmTable.range, "A1:B2");
+  assert.equal(wasmTable.style, "TableStyleMedium4");
+  assert.equal(wasmTable.showFirstColumn, true);
+  assert.equal(wasmTable.showRowStripes, false);
+  assert.equal(wasmTable.showBandedColumns, true);
+  assert.deepEqual(wasmTable.columnNames, ["Codec", "Open XML SDK"]);
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
   const wasmThemeXml = await wasmZip.file("xl/theme/theme1.xml").async("text");
   assert.match(wasmThemeXml, /name="OpenChestnut Fixture"/);
@@ -205,6 +213,15 @@ try {
   assert.match(wasmWorksheetXml, /<x:f t="shared" ref="C2:C3" si="7">B2\*2<\/x:f>/);
   assert.match(wasmWorksheetXml, /<x:f t="shared" si="7"\s*\/>/);
   assert.match(wasmWorksheetXml, /<x:f t="array" ref="D2:D3">SUM\(B2:B3\)<\/x:f>/);
+  const wasmTableXml = await wasmZip.file("xl/tables/table1.xml").async("text");
+  assert.match(wasmTableXml, /displayName="CodecTable"/);
+  assert.match(wasmTableXml, /ref="A1:B2"/);
+  assert.match(wasmTableXml, /<x:tableColumn id="1" name="Codec"\s*\/>/);
+  assert.match(wasmTableXml, /showFirstColumn="1"/);
+  assert.match(wasmTableXml, /showRowStripes="0"/);
+  assert.match(wasmTableXml, /showColumnStripes="1"/);
+  assert.match(await wasmZip.file("xl/worksheets/sheet2.xml").async("text"), /<x:tableParts count="1"><x:tablePart\b[^>]*r:id="rIdTable1"\s*\/><\/x:tableParts>/);
+  assert.match(await wasmZip.file("xl/worksheets/_rels/sheet2.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table1\.xml"/);
   if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {

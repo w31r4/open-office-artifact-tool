@@ -44,12 +44,17 @@ internal static class XlsxCodec
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: false);
             var styles = new XlsxCellStyleCodec(workbookPart);
+            var nextTableId = 1U;
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
             {
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 worksheetPart.Worksheet = BuildWorksheet(source, styles);
+                var tables = new XlsxTableCodec(worksheetPart);
+                tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
+                tables.Save();
+                worksheetPart.Worksheet.Save();
                 sheets.Append(new Sheet
                 {
                     Id = workbookPart.GetIdOfPart(worksheetPart),
@@ -100,6 +105,8 @@ internal static class XlsxCodec
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
             var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, ref cellCount, limits);
+            var tables = new XlsxTableCodec(worksheetPart);
+            target.Tables.Add(tables.Read());
             workbook.Worksheets.Add(target);
         }
 
@@ -125,6 +132,7 @@ internal static class XlsxCodec
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
         var ownsTheme = false;
         string? themePartPath = null;
+        var dirtyTablePartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -143,6 +151,7 @@ internal static class XlsxCodec
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: true);
             var styles = new XlsxCellStyleCodec(workbookPart);
+            var nextTableId = 1U;
             for (var index = 0; index < sheets.Length; index++)
             {
                 var sheet = sheets[index];
@@ -151,6 +160,11 @@ internal static class XlsxCodec
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
                 sheet.Name = source.Name;
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles);
+                var tables = new XlsxTableCodec(worksheetPart);
+                tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
+                tables.Save();
+                dirtyTablePartPaths.UnionWith(tables.DirtyPartPaths);
+                worksheetPart.Worksheet!.Save();
             }
             theme.Save();
             ownsTheme = theme.OwnsOpaqueTheme;
@@ -169,8 +183,8 @@ internal static class XlsxCodec
             outputOpaque,
             "opaque_content_not_preserved",
             ignoreRelationship: ownsTheme ? XlsxThemeCodec.IsThemeRelationship : null,
-            ignorePart: ownsTheme && themePartPath is not null
-                ? item => item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)
+            ignorePart: ownsTheme || dirtyTablePartPaths.Count > 0
+                ? item => (ownsTheme && themePartPath is not null && item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)) || dirtyTablePartPaths.Contains(item.Path)
                 : null);
         return new XlsxExportResult(bytes,
         [
@@ -563,12 +577,16 @@ internal static class XlsxCodec
         if ((uint)workbook.Worksheets.Count > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"Workbook has {workbook.Worksheets.Count} sheets and exceeds max_sheets ({limits.MaxSheets}).");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         ulong cells = 0;
         foreach (var sheet in workbook.Worksheets)
         {
             if (string.IsNullOrWhiteSpace(sheet.Name) || sheet.Name.Length > 31 || sheet.Name.IndexOfAny(['[', ']', ':', '*', '?', '/', '\\']) >= 0)
                 throw new CodecException("invalid_sheet_name", $"Worksheet name {sheet.Name} is invalid for XLSX.");
             if (!names.Add(sheet.Name)) throw new CodecException("duplicate_sheet_name", $"Workbook contains duplicate worksheet name {sheet.Name}.");
+            XlsxTableCodec.ValidateWorksheet(sheet);
+            foreach (var table in sheet.Tables.Where(XlsxTableCodec.HasCompleteSemantics))
+                if (!tableNames.Add(table.Name)) throw new CodecException("invalid_worksheet_table", $"Workbook contains duplicate table name {table.Name}.", sheet.Name);
             cells = checked(cells + (ulong)sheet.Cells.Count);
             if (cells > limits.MaxCells) throw new CodecException("cell_budget_exceeded", $"Workbook exceeds max_cells ({limits.MaxCells}).", sheet.Name);
             foreach (var cell in sheet.Cells)

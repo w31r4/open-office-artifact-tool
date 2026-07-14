@@ -174,6 +174,35 @@ message WorksheetArtifact {
   repeated ColumnDimension column_dimensions = 6;
   repeated RowDimension row_dimensions = 7;
   repeated string merged_ranges = 8;
+  repeated SpreadsheetTableArtifact tables = 9;
+}
+
+// A bounded projection of one worksheet-owned TableDefinitionPart. Cell data
+// remains in the worksheet; this message owns the table range, columns, visual
+// toggles, and its package relationship/source identity.
+message SpreadsheetTableArtifact {
+  string id = 1;
+  string name = 2;
+  string reference = 3;
+  bool has_headers = 4;
+  bool show_totals = 5;
+  bool show_filter_button = 6;
+  string style_name = 7;
+  bool show_first_column = 8;
+  bool show_last_column = 9;
+  bool show_row_stripes = 10;
+  bool show_column_stripes = 11;
+  repeated string column_names = 12;
+  SpreadsheetTableSourceBinding source = 13;
+}
+
+message SpreadsheetTableSourceBinding {
+  string worksheet_part_path = 1;
+  string table_part_path = 2;
+  string relationship_id = 3;
+  string xml_sha256 = 4;
+  string semantic_sha256 = 5;
+  bool editable = 6;
 }
 
 message CellArtifact {

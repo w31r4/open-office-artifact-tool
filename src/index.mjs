@@ -909,8 +909,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including built-in/custom cell number formats plus validated shared and legacy-array formula topology, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell number-format codes, and expanded shared/legacy-array formula metadata through the bounded source-built bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and simple worksheet tables, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables through the source-built bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -2160,7 +2160,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including cell style.numberFormat codes and validated native shared/legacy-array formula metadata but no other direct style authoring." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, and simple worksheet tables with names, ranges, columns, filters, totals, and style toggles." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2168,7 +2168,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell number formats, expanded shared/legacy-array formula metadata, and source/opaque package evidence for fail-closed second export."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable simple worksheet tables, and source/opaque package evidence for fail-closed second export."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
@@ -2964,10 +2964,13 @@ class WorksheetTable {
     this.anchor = { top: range.bounds.top, left: range.bounds.left };
     this.range = rangeToAddress(range.bounds);
     this.hasHeaders = config.hasHeaders ?? hasHeaders;
-    this.showHeaders = this.hasHeaders;
+    this.showHeaders = config.showHeaders ?? this.hasHeaders;
     this.showTotals = Boolean(config.showTotals);
     this.showBandedColumns = Boolean(config.showBandedColumns);
     this.showFilterButton = config.showFilterButton ?? true;
+    this.showFirstColumn = Boolean(config.showFirstColumn);
+    this.showLastColumn = Boolean(config.showLastColumn);
+    this.showRowStripes = config.showRowStripes ?? this.showHeaders;
     this.style = config.style || "TableStyleMedium2";
     this.values = config.values ? config.values.map((row) => [...row]) : range.values.map((row) => [...row]);
     this.columnNames = Array.isArray(config.columnNames) ? config.columnNames.map((value) => String(value)) : undefined;
@@ -2992,7 +2995,7 @@ class WorksheetTable {
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {
-    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, columnNames: this.columnNames, values: this.values };
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, values: this.values };
   }
 
   toSvg(bounds) {
@@ -3002,7 +3005,7 @@ class WorksheetTable {
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, style: this.style, columnNames: this.columnNames, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, values: this.values }; }
 }
 
 class WorksheetTableCollection {
@@ -6720,7 +6723,7 @@ function tableXml(table, tablePartId) {
   const totalsRowShown = table.showTotals ? 1 : 0;
   const autoFilter = table.showFilterButton ? `<autoFilter ref="${attrEscape(ref)}"/>` : "";
   const styleName = table.style || "TableStyleMedium2";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tablePartId}" name="${attrEscape(table.name)}" displayName="${attrEscape(table.name)}" ref="${attrEscape(ref)}" headerRowCount="${headerRowCount}" totalsRowShown="${totalsRowShown}">${autoFilter}<tableColumns count="${table.columnCount || headers.length || 1}">${columns}</tableColumns><tableStyleInfo name="${attrEscape(styleName)}" showFirstColumn="0" showLastColumn="0" showRowStripes="${table.showHeaders ? 1 : 0}" showColumnStripes="${table.showBandedColumns ? 1 : 0}"/></table>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tablePartId}" name="${attrEscape(table.name)}" displayName="${attrEscape(table.name)}" ref="${attrEscape(ref)}" headerRowCount="${headerRowCount}" totalsRowShown="${totalsRowShown}">${autoFilter}<tableColumns count="${table.columnCount || headers.length || 1}">${columns}</tableColumns><tableStyleInfo name="${attrEscape(styleName)}" showFirstColumn="${table.showFirstColumn ? 1 : 0}" showLastColumn="${table.showLastColumn ? 1 : 0}" showRowStripes="${table.showRowStripes ? 1 : 0}" showColumnStripes="${table.showBandedColumns ? 1 : 0}"/></table>`;
 }
 
 function xlsxChartXml(chart) {
@@ -7026,6 +7029,9 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       hasHeaders: attrs.headerRowCount == null || !["0", "false", "off"].includes(String(attrs.headerRowCount).toLowerCase()),
       showTotals: [attrs.totalsRowShown, attrs.totalsRowCount].some((value) => value != null && !["0", "false", "off"].includes(String(value).toLowerCase())),
       showFilterButton: /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b/.test(xml),
+      showFirstColumn: styleAttrs.showFirstColumn != null && !["0", "false", "off"].includes(String(styleAttrs.showFirstColumn).toLowerCase()),
+      showLastColumn: styleAttrs.showLastColumn != null && !["0", "false", "off"].includes(String(styleAttrs.showLastColumn).toLowerCase()),
+      showRowStripes: styleAttrs.showRowStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showRowStripes).toLowerCase()),
       showBandedColumns: styleAttrs.showColumnStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showColumnStripes).toLowerCase()),
       style: styleAttrs.name || "TableStyleMedium2",
       columnNames,
