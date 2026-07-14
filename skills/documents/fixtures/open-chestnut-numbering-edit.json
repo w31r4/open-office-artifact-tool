@@ -1,7 +1,7 @@
 {
   "name": "open-chestnut-numbering-edit",
   "outputName": "open-chestnut-numbering-edit.docx",
-  "initialCodec": "js",
+  "initialCodec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
   "openChestnutEdits": [
     {
@@ -35,7 +35,8 @@
       "numberFormat": "upperLetter",
       "start": 3,
       "levelText": "%1)",
-      "numberingId": 88
+      "numberingId": 88,
+      "abstractNumberingId": 9
     },
     {
       "kind": "listItem",
@@ -44,7 +45,8 @@
       "numberFormat": "upperLetter",
       "start": 3,
       "levelText": "%1)",
-      "numberingId": 88
+      "numberingId": 88,
+      "abstractNumberingId": 9
     }
   ],
   "expectInspect": [

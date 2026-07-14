@@ -73,6 +73,7 @@ internal static class DocxNumberedParagraphCodec
         if (paragraph.Numbering is null) throw Invalid("Numbered paragraph metadata is missing.");
         if (paragraph.Numbering.NumberingId == 0) throw Invalid("Numbered paragraph numbering_id must be greater than zero.");
         if (paragraph.Numbering.NumberingId > int.MaxValue) throw Invalid("Numbered paragraph numbering_id exceeds the WordprocessingML signed integer range.");
+        if (paragraph.Numbering.AbstractNumberingId > int.MaxValue) throw Invalid("Numbered paragraph abstract_numbering_id exceeds the WordprocessingML signed integer range.");
         if (paragraph.Numbering.Level > 8) throw Invalid("Numbered paragraph level must be between 0 and 8.");
         if (paragraph.Numbering.NumberFormat.Length > 128) throw Invalid("Numbered paragraph number_format exceeds 128 characters.");
         if (paragraph.Numbering.LevelText.Length > 1024) throw Invalid("Numbered paragraph level_text exceeds 1024 characters.");

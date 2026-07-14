@@ -622,9 +622,10 @@ message DocumentSourceBinding {
 message DocumentParagraph {
   string text = 1;
   repeated DocumentRun runs = 2;
-  // Direct w:numPr identity plus the resolved source level definition. A
-  // bounded source-preserving slice can edit one complete, directly assigned
-  // numId/level paragraph group through an instance-local level override.
+  // Direct w:numPr identity plus its level definition. Source-free export can
+  // build a bounded text-marker numbering graph, while source-preserving
+  // export can edit one complete, directly assigned numId/level paragraph
+  // group through an instance-local level override.
   DocumentNumbering numbering = 3;
 }
 

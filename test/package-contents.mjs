@@ -106,6 +106,7 @@ for (const required of [
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
   "native/OfficeBridge/tests/BridgeProtocolTests.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/DocxDirectNumbering.cs",
   "skills/spreadsheets/SKILL.md",
   "skills/shared/open-chestnut-compat.mjs",
   "skills/shared/visual-baselines.mjs",

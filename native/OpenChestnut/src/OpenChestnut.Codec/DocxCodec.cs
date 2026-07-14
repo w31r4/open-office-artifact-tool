@@ -85,11 +85,13 @@ internal static class DocxCodec
                 "opaque_content_discarded",
                 $"Discarded {opaqueCount} opaque OPC parts or relationships under explicit allow_lossy policy."));
 
+        var numberingPlan = DocxDirectNumbering.CreatePlan(envelope.Document);
         using var stream = new MemoryStream();
         using (var package = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
         {
             var mainPart = package.AddMainDocumentPart();
             DocxDirectStyles.AddRequiredStyles(mainPart, envelope.Document);
+            DocxDirectNumbering.Apply(mainPart, numberingPlan);
             var context = new DocxPartContext(mainPart);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
@@ -455,13 +457,15 @@ internal static class DocxCodec
 
     private static W.Paragraph BuildParagraph(DocumentBlock block)
     {
-        if (block.Paragraph.Numbering is not null)
-            throw new CodecException(
-                "unsupported_document_features",
-                "Direct authoring of a numbered paragraph requires a numbering-definition graph and is outside the current source-bound slice.");
         var paragraph = new W.Paragraph();
+        var paragraphProperties = new W.ParagraphProperties();
         if (!string.IsNullOrWhiteSpace(block.StyleId))
-            paragraph.ParagraphProperties = new W.ParagraphProperties(new W.ParagraphStyleId { Val = block.StyleId });
+            paragraphProperties.Append(new W.ParagraphStyleId { Val = block.StyleId });
+        if (block.Paragraph.Numbering is { } numbering)
+            paragraphProperties.Append(new W.NumberingProperties(
+                new W.NumberingLevelReference { Val = checked((int)numbering.Level) },
+                new W.NumberingId { Val = checked((int)numbering.NumberingId) }));
+        if (paragraphProperties.ChildElements.Count > 0) paragraph.ParagraphProperties = paragraphProperties;
         if (block.Paragraph.Runs.Count == 0)
         {
             if (block.Paragraph.Text.Length > 0) paragraph.Append(new W.Run(Text(block.Paragraph.Text)));

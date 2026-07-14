@@ -456,6 +456,81 @@ function editedDocumentNumbering(block, source) {
   return { ...source, numberFormat, start, levelText };
 }
 
+function directDocumentNumberingPlan(document) {
+  const groups = new Map();
+  const usedNumberingIds = new Set();
+  const usedAbstractIds = new Set();
+  const result = new Map();
+  const invalid = (message) => {
+    throw new OpenChestnutCodecError(message, [], { code: "invalid_document_numbering" });
+  };
+  const integer = (value, name, { positive = false } = {}) => {
+    const normalized = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+    if (!Number.isInteger(normalized) || normalized < (positive ? 1 : 0) || normalized > 0x7fff_ffff) {
+      invalid(`${name} must be ${positive ? "a positive" : "a non-negative"} WordprocessingML signed integer.`);
+    }
+    return normalized;
+  };
+  const sameDefinition = (left, right) => left.numberFormat === right.numberFormat && left.start === right.start && left.levelText === right.levelText;
+
+  for (const block of document.blocks.filter((item) => item.kind === "listItem")) {
+    if (block.pictureBullet) {
+      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot directly author picture bullet ${block.id}.`, [], { code: "unsupported_document_features" });
+    }
+    if (block.numberingStyleId) {
+      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot directly author style-linked numbering for list item ${block.id}.`, [], { code: "unsupported_document_features" });
+    }
+    const level = integer(block.level, `Document list item ${block.id} level`);
+    if (level > 8) invalid(`Document list item ${block.id} level must be between 0 and 8.`);
+    const start = integer(block.start, `Document list item ${block.id} start`, { positive: true });
+    const numberFormat = String(block.numberFormat || "");
+    const levelText = String(block.levelText || "");
+    if (!numberFormat || numberFormat.length > 128) invalid(`Document list item ${block.id} numberFormat must contain 1 through 128 characters.`);
+    if (!levelText || levelText.length > 1_024) invalid(`Document list item ${block.id} levelText must contain 1 through 1024 characters.`);
+    const expectedListType = numberFormat === "bullet" ? "bullet" : "number";
+    if (block.listType !== expectedListType) invalid(`Document list item ${block.id} listType must be ${expectedListType} for numberFormat ${numberFormat}.`);
+
+    const explicitNumberingId = block.numberingId == null ? undefined : integer(block.numberingId, `Document list item ${block.id} numberingId`, { positive: true });
+    const explicitAbstractId = block.abstractNumberingId == null ? undefined : integer(block.abstractNumberingId, `Document list item ${block.id} abstractNumberingId`);
+    if (explicitNumberingId != null) usedNumberingIds.add(explicitNumberingId);
+    if (explicitAbstractId != null) usedAbstractIds.add(explicitAbstractId);
+    const key = explicitNumberingId == null ? `default:${block.listType}` : `native:${explicitNumberingId}`;
+    if (!groups.has(key)) groups.set(key, { blocks: [], definitions: new Map(), explicitNumberingId, abstractIds: new Set() });
+    const group = groups.get(key);
+    if (group.explicitNumberingId !== explicitNumberingId) invalid(`Document numbering group ${key} has conflicting numbering IDs.`);
+    if (explicitAbstractId != null) group.abstractIds.add(explicitAbstractId);
+    const definition = { numberFormat, start, levelText };
+    const existing = group.definitions.get(level);
+    if (existing && !sameDefinition(existing, definition)) invalid(`Document numbering ${explicitNumberingId ?? key} level ${level} has conflicting definitions.`);
+    group.definitions.set(level, definition);
+    group.blocks.push({ block, level, definition });
+  }
+
+  const allocate = (used, start = 1) => {
+    let candidate = start;
+    while (used.has(candidate)) candidate += 1;
+    if (candidate > 0x7fff_ffff) invalid("Document numbering ID space is exhausted.");
+    used.add(candidate);
+    return candidate;
+  };
+  const sharedDefinitions = new Map();
+  for (const [key, group] of groups) {
+    if (group.abstractIds.size > 1) invalid(`Document numbering ${group.explicitNumberingId ?? key} references conflicting abstract numbering IDs.`);
+    const numberingId = group.explicitNumberingId ?? allocate(usedNumberingIds);
+    const abstractNumberingId = group.abstractIds.size ? [...group.abstractIds][0] : allocate(usedAbstractIds);
+    for (const [level, definition] of group.definitions) {
+      const definitionKey = `${abstractNumberingId}:${level}`;
+      const existing = sharedDefinitions.get(definitionKey);
+      if (existing && !sameDefinition(existing, definition)) invalid(`Document abstract numbering ${abstractNumberingId} level ${level} has conflicting definitions.`);
+      sharedDefinitions.set(definitionKey, definition);
+    }
+    for (const { block, level, definition } of group.blocks) {
+      result.set(block, { numberingId, abstractNumberingId, level, ...definition });
+    }
+  }
+  return result;
+}
+
 function sameDocumentHyperlink(block, source) {
   if (block.kind !== "hyperlink" || block.text !== source.text) return false;
   if (block.styleId !== (source.styleId || "Normal")) return false;
@@ -546,7 +621,7 @@ function unchangedSourceBlock(block, original) {
   }
 }
 
-function documentBlock(block, original) {
+function documentBlock(block, original, directNumbering) {
   if (original && unchangedSourceBlock(block, original)) return original;
   const common = {
     id: original?.id || block.id,
@@ -566,7 +641,15 @@ function documentBlock(block, original) {
   if (block.kind === "listItem") {
     const source = original?.content.case === "paragraph" ? original.content.value : undefined;
     if (!source?.numbering) {
-      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author a numbering-definition graph for list item ${block.id}.`, [], { code: "unsupported_document_features" });
+      if (!directNumbering) {
+        throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice could not plan a numbering-definition graph for list item ${block.id}.`, [], { code: "invalid_document_numbering" });
+      }
+      const text = String(block.text ?? "");
+      if (text.length > 1_000_000) throw new OpenChestnutCodecError(`Document list item ${block.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_numbering" });
+      return {
+        ...common,
+        content: { case: "paragraph", value: { text, numbering: directNumbering } },
+      };
     }
     if (original.source?.editable === false) {
       throw new OpenChestnutCodecError(`Document list item ${block.id} is source-preserved but its paragraph topology is not editable.`, [], { code: "unsupported_document_edit" });
@@ -663,6 +746,7 @@ function documentEnvelope(document) {
   if (state && state.blocks.length !== document.blocks.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.blocks.length}-block topology; the document contains ${document.blocks.length} blocks.`, [], { code: "document_topology_changed" });
   }
+  const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
   return {
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     family: ArtifactFamily.DOCUMENT,
@@ -674,7 +758,7 @@ function documentEnvelope(document) {
       value: {
         id: document.id,
         name: document.name,
-        blocks: document.blocks.map((block, index) => documentBlock(block, state?.blocks[index])),
+        blocks: document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block))),
       },
     },
   };

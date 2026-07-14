@@ -38,7 +38,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
-| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables, source-bound hyperlinks/simple fields/table text, and numbered single-run paragraph text plus coherent direct numbering-definition group edits through the bundled OpenChestnut codec. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables and direct text-marker numbering graphs, plus source-bound hyperlinks/simple fields/table text and coherent numbering-definition group edits through the bundled OpenChestnut codec. |
 | `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation. |
 
 ### document details
@@ -257,6 +257,7 @@ Append a real numbered, character-bulleted, or relationship-backed picture-bulle
 - `start` (number) — Positive starting value for this numbering level.
 - `levelText` (string) — OOXML level text template using placeholders such as %1 or %2.
 - `numberingId` (number|string) — Optional list-instance identity used to group levels during export and preserved by native import.
+- `abstractNumberingId` (number|string) — Optional abstract numbering identity used to share one compatible multilevel definition across list instances; preserved by native import.
 - `numberingStyleId` (string) — Optional Word numbering-style identity resolved through styleLink/numStyleLink and flattened safely on second export.
 - `pictureBullet` (string|object) — Embedded PNG/JPEG/GIF base64 data URL, absolute non-fetched http(s) URI, or { dataUrl|uri, widthPt?, heightPt?, alt? } picture marker owned by the Numbering part.
 - `styleId` (string) — Named paragraph style ID.
@@ -590,11 +591,11 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 
 #### `exportDocxWithOpenChestnut`
 
-Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables, source-bound hyperlinks/simple fields/table text, and numbered single-run paragraph text plus coherent direct numbering-definition group edits through the bundled OpenChestnut codec.
+Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables and direct text-marker numbering graphs, plus source-bound hyperlinks/simple fields/table text and coherent numbering-definition group edits through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
-- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary, including complete explicit gridSpan/vMerge geometry, or carrying validated source bindings for hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraphs. Direct, top-level, complete numId/level groups may coherently edit numberFormat/start/levelText through an instance-local override; partial, linked, nested, or cross-part graphs fail closed.
+- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary. Source-free export accepts complete explicit gridSpan/vMerge geometry and direct text-marker list items grouped by numberingId/abstractNumberingId with consistent levels; picture bullets and style-linked numbering remain on the JavaScript codec. Imported hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraphs retain source bindings. Complete direct numId/level groups may coherently edit numberFormat/start/levelText through an instance-local override; partial, linked, nested, or cross-part edits fail closed.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 

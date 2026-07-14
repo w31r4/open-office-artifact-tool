@@ -215,7 +215,7 @@ try {
     outputDir: path.join(outputDir, "open-chestnut-numbering-edit"),
     nativeRender: nativeStatus.available ? "required" : "auto",
   });
-  assert.equal(numberingEdit.initialCodec, "js");
+  assert.equal(numberingEdit.initialCodec, "open-chestnut");
   assert.equal(numberingEdit.roundtripCodec, "open-chestnut");
   assert.equal(numberingEdit.qa.summary.packageOk, true);
   assert.equal(numberingEdit.qa.summary.verifyOk, true);

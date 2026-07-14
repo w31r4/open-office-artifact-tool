@@ -368,14 +368,21 @@ assert.equal(numberedSourceRoundTrip.blocks[0].numberFormat, "upperLetter");
 
 const groupedNumberingDocument = DocumentModel.create({ blocks: [] });
 groupedNumberingDocument.addListItem("First grouped item", {
-  listType: "number", numberFormat: "upperLetter", start: 3, levelText: "%1)", numberingId: 88,
+  listType: "number", numberFormat: "upperLetter", start: 3, levelText: "%1)", numberingId: 88, abstractNumberingId: 9,
 });
 groupedNumberingDocument.addListItem("Second grouped item", {
-  listType: "number", numberFormat: "upperLetter", start: 3, levelText: "%1)", numberingId: 88,
+  listType: "number", numberFormat: "upperLetter", start: 3, levelText: "%1)", numberingId: 88, abstractNumberingId: 9,
 });
-const groupedNumberingSource = await DocumentFile.exportDocx(groupedNumberingDocument);
+groupedNumberingDocument.addListItem("Nested grouped item", {
+  listType: "number", numberFormat: "lowerRoman", level: 2, start: 4, levelText: "%1.%2.%3.", numberingId: 88, abstractNumberingId: 9,
+});
+const groupedNumberingSource = await exportDocxWithOpenChestnut(groupedNumberingDocument);
+const groupedNumberingSourceZip = await JSZip.loadAsync(groupedNumberingSource.bytes);
+const groupedNumberingSourceXml = await groupedNumberingSourceZip.file("word/numbering.xml").async("text");
+assert.match(groupedNumberingSourceXml, /<w:abstractNum w:abstractNumId="9">[\s\S]*?<w:lvl w:ilvl="0">[\s\S]*?<w:numFmt w:val="upperLetter"\s*\/>[\s\S]*?<w:lvl w:ilvl="2">[\s\S]*?<w:numFmt w:val="lowerRoman"\s*\/>/);
+assert.match(groupedNumberingSourceXml, /<w:num w:numId="88"><w:abstractNumId w:val="9"\s*\/><\/w:num>/);
 const groupedNumberingImported = await importDocxWithOpenChestnut(groupedNumberingSource);
-for (const block of groupedNumberingImported.blocks) {
+for (const block of groupedNumberingImported.blocks.slice(0, 2)) {
   block.numberFormat = "lowerRoman";
   block.start = 5;
   block.levelText = "%1.";
@@ -388,7 +395,9 @@ assert.match(groupedNumberingXml, /<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0">[
 const groupedNumberingRoundTrip = await importDocxWithOpenChestnut(groupedNumberingEdited);
 assert.equal(groupedNumberingRoundTrip.blocks[0].text, "Edited first grouped item");
 assert.equal(groupedNumberingRoundTrip.blocks[1].text, "Second grouped item");
-assert.equal(groupedNumberingRoundTrip.blocks.every((block) => block.numberFormat === "lowerRoman" && block.start === 5 && block.levelText === "%1."), true);
+assert.equal(groupedNumberingRoundTrip.blocks.slice(0, 2).every((block) => block.numberFormat === "lowerRoman" && block.start === 5 && block.levelText === "%1."), true);
+assert.equal(groupedNumberingRoundTrip.blocks[2].level, 2);
+assert.equal(groupedNumberingRoundTrip.blocks[2].start, 4);
 
 const partialNumberingImported = await importDocxWithOpenChestnut(groupedNumberingSource);
 partialNumberingImported.blocks[0].start = 9;
@@ -396,6 +405,30 @@ await assert.rejects(
   exportDocxWithOpenChestnut(partialNumberingImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit" && /coherently/.test(error.message),
 );
+
+const conflictingDirectNumbering = DocumentModel.create({ blocks: [] });
+conflictingDirectNumbering.addListItem("Decimal", { listType: "number", numberFormat: "decimal", numberingId: 91, abstractNumberingId: 11 });
+conflictingDirectNumbering.addListItem("Roman", { listType: "number", numberFormat: "upperRoman", numberingId: 91, abstractNumberingId: 11 });
+await assert.rejects(
+  exportDocxWithOpenChestnut(conflictingDirectNumbering),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_document_numbering" && /conflicting definitions/.test(error.message),
+);
+
+const styleLinkedDirectNumbering = DocumentModel.create({ blocks: [] });
+styleLinkedDirectNumbering.addListItem("Style-linked", { listType: "number", numberingId: 92, numberingStyleId: "AgentNumbering" });
+await assert.rejects(
+  exportDocxWithOpenChestnut(styleLinkedDirectNumbering),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_features" && /style-linked/.test(error.message),
+);
+
+const automaticDirectNumbering = DocumentModel.create({ blocks: [] });
+automaticDirectNumbering.addListItem("First bullet", { listType: "bullet" });
+automaticDirectNumbering.addListItem("Second bullet", { listType: "bullet" });
+automaticDirectNumbering.addListItem("First number", { listType: "number" });
+const automaticDirectRoundTrip = await importDocxWithOpenChestnut(await exportDocxWithOpenChestnut(automaticDirectNumbering));
+assert.equal(automaticDirectRoundTrip.blocks[0].numberingId, automaticDirectRoundTrip.blocks[1].numberingId);
+assert.notEqual(automaticDirectRoundTrip.blocks[0].numberingId, automaticDirectRoundTrip.blocks[2].numberingId);
+assert.ok(automaticDirectRoundTrip.blocks.every((block) => block.numberingId > 0 && block.abstractNumberingId > 0));
 
 const inheritedNumberingZip = await JSZip.loadAsync(numberedSourceDocx.bytes);
 const inheritedDocumentXml = await inheritedNumberingZip.file("word/document.xml").async("text");

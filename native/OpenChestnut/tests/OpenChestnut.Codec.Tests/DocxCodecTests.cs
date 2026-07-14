@@ -329,6 +329,87 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void DirectAuthoringBuildsValidatedSharedMultilevelNumberingGraph()
+    {
+        var exported = Invoke(DirectNumberingExportRequest());
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var numbering = mainPart.NumberingDefinitionsPart!.Numbering!;
+            var abstractNumbering = Assert.Single(numbering.Elements<W.AbstractNum>());
+            Assert.Equal(9, abstractNumbering.AbstractNumberId!.Value);
+            var levels = abstractNumbering.Elements<W.Level>().ToArray();
+            Assert.Equal([0, 2], levels.Select(level => level.LevelIndex!.Value).ToArray());
+            Assert.Equal(W.NumberFormatValues.UpperLetter, levels[0].NumberingFormat!.Val!.Value);
+            Assert.Equal(3, levels[0].StartNumberingValue!.Val!.Value);
+            Assert.Equal("%1)", levels[0].LevelText!.Val!.Value);
+            Assert.Equal(W.NumberFormatValues.LowerRoman, levels[1].NumberingFormat!.Val!.Value);
+            Assert.Equal(5, levels[1].StartNumberingValue!.Val!.Value);
+            Assert.Equal("%1.%2.%3.", levels[1].LevelText!.Val!.Value);
+            var instances = numbering.Elements<W.NumberingInstance>().ToArray();
+            Assert.Equal([77, 78], instances.Select(instance => instance.NumberID!.Value).ToArray());
+            Assert.All(instances, instance => Assert.Equal(9, instance.AbstractNumId!.Val!.Value));
+            var paragraphs = mainPart.Document!.Body!.Elements<W.Paragraph>().ToArray();
+            Assert.Equal([77, 77, 78], paragraphs.Select(paragraph => paragraph.ParagraphProperties!.NumberingProperties!.NumberingId!.Val!.Value).ToArray());
+            Assert.Equal([0, 2, 0], paragraphs.Select(paragraph => paragraph.ParagraphProperties!.NumberingProperties!.NumberingLevelReference!.Val!.Value).ToArray());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Collection(imported.Artifact.Document.Blocks,
+            first =>
+            {
+                Assert.Equal(77u, first.Paragraph.Numbering.NumberingId);
+                Assert.Equal(9u, first.Paragraph.Numbering.AbstractNumberingId);
+                Assert.Equal("upperLetter", first.Paragraph.Numbering.NumberFormat);
+            },
+            second =>
+            {
+                Assert.Equal(2u, second.Paragraph.Numbering.Level);
+                Assert.Equal("lowerRoman", second.Paragraph.Numbering.NumberFormat);
+                Assert.Equal(5u, second.Paragraph.Numbering.Start);
+            },
+            third => Assert.Equal(78u, third.Paragraph.Numbering.NumberingId));
+    }
+
+    [Fact]
+    public void DirectNumberingAuthoringRejectsConflictingOrUnmodeledGraphs()
+    {
+        var conflictingLevel = DirectNumberingExportRequest();
+        conflictingLevel.Artifact.Document.Blocks[1].Paragraph.Numbering.Level = 0;
+        var conflictingLevelResponse = Invoke(conflictingLevel);
+        Assert.False(conflictingLevelResponse.Ok);
+        Assert.Equal("invalid_document_numbering", Assert.Single(conflictingLevelResponse.Diagnostics).Code);
+
+        var conflictingInstance = DirectNumberingExportRequest();
+        conflictingInstance.Artifact.Document.Blocks[1].Paragraph.Numbering.AbstractNumberingId = 10;
+        var conflictingInstanceResponse = Invoke(conflictingInstance);
+        Assert.False(conflictingInstanceResponse.Ok);
+        Assert.Equal("invalid_document_numbering", Assert.Single(conflictingInstanceResponse.Diagnostics).Code);
+
+        var linkedStyle = DirectNumberingExportRequest();
+        linkedStyle.Artifact.Document.Blocks[0].Paragraph.Numbering.NumberingStyleId = "AgentNumbering";
+        var linkedStyleResponse = Invoke(linkedStyle);
+        Assert.False(linkedStyleResponse.Ok);
+        Assert.Equal("unsupported_document_features", Assert.Single(linkedStyleResponse.Diagnostics).Code);
+
+        var zeroStart = DirectNumberingExportRequest();
+        zeroStart.Artifact.Document.Blocks[0].Paragraph.Numbering.Start = 0;
+        var zeroStartResponse = Invoke(zeroStart);
+        Assert.False(zeroStartResponse.Ok);
+        Assert.Equal("invalid_document_numbering", Assert.Single(zeroStartResponse.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NonconformantVerticalMergeRemainsSourcePreservedAndReadOnly()
     {
         var authored = Invoke(ExportRequest());
@@ -1259,6 +1340,57 @@ public sealed class DocxCodecTests
         };
         target.Paragraph.Runs.Add(new DocumentRun { Text = target.Paragraph.Text });
         document.Blocks.Add(target);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static CodecRequest DirectNumberingExportRequest()
+    {
+        static DocumentBlock Item(
+            string id,
+            string text,
+            uint numberingId,
+            uint abstractNumberingId,
+            uint level,
+            string numberFormat,
+            uint start,
+            string levelText)
+        {
+            var block = new DocumentBlock
+            {
+                Id = id,
+                StyleId = "Normal",
+                Paragraph = new DocumentParagraph
+                {
+                    Text = text,
+                    Numbering = new DocumentNumbering
+                    {
+                        NumberingId = numberingId,
+                        AbstractNumberingId = abstractNumberingId,
+                        Level = level,
+                        NumberFormat = numberFormat,
+                        Start = start,
+                        LevelText = levelText,
+                    },
+                },
+            };
+            return block;
+        }
+
+        var document = new DocumentArtifact { Id = "document/direct-numbering", Name = "Direct numbering fixture" };
+        document.Blocks.Add(Item("document/first", "First lettered item", 77, 9, 0, "upperLetter", 3, "%1)"));
+        document.Blocks.Add(Item("document/nested", "Nested roman item", 77, 9, 2, "lowerRoman", 5, "%1.%2.%3."));
+        document.Blocks.Add(Item("document/shared", "Second instance", 78, 9, 0, "upperLetter", 3, "%1)"));
         return new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
