@@ -38,7 +38,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
-| `exportDocxWithOpenChestnut` | api | Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, or fixed-topology table-cell text through the bundled OpenChestnut codec. |
 | `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation. |
 
 ### document details
@@ -588,11 +588,11 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 
 #### `exportDocxWithOpenChestnut`
 
-Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec.
+Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, or fixed-topology table-cell text through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
-- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings from the WASM importer.
+- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings for hyperlinks, simple fields, and fixed-topology table-cell text from the OpenChestnut importer.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 
