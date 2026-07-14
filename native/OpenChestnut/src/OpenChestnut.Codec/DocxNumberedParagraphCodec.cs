@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using OpenOffice.Artifact.Wire.V1;
 using W = DocumentFormat.OpenXml.Wordprocessing;

@@ -283,6 +283,7 @@ public sealed class DocxCodecTests
         Assert.Equal("lowerRoman", block.Paragraph.Numbering.NumberFormat);
         Assert.Equal(4u, block.Paragraph.Numbering.Start);
         Assert.Equal("%1.%2)", block.Paragraph.Numbering.LevelText);
+        Assert.Equal(string.Empty, block.Paragraph.Numbering.NumberingStyleId);
 
         block.Paragraph.Text = "Edited inherited list evidence";
         block.Paragraph.Runs[0].Text = block.Paragraph.Text;
@@ -316,6 +317,115 @@ public sealed class DocxCodecTests
         });
         Assert.Equal("Edited inherited list evidence", roundTrip.Artifact.Document.Blocks[1].Paragraph.Text);
         Assert.Equal(1u, roundTrip.Artifact.Document.Blocks[1].Paragraph.Numbering.Level);
+    }
+
+    [Fact]
+    public void SourcePreservingExportEditsNumberingStyleLinkedParagraphText()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddNumberingStyleLinkedNumbering(authored.File.ToByteArray())),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.True(block.Source.Editable);
+        Assert.Equal("DerivedList", block.StyleId);
+        Assert.Equal(6u, block.Paragraph.Numbering.NumberingId);
+        Assert.Equal(0u, block.Paragraph.Numbering.AbstractNumberingId);
+        Assert.Equal(2u, block.Paragraph.Numbering.Level);
+        Assert.Equal("upperRoman", block.Paragraph.Numbering.NumberFormat);
+        Assert.Equal(9u, block.Paragraph.Numbering.Start);
+        Assert.Equal("%1.%2.%3", block.Paragraph.Numbering.LevelText);
+        Assert.Equal("AgentNumbering", block.Paragraph.Numbering.NumberingStyleId);
+
+        block.Paragraph.Text = "Edited numbering-style link evidence";
+        block.Paragraph.Runs[0].Text = block.Paragraph.Text;
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = document.MainDocumentPart!;
+            Assert.Equal("Edited numbering-style link evidence", mainPart.Document!.Body!.Elements<W.Paragraph>().ElementAt(1).InnerText);
+            Assert.Equal(4, mainPart.StyleDefinitionsPart!.Styles!.Elements<W.Style>()
+                .Single(style => style.StyleId == "AgentNumbering")
+                .StyleParagraphProperties!.NumberingProperties!.NumberingId!.Val!.Value);
+            var abstracts = mainPart.NumberingDefinitionsPart!.Numbering!.Elements<W.AbstractNum>().ToArray();
+            Assert.Equal("AgentNumbering", abstracts.Single(item => item.AbstractNumberId?.Value == 0).NumberingStyleLink!.Val!.Value);
+            Assert.Equal("AgentNumbering", abstracts.Single(item => item.AbstractNumberId?.Value == 2).StyleLink!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.Equal("AgentNumbering", roundTrip.Artifact.Document.Blocks[1].Paragraph.Numbering.NumberingStyleId);
+        Assert.Equal(2u, roundTrip.Artifact.Document.Blocks[1].Paragraph.Numbering.Level);
+
+        block.Paragraph.Numbering.NumberingStyleId = "UnsafeReplacement";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void CyclicNumberingStyleLinkRemainsSourcePreservedAndReadOnly()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var source = AddNumberingStyleLinkedNumbering(authored.File.ToByteArray(), cyclic: true);
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.False(block.Source.Editable);
+        Assert.Equal(6u, block.Paragraph.Numbering.NumberingId);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(source, unchanged.File.ToByteArray());
+
+        block.Paragraph.Text = "Unsafe numbering-style cycle edit";
+        block.Paragraph.Runs[0].Text = block.Paragraph.Text;
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -962,7 +1072,7 @@ public sealed class DocxCodecTests
                     new W.StyleName { Val = "Derived list" },
                     new W.BasedOn { Val = "BaseList" },
                     new W.StyleParagraphProperties(
-                        new W.NumberingProperties(new W.NumberingLevelReference { Val = 1 })))
+                        new W.NumberingProperties(new W.NumberingLevelReference { Val = 8 })))
                 { Type = W.StyleValues.Paragraph, StyleId = "DerivedList" });
 
             var numberingPart = mainPart.AddNewPart<NumberingDefinitionsPart>();
@@ -971,12 +1081,78 @@ public sealed class DocxCodecTests
                     new W.Level(
                         new W.StartNumberingValue { Val = 1 },
                         new W.NumberingFormat { Val = W.NumberFormatValues.UpperLetter },
+                        new W.ParagraphStyleIdInLevel { Val = "BaseList" },
                         new W.LevelText { Val = "%1)" }) { LevelIndex = 0 },
                     new W.Level(
                         new W.StartNumberingValue { Val = 4 },
                         new W.NumberingFormat { Val = W.NumberFormatValues.LowerRoman },
+                        new W.ParagraphStyleIdInLevel { Val = "DerivedList" },
                         new W.LevelText { Val = "%1.%2)" }) { LevelIndex = 1 }) { AbstractNumberId = 9 },
                 new W.NumberingInstance(new W.AbstractNumId { Val = 9 }) { NumberID = 77 });
+            mainPart.Document.Save();
+            stylesPart.Styles.Save();
+            numberingPart.Numbering.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddNumberingStyleLinkedNumbering(byte[] bytes, bool cyclic = false)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var paragraph = mainPart.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            paragraph.ParagraphProperties = new W.ParagraphProperties(
+                new W.ParagraphStyleId { Val = "DerivedList" });
+
+            var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
+            stylesPart.Styles = new W.Styles(
+                new W.Style(
+                    new W.StyleName { Val = "Base list" },
+                    new W.StyleParagraphProperties(
+                        new W.NumberingProperties(new W.NumberingId { Val = 6 })))
+                { Type = W.StyleValues.Paragraph, StyleId = "BaseList" },
+                new W.Style(
+                    new W.StyleName { Val = "Derived list" },
+                    new W.BasedOn { Val = "BaseList" },
+                    new W.StyleParagraphProperties(
+                        new W.NumberingProperties(new W.NumberingLevelReference { Val = 8 })))
+                { Type = W.StyleValues.Paragraph, StyleId = "DerivedList" },
+                new W.Style(
+                    new W.StyleName { Val = "Agent numbering" },
+                    new W.StyleParagraphProperties(
+                        new W.NumberingProperties(new W.NumberingId { Val = cyclic ? 6 : 4 })))
+                { Type = W.StyleValues.Numbering, StyleId = "AgentNumbering" });
+
+            var numberingPart = mainPart.AddNewPart<NumberingDefinitionsPart>();
+            numberingPart.Numbering = new W.Numbering(
+                new W.AbstractNum(
+                    new W.MultiLevelType { Val = W.MultiLevelValues.Multilevel },
+                    new W.NumberingStyleLink { Val = "AgentNumbering" })
+                { AbstractNumberId = 0 },
+                new W.AbstractNum(
+                    new W.MultiLevelType { Val = W.MultiLevelValues.Multilevel },
+                    new W.StyleLink { Val = "AgentNumbering" },
+                    new W.Level(
+                        new W.StartNumberingValue { Val = 1 },
+                        new W.NumberingFormat { Val = W.NumberFormatValues.Decimal },
+                        new W.ParagraphStyleIdInLevel { Val = "BaseList" },
+                        new W.LevelText { Val = "%1." }) { LevelIndex = 0 },
+                    new W.Level(
+                        new W.StartNumberingValue { Val = 3 },
+                        new W.NumberingFormat { Val = W.NumberFormatValues.UpperRoman },
+                        new W.ParagraphStyleIdInLevel { Val = "DerivedList" },
+                        new W.LevelText { Val = "%1.%2.%3" }) { LevelIndex = 2 })
+                { AbstractNumberId = 2 },
+                new W.NumberingInstance(new W.AbstractNumId { Val = 2 }) { NumberID = 4 },
+                new W.NumberingInstance(
+                    new W.AbstractNumId { Val = 0 },
+                    new W.LevelOverride(
+                        new W.StartOverrideNumberingValue { Val = 9 }) { LevelIndex = 2 })
+                { NumberID = 6 });
             mainPart.Document.Save();
             stylesPart.Styles.Save();
             numberingPart.Numbering.Save();
