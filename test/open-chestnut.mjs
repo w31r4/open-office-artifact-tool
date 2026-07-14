@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -16,6 +16,18 @@ import {
   importXlsxWithOpenChestnut,
   openChestnutStatus,
 } from "../src/codecs/open-chestnut.mjs";
+
+function appendComplexColorDifferentialFormat(stylesXml) {
+  const collection = /<x:dxfs count="(\d+)">/.exec(stylesXml);
+  assert.ok(collection, "fixture requires an existing differential-style collection");
+  const id = Number(collection[1]);
+  const complexDxf = '<x:dxf><x:font><x:color rgb="FF2563EB" /></x:font><x:fill><x:patternFill patternType="solid"><x:fgColor rgb="FFE11D48" /><x:bgColor indexed="64" /></x:patternFill></x:fill></x:dxf>';
+  const xml = stylesXml
+    .replace(collection[0], `<x:dxfs count="${id + 1}">`)
+    .replace("</x:dxfs>", `${complexDxf}</x:dxfs>`);
+  assert.notEqual(xml, stylesXml, "fixture must append a complex differential style");
+  return { id, xml };
+}
 
 const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, {
   tabStops: [{ positionEmu: 120n, alignment: "left" }],
@@ -35,8 +47,11 @@ assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTa
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "dynamic", value: { type: "today" } } }))[0], 0x22, "Spreadsheet dynamic-filter criteria must use additive filter field 4.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "top10", value: { top: true, value: 10 } } }))[0], 0x2a, "Spreadsheet Top10-filter criteria must use additive filter field 5.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "icon", value: { iconSet: "3Arrows", iconId: 0 } } }))[0], 0x32, "Spreadsheet icon-filter criteria must use additive filter field 6.");
+assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "color", value: { target: { case: "cellColor", value: true }, color: { source: { case: "rgb", value: "E11D48" } } } } }))[0], 0x3a, "Spreadsheet color-filter criteria must use additive filter field 7.");
 assert.equal(toBinary(SpreadsheetTableIconArtifactSchema, create(SpreadsheetTableIconArtifactSchema, { iconId: 0 }))[0], 0x10, "Spreadsheet icon IDs must use presence-aware field 2 even when zero.");
+assert.equal(toBinary(SpreadsheetTableColorArtifactSchema, create(SpreadsheetTableColorArtifactSchema, { target: { case: "fontColor", value: true } }))[0], 0x10, "Spreadsheet color targets must use an explicit oneof rather than a scalar default.");
 assert.equal(toBinary(SpreadsheetTableSortConditionArtifactSchema, create(SpreadsheetTableSortConditionArtifactSchema, { icon: { iconSet: "3Arrows" } }))[0], 0x1a, "Spreadsheet icon-sort selectors must use additive condition field 3.");
+assert.equal(toBinary(SpreadsheetTableSortConditionArtifactSchema, create(SpreadsheetTableSortConditionArtifactSchema, { color: { target: { case: "cellColor", value: true } } }))[0], 0x22, "Spreadsheet color-sort selectors must use additive condition field 4.");
 assert.equal(toBinary(SpreadsheetTableValueFilterArtifactSchema, create(SpreadsheetTableValueFilterArtifactSchema, { dateGroups: [{ year: 2026, month: 7, grouping: "month" }] }))[0], 0x1a, "Spreadsheet grouped-date criteria must use additive value-filter field 3.");
 assert.equal(toBinary(SpreadsheetTableValueFilterArtifactSchema, create(SpreadsheetTableValueFilterArtifactSchema, { calendarType: "gregorian" }))[0], 0x22, "Spreadsheet grouped-date calendar must use additive value-filter field 4.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
@@ -240,6 +255,21 @@ iconTable.sortState = {
     { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Symbols2" },
   ],
 };
+const colorRules = workbook.worksheets.add("Color Rules");
+colorRules.getRange("A1:B3").values = [["Fill", "Font"], [1, 5], [2, 3]];
+const colorTable = colorRules.tables.add({ range: "A1:B3", name: "ColorRuleTable", hasHeaders: true, style: "TableStyleMedium8" });
+colorTable.filters = [
+  { columnIndex: 0, kind: "color", target: "cell", color: "#E11D48" },
+  { columnIndex: 1, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
+];
+colorTable.sortState = {
+  reference: "A2:B3",
+  caseSensitive: false,
+  conditions: [
+    { reference: "B2:B3", descending: true, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
+    { reference: "A2:A3", descending: false, kind: "color", target: "cell", color: "#E11D48" },
+  ],
+};
 
 const concurrentWorkbook = Workbook.create();
 concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
@@ -267,12 +297,17 @@ assert.match(iconRuleXml, /<x:iconFilter iconSet="3Arrows" iconId="0"\s*\/>/);
 assert.match(iconRuleXml, /<x:iconFilter iconSet="3Flags"\s*\/>/);
 assert.match(iconRuleXml, /<x:sortCondition ref="B2:B3" descending="1" sortBy="icon" iconSet="5Rating" iconId="4"\s*\/>/);
 assert.match(iconRuleXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Symbols2"\s*\/>/);
+const colorRuleXml = await exportedZip.file("xl/tables/table4.xml").async("text");
+assert.match(colorRuleXml, /<x:colorFilter dxfId="0" cellColor="1"\s*\/>/);
+assert.match(colorRuleXml, /<x:colorFilter dxfId="1" cellColor="0"\s*\/>/);
+assert.match(colorRuleXml, /<x:sortCondition ref="B2:B3" descending="1" sortBy="fontColor" dxfId="1"\s*\/>/);
+assert.match(colorRuleXml, /<x:sortCondition ref="A2:A3" sortBy="cellColor" dxfId="0"\s*\/>/);
 
 const imported = await importXlsxWithOpenChestnut(exported);
 assert.equal(imported.dateSystem, "1904");
 assert.equal(imported.theme.name, "OpenChestnut Theme");
 assert.equal(imported.theme.colors.accent1, "#0F766E");
-assert.equal(imported.worksheets.items.length, 4);
+assert.equal(imported.worksheets.items.length, 5);
 const importedTable = imported.worksheets.getItem("Details").tables.getItemOrNullObject("StatusTable");
 assert.equal(importedTable.isNullObject, undefined);
 assert.equal(importedTable.range, "A1:B3");
@@ -292,6 +327,9 @@ assert.deepEqual(importedAdvancedFilterTable.filters, advancedFilterTable.filter
 const importedIconTable = imported.worksheets.getItem("Icon Rules").tables.getItemOrNullObject("IconRuleTable");
 assert.deepEqual(importedIconTable.filters, iconTable.filters);
 assert.deepEqual(importedIconTable.sortState, iconTable.sortState);
+const importedColorTable = imported.worksheets.getItem("Color Rules").tables.getItemOrNullObject("ColorRuleTable");
+assert.deepEqual(importedColorTable.filters, colorTable.filters);
+assert.deepEqual(importedColorTable.sortState, colorTable.sortState);
 assert.equal(importedTable.style, "TableStyleMedium4");
 assert.equal(importedTable.showFirstColumn, true);
 assert.equal(importedTable.showBandedColumns, true);
@@ -319,7 +357,7 @@ const javascriptImported = await SpreadsheetFile.importXlsx(exported);
 assert.equal(javascriptImported.dateSystem, "1904");
 assert.equal(javascriptImported.theme.name, "OpenChestnut Theme");
 assert.equal(javascriptImported.theme.colors.accent1, "#0F766E");
-assert.equal(javascriptImported.worksheets.items.length, 4);
+assert.equal(javascriptImported.worksheets.items.length, 5);
 assert.equal(javascriptImported.worksheets.getItem("Details").tables.items[0].name, "StatusTable");
 assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0].columnNames, ["Status", "Value"]);
 assert.equal(javascriptImported.worksheets.getItem("Details").tables.items[0].columnDefinitions[1].calculatedColumnFormula, "=LEN([@Status])");
@@ -328,6 +366,8 @@ assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0
 assert.deepEqual(javascriptImported.worksheets.getItem("Advanced Filters").tables.items[0].filters, advancedFilterTable.filters);
 assert.deepEqual(javascriptImported.worksheets.getItem("Icon Rules").tables.items[0].filters, iconTable.filters);
 assert.deepEqual(javascriptImported.worksheets.getItem("Icon Rules").tables.items[0].sortState, iconTable.sortState);
+assert.deepEqual(javascriptImported.worksheets.getItem("Color Rules").tables.items[0].filters, colorTable.filters);
+assert.deepEqual(javascriptImported.worksheets.getItem("Color Rules").tables.items[0].sortState, colorTable.sortState);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
@@ -369,6 +409,10 @@ importedIconTable.filters[1].iconId = 1;
 importedIconTable.sortState.conditions[0].iconSet = "4Rating";
 importedIconTable.sortState.conditions[0].iconId = 3;
 importedIconTable.sortState.conditions[1].iconId = 2;
+importedColorTable.filters[0].color = "#22C55E";
+importedColorTable.sortState.conditions[1].color = "#22C55E";
+importedColorTable.filters[1].color = "#2563EB";
+importedColorTable.sortState.conditions[0].color = "#2563EB";
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
 const secondImported = await importXlsxWithOpenChestnut(secondExport);
@@ -409,6 +453,14 @@ assert.deepEqual(secondImported.worksheets.getItem("Icon Rules").tables.getItemO
     { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Symbols2", iconId: 2 },
   ],
 });
+assert.deepEqual(secondImported.worksheets.getItem("Color Rules").tables.getItemOrNullObject("ColorRuleTable").filters, [
+  { columnIndex: 0, kind: "color", target: "cell", color: "#22C55E" },
+  { columnIndex: 1, kind: "color", target: "font", color: "#2563EB" },
+]);
+assert.deepEqual(secondImported.worksheets.getItem("Color Rules").tables.getItemOrNullObject("ColorRuleTable").sortState.conditions, [
+  { reference: "B2:B3", descending: true, kind: "color", target: "font", color: "#2563EB" },
+  { reference: "A2:A3", descending: false, kind: "color", target: "cell", color: "#22C55E" },
+]);
 secondTable.delete();
 await assert.rejects(
   exportXlsxWithOpenChestnut(secondImported, { recalculate: false }),
@@ -436,28 +488,34 @@ await assert.rejects(
 
 const colorSortZip = await JSZip.loadAsync(exported.bytes);
 const colorSortSourceXml = await colorSortZip.file(complexTablePath).async("text");
-const colorSortXml = colorSortSourceXml.replace(/(<x:sortCondition ref="B2:B3" descending="1")/, '$1 sortBy="cellColor" dxfId="0"');
-assert.notEqual(colorSortXml, colorSortSourceXml, "fixture must add an unsupported color-sort profile");
+const colorSortStylesPath = "xl/styles.xml";
+const colorSortStyles = appendComplexColorDifferentialFormat(await colorSortZip.file(colorSortStylesPath).async("text"));
+colorSortZip.file(colorSortStylesPath, colorSortStyles.xml);
+const colorSortXml = colorSortSourceXml.replace(/(<x:sortCondition ref="B2:B3" descending="1")/, `$1 sortBy="cellColor" dxfId="${colorSortStyles.id}"`);
+assert.notEqual(colorSortXml, colorSortSourceXml, "fixture must add a complex color-sort profile");
 colorSortZip.file(complexTablePath, colorSortXml);
 const colorSortBytes = await colorSortZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 const colorSortImported = await importXlsxWithOpenChestnut(colorSortBytes);
 const colorSortSheet = colorSortImported.worksheets.getItem("Details");
-assert.equal(colorSortSheet.tables.items.length, 0, "unsupported color sorts must remain hidden read-only table slots");
+assert.equal(colorSortSheet.tables.items.length, 0, "complex color sorts must remain hidden read-only table slots");
 colorSortSheet.getRange("B2").values = [[9]];
 const colorSortPreserved = await exportXlsxWithOpenChestnut(colorSortImported, { recalculate: false });
-assert.equal(await (await JSZip.loadAsync(colorSortPreserved.bytes)).file(complexTablePath).async("text"), colorSortXml, "unsupported color-sort table XML must remain byte-exact");
+assert.equal(await (await JSZip.loadAsync(colorSortPreserved.bytes)).file(complexTablePath).async("text"), colorSortXml, "complex color-sort table XML must remain byte-exact");
 
 const colorFilterZip = await JSZip.loadAsync(exported.bytes);
 const colorFilterSourceXml = await colorFilterZip.file(complexTablePath).async("text");
-const colorFilterXml = colorFilterSourceXml.replace(/<x:filters blank="1">[\s\S]*?<\/x:filters>/, '<x:colorFilter dxfId="0" cellColor="1"/>');
-assert.notEqual(colorFilterXml, colorFilterSourceXml, "fixture must add an unsupported color-filter profile");
+const colorFilterStylesPath = "xl/styles.xml";
+const colorFilterStyles = appendComplexColorDifferentialFormat(await colorFilterZip.file(colorFilterStylesPath).async("text"));
+colorFilterZip.file(colorFilterStylesPath, colorFilterStyles.xml);
+const colorFilterXml = colorFilterSourceXml.replace(/<x:filters blank="1">[\s\S]*?<\/x:filters>/, `<x:colorFilter dxfId="${colorFilterStyles.id}" cellColor="1"/>`);
+assert.notEqual(colorFilterXml, colorFilterSourceXml, "fixture must add a complex color-filter profile");
 colorFilterZip.file(complexTablePath, colorFilterXml);
 const colorFilterImported = await importXlsxWithOpenChestnut(await colorFilterZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
 const colorFilterSheet = colorFilterImported.worksheets.getItem("Details");
-assert.equal(colorFilterSheet.tables.items.length, 0, "unsupported color filters must remain hidden read-only table slots");
+assert.equal(colorFilterSheet.tables.items.length, 0, "complex color filters must remain hidden read-only table slots");
 colorFilterSheet.getRange("B2").values = [[11]];
 const colorFilterPreserved = await exportXlsxWithOpenChestnut(colorFilterImported, { recalculate: false });
-assert.equal(await (await JSZip.loadAsync(colorFilterPreserved.bytes)).file(complexTablePath).async("text"), colorFilterXml, "unsupported color-filter table XML must remain byte-exact");
+assert.equal(await (await JSZip.loadAsync(colorFilterPreserved.bytes)).file(complexTablePath).async("text"), colorFilterXml, "complex color-filter table XML must remain byte-exact");
 
 const complexThemeZip = await JSZip.loadAsync(exported.bytes);
 const complexThemePath = "xl/theme/theme1.xml";
@@ -570,6 +628,30 @@ invalidIconTableSheet.tables.add({
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidIconTableWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /invalid icon filter/i.test(error.message),
+);
+const invalidColorTargetWorkbook = Workbook.create();
+const invalidColorTargetSheet = invalidColorTargetWorkbook.worksheets.add("Sheet1");
+invalidColorTargetSheet.getRange("A1:A2").values = [["Value"], [1]];
+invalidColorTargetSheet.tables.add({
+  range: "A1:A2",
+  name: "InvalidColorTargetTable",
+  filters: [{ columnIndex: 0, kind: "color", target: "background", color: "#E11D48" }],
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidColorTargetWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /color target/i.test(error.message),
+);
+const missingTableColorWorkbook = Workbook.create();
+const missingTableColorSheet = missingTableColorWorkbook.worksheets.add("Sheet1");
+missingTableColorSheet.getRange("A1:A2").values = [["Value"], [1]];
+missingTableColorSheet.tables.add({
+  range: "A1:A2",
+  name: "MissingTableColor",
+  filters: [{ columnIndex: 0, kind: "color", target: "cell" }],
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(missingTableColorWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /provide a color/i.test(error.message),
 );
 
 const invalidNumberFormat = Workbook.create();

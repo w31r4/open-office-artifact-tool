@@ -1694,6 +1694,39 @@ assert.match(iconRuleXml, /<sortCondition ref="A2:A3" sortBy="icon" iconSet="3Sy
 const javascriptIconImported = await SpreadsheetFile.importXlsx(iconRuleXlsx);
 assert.deepEqual(javascriptIconImported.worksheets.getItem("IconRules").tables.items[0].filters, javascriptIconTable.filters);
 assert.deepEqual(javascriptIconImported.worksheets.getItem("IconRules").tables.items[0].sortState, javascriptIconTable.sortState);
+const colorRuleWorkbook = Workbook.create();
+const colorRuleSheet = colorRuleWorkbook.worksheets.add("ColorRules");
+colorRuleSheet.getRange("A1:B3").values = [["Fill", "Font"], [1, 5], [2, 3]];
+const javascriptColorTable = colorRuleSheet.tables.add({ range: "A1:B3", name: "ColorRuleTable" });
+javascriptColorTable.filters = [
+  { columnIndex: 0, kind: "color", target: "cell", color: "#E11D48" },
+  { columnIndex: 1, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
+];
+javascriptColorTable.sortState = {
+  reference: "A2:B3",
+  caseSensitive: false,
+  conditions: [
+    { reference: "B2:B3", descending: true, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
+    { reference: "A2:A3", descending: false, kind: "color", target: "cell", color: "#E11D48" },
+  ],
+};
+const colorRuleXlsx = await SpreadsheetFile.exportXlsx(colorRuleWorkbook);
+const colorRuleZip = await JSZip.loadAsync(new Uint8Array(await colorRuleXlsx.arrayBuffer()));
+const colorRuleXml = await colorRuleZip.file("xl/tables/table1.xml").async("text");
+const colorStylesXml = await colorRuleZip.file("xl/styles.xml").async("text");
+assert.match(colorRuleXml, /<colorFilter dxfId="0" cellColor="1"\/>/);
+assert.match(colorRuleXml, /<colorFilter dxfId="1" cellColor="0"\/>/);
+assert.match(colorRuleXml, /<sortCondition ref="B2:B3" descending="1" sortBy="fontColor" dxfId="1"\/>/);
+assert.match(colorRuleXml, /<sortCondition ref="A2:A3" sortBy="cellColor" dxfId="0"\/>/);
+assert.ok(colorStylesXml.includes('<dxfs count="2"><dxf><fill><patternFill patternType="solid"><fgColor rgb="FFE11D48"/><bgColor indexed="64"/></patternFill></fill></dxf><dxf><font><color theme="4" tint="-0.25"/></font></dxf></dxfs>'));
+const javascriptColorImported = await SpreadsheetFile.importXlsx(colorRuleXlsx);
+assert.deepEqual(javascriptColorImported.worksheets.getItem("ColorRules").tables.items[0].filters, javascriptColorTable.filters);
+assert.deepEqual(javascriptColorImported.worksheets.getItem("ColorRules").tables.items[0].sortState, javascriptColorTable.sortState);
+const invalidColorRuleWorkbook = Workbook.create();
+const invalidColorRuleSheet = invalidColorRuleWorkbook.worksheets.add("InvalidColor");
+invalidColorRuleSheet.getRange("A1:A2").values = [["Value"], [1]];
+invalidColorRuleSheet.tables.add({ range: "A1:A2", name: "InvalidColorTable", filters: [{ columnIndex: 0, kind: "color", target: "background", color: "#E11D48" }] });
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidColorRuleWorkbook), /color target must be 'cell' or 'font'/i);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
 assert.equal(pivotPartNames.length, 3);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");

@@ -181,7 +181,16 @@ function borderXml(style = {}) {
 }
 
 function dxfXml(style = {}) {
-  const normalized = normalizeXlsxStyle(style), font = normalized.font || {};
+  const normalized = normalizeXlsxStyle(style), sourceFont = style.font || {};
+  const font = {
+    bold: style.bold ?? sourceFont.bold,
+    italic: style.italic ?? sourceFont.italic,
+    underline: style.underline ?? sourceFont.underline,
+    strike: style.strike ?? sourceFont.strike,
+    color: style.fontColor ?? sourceFont.color ?? style.color,
+    size: style.fontSize ?? sourceFont.size,
+    name: style.fontFamily ?? sourceFont.name,
+  };
   const underline = font.underline ? `<u${typeof font.underline === "string" && font.underline !== "single" ? ` val="${attrEscape(font.underline)}"` : ""}/>` : "";
   const fontOutput = (font.bold || font.italic || font.underline || font.strike || font.color || font.size || font.name)
     ? `<font>${font.bold ? "<b/>" : ""}${font.italic ? "<i/>" : ""}${underline}${font.strike ? "<strike/>" : ""}${font.size ? `<sz val="${Number(font.size) || 11}"/>` : ""}${font.color ? xlsxColorElementXml("color", font.color) : ""}${font.name ? `<name val="${attrEscape(font.name)}"/>` : ""}</font>`

@@ -175,7 +175,14 @@ internal sealed class XlsxCellStyleCodec
             source.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.CellColor && !source.CellColor ||
             source.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.FontColor && !source.FontColor)
             throw InvalidTableColor($"Worksheet table {location} color selector must provide exactly one true target and one color.");
-        ValidateColor(source.Color, location, "table");
+        try
+        {
+            ValidateColor(source.Color, location, "table");
+        }
+        catch (CodecException)
+        {
+            throw InvalidTableColor($"Worksheet table {location} has an invalid color selector.");
+        }
     }
 
     internal void Apply(Cell cell, CellArtifact source)

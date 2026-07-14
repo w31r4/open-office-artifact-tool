@@ -232,6 +232,19 @@ try {
       { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Symbols2" },
     ],
   });
+  const wasmColorTable = wasmWorkbook.worksheets.getItem("Color Rules").tables.getItemOrNullObject("ColorRuleTable");
+  assert.deepEqual(wasmColorTable.filters, [
+    { columnIndex: 0, kind: "color", target: "cell", color: "#E11D48" },
+    { columnIndex: 1, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
+  ]);
+  assert.deepEqual(wasmColorTable.sortState, {
+    reference: "A2:B3",
+    caseSensitive: false,
+    conditions: [
+      { reference: "B2:B3", descending: true, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
+      { reference: "A2:A3", descending: false, kind: "color", target: "cell", color: "#E11D48" },
+    ],
+  });
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
   const wasmThemeXml = await wasmZip.file("xl/theme/theme1.xml").async("text");
   assert.match(wasmThemeXml, /name="OpenChestnut Fixture"/);
@@ -267,10 +280,16 @@ try {
   assert.match(wasmIconRuleXml, /<x:iconFilter iconSet="3Flags"\s*\/>/);
   assert.match(wasmIconRuleXml, /<x:sortCondition ref="B2:B3" descending="1" sortBy="icon" iconSet="5Rating" iconId="4"\s*\/>/);
   assert.match(wasmIconRuleXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Symbols2"\s*\/>/);
+  const wasmColorRuleXml = await wasmZip.file("xl/tables/table4.xml").async("text");
+  assert.match(wasmColorRuleXml, /<x:colorFilter dxfId="0" cellColor="1"\s*\/>/);
+  assert.match(wasmColorRuleXml, /<x:colorFilter dxfId="1" cellColor="0"\s*\/>/);
+  assert.match(wasmColorRuleXml, /<x:sortCondition ref="B2:B3" descending="1" sortBy="fontColor" dxfId="1"\s*\/>/);
+  assert.match(wasmColorRuleXml, /<x:sortCondition ref="A2:A3" sortBy="cellColor" dxfId="0"\s*\/>/);
   assert.match(await wasmZip.file("xl/worksheets/sheet2.xml").async("text"), /<x:tableParts count="1"><x:tablePart\b[^>]*r:id="rIdTable1"\s*\/><\/x:tableParts>/);
   assert.match(await wasmZip.file("xl/worksheets/_rels/sheet2.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table1\.xml"/);
   assert.match(await wasmZip.file("xl/worksheets/_rels/sheet3.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table2\.xml"/);
   assert.match(await wasmZip.file("xl/worksheets/_rels/sheet4.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table3\.xml"/);
+  assert.match(await wasmZip.file("xl/worksheets/_rels/sheet5.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table4\.xml"/);
   if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {

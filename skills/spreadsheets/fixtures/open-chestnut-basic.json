@@ -203,6 +203,38 @@
           }
         }
       ]
+    },
+    {
+      "name": "Color Rules",
+      "ranges": [
+        {
+          "range": "A1:B3",
+          "values": [
+            ["Fill", "Font"],
+            [1, 5],
+            [2, 3]
+          ]
+        }
+      ],
+      "tables": [
+        {
+          "range": "A1:B3",
+          "name": "ColorRuleTable",
+          "style": "TableStyleMedium8",
+          "filters": [
+            { "columnIndex": 0, "kind": "color", "target": "cell", "color": "#E11D48" },
+            { "columnIndex": 1, "kind": "color", "target": "font", "color": { "theme": 4, "tint": -0.25 } }
+          ],
+          "sortState": {
+            "reference": "A2:B3",
+            "caseSensitive": false,
+            "conditions": [
+              { "reference": "B2:B3", "descending": true, "kind": "color", "target": "font", "color": { "theme": 4, "tint": -0.25 } },
+              { "reference": "A2:A3", "descending": false, "kind": "color", "target": "cell", "color": "#E11D48" }
+            ]
+          }
+        }
+      ]
     }
   ],
   "expectations": [

@@ -288,7 +288,7 @@ function wireSpreadsheetColor(value, address, component) {
   if (value.theme != null) return { source: { case: "theme", value: Number(value.theme) }, tint };
   if (value.indexed != null) return { source: { case: "indexed", value: Number(value.indexed) }, tint };
   if (value.auto === true) return { source: { case: "automatic", value: true }, tint };
-  if (value.rgb != null) return wireSpreadsheetColor(value.rgb, address, component);
+  if (value.rgb != null) return { ...wireSpreadsheetColor(value.rgb, address, component), tint };
   invalidCellStyle(address, `${component} color has no supported source.`);
 }
 
@@ -353,7 +353,9 @@ function wireCellStyle(style, address) {
 function spreadsheetColorFromWire(color) {
   if (!color?.source?.case) return undefined;
   const tint = color.tint == null || color.tint === 0 ? {} : { tint: color.tint };
-  if (color.source.case === "rgb") return `#${String(color.source.value).slice(-6).toUpperCase()}`;
+  if (color.source.case === "rgb") return color.tint == null || color.tint === 0
+    ? `#${String(color.source.value).slice(-6).toUpperCase()}`
+    : { rgb: `#${String(color.source.value).slice(-6).toUpperCase()}`, ...tint };
   if (color.source.case === "theme") return { theme: color.source.value, ...tint };
   if (color.source.case === "indexed") return { indexed: color.source.value, ...tint };
   if (color.source.case === "automatic") return { auto: true, ...tint };
@@ -554,6 +556,12 @@ function tableFilters(table) {
         },
       };
     }
+    if (filter?.kind === "color") {
+      return {
+        columnIndex,
+        criteria: { case: "color", value: wireTableColor(filter, `table ${table.name} filter column ${columnIndex}`) },
+      };
+    }
     return {
       columnIndex,
       criteria: {
@@ -613,6 +621,13 @@ function publicTableFilter(filter) {
       ...(filter.criteria.value?.iconId == null ? {} : { iconId: filter.criteria.value.iconId }),
     };
   }
+  if (filter?.criteria?.case === "color") {
+    return {
+      columnIndex: Number(filter.columnIndex ?? 0),
+      kind: "color",
+      ...publicTableColor(filter.criteria.value),
+    };
+  }
   return {
     columnIndex: Number(filter?.columnIndex ?? 0),
     kind: "values",
@@ -648,6 +663,8 @@ function tableSortState(table) {
               iconSet: String(condition.iconSet ?? ""),
               iconId: condition.iconId == null ? undefined : Number(condition.iconId),
             },
+          } : condition?.kind === "color" ? {
+            color: wireTableColor(condition, `table ${table.name} sort ${condition.reference}`),
           } : {}),
         }))
       : [],
@@ -666,8 +683,28 @@ function publicTableSortState(sort) {
         kind: "icon",
         iconSet: condition.icon.iconSet,
         ...(condition.icon.iconId == null ? {} : { iconId: condition.icon.iconId }),
+      } : condition.color ? {
+        kind: "color",
+        ...publicTableColor(condition.color),
       } : {}),
     })),
+  };
+}
+
+function wireTableColor(value, address) {
+  const target = value?.target;
+  if (target !== "cell" && target !== "font") {
+    throw new OpenChestnutCodecError(`Worksheet ${address} color target must be 'cell' or 'font'.`, [], { code: "invalid_worksheet_table" });
+  }
+  const color = wireSpreadsheetColor(value.color, address, `${target} color`);
+  if (!color) throw new OpenChestnutCodecError(`Worksheet ${address} must provide a color.`, [], { code: "invalid_worksheet_table" });
+  return { target: { case: target === "cell" ? "cellColor" : "fontColor", value: true }, color };
+}
+
+function publicTableColor(value) {
+  return {
+    target: value?.target?.case === "cellColor" ? "cell" : "font",
+    color: spreadsheetColorFromWire(value?.color),
   };
 }
 

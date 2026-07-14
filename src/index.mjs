@@ -2338,8 +2338,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     style: { type: "string", description: "Table style name." },
     columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
     columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
-    filters: { type: "object[]", description: "Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, or standard icon-set AutoFilters; omitted iconId means no icon." },
-    sortState: { type: "object", description: "Bounded value/icon-sort state with reference, caseSensitive, and ordered single-column conditions; icon conditions add kind='icon', iconSet, and optional iconId." },
+    filters: { type: "object[]", description: "Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, standard icon-set, or stable cell-fill/font-color AutoFilters; color filters use kind='color', target='cell'|'font', and color without exposing dxfId." },
+    sortState: { type: "object", description: "Bounded value/icon/color-sort state with reference, caseSensitive, and ordered single-column conditions; color conditions use kind='color', target='cell'|'font', and color while the codec owns dxf allocation." },
     showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
   "sheet.pivotTables.add": helpSchema({
@@ -3022,6 +3022,12 @@ class WorksheetTable {
         iconSet: String(filter.iconSet ?? ""),
         ...(filter.iconId == null ? {} : { iconId: Number(filter.iconId) }),
       };
+      if (filter?.kind === "color") return {
+        columnIndex,
+        kind: "color",
+        target: String(filter.target ?? ""),
+        color: filter.color,
+      };
       return {
         columnIndex,
         kind: "values",
@@ -3052,6 +3058,10 @@ class WorksheetTable {
               kind: "icon",
               iconSet: String(condition.iconSet ?? ""),
               ...(condition.iconId == null ? {} : { iconId: Number(condition.iconId) }),
+            } : condition?.kind === "color" ? {
+              kind: "color",
+              target: String(condition.target ?? ""),
+              color: condition.color,
             } : {}),
           }))
         : [],
@@ -6413,7 +6423,7 @@ export class SpreadsheetFile {
         zip.file(`xl/drawings/_rels/drawing${index + 1}.xml.rels`, drawingRelsXml(sheetImageParts, sheetChartParts));
       }
     });
-    tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId)));
+    tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId, styleTable)));
     pivotParts.forEach((part) => {
       zip.file(`xl/pivotTables/pivotTable${part.pivotPartId}.xml`, spreadsheetPivotTableDefinitionXml(part));
       zip.file(`xl/pivotTables/_rels/pivotTable${part.pivotPartId}.xml.rels`, pivotTableDefinitionRelsXml(part));
@@ -6463,7 +6473,7 @@ export class SpreadsheetFile {
       const xml = await zip.file(partPath)?.async("text");
       if (xml) {
         parseWorksheetXml(sheet, xml, { sharedStrings, styles });
-        await importNativeWorksheetTables(sheet, zip, partPath);
+        await importNativeWorksheetTables(sheet, zip, partPath, styles);
         await importNativeWorksheetDrawings(sheet, zip, partPath);
         await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches, options);
       }
@@ -6612,11 +6622,15 @@ function collectWorkbookStyles(workbook) {
     const key = xlsxStyleKey(style || {});
     if (!key || dxfIndexByKey.has(key)) return;
     dxfIndexByKey.set(key, dxfs.length);
-    dxfs.push(normalizeXlsxStyle(style || {}));
+    dxfs.push(style || {});
   };
   for (const sheet of workbook.worksheets) {
     for (const [, cell] of sheet.store.entries()) addStyle(cell.style || {});
     for (const rule of sheet.conditionalFormattings.items) addDxf(rule.format || rule.rule?.format || {});
+    for (const table of sheet.tables.items) {
+      for (const filter of table.filters || []) if (filter?.kind === "color") addDxf(tableColorDxfStyle(filter));
+      for (const condition of table.sortState?.conditions || []) if (condition?.kind === "color") addDxf(tableColorDxfStyle(condition));
+    }
   }
   return { styles, indexByKey, dxfs, dxfIndexByKey, indexedColors: workbook.indexedColors };
 }
@@ -6804,7 +6818,21 @@ function tableColumnXml(definition, id, name) {
   return `<tableColumn id="${id}" name="${attrEscape(name)}"${totalsFunction}${totalsLabel}>${calculated}${totals}</tableColumn>`;
 }
 
-function tableFilterXml(filter) {
+function tableColorDxfStyle(value) {
+  if (value?.target !== "cell" && value?.target !== "font") throw new Error("Worksheet table color target must be 'cell' or 'font'.");
+  if (value.color == null) throw new Error("Worksheet table color selector must provide a color.");
+  return value.target === "cell"
+    ? { fill: { patternType: "solid", foreground: value.color } }
+    : { font: { color: value.color } };
+}
+
+function tableColorDxfId(value, styleTable) {
+  const id = styleTable?.dxfIndexByKey?.get(xlsxStyleKey(tableColorDxfStyle(value)));
+  if (id == null) throw new Error("Worksheet table color selector has no differential-style resource.");
+  return id;
+}
+
+function tableFilterXml(filter, styleTable) {
   const columnIndex = Number(filter?.columnIndex ?? 0);
   if (filter?.kind === "custom") {
     const criteria = (filter.criteria || []).map((criterion) => `<customFilter operator="${attrEscape(criterion?.operator || "equal")}" val="${attrEscape(criterion?.value ?? "")}"/>`).join("");
@@ -6823,6 +6851,9 @@ function tableFilterXml(filter) {
     const iconId = filter.iconId == null ? "" : ` iconId="${attrEscape(filter.iconId)}"`;
     return `<filterColumn colId="${columnIndex}"><iconFilter iconSet="${attrEscape(filter.iconSet ?? "")}"${iconId}/></filterColumn>`;
   }
+  if (filter?.kind === "color") {
+    return `<filterColumn colId="${columnIndex}"><colorFilter dxfId="${tableColorDxfId(filter, styleTable)}" cellColor="${filter.target === "cell" ? 1 : 0}"/></filterColumn>`;
+  }
   const selectedValues = filter?.values || [];
   const selectedDateGroups = filter?.dateGroups || [];
   if (selectedValues.length && selectedDateGroups.length) throw new Error("Worksheet table <filters> cannot mix exact values and grouped dates.");
@@ -6835,23 +6866,23 @@ function tableFilterXml(filter) {
   return `<filterColumn colId="${columnIndex}"><filters${filter?.includeBlank ? ' blank="1"' : ""}${calendarType}>${values}${groups}</filters></filterColumn>`;
 }
 
-function tableSortStateXml(sortState) {
+function tableSortStateXml(sortState, styleTable) {
   if (!sortState) return "";
   const conditions = (sortState.conditions || []).map((condition) =>
-    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : ""}/>`).join("");
+    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : condition?.kind === "color" ? ` sortBy="${condition.target === "cell" ? "cellColor" : "fontColor"}" dxfId="${tableColorDxfId(condition, styleTable)}"` : ""}/>`).join("");
   return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}>${conditions}</sortState>`;
 }
 
-function tableAutoFilterXml(table, reference) {
+function tableAutoFilterXml(table, reference, styleTable) {
   if (!table.showFilterButton) return "";
-  const filters = Array.isArray(table.filters) ? table.filters.map(tableFilterXml).join("") : "";
-  const sortState = tableSortStateXml(table.sortState);
+  const filters = Array.isArray(table.filters) ? table.filters.map((filter) => tableFilterXml(filter, styleTable)).join("") : "";
+  const sortState = tableSortStateXml(table.sortState, styleTable);
   return filters || sortState
     ? `<autoFilter ref="${attrEscape(reference)}">${filters}${sortState}</autoFilter>`
     : `<autoFilter ref="${attrEscape(reference)}"/>`;
 }
 
-function tableXml(table, tablePartId) {
+function tableXml(table, tablePartId, styleTable) {
   const ref = table.range;
   const seen = new Set();
   const headers = table.columnNames?.length
@@ -6865,7 +6896,7 @@ function tableXml(table, tablePartId) {
   }).join("");
   const headerRowCount = table.showHeaders ? 1 : 0;
   const totalsRowShown = table.showTotals ? 1 : 0;
-  const autoFilter = tableAutoFilterXml(table, ref);
+  const autoFilter = tableAutoFilterXml(table, ref, styleTable);
   const styleName = table.style || "TableStyleMedium2";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tablePartId}" name="${attrEscape(table.name)}" displayName="${attrEscape(table.name)}" ref="${attrEscape(ref)}" headerRowCount="${headerRowCount}" totalsRowShown="${totalsRowShown}">${autoFilter}<tableColumns count="${table.columnCount || headers.length || 1}">${columns}</tableColumns><tableStyleInfo name="${attrEscape(styleName)}" showFirstColumn="${table.showFirstColumn ? 1 : 0}" showLastColumn="${table.showLastColumn ? 1 : 0}" showRowStripes="${table.showRowStripes ? 1 : 0}" showColumnStripes="${table.showBandedColumns ? 1 : 0}"/></table>`;
 }
@@ -7153,7 +7184,32 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   parseWorksheetMergeCellsXml(sheet, xml);
 }
 
-function parseNativeTableFilters(xml) {
+function tableColorFromDxf(styles, dxfId, target) {
+  if (!Number.isInteger(dxfId) || dxfId < 0) return undefined;
+  const style = styles?.dxfs?.[dxfId];
+  if (!style || Object.keys(style).some((key) => key !== (target === "cell" ? "fill" : "font"))) return undefined;
+  if (target === "cell") {
+    const fill = style.fill;
+    const color = typeof fill === "string" ? fill : fill?.patternType === "solid" ? fill.foreground : undefined;
+    return color == null ? undefined : { target, color: tableSemanticColor(color) };
+  }
+  const font = style.font;
+  if (!font?.color || font.bold || font.italic || font.underline || font.strike || font.size !== 11 || font.name !== "Aptos") return undefined;
+  return { target, color: tableSemanticColor(font.color) };
+}
+
+function tableSemanticColor(color) {
+  if (typeof color === "string") return color;
+  return {
+    ...(color?.rgb != null ? { rgb: color.rgb } : {}),
+    ...(color?.theme != null ? { theme: color.theme } : {}),
+    ...(color?.indexed != null ? { indexed: color.indexed } : {}),
+    ...(color?.auto === true ? { auto: true } : {}),
+    ...(color?.tint != null ? { tint: color.tint } : {}),
+  };
+}
+
+function parseNativeTableFilters(xml, styles) {
   const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
   if (!autoFilter) return [];
   return [...autoFilter[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?filterColumn\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?filterColumn\s*>/g)].flatMap((match) => {
@@ -7213,6 +7269,13 @@ function parseNativeTableFilters(xml) {
       if (!icon.iconSet || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return [];
       return [{ columnIndex, kind: "icon", iconSet: icon.iconSet, ...(iconId == null ? {} : { iconId }) }];
     }
+    const colorMatch = /<(?:[A-Za-z_][\w.-]*:)?colorFilter\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?colorFilter\s*>)/.exec(match[2]);
+    if (colorMatch) {
+      const attrs = ooxmlXmlAttributes(colorMatch[1] || "");
+      const target = attrs.cellColor == null || !["0", "false", "off"].includes(String(attrs.cellColor).toLowerCase()) ? "cell" : "font";
+      const color = tableColorFromDxf(styles, Number(attrs.dxfId), target);
+      return color ? [{ columnIndex, kind: "color", ...color }] : [];
+    }
     const customMatch = /<(?:[A-Za-z_][\w.-]*:)?customFilters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?customFilters\s*>)/.exec(match[2]);
     if (!customMatch) return [];
     const customAttrs = ooxmlXmlAttributes(customMatch[1] || "");
@@ -7224,7 +7287,7 @@ function parseNativeTableFilters(xml) {
   });
 }
 
-function parseNativeTableSortState(xml) {
+function parseNativeTableSortState(xml, styles) {
   const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
   if (!autoFilter) return undefined;
   const match = /<(?:[A-Za-z_][\w.-]*:)?sortState\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sortState\s*>/.exec(autoFilter[1]);
@@ -7233,14 +7296,19 @@ function parseNativeTableSortState(xml) {
   if (!attrs.ref || attrs.columnSort != null || attrs.sortMethod != null) return undefined;
   const conditions = [...match[2].matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g)].map((conditionMatch) => {
     const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
-    if (!condition.ref || condition.customList != null || condition.dxfId != null) return undefined;
+    if (!condition.ref || condition.customList != null) return undefined;
     const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
     if (condition.sortBy === "icon") {
       const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
       if (!condition.iconSet || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
       return { reference: condition.ref, descending, kind: "icon", iconSet: condition.iconSet, ...(iconId == null ? {} : { iconId }) };
     }
-    if ((condition.sortBy != null && condition.sortBy !== "value") || condition.iconId != null || condition.iconSet != null) return undefined;
+    if (condition.sortBy === "cellColor" || condition.sortBy === "fontColor") {
+      if (condition.iconId != null || condition.iconSet != null) return undefined;
+      const color = tableColorFromDxf(styles, Number(condition.dxfId), condition.sortBy === "cellColor" ? "cell" : "font");
+      return color ? { reference: condition.ref, descending, kind: "color", ...color } : undefined;
+    }
+    if ((condition.sortBy != null && condition.sortBy !== "value") || condition.iconId != null || condition.iconSet != null || condition.dxfId != null) return undefined;
     return { reference: condition.ref, descending };
   });
   if (!conditions.length || conditions.some((condition) => condition == null)) return undefined;
@@ -7251,7 +7319,7 @@ function parseNativeTableSortState(xml) {
   };
 }
 
-async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
+async function importNativeWorksheetTables(sheet, zip, worksheetPartPath, styles) {
   const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
   for (const relationship of relationships) {
     if (!relationship.type.endsWith("/table") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
@@ -7299,8 +7367,8 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       style: styleAttrs.name || "TableStyleMedium2",
       columnNames,
       columnDefinitions,
-      filters: parseNativeTableFilters(xml),
-      sortState: parseNativeTableSortState(xml),
+      filters: parseNativeTableFilters(xml, styles),
+      sortState: parseNativeTableSortState(xml, styles),
     });
   }
 }
