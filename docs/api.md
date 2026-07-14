@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and worksheet tables with calculated-column/totals metadata, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2017,7 +2017,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables including calculated-column/totals metadata through the source-built bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2046,19 +2046,20 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
 | `workbook.comments.addThread` | api | Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships. |
+| `workbook.connections` | api | Inspect or safely edit the bounded non-secret root metadata of recognized source-bound database connections imported through OpenChestnut. |
 | `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
-| `workbook.inspect` | api | Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
+| `workbook.inspect` | api | Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing. |
 | `workbook.recalculate` | api | Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
-| `workbook.resolve` | api | Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
+| `workbook.resolve` | api | Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
 | `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits. |
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
-| `workbook.verify` | api | Return bounded QA issues for sheets, formulas, tables, charts, and comments. |
+| `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
 | `workbook.worksheets.add` | api | Append an editable worksheet with a stable name and ID. |
 | `worksheet.freezePanes.freezeColumns` | api | Freeze a leading column count in the worksheet view while preserving any frozen rows. |
 | `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
@@ -2071,11 +2072,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and worksheet tables with calculated-column/totals metadata, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, and simple worksheet tables with names, ranges, columns, filters, totals, and style toggles.
+- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, worksheet tables/QueryTables, and recognized source-bound database connection-root metadata.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
@@ -3588,7 +3589,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables including calculated-column/totals metadata through the source-built bundled OpenChestnut codec.
+Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -3597,7 +3598,7 @@ Experimentally import XLSX bytes, effective cell styles/formula topology, and bo
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable simple worksheet tables, and source/opaque package evidence for fail-closed second export.
+- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable worksheet tables/QueryTables, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export.
 
 #### `invokeOpenChestnut`
 
@@ -4043,6 +4044,14 @@ Create Office 2019 threaded comments with GUID identity, people metadata, replie
 
 - `thread` (CommentThread) — Attached Office 2019 threaded comment. addReply(text, config) accepts the same native identity/date/person metadata.
 
+#### `workbook.connections`
+
+Inspect or safely edit the bounded non-secret root metadata of recognized source-bound database connections imported through OpenChestnut.
+
+**Schema returns:**
+
+- `connections` (object[]) — Recognized source-bound database/type-5 connection roots. ID, type, version, count, and order are immutable; provider strings, commands, credentials, source paths, children, extensions, and unsupported types remain hidden and preserved.
+
 #### `Workbook.create`
 
 Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors.
@@ -4103,7 +4112,7 @@ Return a dependency graph of formula nodes, edges, dependents, cycles, and formu
 
 #### `workbook.inspect`
 
-Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -4121,7 +4130,7 @@ Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, com
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated record kinds such as formula, table, style, computedStyle, chart, image.
+- `kind` (string) — Comma-separated record kinds such as connection, formula, table, style, computedStyle, chart, image.
 - `target` (string) — Stable ID, anchor, or A1 cell/range to slice results around.
 - `search` (string) — Case-insensitive text filter over inspect records.
 - `include` (string) — Comma-separated top-level fields to keep.
@@ -4180,7 +4189,7 @@ Return a lightweight SVG preview for a sheet/range or layout JSON when called wi
 
 #### `workbook.resolve`
 
-Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs.
+Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs.
 
 **Schema parameters:**
 
@@ -4261,7 +4270,7 @@ Return a formula precedent tree and bounded NDJSON trace for a target cell, with
 
 #### `workbook.verify`
 
-Return bounded QA issues for sheets, formulas, tables, charts, and comments.
+Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments.
 
 **Schema parameters:**
 

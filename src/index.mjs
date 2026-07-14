@@ -906,11 +906,12 @@ export async function visualQaArtifact(artifact, options = {}) {
 export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors." },
   { artifactKind: "workbook", kind: "api", name: "workbook.setDateSystem", summary: "Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.connections", summary: "Inspect or safely edit the bounded non-secret root metadata of recognized source-bound database connections imported through OpenChestnut." },
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and worksheet tables with calculated-column/totals metadata, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables including calculated-column/totals metadata through the source-built bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -932,12 +933,12 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeRows", summary: "Freeze a leading row count in the worksheet view while preserving any frozen columns." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeColumns", summary: "Freeze a leading column count in the worksheet view while preserving any frozen rows." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.unfreeze", summary: "Remove all frozen worksheet panes and restore a single scrollable view." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
   { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for sheets, formulas, tables, charts, and comments." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments." },
   { artifactKind: "workbook", kind: "api", name: "workbook.recalculate", summary: "Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.resolve", summary: "Resolve stable workbook, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.resolve", summary: "Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs." },
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
@@ -1154,7 +1155,7 @@ const HELP_DETAIL_OVERRIDES = {
     returns: "{ ndjson, truncated } bounded NDJSON records",
     schema: {
       parameters: {
-        kind: { type: "string", description: "Comma-separated record kinds such as formula, table, style, computedStyle, chart, image." },
+        kind: { type: "string", description: "Comma-separated record kinds such as connection, formula, table, style, computedStyle, chart, image." },
         target: { type: "string", description: "Stable ID, anchor, or A1 cell/range to slice results around." },
         search: { type: "string", description: "Case-insensitive text filter over inspect records." },
         include: { type: "string", description: "Comma-separated top-level fields to keep." },
@@ -2129,6 +2130,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "workbook.setDateSystem": helpSchema({
     dateSystem: { type: "string|boolean", required: true, description: "'1900' or false for the 1900 system; '1904' or true for the 1904 system." },
   }, "workbook", "Workbook", "The same workbook after changing its formula and OOXML date-system context."),
+  "workbook.connections": helpSchema({}, "connections", "object[]", "Recognized source-bound database/type-5 connection roots. ID, type, version, count, and order are immutable; provider strings, commands, credentials, source paths, children, extensions, and unsupported types remain hidden and preserved."),
   "workbook.worksheets.add": helpSchema({
     name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
   }, "worksheet", "Worksheet", "Appended editable worksheet."),
@@ -2160,7 +2162,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, and simple worksheet tables with names, ranges, columns, filters, totals, and style toggles." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, worksheet tables/QueryTables, and recognized source-bound database connection-root metadata." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2168,7 +2170,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable simple worksheet tables, and source/opaque package evidence for fail-closed second export."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable worksheet tables/QueryTables, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },

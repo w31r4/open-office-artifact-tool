@@ -11,10 +11,11 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 237);
+assert.equal(HELP_CATALOG.length, 238);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
+assert.match(HELP_CATALOG.find((item) => item.name === "workbook.connections")?.schema?.returns?.connections?.description || "", /provider strings.*hidden and preserved/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
@@ -212,7 +213,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /bulletFont.*bulletColor.*bulletSizePercent.*FollowText/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*tooltip.*targetFrame/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 138);
+assert.equal(workbookCatalog.length, 139);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
