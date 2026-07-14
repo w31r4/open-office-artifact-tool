@@ -210,6 +210,9 @@ message WorksheetArtifact {
   repeated RowDimension row_dimensions = 7;
   repeated string merged_ranges = 8;
   repeated SpreadsheetTableArtifact tables = 9;
+  // Worksheet-level sort state. Unlike a table AutoFilter sort, this may use
+  // column_sort to sort columns from left to right.
+  SpreadsheetTableSortStateArtifact sort_state = 10;
 }
 
 // A bounded projection of one worksheet-owned TableDefinitionPart. Cell data
@@ -341,15 +344,17 @@ message SpreadsheetTableColorArtifact {
   SpreadsheetColor color = 3;
 }
 
-// Sort range plus ordered value/icon/color-sort conditions. A condition
-// reference is one column contained in the sort range; condition order is
-// significant. Optional scalar presence distinguishes an omitted locale
-// method from the explicit SpreadsheetML "none" method.
+// Sort range plus ordered value/icon/color-sort conditions. By default a
+// condition is one column with the sort range's row span. When column_sort is
+// true, a condition is one row with the sort range's column span. Condition
+// order is significant. Optional scalar presence distinguishes omitted native
+// attributes from explicit SpreadsheetML values.
 message SpreadsheetTableSortStateArtifact {
   string reference = 1;
   bool case_sensitive = 2;
   repeated SpreadsheetTableSortConditionArtifact conditions = 3;
   optional string sort_method = 4;
+  optional bool column_sort = 5;
 }
 
 message SpreadsheetTableSortConditionArtifact {
