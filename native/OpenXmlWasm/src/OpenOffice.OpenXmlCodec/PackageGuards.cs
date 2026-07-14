@@ -83,7 +83,9 @@ internal sealed class OpcPackageProfile
                 path.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) ||
                 path.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase) ||
                 IsNumberedXml(path, "ppt/slides/slide") ||
-                IsNumberedRelationshipXml(path, "ppt/slides/_rels/slide"),
+                IsNumberedRelationshipXml(path, "ppt/slides/_rels/slide") ||
+                IsNumberedXml(path, "ppt/slideMasters/slideMaster") ||
+                IsNumberedRelationshipXml(path, "ppt/slideMasters/_rels/slideMaster"),
         relationship =>
         {
             if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) return false;

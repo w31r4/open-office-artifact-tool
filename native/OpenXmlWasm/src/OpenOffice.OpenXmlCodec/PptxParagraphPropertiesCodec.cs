@@ -11,7 +11,7 @@ internal static class PptxParagraphPropertiesCodec
     internal static void Read(
         PresentationTextParagraph target,
         A.TextParagraphPropertiesType? source,
-        PptxSlideContext? slideContext,
+        PptxPartContext? slideContext,
         bool readLevel)
     {
         if (readLevel && source?.Level is not null) target.Level = checked((uint)source.Level.Value);
@@ -73,7 +73,7 @@ internal static class PptxParagraphPropertiesCodec
     internal static void Append(
         A.TextParagraphPropertiesType target,
         PresentationTextParagraph source,
-        PptxSlideContext? slideContext,
+        PptxPartContext? slideContext,
         bool includeLevel)
     {
         if (includeLevel && source.HasLevel) target.Level = checked((int)source.Level);
@@ -89,7 +89,7 @@ internal static class PptxParagraphPropertiesCodec
     internal static void Apply(
         A.TextParagraphPropertiesType target,
         PresentationTextParagraph source,
-        PptxSlideContext slideContext,
+        PptxPartContext slideContext,
         bool includeLevel)
     {
         if (includeLevel) target.Level = source.HasLevel ? checked((int)source.Level) : null;
@@ -103,7 +103,7 @@ internal static class PptxParagraphPropertiesCodec
         PptxDefaultRunStyleCodec.Apply(target, source);
     }
 
-    internal static void Scrub(A.TextParagraphPropertiesType target, PptxSlideContext? slideContext, bool includeLevel)
+    internal static void Scrub(A.TextParagraphPropertiesType target, PptxPartContext? slideContext, bool includeLevel)
     {
         if (includeLevel) target.Level = null;
         if (target.Alignment?.Value is { } alignment && AlignmentName(alignment).Length > 0) target.Alignment = null;

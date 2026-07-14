@@ -11,7 +11,7 @@ namespace OpenOffice.OpenXmlCodec;
 // attribute to a:lvl1pPr through a:lvl9pPr.
 internal static class PptxListStyleCodec
 {
-    internal static void Read(PresentationTextBody target, P.TextBody source, PptxSlideContext? slideContext)
+    internal static void Read(PresentationTextBody target, P.TextBody source, PptxPartContext? slideContext)
     {
         var listStyle = source.Elements<A.ListStyle>().FirstOrDefault();
         if (listStyle is null) return;
@@ -59,7 +59,7 @@ internal static class PptxListStyleCodec
         }
     }
 
-    internal static void Build(A.ListStyle target, PresentationTextBody source, PptxSlideContext? slideContext)
+    internal static void Build(A.ListStyle target, PresentationTextBody source, PptxPartContext? slideContext)
     {
         foreach (var style in source.ListStyles.OrderBy(item => item.Level))
         {
@@ -69,7 +69,7 @@ internal static class PptxListStyleCodec
         }
     }
 
-    internal static void Apply(P.TextBody target, PresentationTextBody source, PptxSlideContext slideContext)
+    internal static void Apply(P.TextBody target, PresentationTextBody source, PptxPartContext slideContext)
     {
         var lists = target.Elements<A.ListStyle>().ToArray();
         if (lists.Length > 1) throw Unsupported("Source-preserving PPTX export cannot edit a malformed text-body list style.");
@@ -104,7 +104,7 @@ internal static class PptxListStyleCodec
         }
     }
 
-    internal static void Scrub(P.TextBody source, PptxSlideContext? slideContext)
+    internal static void Scrub(P.TextBody source, PptxPartContext? slideContext)
     {
         foreach (var list in source.Elements<A.ListStyle>())
         {

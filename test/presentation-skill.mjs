@@ -243,6 +243,11 @@ try {
   assert.equal(wasmTitle?.text.paragraphs[2].runs[0].link, undefined);
   assert.match(wasmTitle?.text.paragraphs[3].bulletImage.dataUrl, /^data:image\/png;base64,/);
   assert.equal(wasmTitle?.text.paragraphs[3].bulletSizeFollowText, true);
+  assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.title[0].alignment, "right");
+  assert.deepEqual(wasmPreservation.qa.presentation.master.textParagraphStyles.title[0].style, { bold: true, fontSize: 42, fontFamily: "Georgia", color: "accent2" });
+  assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.body[1], undefined);
+  assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.other[2].bulletImage.uri, "https://example.com/master-marker.png");
+  assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.other[2].bulletColor, "accent3");
   assert.deepEqual(Object.keys(wasmTitle?.text.inheritedParagraphStyles), ["0", "8"]);
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletCharacter, "→");
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletColor, "accent6");
@@ -263,6 +268,14 @@ try {
   assert.ok(wasmZip.file("ppt/slideMasters/slideMaster1.xml"));
   assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 3);
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
+  const wasmMasterXml = await wasmZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+  assert.match(wasmMasterXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="r"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3150"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent2"\s*\/>[\s\S]*?<a:latin typeface="Georgia"\s*\/>/);
+  const wasmMasterBodyLevel2 = /<p:bodyStyle>[\s\S]*?(<a:lvl2pPr\b[\s\S]*?<\/a:lvl2pPr>)/.exec(wasmMasterXml)?.[1] || "";
+  assert.match(wasmMasterBodyLevel2, /<a:ea typeface="\+mn-ea"\s*\/>/);
+  assert.doesNotMatch(wasmMasterBodyLevel2, /\bmarL=|\bindent=|<a:buChar\b|\bsz=|<a:solidFill>/);
+  assert.match(wasmMasterXml, /<p:otherStyle>[\s\S]*?<a:lvl3pPr>[\s\S]*?<a:schemeClr val="accent3"\s*\/>[\s\S]*?<a:buBlip><a:blip r:link="[^"]+"\s*\/><\/a:buBlip>/);
+  const wasmMasterRelationships = await wasmZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
+  assert.match(wasmMasterRelationships, /relationships\/image[^>]*Target="https:\/\/example\.com\/master-marker\.png"[^>]*TargetMode="External"/);
   const wasmTitleBodyPropertiesXml = /<a:bodyPr\b[^>]*(?:\/>|>[\s\S]*?<\/a:bodyPr>)/.exec(wasmSlideXml)?.[0] || "";
   assert.match(wasmTitleBodyPropertiesXml, /<a:bodyPr[^>]*rot="0"[^>]*vertOverflow="clip"[^>]*horzOverflow="overflow"[^>]*vert="horz"[^>]*wrap="square"[^>]*lIns="152400"[^>]*tIns="95250"[^>]*bIns="66675"[^>]*numCol="2"[^>]*spcCol="228600"[^>]*rtlCol="0"[^>]*anchor="b"[^>]*upright="0"[^>]*>\s*<a:spAutoFit\s*\/>\s*<\/a:bodyPr>/);
   assert.doesNotMatch(wasmTitleBodyPropertiesXml, /\brIns=/);

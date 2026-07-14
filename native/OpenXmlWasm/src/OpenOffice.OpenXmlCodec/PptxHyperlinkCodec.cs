@@ -19,7 +19,7 @@ internal static class PptxHyperlinkCodec
     private static readonly IReadOnlyDictionary<string, string> ActionNameByUri =
         ActionUriByName.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
 
-    internal static void Read(PresentationTextRun target, A.RunProperties? properties, PptxSlideContext? context)
+    internal static void Read(PresentationTextRun target, A.RunProperties? properties, PptxPartContext? context)
     {
         if (context is not null && TryRead(properties?.GetFirstChild<A.HyperlinkOnClick>(), context, out var hyperlink))
             target.RunHyperlink = hyperlink;
@@ -45,14 +45,14 @@ internal static class PptxHyperlinkCodec
     internal static bool HasModeledChoice(PresentationTextRun run) =>
         run.HyperlinkCase != PresentationTextRun.HyperlinkOneofCase.None;
 
-    internal static void Append(A.RunProperties properties, PresentationTextRun source, PptxSlideContext? context)
+    internal static void Append(A.RunProperties properties, PresentationTextRun source, PptxPartContext? context)
     {
         if (source.HyperlinkCase != PresentationTextRun.HyperlinkOneofCase.RunHyperlink) return;
         if (context is null) throw new CodecException("invalid_presentation_hyperlink", "Presentation hyperlink authoring requires a slide relationship context.");
         properties.Append(Build(source.RunHyperlink, context));
     }
 
-    internal static void Apply(A.RunProperties properties, PresentationTextRun requested, PptxSlideContext context)
+    internal static void Apply(A.RunProperties properties, PresentationTextRun requested, PptxPartContext context)
     {
         var existing = properties.GetFirstChild<A.HyperlinkOnClick>();
         var recognized = TryRead(existing, context, out var current);
@@ -76,13 +76,13 @@ internal static class PptxHyperlinkCodec
         }
     }
 
-    internal static void Scrub(A.RunProperties? properties, PptxSlideContext? context)
+    internal static void Scrub(A.RunProperties? properties, PptxPartContext? context)
     {
         if (context is null || properties?.GetFirstChild<A.HyperlinkOnClick>() is not { } hyperlink) return;
         if (TryRead(hyperlink, context, out _)) hyperlink.Remove();
     }
 
-    private static bool TryRead(A.HyperlinkOnClick? source, PptxSlideContext context, out PresentationRunHyperlink hyperlink)
+    private static bool TryRead(A.HyperlinkOnClick? source, PptxPartContext context, out PresentationRunHyperlink hyperlink)
     {
         hyperlink = new PresentationRunHyperlink();
         if (source is null || source.ChildElements.Count > 0 || source.InvalidUrl is not null || source.EndSound is not null) return false;
@@ -124,7 +124,7 @@ internal static class PptxHyperlinkCodec
         }
     }
 
-    private static A.HyperlinkOnClick Build(PresentationRunHyperlink source, PptxSlideContext context)
+    private static A.HyperlinkOnClick Build(PresentationRunHyperlink source, PptxPartContext context)
     {
         Validate(source);
         var hyperlink = new A.HyperlinkOnClick();

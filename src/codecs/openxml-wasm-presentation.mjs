@@ -492,6 +492,83 @@ function presentationTextBody(shape, original, assetCatalog) {
   };
 }
 
+const MASTER_STYLE_KINDS = [
+  ["title", "titleLevels", "deletedTitleLevels"],
+  ["body", "bodyLevels", "deletedBodyLevels"],
+  ["other", "otherLevels", "deletedOtherLevels"],
+];
+
+function wireMasterTextStyles(master, original, assetCatalog) {
+  const result = {};
+  for (const [kind, levelsField, deletedField] of MASTER_STYLE_KINDS) {
+    const originalLevels = new Map((original?.textStyles?.[levelsField] || []).map((style) => [Number(style.level), style]));
+    const current = master.textParagraphStyles?.[kind] || {};
+    const levels = Object.entries(current)
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .map(([level, style]) => wireParagraph(
+        { ...style, level: Number(level), runs: [] },
+        {},
+        originalLevels.get(Number(level)),
+        `master ${master.id} ${kind} level ${Number(level) + 1}`,
+        assetCatalog,
+        { forceLevel: true },
+      ));
+    const currentLevels = new Set(Object.keys(current).map(Number));
+    const deleted = [...originalLevels.keys()].filter((level) => !currentLevels.has(level)).sort((left, right) => left - right);
+    result[levelsField] = levels;
+    if (deleted.length) result[deletedField] = deleted;
+  }
+  return result;
+}
+
+function masterReadOnlySnapshot(master) {
+  return JSON.stringify({
+    id: master.id,
+    name: master.name,
+    theme: master.theme?.toJSON(),
+    background: master.background,
+    placeholders: master.placeholders,
+  });
+}
+
+function layoutReadOnlySnapshot(layout) {
+  return JSON.stringify(layout.toJSON());
+}
+
+function presentationMasters(presentation, state, assetCatalog) {
+  if (state) {
+    if (presentation.masters.items.length !== state.masters.length || state.masters.some((entry, index) => presentation.masters.items[index] !== entry.model)) {
+      throw new OpenXmlWasmCodecError(`Source-preserving PPTX export requires the original ${state.masters.length}-master topology.`, [], { code: "presentation_master_topology_changed" });
+    }
+    return state.masters.map((entry) => {
+      if (masterReadOnlySnapshot(entry.model) !== entry.snapshot) {
+        throw new OpenXmlWasmCodecError(`Presentation master ${entry.model.id} changed outside the bounded textParagraphStyles slice.`, [], { code: "unsupported_presentation_edit" });
+      }
+      return {
+        id: entry.wire.id,
+        name: entry.wire.name,
+        source: entry.wire.source,
+        textStyles: wireMasterTextStyles(entry.model, entry.wire, assetCatalog),
+      };
+    });
+  }
+  const master = presentation.master;
+  return master ? [{ id: master.id, name: master.name, textStyles: wireMasterTextStyles(master, undefined, assetCatalog) }] : [];
+}
+
+function presentationLayouts(presentation, state) {
+  if (!state) return [];
+  if (presentation.layouts.items.length !== state.layouts.length || state.layouts.some((entry, index) => presentation.layouts.items[index] !== entry.model)) {
+    throw new OpenXmlWasmCodecError(`Source-preserving PPTX export requires the original ${state.layouts.length}-layout topology.`, [], { code: "presentation_layout_topology_changed" });
+  }
+  return state.layouts.map((entry) => {
+    if (layoutReadOnlySnapshot(entry.model) !== entry.snapshot) {
+      throw new OpenXmlWasmCodecError(`Presentation layout ${entry.model.id} is preserved but not editable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
+    }
+    return entry.wire;
+  });
+}
+
 function presentationShape(shape, original, assetCatalog) {
   const originalShape = original?.content?.case === "shape" ? original.content.value : original;
   if (!new Set(["rect", "ellipse"]).has(shape.geometry)) {
@@ -538,7 +615,11 @@ function directSlideElements(slide) {
 function unsupportedPresentationFeatures(presentation) {
   const unsupported = [];
   if (presentation.layouts?.items?.length) unsupported.push("slide layouts");
-  if (presentation.masters?.items?.length !== 1 || presentation.master?.configured) unsupported.push("configured slide masters");
+  if (presentation.masters?.items?.length !== 1) unsupported.push("multiple slide masters");
+  const master = presentation.master;
+  if (master?.theme) unsupported.push("master theme override");
+  if (master?.placeholders?.length) unsupported.push("master placeholders");
+  if (master?.background && (master.background.mode !== "solid" || master.background.fill !== presentation.theme.colors.bg1)) unsupported.push("master background override");
   if (presentation.customShows?.items?.length) unsupported.push("custom shows");
   if (presentation.commentFormat !== "legacy") unsupported.push("modern comments");
   for (const slide of presentation.slides?.items || []) {
@@ -578,10 +659,13 @@ export function presentationEnvelope(presentation, protocolVersion) {
   }
 
   const assetCatalog = createPresentationAssetCatalog();
+  const masters = presentationMasters(presentation, state, assetCatalog);
+  const layouts = presentationLayouts(presentation, state);
   const slides = presentation.slides.items.map((slide, slideIndex) => {
     const sourceState = state?.slides[slideIndex];
     if (sourceState) {
       if (slide.name !== sourceState.name) throw new OpenXmlWasmCodecError(`Source-preserving PPTX export does not yet support renaming slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_edit" });
+      if ((slide.layoutId || "") !== (sourceState.wire.layoutId || "")) throw new OpenXmlWasmCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: "presentation_slide_layout_binding_changed" });
       const current = directSlideElements(slide);
       if (current.length !== sourceState.entries.length || sourceState.entries.some((entry) => !current.includes(entry.model))) {
         throw new OpenXmlWasmCodecError(`Source-preserving PPTX export requires slide ${slideIndex + 1}'s original ${sourceState.entries.length}-element topology.`, [], { code: "presentation_element_topology_changed" });
@@ -591,6 +675,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
       source: sourceState?.wire.source,
+      ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
       elements: sourceState
         ? sourceState.entries.map((entry) => {
             if (entry.wire.content.case === "shape") return presentationShape(entry.model, entry.wire, assetCatalog);
@@ -615,6 +700,8 @@ export function presentationEnvelope(presentation, protocolVersion) {
         slideWidthEmu: emuFromPixels(presentation.slideSize.width, "slideSize.width"),
         slideHeightEmu: emuFromPixels(presentation.slideSize.height, "slideSize.height"),
         slides,
+        masters,
+        layouts,
       },
     },
   };
@@ -766,6 +853,13 @@ function modelTextBodyProperties(shape) {
   return properties;
 }
 
+function modelMasterTextStyles(source, assetCatalog) {
+  return Object.fromEntries(MASTER_STYLE_KINDS.map(([kind, levelsField]) => [
+    kind,
+    Object.fromEntries((source?.textStyles?.[levelsField] || []).map((style) => [style.level, modelParagraph(style, assetCatalog, { includeRuns: false })])),
+  ]));
+}
+
 export function presentationFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.PRESENTATION || envelope.payload.case !== "presentation") {
     throw new OpenXmlWasmCodecError("OpenXML WebAssembly response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
@@ -776,10 +870,33 @@ export function presentationFromEnvelope(envelope) {
     slideSize: { width: Number(source.slideWidthEmu) / EMU_PER_PIXEL, height: Number(source.slideHeightEmu) / EMU_PER_PIXEL },
   });
   presentation.id = source.id || presentation.id;
+  const masterStates = [];
+  if (source.masters?.length) {
+    presentation.masters.items.length = 0;
+    for (const sourceMaster of source.masters) {
+      const model = presentation.masters.add({
+        id: sourceMaster.id,
+        name: sourceMaster.name,
+        textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
+      });
+      masterStates.push({ wire: sourceMaster, model, snapshot: masterReadOnlySnapshot(model) });
+    }
+  }
+  const layoutStates = [];
+  for (const sourceLayout of source.layouts || []) {
+    const model = presentation.layouts.add({
+      id: sourceLayout.id,
+      name: sourceLayout.name,
+      type: sourceLayout.type,
+      masterId: sourceLayout.masterId,
+    });
+    layoutStates.push({ wire: sourceLayout, model, snapshot: layoutReadOnlySnapshot(model) });
+  }
   const slideStates = [];
   for (const sourceSlide of source.slides) {
     const slide = presentation.slides.add({ name: sourceSlide.name });
     slide.id = sourceSlide.id || slide.id;
+    slide.layoutId = sourceSlide.layoutId || undefined;
     const entries = [];
     for (const element of sourceSlide.elements) {
       let model;
@@ -832,6 +949,8 @@ export function presentationFromEnvelope(envelope) {
       name: source.name,
       slideWidthEmu: source.slideWidthEmu,
       slideHeightEmu: source.slideHeightEmu,
+      masters: masterStates,
+      layouts: layoutStates,
       slides: slideStates,
     },
     writable: true,

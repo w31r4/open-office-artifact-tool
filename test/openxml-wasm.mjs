@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { PresentationArtifactSchema, PresentationMasterTextStylesSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenXmlWasmCodecError,
   exportDocxWithOpenXmlWasm,
@@ -99,6 +99,26 @@ assert.deepEqual(
   "Explicit text-body upright deletion must use additive field 30.",
 );
 assert.equal(toBinary(PresentationTextRunSchema, create(PresentationTextRunSchema, { content: { case: "text", value: "x" } }))[0], 0x0a, "Presentation text must retain field 1.");
+assert.equal(
+  toBinary(PresentationArtifactSchema, create(PresentationArtifactSchema, { masters: [{ id: "master/1" }] }))[0],
+  0x32,
+  "Presentation masters must use additive field 6.",
+);
+assert.equal(
+  toBinary(PresentationArtifactSchema, create(PresentationArtifactSchema, { layouts: [{ id: "layout/1" }] }))[0],
+  0x3a,
+  "Presentation layouts must use additive field 7.",
+);
+assert.equal(
+  toBinary(PresentationSlideSchema, create(PresentationSlideSchema, { layoutId: "layout/1" }))[0],
+  0x2a,
+  "Presentation slide layout locators must use additive field 5.",
+);
+assert.equal(
+  toBinary(PresentationMasterTextStylesSchema, create(PresentationMasterTextStylesSchema, { deletedOtherLevels: [8] }))[0],
+  0x32,
+  "Presentation master other-level deletion must use field 6.",
+);
 
 const workbook = Workbook.create({ dateSystem: "1904" });
 const summary = workbook.worksheets.add("Summary");
@@ -255,6 +275,106 @@ const pptxImported = await importPptxWithOpenXmlWasm(pptxExported);
 assert.equal(pptxImported.slides.count, 1);
 assert.equal(pptxImported.slides.getItem(0).shapes.items[0].text.value, "OpenXML WASM presentation");
 assert.equal(pptxImported.verify().ok, true);
+
+const masterStylePresentation = Presentation.create({
+  slideSize: { width: 1280, height: 720 },
+  master: {
+    id: "master/authored",
+    name: "Authored Master",
+    textParagraphStyles: {
+      title: { 0: { alignment: "center", style: { bold: true, fontSize: 40, fontFamily: "Aptos Display", color: "accent1" } } },
+      body: { 1: { marginLeft: 72, indent: -24, bulletCharacter: "•", style: { fontSize: 24 } } },
+    },
+  },
+});
+masterStylePresentation.slides.add({ name: "Master styles" }).shapes.add({
+  name: "Body",
+  position: { left: 60, top: 80, width: 860, height: 120 },
+  fill: "#FFFFFF",
+  line: { fill: "#334155", width: 1 },
+  text: "Master style evidence",
+});
+const masterStyleAuthored = await exportPptxWithOpenXmlWasm(masterStylePresentation);
+const masterStyleSourceZip = await JSZip.loadAsync(masterStyleAuthored.bytes);
+const masterPartPath = "ppt/slideMasters/slideMaster1.xml";
+const masterStyleAuthoredXml = await masterStyleSourceZip.file(masterPartPath).async("text");
+assert.match(masterStyleAuthoredXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="ctr"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3000"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent1"\s*\/>[\s\S]*?<a:latin typeface="Aptos Display"\s*\/>/);
+assert.match(masterStyleAuthoredXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr[^>]*marL="685800"[^>]*indent="-228600"[^>]*>[\s\S]*?<a:buChar char="•"\s*\/>/);
+masterStyleSourceZip.file(masterPartPath, masterStyleAuthoredXml.replace(/<a:lvl1pPr\b/, '<a:lvl1pPr marR="123456"'));
+const masterStyleSource = await masterStyleSourceZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const masterStyleImported = await importPptxWithOpenXmlWasm(masterStyleSource);
+assert.equal(masterStyleImported.masters.count, 1);
+assert.equal(masterStyleImported.layouts.items.length, 1);
+assert.equal(masterStyleImported.master.id, "presentation/master/1");
+assert.equal(masterStyleImported.master.name, "Authored Master");
+assert.equal(masterStyleImported.master.textParagraphStyles.title[0].alignment, "center");
+assert.equal(masterStyleImported.master.textParagraphStyles.title[0].style.color, "accent1");
+assert.equal(masterStyleImported.master.textParagraphStyles.body[1].bulletCharacter, "•");
+assert.equal(masterStyleImported.layouts.items[0].masterId, masterStyleImported.master.id);
+assert.equal(masterStyleImported.layouts.items[0].type, "blank");
+assert.equal(masterStyleImported.slides.getItem(0).layoutId, masterStyleImported.layouts.items[0].id);
+masterStyleImported.master.textParagraphStyles.title[0].alignment = "right";
+delete masterStyleImported.master.textParagraphStyles.body[1];
+masterStyleImported.master.textParagraphStyles.other[2] = {
+  level: 2,
+  bulletImage: { uri: "https://example.com/master-marker.png", relationshipMode: "link" },
+  bulletColor: "accent3",
+  style: { italic: true, fontSize: 20 },
+};
+const masterStyleEdited = await exportPptxWithOpenXmlWasm(masterStyleImported);
+const masterStyleEditedZip = await JSZip.loadAsync(masterStyleEdited.bytes);
+const masterStyleEditedXml = await masterStyleEditedZip.file(masterPartPath).async("text");
+assert.match(masterStyleEditedXml, /<a:lvl1pPr[^>]*marR="123456"[^>]*algn="r"[^>]*>/);
+assert.doesNotMatch(masterStyleEditedXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr/);
+assert.match(masterStyleEditedXml, /<p:otherStyle>[\s\S]*?<a:lvl3pPr>[\s\S]*?<a:buClr><a:schemeClr val="accent3"\s*\/><\/a:buClr>[\s\S]*?<a:buBlip><a:blip r:link="[^"]+"\s*\/><\/a:buBlip>/);
+const masterRelationships = await masterStyleEditedZip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels").async("text");
+assert.match(masterRelationships, /Type="[^"]+\/image" Target="https:\/\/example\.com\/master-marker\.png" TargetMode="External"/);
+const masterStyleRoundTrip = await importPptxWithOpenXmlWasm(masterStyleEdited);
+assert.equal(masterStyleRoundTrip.master.textParagraphStyles.title[0].alignment, "right");
+assert.equal(masterStyleRoundTrip.master.textParagraphStyles.body[1], undefined);
+assert.equal(masterStyleRoundTrip.master.textParagraphStyles.other[2].bulletImage.uri, "https://example.com/master-marker.png");
+masterStyleImported.slides.getItem(0).layoutId = "presentation/master/1/layout/missing";
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(masterStyleImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "presentation_slide_layout_binding_changed",
+);
+masterStyleImported.slides.getItem(0).layoutId = masterStyleImported.layouts.items[0].id;
+masterStyleImported.master.name = "Unsafe rename";
+await assert.rejects(
+  exportPptxWithOpenXmlWasm(masterStyleImported),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_presentation_edit",
+);
+
+const multiMasterPresentation = Presentation.create({
+  masters: [
+    { id: "master/primary", name: "Primary", textParagraphStyles: { title: { 0: { style: { fontSize: 36, color: "accent1" } } } } },
+    { id: "master/secondary", name: "Secondary", textParagraphStyles: { title: { 0: { style: { fontSize: 32, color: "accent2" } } } } },
+  ],
+  layouts: [
+    { id: "layout/primary", name: "Primary Blank", type: "blank", masterId: "master/primary" },
+    { id: "layout/secondary", name: "Secondary Blank", type: "blank", masterId: "master/secondary" },
+  ],
+});
+for (const [name, layoutId] of [["Primary slide", "layout/primary"], ["Secondary slide", "layout/secondary"]]) {
+  multiMasterPresentation.slides.add({ name, layoutId }).shapes.add({
+    name,
+    position: { left: 60, top: 60, width: 760, height: 80 },
+    fill: "#FFFFFF",
+    line: { fill: "#334155", width: 1 },
+    text: name,
+  });
+}
+const multiMasterSource = await PresentationFile.exportPptx(multiMasterPresentation);
+const multiMasterImported = await importPptxWithOpenXmlWasm(multiMasterSource);
+assert.equal(multiMasterImported.masters.count, 2);
+assert.equal(multiMasterImported.layouts.items.length, 2);
+assert.notEqual(multiMasterImported.slides.items[0].layoutId, multiMasterImported.slides.items[1].layoutId);
+assert.equal(multiMasterImported.layouts.getItem(multiMasterImported.slides.items[1].layoutId).masterId, multiMasterImported.masters.items[1].id);
+multiMasterImported.masters.items[1].textParagraphStyles.title[0].style.color = "accent4";
+const multiMasterEdited = await exportPptxWithOpenXmlWasm(multiMasterImported);
+const multiMasterRoundTrip = await importPptxWithOpenXmlWasm(multiMasterEdited);
+assert.equal(multiMasterRoundTrip.masters.items[1].textParagraphStyles.title[0].style.color, "accent4");
+assert.equal(multiMasterRoundTrip.slides.items[1].layoutId, multiMasterRoundTrip.layouts.items[1].id);
 
 const richPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const richShape = richPresentation.slides.add({ name: "Rich text" }).shapes.add({

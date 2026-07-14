@@ -187,6 +187,10 @@ message PresentationArtifact {
   int64 slide_width_emu = 3;
   int64 slide_height_emu = 4;
   repeated PresentationSlide slides = 5;
+  // Package-level identity remains separate from effective slide formatting.
+  // Source-bound exports require the original master/layout topology.
+  repeated PresentationMaster masters = 6;
+  repeated PresentationLayout layouts = 7;
 }
 
 message PresentationSlide {
@@ -194,6 +198,9 @@ message PresentationSlide {
   string name = 2;
   repeated PresentationElement elements = 3;
   PresentationSlideSourceBinding source = 4;
+  // Stable public locator for the source layout, not an inherited style
+  // snapshot. Changing this binding is outside the current bounded slice.
+  string layout_id = 5;
 }
 
 message PresentationSlideSourceBinding {
@@ -201,6 +208,56 @@ message PresentationSlideSourceBinding {
   string part_path = 2;
   string relationship_id = 3;
   string slide_xml_sha256 = 4;
+  string layout_relationship_id = 5;
+}
+
+// The first bounded package-level PresentationML slice exposes every source
+// master and layout as a hash-bound locator while keeping layout content and
+// graph topology read-only. Only master p:txStyles level defaults are modeled
+// for source-preserving edits.
+message PresentationMaster {
+  string id = 1;
+  string name = 2;
+  PresentationMasterSourceBinding source = 3;
+  PresentationMasterTextStyles text_styles = 4;
+}
+
+message PresentationMasterSourceBinding {
+  uint32 master_index = 1;
+  string part_path = 2;
+  string relationship_id = 3;
+  string master_xml_sha256 = 4;
+  string text_styles_semantic_sha256 = 5;
+  bool text_styles_editable = 6;
+}
+
+message PresentationLayout {
+  string id = 1;
+  string name = 2;
+  string master_id = 3;
+  string type = 4;
+  PresentationLayoutSourceBinding source = 5;
+}
+
+message PresentationLayoutSourceBinding {
+  // Index is local to the owning master's p:sldLayoutIdLst.
+  uint32 layout_index = 1;
+  string part_path = 2;
+  string relationship_id = 3;
+  string layout_xml_sha256 = 4;
+}
+
+message PresentationMasterTextStyles {
+  // Each level uses PresentationTextParagraph's required 0-based level and
+  // bounded paragraph-property fields. Runs are forbidden. Omitted levels
+  // preserve source state; deleted_* entries explicitly scrub only modeled
+  // fields and remove the native level when no residual content remains.
+  repeated PresentationTextParagraph title_levels = 1;
+  repeated PresentationTextParagraph body_levels = 2;
+  repeated PresentationTextParagraph other_levels = 3;
+  repeated uint32 deleted_title_levels = 4;
+  repeated uint32 deleted_body_levels = 5;
+  repeated uint32 deleted_other_levels = 6;
 }
 
 message PresentationElement {
@@ -246,8 +303,8 @@ message PresentationShape {
 // direct paragraph spacing/default-run styles, bounded text-body layout, and
 // bounded click links.
 // Transformed or non-sRGB/non-theme marker colors, custom-show/mouse-over
-// links, field paragraph properties, advanced body properties, and
-// master/layout text styles stay source-bound. Shape-local list levels use the
+// links, field paragraph properties, and unmodeled master/layout content stay
+// source-bound. Shape-local list levels and master p:txStyles levels reuse the
 // bounded fields below.
 message PresentationTextBody {
   repeated PresentationTextParagraph paragraphs = 1;

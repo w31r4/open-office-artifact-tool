@@ -19,7 +19,7 @@ internal static class PptxBulletCodec
         "thaiAlphaParenBoth", "thaiAlphaParenR", "thaiAlphaPeriod", "thaiNumParenBoth", "thaiNumParenR", "thaiNumPeriod",
     };
 
-    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source, PptxSlideContext? context)
+    internal static void Read(PresentationTextParagraph target, A.TextParagraphPropertiesType? source, PptxPartContext? context)
     {
         if (source is null) return;
         var choices = BulletChoices(source).ToArray();
@@ -61,7 +61,7 @@ internal static class PptxBulletCodec
                     throw Invalid("Presentation auto-number start_at must be from 1 through 32767.");
                 return;
             case PresentationTextParagraph.BulletOneofCase.PictureBullet:
-                PptxSlideContext.ValidatePicture(paragraph.PictureBullet);
+                PptxPartContext.ValidatePicture(paragraph.PictureBullet);
                 return;
             default:
                 throw Invalid("Presentation paragraph contains an unknown bullet case.");
@@ -71,13 +71,13 @@ internal static class PptxBulletCodec
     internal static bool HasModeledBullet(PresentationTextParagraph paragraph) =>
         paragraph.BulletCase != PresentationTextParagraph.BulletOneofCase.None;
 
-    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source, PptxSlideContext? context)
+    internal static void Append(A.TextParagraphPropertiesType target, PresentationTextParagraph source, PptxPartContext? context)
     {
         if (!HasModeledBullet(source)) return;
         target.AddChild(Build(source, context), true);
     }
 
-    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source, PptxSlideContext context)
+    internal static void Apply(A.TextParagraphPropertiesType target, PresentationTextParagraph source, PptxPartContext context)
     {
         if (!HasModeledBullet(source)) return;
         var existing = BulletChoices(target).ToArray();
@@ -90,13 +90,13 @@ internal static class PptxBulletCodec
         target.AddChild(Build(source, context), true);
     }
 
-    internal static void Scrub(A.TextParagraphPropertiesType target, PptxSlideContext? context)
+    internal static void Scrub(A.TextParagraphPropertiesType target, PptxPartContext? context)
     {
         var choices = BulletChoices(target).ToArray();
         if (choices.Length == 1 && Modeled(choices[0], context)) choices[0].Remove();
     }
 
-    private static OpenXmlElement Build(PresentationTextParagraph source, PptxSlideContext? context) => source.BulletCase switch
+    private static OpenXmlElement Build(PresentationTextParagraph source, PptxPartContext? context) => source.BulletCase switch
     {
         PresentationTextParagraph.BulletOneofCase.NoBullet => new A.NoBullet(),
         PresentationTextParagraph.BulletOneofCase.BulletCharacter => new A.CharacterBullet { Char = source.BulletCharacter },
@@ -113,7 +113,7 @@ internal static class PptxBulletCodec
     private static IEnumerable<OpenXmlElement> BulletChoices(A.TextParagraphPropertiesType source) =>
         source.ChildElements.Where(child => child is A.NoBullet or A.CharacterBullet or A.AutoNumberedBullet or A.PictureBullet);
 
-    private static bool Modeled(OpenXmlElement source, PptxSlideContext? context) => source switch
+    private static bool Modeled(OpenXmlElement source, PptxPartContext? context) => source switch
     {
         A.NoBullet => true,
         A.CharacterBullet character => ValidCharacter(character.Char?.Value),

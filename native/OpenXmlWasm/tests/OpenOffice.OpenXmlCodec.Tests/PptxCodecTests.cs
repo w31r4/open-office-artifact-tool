@@ -35,6 +35,119 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void MasterGraphAndTextStylesAuthorImportEditDeleteAndPreserveResidualContent()
+    {
+        var request = ExportRequest();
+        var styles = new PresentationMasterTextStyles();
+        styles.TitleLevels.Add(new PresentationTextParagraph
+        {
+            Level = 0,
+            Alignment = "center",
+            DefaultRunProperties = new PresentationTextStyle
+            {
+                Bold = true,
+                FontSizePoints = 30,
+                FontFamily = "Aptos Display",
+                ColorScheme = "accent1",
+            },
+        });
+        styles.BodyLevels.Add(new PresentationTextParagraph
+        {
+            Level = 1,
+            MarginLeftEmu = 685_800,
+            IndentEmu = -228_600,
+            BulletCharacter = "•",
+        });
+        request.Artifact.Presentation.Masters.Add(new PresentationMaster
+        {
+            Id = "master/authored",
+            Name = "Authored Master",
+            TextStyles = styles,
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        byte[] source;
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(authored.File.Span);
+            stream.Position = 0;
+            using (var package = PresentationDocument.Open(stream, true))
+            {
+                var master = package.PresentationPart!.SlideMasterParts.Single().SlideMaster!;
+                master.TextStyles!.TitleStyle!.GetFirstChild<A.Level1ParagraphProperties>()!.RightMargin = 123_456;
+                master.Save();
+            }
+            source = stream.ToArray();
+        }
+
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedMaster = Assert.Single(imported.Artifact.Presentation.Masters);
+        var importedLayout = Assert.Single(imported.Artifact.Presentation.Layouts);
+        var importedSlide = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.Equal("presentation/master/1", importedMaster.Id);
+        Assert.Equal("Authored Master", importedMaster.Name);
+        Assert.True(importedMaster.Source.TextStylesEditable);
+        Assert.Equal("presentation/master/1/layout/1", importedLayout.Id);
+        Assert.Equal(importedMaster.Id, importedLayout.MasterId);
+        Assert.Equal("blank", importedLayout.Type);
+        Assert.Equal(importedLayout.Id, importedSlide.LayoutId);
+        Assert.False(string.IsNullOrWhiteSpace(importedSlide.Source.LayoutRelationshipId));
+        Assert.Equal("center", Assert.Single(importedMaster.TextStyles.TitleLevels).Alignment);
+        Assert.Equal(1U, Assert.Single(importedMaster.TextStyles.BodyLevels).Level);
+
+        importedMaster.TextStyles.TitleLevels[0].Alignment = "right";
+        importedMaster.TextStyles.BodyLevels.Clear();
+        importedMaster.TextStyles.DeletedBodyLevels.Add(1);
+        importedMaster.TextStyles.OtherLevels.Add(new PresentationTextParagraph
+        {
+            Level = 2,
+            PictureBullet = new PresentationPictureBullet { Uri = "https://example.com/master-marker.png" },
+            BulletColorScheme = "accent3",
+        });
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using (var stream = new MemoryStream(preserved.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var masterPart = package.PresentationPart!.SlideMasterParts.Single();
+            var master = masterPart.SlideMaster!;
+            var title = master.TextStyles!.TitleStyle!.GetFirstChild<A.Level1ParagraphProperties>()!;
+            Assert.Equal(A.TextAlignmentTypeValues.Right, title.Alignment!.Value);
+            Assert.Equal(123_456, title.RightMargin!.Value);
+            Assert.Null(master.TextStyles.BodyStyle!.GetFirstChild<A.Level2ParagraphProperties>());
+            var other = master.TextStyles.OtherStyle!.GetFirstChild<A.Level3ParagraphProperties>()!;
+            Assert.NotNull(other.GetFirstChild<A.PictureBullet>());
+            Assert.Equal(A.SchemeColorValues.Accent3, other.GetFirstChild<A.BulletColor>()!.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Contains(masterPart.ExternalRelationships, relationship =>
+                relationship.RelationshipType.EndsWith("/image", StringComparison.Ordinal) &&
+                relationship.Uri.OriginalString == "https://example.com/master-marker.png");
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var roundTrip = Import(preserved.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripStyles = Assert.Single(roundTrip.Artifact.Presentation.Masters).TextStyles;
+        Assert.Equal("right", Assert.Single(roundTripStyles.TitleLevels).Alignment);
+        Assert.Empty(roundTripStyles.BodyLevels);
+        Assert.Equal(PresentationTextParagraph.BulletOneofCase.PictureBullet, Assert.Single(roundTripStyles.OtherLevels).BulletCase);
+
+        imported.Artifact.Presentation.Slides[0].LayoutId = "presentation/master/1/layout/missing";
+        var rebound = Export(imported.Artifact);
+        Assert.False(rebound.Ok);
+        Assert.Equal("invalid_presentation_layout", Assert.Single(rebound.Diagnostics).Code);
+
+        request = ExportRequest();
+        var invalidStyles = new PresentationMasterTextStyles();
+        invalidStyles.TitleLevels.Add(new PresentationTextParagraph { Level = 0 });
+        request.Artifact.Presentation.Masters.Add(new PresentationMaster { Id = "master/invalid", TextStyles = invalidStyles });
+        var invalid = Invoke(request);
+        Assert.False(invalid.Ok);
+        Assert.Equal("invalid_presentation_master_style", Assert.Single(invalid.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportEditsSimpleShapeAndKeepsPictureGraph()
     {
         var first = Invoke(ExportRequest());

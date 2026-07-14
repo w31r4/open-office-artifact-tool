@@ -14,7 +14,7 @@ internal static class PptxTextCodec
     private const int MaxTabStops = 256;
     private const double MaxFontSizePoints = 768;
 
-    internal static PresentationTextBody Read(P.TextBody? source, PptxSlideContext? slideContext = null)
+    internal static PresentationTextBody Read(P.TextBody? source, PptxPartContext? slideContext = null)
     {
         var body = new PresentationTextBody();
         if (source is null) return body;
@@ -115,7 +115,7 @@ internal static class PptxTextCodec
         _ = CanonicalBody(shape);
     }
 
-    internal static P.TextBody Build(PresentationShape shape, PptxSlideContext? slideContext = null)
+    internal static P.TextBody Build(PresentationShape shape, PptxPartContext? slideContext = null)
     {
         var semantic = CanonicalBody(shape);
         var bodyProperties = new A.BodyProperties();
@@ -127,7 +127,7 @@ internal static class PptxTextCodec
         return body;
     }
 
-    internal static void Apply(P.Shape shape, PresentationShape requested, PptxSlideContext slideContext)
+    internal static void Apply(P.Shape shape, PresentationShape requested, PptxPartContext slideContext)
     {
         var semantic = CanonicalBody(requested);
         if (shape.TextBody is null)
@@ -152,7 +152,7 @@ internal static class PptxTextCodec
         }
     }
 
-    internal static void ScrubModeledContent(P.TextBody? body, PptxSlideContext? slideContext = null)
+    internal static void ScrubModeledContent(P.TextBody? body, PptxPartContext? slideContext = null)
     {
         if (body is null) return;
         PptxBodyPropertiesCodec.Scrub(body);
@@ -196,7 +196,7 @@ internal static class PptxTextCodec
         return body;
     }
 
-    private static void NormalizeParagraphEditIntent(PresentationTextParagraph paragraph)
+    internal static void NormalizeParagraphEditIntent(PresentationTextParagraph paragraph)
     {
         if (paragraph.HasNoTabStops) paragraph.ClearNoTabStops();
         if (paragraph.LeftMarginCase == PresentationTextParagraph.LeftMarginOneofCase.NoMarginLeft) paragraph.ClearLeftMargin();
@@ -228,7 +228,7 @@ internal static class PptxTextCodec
         if (!PptxBodyPropertiesCodec.HasModeledProperties(properties)) body.BodyProperties = null;
     }
 
-    private static PresentationTextRun ReadInline(OpenXmlElement source, PptxSlideContext? slideContext)
+    private static PresentationTextRun ReadInline(OpenXmlElement source, PptxPartContext? slideContext)
     {
         var run = source switch
         {
@@ -255,7 +255,7 @@ internal static class PptxTextCodec
         return run;
     }
 
-    private static A.Paragraph BuildParagraph(PresentationTextParagraph source, PptxSlideContext? slideContext)
+    private static A.Paragraph BuildParagraph(PresentationTextParagraph source, PptxPartContext? slideContext)
     {
         var paragraph = new A.Paragraph();
         if (PptxParagraphPropertiesCodec.HasAuthoredProperties(source, includeLevel: true))
@@ -269,7 +269,7 @@ internal static class PptxTextCodec
         return paragraph;
     }
 
-    private static OpenXmlElement BuildInline(PresentationTextRun source, PptxSlideContext? slideContext)
+    private static OpenXmlElement BuildInline(PresentationTextRun source, PptxPartContext? slideContext)
     {
         var properties = new A.RunProperties { Language = "en-US" };
         ApplyRunProperties(properties, source);
@@ -283,7 +283,7 @@ internal static class PptxTextCodec
         };
     }
 
-    private static void ApplyParagraphProperties(A.Paragraph source, PresentationTextParagraph requested, PptxSlideContext slideContext)
+    private static void ApplyParagraphProperties(A.Paragraph source, PresentationTextParagraph requested, PptxPartContext slideContext)
     {
         var properties = source.ParagraphProperties;
         if (properties is null && PptxParagraphPropertiesCodec.HasAuthoredProperties(requested, includeLevel: true))
@@ -295,7 +295,7 @@ internal static class PptxTextCodec
         PptxParagraphPropertiesCodec.Apply(properties, requested, slideContext, includeLevel: true);
     }
 
-    private static void ApplyInline(OpenXmlElement source, PresentationTextRun requested, PptxSlideContext slideContext)
+    private static void ApplyInline(OpenXmlElement source, PresentationTextRun requested, PptxPartContext slideContext)
     {
         if (!InlineKindMatches(source, requested))
             throw new CodecException("presentation_text_topology_changed", "Source-preserving PPTX export cannot change an inline between text, line-break, and field kinds.");
@@ -499,7 +499,7 @@ internal static class PptxTextCodec
         else if (PptxColor.SolidRgb(fill).Length > 0) fill!.Remove();
     }
 
-    private static void ScrubRunProperties(A.RunProperties? properties, PptxSlideContext? slideContext)
+    private static void ScrubRunProperties(A.RunProperties? properties, PptxPartContext? slideContext)
     {
         if (properties is null) return;
         properties.Bold = null;
