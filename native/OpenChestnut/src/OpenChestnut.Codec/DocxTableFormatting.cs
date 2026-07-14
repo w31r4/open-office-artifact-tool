@@ -8,8 +8,9 @@ namespace OpenChestnut.Codec;
 // Owns the first bounded direct table-formatting profile. The profile is
 // deliberately complete: presence means fixed dxa width/grid, four cell
 // margins, six uniform RGB borders, and a uniformly filled/bold first row.
-// Partial, theme-based, conditional, or style-effective formatting remains in
-// source XML instead of being represented as safely editable semantics.
+// Only a profile recognized in full can be edited in place. Partial,
+// theme-based, conditional, or style-effective formatting remains in source
+// XML instead of being represented as safely editable semantics.
 internal static class DocxTableFormatting
 {
     private const uint MaxDxa = 1_000_000;

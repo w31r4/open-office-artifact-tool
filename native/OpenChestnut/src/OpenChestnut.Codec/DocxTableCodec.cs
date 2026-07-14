@@ -7,8 +7,9 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 namespace OpenChestnut.Codec;
 
 // Owns fixed-topology source edits and bounded source-free table construction.
-// Imported table, row, cell, paragraph, and run formatting stays in source XML
-// behind the residual hash. Direct geometry must completely cover tblGrid and
+// Imported table, row, cell, paragraph, and run properties stay in source XML
+// behind the residual hash except for the exact direct-formatting profile owned
+// by DocxTableFormatting. Direct geometry must completely cover tblGrid and
 // carry an exact gridSpan/vMerge chain; ambiguous continuations fail closed.
 internal static class DocxTableCodec
 {
