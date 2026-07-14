@@ -93,12 +93,12 @@ if (!skipCommands) {
   } else {
     checks.push(summarizeCheck("dotnet test native/OfficeBridge", { ok: true, stdout: "skipped: dotnet or native/OfficeBridge unavailable", stderr: "", command: "dotnet test native/OfficeBridge" }, false));
   }
-  if (fs.existsSync(path.join(repoRoot, "native", "OpenXmlWasm")) && commandExists("dotnet")) {
-    const check = summarizeCheck("dotnet test native/OpenXmlWasm", run("dotnet", ["test", "native/OpenXmlWasm/OpenXmlWasm.sln", "--configuration", "Release"]));
+  if (fs.existsSync(path.join(repoRoot, "native", "OpenChestnut")) && commandExists("dotnet")) {
+    const check = summarizeCheck("dotnet test native/OpenChestnut", run("dotnet", ["test", "native/OpenChestnut/OpenChestnut.sln", "--configuration", "Release"]));
     checks.push(check);
-    if (!check.ok) blockers.push("dotnet test native/OpenXmlWasm failed.");
+    if (!check.ok) blockers.push("dotnet test native/OpenChestnut failed.");
   } else {
-    checks.push(summarizeCheck("dotnet test native/OpenXmlWasm", { ok: true, stdout: "skipped: dotnet or native/OpenXmlWasm unavailable", stderr: "", command: "dotnet test native/OpenXmlWasm" }, false));
+    checks.push(summarizeCheck("dotnet test native/OpenChestnut", { ok: true, stdout: "skipped: dotnet or native/OpenChestnut unavailable", stderr: "", command: "dotnet test native/OpenChestnut" }, false));
   }
 }
 

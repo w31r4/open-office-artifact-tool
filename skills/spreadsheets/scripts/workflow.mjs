@@ -13,7 +13,8 @@ import {
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportXlsxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportXlsxWithOpenChestnut, importXlsxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
+import { normalizeOpenChestnutCodecName } from "../../shared/open-chestnut-compat.mjs";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -331,16 +332,16 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const workbook = createWorkbookFromFixture(fixture);
   const workbookPath = path.join(outputDir, fixture.outputName || `${fixture.name || "workbook"}.xlsx`);
-  const codec = String(options.codec || fixture.codec || "javascript").toLowerCase();
-  if (!new Set(["javascript", "openxml-wasm"]).has(codec)) throw new Error(`Unsupported spreadsheet fixture codec ${codec}; expected javascript or openxml-wasm.`);
-  let file = codec === "openxml-wasm"
-    ? await exportXlsxWithOpenXmlWasm(workbook)
+  const codec = normalizeOpenChestnutCodecName(options.codec || fixture.codec || "javascript");
+  if (!new Set(["javascript", "open-chestnut"]).has(codec)) throw new Error(`Unsupported spreadsheet fixture codec ${codec}; expected javascript or open-chestnut.`);
+  let file = codec === "open-chestnut"
+    ? await exportXlsxWithOpenChestnut(workbook)
     : await SpreadsheetFile.exportXlsx(workbook);
-  const roundtripCodec = String(options.roundtripCodec || fixture.roundtripCodec || "none").toLowerCase();
-  if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
-  if (roundtripCodec === "openxml-wasm") {
-    const imported = await importXlsxWithOpenXmlWasm(file);
-    file = await exportXlsxWithOpenXmlWasm(imported, { recalculate: false });
+  const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
+  if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
+  if (roundtripCodec === "open-chestnut") {
+    const imported = await importXlsxWithOpenChestnut(file);
+    file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
   }
   await file.save(workbookPath);
   const qa = await verifyWorkbookFile(workbookPath, {

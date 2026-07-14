@@ -11,7 +11,7 @@ This package is implemented independently using open implementation code:
 - shared `FileBlob`
 - `inspect(...)`, `resolve(...)`, `help(...)`, render/export-style APIs where practical
 
-The long-term Office I/O architecture is documented in [docs/reference-runtime-architecture.md](docs/reference-runtime-architecture.md). The agent-facing model remains JavaScript. Source-built C# Open XML SDK codecs now run from bundled .NET WebAssembly for bounded XLSX, DOCX, and PPTX slices; advanced authoring semantics still use the existing JavaScript codecs as the default migration fallback. The Windows Microsoft Office bridge is optional render/compatibility QA, not the core file codec.
+The long-term Office I/O architecture is documented in [docs/reference-runtime-architecture.md](docs/reference-runtime-architecture.md). The agent-facing model remains JavaScript. **OpenChestnut** is this project's independent, source-built C# Open XML SDK codec and bundled .NET WebAssembly runtime for bounded XLSX, DOCX, and PPTX slices; advanced authoring semantics still use the existing JavaScript codecs as the default migration fallback. The Windows Microsoft Office bridge is optional render/compatibility QA, not the core file codec.
 
 ## Current status
 
@@ -41,7 +41,7 @@ DOCX settings are agent-facing through `DocumentModel.create({ settings })`, `do
 
 DOCX bookmark and hyperlink semantics live in `src/ooxml/docx-links.mjs`. `document.addBookmark(target, name, { endTarget, nativeId })` creates a block-backed or exact `table.getCell(row, column)` range that participates in inspect/resolve/verify and emits paired `w:bookmarkStart`/`w:bookmarkEnd` markers in document order. `document.addHyperlink(...)` accepts an external URL, `#bookmark`, a bookmark facade, or `{ anchor }`; internal links use `w:anchor` without creating a package relationship, while external links use `r:id`. Metadata-free import restores block/table-cell ranges, native numeric IDs, anchors, tooltips, history state, external URLs, and relationship IDs. Package inspection rejects duplicate, unpaired, reversed, out-of-range bookmarks and dangling internal anchors.
 
-The experimental OpenXML-WASM DOCX path additionally treats bounded whole-paragraph hyperlinks and simple fields as source-bound editable content. Its C# Open XML SDK codec can change hyperlink text, tooltip, history, and external/internal target mode while changing only relationships owned by that hyperlink. It can also edit one-run `w:fldSimple` instructions/results for a bounded non-fetching catalog such as `PAGE`, `NUMPAGES`, dates, document properties, and counts. Residual hashes retain native run/paragraph formatting; mixed-content, multi-run, complex, and unsupported fields remain read-only instead of being flattened or executed.
+The experimental OpenChestnut DOCX path additionally treats bounded whole-paragraph hyperlinks and simple fields as source-bound editable content. Its C# Open XML SDK codec can change hyperlink text, tooltip, history, and external/internal target mode while changing only relationships owned by that hyperlink. It can also edit one-run `w:fldSimple` instructions/results for a bounded non-fetching catalog such as `PAGE`, `NUMPAGES`, dates, document properties, and counts. Residual hashes retain native run/paragraph formatting; mixed-content, multi-run, complex, and unsupported fields remain read-only instead of being flattened or executed.
 
 Native Word bibliography semantics live in `src/ooxml/docx-bibliography.mjs`. `document.addBibliographySource(...)` creates resolvable `b:Source` entries with Word source types, personal or corporate authors, deterministic GUIDs, and structured publication fields; `document.addCitation(...)` writes a real `CITATION` field keyed by the source tag. Export stores cited and uncited sources in a relationship-owned `customXml/item*.xml` `b:Sources` part. Metadata-free import follows arbitrary customXml targets, accepts alternate namespace prefixes, restores source/style metadata and visible field results, and preserves them on second export. Package inspection rejects invalid or duplicate sources, unlinked bibliography parts, and citation tags without a matching source. Generic `w:fldSimple` and complex fields continue to recover their instruction/display values, and comments attached to hyperlinks, fields, and citations use the same native range/reference anchors.
 
@@ -80,34 +80,34 @@ await (await SpreadsheetFile.exportCsv(workbook, { sheetName: "Sheet1" })).save(
 const importedCsv = await SpreadsheetFile.importCsv("Name,Value\r\nRevenue,120", { coerceTypes: true });
 ```
 
-The experimental Open XML SDK WebAssembly subpath authors a bounded workbook feature set directly. For imported XLSX files, it also carries a budget-checked, hash-bound source-package snapshot and updates modeled workbook/sheet/cell fields in place, so unmodeled styles, tables, pivots, drawings, comments, and arbitrary legal OPC targets survive the second export byte-for-byte at the opaque-part boundary. New advanced workbooks still use the JavaScript codec until their semantics enter the public schema. Consumption uses only bundled runtime assets; a local .NET SDK is not required:
+The experimental OpenChestnut subpath authors a bounded workbook feature set directly. For imported XLSX files, it also carries a budget-checked, hash-bound source-package snapshot and updates modeled workbook/sheet/cell fields in place, so unmodeled styles, tables, pivots, drawings, comments, and arbitrary legal OPC targets survive the second export byte-for-byte at the opaque-part boundary. New advanced workbooks still use the JavaScript codec until their semantics enter the public schema. Consumption uses only bundled runtime assets; a local .NET SDK is not required:
 
 ```js
 import { Workbook } from "open-office-artifact-tool";
-import { exportXlsxWithOpenXmlWasm, importXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportXlsxWithOpenChestnut, importXlsxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 
 const workbook = Workbook.create({ dateSystem: "1904" });
 workbook.worksheets.add("Summary").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 42.5]];
-const xlsx = await exportXlsxWithOpenXmlWasm(workbook);
-const roundtripped = await importXlsxWithOpenXmlWasm(xlsx);
+const xlsx = await exportXlsxWithOpenChestnut(workbook);
+const roundtripped = await importXlsxWithOpenChestnut(xlsx);
 ```
 
 The same subpath authors a bounded DOCX semantic slice. Imported advanced blocks are hash-bound to the original package: unchanged content is preserved, while edits to not-yet-modeled structures fail explicitly.
 
 ```js
 import { DocumentModel } from "open-office-artifact-tool";
-import { exportDocxWithOpenXmlWasm, importDocxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportDocxWithOpenChestnut, importDocxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 
-const document = DocumentModel.create({ paragraphs: ["OpenXML WASM document"] });
-const docx = await exportDocxWithOpenXmlWasm(document);
-const importedDocument = await importDocxWithOpenXmlWasm(docx);
+const document = DocumentModel.create({ paragraphs: ["OpenChestnut document"] });
+const docx = await exportDocxWithOpenChestnut(document);
+const importedDocument = await importDocxWithOpenChestnut(docx);
 ```
 
 PPTX uses the same loss-aware boundary. A simple deck can be authored directly; importing an advanced deck carries hash-bound master/layout/slide/shape bindings so unsupported native objects survive safe modeled edits. The WebAssembly slice exposes every Slide Master and Slide Layout as a stable package locator, preserves the Slide → Layout → Master chain, and permits bounded title/body/other `p:txStyles`, direct Master/Layout solid or theme-reference backgrounds, and owner-local Master/Layout placeholder text/body/list/link edits. Effective inheritance stays in the JavaScript model; placeholder geometry/fill/shape style/identity, placeholder topology, and slide rebinding remain read-only.
 
 ```js
 import { Presentation } from "open-office-artifact-tool";
-import { exportPptxWithOpenXmlWasm, importPptxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportPptxWithOpenChestnut, importPptxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 
 const deck = Presentation.create({
   master: {
@@ -122,16 +122,16 @@ deck.slides.add({ name: "Overview" }).shapes.add({
   name: "Title",
   text: [
     { alignment: "center", lineSpacing: 1.2, spaceAfter: 8, runs: [
-      { text: "OpenXML ", style: { bold: true, fontSize: 36, color: "#0F172A" } },
-      { text: "WASM presentation", style: { italic: true, fontSize: 36 }, link: { uri: "https://example.com/evidence", tooltip: "Open evidence" } },
+      { text: "OpenChestnut ", style: { bold: true, fontSize: 36, color: "#0F172A" } },
+      { text: "presentation", style: { italic: true, fontSize: 36 }, link: { uri: "https://example.com/evidence", tooltip: "Open evidence" } },
     ] },
     { autoNumber: { type: "arabicPeriod", startAt: 1 }, bulletFont: "Aptos", bulletColor: "#2563EB", bulletSizePercent: 1.25, runs: ["Validated list marker"] },
     { bulletImage: { dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==" }, runs: ["Content-addressed picture marker"] },
   ],
   position: { left: 60, top: 40, width: 860, height: 70 },
 });
-const pptx = await exportPptxWithOpenXmlWasm(deck);
-const importedDeck = await importPptxWithOpenXmlWasm(pptx);
+const pptx = await exportPptxWithOpenChestnut(deck);
+const importedDeck = await importPptxWithOpenChestnut(pptx);
 ```
 
 Presentation compose-first authoring uses helper nodes that mirror the agent-oriented JSX vocabulary while staying transpiler-free:
@@ -183,6 +183,10 @@ const tree = jsxs(Fragment, {
 });
 slide.compose(tree, { frame: { left: 80, top: 120, width: 720, height: 180 } });
 ```
+
+### OpenChestnut naming compatibility
+
+`open-office-artifact-tool/codecs/open-chestnut` is the canonical codec subpath and owns all implementation/runtime behavior. The former `open-office-artifact-tool/codecs/openxml-wasm` subpath remains as a deprecated, compatibility-only re-export for existing consumers; its legacy function names are aliases of the OpenChestnut functions and report `metadata.codec === "open-chestnut"`. New code, fixtures, build commands, and documentation should use OpenChestnut. The public wire namespace remains `open_office.artifact.v1` and is independent of either JavaScript module name.
 
 ## Renderer adapters
 

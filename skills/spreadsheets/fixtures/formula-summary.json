@@ -1,6 +1,6 @@
 {
   "name": "formula-summary",
-  "roundtripCodec": "openxml-wasm",
+  "roundtripCodec": "open-chestnut",
   "dateSystem": "1904",
   "theme": {
     "name": "Agent Spreadsheet Theme",

@@ -38,8 +38,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
-| `exportDocxWithOpenXmlWasm` | api | Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled C# Open XML SDK WebAssembly codec. |
-| `importDocxWithOpenXmlWasm` | api | Experimentally import DOCX bytes with loss-aware block source bindings for fail-closed advanced-content preservation. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled C# Open XML SDK WebAssembly codec. |
+| `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes with loss-aware block source bindings for fail-closed advanced-content preservation. |
 
 ### document details
 
@@ -586,7 +586,7 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 
 - `document` (DocumentModel) — Editable document facade.
 
-#### `exportDocxWithOpenXmlWasm`
+#### `exportDocxWithOpenChestnut`
 
 Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled C# Open XML SDK WebAssembly codec.
 
@@ -600,7 +600,7 @@ Experimentally export the bounded DocumentModel paragraph/run/table slice throug
 
 - `blob` (FileBlob) — DOCX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata.
 
-#### `importDocxWithOpenXmlWasm`
+#### `importDocxWithOpenChestnut`
 
 Experimentally import DOCX bytes with loss-aware block source bindings for fail-closed advanced-content preservation.
 
@@ -1020,8 +1020,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenXmlWasm` | api | Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
-| `importPptxWithOpenXmlWasm` | api | Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed. |
+| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
@@ -1088,7 +1088,7 @@ Create an editable text block with name, className/style text tokens, and stable
 
 - `node` (object) — Paragraph compose node.
 
-#### `exportPptxWithOpenXmlWasm`
+#### `exportPptxWithOpenChestnut`
 
 Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed.
 
@@ -1102,7 +1102,7 @@ Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and
 
 - `blob` (FileBlob) — PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata.
 
-#### `importPptxWithOpenXmlWasm`
+#### `importPptxWithOpenChestnut`
 
 Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
@@ -1923,7 +1923,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenXmlWasm` | api | Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2012,9 +2012,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenXmlWasm` | api | Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec. |
-| `invokeOpenXmlWasm` | api | Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects. |
-| `openXmlWasmStatus` | api | Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec. |
+| `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects. |
+| `openChestnutStatus` | api | Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
 | `range.fillDown` | api | Copy top-row contents and formatting down the range while translating relative A1 formula references. |
@@ -2064,7 +2064,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 ### workbook details
 
-#### `exportXlsxWithOpenXmlWasm`
+#### `exportXlsxWithOpenChestnut`
 
 Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec.
 
@@ -3581,7 +3581,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
-#### `importXlsxWithOpenXmlWasm`
+#### `importXlsxWithOpenChestnut`
 
 Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec.
 
@@ -3594,7 +3594,7 @@ Experimentally import XLSX bytes through the bounded source-built bundled C# Ope
 
 - `workbook` (Workbook) — Imported first-slice workbook facade carrying source/opaque package evidence for fail-closed second export.
 
-#### `invokeOpenXmlWasm`
+#### `invokeOpenChestnut`
 
 Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects.
 
@@ -3604,9 +3604,9 @@ Advanced experimental byte-boundary API for invoking the public OpenXML codec pr
 
 **Schema returns:**
 
-- `response` (object) — Decoded public CodecResponse wire message; structured codec failures throw OpenXmlWasmCodecError.
+- `response` (object) — Decoded public CodecResponse wire message; structured codec failures throw OpenChestnutCodecError.
 
-#### `openXmlWasmStatus`
+#### `openChestnutStatus`
 
 Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest.
 

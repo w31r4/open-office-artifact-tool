@@ -16,7 +16,8 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportPptxWithOpenXmlWasm, importPptxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportPptxWithOpenChestnut, importPptxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
+import { normalizeOpenChestnutCodecName, presentationOpenChestnutConfig } from "../../shared/open-chestnut-compat.mjs";
 import {
   prepareNumberedVisualBaselines,
   runPngVisualQa,
@@ -326,35 +327,35 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   let pptx = await PresentationFile.exportPptx(presentation);
   pptx = await applyFixturePackageDrawing(pptx, fixture);
   pptx = await applyFixturePackageReview(pptx, fixture);
-  const roundtripCodec = String(options.roundtripCodec || fixture.roundtripCodec || "none").toLowerCase();
-  if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported presentation roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
-  if (roundtripCodec === "openxml-wasm") {
-    const imported = await importPptxWithOpenXmlWasm(pptx);
-    const edit = fixture.openXmlWasm?.edit;
+  const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
+  if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported presentation roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
+  if (roundtripCodec === "open-chestnut") {
+    const imported = await importPptxWithOpenChestnut(pptx);
+    const edit = presentationOpenChestnutConfig(fixture)?.edit;
     if (edit) {
       if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
       if (edit.layoutBackground) imported.layouts.items[0].background = edit.layoutBackground;
       if (edit.masterPlaceholder) {
         const placeholder = imported.master.placeholders.find((item) => item.type === edit.masterPlaceholder.type && item.idx === Number(edit.masterPlaceholder.idx));
-        assert.ok(placeholder, `Missing OpenXML WASM master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);
+        assert.ok(placeholder, `Missing OpenChestnut master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);
         if (Object.hasOwn(edit.masterPlaceholder, "text")) placeholder.text = edit.masterPlaceholder.text;
         if (edit.masterPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.masterPlaceholder.textBodyProperties;
       }
       if (edit.layoutPlaceholder) {
         const placeholder = imported.layouts.items[0].placeholders.find((item) => item.type === edit.layoutPlaceholder.type && item.idx === Number(edit.layoutPlaceholder.idx));
-        assert.ok(placeholder, `Missing OpenXML WASM layout placeholder ${edit.layoutPlaceholder.type}:${edit.layoutPlaceholder.idx}`);
+        assert.ok(placeholder, `Missing OpenChestnut layout placeholder ${edit.layoutPlaceholder.type}:${edit.layoutPlaceholder.idx}`);
         if (Object.hasOwn(edit.layoutPlaceholder, "text")) placeholder.text = edit.layoutPlaceholder.text;
         if (edit.layoutPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.layoutPlaceholder.textBodyProperties;
       }
       if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
-      assert.ok(shape, `Missing OpenXML WASM editable shape ${edit.shapeName || edit.shapeId}`);
+      assert.ok(shape, `Missing OpenChestnut editable shape ${edit.shapeName || edit.shapeId}`);
       shape.text.set(edit.text ?? shape.text.value);
       if (edit.textBodyProperties) shape.text.bodyProperties = edit.textBodyProperties;
       if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;
     }
-    pptx = await exportPptxWithOpenXmlWasm(imported);
+    pptx = await exportPptxWithOpenChestnut(imported);
   }
   await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {

@@ -23,7 +23,7 @@ try {
     nativeRender: nativeAvailable ? "required" : "off",
   });
   assert.equal(result.fixture.name, "formula-summary");
-  assert.equal(result.roundtripCodec, "openxml-wasm");
+  assert.equal(result.roundtripCodec, "open-chestnut");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
@@ -159,11 +159,11 @@ try {
   assert.equal(result.qa.packageInspect.records[0].semanticIssues, 0);
   assert.deepEqual([...(await fs.readFile(result.qa.summary.files.preview)).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
 
-  const wasmResult = await runSpreadsheetFixture(path.join(repoRoot, "skills", "spreadsheets", "fixtures", "openxml-wasm-basic.json"), {
-    outputDir: path.join(outputDir, "openxml-wasm-basic"),
+  const wasmResult = await runSpreadsheetFixture(path.join(repoRoot, "skills", "spreadsheets", "fixtures", "open-chestnut-basic.json"), {
+    outputDir: path.join(outputDir, "open-chestnut-basic"),
     nativeRender: nativeSpreadsheetRenderStatus().available ? "required" : "off",
   });
-  assert.equal(wasmResult.codec, "openxml-wasm");
+  assert.equal(wasmResult.codec, "open-chestnut");
   assert.equal(wasmResult.qa.summary.packageOk, true);
   assert.equal(wasmResult.qa.summary.verifyOk, true);
   assert.equal(wasmResult.qa.summary.visualQaOk, true);

@@ -207,16 +207,16 @@ try {
   assert.match(packageDrawing.qa.inspect.ndjson, /Agent status/);
   assert.equal(packageDrawing.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
-  const wasmPreservation = await runPresentationFixture("skills/presentations/fixtures/openxml-wasm-preservation.json", {
-    outputDir: path.join(root, "openxml-wasm-preservation"),
+  const wasmPreservation = await runPresentationFixture("skills/presentations/fixtures/open-chestnut-preservation.json", {
+    outputDir: path.join(root, "open-chestnut-preservation"),
     nativeRender: nativeStatus.available ? "required" : "auto",
   });
-  assert.equal(wasmPreservation.roundtripCodec, "openxml-wasm");
+  assert.equal(wasmPreservation.roundtripCodec, "open-chestnut");
   assert.equal(wasmPreservation.qa.summary.packageOk, true);
   assert.equal(wasmPreservation.qa.verify.ok, true);
   const wasmSlide = wasmPreservation.qa.presentation.slides.items[0];
   const wasmTitle = wasmSlide.shapes.items.find((item) => item.name === "wasm-title");
-  assert.equal(wasmTitle?.text.value, "After OpenXML WASM\t2\nField and line-break evidence\nCharacter marker\nAutomatic marker\nPicture marker");
+  assert.equal(wasmTitle?.text.value, "After OpenChestnut\t2\nField and line-break evidence\nCharacter marker\nAutomatic marker\nPicture marker");
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.bold, true);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");
