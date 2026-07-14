@@ -949,7 +949,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded value/custom filters and value-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
@@ -2339,6 +2339,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
     columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
     filters: { type: "object[]", description: "Zero-based table-column value or one/two-criterion custom AutoFilters." },
+    sortState: { type: "object", description: "Bounded value-sort state with reference, caseSensitive, and ordered single-column { reference, descending } conditions." },
     showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
   "sheet.pivotTables.add": helpSchema({
@@ -3007,6 +3008,13 @@ class WorksheetTable {
         includeBlank: Boolean(filter?.includeBlank),
       };
     }) : [];
+    this.sortState = config.sortState ? {
+      reference: String(config.sortState.reference ?? ""),
+      caseSensitive: Boolean(config.sortState.caseSensitive),
+      conditions: Array.isArray(config.sortState.conditions)
+        ? config.sortState.conditions.map((condition) => ({ reference: String(condition?.reference ?? ""), descending: Boolean(condition?.descending) }))
+        : [],
+    } : undefined;
     this.rows = new WorksheetTableRowsFacade(this);
     this.refreshDimensions();
   }
@@ -3028,7 +3036,7 @@ class WorksheetTable {
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {
-    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, values: this.values };
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, sortState: this.sortState, values: this.values };
   }
 
   toSvg(bounds) {
@@ -3038,7 +3046,7 @@ class WorksheetTable {
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, sortState: this.sortState, values: this.values }; }
 }
 
 class WorksheetTableCollection {
@@ -6765,11 +6773,19 @@ function tableFilterXml(filter) {
   return `<filterColumn colId="${columnIndex}"><filters${filter?.includeBlank ? ' blank="1"' : ""}>${values}</filters></filterColumn>`;
 }
 
+function tableSortStateXml(sortState) {
+  if (!sortState) return "";
+  const conditions = (sortState.conditions || []).map((condition) =>
+    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}/>`).join("");
+  return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}>${conditions}</sortState>`;
+}
+
 function tableAutoFilterXml(table, reference) {
   if (!table.showFilterButton) return "";
   const filters = Array.isArray(table.filters) ? table.filters.map(tableFilterXml).join("") : "";
-  return filters
-    ? `<autoFilter ref="${attrEscape(reference)}">${filters}</autoFilter>`
+  const sortState = tableSortStateXml(table.sortState);
+  return filters || sortState
+    ? `<autoFilter ref="${attrEscape(reference)}">${filters}${sortState}</autoFilter>`
     : `<autoFilter ref="${attrEscape(reference)}"/>`;
 }
 
@@ -7101,6 +7117,26 @@ function parseNativeTableFilters(xml) {
   });
 }
 
+function parseNativeTableSortState(xml) {
+  const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
+  if (!autoFilter) return undefined;
+  const match = /<(?:[A-Za-z_][\w.-]*:)?sortState\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sortState\s*>/.exec(autoFilter[1]);
+  if (!match) return undefined;
+  const attrs = ooxmlXmlAttributes(match[1] || "");
+  if (!attrs.ref || attrs.columnSort != null || attrs.sortMethod != null) return undefined;
+  const conditions = [...match[2].matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g)].map((conditionMatch) => {
+    const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
+    if (!condition.ref || (condition.sortBy != null && condition.sortBy !== "value") || condition.customList != null || condition.dxfId != null || condition.iconId != null || condition.iconSet != null) return undefined;
+    return { reference: condition.ref, descending: condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase()) };
+  });
+  if (!conditions.length || conditions.some((condition) => condition == null)) return undefined;
+  return {
+    reference: attrs.ref,
+    caseSensitive: attrs.caseSensitive != null && !["0", "false", "off"].includes(String(attrs.caseSensitive).toLowerCase()),
+    conditions,
+  };
+}
+
 async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
   const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
   for (const relationship of relationships) {
@@ -7150,6 +7186,7 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       columnNames,
       columnDefinitions,
       filters: parseNativeTableFilters(xml),
+      sortState: parseNativeTableSortState(xml),
     });
   }
 }

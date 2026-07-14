@@ -200,9 +200,12 @@ message SpreadsheetTableArtifact {
   // from this message.
   repeated SpreadsheetTableColumnArtifact columns = 14;
   // Bounded AutoFilter criteria keyed by zero-based table column index.
-  // Dynamic/date-group/color/icon/Top10 filters and sort state remain
-  // source-bound residual content until modeled independently.
+  // Dynamic/date-group/color/icon/Top10 filters remain source-bound residual
+  // content until modeled independently.
   repeated SpreadsheetTableFilterArtifact filters = 15;
+  // Bounded AutoFilter sort state. Only ordinary value sorts are modeled;
+  // color/icon/custom-list and locale-specific sort profiles remain opaque.
+  SpreadsheetTableSortStateArtifact sort_state = 16;
 }
 
 // A bounded SpreadsheetML tableColumn projection. Formula strings use the
@@ -243,6 +246,19 @@ message SpreadsheetTableCustomFilterArtifact {
 message SpreadsheetTableCustomFilterCriterionArtifact {
   string operator = 1;
   string value = 2;
+}
+
+// Sort range plus ordered value-sort conditions. A condition reference is one
+// column contained in the sort range; condition order is significant.
+message SpreadsheetTableSortStateArtifact {
+  string reference = 1;
+  bool case_sensitive = 2;
+  repeated SpreadsheetTableSortConditionArtifact conditions = 3;
+}
+
+message SpreadsheetTableSortConditionArtifact {
+  string reference = 1;
+  bool descending = 2;
 }
 
 message SpreadsheetTableSourceBinding {

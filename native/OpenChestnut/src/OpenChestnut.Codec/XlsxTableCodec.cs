@@ -11,9 +11,10 @@ namespace OpenChestnut.Codec;
 
 // Owns the bounded worksheet TableParts -> TableDefinitionPart graph. Cell
 // values/formulas remain owned by XlsxCodec; this module owns the table-level
-// calculated-column/totals metadata plus bounded value/custom AutoFilters.
-// Query tables, dynamic/date-group/color/icon/Top10 filters, sort state,
-// extensions, differential styles, and other complex profiles remain opaque.
+// calculated-column/totals metadata plus bounded value/custom AutoFilters and
+// ordinary cell-value sort state. Query tables, dynamic/date-group/color/icon/
+// Top10 filters, custom-list/color/icon sorts, extensions, differential styles,
+// and other complex profiles remain opaque.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -241,6 +242,7 @@ internal sealed class XlsxTableCodec
                 throw Invalid($"Worksheet table {table.Name} has an invalid or duplicate filter column index.", location);
             ValidateFilter(table, filter, location);
         }
+        if (table.SortState is not null) ValidateSortState(table, bounds, location);
     }
 
     private static void ValidateFilter(SpreadsheetTableArtifact table, SpreadsheetTableFilterArtifact filter, string location)
@@ -263,6 +265,26 @@ internal sealed class XlsxTableCodec
                 break;
             default:
                 throw Invalid($"Worksheet table {table.Name} filter must provide exactly one supported criteria type.", location);
+        }
+    }
+
+    private static void ValidateSortState(SpreadsheetTableArtifact table, (uint Top, uint Left, uint Bottom, uint Right) tableBounds, string location)
+    {
+        if (!table.ShowFilterButton)
+            throw Invalid($"Worksheet table {table.Name} cannot define sort state while filter buttons are hidden.", location);
+        var sort = table.SortState;
+        var bounds = Range(sort.Reference, location);
+        if (bounds.Top < tableBounds.Top || bounds.Left < tableBounds.Left || bounds.Bottom > tableBounds.Bottom || bounds.Right > tableBounds.Right)
+            throw Invalid($"Worksheet table {table.Name} sort range must be contained in the table range.", location);
+        if (sort.Conditions.Count is < 1 or > 64)
+            throw Invalid($"Worksheet table {table.Name} sort state must provide between one and 64 conditions.", location);
+        var columns = new HashSet<uint>();
+        foreach (var condition in sort.Conditions)
+        {
+            var conditionBounds = Range(condition.Reference, location);
+            if (conditionBounds.Left != conditionBounds.Right || conditionBounds.Top != bounds.Top || conditionBounds.Bottom != bounds.Bottom ||
+                conditionBounds.Left < bounds.Left || conditionBounds.Right > bounds.Right || !columns.Add(conditionBounds.Left))
+                throw Invalid($"Worksheet table {table.Name} has an invalid or duplicate value-sort condition.", location);
         }
     }
 
@@ -327,10 +349,18 @@ internal sealed class XlsxTableCodec
         }
         var filter = root.Element(Spreadsheet + "autoFilter");
         var tableFilters = new List<SpreadsheetTableFilterArtifact>();
+        SpreadsheetTableSortStateArtifact? sortState = null;
         if (filter is not null)
         {
             if (filter.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "ref")) || filter.Attribute("ref")?.Value != reference) return false;
-            foreach (var filterColumn in filter.Elements())
+            var filterChildren = filter.Elements().ToArray();
+            var sortIndex = Array.FindIndex(filterChildren, item => item.Name == Spreadsheet + "sortState");
+            if (sortIndex >= 0)
+            {
+                if (sortIndex != filterChildren.Length - 1 || !TryReadSortState(filterChildren[sortIndex], out sortState)) return false;
+                filterChildren = filterChildren[..sortIndex];
+            }
+            foreach (var filterColumn in filterChildren)
             {
                 if (!TryReadFilter(filterColumn, out var tableFilter)) return false;
                 tableFilters.Add(tableFilter!);
@@ -361,6 +391,7 @@ internal sealed class XlsxTableCodec
         artifact.ColumnNames.Add(richColumns.Select(item => item.Name));
         artifact.Columns.Add(richColumns);
         artifact.Filters.Add(tableFilters);
+        if (sortState is not null) artifact.SortState = sortState;
         try { Validate(artifact, artifact.Name); }
         catch (CodecException) { artifact = null; return false; }
         return true;
@@ -445,6 +476,29 @@ internal sealed class XlsxTableCodec
         return true;
     }
 
+    private static bool TryReadSortState(XElement element, out SpreadsheetTableSortStateArtifact? artifact)
+    {
+        artifact = null;
+        if (element.Name != Spreadsheet + "sortState" || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "caseSensitive"))) ||
+            element.Attribute("ref") is not XAttribute reference ||
+            !TryBool(element.Attribute("caseSensitive")?.Value, defaultValue: false, out var caseSensitive)) return false;
+        var conditions = element.Elements().ToArray();
+        if (conditions.Length is < 1 or > 64) return false;
+        var sort = new SpreadsheetTableSortStateArtifact { Reference = reference.Value, CaseSensitive = caseSensitive };
+        foreach (var condition in conditions)
+        {
+            if (condition.Name != Spreadsheet + "sortCondition" || condition.Elements().Any() || condition.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "descending" or "sortBy"))) ||
+                condition.Attribute("ref") is not XAttribute conditionReference ||
+                condition.Attribute("sortBy")?.Value is string sortBy && sortBy != "value" ||
+                !TryBool(condition.Attribute("descending")?.Value, defaultValue: false, out var descending)) return false;
+            sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = conditionReference.Value, Descending = descending });
+        }
+        artifact = sort;
+        return true;
+    }
+
     private static void ValidateBinding(SpreadsheetTableSourceBinding? binding, Entry entry)
     {
         if (binding is null || !binding.WorksheetPartPath.Equals(entry.Artifact.Source.WorksheetPartPath, StringComparison.OrdinalIgnoreCase) ||
@@ -502,6 +556,20 @@ internal sealed class XlsxTableCodec
     {
         var element = new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference));
         element.Add(table.Filters.Select(CreateFilter));
+        if (table.SortState is not null) element.Add(CreateSortState(table.SortState));
+        return element;
+    }
+
+    private static XElement CreateSortState(SpreadsheetTableSortStateArtifact sort)
+    {
+        var element = new XElement(Spreadsheet + "sortState", new XAttribute("ref", sort.Reference));
+        if (sort.CaseSensitive) element.SetAttributeValue("caseSensitive", 1);
+        element.Add(sort.Conditions.Select(condition =>
+        {
+            var child = new XElement(Spreadsheet + "sortCondition", new XAttribute("ref", condition.Reference));
+            if (condition.Descending) child.SetAttributeValue("descending", 1);
+            return child;
+        }));
         return element;
     }
 
@@ -561,6 +629,7 @@ internal sealed class XlsxTableCodec
             column.TotalsRowLabel, column.TotalsRowFormula, column.TotalsRowFormulaArray.ToString(),
         }),
         .. table.Filters.SelectMany(filter => FilterSemantics(filter)),
+        .. SortStateSemantics(table.SortState),
     ])));
 
     private static IEnumerable<string> FilterSemantics(SpreadsheetTableFilterArtifact filter)
@@ -581,6 +650,18 @@ internal sealed class XlsxTableCodec
                     yield return criterion.Value;
                 }
                 break;
+        }
+    }
+
+    private static IEnumerable<string> SortStateSemantics(SpreadsheetTableSortStateArtifact? sort)
+    {
+        if (sort is null) { yield return "no-sort-state"; yield break; }
+        yield return sort.Reference;
+        yield return sort.CaseSensitive.ToString();
+        foreach (var condition in sort.Conditions)
+        {
+            yield return condition.Reference;
+            yield return condition.Descending.ToString();
         }
     }
 

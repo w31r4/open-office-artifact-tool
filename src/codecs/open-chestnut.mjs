@@ -545,6 +545,27 @@ function publicTableFilter(filter) {
   };
 }
 
+function tableSortState(table) {
+  const sort = table?.sortState;
+  if (!sort) return undefined;
+  return {
+    reference: String(sort.reference ?? ""),
+    caseSensitive: Boolean(sort.caseSensitive),
+    conditions: Array.isArray(sort.conditions)
+      ? sort.conditions.map((condition) => ({ reference: String(condition?.reference ?? ""), descending: Boolean(condition?.descending) }))
+      : [],
+  };
+}
+
+function publicTableSortState(sort) {
+  if (!sort) return undefined;
+  return {
+    reference: sort.reference,
+    caseSensitive: Boolean(sort.caseSensitive),
+    conditions: (sort.conditions || []).map((condition) => ({ reference: condition.reference, descending: Boolean(condition.descending) })),
+  };
+}
+
 function tableSnapshot(table) {
   const columnNames = tableColumnNames(table);
   return {
@@ -562,6 +583,7 @@ function tableSnapshot(table) {
     columnNames,
     columns: tableColumnDefinitions(table, columnNames),
     filters: tableFilters(table),
+    sortState: tableSortState(table),
   };
 }
 
@@ -742,6 +764,7 @@ function workbookFromEnvelope(envelope) {
         columnNames: [...sourceTable.columnNames],
         columnDefinitions: sourceTable.columns?.length ? sourceTable.columns.map((column) => ({ ...column })) : undefined,
         filters: sourceTable.filters?.map(publicTableFilter),
+        sortState: publicTableSortState(sourceTable.sortState),
       });
       table.showHeaders = sourceTable.hasHeaders;
       table.showFirstColumn = sourceTable.showFirstColumn;
