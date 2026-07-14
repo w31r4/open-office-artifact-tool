@@ -130,16 +130,16 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
   --output-dir tmp/spreadsheet-skill-fixture
 ```
 
-This fixture intentionally runs `JavaScript export → OpenXML-WASM import → source-preserving OpenXML-WASM export` before inspect/render/verify. Its advanced theme, styles, table, pivot, chart, image, comments, formulas, and native pages therefore exercise both codec boundaries.
+This fixture intentionally runs `JavaScript export → OpenChestnut import → source-preserving OpenChestnut export` before inspect/render/verify. Its advanced theme, styles, table, pivot, chart, image, comments, formulas, and native pages therefore exercise both codec boundaries.
 
 The source-built Open XML SDK WebAssembly codec is available for the bounded first-slice workbook features: primitive/cached-formula cells, date-system selection, sheets, merges, dimensions, gridlines, and frozen panes. Exercise that path through the same agent QA workflow:
 
 ```sh
 node skills/spreadsheets/scripts/run-fixture.mjs \
-  --fixture skills/spreadsheets/fixtures/openxml-wasm-basic.json \
-  --codec openxml-wasm \
+  --fixture skills/spreadsheets/fixtures/open-chestnut-basic.json \
+  --codec open-chestnut \
   --native-render required \
-  --output-dir tmp/openxml-wasm-spreadsheet-fixture
+  --output-dir tmp/open-chestnut-spreadsheet-fixture
 ```
 
 Direct WebAssembly authoring is fail-closed for styles, themes, defined names, tables, pivots, drawings, comments, validations, conditional formatting, and advanced formula metadata. Imported workbooks are different: the codec retains a bounded, hash-bound source package and applies modeled edits in place, then verifies every opaque part digest and relationship before returning the file. Use the default `javascript` codec to create advanced workbooks until the public protobuf schema covers them; never discard or fabricate preservation state merely to make an export pass.

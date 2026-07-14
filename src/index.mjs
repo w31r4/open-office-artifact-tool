@@ -909,10 +909,10 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenXmlWasm", summary: "Experimentally export the bounded first-slice Workbook model through the source-built bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenXmlWasm", summary: "Experimentally import XLSX bytes through the bounded source-built bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "openXmlWasmStatus", summary: "Lazily initialize the bundled OpenXML WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
-  { artifactKind: "workbook", kind: "api", name: "invokeOpenXmlWasm", summary: "Advanced experimental byte-boundary API for invoking the public OpenXML codec protocol with generated wire-message objects." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded first-slice Workbook model through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes through the bounded source-built bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
+  { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.patchXlsx", summary: "Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importDelimited", summary: "Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines." },
@@ -1075,8 +1075,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs." },
-  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenXmlWasm", summary: "Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled C# Open XML SDK WebAssembly codec, preserving unsupported native content fail-closed." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenXmlWasm", summary: "Experimentally import PPTX bytes with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled OpenChestnut codec, preserving unsupported native content fail-closed." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1110,8 +1110,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments." },
-  { artifactKind: "document", kind: "api", name: "exportDocxWithOpenXmlWasm", summary: "Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "document", kind: "api", name: "importDocxWithOpenXmlWasm", summary: "Experimentally import DOCX bytes with loss-aware block source bindings for fail-closed advanced-content preservation." },
+  { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Experimentally export the bounded DocumentModel paragraph/run/table slice through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
@@ -1869,12 +1869,12 @@ const DOCUMENT_HELP_SCHEMAS = {
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
     preferNative: { type: "boolean", description: "Parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks." },
   }, "document", "DocumentModel", "Imported editable document facade."),
-  "exportDocxWithOpenXmlWasm": helpSchema({
+  "exportDocxWithOpenChestnut": helpSchema({
     document: { type: "DocumentModel", required: true, description: "Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings from the WASM importer." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "DOCX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
-  "importDocxWithOpenXmlWasm": helpSchema({
+  "importDocxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "DOCX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "document", "DocumentModel", "Imported document facade carrying source/opaque package evidence and loss-aware block bindings for fail-closed second export."),
@@ -2104,12 +2104,12 @@ const PRESENTATION_HELP_SCHEMAS = {
   "PresentationFile.importPptx": helpSchema({
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
   }, "presentation", "Presentation", "Imported editable presentation facade."),
-  "exportPptxWithOpenXmlWasm": helpSchema({
+  "exportPptxWithOpenChestnut": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse; ordered text/field/line-break inline; paragraph tab-stop; character/auto/none marker; direct marker-style; and external/internal/relative-action link boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
-  "importPptxWithOpenXmlWasm": helpSchema({
+  "importPptxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "presentation", "Presentation", "Imported presentation facade with editable ordered text/field/line-break inlines, paragraph tab stops, direct list markers/styles, and bounded links plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
@@ -2154,20 +2154,20 @@ const WORKBOOK_HELP_SCHEMAS = {
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
-  "exportXlsxWithOpenXmlWasm": helpSchema({
+  "exportXlsxWithOpenChestnut": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade within the current first-slice feature boundary." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "XLSX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
-  "importXlsxWithOpenXmlWasm": helpSchema({
+  "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "workbook", "Workbook", "Imported first-slice workbook facade carrying source/opaque package evidence for fail-closed second export."),
-  "openXmlWasmStatus": helpSchema({}, "status", "object", "Bundled runtime status with protocolVersion, assemblyName, and integrity manifest."),
-  "invokeOpenXmlWasm": helpSchema({
+  "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
+  "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
-  }, "response", "object", "Decoded public CodecResponse wire message; structured codec failures throw OpenXmlWasmCodecError."),
+  }, "response", "object", "Decoded public CodecResponse wire message; structured codec failures throw OpenChestnutCodecError."),
   "SpreadsheetFile.inspectXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
     includeText: { type: "boolean", description: "Include bounded XML/JSON/relationship previews." },

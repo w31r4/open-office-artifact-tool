@@ -13,7 +13,8 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportDocxWithOpenXmlWasm, importDocxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
+import { exportDocxWithOpenChestnut, importDocxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
+import { documentOpenChestnutEdits, normalizeOpenChestnutCodecName } from "../../shared/open-chestnut-compat.mjs";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -312,11 +313,11 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     });
   }
   if (packagePatches.length) docx = await DocumentFile.patchDocx(docx, packagePatches);
-  const roundtripCodec = String(options.roundtripCodec || fixture.roundtripCodec || "none").toLowerCase();
-  if (!new Set(["none", "openxml-wasm"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or openxml-wasm.`);
-  if (roundtripCodec === "openxml-wasm") {
-    const imported = await importDocxWithOpenXmlWasm(docx);
-    for (const edit of fixture.openXmlWasmEdits || []) {
+  const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
+  if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
+  if (roundtripCodec === "open-chestnut") {
+    const imported = await importDocxWithOpenChestnut(docx);
+    for (const edit of documentOpenChestnutEdits(fixture)) {
       if (edit.kind === "hyperlink") {
         const hyperlink = imported.blocks.find((block) => block.kind === "hyperlink" && (!edit.matchText || block.text === edit.matchText));
         assert.ok(hyperlink, `Missing source-bound hyperlink fixture target ${edit.matchText || "(unspecified)"}.`);
@@ -340,9 +341,9 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         if (Object.prototype.hasOwnProperty.call(edit, "display")) field.display = String(edit.display);
         continue;
       }
-      throw new Error(`Unsupported document OpenXML-WASM fixture edit kind ${edit.kind}.`);
+      throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);
     }
-    docx = await exportDocxWithOpenXmlWasm(imported);
+    docx = await exportDocxWithOpenChestnut(imported);
   }
   await docx.save(docxPath);
   const qa = await verifyDocumentFile(docxPath, {
@@ -357,7 +358,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     pixelRegistration: options.pixelRegistration,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
-    preferNative: packagePatches.length > 0 || roundtripCodec === "openxml-wasm",
+    preferNative: packagePatches.length > 0 || roundtripCodec === "open-chestnut",
   });
   return { fixture, docxPath, qa, roundtripCodec };
 }

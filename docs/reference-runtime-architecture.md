@@ -133,11 +133,13 @@ Primary public references:
 The first source-built boundary now exists:
 
 - `proto/open_office/artifact/v1/office_artifact.proto` is the independently designed, versioned public wire contract. Buf generates the shipped JavaScript binding; `Grpc.Tools` generates the C# binding from the same source.
-- `native/OpenXmlWasm/src/OpenOffice.OpenXmlCodec` uses `DocumentFormat.OpenXml` 3.5.1 and `Google.Protobuf` 3.35.1 for bounded XLSX/DOCX/PPTX import/export and structured diagnostics.
-- `native/OpenXmlWasm/src/OpenOffice.OpenXmlWasm` exposes one `[JSExport]` byte-in/byte-out method and publishes a trimmed `browser-wasm` AppBundle.
-- `src/codecs/openxml-wasm.mjs` lazily initializes and caches that runtime. Family adapters such as `openxml-wasm-presentation.mjs` map JavaScript models to the public wire schema, fail closed when direct authoring leaves a modeled slice, and carry validated source-package preservation state across imported edits.
-- `runtime/openxml-wasm` contains the reproducible release bundle, integrity manifest, CycloneDX SBOM, .NET license, and upstream third-party notices. It is built from this repository; it contains no reference-package artifact.
+- `native/OpenChestnut/src/OpenChestnut.Codec` uses `DocumentFormat.OpenXml` 3.5.1 and `Google.Protobuf` 3.35.1 for bounded XLSX/DOCX/PPTX import/export and structured diagnostics.
+- `native/OpenChestnut/src/OpenChestnut.Runtime` exposes one `[JSExport]` byte-in/byte-out method and publishes a trimmed `browser-wasm` AppBundle.
+- `src/codecs/open-chestnut.mjs` lazily initializes and caches that runtime. Family adapters such as `open-chestnut-presentation.mjs` map JavaScript models to the public wire schema, fail closed when direct authoring leaves a modeled slice, and carry validated source-package preservation state across imported edits.
+- `runtime/open-chestnut` contains the reproducible release bundle, integrity manifest, CycloneDX SBOM, .NET license, and upstream third-party notices. It is built from this repository; it contains no reference-package artifact.
 - The npm clean-install gate packs the real tarball, installs it in a temporary directory, removes `dotnet` from runtime `PATH`, and performs XLSX, DOCX, and PPTX export/import through the public package subpath.
+
+OpenChestnut is the canonical implementation identity. The old `codecs/openxml-wasm` module and old build/test script names are deprecated compatibility aliases that delegate to the canonical module/scripts. There is no legacy runtime directory or assembly; status and exported file metadata identify the codec as `open-chestnut` even when invoked through an old alias.
 
 The first slice covers workbook date systems, worksheets, primitive and cached-formula cells, merged ranges, row/column dimensions, gridline state, and frozen panes. Import stores one budget-checked source-package snapshot plus opaque part digests and relationship inventory in the public envelope. Second export verifies the snapshot SHA-256 and source identity, updates modeled fields in the original package through Open XML SDK, validates the complete result against Office 2021, and then rejects it unless all opaque part digests and relationships still match. This preserves imported styles, themes, tables, pivots, drawings, comments, validations, defined names, and arbitrary legal targets without pretending those features are semantically modeled by C#. Direct advanced authoring still uses the JavaScript codec, and missing/tampered preservation state remains fail-closed unless the caller explicitly accepts lossy rebuilding.
 
@@ -147,7 +149,7 @@ The PPTX slice models slide order/size, a hash-bound Slide → Layout → Master
 
 Shape paragraphs and shape-local `a:lstStyle` levels 0 through 8 cover alignment, direct margins and signed indents, point/multiplier spacing, tab stops, bounded default-run and inline styles, text/field/line-break inlines, character/auto-number/no-bullet/picture markers, bounded click links, and bounded `a:bodyPr` layout. `PptxParagraphPropertiesCodec` coordinates the shared paragraph-property subset, `PptxListStyleCodec` owns shape-local list-level topology, `PptxBodyPropertiesCodec` owns text-frame properties and AutoFit, `PptxMasterTextStylesCodec` owns title/body/other master levels, `PptxBackgroundCodec` owns direct Master/Layout solid or background-style-reference fills without flattening inheritance, and `PptxPlaceholderCodec` owns only direct `p:ph` identity plus local text. `PptxPartContext` generalizes relationship ownership across Slide, Master, and Layout parts while the shared asset catalog owns content-addressed picture bytes.
 
-Missing master-style and background fields preserve source state. Explicit master-level deletion removes only modeled properties and drops the native level node only when no residual attributes or children remain. Direct background replacement/addition accepts only `p:bgPr/a:solidFill` or `p:bgRef` with one untransformed RGB/theme color and a bounded reference index; direct removal, gradients, patterns, images, groups, effects, and transforms remain source-bound. Placeholder name/type/index and shape-tree position are identity; source-bound editing permits only fixed paragraph/inline-topology local text/body/list/link changes, while geometry/fill/shape style and effective inherited values remain source XML. Fixed-topology edits retain old media and relationships, validate against Office 2021, compare the guarded OPC graph, and require byte equality or residual equality outside explicitly changed slide/master/layout content. Custom-show/mouse-over links, field-local paragraph properties, WordArt/3D/compatibility features, placeholder geometry/shape styles, themes, charts, groups, notes, and arbitrary recursive OPC content remain source-preserved and fail closed when replaced. The runnable `openxml-wasm-preservation` fixture crosses JavaScript authoring, bundled-WASM import, master/layout background and owner-local placeholder edits, a Layout-owned hyperlink addition, master-title edit, loss-aware master-body-level deletion, Master-owned external picture-marker addition, shape text/body/list edits, JavaScript semantic/package verification, and Playwright plus LibreOffice/Poppler rendering.
+Missing master-style and background fields preserve source state. Explicit master-level deletion removes only modeled properties and drops the native level node only when no residual attributes or children remain. Direct background replacement/addition accepts only `p:bgPr/a:solidFill` or `p:bgRef` with one untransformed RGB/theme color and a bounded reference index; direct removal, gradients, patterns, images, groups, effects, and transforms remain source-bound. Placeholder name/type/index and shape-tree position are identity; source-bound editing permits only fixed paragraph/inline-topology local text/body/list/link changes, while geometry/fill/shape style and effective inherited values remain source XML. Fixed-topology edits retain old media and relationships, validate against Office 2021, compare the guarded OPC graph, and require byte equality or residual equality outside explicitly changed slide/master/layout content. Custom-show/mouse-over links, field-local paragraph properties, WordArt/3D/compatibility features, placeholder geometry/shape styles, themes, charts, groups, notes, and arbitrary recursive OPC content remain source-preserved and fail closed when replaced. The runnable `open-chestnut-preservation` fixture crosses JavaScript authoring, bundled-WASM import, master/layout background and owner-local placeholder edits, a Layout-owned hyperlink addition, master-title edit, loss-aware master-body-level deletion, Master-owned external picture-marker addition, shape text/body/list edits, JavaScript semantic/package verification, and Playwright plus LibreOffice/Poppler rendering.
 
 The placeholder slice passes 34 codec tests, a reproducible 38-file/12,864,199-byte runtime build, the 192-file clean-install package, and real Chromium/LibreOffice/Poppler gates. Hosted Linux run [`29298306670`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29298306670) passes that complete gate on `main`.
 
@@ -181,7 +183,7 @@ flowchart LR
 - codec policy such as `wasm`, `js`, or controlled fallback;
 - input preflight, output limits, timeouts, and structured errors.
 
-### C# OpenXML-WASM owns
+### C# OpenChestnut owns
 
 - opening and creating WordprocessingDocument, PresentationDocument, and SpreadsheetDocument packages from bounded byte streams;
 - typed part, content-type, relationship, and schema element handling;
@@ -233,7 +235,7 @@ The build is pinned by `global.json` to .NET SDK 8.0.128 and uses the 8.0.28 `wa
 
 ## Migration plan
 
-1. **Implemented:** add a source-built `native/OpenXmlWasm` scaffold and a minimal versioned schema.
+1. **Implemented:** add a source-built `native/OpenChestnut` scaffold and a minimal versioned schema.
 2. **Implemented:** prove one end-to-end XLSX vertical slice: JS model to message bytes to C# Open XML SDK to XLSX, then back to the JS model.
 3. **Implemented:** package the runtime and run the installed tarball with `dotnet` removed from runtime `PATH`.
 4. **Implemented locally and in hosted Linux CI:** exercise the existing spreadsheet formula-summary and arbitrary-path fixtures through both `wasm` and `js` codecs. Compare semantic inspect output, modeled verification, Open XML validation, all-sheet Playwright output, and LibreOffice/Poppler native pages.
@@ -257,9 +259,9 @@ The first WebAssembly migration milestone is not complete until every row is don
 | Unknown OPC content is detected and second export is fail-closed unless explicitly lossy | done: hash/source/graph-bound snapshot preservation plus post-write opaque digest/inventory verification |
 | Malformed/oversized input produces bounded structured errors | partial: byte/ZIP/part/sheet/cell/path/ratio budgets covered; broader malformed corpus remains todo |
 | Runtime initialization is lazy, cached, and concurrency-tested | done |
-| Bounded `openxml-wasm-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally and in hosted Linux CI |
+| Bounded `open-chestnut-basic` fixture passes JS/WASM semantic import, inspect/resolve/verify, and skill QA | done locally and in hosted Linux CI |
 | Existing formula-summary/arbitrary-path fixture passes inspect/resolve/verify through both codecs | done locally and in hosted run [`29257565233`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29257565233) |
-| LibreOffice/Poppler render-backed cross-codec output passes | done locally and in hosted Linux CI for `openxml-wasm-basic` plus the three-sheet formula-summary |
+| LibreOffice/Poppler render-backed cross-codec output passes | done locally and in hosted Linux CI for `open-chestnut-basic` plus the three-sheet formula-summary |
 | Full npm/docs/package/C# gates and hosted Linux CI pass for the committed milestone | done in hosted run [`29257565233`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29257565233) |
 
 ## Explicit non-goals

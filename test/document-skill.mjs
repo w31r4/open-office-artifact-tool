@@ -20,7 +20,7 @@ const nativeStatus = nativeDocumentRenderStatus();
 try {
   const result = await runDocumentFixture(fixturePath, { outputDir, nativeRender: nativeStatus.available ? "required" : "auto" });
   assert.equal(result.fixture.name, "business-brief");
-  assert.equal(result.roundtripCodec, "openxml-wasm");
+  assert.equal(result.roundtripCodec, "open-chestnut");
   assert.equal(result.qa.summary.verifyOk, true);
   assert.equal(result.qa.summary.packageOk, true);
   assert.equal(result.qa.summary.visualQaOk, true);
@@ -134,7 +134,7 @@ try {
   assert.equal(nativePreferredDocument.resolve(nativeTableComment?.targetId)?.kind, "table");
   const externalLink = nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.url);
   assert.equal(externalLink?.url, "https://learn.microsoft.com/office/open-xml/word-processing");
-  assert.equal(externalLink?.tooltip, "Edited through the source-built OpenXML WASM codec");
+  assert.equal(externalLink?.tooltip, "Edited through the source-built OpenChestnut codec");
   assert.equal(externalLink?.history, false);
   const recommendationLink = nativePreferredDocument.blocks.find((item) => item.kind === "hyperlink" && item.anchor === "RecommendationSection");
   const recommendationBookmark = nativePreferredDocument.bookmarks.find((item) => item.name === "RecommendationSection");

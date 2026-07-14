@@ -14,7 +14,7 @@ The npm package declares or optionally integrates the following public libraries
 | node-canvas (`canvas`) | Optional canvas raster adapter | MIT |
 | Microsoft Open XML SDK (`DocumentFormat.OpenXml`) | OOXML package codec compiled from source into the bundled WebAssembly runtime | MIT |
 | Google Protobuf for .NET | Public protobuf wire-schema runtime compiled from source into the bundled WebAssembly runtime | BSD-3-Clause |
-| .NET 8 WebAssembly runtime | Bundled execution runtime for the Open XML codec | MIT plus the upstream third-party notices shipped under `runtime/openxml-wasm/` |
+| .NET 8 WebAssembly runtime | Bundled execution runtime for the OpenChestnut codec | MIT plus the upstream third-party notices shipped under `runtime/open-chestnut/` |
 
 Buf CLI, `protoc-gen-es`, `Grpc.Tools`, and the .NET SDK/WebAssembly workload are build-only tools. Their generated protocol bindings or compiled outputs are shipped, but the tools themselves are not included in the npm tarball.
 

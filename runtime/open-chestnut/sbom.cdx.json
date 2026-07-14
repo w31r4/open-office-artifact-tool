@@ -1,0 +1,85 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "OpenChestnut.Runtime",
+      "version": "0.1.0",
+      "purl": "pkg:npm/open-office-artifact-tool@0.1.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "Microsoft.NETCore.App browser-wasm runtime",
+      "version": "8.0.28",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:generic/dotnet-runtime@8.0.28?rid=browser-wasm"
+    },
+    {
+      "type": "library",
+      "name": "DocumentFormat.OpenXml",
+      "version": "3.5.1",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:nuget/DocumentFormat.OpenXml@3.5.1"
+    },
+    {
+      "type": "library",
+      "name": "DocumentFormat.OpenXml.Framework",
+      "version": "3.5.1",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:nuget/DocumentFormat.OpenXml.Framework@3.5.1"
+    },
+    {
+      "type": "library",
+      "name": "Google.Protobuf",
+      "version": "3.35.1",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "purl": "pkg:nuget/Google.Protobuf@3.35.1"
+    },
+    {
+      "type": "library",
+      "name": "System.IO.Packaging",
+      "version": "8.0.1",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:nuget/System.IO.Packaging@8.0.1"
+    }
+  ]
+}
