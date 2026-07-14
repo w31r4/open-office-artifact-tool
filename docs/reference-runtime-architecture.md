@@ -157,7 +157,7 @@ The subsequent DOCX hyperlink slice passes hosted Linux run [`29299603126`](http
 
 The OpenChestnut numbering-style-linked numbered-paragraph milestone passes hosted Linux run [`29327443007`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29327443007): canonical and compatibility APIs, 47 C# tests, the 202-file no-local-dotnet clean install, Chromium/LibreOffice/Poppler, OfficeBridge, and two byte-identical 38-file/12,913,854-byte runtime builds all pass on `main`. This evidence covers `w:lvl/w:pStyle`, `styleLink`, recursive `numStyleLink`, instance start overrides, and additive numbering-style wire identity.
 
-The subsequent merge-aware DOCX table slice passes 49 local C# tests plus bundled-WASM and real Documents-skill gates with a 38-file/12,925,116-byte macOS runtime. Refreshed hosted Linux evidence is pending the milestone push.
+The subsequent merge-aware DOCX table slice passes 49 local C# tests plus bundled-WASM and real Documents-skill gates with a 38-file/12,925,116-byte macOS runtime. Hosted Linux run [`29330878218`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29330878218) passes the same 49-test gate, the 203-file no-local-dotnet clean install, real Chromium/LibreOffice/Poppler checks, OfficeBridge tests, and two byte-identical 38-file/12,925,118-byte runtime builds.
 
 The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
