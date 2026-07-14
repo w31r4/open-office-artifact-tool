@@ -120,6 +120,14 @@
               ]
             }
           ],
+          "sortState": {
+            "reference": "A2:C3",
+            "caseSensitive": true,
+            "conditions": [
+              { "reference": "C2:C3", "descending": true },
+              { "reference": "A2:A3", "descending": false }
+            ]
+          },
           "columnDefinitions": [
             { "name": "Codec", "totalsRowFunction": "none", "totalsRowLabel": "Total" },
             { "name": "Runtime" },

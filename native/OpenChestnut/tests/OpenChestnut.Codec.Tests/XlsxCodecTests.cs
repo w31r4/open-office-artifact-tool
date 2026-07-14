@@ -809,6 +809,104 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsAndImportsWorksheetTableValueSortState()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(SortTableExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/tables/table1.xml"));
+        Assert.Contains("<x:sortState ref=\"A2:B3\" caseSensitive=\"1\"><x:sortCondition ref=\"B2:B3\" descending=\"1\" /><x:sortCondition ref=\"A2:A3\" /></x:sortState>", xml);
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sort = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).SortState;
+        Assert.Equal("A2:B3", sort.Reference);
+        Assert.True(sort.CaseSensitive);
+        Assert.Equal(2, sort.Conditions.Count);
+        Assert.Equal("B2:B3", sort.Conditions[0].Reference);
+        Assert.True(sort.Conditions[0].Descending);
+        Assert.Equal("A2:A3", sort.Conditions[1].Reference);
+        Assert.False(sort.Conditions[1].Descending);
+    }
+
+    [Fact]
+    public void SourcePreservingWorksheetTableSortEditKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(SortTableExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.SortState.CaseSensitive = false;
+        table.SortState.Conditions[0].Descending = false;
+        table.SortState.Conditions[1].Descending = true;
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
+        Assert.False(edited.SortState.CaseSensitive);
+        Assert.False(edited.SortState.Conditions[0].Descending);
+        Assert.True(edited.SortState.Conditions[1].Descending);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetTableSortProfiles()
+    {
+        var request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Reference = "B2:C3";
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Conditions[0].Reference = "A2:B3";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Conditions[1].Reference = "B2:B3";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].ShowFilterButton = false;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void UnsupportedColorWorksheetTableSortRemainsByteExactAndReadOnly()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(SortTableExportRequest().ToByteArray()));
+        var bytes = MutateTableWithColorSort(first.File.ToByteArray());
+        var imported = Import(bytes);
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.False(table.Source.Editable);
+        Assert.Null(table.SortState);
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(bytes, "xl/tables/table1.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/tables/table1.xml"));
+    }
+
+    [Fact]
     public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -1089,6 +1187,16 @@ public sealed class XlsxCodecTests
         return request;
     }
 
+    private static CodecRequest SortTableExportRequest()
+    {
+        var request = FilterTableExportRequest();
+        var sort = new SpreadsheetTableSortStateArtifact { Reference = "A2:B3", CaseSensitive = true };
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "B2:B3", Descending = true });
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A2:A3" });
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState = sort;
+        return request;
+    }
+
     private static SpreadsheetTableArtifact TableArtifact()
     {
         var table = new SpreadsheetTableArtifact
@@ -1137,6 +1245,27 @@ public sealed class XlsxCodecTests
             var spreadsheet = table.Root!.Name.Namespace;
             table.Root.Element(spreadsheet + "autoFilter")!.Add(new XElement(spreadsheet + "filterColumn", new XAttribute("colId", 0),
                 new XElement(spreadsheet + "dynamicFilter", new XAttribute("type", "today"))));
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/tables/table1.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(table.ToString(SaveOptions.DisableFormatting));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MutateTableWithColorSort(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/tables/table1.xml") ?? throw new InvalidOperationException("Worksheet table is missing.");
+            XDocument table;
+            using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
+            var spreadsheet = table.Root!.Name.Namespace;
+            var condition = table.Root.Element(spreadsheet + "autoFilter")!.Element(spreadsheet + "sortState")!.Elements(spreadsheet + "sortCondition").First();
+            condition.SetAttributeValue("sortBy", "cellColor");
+            condition.SetAttributeValue("dxfId", 0);
             entry.Delete();
             var replacement = archive.CreateEntry("xl/tables/table1.xml");
             using var writer = new StreamWriter(replacement.Open());

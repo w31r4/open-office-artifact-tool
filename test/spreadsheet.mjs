@@ -1613,6 +1613,11 @@ formulaTableSheet.tables.add({
     { columnIndex: 0, kind: "values", values: ["North"], includeBlank: true },
     { columnIndex: 1, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "2" }, { operator: "lessThanOrEqual", value: "3" }] },
   ],
+  sortState: {
+    reference: "A2:C3",
+    caseSensitive: true,
+    conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
+  },
   columnDefinitions: [
     { name: "Product", totalsRowFunction: "none", totalsRowLabel: "Total" },
     { name: "Units", totalsRowFunction: "average" },
@@ -1628,6 +1633,7 @@ assert.match(formulaTableXml, /<calculatedColumnFormula>\[@Units\]\*2<\/calculat
 assert.match(formulaTableXml, /<totalsRowFormula>SUBTOTAL\(109,\[Revenue\]\)<\/totalsRowFormula>/);
 assert.match(formulaTableXml, /<filterColumn colId="0"><filters blank="1"><filter val="North"\/><\/filters><\/filterColumn>/);
 assert.match(formulaTableXml, /<customFilters and="1"><customFilter operator="greaterThanOrEqual" val="2"\/><customFilter operator="lessThanOrEqual" val="3"\/><\/customFilters>/);
+assert.match(formulaTableXml, /<sortState ref="A2:C3" caseSensitive="1"><sortCondition ref="C2:C3" descending="1"\/><sortCondition ref="A2:A3"\/><\/sortState>/);
 const formulaTableImported = await SpreadsheetFile.importXlsx(formulaTableXlsx);
 const importedFormulaTable = formulaTableImported.worksheets.getItem("FormulaTable").tables.getItemOrNullObject("FormulaTable");
 assert.deepEqual(importedFormulaTable.columnDefinitions, [
@@ -1639,6 +1645,11 @@ assert.deepEqual(importedFormulaTable.filters, [
   { columnIndex: 0, kind: "values", values: ["North"], includeBlank: true },
   { columnIndex: 1, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "2" }, { operator: "lessThanOrEqual", value: "3" }] },
 ]);
+assert.deepEqual(importedFormulaTable.sortState, {
+  reference: "A2:C3",
+  caseSensitive: true,
+  conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
+});
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
 assert.equal(pivotPartNames.length, 3);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");
