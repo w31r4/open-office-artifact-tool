@@ -32,8 +32,8 @@
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
-      "bytes": 5719833,
-      "sha256": "1e7c5ec73f2374894533543ed1cbf153c45f9f32865af96dcf8666c4cdfab743"
+      "bytes": 5720345,
+      "sha256": "3712fe3b4ac57814c8c1c6484837d1f1a5124191a9bbb0d65d8d434bce3fa8cc"
     },
     {
       "path": "_framework/Google.Protobuf.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenOffice.OpenXmlCodec.wasm",
-      "bytes": 464149,
-      "sha256": "48a78f253790c631cf2cef5f4089ab41fe22e40fcb00b888800f3a09357bbdb8"
+      "bytes": 471317,
+      "sha256": "0c7b6d7f527c041acacefb5d3b4bc3b11f5ac787ad28fef77be4a7c5c2a69a6a"
     },
     {
       "path": "_framework/OpenOffice.OpenXmlWasm.wasm",
       "bytes": 6421,
-      "sha256": "01cc85da6114ded2e6748ab019c50d0e7cbd6fd72218524816323c038a669791"
+      "sha256": "80f159f8f2788349158d1627319a6cd237c50ddef05a688030313026abb30fc5"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -118,7 +118,7 @@
     {
       "path": "_framework/System.Private.CoreLib.wasm",
       "bytes": 1949973,
-      "sha256": "a6365282484ba9a1df54ff24d9ed146b69c2d85e0d88ad388b3268134c93895d"
+      "sha256": "11d21efbb51f21cc5fd43f6f8394b63e71fbeea313c54416b04ab39ee34343e3"
     },
     {
       "path": "_framework/System.Private.Uri.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3149,
-      "sha256": "95807144e4a3b42c528f2592e9dee7ede8d382fbe14bb5fae21da5d38bc53534"
+      "sha256": "1d3d26d397df8c8cac0f9609f91b5b88799c4bceb4f657633a5ea3c38817ab0d"
     },
     {
       "path": "_framework/dotnet.js",
@@ -173,7 +173,7 @@
     {
       "path": "_framework/dotnet.native.wasm",
       "bytes": 1417190,
-      "sha256": "cd761ad65ce8c56200cafb5810d7cff190994dbf1533c8070eb784c97905efd5"
+      "sha256": "5feb6e2020992fb24530a5bcced048122c7c61148d3e861cb1bce03ecc2f1af2"
     },
     {
       "path": "_framework/dotnet.runtime.js",
@@ -201,5 +201,5 @@
       "sha256": "7ae7e50d45200aa9644c03ee5a50359bdb4a8dfc3c408a5f28b95add0a08096c"
     }
   ],
-  "totalBytes": 12878535
+  "totalBytes": 12886215
 }

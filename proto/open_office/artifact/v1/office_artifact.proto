@@ -601,6 +601,7 @@ message DocumentBlock {
     DocumentTable table = 11;
     DocumentOpaqueBlock opaque = 12;
     DocumentHyperlink hyperlink = 13;
+    DocumentField field = 14;
   }
 }
 
@@ -642,6 +643,11 @@ message DocumentHyperlink {
   string relationship_id = 4;
   optional string tooltip = 5;
   optional bool history = 6;
+}
+
+message DocumentField {
+  string instruction = 1;
+  string display = 2;
 }
 
 message DocumentTable {

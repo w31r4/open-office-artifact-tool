@@ -121,6 +121,7 @@ try {
   assert.match(businessBriefDocumentXml, /<w:hyperlink\b(?=[^>]*w:anchor="RecommendationSection")(?=[^>]*w:history="0")(?=[^>]*w:tooltip="Open the recommendation section")[^>]*>/);
   assert.match(businessBriefDocumentXml, /<w:hyperlink\b(?=[^>]*w:anchor="ReadinessEvidence")(?=[^>]*w:history="0")(?=[^>]*w:tooltip="Open the readiness table evidence")[^>]*>/);
   assert.match(businessBriefDocumentXml, /w:instr="CITATION ECMA376"/);
+  assert.match(businessBriefDocumentXml, /<w:fldSimple\b[^>]*w:instr="NUMPAGES"[^>]*>[\s\S]*?<w:t>2<\/w:t>[\s\S]*?<\/w:fldSimple>/);
   const businessBriefRels = await businessBriefZip.file("word/_rels/document.xml.rels").async("text");
   assert.match(businessBriefRels, /Target="https:\/\/learn\.microsoft\.com\/office\/open-xml\/word-processing"[^>]*TargetMode="External"/);
   assert.match(businessBriefRels, /relationships\/commentsExtended/);
@@ -155,7 +156,9 @@ try {
   const nativePreferredSecondBibliography = await nativePreferredSecondZip.file("customXml/item1.xml").async("text");
   assert.match(nativePreferredSecondBibliography, /<b:Tag>ECMA376<\/b:Tag>/);
   assert.match(nativePreferredSecondBibliography, /<b:Tag>OpenXmlSdk<\/b:Tag>/);
-  assert.equal(nativePreferredDocument.blocks.find((item) => item.kind === "field")?.instruction, "PAGE");
+  const nativePageCountField = nativePreferredDocument.blocks.find((item) => item.kind === "field");
+  assert.equal(nativePageCountField?.instruction, "NUMPAGES");
+  assert.equal(nativePageCountField?.display, "2");
   const nativeCitation = nativePreferredDocument.blocks.find((item) => item.kind === "citation");
   assert.match(nativeCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
   assert.equal(nativeCitation?.metadata?.tag, "ECMA376");

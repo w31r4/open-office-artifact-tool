@@ -317,20 +317,30 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   if (roundtripCodec === "openxml-wasm") {
     const imported = await importDocxWithOpenXmlWasm(docx);
     for (const edit of fixture.openXmlWasmEdits || []) {
-      if (edit.kind !== "hyperlink") throw new Error(`Unsupported document OpenXML-WASM fixture edit kind ${edit.kind}.`);
-      const hyperlink = imported.blocks.find((block) => block.kind === "hyperlink" && (!edit.matchText || block.text === edit.matchText));
-      assert.ok(hyperlink, `Missing source-bound hyperlink fixture target ${edit.matchText || "(unspecified)"}.`);
-      if (Object.prototype.hasOwnProperty.call(edit, "text")) hyperlink.text = String(edit.text);
-      if (Object.prototype.hasOwnProperty.call(edit, "url")) {
-        hyperlink.url = String(edit.url || "");
-        hyperlink.anchor = undefined;
+      if (edit.kind === "hyperlink") {
+        const hyperlink = imported.blocks.find((block) => block.kind === "hyperlink" && (!edit.matchText || block.text === edit.matchText));
+        assert.ok(hyperlink, `Missing source-bound hyperlink fixture target ${edit.matchText || "(unspecified)"}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "text")) hyperlink.text = String(edit.text);
+        if (Object.prototype.hasOwnProperty.call(edit, "url")) {
+          hyperlink.url = String(edit.url || "");
+          hyperlink.anchor = undefined;
+        }
+        if (Object.prototype.hasOwnProperty.call(edit, "anchor")) {
+          hyperlink.anchor = String(edit.anchor || "") || undefined;
+          hyperlink.url = "";
+        }
+        if (Object.prototype.hasOwnProperty.call(edit, "tooltip")) hyperlink.tooltip = edit.tooltip;
+        if (Object.prototype.hasOwnProperty.call(edit, "history")) hyperlink.history = edit.history !== false;
+        continue;
       }
-      if (Object.prototype.hasOwnProperty.call(edit, "anchor")) {
-        hyperlink.anchor = String(edit.anchor || "") || undefined;
-        hyperlink.url = "";
+      if (edit.kind === "field") {
+        const field = imported.blocks.find((block) => block.kind === "field" && (!edit.matchInstruction || block.instruction === edit.matchInstruction));
+        assert.ok(field, `Missing source-bound field fixture target ${edit.matchInstruction || "(unspecified)"}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "instruction")) field.instruction = String(edit.instruction);
+        if (Object.prototype.hasOwnProperty.call(edit, "display")) field.display = String(edit.display);
+        continue;
       }
-      if (Object.prototype.hasOwnProperty.call(edit, "tooltip")) hyperlink.tooltip = edit.tooltip;
-      if (Object.prototype.hasOwnProperty.call(edit, "history")) hyperlink.history = edit.history !== false;
+      throw new Error(`Unsupported document OpenXML-WASM fixture edit kind ${edit.kind}.`);
     }
     docx = await exportDocxWithOpenXmlWasm(imported);
   }

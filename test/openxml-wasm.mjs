@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { DocumentBlockSchema, DocumentHyperlinkSchema, DocumentSourceBindingSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentSourceBindingSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenXmlWasmCodecError,
   exportDocxWithOpenXmlWasm,
@@ -21,8 +21,10 @@ const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(Presentat
   tabStops: [{ positionEmu: 120n, alignment: "left" }],
 }));
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
+assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
 assert.equal(toBinary(DocumentHyperlinkSchema, create(DocumentHyperlinkSchema, { target: { case: "externalUri", value: "https://example.test" } }))[0], 0x12, "Document external hyperlink targets must use field 2.");
+assert.equal(toBinary(DocumentFieldSchema, create(DocumentFieldSchema, { instruction: "PAGE" }))[0], 0x0a, "Document field instructions must use field 1.");
 assert.equal(legacyTabWire[0], 0x72, "Presentation tab stops must retain repeated-message field 14.");
 assert.equal(fromBinary(PresentationTextParagraphSchema, legacyTabWire).tabStops[0].positionEmu, 120n);
 assert.deepEqual([...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { noTabStops: true }))], [0x78, 0x01], "Explicit tab deletion must remain additive field 15.");
@@ -282,6 +284,33 @@ directHyperlinkDocument.blocks[0].url = "javascript:alert(1)";
 await assert.rejects(
   exportDocxWithOpenXmlWasm(directHyperlinkDocument),
   (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_document_hyperlink",
+);
+
+const directFieldDocument = DocumentModel.create({ blocks: [] });
+directFieldDocument.addField("PAGE", "1", { styleId: "Normal" });
+const directFieldDocx = await exportDocxWithOpenXmlWasm(directFieldDocument);
+const directFieldRoundTrip = await importDocxWithOpenXmlWasm(directFieldDocx);
+assert.equal(directFieldRoundTrip.blocks[0].kind, "field");
+assert.equal(directFieldRoundTrip.blocks[0].instruction, "PAGE");
+assert.equal(directFieldRoundTrip.blocks[0].display, "1");
+
+const sourceFieldDocument = DocumentModel.create({ blocks: [] });
+sourceFieldDocument.addField("PAGE", "1", { styleId: "Normal" });
+const sourceFieldDocx = await DocumentFile.exportDocx(sourceFieldDocument);
+const sourceFieldImported = await importDocxWithOpenXmlWasm(sourceFieldDocx);
+assert.equal(sourceFieldImported.blocks[0].kind, "field");
+sourceFieldImported.blocks[0].instruction = "NUMPAGES \\* MERGEFORMAT";
+sourceFieldImported.blocks[0].display = "2";
+const sourceFieldEdited = await exportDocxWithOpenXmlWasm(sourceFieldImported);
+const sourceFieldRoundTrip = await DocumentFile.importDocx(sourceFieldEdited, { preferNative: true });
+assert.equal(sourceFieldRoundTrip.blocks[0].kind, "field");
+assert.equal(sourceFieldRoundTrip.blocks[0].instruction, "NUMPAGES \\* MERGEFORMAT");
+assert.equal(sourceFieldRoundTrip.blocks[0].display, "2");
+
+directFieldDocument.blocks[0].instruction = "DDEAUTO command";
+await assert.rejects(
+  exportDocxWithOpenXmlWasm(directFieldDocument),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_document_field",
 );
 
 const minimalPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });

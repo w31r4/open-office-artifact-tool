@@ -340,6 +340,109 @@ public sealed class DocxCodecTests
         Assert.Equal("https://example.test/first-only", mainPart.HyperlinkRelationships.Single(item => item.Id == hyperlinks[0].Id).Uri.OriginalString);
     }
 
+    [Fact]
+    public void SourcePreservingExportEditsBoundedSimpleFieldAndKeepsFormatting()
+    {
+        var authored = Invoke(FieldExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddSimpleFieldFormatting(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[0];
+        Assert.Equal(DocumentBlock.ContentOneofCase.Field, block.ContentCase);
+        Assert.True(block.Source.Editable);
+        Assert.NotEmpty(block.Source.ResidualSha256);
+        Assert.Equal("PAGE", block.Field.Instruction);
+        Assert.Equal("1", block.Field.Display);
+
+        block.Field.Instruction = "NUMPAGES \\* MERGEFORMAT";
+        block.Field.Display = "2";
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var field = document.MainDocumentPart!.Document!.Descendants<W.SimpleField>().Single();
+            Assert.Equal("NUMPAGES \\* MERGEFORMAT", field.Instruction?.Value);
+            Assert.Equal("2", field.InnerText);
+            Assert.True(field.Dirty?.Value);
+            Assert.NotNull(field.Descendants<W.Bold>().SingleOrDefault());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.Equal("NUMPAGES \\* MERGEFORMAT", roundTrip.Artifact.Document.Blocks[0].Field.Instruction);
+        Assert.Equal("2", roundTrip.Artifact.Document.Blocks[0].Field.Display);
+    }
+
+    [Fact]
+    public void FieldSlicePreservesUnsupportedInstructionsAndTopologiesReadOnly()
+    {
+        var authored = Invoke(FieldExportRequest());
+        var unsupportedSource = SetSimpleFieldInstruction(authored.File.ToByteArray(), "INCLUDETEXT \\\"https://example.test/data\\\"");
+        var unsupported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(unsupportedSource),
+        });
+        Assert.True(unsupported.Ok, Diagnostics(unsupported));
+        Assert.Equal(DocumentBlock.ContentOneofCase.Field, unsupported.Artifact.Document.Blocks[0].ContentCase);
+        Assert.False(unsupported.Artifact.Document.Blocks[0].Source.Editable);
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = unsupported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        unsupported.Artifact.Document.Blocks[0].Field.Display = "Unsafe edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = unsupported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var multiRun = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddSecondFieldRun(authored.File.ToByteArray())),
+        });
+        Assert.Equal(DocumentBlock.ContentOneofCase.Field, multiRun.Artifact.Document.Blocks[0].ContentCase);
+        Assert.False(multiRun.Artifact.Document.Blocks[0].Source.Editable);
+
+        var unsafeRequest = FieldExportRequest();
+        unsafeRequest.Artifact.Document.Blocks[0].Field.Instruction = "DDEAUTO command";
+        var unsafeResponse = Invoke(unsafeRequest);
+        Assert.False(unsafeResponse.Ok);
+        Assert.Equal("invalid_document_field", Assert.Single(unsafeResponse.Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
@@ -422,6 +525,70 @@ public sealed class DocxCodecTests
                 Document = document,
             },
         };
+    }
+
+    private static CodecRequest FieldExportRequest()
+    {
+        var document = new DocumentArtifact { Id = "document/field", Name = "Field fixture" };
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/page-field",
+            StyleId = "Normal",
+            Field = new DocumentField { Instruction = "PAGE", Display = "1" },
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static byte[] AddSimpleFieldFormatting(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var field = document.MainDocumentPart!.Document!.Descendants<W.SimpleField>().Single();
+            field.Dirty = true;
+            field.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Bold()));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetSimpleFieldInstruction(byte[] bytes, string instruction)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            document.MainDocumentPart!.Document!.Descendants<W.SimpleField>().Single().Instruction = instruction;
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSecondFieldRun(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            document.MainDocumentPart!.Document!.Descendants<W.SimpleField>().Single().Append(new W.Run(new W.Text(" second result")));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddBookmarkTarget(byte[] bytes)

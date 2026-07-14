@@ -191,6 +191,34 @@ internal static class DocxCodec
                             $"Document hyperlink block {ordinal} does not match the requested modeled semantics after editing.",
                             "word/document.xml");
                 }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
+                {
+                    if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document field block {ordinal} paragraph style is source-bound and cannot be edited by this codec slice.",
+                            "word/document.xml");
+                    if (element is not W.Paragraph fieldParagraph ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxFieldCodec.ResidualHash(fieldParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document field block {ordinal} unmodeled source formatting does not match its binding.",
+                            "word/document.xml");
+                    DocxFieldCodec.Apply(fieldParagraph, block.Field);
+                    if (!DocxFieldCodec.ResidualHash(fieldParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document field block {ordinal} changed unmodeled paragraph or result-run formatting.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(fieldParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document field block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
                 else
                 {
                     element.InsertBeforeSelf(BuildBlock(block, context));
@@ -234,6 +262,12 @@ internal static class DocxCodec
                 if (DocxHyperlinkCodec.TryRead(paragraph, context, out var hyperlink, out editable))
                 {
                     block.Hyperlink = hyperlink;
+                    semanticItems++;
+                    break;
+                }
+                if (DocxFieldCodec.TryRead(paragraph, out var field, out editable))
+                {
+                    block.Field = field;
                     semanticItems++;
                     break;
                 }
@@ -282,8 +316,13 @@ internal static class DocxCodec
             ElementSha256 = HashElement(element),
             Editable = editable,
         };
-        if (element is W.Paragraph hyperlinkParagraph && block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
-            block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(hyperlinkParagraph);
+        if (element is W.Paragraph sourceParagraph)
+        {
+            if (block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
+                block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(sourceParagraph);
+            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
+                block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
+        }
         block.Source.SemanticSha256 = SemanticHash(block);
         return block;
     }
@@ -316,6 +355,7 @@ internal static class DocxCodec
         DocumentBlock.ContentOneofCase.Paragraph => BuildParagraph(block),
         DocumentBlock.ContentOneofCase.Table => BuildTable(block),
         DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
+        DocumentBlock.ContentOneofCase.Field => DocxFieldCodec.Build(block),
         DocumentBlock.ContentOneofCase.Opaque => throw new CodecException(
             "unsupported_document_block",
             $"Opaque document block {block.Id} requires its validated source package and cannot be authored from scratch."),
@@ -420,6 +460,11 @@ internal static class DocxCodec
                     break;
                 case DocumentBlock.ContentOneofCase.Hyperlink:
                     DocxHyperlinkCodec.Validate(block.Hyperlink);
+                    semanticItems++;
+                    break;
+                case DocumentBlock.ContentOneofCase.Field:
+                    if (block.Source?.Editable == false) DocxFieldCodec.ValidatePreserved(block.Field);
+                    else DocxFieldCodec.Validate(block.Field);
                     semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Opaque:
