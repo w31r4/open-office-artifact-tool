@@ -251,7 +251,10 @@ internal sealed class XlsxCellStyleCodec
             Name = font.GetFirstChild<FontName>()?.Val?.Value ?? "Aptos",
         };
         if (font.GetFirstChild<Underline>() is { } underline)
-            target.Underline = underline.GetAttribute("val", string.Empty).Value is { Length: > 0 } value ? value : "single";
+        {
+            var underlineText = underline.Val is { } underlineValue ? (string?)underlineValue : null;
+            target.Underline = underlineText ?? "single";
+        }
         target.Color = ReadColor(font.GetFirstChild<DocumentFormat.OpenXml.Spreadsheet.Color>());
         return target;
     }
@@ -260,14 +263,16 @@ internal sealed class XlsxCellStyleCodec
     {
         var pattern = fill.PatternFill;
         if (pattern is null) return null;
-        var patternType = pattern.GetAttribute("patternType", string.Empty).Value;
-        if (string.IsNullOrEmpty(patternType)) patternType = "none";
+        var patternText = pattern.PatternType is { } patternValue ? (string?)patternValue : null;
+        var patternType = patternText ?? "none";
         if (patternType == "none") return null;
+        var background = ReadColor(pattern.BackgroundColor);
+        if (patternType == "solid" && background?.SourceCase == SpreadsheetColor.SourceOneofCase.Indexed && background.Indexed == 64) background = null;
         return new SpreadsheetFillStyle
         {
             PatternType = patternType,
             Foreground = ReadColor(pattern.ForegroundColor),
-            Background = ReadColor(pattern.BackgroundColor),
+            Background = background,
         };
     }
 
@@ -288,7 +293,7 @@ internal sealed class XlsxCellStyleCodec
 
     private static SpreadsheetBorderEdgeStyle? ReadBorderEdge(BorderPropertiesType? edge)
     {
-        var style = edge?.GetAttribute("style", string.Empty).Value;
+        var style = edge?.Style is { } styleValue ? (string?)styleValue : null;
         if (string.IsNullOrEmpty(style) || style == "none") return null;
         return new SpreadsheetBorderEdgeStyle { Style = style, Color = ReadColor(edge!.Color) };
     }
@@ -297,8 +302,8 @@ internal sealed class XlsxCellStyleCodec
     {
         if (alignment is null) return null;
         var target = new SpreadsheetAlignmentStyle();
-        if (alignment.Horizontal?.HasValue == true) target.Horizontal = alignment.GetAttribute("horizontal", string.Empty).Value;
-        if (alignment.Vertical?.HasValue == true) target.Vertical = alignment.GetAttribute("vertical", string.Empty).Value;
+        if (alignment.Horizontal?.HasValue == true) target.Horizontal = (string?)alignment.Horizontal ?? string.Empty;
+        if (alignment.Vertical?.HasValue == true) target.Vertical = (string?)alignment.Vertical ?? string.Empty;
         if (alignment.WrapText?.HasValue == true) target.WrapText = alignment.WrapText.Value;
         if (alignment.TextRotation?.HasValue == true) target.TextRotation = alignment.TextRotation.Value;
         if (alignment.Indent?.HasValue == true) target.Indent = alignment.Indent.Value;
@@ -360,14 +365,13 @@ internal sealed class XlsxCellStyleCodec
 
     private static Font ApplyFont(Font target, SpreadsheetFontStyle source)
     {
-        foreach (var child in target.ChildElements.Where(item => item is Bold or Italic or Underline or Strike or DocumentFormat.OpenXml.Spreadsheet.Color or FontSize or FontName).ToArray()) child.Remove();
-        if (source.HasBold && source.Bold) target.Append(new Bold());
-        if (source.HasItalic && source.Italic) target.Append(new Italic());
-        if (source.HasUnderline && source.Underline != "none") target.Append(new Underline { Val = new UnderlineValues(source.Underline) });
-        if (source.HasStrike && source.Strike) target.Append(new Strike());
-        if (source.Color is not null) target.Append(ApplyColor(new DocumentFormat.OpenXml.Spreadsheet.Color(), source.Color));
-        if (source.HasSizePoints) target.Append(new FontSize { Val = source.SizePoints });
-        if (source.HasName) target.Append(new FontName { Val = source.Name });
+        target.Bold = source.HasBold && source.Bold ? new Bold() : null;
+        target.Italic = source.HasItalic && source.Italic ? new Italic() : null;
+        target.Strike = source.HasStrike && source.Strike ? new Strike() : null;
+        target.Underline = source.HasUnderline && source.Underline != "none" ? new Underline { Val = new UnderlineValues(source.Underline) } : null;
+        target.FontSize = source.HasSizePoints ? new FontSize { Val = source.SizePoints } : null;
+        target.Color = source.Color is not null ? ApplyColor(new DocumentFormat.OpenXml.Spreadsheet.Color(), source.Color) : null;
+        target.FontName = source.HasName ? new FontName { Val = source.Name } : null;
         return target;
     }
 

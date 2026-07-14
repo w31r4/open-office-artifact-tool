@@ -267,6 +267,10 @@ function numberFormatCode(value, address) {
   return value;
 }
 
+function cellNumberFormatCode(cell, address) {
+  return numberFormatCode(cell?.style?.numberFormat ?? cell?.style?.numFmt, address);
+}
+
 function invalidCellStyle(address, message, cause) {
   throw new OpenChestnutCodecError(`Cell ${address} ${message}`, [], { code: "invalid_cell_style", cause });
 }
@@ -443,7 +447,7 @@ function wireCell(address, cell) {
     column: coordinates.column,
     formula: cell.formula ? String(cell.formula) : "",
     formulaMetadata: cellFormulaMetadata(address, cell),
-    numberFormatCode: numberFormatCode(cell.style?.numberFormat, address),
+    numberFormatCode: cellNumberFormatCode(cell, address),
     style: wireCellStyle(cell.style, address),
     value: { case: undefined },
   };

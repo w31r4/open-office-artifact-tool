@@ -57,6 +57,7 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/PptxTextCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxFormulaCodec.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/XlsxCellStyleCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxNumberFormatCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Runtime/Program.cs",
   "native/OpenChestnut/tests/OpenChestnut.Codec.Tests/DocxCodecTests.cs",

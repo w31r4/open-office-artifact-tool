@@ -22,6 +22,7 @@ const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(Presentat
 }));
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { numberFormatCode: "0.00%" }))[0], 0x22, "Spreadsheet number-format codes must use additive cell field 4.");
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { formulaMetadata: { kind: 1, sharedIndex: 7, reference: "C1:C2" } }))[0], 0x2a, "Spreadsheet formula topology must use additive cell field 5.");
+assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { style: { font: { bold: true } } }))[0], 0x32, "Spreadsheet static styles must use additive cell field 6.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
@@ -148,6 +149,18 @@ const workbook = Workbook.create({ dateSystem: "1904" });
 const summary = workbook.worksheets.add("Summary");
 summary.getRange("A1:B2").values = [["Quarter", 42.5], [true, null]];
 summary.getRange("B2").formulas = [["=B1*2"]];
+summary.getRange("A1:B1").format = {
+  fill: { patternType: "darkGrid", foreground: { theme: 4, tint: 0.4 }, background: "#E2E8F0" },
+  font: { bold: true, italic: false, underline: "double", strike: false, color: "#FFFFFF", size: 13, name: "Aptos Display" },
+  alignment: { horizontal: "center", vertical: "bottom", wrapText: true, textRotation: 15, indent: 1, shrinkToFit: false, readingOrder: 1 },
+  border: {
+    left: { style: "thin", color: { indexed: 8 } },
+    right: { style: "thin", color: { indexed: 8 } },
+    top: { style: "thin", color: { auto: true } },
+    bottom: { style: "double", color: "#38BDF8" },
+  },
+  protection: { locked: false, hidden: true },
+};
 summary.getRange("B1").format.numberFormat = "0.000 \"units\"";
 summary.getRange("B2").format.numberFormat = "0.00%";
 summary.freezePanes.freezeRows(1).freezeColumns(1);
@@ -182,6 +195,11 @@ assert.equal(imported.worksheets.getItem("Summary").columnDimensions.get(0).widt
 assert.deepEqual(imported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
 assert.equal(imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "0.000 \"units\"");
 assert.equal(imported.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.00%");
+assert.equal(imported.worksheets.getItem("Summary").getRange("A1").format.font.bold, true);
+assert.equal(imported.worksheets.getItem("Summary").getRange("A1").format.font.underline, "double");
+assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1").format.fill, { patternType: "darkGrid", foreground: { theme: 4, tint: 0.4 }, background: "#E2E8F0" });
+assert.equal(imported.worksheets.getItem("Summary").getRange("A1").format.border.bottom.style, "double");
+assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1").format.protection, { locked: false, hidden: true });
 assert.match(imported.inspect({ kind: "workbook,sheet,formula" }).ndjson, /"dateSystem":"1904"/);
 assert.equal(imported.verify().ok, true);
 assert.equal(imported.resolve(imported.worksheets.getItem("Summary").id).name, "Summary");
@@ -197,11 +215,22 @@ assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "0.000 \"units\"");
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.00%");
+assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.font.bold, true);
+assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.fill.patternType, "darkGrid");
+assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.border.bottom.style, "double");
 
 imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat = "$#,##0.00";
+imported.worksheets.getItem("Summary").getRange("A1").format = {
+  ...imported.worksheets.getItem("Summary").getRange("A1").format,
+  fill: "#22C55E",
+  font: { ...imported.worksheets.getItem("Summary").getRange("A1").format.font, bold: false },
+};
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
-assert.equal((await importXlsxWithOpenChestnut(secondExport)).worksheets.getItem("Summary").getRange("B1").format.numberFormat, "$#,##0.00");
+const secondImported = await importXlsxWithOpenChestnut(secondExport);
+assert.equal(secondImported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "$#,##0.00");
+assert.equal(secondImported.worksheets.getItem("Summary").getRange("A1").format.fill, "#22C55E");
+assert.equal(secondImported.worksheets.getItem("Summary").getRange("A1").format.font.bold, false);
 
 const externalZip = await JSZip.loadAsync(exported.bytes);
 const relationshipPath = "xl/_rels/workbook.xml.rels";
@@ -248,6 +277,30 @@ invalidNumberFormat.worksheets.getItem("Sheet1").getRange("A1").format.numberFor
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidNumberFormat),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_number_format",
+);
+
+const invalidFontSize = Workbook.create();
+invalidFontSize.worksheets.add("Sheet1").getRange("A1").values = [[1]];
+invalidFontSize.worksheets.getItem("Sheet1").getRange("A1").format = { font: { size: 500 } };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidFontSize),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_style" && /font size/i.test(error.message),
+);
+
+const invalidThemeColor = Workbook.create();
+invalidThemeColor.worksheets.add("Sheet1").getRange("A1").values = [[1]];
+invalidThemeColor.worksheets.getItem("Sheet1").getRange("A1").format = { fill: { patternType: "solid", foreground: { theme: 12 } } };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidThemeColor),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_style" && /theme color index/i.test(error.message),
+);
+
+const invalidBorderStyle = Workbook.create();
+invalidBorderStyle.worksheets.add("Sheet1").getRange("A1").values = [[1]];
+invalidBorderStyle.worksheets.getItem("Sheet1").getRange("A1").format = { border: { bottom: { style: "triple", color: "#000000" } } };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidBorderStyle),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_style" && /border style/i.test(error.message),
 );
 
 const formulaWorkbook = Workbook.create();

@@ -273,6 +273,124 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolRoundTripsCompleteStaticCellStyleProfile()
+    {
+        var request = ExportRequest();
+        var expected = FullStaticStyle();
+        request.Artifact.Workbook.Worksheets[0].Cells[0].Style = expected;
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var styles = document.WorkbookPart!.WorkbookStylesPart!.Stylesheet!;
+            Assert.True((styles.Fonts?.Count?.Value ?? 0) >= 2);
+            Assert.True((styles.Fills?.Count?.Value ?? 0) >= 3);
+            Assert.True((styles.Borders?.Count?.Value ?? 0) >= 2);
+            var cell = document.WorkbookPart.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(item => item.CellReference?.Value == "A1");
+            var format = styles.CellFormats!.Elements<CellFormat>().ElementAt(checked((int)cell.StyleIndex!.Value));
+            Assert.True(format.ApplyFont?.Value);
+            Assert.True(format.ApplyFill?.Value);
+            Assert.True(format.ApplyBorder?.Value);
+            Assert.True(format.ApplyAlignment?.Value);
+            Assert.True(format.ApplyProtection?.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(expected, imported.Artifact.Workbook.Worksheets[0].Cells[0].Style);
+    }
+
+    [Fact]
+    public void SourcePreservingStyleEditClonesResourcesAndRetainsResidualProperties()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Cells[0].Style = FullStaticStyle();
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(firstExport.Ok);
+        var bytes = AddUnmodeledStaticStyleProperties(firstExport.File.ToByteArray(), "A1", out var originalStyleIndex, out var originalFontIndex);
+        var imported = Import(bytes);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        imported.Artifact.Workbook.Worksheets[0].Cells[0].Style.Font.Bold = false;
+        imported.Artifact.Workbook.Worksheets[0].Cells[0].Style.Fill.Foreground = new SpreadsheetColor { Rgb = "22C55E" };
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var styles = document.WorkbookPart!.WorkbookStylesPart!.Stylesheet!;
+            var formats = styles.CellFormats!.Elements<CellFormat>().ToArray();
+            var fonts = styles.Fonts!.Elements<Font>().ToArray();
+            Assert.True(formats[originalStyleIndex].QuotePrefix?.Value);
+            Assert.Equal(FontSchemeValues.Minor, fonts[originalFontIndex].FontScheme?.Val?.Value);
+            var cell = document.WorkbookPart.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(item => item.CellReference?.Value == "A1");
+            var derived = formats[checked((int)cell.StyleIndex!.Value)];
+            Assert.NotEqual(originalStyleIndex, checked((int)cell.StyleIndex.Value));
+            Assert.True(derived.QuotePrefix?.Value);
+            Assert.Equal(FontSchemeValues.Minor, fonts[checked((int)derived.FontId!.Value)].FontScheme?.Val?.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var reimported = Import(exported.File.ToByteArray());
+        var style = reimported.Artifact.Workbook.Worksheets[0].Cells[0].Style;
+        Assert.False(style.Font.Bold);
+        Assert.Equal("22C55E", style.Fill.Foreground.Rgb);
+        Assert.Equal("0.000 \"units\"", reimported.Artifact.Workbook.Worksheets[0].Cells[1].NumberFormatCode);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidStaticCellStyles()
+    {
+        var oversizedFont = ExportRequest();
+        oversizedFont.Artifact.Workbook.Worksheets[0].Cells[0].Style = new CellStyleArtifact { Font = new SpreadsheetFontStyle { SizePoints = 500 } };
+        var invalidFont = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(oversizedFont.ToByteArray()));
+        Assert.False(invalidFont.Ok);
+        Assert.Equal("invalid_cell_style", Assert.Single(invalidFont.Diagnostics).Code);
+
+        var invalidColor = ExportRequest();
+        invalidColor.Artifact.Workbook.Worksheets[0].Cells[0].Style = new CellStyleArtifact
+        {
+            Fill = new SpreadsheetFillStyle { PatternType = "solid", Foreground = new SpreadsheetColor { Theme = 12 } },
+        };
+        var colorResponse = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidColor.ToByteArray()));
+        Assert.False(colorResponse.Ok);
+        Assert.Equal("invalid_cell_style", Assert.Single(colorResponse.Diagnostics).Code);
+
+        var invalidBorder = ExportRequest();
+        invalidBorder.Artifact.Workbook.Worksheets[0].Cells[0].Style = new CellStyleArtifact
+        {
+            Border = new SpreadsheetBorderStyle { Left = new SpreadsheetBorderEdgeStyle { Style = "triple" } },
+        };
+        var borderResponse = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidBorder.ToByteArray()));
+        Assert.False(borderResponse.Ok);
+        Assert.Equal("invalid_cell_style", Assert.Single(borderResponse.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourceFreeExportDeduplicatesIdenticalStaticStyles()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Cells[0].Style = FullStaticStyle();
+        request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 2, Column = 0, StringValue = "same", Style = FullStaticStyle() });
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        using var stream = new MemoryStream(exported.File.ToByteArray());
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var cells = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Where(item => item.CellReference?.Value is "A1" or "A3").ToArray();
+        Assert.Equal(cells[0].StyleIndex?.Value, cells[1].StyleIndex?.Value);
+    }
+
+    [Fact]
     public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -479,6 +597,36 @@ public sealed class XlsxCodecTests
         };
     }
 
+    private static CellStyleArtifact FullStaticStyle() => new()
+    {
+        Font = new SpreadsheetFontStyle
+        {
+            Bold = true, Italic = false, Underline = "double", Strike = true,
+            Color = new SpreadsheetColor { Theme = 4, Tint = 0.25 }, SizePoints = 14, Name = "Aptos Display",
+        },
+        Fill = new SpreadsheetFillStyle
+        {
+            PatternType = "solid",
+            Foreground = new SpreadsheetColor { Rgb = "0F172A" },
+        },
+        Border = new SpreadsheetBorderStyle
+        {
+            Left = new SpreadsheetBorderEdgeStyle { Style = "thin", Color = new SpreadsheetColor { Indexed = 8 } },
+            Right = new SpreadsheetBorderEdgeStyle { Style = "thin", Color = new SpreadsheetColor { Indexed = 8 } },
+            Top = new SpreadsheetBorderEdgeStyle { Style = "thin", Color = new SpreadsheetColor { Indexed = 8 } },
+            Bottom = new SpreadsheetBorderEdgeStyle { Style = "double", Color = new SpreadsheetColor { Automatic = true } },
+            Diagonal = new SpreadsheetBorderEdgeStyle { Style = "dashed", Color = new SpreadsheetColor { Rgb = "EF4444" } },
+            DiagonalUp = true,
+            Outline = false,
+        },
+        Alignment = new SpreadsheetAlignmentStyle
+        {
+            Horizontal = "center", Vertical = "bottom", WrapText = true, TextRotation = 45,
+            Indent = 2, ShrinkToFit = false, ReadingOrder = 1,
+        },
+        Protection = new SpreadsheetProtectionStyle { Locked = false, Hidden = true },
+    };
+
     private static CodecResponse Import(byte[] bytes) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
     {
         ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -502,6 +650,26 @@ public sealed class XlsxCodecTests
             format.Protection = new Protection { Locked = false };
             format.ApplyProtection = true;
             document.WorkbookPart.WorkbookStylesPart.Stylesheet!.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnmodeledStaticStyleProperties(byte[] bytes, string reference, out int styleIndex, out int fontIndex)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var cell = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(item => item.CellReference?.Value == reference);
+            styleIndex = checked((int)(cell.StyleIndex?.Value ?? 0));
+            var styles = document.WorkbookPart.WorkbookStylesPart!.Stylesheet!;
+            var format = styles.CellFormats!.Elements<CellFormat>().ElementAt(styleIndex);
+            format.QuotePrefix = true;
+            fontIndex = checked((int)(format.FontId?.Value ?? 0));
+            var font = styles.Fonts!.Elements<Font>().ElementAt(fontIndex);
+            font.FontScheme = new FontScheme { Val = FontSchemeValues.Minor };
+            styles.Save();
         }
         return stream.ToArray();
     }

@@ -37,6 +37,25 @@
           "formulaMetadata": { "kind": "array", "reference": "D2:D3" }
         },
         {
+          "range": "A1:D1",
+          "format": {
+            "fill": { "patternType": "darkGrid", "foreground": { "theme": 4, "tint": 0.4 }, "background": "#E2E8F0" },
+            "font": { "bold": true, "underline": "double", "color": "#FFFFFF", "size": 12, "name": "Aptos Display" },
+            "alignment": { "horizontal": "center", "vertical": "bottom", "wrapText": true, "textRotation": 15, "indent": 1, "readingOrder": 1 },
+            "border": {
+              "left": { "style": "thin", "color": { "indexed": 8 } },
+              "right": { "style": "thin", "color": { "indexed": 8 } },
+              "top": { "style": "thin", "color": { "auto": true } },
+              "bottom": { "style": "double", "color": "#38BDF8" }
+            },
+            "protection": { "locked": false, "hidden": true }
+          }
+        },
+        {
+          "range": "C2:C3",
+          "format": { "fill": "#DCFCE7", "font": { "bold": true, "color": "#166534" }, "alignment": { "horizontal": "right" } }
+        },
+        {
           "range": "B2",
           "format": { "numberFormat": "0.000 \"units\"" }
         },
