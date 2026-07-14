@@ -41,13 +41,13 @@ internal static class XlsxCodec
             if (envelope.Workbook.DateSystem == WorkbookDateSystem._1904)
                 workbookPart.Workbook.WorkbookProperties = new WorkbookProperties { Date1904 = true };
             var sheets = workbookPart.Workbook.AppendChild(new Sheets());
-            var numberFormats = new XlsxNumberFormatCodec(workbookPart);
+            var styles = new XlsxCellStyleCodec(workbookPart);
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
             {
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
-                worksheetPart.Worksheet = BuildWorksheet(source, numberFormats);
+                worksheetPart.Worksheet = BuildWorksheet(source, styles);
                 sheets.Append(new Sheet
                 {
                     Id = workbookPart.GetIdOfPart(worksheetPart),
@@ -55,7 +55,7 @@ internal static class XlsxCodec
                     Name = source.Name,
                 });
             }
-            numberFormats.Save();
+            styles.Save();
             workbookPart.Workbook.Save();
         }
 
@@ -84,7 +84,7 @@ internal static class XlsxCodec
             DateSystem = workbookRoot.WorkbookProperties?.Date1904?.Value == true ? WorkbookDateSystem._1904 : WorkbookDateSystem._1900,
         };
         var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
-        var numberFormats = new XlsxNumberFormatCodec(workbookPart);
+        var styles = new XlsxCellStyleCodec(workbookPart);
         var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
         if ((uint)sheets.Length > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"XLSX workbook has {sheets.Length} sheets and exceeds max_sheets ({limits.MaxSheets}).");
@@ -95,7 +95,7 @@ internal static class XlsxCodec
             var sheet = sheets[index];
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
-            var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, numberFormats, ref cellCount, limits);
+            var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, ref cellCount, limits);
             workbook.Worksheets.Add(target);
         }
 
@@ -134,7 +134,7 @@ internal static class XlsxCodec
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
             workbookRoot.WorkbookProperties.Date1904 = envelope.Workbook.DateSystem == WorkbookDateSystem._1904;
             var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
-            var numberFormats = new XlsxNumberFormatCodec(workbookPart);
+            var styles = new XlsxCellStyleCodec(workbookPart);
             for (var index = 0; index < sheets.Length; index++)
             {
                 var sheet = sheets[index];
@@ -142,9 +142,9 @@ internal static class XlsxCodec
                 if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
                 sheet.Name = source.Name;
-                PatchWorksheet(worksheetPart, source, sharedStrings, numberFormats);
+                PatchWorksheet(worksheetPart, source, sharedStrings, styles);
             }
-            numberFormats.Save();
+            styles.Save();
             workbookRoot.Save();
         }
 
@@ -160,13 +160,13 @@ internal static class XlsxCodec
         ]);
     }
 
-    private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats)
+    private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {source.Name} has no Worksheet root element.");
         var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, source.Name);
         PatchSheetView(worksheet, source);
         PatchColumnDimensions(worksheet, source);
-        PatchRowsAndCells(worksheet, source, sharedStrings, numberFormats, formulas);
+        PatchRowsAndCells(worksheet, source, sharedStrings, styles, formulas);
         PatchMergedRanges(worksheet, source);
         worksheet.Save();
     }
@@ -258,7 +258,7 @@ internal static class XlsxCodec
         else worksheet.InsertBefore(replacement, sheetData);
     }
 
-    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats, XlsxFormulaCodec formulas)
+    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxFormulaCodec formulas)
     {
         var sheetData = worksheet.GetFirstChild<SheetData>();
         if (sheetData is null)
@@ -283,23 +283,23 @@ internal static class XlsxCodec
             var row = GetOrCreateRow(sheetData, rows, sourceCell.Row);
             var reference = CellReference(sourceCell.Row, sourceCell.Column);
             var cell = row.Elements<Cell>().FirstOrDefault(item => string.Equals(item.CellReference?.Value, reference, StringComparison.OrdinalIgnoreCase));
-            var current = cell is null ? null : ReadCell(cell, sourceCell.Row, sharedStrings, numberFormats, formulas);
+            var current = cell is null ? null : ReadCell(cell, sourceCell.Row, sharedStrings, styles, formulas);
             if (current is not null && CellSemanticallyEqual(current, sourceCell)) continue;
             if (cell is null)
             {
-                cell = BuildCell(sourceCell, numberFormats);
+                cell = BuildCell(sourceCell, styles);
                 var before = row.Elements<Cell>().FirstOrDefault(item => ParseCellReference(item.CellReference?.Value, sourceCell.Row).Column > sourceCell.Column);
                 if (before is null) row.Append(cell);
                 else row.InsertBefore(cell, before);
             }
             else
             {
-                var replacement = BuildCell(sourceCell, numberFormats: null);
+                var replacement = BuildCell(sourceCell, styles: null);
                 if (!XlsxFormulaCodec.SemanticallyEqual(current!, sourceCell)) formulas.Apply(cell, sourceCell);
                 cell.CellValue = replacement.CellValue?.CloneNode(true) as CellValue;
                 cell.InlineString = replacement.InlineString?.CloneNode(true) as InlineString;
                 cell.DataType = replacement.DataType;
-                numberFormats.Apply(cell, sourceCell.NumberFormatCode);
+                styles.Apply(cell, sourceCell);
             }
         }
     }
@@ -319,6 +319,7 @@ internal static class XlsxCodec
     {
         if (!XlsxFormulaCodec.SemanticallyEqual(left, right) ||
             !string.Equals(left.NumberFormatCode, right.NumberFormatCode, StringComparison.Ordinal) ||
+            !Equals(left.Style, right.Style) ||
             left.ValueCase != right.ValueCase) return false;
         return left.ValueCase switch
         {
@@ -357,7 +358,7 @@ internal static class XlsxCodec
         else worksheet.InsertAfter(replacement, sheetData);
     }
 
-    private static Worksheet BuildWorksheet(WorksheetArtifact source, XlsxNumberFormatCodec numberFormats)
+    private static Worksheet BuildWorksheet(WorksheetArtifact source, XlsxCellStyleCodec styles)
     {
         var worksheet = new Worksheet();
         var sheetView = new SheetView { WorkbookViewId = 0U, ShowGridLines = source.ShowGridLines };
@@ -411,7 +412,7 @@ internal static class XlsxCodec
                 row.Hidden = dimension.Hidden;
             }
             if (cellsByRow.TryGetValue(rowIndex, out var cells))
-                foreach (var cell in cells) row.Append(BuildCell(cell, numberFormats));
+                foreach (var cell in cells) row.Append(BuildCell(cell, styles));
             sheetData.Append(row);
         }
         worksheet.Append(sheetData);
@@ -425,7 +426,7 @@ internal static class XlsxCodec
         return worksheet;
     }
 
-    private static Cell BuildCell(CellArtifact source, XlsxNumberFormatCodec? numberFormats)
+    private static Cell BuildCell(CellArtifact source, XlsxCellStyleCodec? styles)
     {
         var cell = new Cell { CellReference = CellReference(source.Row, source.Column) };
         cell.CellFormula = XlsxFormulaCodec.Build(source);
@@ -456,11 +457,11 @@ internal static class XlsxCodec
                 cell.CellValue = new CellValue(source.ErrorValue);
                 break;
         }
-        numberFormats?.Apply(cell, source.NumberFormatCode);
+        styles?.Apply(cell, source);
         return cell;
     }
 
-    private static WorksheetArtifact ReadWorksheet(WorksheetPart worksheetPart, string name, int index, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats, ref ulong cellCount, EffectiveCodecLimits limits)
+    private static WorksheetArtifact ReadWorksheet(WorksheetPart worksheetPart, string name, int index, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, ref ulong cellCount, EffectiveCodecLimits limits)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {name} has no Worksheet root element.");
         var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, name);
@@ -506,7 +507,7 @@ internal static class XlsxCodec
             {
                 cellCount++;
                 if (cellCount > limits.MaxCells) throw new CodecException("cell_budget_exceeded", $"XLSX workbook exceeds max_cells ({limits.MaxCells}).", name);
-                target.Cells.Add(ReadCell(cell, rowIndex, sharedStrings, numberFormats, formulas));
+                target.Cells.Add(ReadCell(cell, rowIndex, sharedStrings, styles, formulas));
             }
         }
         foreach (var merge in worksheet.Elements<MergeCells>().SelectMany(item => item.Elements<MergeCell>()))
@@ -514,10 +515,10 @@ internal static class XlsxCodec
         return target;
     }
 
-    private static CellArtifact ReadCell(Cell cell, uint fallbackRow, IReadOnlyList<string> sharedStrings, XlsxNumberFormatCodec numberFormats, XlsxFormulaCodec formulas)
+    private static CellArtifact ReadCell(Cell cell, uint fallbackRow, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxFormulaCodec formulas)
     {
         var (row, column) = ParseCellReference(cell.CellReference?.Value, fallbackRow);
-        var target = new CellArtifact { Row = row, Column = column, NumberFormatCode = numberFormats.Read(cell) };
+        var target = new CellArtifact { Row = row, Column = column, NumberFormatCode = styles.ReadNumberFormat(cell), Style = styles.ReadStyle(cell) };
         formulas.Populate(target);
         var text = cell.CellValue?.Text ?? cell.InnerText ?? string.Empty;
         var dataType = cell.DataType?.Value;
@@ -555,6 +556,7 @@ internal static class XlsxCodec
             {
                 if (cell.Row >= 1_048_576 || cell.Column >= 16_384) throw new CodecException("cell_out_of_range", $"Cell at row {cell.Row}, column {cell.Column} exceeds XLSX limits.", sheet.Name);
                 XlsxNumberFormatCodec.Canonicalize(cell.NumberFormatCode, $"{sheet.Name}!{CellReference(cell.Row, cell.Column)}");
+                XlsxCellStyleCodec.Validate(cell.Style, $"{sheet.Name}!{CellReference(cell.Row, cell.Column)}");
             }
             XlsxFormulaCodec.ValidateArtifact(sheet);
         }

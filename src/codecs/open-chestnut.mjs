@@ -1,6 +1,7 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { readFile } from "node:fs/promises";
 import { DocumentModel, FileBlob, Workbook } from "../index.mjs";
+import { normalizeXlsxStyle } from "../spreadsheet/ooxml-styles.mjs";
 import {
   ArtifactFamily,
   CellFormulaKind,
@@ -28,6 +29,7 @@ const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const MAX_XLSX_FORMULA_LENGTH = 8192;
 const MAX_XLSX_FORMULA_TOPOLOGY_CELLS = 1_048_576;
 const XLSX_FORMULA_METADATA_KEYS = new Set(["formulaType", "sharedIndex", "sharedRef", "arrayRef"]);
+const XLSX_NUMBER_FORMAT_STYLE_KEYS = new Set(["numberFormat", "numFmt"]);
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
 const DEFAULT_THEME_COLORS = {
   dk1: "#000000", lt1: "#FFFFFF", dk2: "#1F497D", lt2: "#EEECE1",
@@ -265,6 +267,150 @@ function numberFormatCode(value, address) {
   return value;
 }
 
+function invalidCellStyle(address, message, cause) {
+  throw new OpenChestnutCodecError(`Cell ${address} ${message}`, [], { code: "invalid_cell_style", cause });
+}
+
+function wireSpreadsheetColor(value, address, component) {
+  if (value == null) return undefined;
+  if (typeof value === "string") {
+    const rgb = value.replace(/^#/, "").slice(-6).toUpperCase();
+    if (!/^[0-9A-F]{6}$/.test(rgb)) invalidCellStyle(address, `${component} color must be six/eight-digit RGB or a supported symbolic color.`);
+    return { source: { case: "rgb", value: rgb } };
+  }
+  const tint = value.tint == null ? undefined : Number(value.tint);
+  if (value.theme != null) return { source: { case: "theme", value: Number(value.theme) }, tint };
+  if (value.indexed != null) return { source: { case: "indexed", value: Number(value.indexed) }, tint };
+  if (value.auto === true) return { source: { case: "automatic", value: true }, tint };
+  if (value.rgb != null) return wireSpreadsheetColor(value.rgb, address, component);
+  invalidCellStyle(address, `${component} color has no supported source.`);
+}
+
+function wireBorderEdge(edge, address, name) {
+  if (!edge?.style) return undefined;
+  return { style: String(edge.style), color: wireSpreadsheetColor(edge.color, address, `${name} border`) };
+}
+
+function wireCellStyle(style, address) {
+  const keys = Object.keys(style || {}).filter((key) => style[key] != null && !XLSX_NUMBER_FORMAT_STYLE_KEYS.has(key));
+  if (keys.length === 0) return undefined;
+  let normalized;
+  try {
+    normalized = normalizeXlsxStyle(style);
+  } catch (cause) {
+    invalidCellStyle(address, `has invalid static formatting: ${cause.message}`, cause);
+  }
+  const font = normalized.font;
+  const fill = typeof normalized.fill === "string" ? { patternType: "solid", foreground: normalized.fill } : normalized.fill;
+  const border = normalized.border;
+  const uniformEdge = border?.style ? { style: border.style, color: border.color } : undefined;
+  const edge = (name) => wireBorderEdge(uniformEdge || border?.[name], address, name);
+  return {
+    font: {
+      bold: font.bold,
+      italic: font.italic,
+      underline: font.underline ? String(font.underline === true ? "single" : font.underline) : undefined,
+      strike: font.strike,
+      color: wireSpreadsheetColor(font.color, address, "font"),
+      sizePoints: font.size,
+      name: font.name,
+    },
+    fill: fill ? {
+      patternType: fill.patternType,
+      foreground: wireSpreadsheetColor(fill.foreground, address, "fill foreground"),
+      background: wireSpreadsheetColor(fill.background, address, "fill background"),
+    } : undefined,
+    border: border ? {
+      left: edge("left"), right: edge("right"), top: edge("top"), bottom: edge("bottom"),
+      diagonal: edge("diagonal"), start: edge("start"), end: edge("end"),
+      horizontal: edge("horizontal"), vertical: edge("vertical"),
+      diagonalUp: border.diagonalUp,
+      diagonalDown: border.diagonalDown,
+      outline: border.outline,
+    } : undefined,
+    alignment: normalized.alignment ? {
+      horizontal: normalized.alignment.horizontal,
+      vertical: normalized.alignment.vertical,
+      wrapText: normalized.alignment.wrapText,
+      textRotation: normalized.alignment.textRotation,
+      indent: normalized.alignment.indent,
+      shrinkToFit: normalized.alignment.shrinkToFit,
+      readingOrder: normalized.alignment.readingOrder,
+    } : undefined,
+    protection: normalized.protection ? {
+      locked: normalized.protection.locked,
+      hidden: normalized.protection.hidden,
+    } : undefined,
+  };
+}
+
+function spreadsheetColorFromWire(color) {
+  if (!color?.source?.case) return undefined;
+  const tint = color.tint == null || color.tint === 0 ? {} : { tint: color.tint };
+  if (color.source.case === "rgb") return `#${String(color.source.value).slice(-6).toUpperCase()}`;
+  if (color.source.case === "theme") return { theme: color.source.value, ...tint };
+  if (color.source.case === "indexed") return { indexed: color.source.value, ...tint };
+  if (color.source.case === "automatic") return { auto: true, ...tint };
+  return undefined;
+}
+
+function borderEdgeFromWire(edge) {
+  if (!edge?.style) return undefined;
+  return { style: edge.style, color: spreadsheetColorFromWire(edge.color) || "#000000" };
+}
+
+function cellStyleFromWire(source) {
+  if (!source) return undefined;
+  const style = {};
+  if (source.font) {
+    style.font = {
+      ...(source.font.bold == null ? {} : { bold: source.font.bold }),
+      ...(source.font.italic == null ? {} : { italic: source.font.italic }),
+      ...(source.font.underline == null ? {} : { underline: source.font.underline }),
+      ...(source.font.strike == null ? {} : { strike: source.font.strike }),
+      ...(source.font.color ? { color: spreadsheetColorFromWire(source.font.color) } : {}),
+      ...(source.font.sizePoints == null ? {} : { size: source.font.sizePoints }),
+      ...(source.font.name == null ? {} : { name: source.font.name }),
+    };
+  }
+  if (source.fill) {
+    const foreground = spreadsheetColorFromWire(source.fill.foreground);
+    const background = spreadsheetColorFromWire(source.fill.background);
+    style.fill = source.fill.patternType === "solid" && typeof foreground === "string" && !background
+      ? foreground
+      : { patternType: source.fill.patternType || "none", ...(foreground ? { foreground } : {}), ...(background ? { background } : {}) };
+  }
+  if (source.border) {
+    const border = {};
+    for (const name of ["left", "right", "top", "bottom", "diagonal", "start", "end", "horizontal", "vertical"]) {
+      const value = borderEdgeFromWire(source.border[name]);
+      if (value) border[name] = value;
+    }
+    for (const [wire, model] of [["diagonalUp", "diagonalUp"], ["diagonalDown", "diagonalDown"], ["outline", "outline"]]) {
+      if (source.border[wire] != null) border[model] = source.border[wire];
+    }
+    const perimeter = [border.left, border.right, border.top, border.bottom];
+    const samePerimeter = perimeter.every(Boolean) && perimeter.every((candidate) => JSON.stringify(candidate) === JSON.stringify(perimeter[0]));
+    const hasExtras = border.diagonal || border.start || border.end || border.horizontal || border.vertical || border.diagonalUp != null || border.diagonalDown != null || border.outline != null;
+    style.border = samePerimeter && !hasExtras ? perimeter[0] : border;
+  }
+  if (source.alignment) {
+    style.alignment = Object.fromEntries(Object.entries({
+      horizontal: source.alignment.horizontal,
+      vertical: source.alignment.vertical,
+      wrapText: source.alignment.wrapText,
+      textRotation: source.alignment.textRotation,
+      indent: source.alignment.indent,
+      shrinkToFit: source.alignment.shrinkToFit,
+      readingOrder: source.alignment.readingOrder,
+    }).filter(([, value]) => value != null));
+  }
+  if (source.protection) {
+    style.protection = Object.fromEntries(Object.entries({ locked: source.protection.locked, hidden: source.protection.hidden }).filter(([, value]) => value != null));
+  }
+  return Object.keys(style).length ? style : undefined;
+}
+
 function unsupportedWorkbookFeatures(workbook) {
   const unsupported = [];
   if (workbook.definedNames?.items?.length) unsupported.push("defined names");
@@ -282,8 +428,7 @@ function unsupportedWorkbookFeatures(workbook) {
     if (sheet.dataValidations?.items?.length) unsupported.push(`${prefix} data validations`);
     if (sheet.conditionalFormattings?.items?.length) unsupported.push(`${prefix} conditional formatting`);
     for (const [address, cell] of sheet.store?.entries?.() || []) {
-      const styleKeys = Object.keys(cell.style || {}).filter((key) => cell.style[key] != null);
-      if (styleKeys.some((key) => key !== "numberFormat")) unsupported.push(`${prefix} styled cell ${address}`);
+      if (cell.style && Object.keys(cell.style).some((key) => cell.style[key] != null)) wireCellStyle(cell.style, `${sheet.name}!${address}`);
       const metadata = Object.keys(cell).filter((key) => !["value", "formula", "style"].includes(key) && !XLSX_FORMULA_METADATA_KEYS.has(key));
       if (metadata.length) unsupported.push(`${prefix} advanced formula metadata at ${address}`);
     }
@@ -299,6 +444,7 @@ function wireCell(address, cell) {
     formula: cell.formula ? String(cell.formula) : "",
     formulaMetadata: cellFormulaMetadata(address, cell),
     numberFormatCode: numberFormatCode(cell.style?.numberFormat, address),
+    style: wireCellStyle(cell.style, address),
     value: { case: undefined },
   };
   if (cell.value == null) return target;
@@ -348,7 +494,7 @@ function workbookEnvelope(workbook) {
           rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
           mergedRanges: [...(sheet.mergedRanges || [])],
           cells: (() => {
-            const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || numberFormatCode(cell.style?.numberFormat, "formatted cell")).map(([address, cell]) => wireCell(address, cell));
+            const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
             validateFormulaTopology(cells, sheet.name);
             return cells;
           })(),
@@ -404,7 +550,8 @@ function workbookFromEnvelope(envelope) {
         cell.formulaType = "array";
         cell.arrayRef = sourceCell.formulaMetadata.reference;
       }
-      if (sourceCell.numberFormatCode) cell.style = { ...cell.style, numberFormat: sourceCell.numberFormatCode };
+      const staticStyle = cellStyleFromWire(sourceCell.style);
+      if (staticStyle || sourceCell.numberFormatCode) cell.style = { ...(staticStyle || {}), ...(sourceCell.numberFormatCode ? { numberFormat: sourceCell.numberFormatCode } : {}) };
       switch (sourceCell.value.case) {
         case "stringValue": cell.value = sourceCell.value.value; break;
         case "numberValue": cell.value = sourceCell.value.value; break;

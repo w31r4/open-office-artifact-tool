@@ -156,6 +156,9 @@ message CellArtifact {
   string number_format_code = 4;
   // Native formula topology for shared and legacy array formulas.
   CellFormulaMetadata formula_metadata = 5;
+  // Effective bounded static cell formatting. Number formats remain field 4
+  // so existing wire consumers retain their additive compatibility.
+  CellStyleArtifact style = 6;
 
   oneof value {
     string string_value = 10;
@@ -175,6 +178,78 @@ message CellFormulaMetadata {
   CellFormulaKind kind = 1;
   uint32 shared_index = 2;
   string reference = 3;
+}
+
+// A clean-room semantic projection of the SpreadsheetML cell style record.
+// Named-style identity, conditional formats, gradients, phonetic settings,
+// and extension payloads remain source-bound opaque content.
+message CellStyleArtifact {
+  SpreadsheetFontStyle font = 1;
+  SpreadsheetFillStyle fill = 2;
+  SpreadsheetBorderStyle border = 3;
+  SpreadsheetAlignmentStyle alignment = 4;
+  SpreadsheetProtectionStyle protection = 5;
+}
+
+message SpreadsheetColor {
+  oneof source {
+    string rgb = 1;
+    uint32 theme = 2;
+    uint32 indexed = 3;
+    bool automatic = 4;
+  }
+  optional double tint = 5;
+}
+
+message SpreadsheetFontStyle {
+  optional bool bold = 1;
+  optional bool italic = 2;
+  optional string underline = 3;
+  optional bool strike = 4;
+  SpreadsheetColor color = 5;
+  optional double size_points = 6;
+  optional string name = 7;
+}
+
+message SpreadsheetFillStyle {
+  string pattern_type = 1;
+  SpreadsheetColor foreground = 2;
+  SpreadsheetColor background = 3;
+}
+
+message SpreadsheetBorderEdgeStyle {
+  string style = 1;
+  SpreadsheetColor color = 2;
+}
+
+message SpreadsheetBorderStyle {
+  SpreadsheetBorderEdgeStyle left = 1;
+  SpreadsheetBorderEdgeStyle right = 2;
+  SpreadsheetBorderEdgeStyle top = 3;
+  SpreadsheetBorderEdgeStyle bottom = 4;
+  SpreadsheetBorderEdgeStyle diagonal = 5;
+  SpreadsheetBorderEdgeStyle start = 6;
+  SpreadsheetBorderEdgeStyle end = 7;
+  SpreadsheetBorderEdgeStyle horizontal = 8;
+  SpreadsheetBorderEdgeStyle vertical = 9;
+  optional bool diagonal_up = 10;
+  optional bool diagonal_down = 11;
+  optional bool outline = 12;
+}
+
+message SpreadsheetAlignmentStyle {
+  optional string horizontal = 1;
+  optional string vertical = 2;
+  optional bool wrap_text = 3;
+  optional uint32 text_rotation = 4;
+  optional uint32 indent = 5;
+  optional bool shrink_to_fit = 6;
+  optional uint32 reading_order = 7;
+}
+
+message SpreadsheetProtectionStyle {
+  optional bool locked = 1;
+  optional bool hidden = 2;
 }
 
 message FreezePane {
