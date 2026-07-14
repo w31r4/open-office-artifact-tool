@@ -4,17 +4,20 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
 // Owns the narrow, source-bound QueryTablePart decision for one worksheet
-// table. The public model sees root query policy and a stable connection ID;
-// the source package continues to own connection definitions, refresh history,
-// query fields, extensions, and all other XML. This module never authors a new
-// external-data graph.
+// table. The public model sees root query policy, a stable connection ID, and
+// one bounded refresh/field profile. The source package continues to own
+// connection definitions, extensions, and all other XML. This module never
+// authors a new external-data graph or changes field identity/topology.
 internal sealed class XlsxQueryTableCodec
 {
+    private enum RefreshProfile { Absent, Recognized, Opaque }
+
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private static readonly HashSet<string> GrowShrinkTypes = new(StringComparer.Ordinal)
     {
@@ -23,6 +26,8 @@ internal sealed class XlsxQueryTableCodec
     private readonly QueryTablePart _part;
     private readonly XDocument _document;
     private readonly HashSet<uint> _connectionIds;
+    private readonly RefreshProfile _refreshProfile;
+    private readonly XElement? _refreshElement;
     private readonly SpreadsheetTableQueryArtifact _sourceArtifact;
 
     private XlsxQueryTableCodec(
@@ -33,12 +38,16 @@ internal sealed class XlsxQueryTableCodec
         string connectionPartPath,
         byte[] connectionBytes,
         HashSet<uint> connectionIds,
+        RefreshProfile refreshProfile,
+        XElement? refreshElement,
         SpreadsheetTableQueryArtifact artifact)
     {
         _part = part;
         RelationshipId = relationshipId;
         _document = document;
         _connectionIds = connectionIds;
+        _refreshProfile = refreshProfile;
+        _refreshElement = refreshElement;
         Path = part.Uri.OriginalString.TrimStart('/');
         artifact.Source = new SpreadsheetTableQuerySourceBinding
         {
@@ -73,10 +82,11 @@ internal sealed class XlsxQueryTableCodec
         var connectionsPart = workbookPart.ConnectionsPart;
         if (connectionsPart is null) return false;
 
-        if (!TryReadPart(queryPart, out var queryBytes, out var queryDocument) ||
+        if (!TryReadTableColumnIds(tablePart, out var tableColumnIds) ||
+            !TryReadPart(queryPart, out var queryBytes, out var queryDocument) ||
             !TryReadPart(connectionsPart, out var connectionBytes, out var connectionDocument) ||
             !TryReadConnections(connectionDocument!, out var connectionIds) ||
-            !TryReadQuery(queryDocument!, out var artifact) ||
+            !TryReadQuery(queryDocument!, tableColumnIds, out var artifact, out var refreshProfile, out var refreshElement) ||
             !connectionIds.Contains(artifact!.ConnectionId)) return false;
 
         codec = new XlsxQueryTableCodec(
@@ -87,6 +97,8 @@ internal sealed class XlsxQueryTableCodec
             connectionsPart.Uri.OriginalString.TrimStart('/'),
             connectionBytes!,
             connectionIds,
+            refreshProfile,
+            refreshElement,
             artifact!);
         return true;
     }
@@ -100,6 +112,7 @@ internal sealed class XlsxQueryTableCodec
             throw Invalid("Worksheet query table connection_id must be positive.", location);
         if (query.HasGrowShrinkType && !GrowShrinkTypes.Contains(query.GrowShrinkType))
             throw Invalid($"Worksheet query table grow/shrink type {query.GrowShrinkType} is invalid.", location);
+        if (query.Refresh is not null) ValidateRefresh(query.Refresh, location);
     }
 
     internal void Apply(SpreadsheetTableQueryArtifact? desired, bool sourceBound)
@@ -110,6 +123,7 @@ internal sealed class XlsxQueryTableCodec
             throw Invalid("Source-preserving XLSX export cannot remove an imported QueryTable graph in this bounded slice.", Path);
         Validate(desired, Path);
         ValidateBinding(desired.Source);
+        ValidateRefreshShape(desired.Refresh);
         if (!_connectionIds.Contains(desired.ConnectionId))
             throw Invalid($"Worksheet query table connection_id {desired.ConnectionId} does not identify a connection in the validated source ConnectionsPart.", Path);
         if (SemanticSha256(desired).Equals(_sourceArtifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return;
@@ -142,6 +156,78 @@ internal sealed class XlsxQueryTableCodec
             throw Invalid("Worksheet query table source binding does not match the validated source package.", Path);
     }
 
+    private void ValidateRefreshShape(SpreadsheetTableQueryRefreshArtifact? desired)
+    {
+        if (_refreshProfile != RefreshProfile.Recognized)
+        {
+            if (desired is not null)
+                throw Invalid("Source-preserving XLSX export cannot fabricate or replace an absent/opaque query refresh profile.", Path);
+            return;
+        }
+        var source = _sourceArtifact.Refresh;
+        if (desired is null || source is null)
+            throw Invalid("Source-preserving XLSX export cannot remove a recognized query refresh profile.", Path);
+        if (desired.Fields.Count != source.Fields.Count)
+            throw Invalid("Source-preserving XLSX export cannot add or remove query refresh fields.", Path);
+        for (var index = 0; index < source.Fields.Count; index++)
+        {
+            var before = source.Fields[index];
+            var after = desired.Fields[index];
+            if (after.Id != before.Id || after.HasTableColumnId != before.HasTableColumnId ||
+                after.HasTableColumnId && after.TableColumnId != before.TableColumnId)
+                throw Invalid("Source-preserving XLSX export cannot reorder or rebind query refresh field identity.", Path);
+        }
+    }
+
+    private static void ValidateRefresh(SpreadsheetTableQueryRefreshArtifact refresh, string location)
+    {
+        if (refresh.Fields.Count > 16_384 ||
+            refresh.HasMinimumVersion && refresh.MinimumVersion > byte.MaxValue ||
+            refresh.HasUnboundColumnsLeft && refresh.UnboundColumnsLeft > 16_384 ||
+            refresh.HasUnboundColumnsRight && refresh.UnboundColumnsRight > 16_384)
+            throw Invalid("Worksheet query refresh metadata exceeds the bounded profile.", location);
+        var ids = new HashSet<uint>();
+        var tableColumnIds = new HashSet<uint>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rowNumberFields = 0;
+        foreach (var field in refresh.Fields)
+        {
+            if (field.Id == 0 || !ids.Add(field.Id) ||
+                field.HasName && (string.IsNullOrWhiteSpace(field.Name) || field.Name.Length > 255 || field.Name.Any(char.IsControl) || !names.Add(field.Name)) ||
+                field.HasTableColumnId && (field.TableColumnId == 0 || !tableColumnIds.Add(field.TableColumnId)))
+                throw Invalid("Worksheet query refresh has an invalid or duplicate field profile.", location);
+            if (field.HasRowNumbers && field.RowNumbers && ++rowNumberFields > 1)
+                throw Invalid("Worksheet query refresh cannot identify more than one row-number field.", location);
+        }
+        if (refresh.HasNextId && (refresh.NextId == 0 || ids.Contains(refresh.NextId)))
+            throw Invalid("Worksheet query refresh next_id must identify an unused positive field ID.", location);
+    }
+
+    private void PatchRefresh(SpreadsheetTableQueryRefreshArtifact refresh)
+    {
+        var element = _refreshElement!;
+        SetOptional(element, "preserveSortFilterLayout", refresh.HasPreserveSortFilterLayout, refresh.PreserveSortFilterLayout);
+        SetOptional(element, "fieldIdWrapped", refresh.HasFieldIdWrapped, refresh.FieldIdWrapped);
+        SetOptional(element, "headersInLastRefresh", refresh.HasHeadersInLastRefresh, refresh.HeadersInLastRefresh);
+        SetOptional(element, "minimumVersion", refresh.HasMinimumVersion, refresh.MinimumVersion);
+        SetOptional(element, "nextId", refresh.HasNextId, refresh.NextId);
+        SetOptional(element, "unboundColumnsLeft", refresh.HasUnboundColumnsLeft, refresh.UnboundColumnsLeft);
+        SetOptional(element, "unboundColumnsRight", refresh.HasUnboundColumnsRight, refresh.UnboundColumnsRight);
+        var fieldsElement = element.Elements(Spreadsheet + "queryTableFields").SingleOrDefault();
+        if (fieldsElement is null) return;
+        var fieldElements = fieldsElement.Elements(Spreadsheet + "queryTableField").ToArray();
+        for (var index = 0; index < fieldElements.Length; index++)
+        {
+            var field = refresh.Fields[index];
+            var fieldElement = fieldElements[index];
+            fieldElement.SetAttributeValue("name", field.HasName ? field.Name : null);
+            SetOptional(fieldElement, "dataBound", field.HasDataBound, field.DataBound);
+            SetOptional(fieldElement, "rowNumbers", field.HasRowNumbers, field.RowNumbers);
+            SetOptional(fieldElement, "fillFormulas", field.HasFillFormulas, field.FillFormulas);
+            SetOptional(fieldElement, "clipped", field.HasClipped, field.Clipped);
+        }
+    }
+
     private void Patch(SpreadsheetTableQueryArtifact query)
     {
         var root = _document.Root!;
@@ -167,13 +253,21 @@ internal sealed class XlsxQueryTableCodec
         SetOptional(root, "applyPatternFormats", query.HasApplyPatternFormats, query.ApplyPatternFormats);
         SetOptional(root, "applyAlignmentFormats", query.HasApplyAlignmentFormats, query.ApplyAlignmentFormats);
         SetOptional(root, "applyWidthHeightFormats", query.HasApplyWidthHeightFormats, query.ApplyWidthHeightFormats);
+        if (_refreshProfile == RefreshProfile.Recognized) PatchRefresh(query.Refresh!);
         Artifact = query.Clone();
         Dirty = true;
     }
 
-    private static bool TryReadQuery(XDocument document, out SpreadsheetTableQueryArtifact? artifact)
+    private static bool TryReadQuery(
+        XDocument document,
+        IReadOnlySet<uint> tableColumnIds,
+        out SpreadsheetTableQueryArtifact? artifact,
+        out RefreshProfile refreshProfile,
+        out XElement? refreshElement)
     {
         artifact = null;
+        refreshProfile = RefreshProfile.Absent;
+        refreshElement = null;
         var root = document.Root;
         if (root?.Name != Spreadsheet + "queryTable") return false;
         var name = root.Attribute("name")?.Value;
@@ -209,8 +303,90 @@ internal sealed class XlsxQueryTableCodec
             if (!uint.TryParse(autoFormat.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var autoFormatId)) return false;
             result.AutoFormatId = autoFormatId;
         }
+        var refreshElements = root.Elements(Spreadsheet + "queryTableRefresh").ToArray();
+        if (refreshElements.Length == 1)
+        {
+            refreshElement = refreshElements[0];
+            if (TryReadRefresh(refreshElement, tableColumnIds, out var refresh))
+            {
+                result.Refresh = refresh;
+                refreshProfile = RefreshProfile.Recognized;
+            }
+            else refreshProfile = RefreshProfile.Opaque;
+        }
+        else if (refreshElements.Length > 1) refreshProfile = RefreshProfile.Opaque;
         artifact = result;
         return true;
+    }
+
+    private static bool TryReadTableColumnIds(TableDefinitionPart part, out HashSet<uint> ids)
+    {
+        ids = [];
+        var columns = part.Table?.TableColumns?.Elements<TableColumn>().ToArray();
+        if (columns is null || columns.Length == 0) return false;
+        foreach (var column in columns)
+        {
+            var id = column.Id?.Value;
+            if (id is null or 0 || !ids.Add(id.Value)) return false;
+        }
+        return true;
+    }
+
+    private static bool TryReadRefresh(
+        XElement element,
+        IReadOnlySet<uint> tableColumnIds,
+        out SpreadsheetTableQueryRefreshArtifact refresh)
+    {
+        var result = new SpreadsheetTableQueryRefreshArtifact();
+        refresh = result;
+        if (!ReadOptionalBool(element, "preserveSortFilterLayout", value => result.PreserveSortFilterLayout = value) ||
+            !ReadOptionalBool(element, "fieldIdWrapped", value => result.FieldIdWrapped = value) ||
+            !ReadOptionalBool(element, "headersInLastRefresh", value => result.HeadersInLastRefresh = value) ||
+            !ReadOptionalUInt(element, "minimumVersion", value => result.MinimumVersion = value) ||
+            !ReadOptionalUInt(element, "nextId", value => result.NextId = value) ||
+            !ReadOptionalUInt(element, "unboundColumnsLeft", value => result.UnboundColumnsLeft = value) ||
+            !ReadOptionalUInt(element, "unboundColumnsRight", value => result.UnboundColumnsRight = value)) return false;
+
+        var fieldCollections = element.Elements(Spreadsheet + "queryTableFields").ToArray();
+        if (fieldCollections.Length > 1) return false;
+        if (fieldCollections.Length == 1)
+        {
+            var fieldElements = fieldCollections[0].Elements().ToArray();
+            if (fieldElements.Any(child => child.Name != Spreadsheet + "queryTableField") ||
+                !uint.TryParse(fieldCollections[0].Attribute("count")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ||
+                count != fieldElements.Length || count > 16_384) return false;
+            foreach (var fieldElement in fieldElements)
+            {
+                if (fieldElement.Elements().Any(child => child.Name != Spreadsheet + "extLst") ||
+                    fieldElement.Elements(Spreadsheet + "extLst").Skip(1).Any() ||
+                    !uint.TryParse(fieldElement.Attribute("id")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id == 0)
+                    return false;
+                var field = new SpreadsheetTableQueryFieldArtifact { Id = id };
+                if (fieldElement.Attribute("name") is { } name) field.Name = name.Value;
+                if (!ReadOptionalBool(fieldElement, "dataBound", value => field.DataBound = value) ||
+                    !ReadOptionalBool(fieldElement, "rowNumbers", value => field.RowNumbers = value) ||
+                    !ReadOptionalBool(fieldElement, "fillFormulas", value => field.FillFormulas = value) ||
+                    !ReadOptionalBool(fieldElement, "clipped", value => field.Clipped = value)) return false;
+                if (fieldElement.Attribute("tableColumnId") is { } tableColumn)
+                {
+                    if (!uint.TryParse(tableColumn.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var tableColumnId) ||
+                        tableColumnId == 0 || !tableColumnIds.Contains(tableColumnId)) return false;
+                    field.TableColumnId = tableColumnId;
+                }
+                result.Fields.Add(field);
+            }
+        }
+        try
+        {
+            ValidateRefresh(result, string.Empty);
+            refresh = result;
+            return true;
+        }
+        catch (CodecException)
+        {
+            refresh = new SpreadsheetTableQueryRefreshArtifact();
+            return false;
+        }
     }
 
     private static bool TryReadConnections(XDocument document, out HashSet<uint> connectionIds)
@@ -258,6 +434,14 @@ internal sealed class XlsxQueryTableCodec
         return true;
     }
 
+    private static bool ReadOptionalUInt(XElement root, string name, Action<uint> set)
+    {
+        if (root.Attribute(name) is not { } attribute) return true;
+        if (!uint.TryParse(attribute.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var value)) return false;
+        set(value);
+        return true;
+    }
+
     private static bool TryBool(string value, out bool parsed)
     {
         if (value is "1" or "true") { parsed = true; return true; }
@@ -269,33 +453,65 @@ internal sealed class XlsxQueryTableCodec
     private static void SetOptional(XElement root, string name, bool hasValue, bool value) =>
         root.SetAttributeValue(name, hasValue ? value ? "1" : "0" : null);
 
-    private static string SemanticSha256(SpreadsheetTableQueryArtifact query) => Sha256(Encoding.UTF8.GetBytes(string.Join('\0',
-    [
-        query.Name,
-        query.ConnectionId.ToString(CultureInfo.InvariantCulture),
-        Optional(query.HasHeaders, query.Headers),
-        Optional(query.HasRowNumbers, query.RowNumbers),
-        Optional(query.HasDisableRefresh, query.DisableRefresh),
-        Optional(query.HasBackgroundRefresh, query.BackgroundRefresh),
-        Optional(query.HasFirstBackgroundRefresh, query.FirstBackgroundRefresh),
-        Optional(query.HasRefreshOnLoad, query.RefreshOnLoad),
-        query.HasGrowShrinkType ? query.GrowShrinkType : "<absent>",
-        Optional(query.HasFillFormulas, query.FillFormulas),
-        Optional(query.HasRemoveDataOnSave, query.RemoveDataOnSave),
-        Optional(query.HasDisableEdit, query.DisableEdit),
-        Optional(query.HasPreserveFormatting, query.PreserveFormatting),
-        Optional(query.HasAdjustColumnWidth, query.AdjustColumnWidth),
-        Optional(query.HasIntermediate, query.Intermediate),
-        query.HasAutoFormatId ? query.AutoFormatId.ToString(CultureInfo.InvariantCulture) : "<absent>",
-        Optional(query.HasApplyNumberFormats, query.ApplyNumberFormats),
-        Optional(query.HasApplyBorderFormats, query.ApplyBorderFormats),
-        Optional(query.HasApplyFontFormats, query.ApplyFontFormats),
-        Optional(query.HasApplyPatternFormats, query.ApplyPatternFormats),
-        Optional(query.HasApplyAlignmentFormats, query.ApplyAlignmentFormats),
-        Optional(query.HasApplyWidthHeightFormats, query.ApplyWidthHeightFormats),
-    ])));
+    private static void SetOptional(XElement root, string name, bool hasValue, uint value) =>
+        root.SetAttributeValue(name, hasValue ? value.ToString(CultureInfo.InvariantCulture) : null);
+
+    private static string SemanticSha256(SpreadsheetTableQueryArtifact query)
+    {
+        var values = new List<string>
+        {
+            query.Name,
+            query.ConnectionId.ToString(CultureInfo.InvariantCulture),
+            Optional(query.HasHeaders, query.Headers),
+            Optional(query.HasRowNumbers, query.RowNumbers),
+            Optional(query.HasDisableRefresh, query.DisableRefresh),
+            Optional(query.HasBackgroundRefresh, query.BackgroundRefresh),
+            Optional(query.HasFirstBackgroundRefresh, query.FirstBackgroundRefresh),
+            Optional(query.HasRefreshOnLoad, query.RefreshOnLoad),
+            query.HasGrowShrinkType ? query.GrowShrinkType : "<absent>",
+            Optional(query.HasFillFormulas, query.FillFormulas),
+            Optional(query.HasRemoveDataOnSave, query.RemoveDataOnSave),
+            Optional(query.HasDisableEdit, query.DisableEdit),
+            Optional(query.HasPreserveFormatting, query.PreserveFormatting),
+            Optional(query.HasAdjustColumnWidth, query.AdjustColumnWidth),
+            Optional(query.HasIntermediate, query.Intermediate),
+            Optional(query.HasAutoFormatId, query.AutoFormatId),
+            Optional(query.HasApplyNumberFormats, query.ApplyNumberFormats),
+            Optional(query.HasApplyBorderFormats, query.ApplyBorderFormats),
+            Optional(query.HasApplyFontFormats, query.ApplyFontFormats),
+            Optional(query.HasApplyPatternFormats, query.ApplyPatternFormats),
+            Optional(query.HasApplyAlignmentFormats, query.ApplyAlignmentFormats),
+            Optional(query.HasApplyWidthHeightFormats, query.ApplyWidthHeightFormats),
+        };
+        if (query.Refresh is null) values.Add("<refresh-absent>");
+        else
+        {
+            var refresh = query.Refresh;
+            values.Add("<refresh>");
+            values.Add(Optional(refresh.HasPreserveSortFilterLayout, refresh.PreserveSortFilterLayout));
+            values.Add(Optional(refresh.HasFieldIdWrapped, refresh.FieldIdWrapped));
+            values.Add(Optional(refresh.HasHeadersInLastRefresh, refresh.HeadersInLastRefresh));
+            values.Add(Optional(refresh.HasMinimumVersion, refresh.MinimumVersion));
+            values.Add(Optional(refresh.HasNextId, refresh.NextId));
+            values.Add(Optional(refresh.HasUnboundColumnsLeft, refresh.UnboundColumnsLeft));
+            values.Add(Optional(refresh.HasUnboundColumnsRight, refresh.UnboundColumnsRight));
+            foreach (var field in refresh.Fields)
+            {
+                values.Add("<field>");
+                values.Add(field.Id.ToString(CultureInfo.InvariantCulture));
+                values.Add(field.HasName ? field.Name : "<absent>");
+                values.Add(Optional(field.HasDataBound, field.DataBound));
+                values.Add(Optional(field.HasRowNumbers, field.RowNumbers));
+                values.Add(Optional(field.HasFillFormulas, field.FillFormulas));
+                values.Add(Optional(field.HasClipped, field.Clipped));
+                values.Add(Optional(field.HasTableColumnId, field.TableColumnId));
+            }
+        }
+        return Sha256(Encoding.UTF8.GetBytes(string.Join('\0', values)));
+    }
 
     private static string Optional(bool hasValue, bool value) => hasValue ? value ? "1" : "0" : "<absent>";
+    private static string Optional(bool hasValue, uint value) => hasValue ? value.ToString(CultureInfo.InvariantCulture) : "<absent>";
     private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static CodecException Invalid(string message, string? location = null) => new("invalid_worksheet_table", message, location);
 }

@@ -2966,12 +2966,33 @@ const WORKSHEET_TABLE_QUERY_BOOLEAN_FIELDS = [
   "applyWidthHeightFormats",
 ];
 
+const WORKSHEET_TABLE_QUERY_REFRESH_BOOLEAN_FIELDS = ["preserveSortFilterLayout", "fieldIdWrapped", "headersInLastRefresh"];
+const WORKSHEET_TABLE_QUERY_REFRESH_UINT_FIELDS = ["minimumVersion", "nextId", "unboundColumnsLeft", "unboundColumnsRight"];
+const WORKSHEET_TABLE_QUERY_FIELD_BOOLEAN_FIELDS = ["dataBound", "rowNumbers", "fillFormulas", "clipped"];
+
+function normalizeWorksheetTableQueryRefresh(refresh) {
+  if (refresh == null) return undefined;
+  const normalized = {
+    fields: Array.isArray(refresh.fields) ? refresh.fields.map((field) => {
+      const result = { id: Number(field?.id ?? 0) };
+      if (field?.name !== undefined) result.name = String(field.name);
+      for (const name of WORKSHEET_TABLE_QUERY_FIELD_BOOLEAN_FIELDS) if (field?.[name] !== undefined) result[name] = Boolean(field[name]);
+      if (field?.tableColumnId !== undefined) result.tableColumnId = Number(field.tableColumnId);
+      return result;
+    }) : [],
+  };
+  for (const field of WORKSHEET_TABLE_QUERY_REFRESH_BOOLEAN_FIELDS) if (refresh[field] !== undefined) normalized[field] = Boolean(refresh[field]);
+  for (const field of WORKSHEET_TABLE_QUERY_REFRESH_UINT_FIELDS) if (refresh[field] !== undefined) normalized[field] = Number(refresh[field]);
+  return normalized;
+}
+
 function normalizeWorksheetTableQuery(query) {
   if (query == null) return undefined;
   const normalized = { name: String(query.name ?? ""), connectionId: Number(query.connectionId ?? 0) };
   for (const field of WORKSHEET_TABLE_QUERY_BOOLEAN_FIELDS) if (query[field] !== undefined) normalized[field] = Boolean(query[field]);
   if (query.growShrinkType !== undefined) normalized.growShrinkType = String(query.growShrinkType);
   if (query.autoFormatId !== undefined) normalized.autoFormatId = Number(query.autoFormatId);
+  if (query.refresh != null) normalized.refresh = normalizeWorksheetTableQueryRefresh(query.refresh);
   return normalized;
 }
 
@@ -7342,6 +7363,71 @@ function parseNativeTableSortState(xml, styles) {
   };
 }
 
+function parseNativeQueryTableRefresh(xml) {
+  const matches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableRefresh\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableRefresh>/g)];
+  if (matches.length !== 1) return undefined;
+  const attrs = ooxmlXmlAttributes(matches[0][1] || "");
+  const body = matches[0][2] || "";
+  const refresh = {};
+  for (const field of WORKSHEET_TABLE_QUERY_REFRESH_BOOLEAN_FIELDS) {
+    if (attrs[field] == null) continue;
+    const value = String(attrs[field]).toLowerCase();
+    if (!["0", "1", "false", "true"].includes(value)) return undefined;
+    refresh[field] = value === "1" || value === "true";
+  }
+  for (const field of WORKSHEET_TABLE_QUERY_REFRESH_UINT_FIELDS) {
+    if (attrs[field] == null) continue;
+    const value = Number(attrs[field]);
+    if (!Number.isInteger(value) || value < 0 || value > 0xFFFFFFFF || field === "minimumVersion" && value > 255 || field.startsWith("unboundColumns") && value > 16384)
+      return undefined;
+    refresh[field] = value;
+  }
+  const fieldCollections = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableFields\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableFields>/g)];
+  if (fieldCollections.length > 1) return undefined;
+  const fields = [];
+  if (fieldCollections.length === 1) {
+    const collectionAttrs = ooxmlXmlAttributes(fieldCollections[0][1] || "");
+    const fieldTags = [...(fieldCollections[0][2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableField\b([^>]*)\/?>/g)];
+    const count = Number(collectionAttrs.count);
+    if (!Number.isInteger(count) || count < 0 || count !== fieldTags.length || count > 16384) return undefined;
+    const ids = new Set();
+    const names = new Set();
+    const tableColumnIds = new Set();
+    let rowNumberFields = 0;
+    for (const tag of fieldTags) {
+      const fieldAttrs = ooxmlXmlAttributes(tag[1] || "");
+      const id = Number(fieldAttrs.id);
+      if (!Number.isInteger(id) || id <= 0 || ids.has(id)) return undefined;
+      ids.add(id);
+      const field = { id };
+      if (fieldAttrs.name != null) {
+        const name = String(fieldAttrs.name);
+        const key = name.toLowerCase();
+        if (!name.trim() || name.length > 255 || names.has(key)) return undefined;
+        names.add(key);
+        field.name = name;
+      }
+      for (const name of WORKSHEET_TABLE_QUERY_FIELD_BOOLEAN_FIELDS) {
+        if (fieldAttrs[name] == null) continue;
+        const value = String(fieldAttrs[name]).toLowerCase();
+        if (!["0", "1", "false", "true"].includes(value)) return undefined;
+        field[name] = value === "1" || value === "true";
+      }
+      if (field.rowNumbers === true && ++rowNumberFields > 1) return undefined;
+      if (fieldAttrs.tableColumnId != null) {
+        const tableColumnId = Number(fieldAttrs.tableColumnId);
+        if (!Number.isInteger(tableColumnId) || tableColumnId <= 0 || tableColumnIds.has(tableColumnId)) return undefined;
+        tableColumnIds.add(tableColumnId);
+        field.tableColumnId = tableColumnId;
+      }
+      fields.push(field);
+    }
+    if (refresh.nextId != null && (refresh.nextId <= 0 || ids.has(refresh.nextId))) return undefined;
+  }
+  refresh.fields = fields;
+  return refresh;
+}
+
 function parseNativeQueryTable(xml) {
   const opening = /<(?:[A-Za-z_][\w.-]*:)?queryTable\b[^>]*>/.exec(String(xml || ""))?.[0];
   if (!opening) return undefined;
@@ -7372,6 +7458,8 @@ function parseNativeQueryTable(xml) {
     if (!Number.isInteger(autoFormatId) || autoFormatId < 0) return undefined;
     query.autoFormatId = autoFormatId;
   }
+  const refresh = parseNativeQueryTableRefresh(xml);
+  if (refresh) query.refresh = refresh;
   return query;
 }
 

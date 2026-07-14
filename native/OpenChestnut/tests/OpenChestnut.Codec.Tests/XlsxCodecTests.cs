@@ -638,6 +638,31 @@ public sealed class XlsxCodecTests
         Assert.Equal("rIdQueryTable", query.Source.RelationshipId);
         Assert.Equal("xl/connections.xml", query.Source.ConnectionPartPath);
         Assert.True(query.Source.Editable);
+        var refresh = Assert.IsType<SpreadsheetTableQueryRefreshArtifact>(query.Refresh);
+        Assert.True(refresh.PreserveSortFilterLayout);
+        Assert.False(refresh.FieldIdWrapped);
+        Assert.True(refresh.HeadersInLastRefresh);
+        Assert.Equal(0U, refresh.MinimumVersion);
+        Assert.Equal(3U, refresh.NextId);
+        Assert.Equal(0U, refresh.UnboundColumnsLeft);
+        Assert.Equal(0U, refresh.UnboundColumnsRight);
+        Assert.Collection(refresh.Fields,
+            field =>
+            {
+                Assert.Equal(1U, field.Id);
+                Assert.Equal("Region", field.Name);
+                Assert.True(field.DataBound);
+                Assert.False(field.FillFormulas);
+                Assert.False(field.Clipped);
+                Assert.Equal(1U, field.TableColumnId);
+            },
+            field =>
+            {
+                Assert.Equal(2U, field.Id);
+                Assert.Equal("Revenue", field.Name);
+                Assert.True(field.DataBound);
+                Assert.Equal(2U, field.TableColumnId);
+            });
 
         table.Name = "WarehouseTable";
         query.Name = "Warehouse sales refreshed";
@@ -645,6 +670,13 @@ public sealed class XlsxCodecTests
         query.RefreshOnLoad = true;
         query.AutoFormatId = 3;
         query.ApplyFontFormats = true;
+        refresh.PreserveSortFilterLayout = false;
+        refresh.HeadersInLastRefresh = false;
+        refresh.MinimumVersion = 1;
+        refresh.Fields[0].Name = "Territory";
+        refresh.Fields[0].DataBound = false;
+        refresh.Fields[1].FillFormulas = true;
+        refresh.Fields[1].Clipped = true;
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -663,7 +695,13 @@ public sealed class XlsxCodecTests
         Assert.Contains("refreshOnLoad=\"1\"", queryXml);
         Assert.Contains("autoFormatId=\"3\"", queryXml);
         Assert.Contains("applyFontFormats=\"1\"", queryXml);
+        Assert.Contains("preserveSortFilterLayout=\"0\"", queryXml);
+        Assert.Contains("headersInLastRefresh=\"0\"", queryXml);
+        Assert.Contains("minimumVersion=\"1\"", queryXml);
+        Assert.Contains("id=\"1\" name=\"Territory\" dataBound=\"0\"", queryXml);
+        Assert.Contains("id=\"2\" name=\"Revenue\" dataBound=\"1\" tableColumnId=\"2\" fillFormulas=\"1\" clipped=\"1\"", queryXml);
         Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
+        Assert.Contains("<fixture:fieldOpaque value=\"kept\"", queryXml);
         Assert.Contains("<fixture:opaque value=\"kept\"", queryXml);
 
         var reimported = Import(output);
@@ -674,8 +712,68 @@ public sealed class XlsxCodecTests
         Assert.True(edited.QueryTable.RefreshOnLoad);
         Assert.Equal(3U, edited.QueryTable.AutoFormatId);
         Assert.True(edited.QueryTable.ApplyFontFormats);
+        Assert.False(edited.QueryTable.Refresh.PreserveSortFilterLayout);
+        Assert.False(edited.QueryTable.Refresh.HeadersInLastRefresh);
+        Assert.Equal(1U, edited.QueryTable.Refresh.MinimumVersion);
+        Assert.Equal("Territory", edited.QueryTable.Refresh.Fields[0].Name);
+        Assert.False(edited.QueryTable.Refresh.Fields[0].DataBound);
+        Assert.True(edited.QueryTable.Refresh.Fields[1].FillFormulas);
+        Assert.True(edited.QueryTable.Refresh.Fields[1].Clipped);
         Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
         Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void WorksheetQueryRefreshRejectsIdentityTopologyAndInvalidMetadata()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray());
+
+        var imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].Id = 99;
+        var response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields.RemoveAt(0);
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.NextId = 2;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.MinimumVersion = 256;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void OpaqueWorksheetQueryRefreshStaysHiddenDuringRootEdit()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var imported = Import(AddQueryTableGraph(authored.File.ToByteArray(), opaqueRefresh: true));
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.NotNull(table.QueryTable);
+        Assert.Null(table.QueryTable.Refresh);
+        table.QueryTable.Name = "Opaque refresh retained";
+        var response = Export(imported.Artifact);
+        Assert.True(response.Ok, string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(response.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
+        Assert.Contains("name=\"Opaque refresh retained\"", queryXml);
+        Assert.Contains("tableColumnId=\"999\"", queryXml);
+
+        imported = Import(AddQueryTableGraph(authored.File.ToByteArray(), opaqueRefresh: true));
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh = new SpreadsheetTableQueryRefreshArtifact();
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -1877,6 +1975,14 @@ public sealed class XlsxCodecTests
         File = ByteString.CopyFrom(bytes),
     }.ToByteArray()));
 
+    private static CodecResponse Export(ArtifactEnvelope artifact) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+    {
+        ProtocolVersion = CodecProtocol.ProtocolVersion,
+        Operation = CodecOperation.ExportXlsx,
+        Family = ArtifactFamily.Workbook,
+        Artifact = artifact,
+    }.ToByteArray()));
+
     private static byte[] AddUnmodeledCellFormatProperties(byte[] bytes, out int styleIndex)
     {
         using var stream = new MemoryStream();
@@ -2012,7 +2118,7 @@ public sealed class XlsxCodecTests
         return output.ToArray();
     }
 
-    private static byte[] AddQueryTableGraph(byte[] bytes, bool addUnsupportedRelationship = false)
+    private static byte[] AddQueryTableGraph(byte[] bytes, bool addUnsupportedRelationship = false, bool opaqueRefresh = false)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -2038,8 +2144,10 @@ public sealed class XlsxCodecTests
                 <x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7">
                   <x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0">
                     <x:queryTableFields count="2">
-                      <x:queryTableField id="1" name="Region" dataBound="1" tableColumnId="1"/>
-                      <x:queryTableField id="2" name="Revenue" dataBound="1" tableColumnId="2"/>
+                      <x:queryTableField id="1" name="Region" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0">
+                        <x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst>
+                      </x:queryTableField>
+                      <x:queryTableField id="2" name="Revenue" dataBound="1" tableColumnId="{{(opaqueRefresh ? 999 : 2)}}"/>
                     </x:queryTableFields>
                   </x:queryTableRefresh>
                   <x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst>

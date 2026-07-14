@@ -715,12 +715,33 @@ const TABLE_QUERY_BOOLEAN_FIELDS = [
   "applyWidthHeightFormats",
 ];
 
+const TABLE_QUERY_REFRESH_BOOLEAN_FIELDS = ["preserveSortFilterLayout", "fieldIdWrapped", "headersInLastRefresh"];
+const TABLE_QUERY_REFRESH_UINT_FIELDS = ["minimumVersion", "nextId", "unboundColumnsLeft", "unboundColumnsRight"];
+const TABLE_QUERY_FIELD_BOOLEAN_FIELDS = ["dataBound", "rowNumbers", "fillFormulas", "clipped"];
+
+function publicTableQueryField(value) {
+  const field = { id: Number(value?.id ?? 0) };
+  if (value?.name !== undefined) field.name = String(value.name);
+  for (const name of TABLE_QUERY_FIELD_BOOLEAN_FIELDS) if (value?.[name] !== undefined) field[name] = Boolean(value[name]);
+  if (value?.tableColumnId !== undefined) field.tableColumnId = Number(value.tableColumnId);
+  return field;
+}
+
+function publicTableQueryRefresh(value) {
+  if (!value) return undefined;
+  const refresh = { fields: Array.isArray(value.fields) ? value.fields.map(publicTableQueryField) : [] };
+  for (const field of TABLE_QUERY_REFRESH_BOOLEAN_FIELDS) if (value[field] !== undefined) refresh[field] = Boolean(value[field]);
+  for (const field of TABLE_QUERY_REFRESH_UINT_FIELDS) if (value[field] !== undefined) refresh[field] = Number(value[field]);
+  return refresh;
+}
+
 function publicTableQuery(value) {
   if (!value) return undefined;
   const query = { name: String(value.name ?? ""), connectionId: Number(value.connectionId ?? 0) };
   for (const field of TABLE_QUERY_BOOLEAN_FIELDS) if (value[field] !== undefined) query[field] = Boolean(value[field]);
   if (value.growShrinkType !== undefined) query.growShrinkType = String(value.growShrinkType);
   if (value.autoFormatId !== undefined) query.autoFormatId = Number(value.autoFormatId);
+  if (value.refresh) query.refresh = publicTableQueryRefresh(value.refresh);
   return query;
 }
 
