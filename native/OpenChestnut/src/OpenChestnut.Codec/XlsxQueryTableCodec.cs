@@ -490,7 +490,9 @@ internal sealed class XlsxQueryTableCodec
     {
         names = [];
         var fields = element.Elements().ToArray();
-        if (fields.Any(child => child.Name != Spreadsheet + "deletedField") ||
+        if (element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "count")) ||
+            fields.Any(child => child.Name != Spreadsheet + "deletedField") ||
             !uint.TryParse(element.Attribute("count")?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ||
             count != fields.Length || count > 16_384) return false;
         var result = new List<string>(fields.Length);

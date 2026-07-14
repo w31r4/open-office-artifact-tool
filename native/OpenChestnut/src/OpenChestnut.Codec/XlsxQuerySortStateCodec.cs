@@ -164,7 +164,7 @@ internal sealed class XlsxQuerySortStateCodec
             var result = new SpreadsheetTableSortConditionArtifact { Reference = conditionReference.Value, Descending = descending };
             if (sortBy == "icon")
             {
-                if (iconSet is null || !IconSets.ContainsKey(iconSet)) return false;
+                if (iconSet is null || differentialFormatId is not null || !IconSets.ContainsKey(iconSet)) return false;
                 var icon = new SpreadsheetTableIconArtifact { IconSet = iconSet };
                 if (iconId is not null) icon.IconId = iconId.Value;
                 if (!ValidIcon(icon)) return false;

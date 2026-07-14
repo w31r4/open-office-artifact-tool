@@ -7348,9 +7348,10 @@ function parseNativeSortState(xml, styles) {
   const extensionPattern = /<(?:[A-Za-z_][\w.-]*:)?extLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst\s*>/g;
   const extensions = [...body.matchAll(extensionPattern)];
   if (extensions.length > 1) return undefined;
+  const bodyWithoutExtensions = body.replace(extensionPattern, "");
   const conditionPattern = /<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g;
-  const conditionMatches = [...body.matchAll(conditionPattern)];
-  const residual = body.replace(extensionPattern, "").replace(conditionPattern, "").trim();
+  const conditionMatches = [...bodyWithoutExtensions.matchAll(conditionPattern)];
+  const residual = bodyWithoutExtensions.replace(conditionPattern, "").trim();
   if (residual) return undefined;
   const conditions = conditionMatches.map((conditionMatch) => {
     const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
@@ -7358,7 +7359,7 @@ function parseNativeSortState(xml, styles) {
     const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
     if (condition.sortBy === "icon") {
       const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
-      if (!condition.iconSet || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
+      if (!condition.iconSet || condition.dxfId != null || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
       return { reference: condition.ref, descending, kind: "icon", iconSet: condition.iconSet, ...(iconId == null ? {} : { iconId }) };
     }
     if (condition.sortBy === "cellColor" || condition.sortBy === "fontColor") {
