@@ -31,6 +31,7 @@ internal static class DocxCodec
             throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", "word/document.xml");
         var body = mainPart.Document?.Body ??
             throw new CodecException("missing_document_body", "DOCX package has no document body.", "word/document.xml");
+        var context = new DocxPartContext(mainPart);
 
         var document = new DocumentArtifact { Id = "document/1", Name = "Imported document" };
         ulong semanticItems = 0;
@@ -39,7 +40,7 @@ internal static class DocxCodec
         {
             var element = body.ChildElements[bodyIndex];
             if (element is W.SectionProperties) continue;
-            var block = ReadBodyBlock(element, ordinal++, checked((uint)bodyIndex), ref semanticItems, limits);
+            var block = ReadBodyBlock(element, ordinal++, checked((uint)bodyIndex), ref semanticItems, limits, context);
             document.Blocks.Add(block);
         }
 
@@ -82,10 +83,11 @@ internal static class DocxCodec
         using (var package = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
         {
             var mainPart = package.AddMainDocumentPart();
+            var context = new DocxPartContext(mainPart);
             var body = new W.Body();
-            foreach (var block in envelope.Document.Blocks) body.Append(BuildBlock(block));
-            body.Append(new W.SectionProperties());
             mainPart.Document = new W.Document(body);
+            foreach (var block in envelope.Document.Blocks) body.Append(BuildBlock(block, context));
+            body.Append(new W.SectionProperties());
             mainPart.Document.Save();
         }
 
@@ -105,12 +107,14 @@ internal static class DocxCodec
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
+        DocxPartContext? context = null;
         using (var package = WordprocessingDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = true }))
         {
             var mainPart = package.MainDocumentPart ??
                 throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", "word/document.xml");
             var body = mainPart.Document?.Body ??
                 throw new CodecException("missing_document_body", "DOCX package has no document body.", "word/document.xml");
+            context = new DocxPartContext(mainPart);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
             if (sourceElements.Length != envelope.Document.Blocks.Count)
                 throw new CodecException(
@@ -139,11 +143,17 @@ internal static class DocxCodec
                         $"Document block {ordinal} no longer matches its source element hash.",
                         "word/document.xml");
 
-                var original = ReadBodyBlock(element, ordinal, binding.BodyIndex, ref semanticItems, limits);
+                var original = ReadBodyBlock(element, ordinal, binding.BodyIndex, ref semanticItems, limits, context);
                 if (!SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                     throw new CodecException(
                         "document_source_semantics_mismatch",
                         $"Document block {ordinal} source semantics do not match its binding.",
+                        "word/document.xml");
+                if (block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink &&
+                    !block.Hyperlink.RelationshipId.Equals(original.Hyperlink.RelationshipId, StringComparison.Ordinal))
+                    throw new CodecException(
+                        "document_source_binding_mismatch",
+                        $"Document hyperlink block {ordinal} relationship locator does not match its source element.",
                         "word/document.xml");
 
                 if (SemanticHash(block).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
@@ -153,8 +163,39 @@ internal static class DocxCodec
                         $"Document block {ordinal} contains WordprocessingML that is preserved but not yet safely editable by this codec slice.",
                         "word/document.xml");
 
-                element.InsertBeforeSelf(BuildBlock(block));
-                element.Remove();
+                if (block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
+                {
+                    if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document hyperlink block {ordinal} paragraph style is source-bound and cannot be edited by this codec slice.",
+                            "word/document.xml");
+                    if (element is not W.Paragraph hyperlinkParagraph ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxHyperlinkCodec.ResidualHash(hyperlinkParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document hyperlink block {ordinal} unmodeled source formatting does not match its binding.",
+                            "word/document.xml");
+                    DocxHyperlinkCodec.Apply(hyperlinkParagraph, block.Hyperlink, original.Hyperlink, context);
+                    if (!DocxHyperlinkCodec.ResidualHash(hyperlinkParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document hyperlink block {ordinal} changed unmodeled paragraph or run formatting.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(hyperlinkParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document hyperlink block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
+                else
+                {
+                    element.InsertBeforeSelf(BuildBlock(block, context));
+                    element.Remove();
+                }
             }
             mainPart.Document!.Save();
         }
@@ -163,7 +204,11 @@ internal static class DocxCodec
         ValidateOutputBudget(bytes, limits);
         ValidateOffice2021(bytes);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Docx, includeSourcePackage: false);
-        PackageGuards.AssertOpaqueGraphMatches(envelope.OpaqueOpc, outputOpaque, "opaque_content_not_preserved");
+        PackageGuards.AssertOpaqueGraphMatches(
+            envelope.OpaqueOpc,
+            outputOpaque,
+            "opaque_content_not_preserved",
+            context is null ? null : context.IgnoresModeledRelationship);
         var diagnostics = new List<Diagnostic>();
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning(
@@ -177,15 +222,22 @@ internal static class DocxCodec
         int ordinal,
         uint bodyIndex,
         ref ulong semanticItems,
-        EffectiveCodecLimits limits)
+        EffectiveCodecLimits limits,
+        DocxPartContext context)
     {
         var block = new DocumentBlock { Id = $"document/block/{ordinal + 1}" };
         var editable = false;
         switch (element)
         {
             case W.Paragraph paragraph:
-                editable = IsSimpleParagraph(paragraph);
                 block.StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
+                if (DocxHyperlinkCodec.TryRead(paragraph, context, out var hyperlink, out editable))
+                {
+                    block.Hyperlink = hyperlink;
+                    semanticItems++;
+                    break;
+                }
+                editable = IsSimpleParagraph(paragraph);
                 var paragraphArtifact = new DocumentParagraph { Text = DescendantText(paragraph) };
                 if (editable)
                 {
@@ -230,6 +282,8 @@ internal static class DocxCodec
             ElementSha256 = HashElement(element),
             Editable = editable,
         };
+        if (element is W.Paragraph hyperlinkParagraph && block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
+            block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(hyperlinkParagraph);
         block.Source.SemanticSha256 = SemanticHash(block);
         return block;
     }
@@ -257,10 +311,11 @@ internal static class DocxCodec
                 child is W.RunStyle or W.Bold or W.Italic or W.Underline) ?? true));
     }
 
-    private static OpenXmlElement BuildBlock(DocumentBlock block) => block.ContentCase switch
+    private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context) => block.ContentCase switch
     {
         DocumentBlock.ContentOneofCase.Paragraph => BuildParagraph(block),
         DocumentBlock.ContentOneofCase.Table => BuildTable(block),
+        DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Opaque => throw new CodecException(
             "unsupported_document_block",
             $"Opaque document block {block.Id} requires its validated source package and cannot be authored from scratch."),
@@ -333,6 +388,8 @@ internal static class DocxCodec
         semantic.Id = string.Empty;
         semantic.Name = string.Empty;
         semantic.Source = null;
+        if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
+            semantic.Hyperlink.RelationshipId = string.Empty;
         return Hash(semantic.ToByteArray());
     }
 
@@ -360,6 +417,10 @@ internal static class DocxCodec
                     break;
                 case DocumentBlock.ContentOneofCase.Table:
                     semanticItems += checked((ulong)block.Table.Rows.Sum(row => row.Cells.Count));
+                    break;
+                case DocumentBlock.ContentOneofCase.Hyperlink:
+                    DocxHyperlinkCodec.Validate(block.Hyperlink);
+                    semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Opaque:
                     semanticItems++;

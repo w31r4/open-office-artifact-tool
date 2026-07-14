@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { DocumentBlockSchema, DocumentHyperlinkSchema, DocumentSourceBindingSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenXmlWasmCodecError,
   exportDocxWithOpenXmlWasm,
@@ -20,6 +20,9 @@ import {
 const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, {
   tabStops: [{ positionEmu: 120n, alignment: "left" }],
 }));
+assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
+assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
+assert.equal(toBinary(DocumentHyperlinkSchema, create(DocumentHyperlinkSchema, { target: { case: "externalUri", value: "https://example.test" } }))[0], 0x12, "Document external hyperlink targets must use field 2.");
 assert.equal(legacyTabWire[0], 0x72, "Presentation tab stops must retain repeated-message field 14.");
 assert.equal(fromBinary(PresentationTextParagraphSchema, legacyTabWire).tabStops[0].positionEmu, 120n);
 assert.deepEqual([...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { noTabStops: true }))], [0x78, 0x01], "Explicit tab deletion must remain additive field 15.");
@@ -240,31 +243,45 @@ assert.equal(docxImported.verify().ok, true);
 const richDocument = DocumentModel.create({ name: "Source preservation", blocks: [] });
 richDocument.addParagraph("Editable lead", { styleId: "Normal" });
 richDocument.addHyperlink("Preserved link", "https://example.invalid/source");
+const richBookmarkTarget = richDocument.addParagraph("Bookmark target", { styleId: "Normal" });
+richDocument.addBookmark(richBookmarkTarget, "LeadTarget");
 richDocument.addHeader("Preserved header", { sectionIndex: 0, referenceType: "default" });
 const richSource = await DocumentFile.exportDocx(richDocument);
 const richImported = await importDocxWithOpenXmlWasm(richSource);
 assert.equal(richImported.blocks[0].text, "Editable lead");
 assert.equal(richImported.blocks[1].text, "Preserved link");
+assert.equal(richImported.blocks[1].kind, "hyperlink");
+assert.equal(richImported.blocks[1].url, "https://example.invalid/source");
 richImported.blocks[0].text = "Edited lead";
 richImported.blocks[0].runs[0].text = "Edited lead";
+richImported.blocks[1].text = "Edited link";
+richImported.blocks[1].url = "https://example.invalid/updated";
+richImported.blocks[1].tooltip = "Updated by the WASM codec";
+richImported.blocks[1].history = false;
 const richPreserved = await exportDocxWithOpenXmlWasm(richImported);
 assert.equal(richPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
 const richRoundTrip = await DocumentFile.importDocx(richPreserved, { preferNative: true });
 assert.equal(richRoundTrip.blocks[0].text, "Edited lead");
-assert.equal(richRoundTrip.blocks.some((block) => block.kind === "hyperlink" && block.text === "Preserved link"), true);
+assert.equal(richRoundTrip.blocks.some((block) => block.kind === "hyperlink" && block.text === "Edited link" && block.url === "https://example.invalid/updated" && block.tooltip === "Updated by the WASM codec" && block.history === false), true);
 assert.equal(richRoundTrip.headers.some((header) => header.text === "Preserved header"), true);
-richImported.blocks[1].text = "Unsafe hyperlink edit";
-richImported.blocks[1].runs[0].text = "Unsafe hyperlink edit";
-await assert.rejects(
-  exportDocxWithOpenXmlWasm(richImported),
-  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_document_edit",
-);
+const internalRichImported = await importDocxWithOpenXmlWasm(richSource);
+internalRichImported.blocks[1].text = "Jump to lead";
+internalRichImported.blocks[1].anchor = "LeadTarget";
+internalRichImported.blocks[1].url = "";
+const internalRichPreserved = await exportDocxWithOpenXmlWasm(internalRichImported);
+const internalRichRoundTrip = await DocumentFile.importDocx(internalRichPreserved, { preferNative: true });
+assert.equal(internalRichRoundTrip.blocks.some((block) => block.kind === "hyperlink" && block.text === "Jump to lead" && block.anchor === "LeadTarget"), true);
 
-const unsupportedDocument = DocumentModel.create({ blocks: [] });
-unsupportedDocument.addHyperlink("Unsupported direct authoring", "https://example.invalid/direct");
+const directHyperlinkDocument = DocumentModel.create({ blocks: [] });
+directHyperlinkDocument.addHyperlink("Direct hyperlink", "https://example.invalid/direct", { tooltip: "Direct C# authoring" });
+const directHyperlinkDocx = await exportDocxWithOpenXmlWasm(directHyperlinkDocument);
+const directHyperlinkRoundTrip = await importDocxWithOpenXmlWasm(directHyperlinkDocx);
+assert.equal(directHyperlinkRoundTrip.blocks[0].kind, "hyperlink");
+assert.equal(directHyperlinkRoundTrip.blocks[0].url, "https://example.invalid/direct");
+directHyperlinkDocument.blocks[0].url = "javascript:alert(1)";
 await assert.rejects(
-  exportDocxWithOpenXmlWasm(unsupportedDocument),
-  (error) => error instanceof OpenXmlWasmCodecError && error.code === "unsupported_document_features",
+  exportDocxWithOpenXmlWasm(directHyperlinkDocument),
+  (error) => error instanceof OpenXmlWasmCodecError && error.code === "invalid_document_hyperlink",
 );
 
 const minimalPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });

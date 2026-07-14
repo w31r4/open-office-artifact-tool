@@ -201,7 +201,11 @@ internal static class PackageGuards
         return bytes;
     }
 
-    internal static void AssertOpaqueGraphMatches(OpaqueOpcGraph expected, OpaqueOpcGraph actual, string code)
+    internal static void AssertOpaqueGraphMatches(
+        OpaqueOpcGraph expected,
+        OpaqueOpcGraph actual,
+        string code,
+        Func<OpaqueOpcRelationship, bool>? ignoreRelationship = null)
     {
         var expectedParts = expected.Parts
             .Select(PartSignature)
@@ -212,10 +216,12 @@ internal static class PackageGuards
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
         var expectedRelationships = expected.PackageRelationships
+            .Where(item => ignoreRelationship?.Invoke(item) != true)
             .Select(RelationshipSignature)
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();
         var actualRelationships = actual.PackageRelationships
+            .Where(item => ignoreRelationship?.Invoke(item) != true)
             .Select(RelationshipSignature)
             .OrderBy(item => item, StringComparer.Ordinal)
             .ToArray();

@@ -600,6 +600,7 @@ message DocumentBlock {
     DocumentParagraph paragraph = 10;
     DocumentTable table = 11;
     DocumentOpaqueBlock opaque = 12;
+    DocumentHyperlink hyperlink = 13;
   }
 }
 
@@ -611,6 +612,10 @@ message DocumentSourceBinding {
   string element_sha256 = 2;
   string semantic_sha256 = 3;
   bool editable = 4;
+  // Hash of the source element after removing only the fields modeled by the
+  // selected content case. It protects formatting and extension markup while
+  // a source-bound edit changes modeled values in place.
+  string residual_sha256 = 5;
 }
 
 message DocumentParagraph {
@@ -624,6 +629,19 @@ message DocumentRun {
   bool bold = 3;
   bool italic = 4;
   bool underline = 5;
+}
+
+message DocumentHyperlink {
+  string text = 1;
+  oneof target {
+    string external_uri = 2;
+    string internal_anchor = 3;
+  }
+  // Package-local source locator. It is not durable hyperlink identity and is
+  // ignored by semantic comparison when a relationship is safely rewritten.
+  string relationship_id = 4;
+  optional string tooltip = 5;
+  optional bool history = 6;
 }
 
 message DocumentTable {
