@@ -123,8 +123,9 @@
           "sortState": {
             "reference": "A2:C3",
             "caseSensitive": true,
+            "sortMethod": "stroke",
             "conditions": [
-              { "reference": "C2:C3", "descending": true },
+              { "reference": "C2:C3", "descending": true, "customList": "20,10" },
               { "reference": "A2:A3", "descending": false }
             ]
           },

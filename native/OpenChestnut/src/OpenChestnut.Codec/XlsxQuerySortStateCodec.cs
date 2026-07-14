@@ -12,6 +12,7 @@ namespace OpenChestnut.Codec;
 internal sealed class XlsxQuerySortStateCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    private static readonly HashSet<string> SortMethods = new(StringComparer.Ordinal) { "none", "pinYin", "stroke" };
     private static readonly IReadOnlyDictionary<string, uint> IconSets = new Dictionary<string, uint>(StringComparer.Ordinal)
     {
         ["3Arrows"] = 3, ["3ArrowsGray"] = 3, ["3Flags"] = 3, ["3TrafficLights1"] = 3,
@@ -75,6 +76,7 @@ internal sealed class XlsxQuerySortStateCodec
         ValidateShape(desired, location);
         _element.SetAttributeValue("ref", desired.Reference);
         _element.SetAttributeValue("caseSensitive", desired.CaseSensitive ? "1" : null);
+        _element.SetAttributeValue("sortMethod", desired.HasSortMethod ? desired.SortMethod : null);
         var conditions = _element.Elements(Spreadsheet + "sortCondition").ToArray();
         for (var index = 0; index < conditions.Length; index++)
         {
@@ -86,6 +88,7 @@ internal sealed class XlsxQuerySortStateCodec
             element.SetAttributeValue("iconSet", null);
             element.SetAttributeValue("iconId", null);
             element.SetAttributeValue("dxfId", null);
+            element.SetAttributeValue("customList", condition.HasCustomList ? condition.CustomList : null);
             if (condition.Icon is not null)
             {
                 element.SetAttributeValue("sortBy", "icon");
@@ -106,6 +109,7 @@ internal sealed class XlsxQuerySortStateCodec
         if (sort is null) { yield return "no-query-sort-state"; yield break; }
         yield return sort.Reference;
         yield return sort.CaseSensitive.ToString();
+        yield return sort.HasSortMethod ? sort.SortMethod : "no-sort-method";
         foreach (var condition in sort.Conditions)
         {
             yield return condition.Reference;
@@ -123,6 +127,7 @@ internal sealed class XlsxQuerySortStateCodec
                 _ => string.Empty,
             };
             yield return condition.Color?.Color is { HasTint: true } color ? color.Tint.ToString("R", CultureInfo.InvariantCulture) : "no-tint";
+            yield return condition.HasCustomList ? condition.CustomList : "no-custom-list";
         }
     }
 
@@ -141,9 +146,11 @@ internal sealed class XlsxQuerySortStateCodec
     {
         artifact = null;
         if (element.Name != Spreadsheet + "sortState" || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "caseSensitive"))) ||
+            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "caseSensitive" or "sortMethod"))) ||
             element.Attribute("ref") is not XAttribute reference ||
             !TryBool(element.Attribute("caseSensitive")?.Value, defaultValue: false, out var caseSensitive)) return false;
+        var sortMethod = element.Attribute("sortMethod")?.Value;
+        if (sortMethod is not null && !SortMethods.Contains(sortMethod)) return false;
         var children = element.Elements().ToArray();
         var extensionIndexes = children.Select((child, index) => (child, index)).Where(item => item.child.Name == Spreadsheet + "extLst").Select(item => item.index).ToArray();
         if (extensionIndexes.Length > 1 || extensionIndexes.Length == 1 && extensionIndexes[0] != children.Length - 1 ||
@@ -151,10 +158,11 @@ internal sealed class XlsxQuerySortStateCodec
         var conditions = children.Where(child => child.Name == Spreadsheet + "sortCondition").ToArray();
         if (conditions.Length is < 1 or > 64) return false;
         var sort = new SpreadsheetTableSortStateArtifact { Reference = reference.Value, CaseSensitive = caseSensitive };
+        if (sortMethod is not null) sort.SortMethod = sortMethod;
         foreach (var condition in conditions)
         {
             if (condition.Elements().Any() || condition.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "descending" or "sortBy" or "iconSet" or "iconId" or "dxfId"))) ||
+                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "descending" or "sortBy" or "iconSet" or "iconId" or "dxfId" or "customList"))) ||
                 condition.Attribute("ref") is not XAttribute conditionReference ||
                 !TryBool(condition.Attribute("descending")?.Value, defaultValue: false, out var descending)) return false;
             var sortBy = condition.Attribute("sortBy")?.Value ?? "value";
@@ -162,9 +170,10 @@ internal sealed class XlsxQuerySortStateCodec
             if (!TryOptionalUInt(condition.Attribute("iconId")?.Value, out var iconId) ||
                 !TryOptionalUInt(condition.Attribute("dxfId")?.Value, out var differentialFormatId)) return false;
             var result = new SpreadsheetTableSortConditionArtifact { Reference = conditionReference.Value, Descending = descending };
+            var customList = condition.Attribute("customList")?.Value;
             if (sortBy == "icon")
             {
-                if (iconSet is null || differentialFormatId is not null || !IconSets.ContainsKey(iconSet)) return false;
+                if (iconSet is null || differentialFormatId is not null || customList is not null || !IconSets.ContainsKey(iconSet)) return false;
                 var icon = new SpreadsheetTableIconArtifact { IconSet = iconSet };
                 if (iconId is not null) icon.IconId = iconId.Value;
                 if (!ValidIcon(icon)) return false;
@@ -172,11 +181,12 @@ internal sealed class XlsxQuerySortStateCodec
             }
             else if (sortBy is "cellColor" or "fontColor")
             {
-                if (iconSet is not null || iconId is not null || differentialFormatId is null ||
+                if (iconSet is not null || iconId is not null || differentialFormatId is null || customList is not null ||
                     !styles.TryReadTableColor(differentialFormatId.Value, sortBy == "cellColor", out var color)) return false;
                 result.Color = color;
             }
             else if (sortBy != "value" || iconSet is not null || iconId is not null || differentialFormatId is not null) return false;
+            if (customList is not null) result.CustomList = customList;
             sort.Conditions.Add(result);
         }
         artifact = sort;
@@ -193,6 +203,8 @@ internal sealed class XlsxQuerySortStateCodec
             throw Invalid("Worksheet query refresh sort range must be contained in the source table range.", location);
         if (sort.Conditions.Count is < 1 or > 64)
             throw Invalid("Worksheet query refresh sort state must provide between one and 64 conditions.", location);
+        if (sort.HasSortMethod && !SortMethods.Contains(sort.SortMethod))
+            throw Invalid("Worksheet query refresh has an invalid locale-specific sort method.", location);
         var columns = new HashSet<uint>();
         foreach (var condition in sort.Conditions)
         {
@@ -204,6 +216,9 @@ internal sealed class XlsxQuerySortStateCodec
                 throw Invalid("Worksheet query refresh has an invalid icon-sort condition.", location);
             if (condition.Icon is not null && condition.Color is not null)
                 throw Invalid("Worksheet query refresh sort condition cannot combine icon and color selectors.", location);
+            if (condition.HasCustomList && (string.IsNullOrWhiteSpace(condition.CustomList) || condition.CustomList.Length > 32_767 ||
+                condition.CustomList.Any(char.IsControl) || condition.Icon is not null || condition.Color is not null))
+                throw Invalid("Worksheet query refresh has an invalid custom-list value-sort condition.", location);
             if (condition.Color is not null) XlsxCellStyleCodec.ValidateTableColor(condition.Color, "query refresh sort");
         }
     }

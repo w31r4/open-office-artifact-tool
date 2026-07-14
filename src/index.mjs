@@ -2341,7 +2341,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
     columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
     filters: { type: "object[]", description: "Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, standard icon-set, or stable cell-fill/font-color AutoFilters; color filters use kind='color', target='cell'|'font', and color without exposing dxfId." },
-    sortState: { type: "object", description: "Bounded value/icon/color-sort state with reference, caseSensitive, and ordered single-column conditions; color conditions use kind='color', target='cell'|'font', and color while the codec owns dxf allocation." },
+    sortState: { type: "object", description: "Bounded value/icon/color-sort state with reference, caseSensitive, optional sortMethod ('none'|'pinYin'|'stroke'), and ordered single-column conditions; value conditions may carry customList, while color conditions use kind='color', target='cell'|'font', and color and the codec owns dxf allocation." },
     showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
   "sheet.pivotTables.add": helpSchema({
@@ -2977,6 +2977,7 @@ function normalizeWorksheetTableSortState(sortState) {
   return {
     reference: String(sortState.reference ?? ""),
     caseSensitive: Boolean(sortState.caseSensitive),
+    ...(sortState.sortMethod == null ? {} : { sortMethod: String(sortState.sortMethod) }),
     conditions: Array.isArray(sortState.conditions)
       ? sortState.conditions.map((condition) => ({
           reference: String(condition?.reference ?? ""),
@@ -2989,7 +2990,7 @@ function normalizeWorksheetTableSortState(sortState) {
             kind: "color",
             target: String(condition.target ?? ""),
             color: condition.color,
-          } : {}),
+          } : condition?.customList == null ? {} : { customList: String(condition.customList) }),
         }))
       : [],
   };
@@ -6957,8 +6958,8 @@ function tableFilterXml(filter, styleTable) {
 function tableSortStateXml(sortState, styleTable) {
   if (!sortState) return "";
   const conditions = (sortState.conditions || []).map((condition) =>
-    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : condition?.kind === "color" ? ` sortBy="${condition.target === "cell" ? "cellColor" : "fontColor"}" dxfId="${tableColorDxfId(condition, styleTable)}"` : ""}/>`).join("");
-  return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}>${conditions}</sortState>`;
+    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : condition?.kind === "color" ? ` sortBy="${condition.target === "cell" ? "cellColor" : "fontColor"}" dxfId="${tableColorDxfId(condition, styleTable)}"` : condition?.customList == null ? "" : ` customList="${attrEscape(condition.customList)}"`}/>`).join("");
+  return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}${sortState.sortMethod == null ? "" : ` sortMethod="${attrEscape(sortState.sortMethod)}"`}>${conditions}</sortState>`;
 }
 
 function tableAutoFilterXml(table, reference, styleTable) {
@@ -7380,7 +7381,8 @@ function parseNativeSortState(xml, styles) {
   if (matches.length !== 1) return undefined;
   const match = matches[0];
   const attrs = ooxmlXmlAttributes(match[1] || "");
-  if (!attrs.ref || Object.keys(attrs).some((name) => !["ref", "caseSensitive"].includes(name))) return undefined;
+  if (!attrs.ref || Object.keys(attrs).some((name) => !["ref", "caseSensitive", "sortMethod"].includes(name)) ||
+    attrs.sortMethod != null && !["none", "pinYin", "stroke"].includes(attrs.sortMethod)) return undefined;
   const body = match[2] || "";
   const extensionPattern = /<(?:[A-Za-z_][\w.-]*:)?extLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst\s*>/g;
   const extensions = [...body.matchAll(extensionPattern)];
@@ -7392,25 +7394,26 @@ function parseNativeSortState(xml, styles) {
   if (residual) return undefined;
   const conditions = conditionMatches.map((conditionMatch) => {
     const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
-    if (!condition.ref || Object.keys(condition).some((name) => !["ref", "descending", "sortBy", "iconSet", "iconId", "dxfId"].includes(name))) return undefined;
+    if (!condition.ref || Object.keys(condition).some((name) => !["ref", "descending", "sortBy", "iconSet", "iconId", "dxfId", "customList"].includes(name))) return undefined;
     const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
     if (condition.sortBy === "icon") {
       const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
-      if (!condition.iconSet || condition.dxfId != null || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
+      if (!condition.iconSet || condition.dxfId != null || condition.customList != null || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
       return { reference: condition.ref, descending, kind: "icon", iconSet: condition.iconSet, ...(iconId == null ? {} : { iconId }) };
     }
     if (condition.sortBy === "cellColor" || condition.sortBy === "fontColor") {
-      if (condition.iconId != null || condition.iconSet != null) return undefined;
+      if (condition.iconId != null || condition.iconSet != null || condition.customList != null) return undefined;
       const color = tableColorFromDxf(styles, Number(condition.dxfId), condition.sortBy === "cellColor" ? "cell" : "font");
       return color ? { reference: condition.ref, descending, kind: "color", ...color } : undefined;
     }
     if ((condition.sortBy != null && condition.sortBy !== "value") || condition.iconId != null || condition.iconSet != null || condition.dxfId != null) return undefined;
-    return { reference: condition.ref, descending };
+    return { reference: condition.ref, descending, ...(condition.customList == null ? {} : { customList: condition.customList }) };
   });
   if (!conditions.length || conditions.some((condition) => condition == null)) return undefined;
   return {
     reference: attrs.ref,
     caseSensitive: attrs.caseSensitive != null && !["0", "false", "off"].includes(String(attrs.caseSensitive).toLowerCase()),
+    ...(attrs.sortMethod == null ? {} : { sortMethod: attrs.sortMethod }),
     conditions,
   };
 }

@@ -238,9 +238,8 @@ message SpreadsheetTableArtifact {
   // Exact/grouped-date values, custom comparisons, dynamic, Top10, icon, and
   // bounded cell-fill/font-color filters are modeled.
   repeated SpreadsheetTableFilterArtifact filters = 15;
-  // Bounded AutoFilter sort state. Ordinary value, icon, and bounded
-  // cell-fill/font-color sorts are modeled; custom-list and locale-specific
-  // sort profiles remain opaque.
+  // Bounded AutoFilter sort state. Ordinary/custom-list value, icon, bounded
+  // cell-fill/font-color, and locale-method sorts are modeled.
   SpreadsheetTableSortStateArtifact sort_state = 16;
   // A source-bound projection of an existing QueryTablePart. OpenChestnut can
   // edit the root query policy and rebind it to another connection already in
@@ -344,11 +343,13 @@ message SpreadsheetTableColorArtifact {
 
 // Sort range plus ordered value/icon/color-sort conditions. A condition
 // reference is one column contained in the sort range; condition order is
-// significant.
+// significant. Optional scalar presence distinguishes an omitted locale
+// method from the explicit SpreadsheetML "none" method.
 message SpreadsheetTableSortStateArtifact {
   string reference = 1;
   bool case_sensitive = 2;
   repeated SpreadsheetTableSortConditionArtifact conditions = 3;
+  optional string sort_method = 4;
 }
 
 message SpreadsheetTableSortConditionArtifact {
@@ -358,6 +359,8 @@ message SpreadsheetTableSortConditionArtifact {
   SpreadsheetTableIconArtifact icon = 3;
   // Mutually exclusive with icon; absence of both means value sort.
   SpreadsheetTableColorArtifact color = 4;
+  // Native SpreadsheetML custom-list expression for a value sort only.
+  optional string custom_list = 5;
 }
 
 // Stable root semantics from one SpreadsheetML queryTable part. Optional

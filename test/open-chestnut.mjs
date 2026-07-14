@@ -45,7 +45,7 @@ async function addQueryTableGraph(bytes) {
   ));
   zip.file("xl/tables/_rels/table1.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/></Relationships>');
   zip.file("xl/connections.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture"><x:connection id="7" name="Fixture warehouse" description="Read-only warehouse source" type="5" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="0" saveData="1" savePassword="0" credentials="integrated"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Status, Value FROM Metrics" commandType="2"/><x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst></x:connection><x:connection id="8" name="Opaque companion" type="1" refreshedVersion="8"><x:dbPr connection="Provider=Opaque.Provider;Data Source=opaque.invalid" command="SELECT 1" commandType="2"/></x:connection></x:connections>');
-  zip.file("xl/queryTables/queryTable1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse metrics" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Status" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField><x:queryTableField id="2" name="Value" dataBound="1" tableColumnId="2"/></x:queryTableFields><x:queryTableDeletedFields count="2"><x:deletedField name="Legacy Status"/><x:deletedField name="Legacy Value"/></x:queryTableDeletedFields><x:sortState ref="A2:B3" caseSensitive="1"><x:sortCondition ref="B2:B3" descending="1"/><x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/><x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>');
+  zip.file("xl/queryTables/queryTable1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse metrics" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Status" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField><x:queryTableField id="2" name="Value" dataBound="1" tableColumnId="2"/></x:queryTableFields><x:queryTableDeletedFields count="2"><x:deletedField name="Legacy Status"/><x:deletedField name="Legacy Value"/></x:queryTableDeletedFields><x:sortState ref="A2:B3" caseSensitive="1" sortMethod="stroke"><x:sortCondition ref="B2:B3" descending="1" customList="ready,pending"/><x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/><x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>');
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
@@ -71,6 +71,7 @@ assert.deepEqual([...toBinary(SpreadsheetTableQueryRefreshArtifactSchema, create
 assert.equal(toBinary(SpreadsheetTableQueryRefreshArtifactSchema, create(SpreadsheetTableQueryRefreshArtifactSchema, { sortState: { reference: "A2:B3" } }))[0], 0x52, "Spreadsheet QueryTable refresh-local sort state must use additive refresh field 10.");
 assert.deepEqual([...toBinary(SpreadsheetTableQueryFieldArtifactSchema, create(SpreadsheetTableQueryFieldArtifactSchema, { dataBound: false }))], [0x18, 0x00], "Spreadsheet QueryTable field booleans must preserve explicit false values.");
 assert.equal(toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { conditions: [{ reference: "B2:B3" }] }))[0], 0x1a, "Spreadsheet sort conditions must use sort-state field 3.");
+assert.equal(toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { sortMethod: "stroke" }))[0], 0x22, "Spreadsheet locale sort methods must use additive sort-state field 4.");
 assert.equal(toBinary(SpreadsheetTableColumnArtifactSchema, create(SpreadsheetTableColumnArtifactSchema, { totalsRowFormulaArray: true }))[0], 0x38, "Spreadsheet table totals-formula array state must use column field 7.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "values", value: { values: ["x"] } } }))[0], 0x12, "Spreadsheet value-filter criteria must use filter field 2.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "dynamic", value: { type: "today" } } }))[0], 0x22, "Spreadsheet dynamic-filter criteria must use additive filter field 4.");
@@ -81,6 +82,7 @@ assert.equal(toBinary(SpreadsheetTableIconArtifactSchema, create(SpreadsheetTabl
 assert.equal(toBinary(SpreadsheetTableColorArtifactSchema, create(SpreadsheetTableColorArtifactSchema, { target: { case: "fontColor", value: true } }))[0], 0x10, "Spreadsheet color targets must use an explicit oneof rather than a scalar default.");
 assert.equal(toBinary(SpreadsheetTableSortConditionArtifactSchema, create(SpreadsheetTableSortConditionArtifactSchema, { icon: { iconSet: "3Arrows" } }))[0], 0x1a, "Spreadsheet icon-sort selectors must use additive condition field 3.");
 assert.equal(toBinary(SpreadsheetTableSortConditionArtifactSchema, create(SpreadsheetTableSortConditionArtifactSchema, { color: { target: { case: "cellColor", value: true } } }))[0], 0x22, "Spreadsheet color-sort selectors must use additive condition field 4.");
+assert.equal(toBinary(SpreadsheetTableSortConditionArtifactSchema, create(SpreadsheetTableSortConditionArtifactSchema, { customList: "high,low" }))[0], 0x2a, "Spreadsheet custom-list sorts must use additive condition field 5.");
 assert.equal(toBinary(SpreadsheetTableValueFilterArtifactSchema, create(SpreadsheetTableValueFilterArtifactSchema, { dateGroups: [{ year: 2026, month: 7, grouping: "month" }] }))[0], 0x1a, "Spreadsheet grouped-date criteria must use additive value-filter field 3.");
 assert.equal(toBinary(SpreadsheetTableValueFilterArtifactSchema, create(SpreadsheetTableValueFilterArtifactSchema, { calendarType: "gregorian" }))[0], 0x22, "Spreadsheet grouped-date calendar must use additive value-filter field 4.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
@@ -254,7 +256,8 @@ detailsTable.filters = [
 detailsTable.sortState = {
   reference: "A2:B3",
   caseSensitive: true,
-  conditions: [{ reference: "B2:B3", descending: true }, { reference: "A2:A3", descending: false }],
+  sortMethod: "stroke",
+  conditions: [{ reference: "B2:B3", descending: true, customList: "2,1" }, { reference: "A2:A3", descending: false }],
 };
 const advancedFilters = workbook.worksheets.add("Advanced Filters");
 advancedFilters.getRange("A1:C3").values = [
@@ -316,7 +319,7 @@ const exportedZip = await JSZip.loadAsync(exported.bytes);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:calculatedColumnFormula>LEN\(\[@Status\]\)<\/x:calculatedColumnFormula>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:filterColumn colId="0"><x:filters blank="1"><x:filter val="ready"\s*\/><\/x:filters><\/x:filterColumn>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="1"\s*\/><x:customFilter operator="lessThanOrEqual" val="2"\s*\/><\/x:customFilters>/);
-assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:sortState ref="A2:B3" caseSensitive="1"><x:sortCondition ref="B2:B3" descending="1"\s*\/><x:sortCondition ref="A2:A3"\s*\/><\/x:sortState>/);
+assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:sortState ref="A2:B3" caseSensitive="1" sortMethod="stroke"><x:sortCondition ref="B2:B3" descending="1" customList="2,1"\s*\/><x:sortCondition ref="A2:A3"\s*\/><\/x:sortState>/);
 const advancedFilterXml = await exportedZip.file("xl/tables/table2.xml").async("text");
 assert.match(advancedFilterXml, /<x:filters calendarType="gregorian"><x:dateGroupItem year="2026" dateTimeGrouping="day" month="7" day="15"\s*\/><\/x:filters>/);
 assert.match(advancedFilterXml, /<x:dynamicFilter type="today" val="45853" maxVal="45854"\s*\/>/);
@@ -383,8 +386,9 @@ assert.deepEqual(queryTable.queryTable, {
     sortState: {
       reference: "A2:B3",
       caseSensitive: true,
+      sortMethod: "stroke",
       conditions: [
-        { reference: "B2:B3", descending: true },
+        { reference: "B2:B3", descending: true, customList: "ready,pending" },
         { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 0 },
       ],
     },
@@ -406,7 +410,9 @@ queryTable.queryTable.refresh.fields[0].fillFormulas = true;
 queryTable.queryTable.refresh.fields[1].clipped = true;
 queryTable.queryTable.refresh.deletedFieldNames[0] = "Legacy State";
 queryTable.queryTable.refresh.sortState.caseSensitive = false;
+queryTable.queryTable.refresh.sortState.sortMethod = "pinYin";
 queryTable.queryTable.refresh.sortState.conditions[0].descending = false;
+queryTable.queryTable.refresh.sortState.conditions[0].customList = "pending,ready";
 queryTable.queryTable.refresh.sortState.conditions[1].iconId = 1;
 Object.assign(queryImported.connections[0], {
   name: "Fixture warehouse curated",
@@ -449,8 +455,8 @@ assert.match(queryOutputXml, /id="2" name="Value" dataBound="1" tableColumnId="2
 assert.match(queryOutputXml, /<x:queryTableFields count="2">/);
 assert.match(queryOutputXml, /<x:deletedField name="Legacy State"/);
 assert.match(queryOutputXml, /<x:deletedField name="Legacy Value"/);
-assert.match(queryOutputXml, /<x:sortState ref="A2:B3">/);
-assert.match(queryOutputXml, /<x:sortCondition ref="B2:B3"/);
+assert.match(queryOutputXml, /<x:sortState ref="A2:B3" sortMethod="pinYin">/);
+assert.match(queryOutputXml, /<x:sortCondition ref="B2:B3" customList="pending,ready"/);
 assert.match(queryOutputXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="1"/);
 assert.match(queryOutputXml, /<fixture:fieldOpaque value="kept"/);
 assert.match(queryOutputXml, /<fixture:sortOpaque value="kept"/);
@@ -485,8 +491,9 @@ assert.deepEqual(queryReimportedTable.queryTable.refresh.deletedFieldNames, ["Le
 assert.deepEqual(queryReimportedTable.queryTable.refresh.sortState, {
   reference: "A2:B3",
   caseSensitive: false,
+  sortMethod: "pinYin",
   conditions: [
-    { reference: "B2:B3", descending: false },
+    { reference: "B2:B3", descending: false, customList: "pending,ready" },
     { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
   ],
 });
@@ -600,7 +607,8 @@ assert.deepEqual(importedTable.filters, [
 assert.deepEqual(importedTable.sortState, {
   reference: "A2:B3",
   caseSensitive: true,
-  conditions: [{ reference: "B2:B3", descending: true }, { reference: "A2:A3", descending: false }],
+  sortMethod: "stroke",
+  conditions: [{ reference: "B2:B3", descending: true, customList: "2,1" }, { reference: "A2:A3", descending: false }],
 });
 const importedAdvancedFilterTable = imported.worksheets.getItem("Advanced Filters").tables.getItemOrNullObject("AdvancedFilterTable");
 assert.deepEqual(importedAdvancedFilterTable.filters, advancedFilterTable.filters);
@@ -675,7 +683,9 @@ importedTable.filters[0].includeBlank = false;
 importedTable.filters[1].matchAll = false;
 importedTable.filters[1].criteria[0].value = "0";
 importedTable.sortState.caseSensitive = false;
+importedTable.sortState.sortMethod = "pinYin";
 importedTable.sortState.conditions[0].descending = false;
+importedTable.sortState.conditions[0].customList = "1,2";
 importedTable.sortState.conditions[1].descending = true;
 importedAdvancedFilterTable.filters[0].dateGroups[0].day = 16;
 importedAdvancedFilterTable.filters[1].type = "yesterday";
@@ -714,7 +724,8 @@ assert.deepEqual(secondTable.filters, [
 assert.deepEqual(secondTable.sortState, {
   reference: "A2:B3",
   caseSensitive: false,
-  conditions: [{ reference: "B2:B3", descending: false }, { reference: "A2:A3", descending: true }],
+  sortMethod: "pinYin",
+  conditions: [{ reference: "B2:B3", descending: false, customList: "1,2" }, { reference: "A2:A3", descending: true }],
 });
 assert.deepEqual(secondImported.worksheets.getItem("Advanced Filters").tables.getItemOrNullObject("AdvancedFilterTable").filters, [
   { columnIndex: 0, kind: "values", values: [], includeBlank: false, calendarType: "gregorian", dateGroups: [{ grouping: "day", year: 2026, month: 7, day: 16 }] },
@@ -896,6 +907,18 @@ invalidSortTableSheet.tables.add({
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidSortTableWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /sort condition/i.test(error.message),
+);
+const invalidLocaleSortWorkbook = Workbook.create();
+const invalidLocaleSortSheet = invalidLocaleSortWorkbook.worksheets.add("Sheet1");
+invalidLocaleSortSheet.getRange("A1:B3").values = [["Name", "Score"], ["x", 1], ["y", 2]];
+invalidLocaleSortSheet.tables.add({
+  range: "A1:B3",
+  name: "InvalidLocaleSortTable",
+  sortState: { reference: "A2:B3", sortMethod: "radical", conditions: [{ reference: "A2:A3" }] },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidLocaleSortWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /locale-specific sort method/i.test(error.message),
 );
 const invalidIconTableWorkbook = Workbook.create();
 const invalidIconTableSheet = invalidIconTableWorkbook.worksheets.add("Sheet1");

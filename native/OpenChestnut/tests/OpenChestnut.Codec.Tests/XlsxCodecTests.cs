@@ -679,12 +679,14 @@ public sealed class XlsxCodecTests
         var refreshSort = Assert.IsType<SpreadsheetTableSortStateArtifact>(refresh.SortState);
         Assert.Equal("A2:B3", refreshSort.Reference);
         Assert.True(refreshSort.CaseSensitive);
+        Assert.Equal("stroke", refreshSort.SortMethod);
         Assert.Collection(refreshSort.Conditions,
             condition =>
             {
                 Assert.Equal("B2:B3", condition.Reference);
                 Assert.True(condition.Descending);
                 Assert.Null(condition.Icon);
+                Assert.Equal("North,South", condition.CustomList);
             },
             condition =>
             {
@@ -708,7 +710,9 @@ public sealed class XlsxCodecTests
         refresh.Fields[1].Clipped = true;
         refresh.DeletedFieldNames[0] = "Legacy Territory";
         refreshSort.CaseSensitive = false;
+        refreshSort.SortMethod = "pinYin";
         refreshSort.Conditions[0].Descending = false;
+        refreshSort.Conditions[0].CustomList = "South,North";
         refreshSort.Conditions[1].Icon.IconId = 1;
         connection.Name = "Fixture warehouse curated";
         connection.Description = "Curated without executing the source";
@@ -755,8 +759,8 @@ public sealed class XlsxCodecTests
         Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
         Assert.Contains("<x:deletedField name=\"Legacy Territory\"", queryXml);
         Assert.Contains("<x:deletedField name=\"Legacy Revenue\"", queryXml);
-        Assert.Contains("<x:sortState ref=\"A2:B3\">", queryXml);
-        Assert.Contains("<x:sortCondition ref=\"B2:B3\"", queryXml);
+        Assert.Contains("<x:sortState ref=\"A2:B3\" sortMethod=\"pinYin\">", queryXml);
+        Assert.Contains("<x:sortCondition ref=\"B2:B3\" customList=\"South,North\"", queryXml);
         Assert.Contains("<x:sortCondition ref=\"A2:A3\" sortBy=\"icon\" iconSet=\"3Arrows\" iconId=\"1\"", queryXml);
         Assert.Contains("<fixture:fieldOpaque value=\"kept\"", queryXml);
         Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
@@ -788,7 +792,9 @@ public sealed class XlsxCodecTests
         Assert.True(edited.QueryTable.Refresh.Fields[1].Clipped);
         Assert.Equal(["Legacy Territory", "Legacy Revenue"], edited.QueryTable.Refresh.DeletedFieldNames);
         Assert.False(edited.QueryTable.Refresh.SortState.CaseSensitive);
+        Assert.Equal("pinYin", edited.QueryTable.Refresh.SortState.SortMethod);
         Assert.False(edited.QueryTable.Refresh.SortState.Conditions[0].Descending);
+        Assert.Equal("South,North", edited.QueryTable.Refresh.SortState.Conditions[0].CustomList);
         Assert.Equal(1U, edited.QueryTable.Refresh.SortState.Conditions[1].Icon.IconId);
         Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
         Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
@@ -946,6 +952,18 @@ public sealed class XlsxCodecTests
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
         Assert.Contains("contained in the source table range", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.SortMethod = "radical";
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("locale-specific sort method", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Conditions[1].CustomList = "up,flat,down";
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("custom-list value-sort", Assert.Single(response.Diagnostics).Message);
     }
 
     [Fact]
@@ -970,7 +988,7 @@ public sealed class XlsxCodecTests
         Assert.Contains("name=\"Opaque history retained\"", queryXml);
         Assert.Contains("name=\"Territory\"", queryXml);
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(queryXml, "<x:deletedField name=\"Legacy Region\"").Count);
-        Assert.Contains("sortMethod=\"stroke\"", queryXml);
+        Assert.Contains("columnSort=\"1\"", queryXml);
         Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
 
         imported = Import(source);
@@ -1546,7 +1564,7 @@ public sealed class XlsxCodecTests
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(SortTableExportRequest().ToByteArray()));
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/tables/table1.xml"));
-        Assert.Contains("<x:sortState ref=\"A2:B3\" caseSensitive=\"1\"><x:sortCondition ref=\"B2:B3\" descending=\"1\" /><x:sortCondition ref=\"A2:A3\" /></x:sortState>", xml);
+        Assert.Contains("<x:sortState ref=\"A2:B3\" caseSensitive=\"1\" sortMethod=\"stroke\"><x:sortCondition ref=\"B2:B3\" descending=\"1\" customList=\"High,Medium,Low\" /><x:sortCondition ref=\"A2:A3\" /></x:sortState>", xml);
         using (var stream = new MemoryStream(exported.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
@@ -1556,9 +1574,11 @@ public sealed class XlsxCodecTests
         var sort = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).SortState;
         Assert.Equal("A2:B3", sort.Reference);
         Assert.True(sort.CaseSensitive);
+        Assert.Equal("stroke", sort.SortMethod);
         Assert.Equal(2, sort.Conditions.Count);
         Assert.Equal("B2:B3", sort.Conditions[0].Reference);
         Assert.True(sort.Conditions[0].Descending);
+        Assert.Equal("High,Medium,Low", sort.Conditions[0].CustomList);
         Assert.Equal("A2:A3", sort.Conditions[1].Reference);
         Assert.False(sort.Conditions[1].Descending);
     }
@@ -1572,7 +1592,9 @@ public sealed class XlsxCodecTests
         var path = table.Source.TablePartPath;
         var relationshipId = table.Source.RelationshipId;
         table.SortState.CaseSensitive = false;
+        table.SortState.SortMethod = "pinYin";
         table.SortState.Conditions[0].Descending = false;
+        table.SortState.Conditions[0].CustomList = "Low,Medium,High";
         table.SortState.Conditions[1].Descending = true;
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
         {
@@ -1584,7 +1606,9 @@ public sealed class XlsxCodecTests
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
         Assert.False(edited.SortState.CaseSensitive);
+        Assert.Equal("pinYin", edited.SortState.SortMethod);
         Assert.False(edited.SortState.Conditions[0].Descending);
+        Assert.Equal("Low,Medium,High", edited.SortState.Conditions[0].CustomList);
         Assert.True(edited.SortState.Conditions[1].Descending);
         Assert.Equal(path, edited.Source.TablePartPath);
         Assert.Equal(relationshipId, edited.Source.RelationshipId);
@@ -1616,6 +1640,19 @@ public sealed class XlsxCodecTests
         response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.False(response.Ok);
         Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.SortMethod = "radical";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Contains("locale-specific sort method", Assert.Single(response.Diagnostics).Message);
+
+        request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Conditions[1].Icon = new SpreadsheetTableIconArtifact { IconSet = "3Arrows" };
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.Conditions[1].CustomList = "up,flat,down";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Contains("custom-list value-sort", Assert.Single(response.Diagnostics).Message);
     }
 
     [Fact]
@@ -1958,8 +1995,8 @@ public sealed class XlsxCodecTests
     private static CodecRequest SortTableExportRequest()
     {
         var request = FilterTableExportRequest();
-        var sort = new SpreadsheetTableSortStateArtifact { Reference = "A2:B3", CaseSensitive = true };
-        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "B2:B3", Descending = true });
+        var sort = new SpreadsheetTableSortStateArtifact { Reference = "A2:B3", CaseSensitive = true, SortMethod = "stroke" };
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "B2:B3", Descending = true, CustomList = "High,Medium,Low" });
         sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A2:A3" });
         request.Artifact.Workbook.Worksheets[0].Tables[0].SortState = sort;
         return request;
@@ -2383,7 +2420,7 @@ public sealed class XlsxCodecTests
                 tablePart.AddExternalRelationship("urn:open-office-artifact-tool:unsupported-query-companion", new Uri("https://fixture.invalid/query"), "rIdUnsupportedQueryCompanion");
             var queryPart = tablePart.AddNewPart<QueryTablePart>("rIdQueryTable");
             var secondDeletedFieldName = opaqueDeletedFields ? "Legacy Region" : "Legacy Revenue";
-            var sortOpaqueAttribute = opaqueSort ? " sortMethod=\"stroke\"" : string.Empty;
+            var sortOpaqueAttribute = opaqueSort ? " columnSort=\"1\"" : " sortMethod=\"stroke\"";
             WritePart(queryPart, $$"""
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7">
@@ -2399,7 +2436,7 @@ public sealed class XlsxCodecTests
                       <x:deletedField name="{{secondDeletedFieldName}}"/>
                     </x:queryTableDeletedFields>
                     <x:sortState ref="A2:B3" caseSensitive="1"{{sortOpaqueAttribute}}>
-                      <x:sortCondition ref="B2:B3" descending="1"/>
+                      <x:sortCondition ref="B2:B3" descending="1" customList="North,South"/>
                       <x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/>
                       <x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst>
                     </x:sortState>

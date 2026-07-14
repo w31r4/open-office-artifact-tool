@@ -691,6 +691,7 @@ function wireTableSortState(sort, address) {
   return {
     reference: String(sort.reference ?? ""),
     caseSensitive: Boolean(sort.caseSensitive),
+    ...(sort.sortMethod == null ? {} : { sortMethod: String(sort.sortMethod) }),
     conditions: Array.isArray(sort.conditions)
       ? sort.conditions.map((condition) => ({
           reference: String(condition?.reference ?? ""),
@@ -702,7 +703,7 @@ function wireTableSortState(sort, address) {
             },
           } : condition?.kind === "color" ? {
             color: wireTableColor(condition, `${address} sort ${condition.reference}`),
-          } : {}),
+          } : condition?.customList == null ? {} : { customList: String(condition.customList) }),
         }))
       : [],
   };
@@ -717,6 +718,7 @@ function publicTableSortState(sort) {
   return {
     reference: sort.reference,
     caseSensitive: Boolean(sort.caseSensitive),
+    ...(sort.sortMethod == null ? {} : { sortMethod: sort.sortMethod }),
     conditions: (sort.conditions || []).map((condition) => ({
       reference: condition.reference,
       descending: Boolean(condition.descending),
@@ -727,7 +729,7 @@ function publicTableSortState(sort) {
       } : condition.color ? {
         kind: "color",
         ...publicTableColor(condition.color),
-      } : {}),
+      } : condition.customList == null ? {} : { customList: condition.customList }),
     })),
   };
 }

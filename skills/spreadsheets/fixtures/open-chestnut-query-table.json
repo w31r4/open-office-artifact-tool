@@ -46,8 +46,9 @@
     "sortState": {
       "reference": "A2:B3",
       "caseSensitive": true,
+      "sortMethod": "stroke",
       "conditions": [
-        { "reference": "B2:B3", "descending": true },
+        { "reference": "B2:B3", "descending": true, "customList": "120,80" },
         { "reference": "A2:A3", "kind": "icon", "iconSet": "3Arrows", "iconId": 0 }
       ]
     },
@@ -76,8 +77,9 @@
       "sortState": {
         "reference": "A2:B3",
         "caseSensitive": false,
+        "sortMethod": "pinYin",
         "conditions": [
-          { "reference": "B2:B3", "descending": false },
+          { "reference": "B2:B3", "descending": false, "customList": "80,120" },
           { "reference": "A2:A3", "descending": false, "kind": "icon", "iconSet": "3Arrows", "iconId": 1 }
         ]
       },

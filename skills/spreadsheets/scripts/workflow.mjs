@@ -46,10 +46,12 @@ function sourceQuerySortStateXml(sortState) {
       const iconId = condition.iconId == null ? "" : ` iconId="${Number(condition.iconId)}"`;
       return `<x:sortCondition ref="${fixtureXmlEscape(conditionReference)}"${descending} sortBy="icon" iconSet="${fixtureXmlEscape(iconSet)}"${iconId}/>`;
     }
-    return `<x:sortCondition ref="${fixtureXmlEscape(conditionReference)}"${descending}/>`;
+    const customList = condition.customList == null ? "" : ` customList="${fixtureXmlEscape(condition.customList)}"`;
+    return `<x:sortCondition ref="${fixtureXmlEscape(conditionReference)}"${descending}${customList}/>`;
   }).join("");
   const caseSensitive = sortState.caseSensitive ? ' caseSensitive="1"' : "";
-  return `<x:sortState ref="${fixtureXmlEscape(reference)}"${caseSensitive}>${conditionXml}<x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState>`;
+  const sortMethod = sortState.sortMethod == null ? "" : ` sortMethod="${fixtureXmlEscape(sortState.sortMethod)}"`;
+  return `<x:sortState ref="${fixtureXmlEscape(reference)}"${caseSensitive}${sortMethod}>${conditionXml}<x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState>`;
 }
 
 async function attachSourceQueryTableFixture(file, config = {}) {

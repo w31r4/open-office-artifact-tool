@@ -212,7 +212,8 @@ try {
   assert.deepEqual(wasmTable.sortState, {
     reference: "A2:C3",
     caseSensitive: true,
-    conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
+    sortMethod: "stroke",
+    conditions: [{ reference: "C2:C3", descending: true, customList: "20,10" }, { reference: "A2:A3", descending: false }],
   });
   const wasmAdvancedFilterTable = wasmWorkbook.worksheets.getItem("Advanced Filters").tables.getItemOrNullObject("AdvancedFilterTable");
   assert.deepEqual(wasmAdvancedFilterTable.filters, [
@@ -268,7 +269,7 @@ try {
   assert.match(wasmTableXml, /<x:totalsRowFormula>SUBTOTAL\(109,\[Score\]\)<\/x:totalsRowFormula>/);
   assert.match(wasmTableXml, /<x:filterColumn colId="0"><x:filters><x:filter val="OpenChestnut"\s*\/><\/x:filters><\/x:filterColumn>/);
   assert.match(wasmTableXml, /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="5"\s*\/><x:customFilter operator="lessThanOrEqual" val="20"\s*\/><\/x:customFilters>/);
-  assert.match(wasmTableXml, /<x:sortState ref="A2:C3" caseSensitive="1"><x:sortCondition ref="C2:C3" descending="1"\s*\/><x:sortCondition ref="A2:A3"\s*\/><\/x:sortState>/);
+  assert.match(wasmTableXml, /<x:sortState ref="A2:C3" caseSensitive="1" sortMethod="stroke"><x:sortCondition ref="C2:C3" descending="1" customList="20,10"\s*\/><x:sortCondition ref="A2:A3"\s*\/><\/x:sortState>/);
   assert.match(wasmTableXml, /showFirstColumn="1"/);
   assert.match(wasmTableXml, /showRowStripes="0"/);
   assert.match(wasmTableXml, /showColumnStripes="1"/);
@@ -312,8 +313,9 @@ try {
   assert.deepEqual(queryResult.sourceQueryTable.query.refresh.sortState, {
     reference: "A2:B3",
     caseSensitive: false,
+    sortMethod: "pinYin",
     conditions: [
-      { reference: "B2:B3", descending: false },
+      { reference: "B2:B3", descending: false, customList: "80,120" },
       { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
     ],
   });
@@ -371,8 +373,9 @@ try {
       sortState: {
         reference: "A2:B3",
         caseSensitive: false,
+        sortMethod: "pinYin",
         conditions: [
-          { reference: "B2:B3", descending: false },
+          { reference: "B2:B3", descending: false, customList: "80,120" },
           { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
         ],
       },
@@ -402,7 +405,8 @@ try {
   assert.match(runnableQueryXml, /<x:queryTableFields count="2">/);
   assert.match(runnableQueryXml, /<x:deletedField name="Legacy Territory"/);
   assert.match(runnableQueryXml, /<x:deletedField name="Legacy Revenue"/);
-  assert.match(runnableQueryXml, /<x:sortState ref="A2:B3">/);
+  assert.match(runnableQueryXml, /<x:sortState ref="A2:B3" sortMethod="pinYin">/);
+  assert.match(runnableQueryXml, /<x:sortCondition ref="B2:B3" customList="80,120"/);
   assert.match(runnableQueryXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="1"/);
   assert.match(runnableQueryXml, /<fixture:fieldOpaque value="kept"/);
   assert.match(runnableQueryXml, /<fixture:sortOpaque value="kept"/);

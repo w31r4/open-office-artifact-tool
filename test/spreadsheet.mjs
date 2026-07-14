@@ -1616,7 +1616,8 @@ formulaTableSheet.tables.add({
   sortState: {
     reference: "A2:C3",
     caseSensitive: true,
-    conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
+    sortMethod: "stroke",
+    conditions: [{ reference: "C2:C3", descending: true, customList: "6,4" }, { reference: "A2:A3", descending: false }],
   },
   columnDefinitions: [
     { name: "Product", totalsRowFunction: "none", totalsRowLabel: "Total" },
@@ -1633,7 +1634,7 @@ assert.match(formulaTableXml, /<calculatedColumnFormula>\[@Units\]\*2<\/calculat
 assert.match(formulaTableXml, /<totalsRowFormula>SUBTOTAL\(109,\[Revenue\]\)<\/totalsRowFormula>/);
 assert.match(formulaTableXml, /<filterColumn colId="0"><filters blank="1"><filter val="North"\/><\/filters><\/filterColumn>/);
 assert.match(formulaTableXml, /<customFilters and="1"><customFilter operator="greaterThanOrEqual" val="2"\/><customFilter operator="lessThanOrEqual" val="3"\/><\/customFilters>/);
-assert.match(formulaTableXml, /<sortState ref="A2:C3" caseSensitive="1"><sortCondition ref="C2:C3" descending="1"\/><sortCondition ref="A2:A3"\/><\/sortState>/);
+assert.match(formulaTableXml, /<sortState ref="A2:C3" caseSensitive="1" sortMethod="stroke"><sortCondition ref="C2:C3" descending="1" customList="6,4"\/><sortCondition ref="A2:A3"\/><\/sortState>/);
 const formulaTableImported = await SpreadsheetFile.importXlsx(formulaTableXlsx);
 const importedFormulaTable = formulaTableImported.worksheets.getItem("FormulaTable").tables.getItemOrNullObject("FormulaTable");
 assert.deepEqual(importedFormulaTable.columnDefinitions, [
@@ -1648,7 +1649,8 @@ assert.deepEqual(importedFormulaTable.filters, [
 assert.deepEqual(importedFormulaTable.sortState, {
   reference: "A2:C3",
   caseSensitive: true,
-  conditions: [{ reference: "C2:C3", descending: true }, { reference: "A2:A3", descending: false }],
+  sortMethod: "stroke",
+  conditions: [{ reference: "C2:C3", descending: true, customList: "6,4" }, { reference: "A2:A3", descending: false }],
 });
 const advancedFilterWorkbook = Workbook.create();
 const advancedFilterSheet = advancedFilterWorkbook.worksheets.add("AdvancedFilters");
