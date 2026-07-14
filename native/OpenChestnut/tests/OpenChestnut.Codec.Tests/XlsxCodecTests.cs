@@ -1592,7 +1592,7 @@ public sealed class XlsxCodecTests
         var path = table.Source.TablePartPath;
         var relationshipId = table.Source.RelationshipId;
         table.SortState.CaseSensitive = false;
-        table.SortState.SortMethod = "pinYin";
+        table.SortState.SortMethod = "none";
         table.SortState.Conditions[0].Descending = false;
         table.SortState.Conditions[0].CustomList = "Low,Medium,High";
         table.SortState.Conditions[1].Descending = true;
@@ -1606,7 +1606,7 @@ public sealed class XlsxCodecTests
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
         Assert.False(edited.SortState.CaseSensitive);
-        Assert.Equal("pinYin", edited.SortState.SortMethod);
+        Assert.Equal("none", edited.SortState.SortMethod);
         Assert.False(edited.SortState.Conditions[0].Descending);
         Assert.Equal("Low,Medium,High", edited.SortState.Conditions[0].CustomList);
         Assert.True(edited.SortState.Conditions[1].Descending);
