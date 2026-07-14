@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and simple worksheet tables, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and worksheet tables with calculated-column/totals metadata, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2017,7 +2017,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables through the source-built bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables including calculated-column/totals metadata through the source-built bundled OpenChestnut codec. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2033,7 +2033,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
-| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
+| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
@@ -2071,7 +2071,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and simple worksheet tables, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and worksheet tables with calculated-column/totals metadata, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
@@ -3588,7 +3588,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables through the source-built bundled OpenChestnut codec.
+Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables including calculated-column/totals metadata through the source-built bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -3812,7 +3812,7 @@ Create line/column/stacked sparklines from sourceData into a targetRange; range.
 
 #### `sheet.tables.add`
 
-Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
+Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
 
 **Schema parameters:**
 
@@ -3820,6 +3820,9 @@ Create an inspectable worksheet table over an A1 range with rows.add, getDataRow
 - `hasHeaders` (boolean) — Whether the first row contains headers.
 - `name` (string) — Stable Excel table name.
 - `style` (string) — Table style name.
+- `columnNames` (string[]) — Compatibility projection of table-column names.
+- `columnDefinitions` (object[]) — Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata.
+- `showTotals` (boolean) — Expose the totals row required by totals metadata.
 
 **Schema returns:**
 
