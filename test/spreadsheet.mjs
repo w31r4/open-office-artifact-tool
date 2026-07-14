@@ -1609,6 +1609,10 @@ formulaTableSheet.tables.add({
   range: "A1:C4",
   name: "FormulaTable",
   showTotals: true,
+  filters: [
+    { columnIndex: 0, kind: "values", values: ["North"], includeBlank: true },
+    { columnIndex: 1, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "2" }, { operator: "lessThanOrEqual", value: "3" }] },
+  ],
   columnDefinitions: [
     { name: "Product", totalsRowFunction: "none", totalsRowLabel: "Total" },
     { name: "Units", totalsRowFunction: "average" },
@@ -1622,12 +1626,18 @@ assert.match(formulaTableXml, /totalsRowLabel="Total"/);
 assert.match(formulaTableXml, /totalsRowFunction="average"/);
 assert.match(formulaTableXml, /<calculatedColumnFormula>\[@Units\]\*2<\/calculatedColumnFormula>/);
 assert.match(formulaTableXml, /<totalsRowFormula>SUBTOTAL\(109,\[Revenue\]\)<\/totalsRowFormula>/);
+assert.match(formulaTableXml, /<filterColumn colId="0"><filters blank="1"><filter val="North"\/><\/filters><\/filterColumn>/);
+assert.match(formulaTableXml, /<customFilters and="1"><customFilter operator="greaterThanOrEqual" val="2"\/><customFilter operator="lessThanOrEqual" val="3"\/><\/customFilters>/);
 const formulaTableImported = await SpreadsheetFile.importXlsx(formulaTableXlsx);
 const importedFormulaTable = formulaTableImported.worksheets.getItem("FormulaTable").tables.getItemOrNullObject("FormulaTable");
 assert.deepEqual(importedFormulaTable.columnDefinitions, [
   { name: "Product", calculatedColumnFormula: "", calculatedColumnFormulaArray: false, totalsRowFunction: "none", totalsRowLabel: "Total", totalsRowFormula: "", totalsRowFormulaArray: false },
   { name: "Units", calculatedColumnFormula: "", calculatedColumnFormulaArray: false, totalsRowFunction: "average", totalsRowLabel: "", totalsRowFormula: "", totalsRowFormulaArray: false },
   { name: "Revenue", calculatedColumnFormula: "=[@Units]*2", calculatedColumnFormulaArray: false, totalsRowFunction: "custom", totalsRowLabel: "", totalsRowFormula: "=SUBTOTAL(109,[Revenue])", totalsRowFormulaArray: false },
+]);
+assert.deepEqual(importedFormulaTable.filters, [
+  { columnIndex: 0, kind: "values", values: ["North"], includeBlank: true },
+  { columnIndex: 1, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "2" }, { operator: "lessThanOrEqual", value: "3" }] },
 ]);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
 assert.equal(pivotPartNames.length, 3);

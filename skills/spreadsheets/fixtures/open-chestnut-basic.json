@@ -108,6 +108,18 @@
           "showFirstColumn": true,
           "showRowStripes": false,
           "showBandedColumns": true,
+          "filters": [
+            { "columnIndex": 0, "kind": "values", "values": ["OpenChestnut"], "includeBlank": false },
+            {
+              "columnIndex": 2,
+              "kind": "custom",
+              "matchAll": true,
+              "criteria": [
+                { "operator": "greaterThanOrEqual", "value": "5" },
+                { "operator": "lessThanOrEqual", "value": "20" }
+              ]
+            }
+          ],
           "columnDefinitions": [
             { "name": "Codec", "totalsRowFunction": "none", "totalsRowLabel": "Total" },
             { "name": "Runtime" },

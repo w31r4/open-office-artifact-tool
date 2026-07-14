@@ -497,6 +497,54 @@ function tableColumnDefinitions(table, names) {
   });
 }
 
+function tableFilters(table) {
+  if (!Array.isArray(table.filters)) return [];
+  return table.filters.map((filter) => {
+    const columnIndex = Number(filter?.columnIndex ?? 0);
+    if (filter?.kind === "custom") {
+      return {
+        columnIndex,
+        criteria: {
+          case: "custom",
+          value: {
+            matchAll: Boolean(filter.matchAll),
+            criteria: Array.isArray(filter.criteria)
+              ? filter.criteria.map((criterion) => ({ operator: String(criterion?.operator ?? ""), value: String(criterion?.value ?? "") }))
+              : [],
+          },
+        },
+      };
+    }
+    return {
+      columnIndex,
+      criteria: {
+        case: "values",
+        value: {
+          values: Array.isArray(filter?.values) ? filter.values.map((value) => String(value)) : [],
+          includeBlank: Boolean(filter?.includeBlank),
+        },
+      },
+    };
+  });
+}
+
+function publicTableFilter(filter) {
+  if (filter?.criteria?.case === "custom") {
+    return {
+      columnIndex: Number(filter.columnIndex ?? 0),
+      kind: "custom",
+      matchAll: Boolean(filter.criteria.value?.matchAll),
+      criteria: (filter.criteria.value?.criteria || []).map((criterion) => ({ operator: criterion.operator, value: criterion.value })),
+    };
+  }
+  return {
+    columnIndex: Number(filter?.columnIndex ?? 0),
+    kind: "values",
+    values: [...(filter?.criteria?.value?.values || [])],
+    includeBlank: Boolean(filter?.criteria?.value?.includeBlank),
+  };
+}
+
 function tableSnapshot(table) {
   const columnNames = tableColumnNames(table);
   return {
@@ -513,6 +561,7 @@ function tableSnapshot(table) {
     showColumnStripes: Boolean(table.showBandedColumns),
     columnNames,
     columns: tableColumnDefinitions(table, columnNames),
+    filters: tableFilters(table),
   };
 }
 
@@ -692,6 +741,7 @@ function workbookFromEnvelope(envelope) {
         style: sourceTable.styleName,
         columnNames: [...sourceTable.columnNames],
         columnDefinitions: sourceTable.columns?.length ? sourceTable.columns.map((column) => ({ ...column })) : undefined,
+        filters: sourceTable.filters?.map(publicTableFilter),
       });
       table.showHeaders = sourceTable.hasHeaders;
       table.showFirstColumn = sourceTable.showFirstColumn;

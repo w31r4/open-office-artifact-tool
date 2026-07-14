@@ -3822,6 +3822,7 @@ Create an inspectable worksheet table over an A1 range with rich calculated-colu
 - `style` (string) — Table style name.
 - `columnNames` (string[]) — Compatibility projection of table-column names.
 - `columnDefinitions` (object[]) — Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata.
+- `filters` (object[]) — Zero-based table-column value or one/two-criterion custom AutoFilters.
 - `showTotals` (boolean) — Expose the totals row required by totals metadata.
 
 **Schema returns:**

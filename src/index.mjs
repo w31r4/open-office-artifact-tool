@@ -2338,6 +2338,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     style: { type: "string", description: "Table style name." },
     columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
     columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
+    filters: { type: "object[]", description: "Zero-based table-column value or one/two-criterion custom AutoFilters." },
     showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
   "sheet.pivotTables.add": helpSchema({
@@ -2989,6 +2990,23 @@ class WorksheetTable {
     this.columnNames = Array.isArray(config.columnNames)
       ? config.columnNames.map((value) => String(value))
       : this.columnDefinitions?.map((column) => column.name);
+    this.filters = Array.isArray(config.filters) ? config.filters.map((filter) => {
+      const columnIndex = Number(filter?.columnIndex ?? 0);
+      if (filter?.kind === "custom") return {
+        columnIndex,
+        kind: "custom",
+        matchAll: Boolean(filter.matchAll),
+        criteria: Array.isArray(filter.criteria)
+          ? filter.criteria.map((criterion) => ({ operator: String(criterion?.operator ?? ""), value: String(criterion?.value ?? "") }))
+          : [],
+      };
+      return {
+        columnIndex,
+        kind: "values",
+        values: Array.isArray(filter?.values) ? filter.values.map((value) => String(value)) : [],
+        includeBlank: Boolean(filter?.includeBlank),
+      };
+    }) : [];
     this.rows = new WorksheetTableRowsFacade(this);
     this.refreshDimensions();
   }
@@ -3010,7 +3028,7 @@ class WorksheetTable {
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {
-    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, values: this.values };
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, values: this.values };
   }
 
   toSvg(bounds) {
@@ -3020,7 +3038,7 @@ class WorksheetTable {
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, values: this.values }; }
 }
 
 class WorksheetTableCollection {
@@ -6737,6 +6755,24 @@ function tableColumnXml(definition, id, name) {
   return `<tableColumn id="${id}" name="${attrEscape(name)}"${totalsFunction}${totalsLabel}>${calculated}${totals}</tableColumn>`;
 }
 
+function tableFilterXml(filter) {
+  const columnIndex = Number(filter?.columnIndex ?? 0);
+  if (filter?.kind === "custom") {
+    const criteria = (filter.criteria || []).map((criterion) => `<customFilter operator="${attrEscape(criterion?.operator || "equal")}" val="${attrEscape(criterion?.value ?? "")}"/>`).join("");
+    return `<filterColumn colId="${columnIndex}"><customFilters${filter.matchAll ? ' and="1"' : ""}>${criteria}</customFilters></filterColumn>`;
+  }
+  const values = (filter?.values || []).map((value) => `<filter val="${attrEscape(value)}"/>`).join("");
+  return `<filterColumn colId="${columnIndex}"><filters${filter?.includeBlank ? ' blank="1"' : ""}>${values}</filters></filterColumn>`;
+}
+
+function tableAutoFilterXml(table, reference) {
+  if (!table.showFilterButton) return "";
+  const filters = Array.isArray(table.filters) ? table.filters.map(tableFilterXml).join("") : "";
+  return filters
+    ? `<autoFilter ref="${attrEscape(reference)}">${filters}</autoFilter>`
+    : `<autoFilter ref="${attrEscape(reference)}"/>`;
+}
+
 function tableXml(table, tablePartId) {
   const ref = table.range;
   const seen = new Set();
@@ -6751,7 +6787,7 @@ function tableXml(table, tablePartId) {
   }).join("");
   const headerRowCount = table.showHeaders ? 1 : 0;
   const totalsRowShown = table.showTotals ? 1 : 0;
-  const autoFilter = table.showFilterButton ? `<autoFilter ref="${attrEscape(ref)}"/>` : "";
+  const autoFilter = tableAutoFilterXml(table, ref);
   const styleName = table.style || "TableStyleMedium2";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tablePartId}" name="${attrEscape(table.name)}" displayName="${attrEscape(table.name)}" ref="${attrEscape(ref)}" headerRowCount="${headerRowCount}" totalsRowShown="${totalsRowShown}">${autoFilter}<tableColumns count="${table.columnCount || headers.length || 1}">${columns}</tableColumns><tableStyleInfo name="${attrEscape(styleName)}" showFirstColumn="${table.showFirstColumn ? 1 : 0}" showLastColumn="${table.showLastColumn ? 1 : 0}" showRowStripes="${table.showRowStripes ? 1 : 0}" showColumnStripes="${table.showBandedColumns ? 1 : 0}"/></table>`;
 }
@@ -7039,6 +7075,32 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   parseWorksheetMergeCellsXml(sheet, xml);
 }
 
+function parseNativeTableFilters(xml) {
+  const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
+  if (!autoFilter) return [];
+  return [...autoFilter[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?filterColumn\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?filterColumn\s*>/g)].flatMap((match) => {
+    const columnAttrs = ooxmlXmlAttributes(match[1] || "");
+    const columnIndex = Number(columnAttrs.colId);
+    if (!Number.isInteger(columnIndex) || columnIndex < 0) return [];
+    const valuesMatch = /<(?:[A-Za-z_][\w.-]*:)?filters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?filters\s*>)/.exec(match[2]);
+    if (valuesMatch) {
+      const filterAttrs = ooxmlXmlAttributes(valuesMatch[1] || "");
+      const values = [...(valuesMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?filter\b([^>]*?)\/\s*>/g)]
+        .map((valueMatch) => ooxmlXmlAttributes(valueMatch[1] || "").val)
+        .filter((value) => value != null);
+      return [{ columnIndex, kind: "values", values, includeBlank: filterAttrs.blank != null && !["0", "false", "off"].includes(String(filterAttrs.blank).toLowerCase()) }];
+    }
+    const customMatch = /<(?:[A-Za-z_][\w.-]*:)?customFilters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?customFilters\s*>)/.exec(match[2]);
+    if (!customMatch) return [];
+    const customAttrs = ooxmlXmlAttributes(customMatch[1] || "");
+    const criteria = [...(customMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?customFilter\b([^>]*?)\/\s*>/g)].map((criterionMatch) => {
+      const criterion = ooxmlXmlAttributes(criterionMatch[1] || "");
+      return { operator: criterion.operator || "equal", value: criterion.val ?? "" };
+    });
+    return [{ columnIndex, kind: "custom", matchAll: customAttrs.and != null && !["0", "false", "off"].includes(String(customAttrs.and).toLowerCase()), criteria }];
+  });
+}
+
 async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
   const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
   for (const relationship of relationships) {
@@ -7087,6 +7149,7 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       style: styleAttrs.name || "TableStyleMedium2",
       columnNames,
       columnDefinitions,
+      filters: parseNativeTableFilters(xml),
     });
   }
 }

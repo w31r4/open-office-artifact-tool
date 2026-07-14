@@ -24,6 +24,7 @@ try {
     sheet.getRange("A1:B2").values = [["Label", "Value"], ["clean install", 7]];
     const packagedTable = sheet.tables.add({ range: "A1:B2", name: "PackagedTable", style: "TableStyleMedium4" });
     packagedTable.columnDefinitions = [{ name: "Label" }, { name: "Value", calculatedColumnFormula: "=LEN([@Label])" }];
+    packagedTable.filters = [{ columnIndex: 0, kind: "values", values: ["clean install"], includeBlank: false }];
     const file = await exportXlsxWithOpenChestnut(workbook);
     const imported = await importXlsxWithOpenChestnut(file);
     if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
@@ -31,6 +32,7 @@ try {
     const importedTable = imported.worksheets.getItem("Packaged").tables.getItemOrNullObject("PackagedTable");
     if (importedTable.style !== "TableStyleMedium4") process.exit(11);
     if (importedTable.columnDefinitions[1].calculatedColumnFormula !== "=LEN([@Label])") process.exit(12);
+    if (importedTable.filters[0]?.values[0] !== "clean install") process.exit(13);
     const legacyFile = await exportXlsxWithOpenXmlWasm(workbook);
     if (legacyFile.metadata.codec !== "open-chestnut") process.exit(10);
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });

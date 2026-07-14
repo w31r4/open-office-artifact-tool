@@ -706,6 +706,109 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsAndImportsWorksheetTableValueAndCustomFilters()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FilterTableExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/tables/table1.xml"));
+        Assert.Contains("<x:filterColumn colId=\"0\"><x:filters blank=\"1\"><x:filter val=\"North\" /><x:filter val=\"South\" /></x:filters></x:filterColumn>", xml);
+        Assert.Contains("<x:filterColumn colId=\"1\"><x:customFilters and=\"1\"><x:customFilter operator=\"greaterThanOrEqual\" val=\"80\" /><x:customFilter operator=\"lessThanOrEqual\" val=\"120\" /></x:customFilters></x:filterColumn>", xml);
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var filters = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).Filters;
+        Assert.Equal(2, filters.Count);
+        Assert.Equal(0U, filters[0].ColumnIndex);
+        Assert.Equal(["North", "South"], filters[0].Values.Values);
+        Assert.True(filters[0].Values.IncludeBlank);
+        Assert.Equal(1U, filters[1].ColumnIndex);
+        Assert.True(filters[1].Custom.MatchAll);
+        Assert.Equal("greaterThanOrEqual", filters[1].Custom.Criteria[0].Operator);
+        Assert.Equal("80", filters[1].Custom.Criteria[0].Value);
+    }
+
+    [Fact]
+    public void SourcePreservingWorksheetTableFilterEditKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FilterTableExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.Filters[0].Values.Values.Clear();
+        table.Filters[0].Values.Values.Add("North");
+        table.Filters[0].Values.IncludeBlank = false;
+        table.Filters[1].Custom.MatchAll = false;
+        table.Filters[1].Custom.Criteria[0].Value = "100";
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var edited = Assert.Single(Import(exported.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal(["North"], edited.Filters[0].Values.Values);
+        Assert.False(edited.Filters[0].Values.IncludeBlank);
+        Assert.False(edited.Filters[1].Custom.MatchAll);
+        Assert.Equal("100", edited.Filters[1].Custom.Criteria[0].Value);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetTableFilterProfiles()
+    {
+        var request = FilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[0].ColumnIndex = 2;
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = FilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[1].ColumnIndex = 0;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = FilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Filters[1].Custom.Criteria.Add(new SpreadsheetTableCustomFilterCriterionArtifact { Operator = "equal", Value = "100" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = FilterTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].ShowFilterButton = false;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void UnsupportedDynamicWorksheetTableFilterRemainsByteExactAndReadOnly()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var bytes = MutateTableWithDynamicFilter(first.File.ToByteArray());
+        var imported = Import(bytes);
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.False(table.Source.Editable);
+        Assert.Empty(table.Filters);
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(bytes, "xl/tables/table1.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/tables/table1.xml"));
+    }
+
+    [Fact]
     public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -971,6 +1074,21 @@ public sealed class XlsxCodecTests
         return request;
     }
 
+    private static CodecRequest FilterTableExportRequest()
+    {
+        var request = TableExportRequest();
+        var table = request.Artifact.Workbook.Worksheets[0].Tables[0];
+        var values = new SpreadsheetTableValueFilterArtifact { IncludeBlank = true };
+        values.Values.Add("North");
+        values.Values.Add("South");
+        table.Filters.Add(new SpreadsheetTableFilterArtifact { ColumnIndex = 0, Values = values });
+        var custom = new SpreadsheetTableCustomFilterArtifact { MatchAll = true };
+        custom.Criteria.Add(new SpreadsheetTableCustomFilterCriterionArtifact { Operator = "greaterThanOrEqual", Value = "80" });
+        custom.Criteria.Add(new SpreadsheetTableCustomFilterCriterionArtifact { Operator = "lessThanOrEqual", Value = "120" });
+        table.Filters.Add(new SpreadsheetTableFilterArtifact { ColumnIndex = 1, Custom = custom });
+        return request;
+    }
+
     private static SpreadsheetTableArtifact TableArtifact()
     {
         var table = new SpreadsheetTableArtifact
@@ -999,6 +1117,26 @@ public sealed class XlsxCodecTests
             XDocument table;
             using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
             table.Root!.SetAttributeValue("published", "0");
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/tables/table1.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(table.ToString(SaveOptions.DisableFormatting));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MutateTableWithDynamicFilter(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/tables/table1.xml") ?? throw new InvalidOperationException("Worksheet table is missing.");
+            XDocument table;
+            using (var reader = new StreamReader(entry.Open())) table = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
+            var spreadsheet = table.Root!.Name.Namespace;
+            table.Root.Element(spreadsheet + "autoFilter")!.Add(new XElement(spreadsheet + "filterColumn", new XAttribute("colId", 0),
+                new XElement(spreadsheet + "dynamicFilter", new XAttribute("type", "today"))));
             entry.Delete();
             var replacement = archive.CreateEntry("xl/tables/table1.xml");
             using var writer = new StreamWriter(replacement.Open());

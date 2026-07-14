@@ -204,6 +204,10 @@ try {
   assert.equal(wasmTable.columnDefinitions[0].totalsRowLabel, "Total");
   assert.equal(wasmTable.columnDefinitions[2].calculatedColumnFormula, "=LEN([@Codec])");
   assert.equal(wasmTable.columnDefinitions[2].totalsRowFormula, "=SUBTOTAL(109,[Score])");
+  assert.deepEqual(wasmTable.filters, [
+    { columnIndex: 0, kind: "values", values: ["OpenChestnut"], includeBlank: false },
+    { columnIndex: 2, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "5" }, { operator: "lessThanOrEqual", value: "20" }] },
+  ]);
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
   const wasmThemeXml = await wasmZip.file("xl/theme/theme1.xml").async("text");
   assert.match(wasmThemeXml, /name="OpenChestnut Fixture"/);
@@ -224,6 +228,8 @@ try {
   assert.match(wasmTableXml, /totalsRowLabel="Total"/);
   assert.match(wasmTableXml, /<x:calculatedColumnFormula>LEN\(\[@Codec\]\)<\/x:calculatedColumnFormula>/);
   assert.match(wasmTableXml, /<x:totalsRowFormula>SUBTOTAL\(109,\[Score\]\)<\/x:totalsRowFormula>/);
+  assert.match(wasmTableXml, /<x:filterColumn colId="0"><x:filters><x:filter val="OpenChestnut"\s*\/><\/x:filters><\/x:filterColumn>/);
+  assert.match(wasmTableXml, /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="5"\s*\/><x:customFilter operator="lessThanOrEqual" val="20"\s*\/><\/x:customFilters>/);
   assert.match(wasmTableXml, /showFirstColumn="1"/);
   assert.match(wasmTableXml, /showRowStripes="0"/);
   assert.match(wasmTableXml, /showColumnStripes="1"/);

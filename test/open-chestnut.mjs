@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColumnArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -27,7 +27,9 @@ assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { t
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { tables: [{ name: "Sales" }] }))[0], 0x4a, "Spreadsheet worksheet tables must use additive worksheet field 9.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { source: { tablePartPath: "xl/tables/table1.xml" } }))[0], 0x6a, "Spreadsheet table source bindings must use additive table field 13.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { columns: [{ name: "Revenue" }] }))[0], 0x72, "Spreadsheet rich table columns must use additive table field 14.");
+assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { filters: [{ columnIndex: 1, criteria: { case: "values", value: { values: ["x"] } } }] }))[0], 0x7a, "Spreadsheet table filters must use additive table field 15.");
 assert.equal(toBinary(SpreadsheetTableColumnArtifactSchema, create(SpreadsheetTableColumnArtifactSchema, { totalsRowFormulaArray: true }))[0], 0x38, "Spreadsheet table totals-formula array state must use column field 7.");
+assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "values", value: { values: ["x"] } } }))[0], 0x12, "Spreadsheet value-filter criteria must use filter field 2.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
@@ -192,6 +194,10 @@ detailsTable.columnDefinitions = [
   { name: "Status" },
   { name: "Value", calculatedColumnFormula: "=LEN([@Status])" },
 ];
+detailsTable.filters = [
+  { columnIndex: 0, kind: "values", values: ["ready"], includeBlank: true },
+  { columnIndex: 1, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "1" }, { operator: "lessThanOrEqual", value: "2" }] },
+];
 
 const concurrentWorkbook = Workbook.create();
 concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
@@ -207,6 +213,8 @@ assert.equal(exported.metadata.codec, "open-chestnut");
 assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
 const exportedZip = await JSZip.loadAsync(exported.bytes);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:calculatedColumnFormula>LEN\(\[@Status\]\)<\/x:calculatedColumnFormula>/);
+assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:filterColumn colId="0"><x:filters blank="1"><x:filter val="ready"\s*\/><\/x:filters><\/x:filterColumn>/);
+assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="1"\s*\/><x:customFilter operator="lessThanOrEqual" val="2"\s*\/><\/x:customFilters>/);
 
 const imported = await importXlsxWithOpenChestnut(exported);
 assert.equal(imported.dateSystem, "1904");
@@ -218,6 +226,10 @@ assert.equal(importedTable.isNullObject, undefined);
 assert.equal(importedTable.range, "A1:B3");
 assert.deepEqual(importedTable.columnNames, ["Status", "Value"]);
 assert.equal(importedTable.columnDefinitions[1].calculatedColumnFormula, "=LEN([@Status])");
+assert.deepEqual(importedTable.filters, [
+  { columnIndex: 0, kind: "values", values: ["ready"], includeBlank: true },
+  { columnIndex: 1, kind: "custom", matchAll: true, criteria: [{ operator: "greaterThanOrEqual", value: "1" }, { operator: "lessThanOrEqual", value: "2" }] },
+]);
 assert.equal(importedTable.style, "TableStyleMedium4");
 assert.equal(importedTable.showFirstColumn, true);
 assert.equal(importedTable.showBandedColumns, true);
@@ -249,6 +261,7 @@ assert.equal(javascriptImported.worksheets.items.length, 2);
 assert.equal(javascriptImported.worksheets.getItem("Details").tables.items[0].name, "StatusTable");
 assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0].columnNames, ["Status", "Value"]);
 assert.equal(javascriptImported.worksheets.getItem("Details").tables.items[0].columnDefinitions[1].calculatedColumnFormula, "=LEN([@Status])");
+assert.deepEqual(javascriptImported.worksheets.getItem("Details").tables.items[0].filters, detailsTable.filters);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
@@ -271,6 +284,10 @@ importedTable.showLastColumn = true;
 importedTable.showBandedColumns = false;
 importedTable.columnNames[1] = "Score";
 importedTable.columnDefinitions[1].calculatedColumnFormula = "=LEN([@Status])+1";
+importedTable.filters[0].values = ["pending"];
+importedTable.filters[0].includeBlank = false;
+importedTable.filters[1].matchAll = false;
+importedTable.filters[1].criteria[0].value = "0";
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
 const secondImported = await importXlsxWithOpenChestnut(secondExport);
@@ -285,6 +302,10 @@ assert.equal(secondTable.showLastColumn, true);
 assert.equal(secondTable.showBandedColumns, false);
 assert.deepEqual(secondTable.columnNames, ["Status", "Score"]);
 assert.equal(secondTable.columnDefinitions[1].calculatedColumnFormula, "=LEN([@Status])+1");
+assert.deepEqual(secondTable.filters, [
+  { columnIndex: 0, kind: "values", values: ["pending"], includeBlank: false },
+  { columnIndex: 1, kind: "custom", matchAll: false, criteria: [{ operator: "greaterThanOrEqual", value: "0" }, { operator: "lessThanOrEqual", value: "2" }] },
+]);
 secondTable.delete();
 await assert.rejects(
   exportXlsxWithOpenChestnut(secondImported, { recalculate: false }),
@@ -389,6 +410,14 @@ invalidFormulaTableSheet.tables.add({
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidFormulaTableWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /invalid calculated-column formula/i.test(error.message),
+);
+const invalidFilterTableWorkbook = Workbook.create();
+const invalidFilterTableSheet = invalidFilterTableWorkbook.worksheets.add("Sheet1");
+invalidFilterTableSheet.getRange("A1:B2").values = [["Name", "Score"], ["x", 1]];
+invalidFilterTableSheet.tables.add({ range: "A1:B2", name: "InvalidFilterTable", filters: [{ columnIndex: 2, kind: "values", values: ["x"] }] });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidFilterTableWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /filter column index/i.test(error.message),
 );
 
 const invalidNumberFormat = Workbook.create();
