@@ -295,6 +295,20 @@ function sameTableValues(block, original) {
   return JSON.stringify(block.values || []) === JSON.stringify((original.content.value.rows || []).map((row) => [...row.cells]));
 }
 
+function sameDocumentNumbering(block, paragraph) {
+  const numbering = paragraph.numbering;
+  if (!numbering || block.kind !== "listItem") return false;
+  const numberFormat = numbering.numberFormat || "decimal";
+  return block.text === paragraph.text &&
+    block.listType === (numberFormat === "bullet" ? "bullet" : "number") &&
+    block.numberFormat === numberFormat &&
+    block.level === numbering.level &&
+    block.start === (numbering.start || 1) &&
+    block.levelText === (numbering.levelText || (numberFormat === "bullet" ? "•" : `%${numbering.level + 1}.`)) &&
+    block.numberingId === numbering.numberingId &&
+    block.abstractNumberingId === numbering.abstractNumberingId;
+}
+
 function sameDocumentHyperlink(block, source) {
   if (block.kind !== "hyperlink" || block.text !== source.text) return false;
   if (block.styleId !== (source.styleId || "Normal")) return false;
@@ -363,6 +377,9 @@ function documentField(block, original) {
 function unchangedSourceBlock(block, original) {
   switch (original.content.case) {
     case "paragraph": {
+      if (original.content.value.numbering) {
+        return block.styleId === (original.styleId || "Normal") && sameDocumentNumbering(block, original.content.value);
+      }
       if (block.kind !== "paragraph" || block.text !== original.content.value.text || block.styleId !== (original.styleId || "Normal")) return false;
       if (original.source?.editable !== false) return false;
       return block.runs.every((run) => Object.keys(run.style || {}).length === 0);
@@ -396,6 +413,31 @@ function documentBlock(block, original) {
       content: {
         case: "paragraph",
         value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id)) },
+      },
+    };
+  }
+  if (block.kind === "listItem") {
+    const source = original?.content.case === "paragraph" ? original.content.value : undefined;
+    if (!source?.numbering) {
+      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author a numbering-definition graph for list item ${block.id}.`, [], { code: "unsupported_document_features" });
+    }
+    if (original.source?.editable === false) {
+      throw new OpenChestnutCodecError(`Document list item ${block.id} is source-preserved but its paragraph topology is not editable.`, [], { code: "unsupported_document_edit" });
+    }
+    if (!sameDocumentNumbering({ ...block, text: source.text }, source)) {
+      throw new OpenChestnutCodecError(`Document list item ${block.id} numbering identity, level, and definition metadata are source-bound.`, [], { code: "unsupported_document_edit" });
+    }
+    const text = String(block.text ?? "");
+    if (text.length > 1_000_000) throw new OpenChestnutCodecError(`Document list item ${block.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_numbering" });
+    return {
+      ...common,
+      content: {
+        case: "paragraph",
+        value: {
+          text,
+          runs: source.runs.map((run) => ({ ...run, text })),
+          numbering: source.numbering,
+        },
       },
     };
   }
@@ -500,6 +542,25 @@ function documentFromEnvelope(envelope) {
   const blocks = source.blocks.map((block) => {
     switch (block.content.case) {
       case "paragraph":
+        if (block.content.value.numbering) {
+          const paragraph = block.content.value;
+          const numbering = paragraph.numbering;
+          const numberFormat = numbering.numberFormat || "decimal";
+          return {
+            kind: "listItem",
+            id: block.id,
+            name: block.name,
+            styleId: block.styleId || "Normal",
+            text: paragraph.text,
+            listType: numberFormat === "bullet" ? "bullet" : "number",
+            numberFormat,
+            level: numbering.level,
+            start: numbering.start || 1,
+            levelText: numbering.levelText || (numberFormat === "bullet" ? "•" : `%${numbering.level + 1}.`),
+            numberingId: numbering.numberingId,
+            abstractNumberingId: numbering.abstractNumberingId,
+          };
+        }
         return {
           kind: "paragraph",
           id: block.id,

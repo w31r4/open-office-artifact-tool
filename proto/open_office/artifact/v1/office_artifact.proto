@@ -622,6 +622,19 @@ message DocumentSourceBinding {
 message DocumentParagraph {
   string text = 1;
   repeated DocumentRun runs = 2;
+  // Direct w:numPr identity plus the resolved source level definition. The
+  // first source-bound slice permits text edits only; changing this shared
+  // numbering graph remains fail-closed.
+  DocumentNumbering numbering = 3;
+}
+
+message DocumentNumbering {
+  uint32 numbering_id = 1;
+  uint32 level = 2;
+  uint32 abstract_numbering_id = 3;
+  string number_format = 4;
+  uint32 start = 5;
+  string level_text = 6;
 }
 
 message DocumentRun {

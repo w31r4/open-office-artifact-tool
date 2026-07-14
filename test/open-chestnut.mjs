@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentSourceBindingSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -25,6 +25,8 @@ assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
 assert.equal(toBinary(DocumentHyperlinkSchema, create(DocumentHyperlinkSchema, { target: { case: "externalUri", value: "https://example.test" } }))[0], 0x12, "Document external hyperlink targets must use field 2.");
 assert.equal(toBinary(DocumentFieldSchema, create(DocumentFieldSchema, { instruction: "PAGE" }))[0], 0x0a, "Document field instructions must use field 1.");
+assert.equal(toBinary(DocumentParagraphSchema, create(DocumentParagraphSchema, { numbering: { numberingId: 7 } }))[0], 0x1a, "Document paragraph numbering must use additive field 3.");
+assert.equal(toBinary(DocumentNumberingSchema, create(DocumentNumberingSchema, { numberingId: 7 }))[0], 0x08, "Document numbering IDs must use field 1.");
 assert.equal(legacyTabWire[0], 0x72, "Presentation tab stops must retain repeated-message field 14.");
 assert.equal(fromBinary(PresentationTextParagraphSchema, legacyTabWire).tabStops[0].positionEmu, 120n);
 assert.deepEqual([...toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, { noTabStops: true }))], [0x78, 0x01], "Explicit tab deletion must remain additive field 15.");
@@ -249,6 +251,36 @@ const tableTopologyImported = await importDocxWithOpenChestnut(docxExported);
 tableTopologyImported.blocks[1].values[0].pop();
 await assert.rejects(
   exportDocxWithOpenChestnut(tableTopologyImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
+);
+
+const numberedSourceDocument = DocumentModel.create({ blocks: [] });
+numberedSourceDocument.addListItem("Preserve numbered source text", {
+  listType: "number",
+  numberFormat: "upperLetter",
+  start: 3,
+  levelText: "%1)",
+  numberingId: 77,
+  styleId: "Normal",
+});
+const numberedSourceDocx = await DocumentFile.exportDocx(numberedSourceDocument);
+const numberedSourceImported = await importDocxWithOpenChestnut(numberedSourceDocx);
+const numberedSourceBlock = numberedSourceImported.blocks[0];
+assert.equal(numberedSourceBlock.kind, "listItem");
+assert.equal(numberedSourceBlock.numberFormat, "upperLetter");
+assert.equal(numberedSourceBlock.start, 3);
+assert.equal(numberedSourceBlock.levelText, "%1)");
+assert.ok(numberedSourceBlock.numberingId > 0);
+assert.ok(numberedSourceBlock.abstractNumberingId >= 0);
+numberedSourceBlock.text = "Edited numbered source text";
+const numberedSourceEdited = await exportDocxWithOpenChestnut(numberedSourceImported);
+const numberedSourceRoundTrip = await DocumentFile.importDocx(numberedSourceEdited, { preferNative: true });
+assert.equal(numberedSourceRoundTrip.blocks[0].kind, "listItem");
+assert.equal(numberedSourceRoundTrip.blocks[0].text, "Edited numbered source text");
+assert.equal(numberedSourceRoundTrip.blocks[0].numberFormat, "upperLetter");
+numberedSourceBlock.level = 1;
+await assert.rejects(
+  exportDocxWithOpenChestnut(numberedSourceImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
 );
 

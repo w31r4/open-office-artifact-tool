@@ -160,6 +160,7 @@ try {
   const nativePageCountField = nativePreferredDocument.blocks.find((item) => item.kind === "field");
   assert.equal(nativePageCountField?.instruction, "NUMPAGES");
   assert.equal(nativePageCountField?.display, "2");
+  assert.equal(nativePreferredDocument.blocks.some((item) => item.kind === "listItem" && item.text === "Inspect stable OpenChestnut document blocks and comments."), true);
   const nativeCitation = nativePreferredDocument.blocks.find((item) => item.kind === "citation");
   assert.match(nativeCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
   assert.equal(nativeCitation?.metadata?.tag, "ECMA376");

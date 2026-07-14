@@ -168,6 +168,102 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportEditsDirectNumberedParagraphTextAndKeepsDefinition()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddDirectNumbering(authored.File.ToByteArray())),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.Equal(DocumentBlock.ContentOneofCase.Paragraph, block.ContentCase);
+        Assert.True(block.Source.Editable);
+        Assert.NotEmpty(block.Source.ResidualSha256);
+        Assert.Equal(77u, block.Paragraph.Numbering.NumberingId);
+        Assert.Equal(9u, block.Paragraph.Numbering.AbstractNumberingId);
+        Assert.Equal(0u, block.Paragraph.Numbering.Level);
+        Assert.Equal("upperLetter", block.Paragraph.Numbering.NumberFormat);
+        Assert.Equal(3u, block.Paragraph.Numbering.Start);
+        Assert.Equal("%1)", block.Paragraph.Numbering.LevelText);
+
+        block.Paragraph.Text = "Edited numbered evidence";
+        block.Paragraph.Runs[0].Text = block.Paragraph.Text;
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            Assert.Equal("Edited numbered evidence", paragraph.InnerText);
+            Assert.Equal(77, paragraph.ParagraphProperties!.NumberingProperties!.NumberingId!.Val!.Value);
+            Assert.NotNull(paragraph.Descendants<W.Italic>().SingleOrDefault());
+            var level = document.MainDocumentPart.NumberingDefinitionsPart!.Numbering!
+                .Elements<W.AbstractNum>().Single().Elements<W.Level>().Single();
+            Assert.Equal(W.NumberFormatValues.UpperLetter, level.NumberingFormat!.Val!.Value);
+            Assert.Equal("%1)", level.LevelText!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        block.Paragraph.Numbering.Level = 1;
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void NumberedParagraphSlicePreservesButRejectsComplexTopologyEdits()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var source = AddDirectNumbering(authored.File.ToByteArray(), addSecondRun: true);
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.NotNull(block.Paragraph.Numbering);
+        Assert.False(block.Source.Editable);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        block.Paragraph.Text = "Unsafe numbered edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportKeepsAdvancedParagraphAndRelationships()
     {
         var first = Invoke(ExportRequest(includeSecondParagraph: true));
@@ -713,6 +809,36 @@ public sealed class DocxCodecTests
             var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Descendants<W.TableCell>().First();
             cell.Append(new W.Paragraph(new W.Run(new W.Text(" detail"))));
             document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddDirectNumbering(byte[] bytes, bool addSecondRun = false)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var paragraph = mainPart.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            paragraph.ParagraphProperties = new W.ParagraphProperties(
+                new W.NumberingProperties(
+                    new W.NumberingLevelReference { Val = 0 },
+                    new W.NumberingId { Val = 77 }));
+            paragraph.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Italic()));
+            if (addSecondRun) paragraph.Append(new W.Run(new W.Text(" detail")));
+
+            var numberingPart = mainPart.AddNewPart<NumberingDefinitionsPart>();
+            numberingPart.Numbering = new W.Numbering(
+                new W.AbstractNum(
+                    new W.Level(
+                        new W.StartNumberingValue { Val = 3 },
+                        new W.NumberingFormat { Val = W.NumberFormatValues.UpperLetter },
+                        new W.LevelText { Val = "%1)" }) { LevelIndex = 0 }) { AbstractNumberId = 9 },
+                new W.NumberingInstance(new W.AbstractNumId { Val = 9 }) { NumberID = 77 });
+            mainPart.Document.Save();
+            numberingPart.Numbering.Save();
         }
         return stream.ToArray();
     }

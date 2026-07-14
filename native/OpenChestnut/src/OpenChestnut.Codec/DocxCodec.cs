@@ -247,6 +247,34 @@ internal static class DocxCodec
                             $"Document table block {ordinal} does not match the requested modeled semantics after editing.",
                             "word/document.xml");
                 }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && original.Paragraph.Numbering is not null)
+                {
+                    if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document numbered paragraph block {ordinal} style is source-bound and cannot be edited by this codec slice.",
+                            "word/document.xml");
+                    if (element is not W.Paragraph numberedParagraph ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxNumberedParagraphCodec.ResidualHash(numberedParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document numbered paragraph block {ordinal} source formatting or numbering assignment does not match its binding.",
+                            "word/document.xml");
+                    DocxNumberedParagraphCodec.Apply(numberedParagraph, block.Paragraph, original.Paragraph);
+                    if (!DocxNumberedParagraphCodec.ResidualHash(numberedParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document numbered paragraph block {ordinal} changed its source-bound formatting or numbering assignment.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(numberedParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document numbered paragraph block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
                 else
                 {
                     element.InsertBeforeSelf(BuildBlock(block, context));
@@ -287,6 +315,12 @@ internal static class DocxCodec
         {
             case W.Paragraph paragraph:
                 block.StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
+                if (DocxNumberedParagraphCodec.TryRead(paragraph, context, out var numberedParagraph, out editable))
+                {
+                    block.Paragraph = numberedParagraph;
+                    semanticItems += checked((ulong)Math.Max(1, numberedParagraph.Runs.Count));
+                    break;
+                }
                 if (DocxHyperlinkCodec.TryRead(paragraph, context, out var hyperlink, out editable))
                 {
                     block.Hyperlink = hyperlink;
@@ -340,6 +374,8 @@ internal static class DocxCodec
                 block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
                 block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
+            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.Paragraph.Numbering is not null && editable)
+                block.Source.ResidualSha256 = DocxNumberedParagraphCodec.ResidualHash(sourceParagraph);
         }
         else if (element is W.Table sourceTable && block.ContentCase == DocumentBlock.ContentOneofCase.Table && editable)
         {
@@ -386,6 +422,10 @@ internal static class DocxCodec
 
     private static W.Paragraph BuildParagraph(DocumentBlock block)
     {
+        if (block.Paragraph.Numbering is not null)
+            throw new CodecException(
+                "unsupported_document_features",
+                "Direct authoring of a numbered paragraph requires a numbering-definition graph and is outside the current source-bound slice.");
         var paragraph = new W.Paragraph();
         if (!string.IsNullOrWhiteSpace(block.StyleId))
             paragraph.ParagraphProperties = new W.ParagraphProperties(new W.ParagraphStyleId { Val = block.StyleId });
@@ -473,6 +513,7 @@ internal static class DocxCodec
             switch (block.ContentCase)
             {
                 case DocumentBlock.ContentOneofCase.Paragraph:
+                    if (block.Paragraph.Numbering is not null) DocxNumberedParagraphCodec.Validate(block.Paragraph);
                     if (block.Paragraph.Runs.Count > 0 && block.Paragraph.Text != string.Concat(block.Paragraph.Runs.Select(run => run.Text)))
                         throw new CodecException("inconsistent_document_text", $"Document paragraph {block.Id} text does not match its runs.");
                     semanticItems += checked((ulong)Math.Max(1, block.Paragraph.Runs.Count));

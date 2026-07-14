@@ -5,7 +5,8 @@
   "openChestnutEdits": [
     { "kind": "hyperlink", "matchText": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/word-processing", "tooltip": "Edited through the source-built OpenChestnut codec", "history": false },
     { "kind": "field", "matchInstruction": "PAGE", "instruction": "NUMPAGES", "display": "2" },
-    { "kind": "tableCell", "matchText": "OpenChestnut table", "row": 0, "column": 1, "value": "Pass" }
+    { "kind": "tableCell", "matchText": "OpenChestnut table", "row": 0, "column": 1, "value": "Pass" },
+    { "kind": "listItem", "matchText": "Inspect stable document blocks and comments.", "text": "Inspect stable OpenChestnut document blocks and comments." }
   ],
   "designPreset": "report",
   "theme": {

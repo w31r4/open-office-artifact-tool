@@ -349,6 +349,12 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         table.values[edit.row][edit.column] = String(edit.value ?? "");
         continue;
       }
+      if (edit.kind === "listItem") {
+        const listItem = imported.blocks.find((block) => block.kind === "listItem" && (!edit.matchText || block.text === edit.matchText));
+        assert.ok(listItem, `Missing source-bound list-item fixture target ${edit.matchText || "(unspecified)"}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "text")) listItem.text = String(edit.text);
+        continue;
+      }
       throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);
     }
     docx = await exportDocxWithOpenChestnut(imported);
