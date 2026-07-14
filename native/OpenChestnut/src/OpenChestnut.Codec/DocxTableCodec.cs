@@ -30,7 +30,13 @@ internal static class DocxTableCodec
         if (!DocxTableGeometry.SameTopology(requested, source))
             throw Unsupported("Source-preserving DOCX table grid, span, and merge topology cannot be changed.");
         if (!DocxTableFormatting.Same(requested.Formatting, source.Formatting))
-            throw Unsupported("Source-preserving DOCX table formatting is source-bound and cannot be changed.");
+        {
+            if (source.Formatting is null || requested.Formatting is null)
+                throw Unsupported("Source-preserving DOCX table formatting can change only when the complete direct-formatting profile was recognized during import.");
+            DocxTableFormatting.Apply(table, requested, requested.Formatting);
+            if (!DocxTableFormatting.Same(DocxTableFormatting.Read(table, requested), requested.Formatting))
+                throw Unsupported("Source-preserving DOCX table formatting did not round trip through the bounded direct-formatting profile.");
+        }
 
         var rows = table.Elements<W.TableRow>().ToArray();
         if (rows.Length != requested.Rows.Count)
@@ -117,6 +123,9 @@ internal static class DocxTableCodec
     internal static string ResidualHash(W.Table table)
     {
         var clone = (W.Table)table.CloneNode(true);
+        var artifact = DocxTableGeometry.Read(clone, out _);
+        if (DocxTableFormatting.Read(clone, artifact) is not null)
+            DocxTableFormatting.MaskModeled(clone, artifact);
         foreach (var text in clone.Descendants<W.Text>())
         {
             text.Text = string.Empty;

@@ -14,6 +14,17 @@
       "expectVerticalMerge": "restart",
       "expectEditable": true,
       "value": "Edited merged owner"
+    },
+    {
+      "kind": "tableFormatting",
+      "matchText": "Edited merged owner",
+      "widthDxa": 9300,
+      "indentDxa": 360,
+      "columnWidthsDxa": [2500, 3100, 3700],
+      "cellMarginsDxa": { "top": 40, "bottom": 60, "start": 80, "end": 100 },
+      "borderColor": "884400",
+      "borderSize": 10,
+      "headerFill": "FFF2CC"
     }
   ],
   "blocks": [

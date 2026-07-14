@@ -191,6 +191,72 @@ internal static class DocxTableFormatting
                left.HeaderFill == right.HeaderFill;
     }
 
+    internal static void Apply(W.Table table, DocumentTable artifact, DocumentTableFormatting formatting)
+    {
+        var properties = table.GetFirstChild<W.TableProperties>()!;
+        SetDxa(properties.GetFirstChild<W.TableWidth>()!, formatting.WidthDxa);
+        SetDxa(properties.GetFirstChild<W.TableIndentation>()!, formatting.IndentDxa);
+
+        var borders = properties.GetFirstChild<W.TableBorders>()!;
+        foreach (var border in borders.ChildElements.Cast<W.BorderType>())
+        {
+            border.Val = formatting.BorderSize == 0 ? W.BorderValues.Nil : W.BorderValues.Single;
+            border.Size = formatting.BorderSize;
+            border.Space = 0;
+            border.Color = formatting.BorderColor;
+        }
+
+        var margins = properties.GetFirstChild<W.TableCellMarginDefault>()!;
+        SetDxa(margins.GetFirstChild<W.TopMargin>()!, formatting.CellMarginsDxa.Top);
+        SetDxa(margins.GetFirstChild<W.BottomMargin>()!, formatting.CellMarginsDxa.Bottom);
+        SetDxa((OpenXmlElement?)margins.GetFirstChild<W.StartMargin>() ?? margins.GetFirstChild<W.TableCellLeftMargin>()!, formatting.CellMarginsDxa.Start);
+        SetDxa((OpenXmlElement?)margins.GetFirstChild<W.EndMargin>() ?? margins.GetFirstChild<W.TableCellRightMargin>()!, formatting.CellMarginsDxa.End);
+
+        var gridColumns = table.GetFirstChild<W.TableGrid>()!.Elements<W.GridColumn>().ToArray();
+        for (var column = 0; column < gridColumns.Length; column++)
+            SetWordAttribute(gridColumns[column], "w", formatting.ColumnWidthsDxa[column].ToString(CultureInfo.InvariantCulture));
+
+        var rows = table.Elements<W.TableRow>().ToArray();
+        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+        {
+            var cells = rows[rowIndex].Elements<W.TableCell>().ToArray();
+            for (var cellIndex = 0; cellIndex < cells.Length; cellIndex++)
+            {
+                var geometry = artifact.Rows[rowIndex].RichCells[cellIndex];
+                var width = formatting.ColumnWidthsDxa
+                    .Skip((int)geometry.GridColumn)
+                    .Take((int)geometry.ColumnSpan)
+                    .Aggregate(0UL, (sum, value) => checked(sum + value));
+                SetDxa(cells[cellIndex].TableCellProperties!.GetFirstChild<W.TableCellWidth>()!, checked((uint)width));
+                if (rowIndex == 0)
+                {
+                    var shading = cells[cellIndex].TableCellProperties!.GetFirstChild<W.Shading>()!;
+                    shading.Val = W.ShadingPatternValues.Clear;
+                    shading.Color = "auto";
+                    shading.Fill = formatting.HeaderFill;
+                }
+            }
+        }
+    }
+
+    internal static void MaskModeled(W.Table table, DocumentTable artifact)
+    {
+        const uint canonicalColumnWidth = 1_000;
+        var columns = LogicalColumns(artifact);
+        var formatting = new DocumentTableFormatting
+        {
+            WidthDxa = checked((uint)columns * canonicalColumnWidth),
+            IndentDxa = 0,
+            CellMarginsDxa = new DocumentTableCellMargins(),
+            BorderColor = "000000",
+            BorderSize = 2,
+            HeaderFill = "000000",
+        };
+        for (var column = 0; column < columns; column++)
+            formatting.ColumnWidthsDxa.Add(canonicalColumnWidth);
+        Apply(table, artifact, formatting);
+    }
+
     private static int LogicalColumns(DocumentTable table) => table.Rows.Any(row => row.RichCells.Count > 0)
         ? checked((int)table.GridColumns)
         : Math.Max(1, table.Rows.Count == 0 ? 1 : table.Rows.Max(row => row.Cells.Count));
@@ -232,9 +298,14 @@ internal static class DocxTableFormatting
 
     private static T Dxa<T>(T element, uint width) where T : OpenXmlElement
     {
+        SetDxa(element, width);
+        return element;
+    }
+
+    private static void SetDxa(OpenXmlElement element, uint width)
+    {
         SetWordAttribute(element, "w", width.ToString(CultureInfo.InvariantCulture));
         SetWordAttribute(element, "type", "dxa");
-        return element;
     }
 
     private static T Border<T>(T border, DocumentTableFormatting formatting) where T : W.BorderType

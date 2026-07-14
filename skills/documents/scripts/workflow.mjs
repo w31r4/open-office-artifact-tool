@@ -419,6 +419,14 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         table.values[edit.row][edit.column] = String(edit.value ?? "");
         continue;
       }
+      if (edit.kind === "tableFormatting") {
+        const table = imported.blocks.find((block) => block.kind === "table" && (!edit.matchText || block.values?.some((row) => row.some((value) => String(value) === edit.matchText))));
+        assert.ok(table, `Missing source-bound table-formatting fixture target ${edit.matchText || "(unspecified)"}.`);
+        for (const field of ["widthDxa", "indentDxa", "columnWidthsDxa", "cellMarginsDxa", "borderColor", "borderSize", "headerFill"]) {
+          if (Object.prototype.hasOwnProperty.call(edit, field)) table[field] = structuredClone(edit[field]);
+        }
+        continue;
+      }
       if (edit.kind === "listItem") {
         const listItem = imported.blocks.find((block) => block.kind === "listItem" && (!edit.matchText || block.text === edit.matchText));
         assert.ok(listItem, `Missing source-bound list-item fixture target ${edit.matchText || "(unspecified)"}.`);

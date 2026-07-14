@@ -284,10 +284,31 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
 );
 const tableFormattingImported = await importDocxWithOpenChestnut(docxExported);
+tableFormattingImported.blocks[1].widthDxa = 9600;
+tableFormattingImported.blocks[1].indentDxa = 360;
+tableFormattingImported.blocks[1].columnWidthsDxa = [3200, 6400];
+tableFormattingImported.blocks[1].cellMarginsDxa = { top: 40, bottom: 60, start: 80, end: 100 };
+tableFormattingImported.blocks[1].borderColor = "AA3300";
+tableFormattingImported.blocks[1].borderSize = 12;
 tableFormattingImported.blocks[1].headerFill = "FFF2CC";
+const tableFormattingEdited = await exportDocxWithOpenChestnut(tableFormattingImported);
+const tableFormattingRoundTrip = await importDocxWithOpenChestnut(tableFormattingEdited);
+assert.equal(tableFormattingRoundTrip.blocks[1].widthDxa, 9600);
+assert.equal(tableFormattingRoundTrip.blocks[1].indentDxa, 360);
+assert.deepEqual(tableFormattingRoundTrip.blocks[1].columnWidthsDxa, [3200, 6400]);
+assert.deepEqual(tableFormattingRoundTrip.blocks[1].cellMarginsDxa, { top: 40, bottom: 60, start: 80, end: 100 });
+assert.equal(tableFormattingRoundTrip.blocks[1].borderColor, "AA3300");
+assert.equal(tableFormattingRoundTrip.blocks[1].borderSize, 12);
+assert.equal(tableFormattingRoundTrip.blocks[1].headerFill, "FFF2CC");
+const unrecognizedFormattingZip = await JSZip.loadAsync(docxExported.bytes);
+const unrecognizedFormattingXml = await unrecognizedFormattingZip.file("word/document.xml").async("text");
+unrecognizedFormattingZip.file("word/document.xml", unrecognizedFormattingXml.replace("</w:tblPr>", '<w:tblLook w:val="04A0"/></w:tblPr>'));
+const unrecognizedFormattingDocx = await unrecognizedFormattingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const unrecognizedFormattingImported = await importDocxWithOpenChestnut(unrecognizedFormattingDocx);
+unrecognizedFormattingImported.blocks[1].headerFill = "FFF2CC";
 await assert.rejects(
-  exportDocxWithOpenChestnut(tableFormattingImported),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit" && /formatting is source-bound/.test(error.message),
+  exportDocxWithOpenChestnut(unrecognizedFormattingImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit" && /recognized the complete bounded profile/.test(error.message),
 );
 const authoredMergedDocument = DocumentModel.create({
   name: "Direct merged table",

@@ -383,7 +383,7 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
-    public void ImportedDirectTableFormattingIsSourceBound()
+    public void ImportedRecognizedDirectTableFormattingIsEditableAndPreservesResidual()
     {
         var authored = Invoke(MergedTableExportRequest());
         var imported = Invoke(new CodecRequest
@@ -391,19 +391,106 @@ public sealed class DocxCodecTests
             ProtocolVersion = CodecProtocol.ProtocolVersion,
             Operation = CodecOperation.ImportDocx,
             Family = ArtifactFamily.Document,
-            File = authored.File,
+            File = ByteString.CopyFrom(AddRecognizedTableFormattingResidual(authored.File.ToByteArray())),
         });
         Assert.True(imported.Ok, Diagnostics(imported));
-        imported.Artifact.Document.Blocks[0].Table.Formatting.HeaderFill = "FFF2CC";
-        var rejected = Invoke(new CodecRequest
+        var table = imported.Artifact.Document.Blocks[0].Table;
+        Assert.NotNull(table.Formatting);
+        table.Rows[0].Cells[0] = "Edited merged owner";
+        table.Formatting.WidthDxa = 9600;
+        table.Formatting.IndentDxa = 360;
+        table.Formatting.ColumnWidthsDxa.Clear();
+        table.Formatting.ColumnWidthsDxa.Add([2400, 3200, 4000]);
+        table.Formatting.CellMarginsDxa = new DocumentTableCellMargins { Top = 40, Bottom = 60, Start = 80, End = 100 };
+        table.Formatting.BorderColor = "AA3300";
+        table.Formatting.BorderSize = 12;
+        table.Formatting.HeaderFill = "FFF2CC";
+        var edited = Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
             Operation = CodecOperation.ExportDocx,
             Family = ArtifactFamily.Document,
             Artifact = imported.Artifact,
         });
-        Assert.False(rejected.Ok);
-        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var nativeTable = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            Assert.Equal("9600", nativeTable.TableProperties!.TableWidth!.Width!.Value);
+            Assert.Equal(360, nativeTable.TableProperties.TableIndentation!.Width!.Value);
+            Assert.Equal(new[] { "2400", "3200", "4000" }, nativeTable.TableGrid!.Elements<W.GridColumn>().Select(column => column.Width!.Value));
+            Assert.All(nativeTable.TableProperties.TableBorders!.ChildElements, border =>
+            {
+                Assert.Equal("AA3300", border.GetAttribute("color", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+                Assert.Equal("12", border.GetAttribute("sz", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+            });
+            var rows = nativeTable.Elements<W.TableRow>().ToArray();
+            Assert.Equal("Edited merged owner", rows[0].Elements<W.TableCell>().First().InnerText);
+            Assert.Equal("FFF2CC", rows[0].Elements<W.TableCell>().First().TableCellProperties!.Shading!.Fill!.Value);
+            Assert.Equal(480u, rows[1].TableRowProperties!.GetFirstChild<W.TableRowHeight>()!.Val!.Value);
+            Assert.Equal(W.JustificationValues.Center, rows[2].Elements<W.TableCell>().First().Elements<W.Paragraph>().Single().ParagraphProperties!.Justification!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripFormatting = roundTrip.Artifact.Document.Blocks[0].Table.Formatting;
+        Assert.Equal(9600u, roundTripFormatting.WidthDxa);
+        Assert.Equal(360u, roundTripFormatting.IndentDxa);
+        Assert.Equal(new uint[] { 2400, 3200, 4000 }, roundTripFormatting.ColumnWidthsDxa);
+        Assert.Equal(40u, roundTripFormatting.CellMarginsDxa.Top);
+        Assert.Equal(100u, roundTripFormatting.CellMarginsDxa.End);
+        Assert.Equal("AA3300", roundTripFormatting.BorderColor);
+        Assert.Equal(12u, roundTripFormatting.BorderSize);
+        Assert.Equal("FFF2CC", roundTripFormatting.HeaderFill);
+
+        var removed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        removed.Artifact.Document.Blocks[0].Table.Formatting = null;
+        var removedRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = removed.Artifact,
+        });
+        Assert.False(removedRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(removedRejected.Diagnostics).Code);
+
+        var unformattedRequest = MergedTableExportRequest();
+        unformattedRequest.Artifact.Document.Blocks[0].Table.Formatting = null;
+        var unformatted = Invoke(unformattedRequest);
+        Assert.True(unformatted.Ok, Diagnostics(unformatted));
+        var unrecognized = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = unformatted.File,
+        });
+        Assert.Null(unrecognized.Artifact.Document.Blocks[0].Table.Formatting);
+        unrecognized.Artifact.Document.Blocks[0].Table.Formatting = MergedTableExportRequest().Artifact.Document.Blocks[0].Table.Formatting.Clone();
+        var unrecognizedRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = unrecognized.Artifact,
+        });
+        Assert.False(unrecognizedRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(unrecognizedRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -1596,6 +1683,26 @@ public sealed class DocxCodecTests
             var paragraph = cell.Elements<W.Paragraph>().Single();
             paragraph.PrependChild(new W.ParagraphProperties(new W.Justification { Val = W.JustificationValues.Center }));
             paragraph.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Italic()));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddRecognizedTableFormattingResidual(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var rows = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Elements<W.TableRow>().ToArray();
+            rows[1].PrependChild(new W.TableRowProperties(new W.TableRowHeight
+            {
+                Val = 480,
+                HeightType = W.HeightRuleValues.AtLeast,
+            }));
+            rows[2].Elements<W.TableCell>().First().Elements<W.Paragraph>().Single()
+                .PrependChild(new W.ParagraphProperties(new W.Justification { Val = W.JustificationValues.Center }));
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

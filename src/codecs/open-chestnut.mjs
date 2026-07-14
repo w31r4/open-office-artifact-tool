@@ -761,8 +761,9 @@ function documentBlock(block, original, directNumbering) {
     if (source && !sameDocumentTableGeometry(block, source)) {
       throw new OpenChestnutCodecError(`Document table ${block.id} grid, span, merge, and per-cell editability metadata are source-bound.`, [], { code: "unsupported_document_edit" });
     }
-    if (source && !sameDocumentTableFormatting(block, source)) {
-      throw new OpenChestnutCodecError(`Document table ${block.id} direct formatting is source-bound and cannot be changed.`, [], { code: "unsupported_document_edit" });
+    const formattingChanged = source && !sameDocumentTableFormatting(block, source);
+    if (formattingChanged && !source.formatting) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} direct formatting can change only when OpenChestnut recognized the complete bounded profile during import.`, [], { code: "unsupported_document_edit" });
     }
     if (source) {
       for (let rowIndex = 0; rowIndex < source.rows.length; rowIndex += 1) {
@@ -780,7 +781,11 @@ function documentBlock(block, original, directNumbering) {
         case: "table",
         value: {
           ...(source ? { gridColumns: source.gridColumns } : authored ? { gridColumns: authored.gridColumns } : {}),
-          ...(source ? (source.formatting ? { formatting: { ...source.formatting, columnWidthsDxa: [...source.formatting.columnWidthsDxa], cellMarginsDxa: { ...source.formatting.cellMarginsDxa } } } : {}) : {
+          ...(source ? (source.formatting ? {
+            formatting: formattingChanged
+              ? documentTableFormatting(block, source.gridColumns || Math.max(1, ...source.rows.map((row) => row.cells.length)))
+              : { ...source.formatting, columnWidthsDxa: [...source.formatting.columnWidthsDxa], cellMarginsDxa: { ...source.formatting.cellMarginsDxa } },
+          } : {}) : {
             formatting: documentTableFormatting(block, authored?.gridColumns || Math.max(1, block.columns)),
           }),
           rows: authored?.rows || (block.values || []).map((cells, rowIndex) => ({
