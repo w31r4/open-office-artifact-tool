@@ -82,18 +82,37 @@
       "name": "Details",
       "ranges": [
         {
-          "range": "A1:B2",
-          "values": [["Codec", "Open XML SDK"], ["Runtime", "WebAssembly"]]
+          "range": "A1:C4",
+          "values": [
+            ["Codec", "Runtime", "Score"],
+            ["OpenChestnut", "WebAssembly", 10],
+            ["JS fallback", "Node", 5],
+            ["Total", "", 23]
+          ]
+        },
+        {
+          "range": "C2:C3",
+          "formulas": [["=LEN(A2)"], ["=LEN(A3)"]]
+        },
+        {
+          "range": "C4",
+          "formulas": [["=SUM(C2:C3)"]]
         }
       ],
       "tables": [
         {
-          "range": "A1:B2",
+          "range": "A1:C4",
           "name": "CodecTable",
           "style": "TableStyleMedium4",
+          "showTotals": true,
           "showFirstColumn": true,
           "showRowStripes": false,
-          "showBandedColumns": true
+          "showBandedColumns": true,
+          "columnDefinitions": [
+            { "name": "Codec", "totalsRowFunction": "none", "totalsRowLabel": "Total" },
+            { "name": "Runtime" },
+            { "name": "Score", "calculatedColumnFormula": "=LEN([@Codec])", "totalsRowFunction": "custom", "totalsRowFormula": "=SUBTOTAL(109,[Score])" }
+          ]
         }
       ]
     }

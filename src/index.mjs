@@ -909,8 +909,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and simple worksheet tables, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables through the source-built bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, and worksheet tables with calculated-column/totals metadata, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles/formula topology, and bounded worksheet tables including calculated-column/totals metadata through the source-built bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -949,7 +949,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents." },
@@ -2336,6 +2336,9 @@ const WORKBOOK_HELP_SCHEMAS = {
     hasHeaders: { type: "boolean", description: "Whether the first row contains headers." },
     name: { type: "string", description: "Stable Excel table name." },
     style: { type: "string", description: "Table style name." },
+    columnNames: { type: "string[]", description: "Compatibility projection of table-column names." },
+    columnDefinitions: { type: "object[]", description: "Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata." },
+    showTotals: { type: "boolean", description: "Expose the totals row required by totals metadata." },
   }, "table", "WorksheetTable", "Editable worksheet table facade."),
   "sheet.pivotTables.add": helpSchema({
     name: { type: "string", description: "Stable pivot name." },
@@ -2973,7 +2976,19 @@ class WorksheetTable {
     this.showRowStripes = config.showRowStripes ?? this.showHeaders;
     this.style = config.style || "TableStyleMedium2";
     this.values = config.values ? config.values.map((row) => [...row]) : range.values.map((row) => [...row]);
-    this.columnNames = Array.isArray(config.columnNames) ? config.columnNames.map((value) => String(value)) : undefined;
+    const configuredColumns = Array.isArray(config.columnDefinitions) ? config.columnDefinitions : Array.isArray(config.columns) ? config.columns : undefined;
+    this.columnDefinitions = configuredColumns?.map((column, index) => ({
+      name: String(column?.name ?? config.columnNames?.[index] ?? `Column${index + 1}`),
+      calculatedColumnFormula: column?.calculatedColumnFormula ? String(column.calculatedColumnFormula) : "",
+      calculatedColumnFormulaArray: Boolean(column?.calculatedColumnFormulaArray),
+      totalsRowFunction: column?.totalsRowFunction ? String(column.totalsRowFunction) : "",
+      totalsRowLabel: column?.totalsRowLabel ? String(column.totalsRowLabel) : "",
+      totalsRowFormula: column?.totalsRowFormula ? String(column.totalsRowFormula) : "",
+      totalsRowFormulaArray: Boolean(column?.totalsRowFormulaArray),
+    }));
+    this.columnNames = Array.isArray(config.columnNames)
+      ? config.columnNames.map((value) => String(value))
+      : this.columnDefinitions?.map((column) => column.name);
     this.rows = new WorksheetTableRowsFacade(this);
     this.refreshDimensions();
   }
@@ -2995,7 +3010,7 @@ class WorksheetTable {
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {
-    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, values: this.values };
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, values: this.values };
   }
 
   toSvg(bounds) {
@@ -3005,7 +3020,7 @@ class WorksheetTable {
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, values: this.values }; }
 }
 
 class WorksheetTableCollection {
@@ -6707,6 +6722,21 @@ function sanitizeTableColumnName(value, index, seen) {
   return name;
 }
 
+function tableFormulaXml(name, formula, array) {
+  if (!formula) return "";
+  const text = String(formula).startsWith("=") ? String(formula).slice(1) : String(formula);
+  return `<${name}${array ? ' array="1"' : ""}>${xmlEscape(text)}</${name}>`;
+}
+
+function tableColumnXml(definition, id, name) {
+  const totalsFunction = definition?.totalsRowFunction ? ` totalsRowFunction="${attrEscape(definition.totalsRowFunction)}"` : "";
+  const totalsLabel = definition?.totalsRowLabel ? ` totalsRowLabel="${attrEscape(definition.totalsRowLabel)}"` : "";
+  const calculated = tableFormulaXml("calculatedColumnFormula", definition?.calculatedColumnFormula, definition?.calculatedColumnFormulaArray);
+  const totals = tableFormulaXml("totalsRowFormula", definition?.totalsRowFormula, definition?.totalsRowFormulaArray);
+  if (!calculated && !totals) return `<tableColumn id="${id}" name="${attrEscape(name)}"${totalsFunction}${totalsLabel}/>`;
+  return `<tableColumn id="${id}" name="${attrEscape(name)}"${totalsFunction}${totalsLabel}>${calculated}${totals}</tableColumn>`;
+}
+
 function tableXml(table, tablePartId) {
   const ref = table.range;
   const seen = new Set();
@@ -6717,7 +6747,7 @@ function tableXml(table, tablePartId) {
         : Array.from({ length: table.columnCount || 1 }, (_, index) => `Column${index + 1}`));
   const columns = Array.from({ length: table.columnCount || headers.length || 1 }, (_, index) => {
     const name = sanitizeTableColumnName(headers[index], index, seen);
-    return `<tableColumn id="${index + 1}" name="${attrEscape(name)}"/>`;
+    return tableColumnXml(table.columnDefinitions?.[index], index + 1, name);
   }).join("");
   const headerRowCount = table.showHeaders ? 1 : 0;
   const totalsRowShown = table.showTotals ? 1 : 0;
@@ -7020,7 +7050,28 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
     if (!opening) continue;
     const attrs = ooxmlXmlAttributes(opening);
     if (!attrs.ref) continue;
-    const columnNames = [...String(xml).matchAll(/<(?:[A-Za-z_][\w.-]*:)?tableColumn\b[^>]*\/?\s*>/g)].map((match) => ooxmlXmlAttributes(match[0]).name).filter((name) => name != null);
+    const columnDefinitions = [...String(xml).matchAll(/<(?:[A-Za-z_][\w.-]*:)?tableColumn\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?tableColumn\s*>)/g)].map((match) => {
+      const columnAttrs = ooxmlXmlAttributes(match[1] || "");
+      const body = match[2] || "";
+      const formula = (tag) => {
+        const found = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${tag}\\b([^>]*)>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${tag}\\s*>`).exec(body);
+        if (!found) return { value: "", array: false };
+        const formulaAttrs = ooxmlXmlAttributes(found[1] || "");
+        return { value: `=${decodeXml(found[2])}`, array: formulaAttrs.array != null && !["0", "false", "off"].includes(String(formulaAttrs.array).toLowerCase()) };
+      };
+      const calculated = formula("calculatedColumnFormula");
+      const totals = formula("totalsRowFormula");
+      return {
+        name: columnAttrs.name,
+        calculatedColumnFormula: calculated.value,
+        calculatedColumnFormulaArray: calculated.array,
+        totalsRowFunction: columnAttrs.totalsRowFunction || "",
+        totalsRowLabel: columnAttrs.totalsRowLabel || "",
+        totalsRowFormula: totals.value,
+        totalsRowFormulaArray: totals.array,
+      };
+    }).filter((column) => column.name != null);
+    const columnNames = columnDefinitions.map((column) => column.name);
     const styleTag = /<(?:[A-Za-z_][\w.-]*:)?tableStyleInfo\b[^>]*\/?\s*>/.exec(xml)?.[0];
     const styleAttrs = ooxmlXmlAttributes(styleTag || "");
     sheet.tables.add({
@@ -7035,6 +7086,7 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath) {
       showBandedColumns: styleAttrs.showColumnStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showColumnStripes).toLowerCase()),
       style: styleAttrs.name || "TableStyleMedium2",
       columnNames,
+      columnDefinitions,
     });
   }
 }

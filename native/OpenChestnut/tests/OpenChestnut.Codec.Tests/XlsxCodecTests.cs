@@ -629,6 +629,83 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsAndImportsWorksheetTableColumnFormulasAndTotals()
+    {
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaTableExportRequest().ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/tables/table1.xml"));
+        Assert.Contains("totalsRowLabel=\"Total\"", xml);
+        Assert.Contains("totalsRowFunction=\"average\"", xml);
+        Assert.Contains("<x:calculatedColumnFormula>[@Units]*2</x:calculatedColumnFormula>", xml);
+        Assert.Contains("totalsRowFunction=\"custom\"", xml);
+        Assert.Contains("<x:totalsRowFormula>SUBTOTAL(109,[Revenue])</x:totalsRowFormula>", xml);
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.True(table.ShowTotals);
+        Assert.Equal(3, table.Columns.Count);
+        Assert.Equal("Total", table.Columns[0].TotalsRowLabel);
+        Assert.Equal("average", table.Columns[1].TotalsRowFunction);
+        Assert.Equal("=[@Units]*2", table.Columns[2].CalculatedColumnFormula);
+        Assert.Equal("custom", table.Columns[2].TotalsRowFunction);
+        Assert.Equal("=SUBTOTAL(109,[Revenue])", table.Columns[2].TotalsRowFormula);
+    }
+
+    [Fact]
+    public void SourcePreservingWorksheetTableColumnFormulaEditKeepsPartIdentity()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaTableExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        var table = imported.Artifact.Workbook.Worksheets[0].Tables[0];
+        var path = table.Source.TablePartPath;
+        var relationshipId = table.Source.RelationshipId;
+        table.Columns[1].TotalsRowFunction = "max";
+        table.Columns[2].CalculatedColumnFormula = "=[@Units]*3";
+        table.Columns[2].TotalsRowFormula = "=SUBTOTAL(109,[Revenue])+1";
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var reimported = Import(exported.File.ToByteArray());
+        var edited = Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal("max", edited.Columns[1].TotalsRowFunction);
+        Assert.Equal("=[@Units]*3", edited.Columns[2].CalculatedColumnFormula);
+        Assert.Equal("=SUBTOTAL(109,[Revenue])+1", edited.Columns[2].TotalsRowFormula);
+        Assert.Equal(path, edited.Source.TablePartPath);
+        Assert.Equal(relationshipId, edited.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetTableColumnFormulaProfiles()
+    {
+        var request = FormulaTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Columns[2].CalculatedColumnFormula = "[@Units]*2";
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = FormulaTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].Columns[2].TotalsRowFunction = "sum";
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = FormulaTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].ShowTotals = false;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -847,6 +924,50 @@ public sealed class XlsxCodecTests
         sheet.Cells.Add(new CellArtifact { Row = 2, Column = 0, StringValue = "South" });
         sheet.Cells.Add(new CellArtifact { Row = 2, Column = 1, NumberValue = 80 });
         sheet.Tables.Add(TableArtifact());
+        return request;
+    }
+
+    private static CodecRequest FormulaTableExportRequest()
+    {
+        var request = ExportRequest();
+        var sheet = request.Artifact.Workbook.Worksheets[0];
+        sheet.Cells.Clear();
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 0, StringValue = "Product" });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, StringValue = "Units" });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 2, StringValue = "Revenue" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 0, StringValue = "North" });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, NumberValue = 2 });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 2, Formula = "=B2*2", NumberValue = 4 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 0, StringValue = "South" });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 1, NumberValue = 3 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 2, Formula = "=B3*2", NumberValue = 6 });
+        sheet.Cells.Add(new CellArtifact { Row = 3, Column = 0, StringValue = "Total" });
+        sheet.Cells.Add(new CellArtifact { Row = 3, Column = 1, Formula = "=AVERAGE(B2:B3)", NumberValue = 2.5 });
+        sheet.Cells.Add(new CellArtifact { Row = 3, Column = 2, Formula = "=SUBTOTAL(109,C2:C3)", NumberValue = 10 });
+        var table = new SpreadsheetTableArtifact
+        {
+            Id = "table/formulas",
+            Name = "FormulaTable",
+            Reference = "A1:C4",
+            HasHeaders = true,
+            ShowTotals = true,
+            ShowFilterButton = true,
+            StyleName = "TableStyleMedium4",
+            ShowRowStripes = true,
+        };
+        table.ColumnNames.Add("Product");
+        table.ColumnNames.Add("Units");
+        table.ColumnNames.Add("Revenue");
+        table.Columns.Add(new SpreadsheetTableColumnArtifact { Name = "Product", TotalsRowFunction = "none", TotalsRowLabel = "Total" });
+        table.Columns.Add(new SpreadsheetTableColumnArtifact { Name = "Units", TotalsRowFunction = "average" });
+        table.Columns.Add(new SpreadsheetTableColumnArtifact
+        {
+            Name = "Revenue",
+            CalculatedColumnFormula = "=[@Units]*2",
+            TotalsRowFunction = "custom",
+            TotalsRowFormula = "=SUBTOTAL(109,[Revenue])",
+        });
+        sheet.Tables.Add(table);
         return request;
     }
 

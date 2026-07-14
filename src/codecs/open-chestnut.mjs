@@ -481,7 +481,24 @@ function tableColumnNames(table) {
   return Array.from({ length: count }, (_value, index) => String(headers[index] ?? "").trim() || `Column${index + 1}`);
 }
 
+function tableColumnDefinitions(table, names) {
+  if (!Array.isArray(table.columnDefinitions)) return undefined;
+  return names.map((name, index) => {
+    const column = table.columnDefinitions[index] || {};
+    return {
+      name,
+      calculatedColumnFormula: column.calculatedColumnFormula ? String(column.calculatedColumnFormula) : "",
+      calculatedColumnFormulaArray: Boolean(column.calculatedColumnFormulaArray),
+      totalsRowFunction: column.totalsRowFunction ? String(column.totalsRowFunction) : "",
+      totalsRowLabel: column.totalsRowLabel ? String(column.totalsRowLabel) : "",
+      totalsRowFormula: column.totalsRowFormula ? String(column.totalsRowFormula) : "",
+      totalsRowFormulaArray: Boolean(column.totalsRowFormulaArray),
+    };
+  });
+}
+
 function tableSnapshot(table) {
+  const columnNames = tableColumnNames(table);
   return {
     id: table.id,
     name: table.name,
@@ -494,7 +511,8 @@ function tableSnapshot(table) {
     showLastColumn: Boolean(table.showLastColumn),
     showRowStripes: table.showRowStripes ?? table.showHeaders !== false,
     showColumnStripes: Boolean(table.showBandedColumns),
-    columnNames: tableColumnNames(table),
+    columnNames,
+    columns: tableColumnDefinitions(table, columnNames),
   };
 }
 
@@ -673,6 +691,7 @@ function workbookFromEnvelope(envelope) {
         showBandedColumns: sourceTable.showColumnStripes,
         style: sourceTable.styleName,
         columnNames: [...sourceTable.columnNames],
+        columnDefinitions: sourceTable.columns?.length ? sourceTable.columns.map((column) => ({ ...column })) : undefined,
       });
       table.showHeaders = sourceTable.hasHeaders;
       table.showFirstColumn = sourceTable.showFirstColumn;

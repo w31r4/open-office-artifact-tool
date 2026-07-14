@@ -22,12 +22,15 @@ try {
     const workbook = Workbook.create({ dateSystem: "1904" });
     const sheet = workbook.worksheets.add("Packaged");
     sheet.getRange("A1:B2").values = [["Label", "Value"], ["clean install", 7]];
-    sheet.tables.add({ range: "A1:B2", name: "PackagedTable", style: "TableStyleMedium4" });
+    const packagedTable = sheet.tables.add({ range: "A1:B2", name: "PackagedTable", style: "TableStyleMedium4" });
+    packagedTable.columnDefinitions = [{ name: "Label" }, { name: "Value", calculatedColumnFormula: "=LEN([@Label])" }];
     const file = await exportXlsxWithOpenChestnut(workbook);
     const imported = await importXlsxWithOpenChestnut(file);
     if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
     if (imported.worksheets.getItem("Packaged").getRange("A1:B2").values[1][1] !== 7) process.exit(2);
-    if (imported.worksheets.getItem("Packaged").tables.getItemOrNullObject("PackagedTable").style !== "TableStyleMedium4") process.exit(11);
+    const importedTable = imported.worksheets.getItem("Packaged").tables.getItemOrNullObject("PackagedTable");
+    if (importedTable.style !== "TableStyleMedium4") process.exit(11);
+    if (importedTable.columnDefinitions[1].calculatedColumnFormula !== "=LEN([@Label])") process.exit(12);
     const legacyFile = await exportXlsxWithOpenXmlWasm(workbook);
     if (legacyFile.metadata.codec !== "open-chestnut") process.exit(10);
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });

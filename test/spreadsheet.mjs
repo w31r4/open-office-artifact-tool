@@ -1600,6 +1600,35 @@ assert.match(tableXml, /<tableColumns count="4">/);
 assert.match(tableXml, /showFirstColumn="1"/);
 assert.match(tableXml, /showLastColumn="1"/);
 assert.match(tableXml, /showRowStripes="0"/);
+const formulaTableWorkbook = Workbook.create();
+const formulaTableSheet = formulaTableWorkbook.worksheets.add("FormulaTable");
+formulaTableSheet.getRange("A1:C4").values = [["Product", "Units", "Revenue"], ["North", 2, 4], ["South", 3, 6], ["Total", 2.5, 10]];
+formulaTableSheet.getRange("C2:C3").formulas = [["=B2*2"], ["=B3*2"]];
+formulaTableSheet.getRange("B4:C4").formulas = [["=AVERAGE(B2:B3)", "=SUBTOTAL(109,C2:C3)"]];
+formulaTableSheet.tables.add({
+  range: "A1:C4",
+  name: "FormulaTable",
+  showTotals: true,
+  columnDefinitions: [
+    { name: "Product", totalsRowFunction: "none", totalsRowLabel: "Total" },
+    { name: "Units", totalsRowFunction: "average" },
+    { name: "Revenue", calculatedColumnFormula: "=[@Units]*2", totalsRowFunction: "custom", totalsRowFormula: "=SUBTOTAL(109,[Revenue])" },
+  ],
+});
+const formulaTableXlsx = await SpreadsheetFile.exportXlsx(formulaTableWorkbook);
+const formulaTableZip = await JSZip.loadAsync(new Uint8Array(await formulaTableXlsx.arrayBuffer()));
+const formulaTableXml = await formulaTableZip.file("xl/tables/table1.xml").async("text");
+assert.match(formulaTableXml, /totalsRowLabel="Total"/);
+assert.match(formulaTableXml, /totalsRowFunction="average"/);
+assert.match(formulaTableXml, /<calculatedColumnFormula>\[@Units\]\*2<\/calculatedColumnFormula>/);
+assert.match(formulaTableXml, /<totalsRowFormula>SUBTOTAL\(109,\[Revenue\]\)<\/totalsRowFormula>/);
+const formulaTableImported = await SpreadsheetFile.importXlsx(formulaTableXlsx);
+const importedFormulaTable = formulaTableImported.worksheets.getItem("FormulaTable").tables.getItemOrNullObject("FormulaTable");
+assert.deepEqual(importedFormulaTable.columnDefinitions, [
+  { name: "Product", calculatedColumnFormula: "", calculatedColumnFormulaArray: false, totalsRowFunction: "none", totalsRowLabel: "Total", totalsRowFormula: "", totalsRowFormulaArray: false },
+  { name: "Units", calculatedColumnFormula: "", calculatedColumnFormulaArray: false, totalsRowFunction: "average", totalsRowLabel: "", totalsRowFormula: "", totalsRowFormulaArray: false },
+  { name: "Revenue", calculatedColumnFormula: "=[@Units]*2", calculatedColumnFormulaArray: false, totalsRowFunction: "custom", totalsRowLabel: "", totalsRowFormula: "=SUBTOTAL(109,[Revenue])", totalsRowFormulaArray: false },
+]);
 const pivotPartNames = Object.keys(zip.files).filter((name) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(name));
 assert.equal(pivotPartNames.length, 3);
 const pivotTableXml = await zip.file(pivotPartNames[0]).async("text");

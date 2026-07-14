@@ -10,8 +10,9 @@ using OpenOffice.Artifact.Wire.V1;
 namespace OpenChestnut.Codec;
 
 // Owns the bounded worksheet TableParts -> TableDefinitionPart graph. Cell
-// values remain owned by XlsxCodec; query tables, formulas, filters, extensions,
-// and other complex table profiles remain opaque and uneditable.
+// values/formulas remain owned by XlsxCodec; this module owns the table-level
+// calculated-column/totals metadata. Query tables, filter columns, extensions,
+// differential styles, and other complex profiles remain opaque and uneditable.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -20,6 +21,14 @@ internal sealed class XlsxTableCodec
     private static readonly HashSet<string> RootAttributes = new(StringComparer.Ordinal)
     {
         "id", "name", "displayName", "ref", "headerRowCount", "totalsRowShown",
+    };
+    private static readonly HashSet<string> ColumnAttributes = new(StringComparer.Ordinal)
+    {
+        "id", "name", "totalsRowFunction", "totalsRowLabel",
+    };
+    private static readonly HashSet<string> TotalsRowFunctions = new(StringComparer.Ordinal)
+    {
+        "none", "sum", "min", "max", "average", "count", "countNums", "stdDev", "var", "custom",
     };
     private readonly WorksheetPart _worksheetPart;
     private readonly string _worksheetPath;
@@ -115,6 +124,16 @@ internal sealed class XlsxTableCodec
     internal static bool HasCompleteSemantics(SpreadsheetTableArtifact table) =>
         !string.IsNullOrWhiteSpace(table.Name) && !string.IsNullOrWhiteSpace(table.Reference) && table.ColumnNames.Count > 0;
 
+    private static IReadOnlyList<SpreadsheetTableColumnArtifact> EffectiveColumns(SpreadsheetTableArtifact table) =>
+        table.Columns.Count > 0
+            ? table.Columns.Select((column, index) =>
+            {
+                var effective = column.Clone();
+                if (index < table.ColumnNames.Count) effective.Name = table.ColumnNames[index];
+                return effective;
+            }).ToArray()
+            : table.ColumnNames.Select(name => new SpreadsheetTableColumnArtifact { Name = name }).ToArray();
+
     private void Load(TableDefinitionPart part, string relationshipId)
     {
         byte[] bytes;
@@ -197,15 +216,47 @@ internal sealed class XlsxTableCodec
         var columns = checked((int)(bounds.Right - bounds.Left + 1));
         var rows = checked((int)(bounds.Bottom - bounds.Top + 1));
         if (table.ColumnNames.Count != columns) throw Invalid($"Worksheet table {table.Name} must provide {columns} column names.", location);
+        if (table.Columns.Count > 0 && table.Columns.Count != columns) throw Invalid($"Worksheet table {table.Name} must provide {columns} rich column definitions.", location);
         if (rows < (table.HasHeaders ? 1 : 0) + (table.ShowTotals ? 1 : 0) + 1) throw Invalid($"Worksheet table {table.Name} range is too short for its header/totals profile.", location);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var column in table.ColumnNames)
-            if (string.IsNullOrWhiteSpace(column) || column.Length > 255 || column.Any(char.IsControl) || !names.Add(column))
+        foreach (var column in EffectiveColumns(table))
+        {
+            if (string.IsNullOrWhiteSpace(column.Name) || column.Name.Length > 255 || column.Name.Any(char.IsControl) || !names.Add(column.Name))
                 throw Invalid($"Worksheet table {table.Name} has an invalid or duplicate column name.", location);
+            ValidateColumn(table, column, location);
+        }
         if (string.IsNullOrWhiteSpace(table.StyleName) || table.StyleName.Length > 255 || table.StyleName.Any(char.IsControl))
             throw Invalid($"Worksheet table {table.Name} has an invalid style name.", location);
         if (table.ShowFilterButton && !table.HasHeaders) throw Invalid($"Worksheet table {table.Name} cannot show filter buttons without headers.", location);
     }
+
+    private static void ValidateColumn(SpreadsheetTableArtifact table, SpreadsheetTableColumnArtifact column, string location)
+    {
+        if (column.CalculatedColumnFormulaArray && string.IsNullOrEmpty(column.CalculatedColumnFormula))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} marks a missing calculated formula as an array.", location);
+        if (column.TotalsRowFormulaArray && string.IsNullOrEmpty(column.TotalsRowFormula))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} marks a missing totals formula as an array.", location);
+        if (!string.IsNullOrEmpty(column.CalculatedColumnFormula) && !ValidFormula(column.CalculatedColumnFormula))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} has an invalid calculated-column formula.", location);
+        if (!string.IsNullOrEmpty(column.TotalsRowFormula) && !ValidFormula(column.TotalsRowFormula))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} has an invalid totals-row formula.", location);
+        var function = column.TotalsRowFunction;
+        if (!string.IsNullOrEmpty(function) && !TotalsRowFunctions.Contains(function))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} has an invalid totals-row function.", location);
+        var hasTotalsMetadata = !string.IsNullOrEmpty(function) || !string.IsNullOrEmpty(column.TotalsRowLabel) || !string.IsNullOrEmpty(column.TotalsRowFormula);
+        if (hasTotalsMetadata && !table.ShowTotals)
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} cannot define totals metadata while the totals row is hidden.", location);
+        if (!string.IsNullOrEmpty(column.TotalsRowLabel) && (column.TotalsRowLabel.Length > 255 || column.TotalsRowLabel.Any(char.IsControl) || function is not ("" or "none") || !string.IsNullOrEmpty(column.TotalsRowFormula)))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} has an invalid totals-row label profile.", location);
+        if (!string.IsNullOrEmpty(column.TotalsRowFormula) && function != "custom")
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} custom totals formula requires totalsRowFunction=custom.", location);
+        if (function == "custom" && string.IsNullOrEmpty(column.TotalsRowFormula))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} totalsRowFunction=custom requires a formula.", location);
+        if (function is not ("" or "none" or "custom") && (!string.IsNullOrEmpty(column.TotalsRowLabel) || !string.IsNullOrEmpty(column.TotalsRowFormula)))
+            throw Invalid($"Worksheet table {table.Name} column {column.Name} cannot combine a built-in totals function with a label or custom formula.", location);
+    }
+
+    private static bool ValidFormula(string formula) => formula.Length is > 1 and <= 8193 && formula[0] == '=' && !formula.Any(char.IsControl);
 
     private static bool TryRead(XDocument document, out SpreadsheetTableArtifact? artifact)
     {
@@ -229,12 +280,15 @@ internal sealed class XlsxTableCodec
         var columnsRoot = root.Element(Spreadsheet + "tableColumns");
         if (columnsRoot is null || columnsRoot.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "count"))) return false;
         var columns = columnsRoot.Elements().ToArray();
-        if (columns.Any(item => item.Name != Spreadsheet + "tableColumn" || item.Elements().Any() || item.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("id" or "name"))))) return false;
         if (!uint.TryParse(columnsRoot.Attribute("count")?.Value, out var columnCount) || columnCount != columns.Length) return false;
+        var richColumns = new List<SpreadsheetTableColumnArtifact>(columns.Length);
         for (var index = 0; index < columns.Length; index++)
-            if (!uint.TryParse(columns[index].Attribute("id")?.Value, out var columnId) || columnId != index + 1) return false;
-        var names = columns.Select(item => item.Attribute("name")?.Value).ToArray();
-        if (names.Any(string.IsNullOrWhiteSpace)) return false;
+        {
+            var column = columns[index];
+            if (column.Name != Spreadsheet + "tableColumn" || column.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && (attribute.Name.Namespace != XNamespace.None || !ColumnAttributes.Contains(attribute.Name.LocalName))) ||
+                !uint.TryParse(column.Attribute("id")?.Value, out var columnId) || columnId != index + 1 || !TryReadColumn(column, out var richColumn)) return false;
+            richColumns.Add(richColumn!);
+        }
         var filter = root.Element(Spreadsheet + "autoFilter");
         if (filter is not null && (filter.Elements().Any() || filter.Attributes().Any(item => !item.IsNamespaceDeclaration && (item.Name.Namespace != XNamespace.None || item.Name.LocalName != "ref")) || filter.Attribute("ref")?.Value != reference)) return false;
         var style = root.Element(Spreadsheet + "tableStyleInfo");
@@ -259,9 +313,47 @@ internal sealed class XlsxTableCodec
             ShowRowStripes = showRowStripes,
             ShowColumnStripes = showColumnStripes,
         };
-        artifact.ColumnNames.Add(names!);
+        artifact.ColumnNames.Add(richColumns.Select(item => item.Name));
+        artifact.Columns.Add(richColumns);
         try { Validate(artifact, artifact.Name); }
         catch (CodecException) { artifact = null; return false; }
+        return true;
+    }
+
+    private static bool TryReadColumn(XElement column, out SpreadsheetTableColumnArtifact? artifact)
+    {
+        artifact = null;
+        var name = column.Attribute("name")?.Value;
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        var children = column.Elements().ToArray();
+        if (children.Any(item => item.Name != Spreadsheet + "calculatedColumnFormula" && item.Name != Spreadsheet + "totalsRowFormula") ||
+            children.Select(item => item.Name).Distinct().Count() != children.Length) return false;
+        var expectedIndex = 0;
+        var calculated = children.ElementAtOrDefault(expectedIndex)?.Name == Spreadsheet + "calculatedColumnFormula" ? children[expectedIndex++] : null;
+        var totals = children.ElementAtOrDefault(expectedIndex)?.Name == Spreadsheet + "totalsRowFormula" ? children[expectedIndex++] : null;
+        if (expectedIndex != children.Length || !TryReadFormula(calculated, out var calculatedFormula, out var calculatedArray) ||
+            !TryReadFormula(totals, out var totalsFormula, out var totalsArray)) return false;
+        artifact = new SpreadsheetTableColumnArtifact
+        {
+            Name = name,
+            CalculatedColumnFormula = calculatedFormula,
+            CalculatedColumnFormulaArray = calculatedArray,
+            TotalsRowFunction = column.Attribute("totalsRowFunction")?.Value ?? string.Empty,
+            TotalsRowLabel = column.Attribute("totalsRowLabel")?.Value ?? string.Empty,
+            TotalsRowFormula = totalsFormula,
+            TotalsRowFormulaArray = totalsArray,
+        };
+        return true;
+    }
+
+    private static bool TryReadFormula(XElement? element, out string formula, out bool array)
+    {
+        formula = string.Empty;
+        array = false;
+        if (element is null) return true;
+        if (element.Elements().Any() || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName != "array")) ||
+            !TryBool(element.Attribute("array")?.Value, defaultValue: false, out array) || string.IsNullOrEmpty(element.Value) || element.Value.StartsWith('=')) return false;
+        formula = $"={element.Value}";
         return true;
     }
 
@@ -286,7 +378,7 @@ internal sealed class XlsxTableCodec
         var columns = root.Element(Spreadsheet + "tableColumns")!;
         var style = root.Element(Spreadsheet + "tableStyleInfo")!;
         if (table.ShowFilterButton) columns.AddBeforeSelf(new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference)));
-        foreach (var pair in columns.Elements().Zip(table.ColumnNames)) pair.First.SetAttributeValue("name", pair.Second);
+        foreach (var pair in columns.Elements().Zip(EffectiveColumns(table))) ApplyColumn(pair.First, pair.Second);
         style.SetAttributeValue("name", table.StyleName);
         style.SetAttributeValue("showFirstColumn", table.ShowFirstColumn ? 1 : 0);
         style.SetAttributeValue("showLastColumn", table.ShowLastColumn ? 1 : 0);
@@ -304,18 +396,49 @@ internal sealed class XlsxTableCodec
             new XAttribute("headerRowCount", table.HasHeaders ? 1 : 0), new XAttribute("totalsRowShown", table.ShowTotals ? 1 : 0));
         if (table.ShowFilterButton) root.Add(new XElement(Spreadsheet + "autoFilter", new XAttribute("ref", table.Reference)));
         root.Add(new XElement(Spreadsheet + "tableColumns", new XAttribute("count", table.ColumnNames.Count),
-            table.ColumnNames.Select((name, index) => new XElement(Spreadsheet + "tableColumn", new XAttribute("id", index + 1), new XAttribute("name", name)))));
+            EffectiveColumns(table).Select((column, index) => CreateColumn(column, index + 1))));
         root.Add(new XElement(Spreadsheet + "tableStyleInfo", new XAttribute("name", table.StyleName),
             new XAttribute("showFirstColumn", table.ShowFirstColumn ? 1 : 0), new XAttribute("showLastColumn", table.ShowLastColumn ? 1 : 0),
             new XAttribute("showRowStripes", table.ShowRowStripes ? 1 : 0), new XAttribute("showColumnStripes", table.ShowColumnStripes ? 1 : 0)));
         return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), root);
     }
 
+    private static XElement CreateColumn(SpreadsheetTableColumnArtifact column, int id)
+    {
+        var element = new XElement(Spreadsheet + "tableColumn", new XAttribute("id", id));
+        ApplyColumn(element, column);
+        return element;
+    }
+
+    private static void ApplyColumn(XElement element, SpreadsheetTableColumnArtifact column)
+    {
+        element.SetAttributeValue("name", column.Name);
+        element.SetAttributeValue("totalsRowFunction", string.IsNullOrEmpty(column.TotalsRowFunction) ? null : column.TotalsRowFunction);
+        element.SetAttributeValue("totalsRowLabel", string.IsNullOrEmpty(column.TotalsRowLabel) ? null : column.TotalsRowLabel);
+        element.Elements(Spreadsheet + "calculatedColumnFormula").Remove();
+        element.Elements(Spreadsheet + "totalsRowFormula").Remove();
+        if (!string.IsNullOrEmpty(column.CalculatedColumnFormula))
+            element.AddFirst(FormulaElement("calculatedColumnFormula", column.CalculatedColumnFormula, column.CalculatedColumnFormulaArray));
+        if (!string.IsNullOrEmpty(column.TotalsRowFormula))
+            element.Add(FormulaElement("totalsRowFormula", column.TotalsRowFormula, column.TotalsRowFormulaArray));
+    }
+
+    private static XElement FormulaElement(string name, string formula, bool array)
+    {
+        var element = new XElement(Spreadsheet + name, formula[1..]);
+        if (array) element.SetAttributeValue("array", 1);
+        return element;
+    }
+
     private static string SemanticSha256(SpreadsheetTableArtifact table) => Sha256(Encoding.UTF8.GetBytes(string.Join('\0',
     [
         table.Name, table.Reference, table.HasHeaders.ToString(), table.ShowTotals.ToString(), table.ShowFilterButton.ToString(), table.StyleName,
         table.ShowFirstColumn.ToString(), table.ShowLastColumn.ToString(), table.ShowRowStripes.ToString(), table.ShowColumnStripes.ToString(),
-        .. table.ColumnNames,
+        .. EffectiveColumns(table).SelectMany(column => new[]
+        {
+            column.Name, column.CalculatedColumnFormula, column.CalculatedColumnFormulaArray.ToString(), column.TotalsRowFunction,
+            column.TotalsRowLabel, column.TotalsRowFormula, column.TotalsRowFormulaArray.ToString(),
+        }),
     ])));
 
     private static (uint Top, uint Left, uint Bottom, uint Right) Range(string reference, string location)

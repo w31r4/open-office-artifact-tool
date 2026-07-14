@@ -192,8 +192,26 @@ message SpreadsheetTableArtifact {
   bool show_last_column = 9;
   bool show_row_stripes = 10;
   bool show_column_stripes = 11;
+  // Compatibility projection retained for clients that only model names.
   repeated string column_names = 12;
   SpreadsheetTableSourceBinding source = 13;
+  // Rich column semantics. When both projections are present, column_names is
+  // the compatibility-authoritative name list and the remaining fields come
+  // from this message.
+  repeated SpreadsheetTableColumnArtifact columns = 14;
+}
+
+// A bounded SpreadsheetML tableColumn projection. Formula strings use the
+// same leading-equals convention as CellArtifact.formula; the codec removes
+// that marker when writing table XML and restores it when reading.
+message SpreadsheetTableColumnArtifact {
+  string name = 1;
+  string calculated_column_formula = 2;
+  bool calculated_column_formula_array = 3;
+  string totals_row_function = 4;
+  string totals_row_label = 5;
+  string totals_row_formula = 6;
+  bool totals_row_formula_array = 7;
 }
 
 message SpreadsheetTableSourceBinding {
