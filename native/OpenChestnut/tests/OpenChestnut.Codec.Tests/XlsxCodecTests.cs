@@ -616,7 +616,12 @@ public sealed class XlsxCodecTests
             Top = new SpreadsheetBorderEdgeStyle { Style = "thin", Color = new SpreadsheetColor { Indexed = 8 } },
             Bottom = new SpreadsheetBorderEdgeStyle { Style = "double", Color = new SpreadsheetColor { Automatic = true } },
             Diagonal = new SpreadsheetBorderEdgeStyle { Style = "dashed", Color = new SpreadsheetColor { Rgb = "EF4444" } },
+            Start = new SpreadsheetBorderEdgeStyle { Style = "hair", Color = new SpreadsheetColor { Theme = 5 } },
+            End = new SpreadsheetBorderEdgeStyle { Style = "medium", Color = new SpreadsheetColor { Rgb = "22C55E" } },
+            Horizontal = new SpreadsheetBorderEdgeStyle { Style = "dotted", Color = new SpreadsheetColor { Indexed = 9 } },
+            Vertical = new SpreadsheetBorderEdgeStyle { Style = "dashDot", Color = new SpreadsheetColor { Automatic = true } },
             DiagonalUp = true,
+            DiagonalDown = true,
             Outline = false,
         },
         Alignment = new SpreadsheetAlignmentStyle
