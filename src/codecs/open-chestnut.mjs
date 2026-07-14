@@ -1,7 +1,7 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { readFile } from "node:fs/promises";
 import { DocumentModel, FileBlob, Workbook } from "../index.mjs";
-import { normalizeXlsxStyle } from "../spreadsheet/ooxml-styles.mjs";
+import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
 import {
   ArtifactFamily,
   CellFormulaKind,
@@ -31,11 +31,12 @@ const MAX_XLSX_FORMULA_TOPOLOGY_CELLS = 1_048_576;
 const XLSX_FORMULA_METADATA_KEYS = new Set(["formulaType", "sharedIndex", "sharedRef", "arrayRef"]);
 const XLSX_NUMBER_FORMAT_STYLE_KEYS = new Set(["numberFormat", "numFmt"]);
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
-const DEFAULT_THEME_COLORS = {
-  dk1: "#000000", lt1: "#FFFFFF", dk2: "#1F497D", lt2: "#EEECE1",
-  accent1: "#4F81BD", accent2: "#C0504D", accent3: "#9BBB59", accent4: "#8064A2",
-  accent5: "#4BACC6", accent6: "#F79646", hlink: "#0000FF", folHlink: "#800080",
-};
+const XLSX_THEME_WIRE_FIELDS = [
+  ["dk1", "dk1Rgb"], ["lt1", "lt1Rgb"], ["dk2", "dk2Rgb"], ["lt2", "lt2Rgb"],
+  ["accent1", "accent1Rgb"], ["accent2", "accent2Rgb"], ["accent3", "accent3Rgb"],
+  ["accent4", "accent4Rgb"], ["accent5", "accent5Rgb"], ["accent6", "accent6Rgb"],
+  ["hlink", "hlinkRgb"], ["folHlink", "folHlinkRgb"],
+];
 
 let runtimePromise;
 
@@ -420,7 +421,6 @@ function unsupportedWorkbookFeatures(workbook) {
   if (workbook.definedNames?.items?.length) unsupported.push("defined names");
   if (workbook.comments?.threads?.length) unsupported.push("threaded comments");
   if (workbook.indexedColors?.length) unsupported.push("custom indexed colors");
-  if (workbook.theme?.name !== "Office Clean Room" || Object.entries(DEFAULT_THEME_COLORS).some(([key, value]) => workbook.theme?.colors?.[key] !== value)) unsupported.push("custom workbook theme");
   for (const sheet of workbook.worksheets?.items || []) {
     const prefix = `worksheet ${sheet.name}`;
     if (itemCount(sheet.tables)) unsupported.push(`${prefix} tables`);
@@ -438,6 +438,29 @@ function unsupportedWorkbookFeatures(workbook) {
     }
   }
   return unsupported;
+}
+
+function wireWorkbookTheme(theme, source) {
+  const normalized = normalizeXlsxThemeConfig(theme);
+  return {
+    name: normalized.name,
+    ...Object.fromEntries(XLSX_THEME_WIRE_FIELDS.map(([model, wire]) => [wire, normalized.colors[model].replace(/^#/, "").toUpperCase()])),
+    source,
+  };
+}
+
+function workbookThemeFromWire(theme) {
+  if (!theme || XLSX_THEME_WIRE_FIELDS.some(([, wire]) => !/^[0-9A-Fa-f]{6}$/.test(theme[wire] || ""))) return undefined;
+  return normalizeXlsxThemeConfig({
+    name: theme.name,
+    colors: Object.fromEntries(XLSX_THEME_WIRE_FIELDS.map(([model, wire]) => [model, `#${theme[wire]}`])),
+  });
+}
+
+function sameWorkbookTheme(left, right) {
+  const a = normalizeXlsxThemeConfig(left);
+  const b = normalizeXlsxThemeConfig(right);
+  return a.name === b.name && XLSX_THEME_COLOR_NAMES.every((name) => a.colors[name] === b.colors[name]);
 }
 
 function wireCell(address, cell) {
@@ -473,6 +496,9 @@ function workbookEnvelope(workbook) {
     throw new OpenChestnutCodecError(`The XLSX WebAssembly vertical slice cannot encode: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. Use SpreadsheetFile.exportXlsx until parity reaches these features.`, [], { code: "unsupported_workbook_features" });
   }
   const state = workbook[WORKBOOK_STATE];
+  const theme = state?.themeWire && sameWorkbookTheme(workbook.theme, state.publicTheme)
+    ? state.themeWire
+    : wireWorkbookTheme(workbook.theme, state?.themeWire?.source);
   return {
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     family: ArtifactFamily.WORKBOOK,
@@ -484,6 +510,7 @@ function workbookEnvelope(workbook) {
       value: {
         id: workbook.id,
         dateSystem: workbook.dateSystem === "1904" ? WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 : WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1900,
+        theme,
         worksheets: workbook.worksheets.items.map((sheet) => ({
           id: sheet.id,
           name: sheet.name,
@@ -530,7 +557,11 @@ function workbookFromEnvelope(envelope) {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a workbook artifact.", [], { code: "invalid_workbook_artifact" });
   }
   const source = envelope.payload.value;
-  const workbook = Workbook.create({ dateSystem: source.dateSystem === WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 ? "1904" : "1900" });
+  const importedTheme = workbookThemeFromWire(source.theme);
+  const workbook = Workbook.create({
+    dateSystem: source.dateSystem === WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 ? "1904" : "1900",
+    ...(importedTheme ? { theme: importedTheme } : {}),
+  });
   workbook.id = source.id || workbook.id;
   for (const sourceSheet of source.worksheets) {
     const sheet = workbook.worksheets.add(sourceSheet.name);
@@ -567,7 +598,13 @@ function workbookFromEnvelope(envelope) {
   }
   Object.defineProperty(workbook, WORKBOOK_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics },
+    value: {
+      source: envelope.source,
+      opaqueOpc: envelope.opaqueOpc,
+      diagnostics: envelope.diagnostics,
+      themeWire: source.theme,
+      publicTheme: normalizeXlsxThemeConfig(workbook.theme),
+    },
     writable: true,
   });
   return workbook;

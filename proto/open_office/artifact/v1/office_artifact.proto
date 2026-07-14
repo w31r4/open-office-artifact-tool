@@ -135,6 +135,34 @@ message WorkbookArtifact {
   string id = 1;
   WorkbookDateSystem date_system = 2;
   repeated WorksheetArtifact worksheets = 3;
+  // The 12 ordered DrawingML color-scheme slots used by SpreadsheetML
+  // theme-index colors. Fonts, format schemes, transforms, and extensions
+  // remain source-bound residual content.
+  SpreadsheetThemeArtifact theme = 4;
+}
+
+message SpreadsheetThemeArtifact {
+  string name = 1;
+  string dk1_rgb = 2;
+  string lt1_rgb = 3;
+  string dk2_rgb = 4;
+  string lt2_rgb = 5;
+  string accent1_rgb = 6;
+  string accent2_rgb = 7;
+  string accent3_rgb = 8;
+  string accent4_rgb = 9;
+  string accent5_rgb = 10;
+  string accent6_rgb = 11;
+  string hlink_rgb = 12;
+  string fol_hlink_rgb = 13;
+  SpreadsheetThemeSourceBinding source = 14;
+}
+
+message SpreadsheetThemeSourceBinding {
+  string part_path = 1;
+  string xml_sha256 = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
 }
 
 message WorksheetArtifact {

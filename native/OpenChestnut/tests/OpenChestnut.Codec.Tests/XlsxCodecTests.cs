@@ -5,6 +5,7 @@ using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
 using System.IO.Compression;
+using System.Xml.Linq;
 using Xunit;
 
 namespace OpenChestnut.Codec.Tests;
@@ -391,6 +392,137 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolRoundTripsCompleteWorkbookTheme()
+    {
+        var request = ExportRequest();
+        var expected = CustomTheme();
+        request.Artifact.Workbook.Theme = expected;
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            Assert.NotNull(document.WorkbookPart!.ThemePart);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertTheme(expected, imported.Artifact.Workbook.Theme);
+        Assert.True(imported.Artifact.Workbook.Theme.Source.Editable);
+        Assert.Equal("xl/theme/theme1.xml", imported.Artifact.Workbook.Theme.Source.PartPath);
+        Assert.Contains(imported.Artifact.OpaqueOpc.Parts, item => item.Path == "xl/theme/theme1.xml");
+    }
+
+    [Fact]
+    public void SourcePreservingThemeEditRetainsSystemColorAndResidualContent()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Theme = CustomTheme();
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(first.Ok);
+        var bytes = MutateTheme(first.File.ToByteArray(), unsupportedColor: false);
+        var imported = Import(bytes);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal("101010", imported.Artifact.Workbook.Theme.Dk1Rgb);
+        Assert.True(imported.Artifact.Workbook.Theme.Source.Editable);
+        imported.Artifact.Workbook.Theme.Name = "OpenChestnut Edited";
+        imported.Artifact.Workbook.Theme.Accent2Rgb = "22C55E";
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/theme/theme1.xml"));
+        Assert.Contains("name=\"OpenChestnut Edited\"", xml);
+        Assert.Contains("<a:sysClr val=\"windowText\" lastClr=\"101010\"", xml);
+        Assert.Contains("probe value=\"preserve-me\"", xml);
+        Assert.Contains("<a:fontScheme name=\"Office Clean Room\"", xml);
+        Assert.Contains("<a:accent2><a:srgbClr val=\"22C55E\"", xml);
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        var reimported = Import(exported.File.ToByteArray());
+        Assert.Equal("OpenChestnut Edited", reimported.Artifact.Workbook.Theme.Name);
+        Assert.Equal("101010", reimported.Artifact.Workbook.Theme.Dk1Rgb);
+        Assert.Equal("22C55E", reimported.Artifact.Workbook.Theme.Accent2Rgb);
+    }
+
+    [Fact]
+    public void UnsupportedSourceThemeIsPreservedAndReplacementFailsClosed()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Theme = CustomTheme();
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        var bytes = MutateTheme(first.File.ToByteArray(), unsupportedColor: true);
+        var imported = Import(bytes);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.False(imported.Artifact.Workbook.Theme.Source.Editable);
+        Assert.Empty(imported.Artifact.Workbook.Theme.Accent1Rgb);
+
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(bytes, "xl/theme/theme1.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/theme/theme1.xml"));
+
+        var replacement = CustomTheme();
+        replacement.Source = imported.Artifact.Workbook.Theme.Source.Clone();
+        imported.Artifact.Workbook.Theme = replacement;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_workbook_theme", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidThemeAndTamperedSourceBinding()
+    {
+        var incomplete = ExportRequest();
+        incomplete.Artifact.Workbook.Theme = new SpreadsheetThemeArtifact { Name = "Incomplete", Accent1Rgb = "0F172A" };
+        var missing = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(incomplete.ToByteArray()));
+        Assert.False(missing.Ok);
+        Assert.Equal("invalid_workbook_theme", Assert.Single(missing.Diagnostics).Code);
+
+        var invalid = ExportRequest();
+        invalid.Artifact.Workbook.Theme = CustomTheme();
+        invalid.Artifact.Workbook.Theme.Accent1Rgb = "not-rgb";
+        var malformed = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalid.ToByteArray()));
+        Assert.False(malformed.Ok);
+        Assert.Equal("invalid_workbook_theme", Assert.Single(malformed.Diagnostics).Code);
+
+        var valid = ExportRequest();
+        valid.Artifact.Workbook.Theme = CustomTheme();
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(valid.ToByteArray()));
+        var imported = Import(exported.File.ToByteArray());
+        imported.Artifact.Workbook.Theme.Source.XmlSha256 = new string('0', 64);
+        var tampered = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(tampered.Ok);
+        Assert.Equal("invalid_workbook_theme", Assert.Single(tampered.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRoundTripsSharedAndLegacyArrayFormulaTopology()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -595,6 +727,49 @@ public sealed class XlsxCodecTests
                 Workbook = workbook,
             },
         };
+    }
+
+    private static SpreadsheetThemeArtifact CustomTheme() => new()
+    {
+        Name = "OpenChestnut Theme",
+        Dk1Rgb = "101820", Lt1Rgb = "F8FAFC", Dk2Rgb = "1E3A5F", Lt2Rgb = "E2E8F0",
+        Accent1Rgb = "0F766E", Accent2Rgb = "C2410C", Accent3Rgb = "4D7C0F", Accent4Rgb = "7E22CE",
+        Accent5Rgb = "0369A1", Accent6Rgb = "BE123C", HlinkRgb = "1D4ED8", FolHlinkRgb = "7E22CE",
+    };
+
+    private static void AssertTheme(SpreadsheetThemeArtifact expected, SpreadsheetThemeArtifact actual)
+    {
+        Assert.Equal(expected.Name, actual.Name);
+        Assert.Equal(expected.Dk1Rgb, actual.Dk1Rgb); Assert.Equal(expected.Lt1Rgb, actual.Lt1Rgb);
+        Assert.Equal(expected.Dk2Rgb, actual.Dk2Rgb); Assert.Equal(expected.Lt2Rgb, actual.Lt2Rgb);
+        Assert.Equal(expected.Accent1Rgb, actual.Accent1Rgb); Assert.Equal(expected.Accent2Rgb, actual.Accent2Rgb);
+        Assert.Equal(expected.Accent3Rgb, actual.Accent3Rgb); Assert.Equal(expected.Accent4Rgb, actual.Accent4Rgb);
+        Assert.Equal(expected.Accent5Rgb, actual.Accent5Rgb); Assert.Equal(expected.Accent6Rgb, actual.Accent6Rgb);
+        Assert.Equal(expected.HlinkRgb, actual.HlinkRgb); Assert.Equal(expected.FolHlinkRgb, actual.FolHlinkRgb);
+    }
+
+    private static byte[] MutateTheme(byte[] bytes, bool unsupportedColor)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/theme/theme1.xml") ?? throw new InvalidOperationException("Workbook theme is missing.");
+            XDocument theme;
+            using (var reader = new StreamReader(entry.Open())) theme = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
+            XNamespace drawing = "http://schemas.openxmlformats.org/drawingml/2006/main";
+            XNamespace probe = "urn:openchestnut:test";
+            var scheme = theme.Root!.Element(drawing + "themeElements")!.Element(drawing + "clrScheme")!;
+            scheme.Element(drawing + "dk1")!.Elements().Single().ReplaceWith(new XElement(drawing + "sysClr", new XAttribute("val", "windowText"), new XAttribute("lastClr", "101010")));
+            if (unsupportedColor)
+                scheme.Element(drawing + "accent1")!.Elements().Single().ReplaceWith(new XElement(drawing + "hslClr", new XAttribute("hue", 0), new XAttribute("sat", 100000), new XAttribute("lum", 50000)));
+            theme.Root.Add(new XElement(drawing + "extLst", new XElement(drawing + "ext", new XAttribute("uri", "urn:openchestnut:test"), new XElement(probe + "probe", new XAttribute("value", "preserve-me")))));
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/theme/theme1.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(theme.ToString(SaveOptions.DisableFormatting));
+        }
+        return stream.ToArray();
     }
 
     private static CellStyleArtifact FullStaticStyle() => new()

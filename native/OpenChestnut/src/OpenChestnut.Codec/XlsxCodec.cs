@@ -41,6 +41,8 @@ internal static class XlsxCodec
             if (envelope.Workbook.DateSystem == WorkbookDateSystem._1904)
                 workbookPart.Workbook.WorkbookProperties = new WorkbookProperties { Date1904 = true };
             var sheets = workbookPart.Workbook.AppendChild(new Sheets());
+            var theme = new XlsxThemeCodec(workbookPart);
+            theme.Apply(envelope.Workbook.Theme, sourceBound: false);
             var styles = new XlsxCellStyleCodec(workbookPart);
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
@@ -55,6 +57,7 @@ internal static class XlsxCodec
                     Name = source.Name,
                 });
             }
+            theme.Save();
             styles.Save();
             workbookPart.Workbook.Save();
         }
@@ -69,11 +72,6 @@ internal static class XlsxCodec
     internal static XlsxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
     {
         var opaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Xlsx);
-        var diagnostics = new List<Diagnostic>();
-        var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
-        if (opaqueCount > 0)
-            diagnostics.Add(CodecProtocol.Warning("opaque_content_retained", $"Retained {opaqueCount} unsupported OPC parts or relationships with a hash-bound source package snapshot for loss-aware export.", opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
-
         using var stream = new MemoryStream(bytes, writable: false);
         using var document = SpreadsheetDocument.Open(stream, isEditable: false);
         var workbookPart = document.WorkbookPart ?? throw new CodecException("missing_workbook_part", "XLSX package has no Workbook part.", "xl/workbook.xml");
@@ -83,6 +81,12 @@ internal static class XlsxCodec
             Id = "workbook/1",
             DateSystem = workbookRoot.WorkbookProperties?.Date1904?.Value == true ? WorkbookDateSystem._1904 : WorkbookDateSystem._1900,
         };
+        var theme = new XlsxThemeCodec(workbookPart);
+        if (theme.Read() is { } importedTheme) workbook.Theme = importedTheme;
+        var diagnostics = new List<Diagnostic>();
+        var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
+        if (opaqueCount > 0)
+            diagnostics.Add(CodecProtocol.Warning("opaque_content_retained", $"Retained {opaqueCount} opaque or residual OPC parts or relationships with a hash-bound source package snapshot for loss-aware export.", opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
         var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
         var styles = new XlsxCellStyleCodec(workbookPart);
         var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
@@ -119,6 +123,8 @@ internal static class XlsxCodec
     private static XlsxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
     {
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
+        var ownsTheme = false;
+        string? themePartPath = null;
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -134,6 +140,8 @@ internal static class XlsxCodec
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
             workbookRoot.WorkbookProperties.Date1904 = envelope.Workbook.DateSystem == WorkbookDateSystem._1904;
             var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
+            var theme = new XlsxThemeCodec(workbookPart);
+            theme.Apply(envelope.Workbook.Theme, sourceBound: true);
             var styles = new XlsxCellStyleCodec(workbookPart);
             for (var index = 0; index < sheets.Length; index++)
             {
@@ -144,6 +152,9 @@ internal static class XlsxCodec
                 sheet.Name = source.Name;
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles);
             }
+            theme.Save();
+            ownsTheme = theme.OwnsOpaqueTheme;
+            themePartPath = theme.PartPath;
             styles.Save();
             workbookRoot.Save();
         }
@@ -153,7 +164,14 @@ internal static class XlsxCodec
             throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
         ValidateOffice2021(bytes);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Xlsx, includeSourcePackage: false);
-        PackageGuards.AssertOpaqueGraphMatches(envelope.OpaqueOpc, outputOpaque, "opaque_content_not_preserved");
+        PackageGuards.AssertOpaqueGraphMatches(
+            envelope.OpaqueOpc,
+            outputOpaque,
+            "opaque_content_not_preserved",
+            ignoreRelationship: ownsTheme ? XlsxThemeCodec.IsThemeRelationship : null,
+            ignorePart: ownsTheme && themePartPath is not null
+                ? item => item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)
+                : null);
         return new XlsxExportResult(bytes,
         [
             CodecProtocol.Warning("opaque_content_preserved", $"Preserved {opaqueCount} unsupported OPC parts or relationships from the validated source package while updating modeled workbook content."),
@@ -540,6 +558,7 @@ internal static class XlsxCodec
 
     private static void ValidateWorkbookBudget(WorkbookArtifact workbook, EffectiveCodecLimits limits)
     {
+        XlsxThemeCodec.Validate(workbook.Theme);
         if (workbook.Worksheets.Count == 0) throw new CodecException("missing_worksheets", "Workbook artifact must contain at least one worksheet.");
         if ((uint)workbook.Worksheets.Count > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"Workbook has {workbook.Worksheets.Count} sheets and exceeds max_sheets ({limits.MaxSheets}).");
