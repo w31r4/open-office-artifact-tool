@@ -188,7 +188,7 @@ public sealed class DocxCodecTests
         Assert.Equal(0u, horizontal.GridColumn);
         Assert.Equal(2u, horizontal.ColumnSpan);
         Assert.Equal(1u, horizontal.RowSpan);
-        Assert.Equal(DocumentTableVerticalMerge.None, horizontal.VerticalMerge);
+        Assert.Equal(DocumentTableVerticalMerge.Unspecified, horizontal.VerticalMerge);
         Assert.True(horizontal.Editable);
 
         var vertical = block.Table.Rows[0].RichCells[1];

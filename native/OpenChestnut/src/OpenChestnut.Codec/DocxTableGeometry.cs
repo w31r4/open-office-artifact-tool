@@ -120,12 +120,12 @@ internal static class DocxTableGeometry
 
     private static DocumentTableVerticalMerge VerticalMerge(W.VerticalMerge? merge, ref bool valid)
     {
-        if (merge is null) return DocumentTableVerticalMerge.None;
+        if (merge is null) return DocumentTableVerticalMerge.Unspecified;
         var value = merge.Val?.Value;
         if (value is null || value == W.MergedCellValues.Continue) return DocumentTableVerticalMerge.Continue;
         if (value == W.MergedCellValues.Restart) return DocumentTableVerticalMerge.Restart;
         valid = false;
-        return DocumentTableVerticalMerge.None;
+        return DocumentTableVerticalMerge.Unspecified;
     }
 
     internal static bool IsSimpleCell(W.TableCell cell)
