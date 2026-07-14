@@ -276,6 +276,10 @@ public sealed class DocxCodecTests
             Assert.Equal("Merged owner", first[0].InnerText);
             Assert.Equal(W.MergedCellValues.Continue, rows[1].Elements<W.TableCell>().First().TableCellProperties!.VerticalMerge!.Val!.Value);
             Assert.Equal(2, rows[2].Elements<W.TableCell>().ElementAt(1).TableCellProperties!.GridSpan!.Val!.Value);
+            var tableGridStyle = document.MainDocumentPart.StyleDefinitionsPart!.Styles!
+                .Elements<W.Style>().Single(style => style.StyleId == "TableGrid");
+            Assert.Equal(W.StyleValues.Table, tableGridStyle.Type!.Value);
+            Assert.Equal(6, tableGridStyle.StyleTableProperties!.TableBorders!.ChildElements.Count);
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
         }
 
@@ -316,6 +320,12 @@ public sealed class DocxCodecTests
         var mismatchedSpanResponse = Invoke(mismatchedSpan);
         Assert.False(mismatchedSpanResponse.Ok);
         Assert.Equal("invalid_document_table", Assert.Single(mismatchedSpanResponse.Diagnostics).Code);
+
+        var customStyle = MergedTableExportRequest();
+        customStyle.Artifact.Document.Blocks[0].StyleId = "UnmodeledTableStyle";
+        var customStyleResponse = Invoke(customStyle);
+        Assert.False(customStyleResponse.Ok);
+        Assert.Equal("unsupported_document_features", Assert.Single(customStyleResponse.Diagnostics).Code);
     }
 
     [Fact]

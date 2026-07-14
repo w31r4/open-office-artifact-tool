@@ -21,7 +21,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.addListItem` | api | Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
-| `document.addTable` | api | Append a Word-style table block with rows, columns, cell values, and style metadata. |
+| `document.addTable` | api | Append a Word-style table with physical cell values plus optional logical grid, horizontal-span, and vertical-merge geometry. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
 | `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
@@ -38,7 +38,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
-| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, merge-aware simple table-cell text, or direct and style/numbering-style-linked numbered single-run paragraph text through the bundled OpenChestnut codec. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables, and source-bound hyperlinks, simple fields, merge-aware table-cell text, or numbered single-run paragraph text through the bundled OpenChestnut codec. |
 | `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation. |
 
 ### document details
@@ -297,12 +297,13 @@ Append a DOCX section break with page size, orientation, margin, and break-type 
 
 #### `document.addTable`
 
-Append a Word-style table block with rows, columns, cell values, and style metadata.
+Append a Word-style table with physical cell values plus optional logical grid, horizontal-span, and vertical-merge geometry.
 
 **Schema parameters:**
 
 - `values` (unknown[][]) required — Table cell value matrix.
-- `cells` (object[]) — Imported source-bound physical-cell geometry with gridColumn, columnSpan, rowSpan, verticalMerge, and editable evidence.
+- `gridColumns` (number) — Logical Word table-grid width. Required for explicit authored geometry; otherwise derived from values.
+- `cells` (object[]) — One record per physical value cell with zero-based row/column, gridColumn, columnSpan, rowSpan, verticalMerge none/restart/continue, and editability evidence. OpenChestnut can author complete, contiguous, conforming geometry and keeps imported geometry source-bound.
 - `name` (string) — Inspectable table name.
 - `styleId` (string) — Table style ID.
 - `widthDxa` (number) — Table width in twentieths of a point.
@@ -589,11 +590,11 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 
 #### `exportDocxWithOpenChestnut`
 
-Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, merge-aware simple table-cell text, or direct and style/numbering-style-linked numbered single-run paragraph text through the bundled OpenChestnut codec.
+Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables, and source-bound hyperlinks, simple fields, merge-aware table-cell text, or numbered single-run paragraph text through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
-- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings for hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraph text from the OpenChestnut importer.
+- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary, including complete explicit gridSpan/vMerge geometry, or carrying validated source bindings for hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraph text from the OpenChestnut importer.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 
