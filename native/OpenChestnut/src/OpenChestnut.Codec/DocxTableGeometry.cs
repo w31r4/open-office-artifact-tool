@@ -4,9 +4,10 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 namespace OpenChestnut.Codec;
 
 // Reads the physical WordprocessingML cell sequence onto the logical tblGrid.
-// Geometry stays source-bound: the public wire exposes enough information for
-// agents to understand horizontal and vertical merges without asking the
-// source-preserving writer to rebuild table topology.
+// Imported geometry stays source-bound: the public wire exposes enough
+// information for agents to understand horizontal and vertical merges. The
+// direct writer consumes the same shape only after a separate strict graph
+// validation; it never reconstructs imported topology heuristically.
 internal static class DocxTableGeometry
 {
     private const int MaxGridColumns = 4_096;

@@ -255,12 +255,50 @@ await assert.rejects(
   exportDocxWithOpenChestnut(tableTopologyImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
 );
-const unsupportedMergedAuthoring = DocumentModel.create({
-  blocks: [{ kind: "table", values: [["Merged"]], cells: [{ row: 0, column: 0, gridColumn: 0, columnSpan: 2, rowSpan: 1, verticalMerge: "none", editable: true }] }],
+const authoredMergedDocument = DocumentModel.create({
+  name: "Direct merged table",
+  blocks: [{
+    kind: "table",
+    styleId: "TableGrid",
+    gridColumns: 3,
+    values: [["Merged owner", "Status"], ["", "Ready"], ["Scope", "Complete"]],
+    cells: [
+      { row: 0, column: 0, gridColumn: 0, columnSpan: 2, rowSpan: 2, verticalMerge: "restart" },
+      { row: 0, column: 1, gridColumn: 2, columnSpan: 1, rowSpan: 1 },
+      { row: 1, column: 0, gridColumn: 0, columnSpan: 2, rowSpan: 0, verticalMerge: "continue" },
+      { row: 1, column: 1, gridColumn: 2, columnSpan: 1, rowSpan: 1 },
+      { row: 2, column: 0, gridColumn: 0, columnSpan: 1, rowSpan: 1 },
+      { row: 2, column: 1, gridColumn: 1, columnSpan: 2, rowSpan: 1 },
+    ],
+  }],
+});
+assert.equal(authoredMergedDocument.blocks[0].getCell(1, 0).editable, false);
+const authoredMergedDocx = await exportDocxWithOpenChestnut(authoredMergedDocument);
+const authoredMergedXml = await (await JSZip.loadAsync(authoredMergedDocx.bytes)).file("word/document.xml").async("text");
+assert.match(authoredMergedXml, /<w:tblGrid><w:gridCol\s*\/><w:gridCol\s*\/><w:gridCol\s*\/><\/w:tblGrid>/);
+assert.match(authoredMergedXml, /<w:gridSpan w:val="2"\s*\/>/);
+assert.match(authoredMergedXml, /<w:vMerge w:val="restart"\s*\/>/);
+assert.match(authoredMergedXml, /<w:vMerge w:val="continue"\s*\/>/);
+const authoredMergedRoundTrip = await importDocxWithOpenChestnut(authoredMergedDocx);
+assert.equal(authoredMergedRoundTrip.blocks[0].gridColumns, 3);
+assert.equal(authoredMergedRoundTrip.blocks[0].getCell(0, 0).rowSpan, 2);
+assert.equal(authoredMergedRoundTrip.blocks[0].getCell(1, 0).verticalMerge, "continue");
+assert.equal(authoredMergedRoundTrip.blocks[0].getCell(2, 1).columnSpan, 2);
+
+const invalidMergedAuthoring = DocumentModel.create({
+  blocks: [{
+    kind: "table",
+    gridColumns: 2,
+    values: [["Owner"], [""]],
+    cells: [
+      { row: 0, column: 0, gridColumn: 0, columnSpan: 2, rowSpan: 3, verticalMerge: "restart" },
+      { row: 1, column: 0, gridColumn: 0, columnSpan: 2, rowSpan: 0, verticalMerge: "continue" },
+    ],
+  }],
 });
 await assert.rejects(
-  exportDocxWithOpenChestnut(unsupportedMergedAuthoring),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_features",
+  exportDocxWithOpenChestnut(invalidMergedAuthoring),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_document_table" && /declares rowSpan 3 but spans 2 rows/.test(error.message),
 );
 
 const mergedZip = await JSZip.loadAsync(docxExported.bytes);

@@ -1,0 +1,54 @@
+{
+  "name": "open-chestnut-merged-table",
+  "outputName": "open-chestnut-merged-table.docx",
+  "initialCodec": "open-chestnut",
+  "roundtripCodec": "open-chestnut",
+  "openChestnutEdits": [
+    {
+      "kind": "tableCell",
+      "matchText": "Merged owner",
+      "row": 0,
+      "column": 0,
+      "expectColumnSpan": 2,
+      "expectRowSpan": 2,
+      "expectVerticalMerge": "restart",
+      "expectEditable": true,
+      "value": "Edited merged owner"
+    }
+  ],
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "styleId": "Normal",
+      "text": "OpenChestnut direct merged-table authoring"
+    },
+    {
+      "kind": "table",
+      "name": "merged-table",
+      "styleId": "TableGrid",
+      "gridColumns": 3,
+      "values": [
+        ["Merged owner", "Status"],
+        ["", "Ready"],
+        ["Scope", "Complete"]
+      ],
+      "cells": [
+        { "row": 0, "column": 0, "gridColumn": 0, "columnSpan": 2, "rowSpan": 2, "verticalMerge": "restart" },
+        { "row": 0, "column": 1, "gridColumn": 2, "columnSpan": 1, "rowSpan": 1 },
+        { "row": 1, "column": 0, "gridColumn": 0, "columnSpan": 2, "rowSpan": 0, "verticalMerge": "continue" },
+        { "row": 1, "column": 1, "gridColumn": 2, "columnSpan": 1, "rowSpan": 1 },
+        { "row": 2, "column": 0, "gridColumn": 0, "columnSpan": 1, "rowSpan": 1 },
+        { "row": 2, "column": 1, "gridColumn": 1, "columnSpan": 2, "rowSpan": 1 }
+      ]
+    }
+  ],
+  "expectInspect": [
+    { "kind": "table,tableCell", "pattern": "Merged owner" },
+    { "kind": "table,tableCell", "pattern": "verticalMerge" }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "required",
+    "inspectKind": "document,paragraph,table,tableCell,layout"
+  }
+}

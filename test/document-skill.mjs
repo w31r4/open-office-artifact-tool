@@ -5,6 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+import { importDocxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 import {
   nativeDocumentRenderStatus,
   runDocumentFixture,
@@ -187,6 +188,28 @@ try {
   assert.match(businessBriefNumberingXml, /<w:lvl w:ilvl="1">[\s\S]*?<w:pStyle w:val="BriefNumberedListNested"\/>/);
   assert.match(businessBriefNumberingRels, /Target="media\/image2\.png"/);
   assert.ok(businessBriefZip.file("word/media/image2.png"));
+
+  const authoredMerged = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "open-chestnut-merged-table.json"), {
+    outputDir: path.join(outputDir, "open-chestnut-merged-table"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(authoredMerged.initialCodec, "open-chestnut");
+  assert.equal(authoredMerged.roundtripCodec, "open-chestnut");
+  assert.equal(authoredMerged.qa.summary.packageOk, true);
+  assert.equal(authoredMerged.qa.summary.verifyOk, true);
+  assert.equal(authoredMerged.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  const authoredMergedDocument = await importDocxWithOpenChestnut(await FileBlob.load(authoredMerged.docxPath));
+  const authoredMergedTable = authoredMergedDocument.blocks.find((block) => block.kind === "table");
+  assert.equal(authoredMergedTable?.values[0][0], "Edited merged owner");
+  assert.equal(authoredMergedTable?.getCell(0, 0).columnSpan, 2);
+  assert.equal(authoredMergedTable?.getCell(0, 0).rowSpan, 2);
+  assert.equal(authoredMergedTable?.getCell(1, 0).verticalMerge, "continue");
+  assert.equal(authoredMergedTable?.getCell(1, 0).editable, false);
+  const authoredMergedZip = await JSZip.loadAsync(await fs.readFile(authoredMerged.docxPath));
+  const authoredMergedXml = await authoredMergedZip.file("word/document.xml").async("text");
+  assert.match(authoredMergedXml, /<w:gridSpan w:val="2"\s*\/>/);
+  assert.match(authoredMergedXml, /<w:vMerge w:val="restart"\s*\/>/);
+  assert.match(authoredMergedXml, /<w:vMerge w:val="continue"\s*\/>/);
 
   const packageComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-comments.json"), {
     outputDir: path.join(outputDir, "package-comments"),

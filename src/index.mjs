@@ -1095,7 +1095,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append a tracked insertion with author/date metadata and native DOCX w:ins export." },
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
-  { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table block with rows, columns, cell values, and style metadata." },
+  { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table with physical cell values plus optional logical grid, horizontal-span, and vertical-merge geometry." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity." },
   { artifactKind: "document", kind: "api", name: "document.replyToComment", summary: "Reply to a document comment on the same target through commentsExtended paraIdParent threading." },
   { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions." },
@@ -1110,7 +1110,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments." },
-  { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, merge-aware simple table-cell text, or direct and style/numbering-style-linked numbered single-run paragraph text through the bundled OpenChestnut codec." },
+  { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables, and source-bound hyperlinks, simple fields, merge-aware table-cell text, or numbered single-run paragraph text through the bundled OpenChestnut codec." },
   { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
@@ -1779,7 +1779,8 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "change", "DocumentChangeBlock", "Appended tracked deletion."),
   "document.addTable": helpSchema({
     values: { type: "unknown[][]", required: true, description: "Table cell value matrix." },
-    cells: { type: "object[]", description: "Imported source-bound physical-cell geometry with gridColumn, columnSpan, rowSpan, verticalMerge, and editable evidence." },
+    gridColumns: { type: "number", description: "Logical Word table-grid width. Required for explicit authored geometry; otherwise derived from values." },
+    cells: { type: "object[]", description: "One record per physical value cell with zero-based row/column, gridColumn, columnSpan, rowSpan, verticalMerge none/restart/continue, and editability evidence. OpenChestnut can author complete, contiguous, conforming geometry and keeps imported geometry source-bound." },
     name: { type: "string", description: "Inspectable table name." },
     styleId: { type: "string", description: "Table style ID." },
     widthDxa: { type: "number", description: "Table width in twentieths of a point." },
@@ -1871,7 +1872,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     preferNative: { type: "boolean", description: "Parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks." },
   }, "document", "DocumentModel", "Imported editable document facade."),
   "exportDocxWithOpenChestnut": helpSchema({
-    document: { type: "DocumentModel", required: true, description: "Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings for hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraph text from the OpenChestnut importer." },
+    document: { type: "DocumentModel", required: true, description: "Document facade within the current paragraph/run/table authoring boundary, including complete explicit gridSpan/vMerge geometry, or carrying validated source bindings for hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraph text from the OpenChestnut importer." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "DOCX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
@@ -9414,16 +9415,20 @@ class DocumentTableBlock {
     this.values = (config.values || Array.from({ length: config.rows || 1 }, () => Array.from({ length: config.columns || 1 }, () => ""))).map((row) => [...row]);
     this.rows = this.values.length;
     this.columns = Math.max(0, ...this.values.map((row) => row.length));
-    this.gridColumns = Math.max(0, Math.round(Number(config.gridColumns ?? this.columns)));
-    this.cells = Array.isArray(config.cells) ? config.cells.map((cell) => ({
-      row: Math.max(0, Math.round(Number(cell.row) || 0)),
-      column: Math.max(0, Math.round(Number(cell.column) || 0)),
-      gridColumn: Math.max(0, Math.round(Number(cell.gridColumn) || 0)),
-      columnSpan: Math.max(1, Math.round(Number(cell.columnSpan) || 1)),
-      rowSpan: Math.max(0, Math.round(Number(cell.rowSpan) || 0)),
-      verticalMerge: String(cell.verticalMerge || "none"),
-      editable: cell.editable !== false,
-    })) : undefined;
+    this.cells = Array.isArray(config.cells) ? config.cells.map((cell) => {
+      const verticalMerge = String(cell.verticalMerge || "none");
+      return {
+        row: Math.max(0, Math.round(Number(cell.row) || 0)),
+        column: Math.max(0, Math.round(Number(cell.column) || 0)),
+        gridColumn: Math.max(0, Math.round(Number(cell.gridColumn) || 0)),
+        columnSpan: Math.max(1, Math.round(Number(cell.columnSpan) || 1)),
+        rowSpan: Math.max(0, Math.round(Number(cell.rowSpan ?? (verticalMerge === "continue" ? 0 : 1)) || 0)),
+        verticalMerge,
+        editable: verticalMerge === "continue" ? false : cell.editable !== false,
+      };
+    }) : undefined;
+    const derivedGridColumns = this.cells?.reduce((maximum, cell) => Math.max(maximum, cell.gridColumn + cell.columnSpan), 0) || 0;
+    this.gridColumns = Math.max(0, Math.round(Number(config.gridColumns ?? Math.max(this.columns, derivedGridColumns))));
     this.widthDxa = Math.round(Number(config.widthDxa ?? 9360));
     this.indentDxa = Math.round(Number(config.indentDxa ?? 120));
     this.columnWidthsDxa = Array.isArray(config.columnWidthsDxa)

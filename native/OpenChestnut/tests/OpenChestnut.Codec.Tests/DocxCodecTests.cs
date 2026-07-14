@@ -259,6 +259,66 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void DirectAuthoringBuildsValidatedHorizontalAndVerticalTableMerges()
+    {
+        var exported = Invoke(MergedTableExportRequest());
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var table = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            Assert.Equal(3, table.TableGrid!.Elements<W.GridColumn>().Count());
+            var rows = table.Elements<W.TableRow>().ToArray();
+            Assert.Equal(3, rows.Length);
+            var first = rows[0].Elements<W.TableCell>().ToArray();
+            Assert.Equal(2, first[0].TableCellProperties!.GridSpan!.Val!.Value);
+            Assert.Equal(W.MergedCellValues.Restart, first[0].TableCellProperties!.VerticalMerge!.Val!.Value);
+            Assert.Equal("Merged owner", first[0].InnerText);
+            Assert.Equal(W.MergedCellValues.Continue, rows[1].Elements<W.TableCell>().First().TableCellProperties!.VerticalMerge!.Val!.Value);
+            Assert.Equal(2, rows[2].Elements<W.TableCell>().ElementAt(1).TableCellProperties!.GridSpan!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var tableArtifact = Assert.Single(imported.Artifact.Document.Blocks).Table;
+        Assert.Equal(3u, tableArtifact.GridColumns);
+        Assert.Equal(2u, tableArtifact.Rows[0].RichCells[0].ColumnSpan);
+        Assert.Equal(2u, tableArtifact.Rows[0].RichCells[0].RowSpan);
+        Assert.Equal(DocumentTableVerticalMerge.Restart, tableArtifact.Rows[0].RichCells[0].VerticalMerge);
+        Assert.Equal(DocumentTableVerticalMerge.Continue, tableArtifact.Rows[1].RichCells[0].VerticalMerge);
+        Assert.False(tableArtifact.Rows[1].RichCells[0].Editable);
+    }
+
+    [Fact]
+    public void DirectTableAuthoringRejectsIncompleteOrAmbiguousMergeGeometry()
+    {
+        var missingContinuation = MergedTableExportRequest();
+        missingContinuation.Artifact.Document.Blocks[0].Table.Rows[0].RichCells[0].RowSpan = 3;
+        var missingContinuationResponse = Invoke(missingContinuation);
+        Assert.False(missingContinuationResponse.Ok);
+        Assert.Equal("invalid_document_table", Assert.Single(missingContinuationResponse.Diagnostics).Code);
+
+        var nonEmptyContinuation = MergedTableExportRequest();
+        nonEmptyContinuation.Artifact.Document.Blocks[0].Table.Rows[1].Cells[0] = "ambiguous continuation text";
+        var nonEmptyContinuationResponse = Invoke(nonEmptyContinuation);
+        Assert.False(nonEmptyContinuationResponse.Ok);
+        Assert.Equal("invalid_document_table", Assert.Single(nonEmptyContinuationResponse.Diagnostics).Code);
+
+        var mismatchedSpan = MergedTableExportRequest();
+        mismatchedSpan.Artifact.Document.Blocks[0].Table.Rows[1].RichCells[0].ColumnSpan = 1;
+        var mismatchedSpanResponse = Invoke(mismatchedSpan);
+        Assert.False(mismatchedSpanResponse.Ok);
+        Assert.Equal("invalid_document_table", Assert.Single(mismatchedSpanResponse.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NonconformantVerticalMergeRemainsSourcePreservedAndReadOnly()
     {
         var authored = Invoke(ExportRequest());
@@ -1063,6 +1123,57 @@ public sealed class DocxCodecTests
         };
         target.Paragraph.Runs.Add(new DocumentRun { Text = target.Paragraph.Text });
         document.Blocks.Add(target);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static CodecRequest MergedTableExportRequest()
+    {
+        static DocumentTableCell Cell(
+            uint gridColumn,
+            uint columnSpan = 1,
+            uint rowSpan = 1,
+            DocumentTableVerticalMerge merge = DocumentTableVerticalMerge.Unspecified) => new()
+        {
+            GridColumn = gridColumn,
+            ColumnSpan = columnSpan,
+            RowSpan = rowSpan,
+            VerticalMerge = merge,
+            Editable = merge != DocumentTableVerticalMerge.Continue,
+        };
+
+        var table = new DocumentTable { GridColumns = 3 };
+        var first = new DocumentTableRow();
+        first.Cells.Add("Merged owner");
+        first.Cells.Add("Status");
+        first.RichCells.Add(Cell(0, columnSpan: 2, rowSpan: 2, merge: DocumentTableVerticalMerge.Restart));
+        first.RichCells.Add(Cell(2));
+        table.Rows.Add(first);
+        var second = new DocumentTableRow();
+        second.Cells.Add(string.Empty);
+        second.Cells.Add("Ready");
+        second.RichCells.Add(Cell(0, columnSpan: 2, rowSpan: 0, merge: DocumentTableVerticalMerge.Continue));
+        second.RichCells.Add(Cell(2));
+        table.Rows.Add(second);
+        var third = new DocumentTableRow();
+        third.Cells.Add("Scope");
+        third.Cells.Add("Complete");
+        third.RichCells.Add(Cell(0));
+        third.RichCells.Add(Cell(1, columnSpan: 2));
+        table.Rows.Add(third);
+
+        var document = new DocumentArtifact { Id = "document/merged-table", Name = "Merged table fixture" };
+        document.Blocks.Add(new DocumentBlock { Id = "document/table", StyleId = "TableGrid", Table = table });
         return new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,

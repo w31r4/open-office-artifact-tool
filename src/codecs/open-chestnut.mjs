@@ -324,6 +324,95 @@ function sameDocumentTableGeometry(block, table) {
   });
 }
 
+function authoredDocumentTableGeometry(block) {
+  const invalid = (message) => {
+    throw new OpenChestnutCodecError(`Document table ${block.id} ${message}`, [], { code: "invalid_document_table" });
+  };
+  if (!Array.isArray(block.cells) || block.cells.length === 0) invalid("requires one explicit geometry record for every physical cell.");
+  if (!Number.isInteger(block.gridColumns) || block.gridColumns < 1 || block.gridColumns > 4_096) {
+    invalid("gridColumns must be an integer from 1 through 4096.");
+  }
+
+  const records = new Map();
+  for (const cell of block.cells) {
+    if (!Number.isInteger(cell.row) || !Number.isInteger(cell.column) || cell.row < 0 || cell.column < 0 ||
+        cell.row >= block.values.length || cell.column >= (block.values[cell.row]?.length || 0)) {
+      invalid(`cell ${cell.row},${cell.column} does not identify a physical value cell.`);
+    }
+    const key = `${cell.row}:${cell.column}`;
+    if (records.has(key)) invalid(`contains duplicate geometry for cell ${cell.row},${cell.column}.`);
+    records.set(key, cell);
+  }
+
+  const rows = block.values.map((values, rowIndex) => {
+    if (values.length === 0) invalid(`row ${rowIndex} has no physical cells.`);
+    let cursor;
+    const richCells = values.map((_value, column) => {
+      const source = records.get(`${rowIndex}:${column}`);
+      if (!source) invalid(`is missing geometry for cell ${rowIndex},${column}.`);
+      if (!Number.isInteger(source.gridColumn) || source.gridColumn < 0 || source.gridColumn > 4_096 ||
+          !Number.isInteger(source.columnSpan) || source.columnSpan < 1 || source.columnSpan > 4_096) {
+        invalid(`cell ${rowIndex},${column} has invalid bounded grid geometry.`);
+      }
+      if (cursor !== undefined && source.gridColumn !== cursor) {
+        invalid(`cell ${rowIndex},${column} must begin at grid column ${cursor}, not ${source.gridColumn}.`);
+      }
+      const end = source.gridColumn + source.columnSpan;
+      if (end > block.gridColumns) invalid(`cell ${rowIndex},${column} extends beyond gridColumns ${block.gridColumns}.`);
+      cursor = end;
+      const verticalMerge = String(source.verticalMerge || "none");
+      const merge = verticalMerge === "restart"
+        ? DocumentTableVerticalMerge.RESTART
+        : verticalMerge === "continue" ? DocumentTableVerticalMerge.CONTINUE
+          : verticalMerge === "none" ? DocumentTableVerticalMerge.UNSPECIFIED : undefined;
+      if (merge === undefined) invalid(`cell ${rowIndex},${column} has unsupported verticalMerge ${verticalMerge}.`);
+      const rowSpan = Number(source.rowSpan);
+      if (!Number.isInteger(rowSpan) || rowSpan < 0 || rowSpan > 4_096) invalid(`cell ${rowIndex},${column} has invalid rowSpan.`);
+      if (verticalMerge === "continue") {
+        if (rowSpan !== 0 || String(values[column] ?? "") !== "") invalid(`continuation cell ${rowIndex},${column} must have rowSpan 0 and empty text.`);
+      } else {
+        if (rowSpan < 1 || source.editable === false) invalid(`origin cell ${rowIndex},${column} must have a positive rowSpan and remain editable.`);
+        if (verticalMerge === "none" && rowSpan !== 1) invalid(`unmerged cell ${rowIndex},${column} must have rowSpan 1.`);
+      }
+      return {
+        gridColumn: source.gridColumn,
+        columnSpan: source.columnSpan,
+        rowSpan,
+        verticalMerge: merge,
+        editable: verticalMerge !== "continue",
+      };
+    });
+    const gridBefore = richCells[0].gridColumn;
+    const gridAfter = block.gridColumns - cursor;
+    return { cells: values.map((value) => String(value ?? "")), richCells, gridBefore, gridAfter };
+  });
+  if (records.size !== block.values.reduce((total, row) => total + row.length, 0)) invalid("contains geometry outside the physical value matrix.");
+
+  let active = new Map();
+  const finish = (group) => {
+    if (group.seen !== group.expected) invalid(`merge origin ${group.row},${group.column} declares rowSpan ${group.expected} but spans ${group.seen} rows.`);
+  };
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const continued = new Map();
+    for (let column = 0; column < rows[rowIndex].richCells.length; column += 1) {
+      const cell = rows[rowIndex].richCells[column];
+      const key = `${cell.gridColumn}:${cell.columnSpan}`;
+      if (cell.verticalMerge === DocumentTableVerticalMerge.CONTINUE) {
+        const group = active.get(key);
+        if (!group) invalid(`continuation cell ${rowIndex},${column} has no matching restart in the preceding row.`);
+        group.seen += 1;
+        continued.set(key, group);
+      } else if (cell.verticalMerge === DocumentTableVerticalMerge.RESTART) {
+        continued.set(key, { row: rowIndex, column, expected: cell.rowSpan, seen: 1 });
+      }
+    }
+    for (const [key, group] of active) if (!continued.has(key) || continued.get(key) !== group) finish(group);
+    active = continued;
+  }
+  for (const group of active.values()) finish(group);
+  return { gridColumns: block.gridColumns, rows };
+}
+
 function sameDocumentNumbering(block, paragraph) {
   const numbering = paragraph.numbering;
   if (!numbering || block.kind !== "listItem") return false;
@@ -473,9 +562,7 @@ function documentBlock(block, original) {
   }
   if (block.kind === "table") {
     const source = original?.content.case === "table" ? original.content.value : undefined;
-    if (!source && Array.isArray(block.cells)) {
-      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author table grid, span, or merge geometry for ${block.id}.`, [], { code: "unsupported_document_features" });
-    }
+    const authored = !source && Array.isArray(block.cells) ? authoredDocumentTableGeometry(block) : undefined;
     if (source && !sameDocumentTableGeometry(block, source)) {
       throw new OpenChestnutCodecError(`Document table ${block.id} grid, span, merge, and per-cell editability metadata are source-bound.`, [], { code: "unsupported_document_edit" });
     }
@@ -494,8 +581,8 @@ function documentBlock(block, original) {
       content: {
         case: "table",
         value: {
-          ...(source ? { gridColumns: source.gridColumns } : {}),
-          rows: (block.values || []).map((cells, rowIndex) => ({
+          ...(source ? { gridColumns: source.gridColumns } : authored ? { gridColumns: authored.gridColumns } : {}),
+          rows: authored?.rows || (block.values || []).map((cells, rowIndex) => ({
             cells: cells.map((value) => String(value ?? "")),
             ...(source ? {
               richCells: source.rows[rowIndex]?.richCells.map((cell) => ({ ...cell })) || [],

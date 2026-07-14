@@ -6,11 +6,10 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Owns cell text only for a fixed, deliberately narrow table topology. Table,
-// row, cell, paragraph, and run formatting stay in source XML and are guarded
-// by the residual hash. The companion geometry codec exposes gridSpan/vMerge;
-// horizontal and restart cells with simple text are editable, while vertical
-// continuations and complex cell content remain source-preserved and read-only.
+// Owns fixed-topology source edits and bounded source-free table construction.
+// Imported table, row, cell, paragraph, and run formatting stays in source XML
+// behind the residual hash. Direct geometry must completely cover tblGrid and
+// carry an exact gridSpan/vMerge chain; ambiguous continuations fail closed.
 internal static class DocxTableCodec
 {
     internal static DocumentTable Read(W.Table table, out bool editable)
@@ -49,6 +48,53 @@ internal static class DocxTableCodec
                 text.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
             }
         }
+    }
+
+    internal static W.Table Build(DocumentBlock block)
+    {
+        Validate(block.Table);
+        if (!string.IsNullOrWhiteSpace(block.StyleId) && !block.StyleId.Equals("TableGrid", StringComparison.Ordinal))
+            throw new CodecException(
+                "unsupported_document_features",
+                $"Direct DOCX table authoring cannot materialize custom table style {block.StyleId} without a modeled style graph.");
+        var table = new W.Table();
+        if (!string.IsNullOrWhiteSpace(block.StyleId))
+            table.Append(new W.TableProperties(new W.TableStyle { Val = block.StyleId }));
+
+        if (block.Table.Rows.All(row => row.RichCells.Count == 0))
+        {
+            var columns = block.Table.Rows.Count == 0 ? 1 : Math.Max(1, block.Table.Rows.Max(row => row.Cells.Count));
+            var simpleGrid = new W.TableGrid();
+            for (var column = 0; column < columns; column++) simpleGrid.Append(new W.GridColumn());
+            table.Append(simpleGrid);
+            foreach (var sourceRow in block.Table.Rows)
+            {
+                var row = new W.TableRow();
+                foreach (var value in sourceRow.Cells) row.Append(BuildCell(value));
+                table.Append(row);
+            }
+            return table;
+        }
+
+        ValidateAuthoredGeometry(block.Table);
+        var grid = new W.TableGrid();
+        for (var column = 0; column < block.Table.GridColumns; column++) grid.Append(new W.GridColumn());
+        table.Append(grid);
+        foreach (var sourceRow in block.Table.Rows)
+        {
+            var row = new W.TableRow();
+            if (sourceRow.GridBefore != 0 || sourceRow.GridAfter != 0)
+            {
+                var properties = new W.TableRowProperties();
+                if (sourceRow.GridBefore != 0) properties.Append(new W.GridBefore { Val = checked((int)sourceRow.GridBefore) });
+                if (sourceRow.GridAfter != 0) properties.Append(new W.GridAfter { Val = checked((int)sourceRow.GridAfter) });
+                row.Append(properties);
+            }
+            for (var cellIndex = 0; cellIndex < sourceRow.Cells.Count; cellIndex++)
+                row.Append(BuildCell(sourceRow.Cells[cellIndex], sourceRow.RichCells[cellIndex]));
+            table.Append(row);
+        }
+        return table;
     }
 
     internal static string ResidualHash(W.Table table)
@@ -94,6 +140,88 @@ internal static class DocxTableCodec
             throw Invalid("Document table grid_columns must be between 1 and 4096 when rich cell geometry is present.");
     }
 
+    private static void ValidateAuthoredGeometry(DocumentTable table)
+    {
+        if (table.Rows.Count == 0) throw Invalid("Authored document table geometry requires at least one row.");
+        var active = new Dictionary<(uint Column, uint Span), MergeGroup>();
+        for (var rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
+        {
+            var row = table.Rows[rowIndex];
+            if (row.Cells.Count == 0 || row.RichCells.Count != row.Cells.Count)
+                throw Invalid($"Authored document table row {rowIndex} requires one geometry record for every physical cell.");
+            if (row.GridBefore > table.GridColumns || row.GridAfter > table.GridColumns)
+                throw Invalid($"Authored document table row {rowIndex} has a grid offset outside grid_columns.");
+
+            var cursor = row.GridBefore;
+            var continued = new Dictionary<(uint Column, uint Span), MergeGroup>();
+            for (var cellIndex = 0; cellIndex < row.RichCells.Count; cellIndex++)
+            {
+                var cell = row.RichCells[cellIndex];
+                if (cell.GridColumn != cursor)
+                    throw Invalid($"Authored document table cell {rowIndex},{cellIndex} must begin at grid column {cursor}.");
+                cursor = checked(cursor + cell.ColumnSpan);
+                if (cursor > table.GridColumns)
+                    throw Invalid($"Authored document table cell {rowIndex},{cellIndex} extends beyond grid_columns.");
+                var key = (cell.GridColumn, cell.ColumnSpan);
+                switch (cell.VerticalMerge)
+                {
+                    case DocumentTableVerticalMerge.Unspecified:
+                        if (cell.RowSpan != 1 || !cell.Editable)
+                            throw Invalid($"Authored unmerged cell {rowIndex},{cellIndex} must have row_span one and remain editable.");
+                        break;
+                    case DocumentTableVerticalMerge.Restart:
+                        if (cell.RowSpan == 0 || !cell.Editable)
+                            throw Invalid($"Authored merge origin {rowIndex},{cellIndex} must have a positive row_span and remain editable.");
+                        continued.Add(key, new MergeGroup(rowIndex, cellIndex, checked((int)cell.RowSpan)));
+                        break;
+                    case DocumentTableVerticalMerge.Continue:
+                        if (cell.RowSpan != 0 || cell.Editable || row.Cells[cellIndex].Length != 0)
+                            throw Invalid($"Authored merge continuation {rowIndex},{cellIndex} must be read-only with row_span zero and empty text.");
+                        if (!active.TryGetValue(key, out var group))
+                            throw Invalid($"Authored merge continuation {rowIndex},{cellIndex} has no matching restart in the preceding row.");
+                        group.Seen++;
+                        continued.Add(key, group);
+                        break;
+                    default:
+                        throw Invalid($"Authored document table cell {rowIndex},{cellIndex} has an unsupported vertical_merge value.");
+                }
+            }
+            if (checked(cursor + row.GridAfter) != table.GridColumns)
+                throw Invalid($"Authored document table row {rowIndex} does not cover its declared logical grid.");
+            foreach (var (key, group) in active)
+                if (!continued.TryGetValue(key, out var carried) || !ReferenceEquals(group, carried)) Finish(group);
+            active = continued;
+        }
+        foreach (var group in active.Values) Finish(group);
+    }
+
+    private static W.TableCell BuildCell(string value, DocumentTableCell? geometry = null)
+    {
+        var cell = new W.TableCell();
+        if (geometry is not null)
+        {
+            var properties = new W.TableCellProperties();
+            if (geometry.ColumnSpan > 1) properties.Append(new W.GridSpan { Val = checked((int)geometry.ColumnSpan) });
+            if (geometry.VerticalMerge == DocumentTableVerticalMerge.Restart)
+                properties.Append(new W.VerticalMerge { Val = W.MergedCellValues.Restart });
+            else if (geometry.VerticalMerge == DocumentTableVerticalMerge.Continue)
+                properties.Append(new W.VerticalMerge { Val = W.MergedCellValues.Continue });
+            if (properties.ChildElements.Count > 0) cell.Append(properties);
+        }
+        var text = new W.Text(value)
+        {
+            Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null,
+        };
+        cell.Append(new W.Paragraph(new W.Run(text)));
+        return cell;
+    }
+
+    private static void Finish(MergeGroup group)
+    {
+        if (group.Seen != group.Expected)
+            throw Invalid($"Authored merge origin {group.Row},{group.Cell} declares row_span {group.Expected} but spans {group.Seen} rows.");
+    }
+
     private static bool HasSafeContainerTopology(W.Table table)
     {
         if (table.ChildElements.Any(child => child is not W.TableProperties and not W.TableGrid and not W.TableRow)) return false;
@@ -113,4 +241,12 @@ internal static class DocxTableCodec
 
     private static CodecException Invalid(string message) => new("invalid_document_table", message);
     private static CodecException Unsupported(string message) => new("unsupported_document_edit", message, "word/document.xml");
+
+    private sealed class MergeGroup(int row, int cell, int expected)
+    {
+        internal int Row { get; } = row;
+        internal int Cell { get; } = cell;
+        internal int Expected { get; } = expected;
+        internal int Seen { get; set; } = 1;
+    }
 }

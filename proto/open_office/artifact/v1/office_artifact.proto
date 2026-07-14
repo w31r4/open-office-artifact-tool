@@ -669,15 +669,17 @@ message DocumentField {
 message DocumentTable {
   repeated DocumentTableRow rows = 1;
   // Effective logical grid width after applying row offsets and grid spans.
-  // Imported source-preserving tables expose this as read-only topology.
+  // Imported tables expose it as source-bound topology. Source-free authoring
+  // accepts it only with a complete, validated physical-cell geometry graph.
   uint32 grid_columns = 2;
 }
 
 message DocumentTableRow {
   // Physical cell texts retained for backwards-compatible table consumers.
   repeated string cells = 1;
-  // One entry per physical cell, in the same order as cells. Geometry is
-  // source-bound; only entries marked editable permit text changes.
+  // One entry per physical cell, in the same order as cells. Imported geometry
+  // is source-bound; source-free geometry must be complete and conforming.
+  // Only entries marked editable permit text changes after import.
   repeated DocumentTableCell rich_cells = 2;
   uint32 grid_before = 3;
   uint32 grid_after = 4;

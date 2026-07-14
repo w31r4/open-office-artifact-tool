@@ -321,7 +321,11 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const document = createDocumentFromFixture(fixture);
   const docxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "document"}.docx`);
-  let docx = await DocumentFile.exportDocx(document);
+  const initialCodec = normalizeOpenChestnutCodecName(options.initialCodec || fixture.initialCodec || "js");
+  if (!new Set(["js", "open-chestnut"]).has(initialCodec)) throw new Error(`Unsupported document initial codec ${initialCodec}; expected js or open-chestnut.`);
+  let docx = initialCodec === "open-chestnut"
+    ? await exportDocxWithOpenChestnut(document)
+    : await DocumentFile.exportDocx(document);
   const packagePatches = [];
   if (fixture.packageComments?.length) {
     const partPath = fixture.packageCommentsPart || "word/review/fixture-comments.xml";
@@ -446,5 +450,5 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     maxChars: fixture.qa?.maxChars,
     preferNative: packagePatches.length > 0 || roundtripCodec === "open-chestnut",
   });
-  return { fixture, docxPath, qa, roundtripCodec };
+  return { fixture, docxPath, qa, initialCodec, roundtripCodec };
 }

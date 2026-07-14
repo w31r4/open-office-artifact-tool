@@ -83,6 +83,7 @@ internal static class DocxCodec
         using (var package = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
         {
             var mainPart = package.AddMainDocumentPart();
+            DocxDirectStyles.AddRequiredStyles(mainPart, envelope.Document);
             var context = new DocxPartContext(mainPart);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
@@ -411,7 +412,7 @@ internal static class DocxCodec
     private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context) => block.ContentCase switch
     {
         DocumentBlock.ContentOneofCase.Paragraph => BuildParagraph(block),
-        DocumentBlock.ContentOneofCase.Table => BuildTable(block),
+        DocumentBlock.ContentOneofCase.Table => DocxTableCodec.Build(block),
         DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Field => DocxFieldCodec.Build(block),
         DocumentBlock.ContentOneofCase.Opaque => throw new CodecException(
@@ -447,30 +448,6 @@ internal static class DocxCodec
             paragraph.Append(run);
         }
         return paragraph;
-    }
-
-    private static W.Table BuildTable(DocumentBlock block)
-    {
-        if (block.Table.GridColumns != 0 || block.Table.Rows.Any(row =>
-                row.RichCells.Count > 0 || row.GridBefore != 0 || row.GridAfter != 0))
-            throw new CodecException(
-                "unsupported_document_features",
-                "Direct authoring of source-bound DOCX table grid, span, or merge geometry is outside the current codec slice.");
-        var table = new W.Table();
-        if (!string.IsNullOrWhiteSpace(block.StyleId))
-            table.Append(new W.TableProperties(new W.TableStyle { Val = block.StyleId }));
-        var columns = block.Table.Rows.Count == 0 ? 1 : Math.Max(1, block.Table.Rows.Max(row => row.Cells.Count));
-        var grid = new W.TableGrid();
-        for (var column = 0; column < columns; column++) grid.Append(new W.GridColumn());
-        table.Append(grid);
-        foreach (var sourceRow in block.Table.Rows)
-        {
-            var row = new W.TableRow();
-            foreach (var value in sourceRow.Cells)
-                row.Append(new W.TableCell(new W.Paragraph(new W.Run(Text(value)))));
-            table.Append(row);
-        }
-        return table;
     }
 
     private static W.Text Text(string value) => new(value)
