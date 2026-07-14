@@ -635,6 +635,9 @@ message DocumentNumbering {
   string number_format = 4;
   uint32 start = 5;
   string level_text = 6;
+  // Friendly numbering-style identity resolved from w:styleLink or
+  // w:numStyleLink. It remains source-bound in the text-only slice.
+  string numbering_style_id = 7;
 }
 
 message DocumentRun {

@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using OpenOffice.Artifact.Wire.V1;
 using W = DocumentFormat.OpenXml.Wordprocessing;
@@ -20,18 +19,24 @@ internal static class DocxNumberedParagraphCodec
     {
         artifact = new DocumentParagraph();
         editable = false;
-        if (!TryResolveAssignment(paragraph, context, out var numberingId, out var level, out var candidate))
+        if (!TryResolveAssignment(
+                paragraph,
+                context,
+                out var numberingId,
+                out var directLevel,
+                out var styleChain,
+                out var candidate))
         {
             if (!candidate) return false;
             ReadContent(paragraph, artifact);
             return true;
         }
         ReadContent(paragraph, artifact);
-        var resolved = Resolve(context, numberingId, level);
+        var resolved = DocxNumberingResolver.Resolve(context, numberingId, directLevel, styleChain);
         artifact.Numbering = resolved ?? new DocumentNumbering
         {
             NumberingId = checked((uint)numberingId),
-            Level = checked((uint)Math.Max(0, level)),
+            Level = checked((uint)Math.Max(0, directLevel ?? 0)),
         };
         editable = resolved is not null && IsEditableTopology(paragraph);
         return true;
@@ -69,52 +74,8 @@ internal static class DocxNumberedParagraphCodec
         if (paragraph.Numbering.Level > 8) throw Invalid("Numbered paragraph level must be between 0 and 8.");
         if (paragraph.Numbering.NumberFormat.Length > 128) throw Invalid("Numbered paragraph number_format exceeds 128 characters.");
         if (paragraph.Numbering.LevelText.Length > 1024) throw Invalid("Numbered paragraph level_text exceeds 1024 characters.");
+        if (paragraph.Numbering.NumberingStyleId.Length > 253) throw Invalid("Numbered paragraph numbering_style_id exceeds 253 characters.");
         if (paragraph.Text.Length > 1_000_000) throw Invalid("Numbered paragraph text exceeds 1,000,000 characters.");
-    }
-
-    private static DocumentNumbering? Resolve(DocxPartContext context, int numberingId, int levelIndex)
-    {
-        if (levelIndex is < 0 or > 8) return null;
-        var document = context.NumberingDocument;
-        if (document is null) return null;
-
-        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        static int? IntegerAttribute(XElement? element, XName name) =>
-            int.TryParse(element?.Attribute(name)?.Value, out var value) ? value : null;
-        if (!TryUnique(document.Root?.Elements(w + "num") ?? [],
-                item => IntegerAttribute(item, w + "numId") == numberingId,
-                out var instance) || instance is null) return null;
-        var abstractId = IntegerAttribute(instance.Element(w + "abstractNumId"), w + "val");
-        if (abstractId is null or < 0) return null;
-        if (!TryUnique(document.Root?.Elements(w + "abstractNum") ?? [],
-                item => IntegerAttribute(item, w + "abstractNumId") == abstractId.Value,
-                out var abstractNumbering) || abstractNumbering is null) return null;
-        if (!TryUnique(instance.Elements(w + "lvlOverride"),
-                item => IntegerAttribute(item, w + "ilvl") == levelIndex,
-                out var levelOverride)) return null;
-        XElement? level;
-        if (levelOverride is not null)
-        {
-            if (!TryUnique(levelOverride.Elements(w + "lvl"), _ => true, out level)) return null;
-        }
-        else if (!TryUnique(abstractNumbering.Elements(w + "lvl"),
-                     item => IntegerAttribute(item, w + "ilvl") == levelIndex,
-                     out level)) return null;
-        if (level is null) return null;
-        var format = level.Element(w + "numFmt")?.Attribute(w + "val")?.Value ?? string.Empty;
-        var levelText = level.Element(w + "lvlText")?.Attribute(w + "val")?.Value ?? string.Empty;
-        var start = IntegerAttribute(levelOverride?.Element(w + "startOverride"), w + "val") ??
-                    IntegerAttribute(level.Element(w + "start"), w + "val") ?? 1;
-        if (start < 0) return null;
-        return new DocumentNumbering
-        {
-            NumberingId = checked((uint)numberingId),
-            Level = checked((uint)levelIndex),
-            AbstractNumberingId = checked((uint)abstractId.Value),
-            NumberFormat = format,
-            Start = checked((uint)start),
-            LevelText = levelText,
-        };
     }
 
     private static DocumentRun ReadRun(W.Run run)
@@ -141,62 +102,61 @@ internal static class DocxNumberedParagraphCodec
         W.Paragraph paragraph,
         DocxPartContext context,
         out int numberingId,
-        out int level,
+        out int? directLevel,
+        out IReadOnlyList<string> styleChain,
         out bool candidate)
     {
         numberingId = 0;
-        level = 0;
+        directLevel = null;
+        var resolvedStyleChain = new List<string>();
+        styleChain = resolvedStyleChain;
         var direct = paragraph.ParagraphProperties?.NumberingProperties;
         candidate = direct is not null;
         int? effectiveId = direct?.NumberingId?.Val?.Value;
-        int? effectiveLevel = direct?.NumberingLevelReference?.Val?.Value;
         if (effectiveId == 0) return false;
+        if (direct?.NumberingLevelReference?.Val?.Value is { } explicitLevel)
+            directLevel = explicitLevel;
+        else if (effectiveId is not null)
+            directLevel = 0;
+        if (effectiveId is > 0)
+        {
+            if (directLevel is < 0 or > 8) return false;
+            numberingId = effectiveId.Value;
+            return true;
+        }
 
         var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
         var styles = context.StylesDocument;
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        static int? IntegerAttribute(XElement? element, XName name) =>
+        static int? IntegerAttribute(System.Xml.Linq.XElement? element, System.Xml.Linq.XName name) =>
             int.TryParse(element?.Attribute(name)?.Value, out var value) ? value : null;
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var depth = 0;
         for (; !string.IsNullOrWhiteSpace(styleId) && styles?.Root is not null && depth < 64; depth++)
         {
             if (!visited.Add(styleId)) return false;
+            resolvedStyleChain.Add(styleId);
             var matches = styles.Root.Elements(w + "style")
                 .Where(item => item.Attribute(w + "styleId")?.Value == styleId)
                 .Take(2)
                 .ToArray();
             if (matches.Length > 1)
             {
-                candidate |= matches.Any(item => item.Element(w + "pPr")?.Element(w + "numPr") is not null);
+                candidate = true;
                 return false;
             }
             var style = matches.SingleOrDefault();
             if (style is null) break;
             var numbering = style.Element(w + "pPr")?.Element(w + "numPr");
             candidate |= numbering is not null;
-            effectiveLevel ??= IntegerAttribute(numbering?.Element(w + "ilvl"), w + "val");
             effectiveId ??= IntegerAttribute(numbering?.Element(w + "numId"), w + "val");
             if (effectiveId == 0) return false;
             styleId = style.Element(w + "basedOn")?.Attribute(w + "val")?.Value;
         }
         if (depth == 64 && !string.IsNullOrWhiteSpace(styleId)) return false;
-        if (effectiveId is null or <= 0 || effectiveLevel is < 0 or > 8) return false;
+        if (effectiveId is null or <= 0 || directLevel is < 0 or > 8) return false;
         numberingId = effectiveId.Value;
-        level = effectiveLevel ?? 0;
         return true;
-    }
-
-    private static bool TryUnique(
-        IEnumerable<XElement> elements,
-        Func<XElement, bool> predicate,
-        out XElement? result)
-    {
-        result = null;
-        using var matches = elements.Where(predicate).Take(2).GetEnumerator();
-        if (!matches.MoveNext()) return true;
-        result = matches.Current;
-        return !matches.MoveNext();
     }
 
     private static bool IsEditableTopology(W.Paragraph paragraph)

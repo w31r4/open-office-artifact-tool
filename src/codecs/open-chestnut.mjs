@@ -306,7 +306,8 @@ function sameDocumentNumbering(block, paragraph) {
     block.start === (numbering.start || 1) &&
     block.levelText === (numbering.levelText || (numberFormat === "bullet" ? "•" : `%${numbering.level + 1}.`)) &&
     block.numberingId === numbering.numberingId &&
-    block.abstractNumberingId === numbering.abstractNumberingId;
+    block.abstractNumberingId === numbering.abstractNumberingId &&
+    (block.numberingStyleId || "") === (numbering.numberingStyleId || "");
 }
 
 function sameDocumentHyperlink(block, source) {
@@ -559,6 +560,7 @@ function documentFromEnvelope(envelope) {
             levelText: numbering.levelText || (numberFormat === "bullet" ? "•" : `%${numbering.level + 1}.`),
             numberingId: numbering.numberingId,
             abstractNumberingId: numbering.abstractNumberingId,
+            numberingStyleId: numbering.numberingStyleId || undefined,
           };
         }
         return {
