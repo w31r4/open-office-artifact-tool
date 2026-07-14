@@ -909,8 +909,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including built-in/custom cell number formats, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes and effective cell number-format codes through the bounded source-built bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including built-in/custom cell number formats plus validated shared and legacy-array formula topology, through the source-built bundled OpenChestnut C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell number-format codes, and expanded shared/legacy-array formula metadata through the bounded source-built bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -941,7 +941,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface native array formulas (t=array) with formulaType/sharedRef/arrayRef inspect metadata." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade." },
@@ -2160,7 +2160,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including cell style.numberFormat codes but no other direct style authoring." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including cell style.numberFormat codes and validated native shared/legacy-array formula metadata but no other direct style authoring." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2168,7 +2168,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell number formats plus source/opaque package evidence for fail-closed second export."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell number formats, expanded shared/legacy-array formula metadata, and source/opaque package evidence for fail-closed second export."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
@@ -2306,7 +2306,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared or array formula records." },
     formula: { type: "string", description: "Shared/array formula expression." },
     ref: { type: "string", description: "Shared or spill A1 range." },
-  }, "metadata", "object", "formulaType/sharedRef/arrayRef/spill inspect metadata."),
+  }, "metadata", "object", "formulaType/sharedIndex/sharedRef/arrayRef/spill inspect metadata; writing a formula into one shared member detaches the complete group to ordinary formulas."),
   "workbook.definedNames.add": helpSchema({
     name: { type: "string", required: true, description: "Defined name." },
     refersTo: { type: "string", required: true, description: "Sheet-qualified A1 reference." },

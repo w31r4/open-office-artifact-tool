@@ -132,7 +132,7 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
 
 This fixture intentionally runs `JavaScript export → OpenChestnut import → source-preserving OpenChestnut export` before inspect/render/verify. Its advanced theme, styles, table, pivot, chart, image, comments, formulas, and native pages therefore exercise both codec boundaries.
 
-The source-built Open XML SDK WebAssembly codec is available for the bounded workbook features: primitive/cached-formula cells, built-in/custom `range.format.numberFormat` codes, date-system selection, sheets, merges, dimensions, gridlines, and frozen panes. The checked-in fixture performs OpenChestnut authoring, import, and source-preserving second export, so its custom and percentage formats cross the public wire twice before QA:
+The source-built Open XML SDK WebAssembly codec is available for the bounded workbook features: primitive/cached-formula cells, native shared-formula groups, legacy array-formula anchors, built-in/custom `range.format.numberFormat` codes, date-system selection, sheets, merges, dimensions, gridlines, and frozen panes. The checked-in fixture performs OpenChestnut authoring, import, and source-preserving second export, so its shared/array topology and custom/percentage formats cross the public wire twice before QA:
 
 ```sh
 node skills/spreadsheets/scripts/run-fixture.mjs \
@@ -142,7 +142,7 @@ node skills/spreadsheets/scripts/run-fixture.mjs \
   --output-dir tmp/open-chestnut-spreadsheet-fixture
 ```
 
-Direct WebAssembly authoring is fail-closed for direct styles other than cell number formats, themes, defined names, tables, pivots, drawings, comments, validations, conditional formatting, and advanced formula metadata. On imported workbooks a number-format change clones the cell's existing XF, preserving its font/fill/border/alignment/protection and unknown children; all other unsupported package content stays behind the bounded, hash-bound source package and opaque-graph checks. Use the default `javascript` codec to create advanced workbooks until the public protobuf schema covers them; never discard or fabricate preservation state merely to make an export pass.
+For QA fixtures only, a range operation may declare `formulaMetadata: { kind: "shared", sharedIndex, reference }` on a complete shared group or `{ kind: "array", reference }` on its anchor. This mirrors already-imported native metadata; normal agent editing still uses `range.formulas`. Editing one shared member through that public range API detaches the complete group to ordinary formulas. Direct WebAssembly authoring is fail-closed for direct styles other than cell number formats, themes, defined names, tables, pivots, drawings, comments, validations, conditional formatting, data-table formulas, and dynamic-array extension semantics. On imported workbooks a cached-value-only edit leaves `<f>` untouched, while a number-format change clones the cell's existing XF and preserves both formula XML and unrelated font/fill/border/alignment/protection/unknown children. All other unsupported package content stays behind the bounded, hash-bound source package and opaque-graph checks. Use the default `javascript` codec to create advanced workbooks until the public protobuf schema covers them; never discard or fabricate preservation state merely to make an export pass.
 
 Create and later compare an approved sheet/range baseline:
 

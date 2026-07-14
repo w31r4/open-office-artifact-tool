@@ -125,8 +125,14 @@ function cellAddress(row, column) {
 function formulaRangeBounds(reference, location) {
   const pieces = String(reference || "").split(":");
   if (pieces.length < 1 || pieces.length > 2 || !pieces[0]) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference || "(empty)"} is not a bounded A1 range.`, [], { code: "invalid_cell_formula" });
-  const first = cellCoordinates(pieces[0].replaceAll("$", ""));
-  const second = pieces[1] ? cellCoordinates(pieces[1].replaceAll("$", "")) : first;
+  let first;
+  let second;
+  try {
+    first = cellCoordinates(pieces[0].replaceAll("$", ""));
+    second = pieces[1] ? cellCoordinates(pieces[1].replaceAll("$", "")) : first;
+  } catch {
+    throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference} is invalid.`, [], { code: "invalid_cell_formula" });
+  }
   for (const coordinate of [first, second]) {
     if (coordinate.row >= 1_048_576 || coordinate.column >= 16_384) throw new OpenChestnutCodecError(`Cell ${location} formula reference ${reference} exceeds XLSX limits.`, [], { code: "invalid_cell_formula" });
   }
@@ -157,7 +163,8 @@ function translateSharedFormula(value, source, target) {
     protectedParts.push(part);
     return token;
   });
-  const shifted = protectedFormula.replace(/(?<![A-Za-z0-9_.])(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_. ]*))!)?(\$?)([A-Za-z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_])/g, (match, quotedSheet, bareSheet, absoluteColumn, columnText, absoluteRow, rowText) => {
+  const shifted = protectedFormula.replace(/(?<![A-Za-z0-9_.])(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_. ]*))!)?(\$?)([A-Za-z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_])/g, (match, quotedSheet, bareSheet, absoluteColumn, columnText, absoluteRow, rowText, offset, sourceText) => {
+    if (/^\s*\(/.test(sourceText.slice(offset + match.length))) return match;
     const coordinate = cellCoordinates(`${columnText}${rowText}`);
     const column = absoluteColumn ? coordinate.column : coordinate.column + columnOffset;
     const row = absoluteRow ? coordinate.row : coordinate.row + rowOffset;
@@ -222,7 +229,9 @@ function validateFormulaTopology(cells, sheetName) {
     }
   }
   const occupied = new Map();
-  for (const cell of cells.filter((item) => item.formulaMetadata)) {
+  const sharedRoots = [...sharedGroups.values()].map((members) => members[0]);
+  const topologyRoots = [...sharedRoots, ...cells.filter((item) => item.formulaMetadata?.kind === CellFormulaKind.ARRAY)];
+  for (const cell of topologyRoots) {
     const metadata = cell.formulaMetadata;
     const bounds = formulaRangeBounds(metadata.reference, `${sheetName}!${cellAddress(cell.row, cell.column)}`);
     const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `array:${cell.row}:${cell.column}`;

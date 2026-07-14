@@ -23,6 +23,20 @@
           "formulas": [["=B2*2"]]
         },
         {
+          "range": "C1:D1",
+          "values": [["Shared", "Array"]]
+        },
+        {
+          "range": "C2:C3",
+          "formulas": [["=B2*2"], ["=B3*2"]],
+          "formulaMetadata": { "kind": "shared", "sharedIndex": 7, "reference": "C2:C3" }
+        },
+        {
+          "range": "D2",
+          "formulas": [["=SUM(B2:B3)"]],
+          "formulaMetadata": { "kind": "array", "reference": "D2:D3" }
+        },
+        {
           "range": "B2",
           "format": { "numberFormat": "0.000 \"units\"" }
         },
@@ -48,11 +62,11 @@
     }
   ],
   "expectations": [
-    { "sheet": "Summary", "range": "B2:B3", "values": [[42.5], [85]] }
+    { "sheet": "Summary", "range": "B2:D3", "values": [[42.5, 85, 127.5], [85, 170, null]] }
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:B4",
+    "range": "A1:D4",
     "renderFormat": "png",
     "inspectKind": "workbook,sheet,formula,merge,dimension",
     "maxChars": 16000,

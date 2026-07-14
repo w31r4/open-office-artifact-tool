@@ -171,12 +171,21 @@ try {
   assert.equal(wasmResult.qa.summary.renderFormat, "png");
   const wasmWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(wasmResult.workbookPath));
   assert.equal(wasmWorkbook.dateSystem, "1904");
-  assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("B2:B3").values, [[42.5], [85]]);
+  assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("B2:D3").values, [[42.5, 85, 127.5], [85, 170, null]]);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.000 \"units\"");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B3").format.numberFormat, "0.00%");
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").mergedRanges, ["A4:B4"]);
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedIndex, 7);
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedRef, "C2:C3");
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").formulaType, "array");
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").arrayRef, "D2:D3");
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
   assert.match(await wasmZip.file("xl/styles.xml").async("text"), /0\.000 &quot;units&quot;/);
+  const wasmWorksheetXml = await wasmZip.file("xl/worksheets/sheet1.xml").async("text");
+  assert.match(wasmWorksheetXml, /<x:f t="shared" ref="C2:C3" si="7">B2\*2<\/x:f>/);
+  assert.match(wasmWorksheetXml, /<x:f t="shared" si="7"\s*\/>/);
+  assert.match(wasmWorksheetXml, /<x:f t="array" ref="D2:D3">SUM\(B2:B3\)<\/x:f>/);
   if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {

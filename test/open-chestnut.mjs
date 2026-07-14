@@ -319,6 +319,14 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_formula" && /contains 1 members/.test(error.message),
 );
 
+const digitFunctionWorkbook = Workbook.create();
+const digitFunctionSheet = digitFunctionWorkbook.worksheets.add("DigitFunction");
+digitFunctionSheet.getRange("A1:A2").values = [[10], [100]];
+digitFunctionSheet.getRange("C1:C2").formulas = [["=LOG10(A1)"], ["=LOG10(A2)"]];
+for (const address of ["C1", "C2"]) Object.assign(digitFunctionSheet.store.get(address), { formulaType: "shared", sharedIndex: 9, sharedRef: "C1:C2" });
+const digitFunctionExport = await exportXlsxWithOpenChestnut(digitFunctionWorkbook, { recalculate: false });
+assert.deepEqual((await importXlsxWithOpenChestnut(digitFunctionExport)).worksheets.getItem("DigitFunction").getRange("C1:C2").formulas, [["=LOG10(A1)"], ["=LOG10(A2)"]]);
+
 const minimalDocument = DocumentModel.create({
   name: "OpenChestnut brief",
   blocks: [

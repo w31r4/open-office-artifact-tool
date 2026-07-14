@@ -151,7 +151,12 @@ internal sealed class XlsxFormulaCodec
         }
 
         var topology = new Dictionary<(uint Row, uint Column), string>();
-        foreach (var cell in sheet.Cells.Where(cell => cell.FormulaMetadata is not null))
+        var topologyRoots = sheet.Cells
+            .Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Shared)
+            .GroupBy(cell => cell.FormulaMetadata!.SharedIndex)
+            .Select(group => group.First())
+            .Concat(sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Array));
+        foreach (var cell in topologyRoots)
         {
             var metadata = cell.FormulaMetadata!;
             var bounds = ParseRange(metadata.Reference, sheet.Name);
@@ -273,8 +278,10 @@ internal sealed class XlsxFormulaCodec
         void Flush()
         {
             if (segment.Length == 0) return;
-            output.Append(CellReferencePattern.Replace(segment.ToString(), match =>
+            var sourceText = segment.ToString();
+            output.Append(CellReferencePattern.Replace(sourceText, match =>
             {
+                if (sourceText.AsSpan(match.Index + match.Length).TrimStart().StartsWith("(")) return match.Value;
                 var column = ParseColumn(match.Groups[4].Value);
                 var row = long.Parse(match.Groups[6].Value, CultureInfo.InvariantCulture) - 1;
                 var shiftedColumn = match.Groups[3].Value.Length > 0 ? column : column + columnOffset;

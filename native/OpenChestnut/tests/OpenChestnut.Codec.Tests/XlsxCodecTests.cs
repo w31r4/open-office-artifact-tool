@@ -285,7 +285,7 @@ public sealed class XlsxCodecTests
             Assert.Equal(CellFormulaValues.Shared, cells["C1"].CellFormula!.FormulaType!.Value);
             Assert.Equal(7U, cells["C1"].CellFormula!.SharedIndex!.Value);
             Assert.Equal("C1:C2", cells["C1"].CellFormula!.Reference!.Value);
-            Assert.Equal("A1+B1", cells["C1"].CellFormula!.Text);
+            Assert.Equal("LOG10(A1)+B1", cells["C1"].CellFormula!.Text);
             Assert.Equal(CellFormulaValues.Shared, cells["C2"].CellFormula!.FormulaType!.Value);
             Assert.Equal(7U, cells["C2"].CellFormula!.SharedIndex!.Value);
             Assert.Null(cells["C2"].CellFormula!.Reference);
@@ -298,11 +298,11 @@ public sealed class XlsxCodecTests
         var imported = Import(exported.File.ToByteArray());
         Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var cellsByAddress = imported.Artifact.Workbook.Worksheets[0].Cells.ToDictionary(cell => $"{cell.Row}:{cell.Column}");
-        Assert.Equal("=A1+B1", cellsByAddress["0:2"].Formula);
+        Assert.Equal("=LOG10(A1)+B1", cellsByAddress["0:2"].Formula);
         Assert.Equal(CellFormulaKind.Shared, cellsByAddress["0:2"].FormulaMetadata.Kind);
         Assert.Equal(7U, cellsByAddress["0:2"].FormulaMetadata.SharedIndex);
         Assert.Equal("C1:C2", cellsByAddress["0:2"].FormulaMetadata.Reference);
-        Assert.Equal("=A2+B2", cellsByAddress["1:2"].Formula);
+        Assert.Equal("=LOG10(A2)+B2", cellsByAddress["1:2"].Formula);
         Assert.Equal(CellFormulaKind.Shared, cellsByAddress["1:2"].FormulaMetadata.Kind);
         Assert.Equal("=A1:A2*B1:B2", cellsByAddress["0:4"].Formula);
         Assert.Equal(CellFormulaKind.Array, cellsByAddress["0:4"].FormulaMetadata.Kind);
@@ -355,9 +355,9 @@ public sealed class XlsxCodecTests
         using var document = SpreadsheetDocument.Open(stream, false);
         var cells = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().ToDictionary(item => item.CellReference!.Value!);
         Assert.Null(cells["C1"].CellFormula!.FormulaType);
-        Assert.Equal("A1+B1", cells["C1"].CellFormula!.Text);
+        Assert.Equal("LOG10(A1)+B1", cells["C1"].CellFormula!.Text);
         Assert.Null(cells["C2"].CellFormula!.FormulaType);
-        Assert.Equal("A2+B2", cells["C2"].CellFormula!.Text);
+        Assert.Equal("LOG10(A2)+B2", cells["C2"].CellFormula!.Text);
     }
 
     [Fact]
@@ -432,7 +432,7 @@ public sealed class XlsxCodecTests
         sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, NumberValue = 3 });
         sheet.Cells.Add(new CellArtifact
         {
-            Row = 0, Column = 2, Formula = "=A1+B1", NumberValue = 5,
+            Row = 0, Column = 2, Formula = "=LOG10(A1)+B1", NumberValue = 5,
             FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.Shared, SharedIndex = 7, Reference = "C1:C2" },
         });
         sheet.Cells.Add(new CellArtifact
@@ -444,7 +444,7 @@ public sealed class XlsxCodecTests
         sheet.Cells.Add(new CellArtifact { Row = 1, Column = 1, NumberValue = 5 });
         sheet.Cells.Add(new CellArtifact
         {
-            Row = 1, Column = 2, Formula = "=A2+B2", NumberValue = 9,
+            Row = 1, Column = 2, Formula = "=LOG10(A2)+B2", NumberValue = 9,
             FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.Shared, SharedIndex = 7, Reference = "C1:C2" },
         });
         var workbook = new WorkbookArtifact { Id = "workbook/formulas", DateSystem = WorkbookDateSystem._1900 };

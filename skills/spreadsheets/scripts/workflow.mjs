@@ -57,6 +57,38 @@ function safeFileSegment(value) {
   return String(value || "sheet").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "sheet";
 }
 
+function fixtureCellAddress(row, column) {
+  let number = column + 1;
+  let label = "";
+  while (number > 0) {
+    number -= 1;
+    label = String.fromCharCode(65 + number % 26) + label;
+    number = Math.floor(number / 26);
+  }
+  return `${label}${row + 1}`;
+}
+
+function applyFormulaMetadata(sheet, range, metadata = {}) {
+  const kind = String(metadata.kind || metadata.type || "");
+  const rangeAddress = `${fixtureCellAddress(range.bounds.top, range.bounds.left)}${range.bounds.top === range.bounds.bottom && range.bounds.left === range.bounds.right ? "" : `:${fixtureCellAddress(range.bounds.bottom, range.bounds.right)}`}`;
+  const reference = String(metadata.reference || (kind === "shared" ? rangeAddress : ""));
+  if (kind === "shared") {
+    if (!Number.isInteger(metadata.sharedIndex) || metadata.sharedIndex < 0) throw new Error(`Spreadsheet fixture ${sheet.name}!${rangeAddress} shared formula metadata requires a non-negative sharedIndex.`);
+    for (let row = range.bounds.top; row <= range.bounds.bottom; row += 1) {
+      for (let column = range.bounds.left; column <= range.bounds.right; column += 1) {
+        Object.assign(sheet.store.get(fixtureCellAddress(row, column)), { formulaType: "shared", sharedIndex: metadata.sharedIndex, sharedRef: reference });
+      }
+    }
+    return;
+  }
+  if (kind === "array") {
+    if (!reference) throw new Error(`Spreadsheet fixture ${sheet.name}!${rangeAddress} array formula metadata requires reference.`);
+    Object.assign(sheet.store.get(fixtureCellAddress(range.bounds.top, range.bounds.left)), { formulaType: "array", arrayRef: reference });
+    return;
+  }
+  throw new Error(`Spreadsheet fixture ${sheet.name}!${rangeAddress} formulaMetadata.kind must be shared or array.`);
+}
+
 function pdfPageCount(pdfPath) {
   const result = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`pdfinfo failed for ${pdfPath}: ${result.stderr || result.stdout}`);
@@ -99,6 +131,7 @@ function applyRangeOperation(sheet, operation = {}) {
   const range = sheet.getRange(operation.range);
   if (operation.values) range.values = operation.values;
   if (operation.formulas) range.formulas = operation.formulas;
+  if (operation.formulaMetadata) applyFormulaMetadata(sheet, range, operation.formulaMetadata);
   if (operation.format) range.format = operation.format;
   if (operation.autofitColumns === true) range.format.autofitColumns();
   if (operation.autofitRows === true) range.format.autofitRows();
