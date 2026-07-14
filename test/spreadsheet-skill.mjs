@@ -6,6 +6,7 @@ import sharp from "sharp";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
+import { importXlsxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
 
@@ -291,6 +292,47 @@ try {
   assert.match(await wasmZip.file("xl/worksheets/_rels/sheet4.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table3\.xml"/);
   assert.match(await wasmZip.file("xl/worksheets/_rels/sheet5.xml.rels").async("text"), /Type="[^"]+\/table" Target="(?:\/xl|\.\.)\/tables\/table4\.xml"/);
   if (nativeSpreadsheetRenderStatus().available) assert.equal(wasmResult.qa.summary.nativeRender.status, "passed");
+
+  const queryResult = await runSpreadsheetFixture(path.join(repoRoot, "skills", "spreadsheets", "fixtures", "open-chestnut-query-table.json"), {
+    outputDir: path.join(outputDir, "open-chestnut-query-table"),
+  });
+  assert.equal(queryResult.codec, "open-chestnut");
+  assert.equal(queryResult.roundtripCodec, "open-chestnut");
+  assert.equal(queryResult.sourceQueryTable.query.name, "Warehouse sales refreshed");
+  assert.equal(queryResult.sourceQueryTable.query.disableRefresh, true);
+  assert.equal(queryResult.sourceQueryTable.query.backgroundRefresh, false);
+  assert.equal(queryResult.qa.summary.packageOk, true);
+  assert.equal(queryResult.qa.summary.verifyOk, true);
+  assert.equal(queryResult.qa.summary.visualQaOk, true);
+  assert.equal(queryResult.qa.summary.nativeRender.status, "skipped");
+  const queryWorkbook = await importXlsxWithOpenChestnut(await FileBlob.load(queryResult.workbookPath));
+  const runnableQueryTable = queryWorkbook.worksheets.getItem("External Data").tables.getItemOrNullObject("ExternalSales");
+  assert.deepEqual(runnableQueryTable.queryTable, {
+    name: "Warehouse sales refreshed",
+    connectionId: 7,
+    headers: true,
+    rowNumbers: false,
+    disableRefresh: true,
+    backgroundRefresh: false,
+    firstBackgroundRefresh: false,
+    refreshOnLoad: false,
+    growShrinkType: "insertClear",
+    fillFormulas: false,
+    removeDataOnSave: false,
+    disableEdit: false,
+    preserveFormatting: true,
+    adjustColumnWidth: true,
+    intermediate: false,
+    autoFormatId: 3,
+    applyFontFormats: true,
+  });
+  const queryZip = await JSZip.loadAsync(await fs.readFile(queryResult.workbookPath));
+  const runnableQueryXml = await queryZip.file("xl/queryTables/queryTable1.xml").async("text");
+  assert.match(runnableQueryXml, /disableRefresh="1"/);
+  assert.match(runnableQueryXml, /backgroundRefresh="0"/);
+  assert.match(runnableQueryXml, /<x:queryTableFields count="2">/);
+  assert.match(runnableQueryXml, /<fixture:opaque value="kept"/);
+  assert.match(await fs.readFile(queryResult.qa.summary.files.packageInspect, "utf8"), /xl\/queryTables\/queryTable1\.xml/);
 
   const secondQa = await verifyWorkbookFile(result.workbookPath, {
     outputDir: path.join(outputDir, "second-qa"),

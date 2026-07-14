@@ -613,6 +613,134 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ImportsAndEditsSourceBoundWorksheetQueryTableGraph()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray());
+        AssertOffice2021Valid(source);
+        var connectionXml = ReadEntry(source, "xl/connections.xml");
+        var relationshipXml = ReadEntry(source, "xl/tables/_rels/table1.xml.rels");
+
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.True(table.Source.Editable);
+        var query = Assert.IsType<SpreadsheetTableQueryArtifact>(table.QueryTable);
+        Assert.Equal("Warehouse sales", query.Name);
+        Assert.Equal(7U, query.ConnectionId);
+        Assert.True(query.Headers);
+        Assert.False(query.RowNumbers);
+        Assert.True(query.BackgroundRefresh);
+        Assert.False(query.RefreshOnLoad);
+        Assert.True(query.PreserveFormatting);
+        Assert.Equal("insertClear", query.GrowShrinkType);
+        Assert.Equal("xl/queryTables/queryTable1.xml", query.Source.QueryPartPath);
+        Assert.Equal("rIdQueryTable", query.Source.RelationshipId);
+        Assert.Equal("xl/connections.xml", query.Source.ConnectionPartPath);
+        Assert.True(query.Source.Editable);
+
+        table.Name = "WarehouseTable";
+        query.Name = "Warehouse sales refreshed";
+        query.BackgroundRefresh = false;
+        query.RefreshOnLoad = true;
+        query.AutoFormatId = 3;
+        query.ApplyFontFormats = true;
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var output = exported.File.ToByteArray();
+        AssertOffice2021Valid(output);
+        Assert.Equal(connectionXml, ReadEntry(output, "xl/connections.xml"));
+        Assert.Equal(relationshipXml, ReadEntry(output, "xl/tables/_rels/table1.xml.rels"));
+        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, "xl/queryTables/queryTable1.xml"));
+        Assert.Contains("name=\"Warehouse sales refreshed\"", queryXml);
+        Assert.Contains("backgroundRefresh=\"0\"", queryXml);
+        Assert.Contains("refreshOnLoad=\"1\"", queryXml);
+        Assert.Contains("autoFormatId=\"3\"", queryXml);
+        Assert.Contains("applyFontFormats=\"1\"", queryXml);
+        Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
+        Assert.Contains("<fixture:opaque value=\"kept\"", queryXml);
+
+        var reimported = Import(output);
+        var edited = Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.Equal("WarehouseTable", edited.Name);
+        Assert.Equal("Warehouse sales refreshed", edited.QueryTable.Name);
+        Assert.False(edited.QueryTable.BackgroundRefresh);
+        Assert.True(edited.QueryTable.RefreshOnLoad);
+        Assert.Equal(3U, edited.QueryTable.AutoFormatId);
+        Assert.True(edited.QueryTable.ApplyFontFormats);
+        Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
+        Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
+    }
+
+    [Fact]
+    public void WorksheetQueryTableRejectsFabricationRebindingAndBindingTamper()
+    {
+        var sourceFree = TableExportRequest();
+        sourceFree.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable = new SpreadsheetTableQueryArtifact
+        {
+            Name = "Fabricated query",
+            ConnectionId = 1,
+        };
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(sourceFree.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var imported = Import(AddQueryTableGraph(authored.File.ToByteArray()));
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.ConnectionId = 999;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(AddQueryTableGraph(authored.File.ToByteArray()));
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Source.ConnectionXmlSha256 = new string('0', 64);
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void UnsupportedWorksheetQueryTableRemainsByteExactAndHidden()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray(), addUnsupportedRelationship: true);
+        var imported = Import(source);
+        var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
+        Assert.False(table.Source.Editable);
+        Assert.Empty(table.Name);
+        Assert.Null(table.QueryTable);
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(source, "xl/tables/table1.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/tables/table1.xml"));
+        Assert.Equal(ReadEntry(source, "xl/queryTables/queryTable1.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
+        Assert.Equal(ReadEntry(source, "xl/connections.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/connections.xml"));
+    }
+
+    [Fact]
     public void ProtocolRejectsInvalidWorksheetTableProfiles()
     {
         var request = TableExportRequest();
@@ -1882,6 +2010,57 @@ public sealed class XlsxCodecTests
         using var output = new MemoryStream();
         entry.CopyTo(output);
         return output.ToArray();
+    }
+
+    private static byte[] AddQueryTableGraph(byte[] bytes, bool addUnsupportedRelationship = false)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var workbookPart = document.WorkbookPart!;
+            var connectionsPart = workbookPart.AddNewPart<ConnectionsPart>("rIdConnections");
+            WritePart(connectionsPart, """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                  <x:connection id="7" name="Fixture warehouse" type="5" refreshedVersion="8" background="1" refreshOnLoad="0" saveData="1">
+                    <x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Region, Revenue FROM Sales" commandType="2"/>
+                  </x:connection>
+                </x:connections>
+                """);
+            var tablePart = workbookPart.WorksheetParts.Single().TableDefinitionParts.Single();
+            if (addUnsupportedRelationship)
+                tablePart.AddExternalRelationship("urn:open-office-artifact-tool:unsupported-query-companion", new Uri("https://fixture.invalid/query"), "rIdUnsupportedQueryCompanion");
+            var queryPart = tablePart.AddNewPart<QueryTablePart>("rIdQueryTable");
+            WritePart(queryPart, $$"""
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7">
+                  <x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0">
+                    <x:queryTableFields count="2">
+                      <x:queryTableField id="1" name="Region" dataBound="1" tableColumnId="1"/>
+                      <x:queryTableField id="2" name="Revenue" dataBound="1" tableColumnId="2"/>
+                    </x:queryTableFields>
+                  </x:queryTableRefresh>
+                  <x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst>
+                </x:queryTable>
+                """);
+        }
+        return stream.ToArray();
+    }
+
+    private static void WritePart(OpenXmlPart part, string xml)
+    {
+        using var target = part.GetStream(FileMode.Create, FileAccess.Write);
+        using var writer = new StreamWriter(target, new System.Text.UTF8Encoding(false));
+        writer.Write(xml);
+    }
+
+    private static void AssertOffice2021Valid(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
     }
 
     private static byte[] AddExternalWorkbookRelationship(byte[] bytes)

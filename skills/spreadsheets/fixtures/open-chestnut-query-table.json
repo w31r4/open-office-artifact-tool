@@ -1,0 +1,65 @@
+{
+  "name": "open-chestnut-query-table",
+  "outputName": "open-chestnut-query-table.xlsx",
+  "codec": "open-chestnut",
+  "roundtripCodec": "open-chestnut",
+  "sheets": [
+    {
+      "name": "External Data",
+      "ranges": [
+        {
+          "range": "A1:B3",
+          "values": [
+            ["Region", "Revenue"],
+            ["North", 120],
+            ["South", 80]
+          ]
+        },
+        {
+          "range": "A1:B1",
+          "format": {
+            "fill": "#0F766E",
+            "font": { "bold": true, "color": "#FFFFFF" }
+          }
+        }
+      ],
+      "tables": [
+        {
+          "range": "A1:B3",
+          "name": "ExternalSales",
+          "style": "TableStyleMedium4",
+          "showRowStripes": true
+        }
+      ]
+    }
+  ],
+  "sourceQueryTableFixture": {
+    "sheet": "External Data",
+    "table": "ExternalSales",
+    "tablePartPath": "xl/tables/table1.xml",
+    "queryPartPath": "xl/queryTables/queryTable1.xml",
+    "connectionId": 7,
+    "connectionName": "Fixture warehouse",
+    "queryName": "Warehouse sales",
+    "fields": ["Region", "Revenue"],
+    "edit": {
+      "name": "Warehouse sales refreshed",
+      "disableRefresh": true,
+      "backgroundRefresh": false,
+      "refreshOnLoad": false,
+      "autoFormatId": 3,
+      "applyFontFormats": true
+    }
+  },
+  "expectations": [
+    { "sheet": "External Data", "range": "A2:B3", "values": [["North", 120], ["South", 80]] }
+  ],
+  "qa": {
+    "sheetName": "External Data",
+    "range": "A1:B3",
+    "renderFormat": "png",
+    "inspectKind": "workbook,sheet,table,style,computedStyle",
+    "maxChars": 16000,
+    "nativeRender": "off"
+  }
+}

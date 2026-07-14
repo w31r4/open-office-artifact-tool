@@ -708,6 +708,28 @@ function publicTableColor(value) {
   };
 }
 
+const TABLE_QUERY_BOOLEAN_FIELDS = [
+  "headers", "rowNumbers", "disableRefresh", "backgroundRefresh", "firstBackgroundRefresh", "refreshOnLoad",
+  "fillFormulas", "removeDataOnSave", "disableEdit", "preserveFormatting", "adjustColumnWidth", "intermediate",
+  "applyNumberFormats", "applyBorderFormats", "applyFontFormats", "applyPatternFormats", "applyAlignmentFormats",
+  "applyWidthHeightFormats",
+];
+
+function publicTableQuery(value) {
+  if (!value) return undefined;
+  const query = { name: String(value.name ?? ""), connectionId: Number(value.connectionId ?? 0) };
+  for (const field of TABLE_QUERY_BOOLEAN_FIELDS) if (value[field] !== undefined) query[field] = Boolean(value[field]);
+  if (value.growShrinkType !== undefined) query.growShrinkType = String(value.growShrinkType);
+  if (value.autoFormatId !== undefined) query.autoFormatId = Number(value.autoFormatId);
+  return query;
+}
+
+function wireTableQuery(table) {
+  const query = publicTableQuery(table.queryTable);
+  if (!query) return undefined;
+  return { ...query, source: table[TABLE_STATE]?.wire?.queryTable?.source };
+}
+
 function tableSnapshot(table) {
   const columnNames = tableColumnNames(table);
   return {
@@ -726,6 +748,7 @@ function tableSnapshot(table) {
     columns: tableColumnDefinitions(table, columnNames),
     filters: tableFilters(table),
     sortState: tableSortState(table),
+    queryTable: publicTableQuery(table.queryTable),
   };
 }
 
@@ -734,7 +757,7 @@ function sameTableSnapshot(table, snapshot) {
 }
 
 function wireWorksheetTable(table) {
-  return { ...tableSnapshot(table), source: table[TABLE_STATE]?.wire?.source };
+  return { ...tableSnapshot(table), queryTable: wireTableQuery(table), source: table[TABLE_STATE]?.wire?.source };
 }
 
 function wireWorksheetTables(sheet, state) {
@@ -907,6 +930,7 @@ function workbookFromEnvelope(envelope) {
         columnDefinitions: sourceTable.columns?.length ? sourceTable.columns.map((column) => ({ ...column })) : undefined,
         filters: sourceTable.filters?.map(publicTableFilter),
         sortState: publicTableSortState(sourceTable.sortState),
+        queryTable: publicTableQuery(sourceTable.queryTable),
       });
       table.showHeaders = sourceTable.hasHeaders;
       table.showFirstColumn = sourceTable.showFirstColumn;

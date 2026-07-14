@@ -207,6 +207,12 @@ message SpreadsheetTableArtifact {
   // cell-fill/font-color sorts are modeled; custom-list and locale-specific
   // sort profiles remain opaque.
   SpreadsheetTableSortStateArtifact sort_state = 16;
+  // A source-bound projection of an existing QueryTablePart. OpenChestnut can
+  // edit the root query policy and rebind it to another connection already in
+  // the same source ConnectionsPart, but never fabricates external connections
+  // during source-free authoring. Refresh history, query fields, extensions,
+  // connection definitions, and unknown XML remain source-preserved.
+  SpreadsheetTableQueryArtifact query_table = 17;
 }
 
 // A bounded SpreadsheetML tableColumn projection. Formula strings use the
@@ -316,6 +322,49 @@ message SpreadsheetTableSortConditionArtifact {
   SpreadsheetTableIconArtifact icon = 3;
   // Mutually exclusive with icon; absence of both means value sort.
   SpreadsheetTableColorArtifact color = 4;
+}
+
+// Stable root semantics from one SpreadsheetML queryTable part. Optional
+// scalar presence retains the distinction between an omitted native attribute
+// and an explicit false/zero value while leaving queryTableRefresh children
+// and connection credentials outside the public semantic model.
+message SpreadsheetTableQueryArtifact {
+  string name = 1;
+  uint32 connection_id = 2;
+  optional bool headers = 3;
+  optional bool row_numbers = 4;
+  optional bool disable_refresh = 5;
+  optional bool background_refresh = 6;
+  optional bool first_background_refresh = 7;
+  optional bool refresh_on_load = 8;
+  optional string grow_shrink_type = 9;
+  optional bool fill_formulas = 10;
+  optional bool remove_data_on_save = 11;
+  optional bool disable_edit = 12;
+  optional bool preserve_formatting = 13;
+  optional bool adjust_column_width = 14;
+  optional bool intermediate = 15;
+  optional uint32 auto_format_id = 16;
+  optional bool apply_number_formats = 17;
+  optional bool apply_border_formats = 18;
+  optional bool apply_font_formats = 19;
+  optional bool apply_pattern_formats = 20;
+  optional bool apply_alignment_formats = 21;
+  optional bool apply_width_height_formats = 22;
+  SpreadsheetTableQuerySourceBinding source = 23;
+}
+
+// Package locators and hashes used to prove that a query edit still targets
+// the validated source QueryTablePart and its unchanged ConnectionsPart.
+// Relationship IDs and part paths are package-local locators, not durable IDs.
+message SpreadsheetTableQuerySourceBinding {
+  string query_part_path = 1;
+  string relationship_id = 2;
+  string xml_sha256 = 3;
+  string semantic_sha256 = 4;
+  string connection_part_path = 5;
+  string connection_xml_sha256 = 6;
+  bool editable = 7;
 }
 
 message SpreadsheetTableSourceBinding {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import JSZip from "jszip";
 
 import {
   FileBlob,
@@ -25,6 +26,45 @@ import {
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CSV_MIME = "text/csv";
 const TSV_MIME = "text/tab-separated-values";
+
+function fixtureXmlEscape(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+async function attachSourceQueryTableFixture(file, config = {}) {
+  const tablePartPath = String(config.tablePartPath || "xl/tables/table1.xml");
+  const queryPartPath = String(config.queryPartPath || "xl/queryTables/queryTable1.xml");
+  if (!/^xl\/tables\/table[1-9][0-9]*\.xml$/.test(tablePartPath) || !/^xl\/queryTables\/queryTable[1-9][0-9]*\.xml$/.test(queryPartPath))
+    throw new Error("sourceQueryTableFixture requires canonical numbered table/queryTable part paths.");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const zip = await JSZip.loadAsync(bytes);
+  if (!zip.file(tablePartPath)) throw new Error(`sourceQueryTableFixture cannot find ${tablePartPath}.`);
+  if (zip.file("xl/connections.xml") || zip.file(queryPartPath)) throw new Error("sourceQueryTableFixture refuses to replace an existing connection or QueryTable part.");
+  const contentTypes = await zip.file("[Content_Types].xml")?.async("text");
+  const workbookRelationships = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
+  if (!contentTypes?.includes("</Types>") || !workbookRelationships?.includes("</Relationships>"))
+    throw new Error("sourceQueryTableFixture requires readable content types and workbook relationships.");
+  const tableName = path.posix.basename(tablePartPath);
+  const tableRelationshipPath = `${path.posix.dirname(tablePartPath)}/_rels/${tableName}.rels`;
+  if (zip.file(tableRelationshipPath)) throw new Error(`sourceQueryTableFixture refuses to replace ${tableRelationshipPath}.`);
+  const connectionId = Number(config.connectionId ?? 7);
+  if (!Number.isInteger(connectionId) || connectionId <= 0) throw new Error("sourceQueryTableFixture.connectionId must be a positive integer.");
+  const fields = Array.isArray(config.fields) && config.fields.length ? config.fields.map(String) : ["Key", "Value"];
+  const queryTarget = path.posix.relative(path.posix.dirname(tablePartPath), queryPartPath);
+  zip.file("[Content_Types].xml", contentTypes.replace(
+    "</Types>",
+    `<Override PartName="/xl/connections.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/><Override PartName="/${fixtureXmlEscape(queryPartPath)}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml"/></Types>`,
+  ));
+  zip.file("xl/_rels/workbook.xml.rels", workbookRelationships.replace(
+    "</Relationships>",
+    '<Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="connections.xml"/></Relationships>',
+  ));
+  zip.file(tableRelationshipPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="${fixtureXmlEscape(queryTarget)}"/></Relationships>`);
+  zip.file("xl/connections.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:connection id="${connectionId}" name="${fixtureXmlEscape(config.connectionName || "Fixture connection")}" type="5" refreshedVersion="8" background="1" refreshOnLoad="0" saveData="1"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT fixture fields" commandType="2"/></x:connection></x:connections>`);
+  const queryFields = fields.map((name, index) => `<x:queryTableField id="${index + 1}" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="${index + 1}"/>`).join("");
+  zip.file(queryPartPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="${fixtureXmlEscape(config.queryName || "Fixture query")}" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="${connectionId}"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="${fields.length + 1}" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="${fields.length}">${queryFields}</x:queryTableFields></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>`);
+  return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: XLSX_MIME, name: "source-query-table-fixture.xlsx" });
+}
 
 const EXTENSION_BY_FORMAT = {
   svg: "svg",
@@ -374,6 +414,20 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   let file = codec === "open-chestnut"
     ? await exportXlsxWithOpenChestnut(workbook)
     : await SpreadsheetFile.exportXlsx(workbook);
+  let sourceQueryTable;
+  if (fixture.sourceQueryTableFixture) {
+    if (codec !== "open-chestnut") throw new Error("sourceQueryTableFixture requires codec=open-chestnut.");
+    file = await attachSourceQueryTableFixture(file, fixture.sourceQueryTableFixture);
+    const imported = await importXlsxWithOpenChestnut(file);
+    const sourceQuery = fixture.sourceQueryTableFixture;
+    const sheet = imported.worksheets.getItem(sourceQuery.sheet);
+    const table = sheet?.tables.getItemOrNullObject(sourceQuery.table);
+    if (!sheet || !table || table.isNullObject || !table.queryTable)
+      throw new Error(`sourceQueryTableFixture could not resolve ${sourceQuery.sheet}!${sourceQuery.table}.`);
+    Object.assign(table.queryTable, sourceQuery.edit || {});
+    file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
+    sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: { ...table.queryTable } };
+  }
   const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
   if (roundtripCodec === "open-chestnut") {
@@ -397,5 +451,5 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     allSheets: options.allSheets,
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
   });
-  return { fixture, workbookPath, qa, codec, roundtripCodec };
+  return { fixture, workbookPath, qa, codec, roundtripCodec, sourceQueryTable };
 }

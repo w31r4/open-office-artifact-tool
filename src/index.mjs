@@ -2958,6 +2958,23 @@ class WorksheetTableRowsFacade {
   }
 }
 
+const WORKSHEET_TABLE_QUERY_UNSUPPORTED = Symbol("open-office-artifact-tool.worksheet-table-query-unsupported");
+const WORKSHEET_TABLE_QUERY_BOOLEAN_FIELDS = [
+  "headers", "rowNumbers", "disableRefresh", "backgroundRefresh", "firstBackgroundRefresh", "refreshOnLoad",
+  "fillFormulas", "removeDataOnSave", "disableEdit", "preserveFormatting", "adjustColumnWidth", "intermediate",
+  "applyNumberFormats", "applyBorderFormats", "applyFontFormats", "applyPatternFormats", "applyAlignmentFormats",
+  "applyWidthHeightFormats",
+];
+
+function normalizeWorksheetTableQuery(query) {
+  if (query == null) return undefined;
+  const normalized = { name: String(query.name ?? ""), connectionId: Number(query.connectionId ?? 0) };
+  for (const field of WORKSHEET_TABLE_QUERY_BOOLEAN_FIELDS) if (query[field] !== undefined) normalized[field] = Boolean(query[field]);
+  if (query.growShrinkType !== undefined) normalized.growShrinkType = String(query.growShrinkType);
+  if (query.autoFormatId !== undefined) normalized.autoFormatId = Number(query.autoFormatId);
+  return normalized;
+}
+
 class WorksheetTable {
   constructor(worksheet, rangeOrConfig, hasHeaders = true, name) {
     this.worksheet = worksheet;
@@ -3066,6 +3083,9 @@ class WorksheetTable {
           }))
         : [],
     } : undefined;
+    this.queryTable = normalizeWorksheetTableQuery(config.queryTable);
+    if (config.queryTableUnsupported === true)
+      Object.defineProperty(this, WORKSHEET_TABLE_QUERY_UNSUPPORTED, { configurable: true, value: true, writable: true });
     this.rows = new WorksheetTableRowsFacade(this);
     this.refreshDimensions();
   }
@@ -3087,7 +3107,7 @@ class WorksheetTable {
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {
-    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, sortState: this.sortState, values: this.values };
+    return { kind: "table", id: this.id, sheet: this.worksheet.name, name: this.name, address: this.range, rows: this.rowCount, cols: this.columnCount, hasHeaders: this.hasHeaders, style: this.style, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, showBandedColumns: this.showBandedColumns, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, sortState: this.sortState, queryTable: this.queryTable, queryTableUnsupported: this[WORKSHEET_TABLE_QUERY_UNSUPPORTED] === true, values: this.values };
   }
 
   toSvg(bounds) {
@@ -3097,7 +3117,7 @@ class WorksheetTable {
     return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="none" stroke="#0ea5e9" stroke-width="2"/><text x="${left}" y="${Math.max(12, top - 6)}" font-family="Arial" font-size="11" fill="#0284c7">${xmlEscape(this.name)}</text>`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, sortState: this.sortState, values: this.values }; }
+  toJSON() { return { id: this.id, name: this.name, range: this.range, hasHeaders: this.hasHeaders, showHeaders: this.showHeaders, showTotals: this.showTotals, showBandedColumns: this.showBandedColumns, showFilterButton: this.showFilterButton, showFirstColumn: this.showFirstColumn, showLastColumn: this.showLastColumn, showRowStripes: this.showRowStripes, style: this.style, columnNames: this.columnNames, columnDefinitions: this.columnDefinitions, filters: this.filters, sortState: this.sortState, queryTable: this.queryTable, values: this.values }; }
 }
 
 class WorksheetTableCollection {
@@ -6387,6 +6407,9 @@ export class SpreadsheetFile {
   }
 
   static async exportXlsx(workbook) {
+    const queryTable = workbook.worksheets.items.flatMap((sheet) => sheet.tables.items).find((table) => table.queryTable != null || table[WORKSHEET_TABLE_QUERY_UNSUPPORTED] === true);
+    if (queryTable)
+      throw new Error(`The JavaScript XLSX codec cannot author or source-preserve QueryTable/external-connection graphs for ${queryTable.name}; use the source-bound OpenChestnut XLSX codec.`);
     workbook.recalculate();
     const zip = new JSZip();
     const tableParts = collectWorkbookTableParts(workbook);
@@ -7319,6 +7342,65 @@ function parseNativeTableSortState(xml, styles) {
   };
 }
 
+function parseNativeQueryTable(xml) {
+  const opening = /<(?:[A-Za-z_][\w.-]*:)?queryTable\b[^>]*>/.exec(String(xml || ""))?.[0];
+  if (!opening) return undefined;
+  const attrs = ooxmlXmlAttributes(opening);
+  const connectionId = Number(attrs.connectionId);
+  if (!attrs.name || attrs.name.length > 255 || !Number.isInteger(connectionId) || connectionId <= 0) return undefined;
+  const query = { name: attrs.name, connectionId };
+  const booleanFields = {
+    headers: "headers", rowNumbers: "rowNumbers", disableRefresh: "disableRefresh", backgroundRefresh: "backgroundRefresh",
+    firstBackgroundRefresh: "firstBackgroundRefresh", refreshOnLoad: "refreshOnLoad", fillFormulas: "fillFormulas",
+    removeDataOnSave: "removeDataOnSave", disableEdit: "disableEdit", preserveFormatting: "preserveFormatting",
+    adjustColumnWidth: "adjustColumnWidth", intermediate: "intermediate", applyNumberFormats: "applyNumberFormats",
+    applyBorderFormats: "applyBorderFormats", applyFontFormats: "applyFontFormats", applyPatternFormats: "applyPatternFormats",
+    applyAlignmentFormats: "applyAlignmentFormats", applyWidthHeightFormats: "applyWidthHeightFormats",
+  };
+  for (const [attribute, field] of Object.entries(booleanFields)) {
+    if (attrs[attribute] == null) continue;
+    const value = String(attrs[attribute]).toLowerCase();
+    if (!["0", "1", "false", "true"].includes(value)) return undefined;
+    query[field] = value === "1" || value === "true";
+  }
+  if (attrs.growShrinkType != null) {
+    if (!["insertClear", "insertDelete", "overwriteClear"].includes(attrs.growShrinkType)) return undefined;
+    query.growShrinkType = attrs.growShrinkType;
+  }
+  if (attrs.autoFormatId != null) {
+    const autoFormatId = Number(attrs.autoFormatId);
+    if (!Number.isInteger(autoFormatId) || autoFormatId < 0) return undefined;
+    query.autoFormatId = autoFormatId;
+  }
+  return query;
+}
+
+async function importNativeTableQuery(zip, tablePartPath) {
+  const relationshipPath = ooxmlRelationshipPartPath(tablePartPath, "XLSX");
+  const relationshipFile = zip.file(relationshipPath);
+  if (!relationshipFile) return {};
+  const relationships = parseRelsXml(await relationshipFile.async("text"));
+  const queryRelationships = relationships.filter((item) => item.type.endsWith("/queryTable"));
+  if (queryRelationships.length === 0) return {};
+  if (relationships.length !== 1 || queryRelationships.length !== 1 || String(queryRelationships[0].targetMode || "").toLowerCase() === "external")
+    return { queryTableUnsupported: true };
+  const queryPartPath = ooxmlResolveRelationshipTarget(tablePartPath, queryRelationships[0].target);
+  const queryXml = await zip.file(queryPartPath)?.async("text");
+  if (!queryXml || zip.file(ooxmlRelationshipPartPath(queryPartPath, "XLSX"))) return { queryTableUnsupported: true };
+  const queryTable = parseNativeQueryTable(queryXml);
+  if (!queryTable) return { queryTableUnsupported: true };
+  const workbookRelationships = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
+  const connectionRelationships = workbookRelationships.filter((item) => item.type.endsWith("/connections") && String(item.targetMode || "").toLowerCase() !== "external");
+  if (connectionRelationships.length !== 1) return { queryTableUnsupported: true };
+  const connectionPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", connectionRelationships[0].target);
+  const connectionsXml = await zip.file(connectionPath)?.async("text");
+  if (!connectionsXml) return { queryTableUnsupported: true };
+  const connectionIds = [...connectionsXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?connection\b([^>]*)>/g)]
+    .map((match) => Number(ooxmlXmlAttributes(match[1] || "").id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  return connectionIds.includes(queryTable.connectionId) ? { queryTable } : { queryTableUnsupported: true };
+}
+
 async function importNativeWorksheetTables(sheet, zip, worksheetPartPath, styles) {
   const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
   for (const relationship of relationships) {
@@ -7354,6 +7436,7 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath, styles
     const columnNames = columnDefinitions.map((column) => column.name);
     const styleTag = /<(?:[A-Za-z_][\w.-]*:)?tableStyleInfo\b[^>]*\/?\s*>/.exec(xml)?.[0];
     const styleAttrs = ooxmlXmlAttributes(styleTag || "");
+    const queryProfile = await importNativeTableQuery(zip, tablePartPath);
     sheet.tables.add({
       range: attrs.ref,
       name: attrs.displayName || attrs.name || `Table${sheet.tables.items.length + 1}`,
@@ -7369,6 +7452,7 @@ async function importNativeWorksheetTables(sheet, zip, worksheetPartPath, styles
       columnDefinitions,
       filters: parseNativeTableFilters(xml, styles),
       sortState: parseNativeTableSortState(xml, styles),
+      ...queryProfile,
     });
   }
 }

@@ -13,10 +13,12 @@ namespace OpenChestnut.Codec;
 // Owns the bounded worksheet TableParts -> TableDefinitionPart graph. Cell
 // values/formulas remain owned by XlsxCodec; this module owns the table-level
 // calculated-column/totals metadata plus bounded value/custom/dynamic/date-group/
-// Top10/icon/color AutoFilters and ordinary cell-value/icon/color sort state.
+// Top10/icon/color AutoFilters, ordinary cell-value/icon/color sort state, and
+// a source-bound QueryTable root policy.
 // Stable color semantics resolve through the workbook stylesheet without
-// exposing or mutating shared dxf indexes. Query tables, custom-list sorts,
-// extensions, and other complex differential-style profiles remain opaque.
+// exposing or mutating shared dxf indexes. Query refresh history/fields,
+// connection definitions, custom-list sorts, extensions, and other complex
+// differential-style profiles remain opaque.
 internal sealed class XlsxTableCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -62,6 +64,7 @@ internal sealed class XlsxTableCodec
     };
     private static readonly string[] DateGroupings = ["year", "month", "day", "hour", "minute", "second"];
     private readonly WorksheetPart _worksheetPart;
+    private readonly WorkbookPart _workbookPart;
     private readonly XlsxCellStyleCodec _styles;
     private readonly string _worksheetPath;
     private readonly List<Entry> _entries = [];
@@ -73,13 +76,15 @@ internal sealed class XlsxTableCodec
         internal required string Path { get; init; }
         internal required XDocument Document { get; init; }
         internal required SpreadsheetTableArtifact Artifact { get; set; }
+        internal XlsxQueryTableCodec? Query { get; init; }
         internal bool Editable { get; init; }
         internal bool Dirty { get; set; }
     }
 
-    internal XlsxTableCodec(WorksheetPart worksheetPart, XlsxCellStyleCodec styles)
+    internal XlsxTableCodec(WorksheetPart worksheetPart, WorkbookPart workbookPart, XlsxCellStyleCodec styles)
     {
         _worksheetPart = worksheetPart;
+        _workbookPart = workbookPart;
         _styles = styles;
         _worksheetPath = worksheetPart.Uri.OriginalString.TrimStart('/');
         var tableParts = worksheetPart.Worksheet?.Elements<TableParts>().ToArray() ?? [];
@@ -96,7 +101,11 @@ internal sealed class XlsxTableCodec
     }
 
     internal IReadOnlyList<SpreadsheetTableArtifact> Read() => _entries.Select(item => item.Artifact.Clone()).ToArray();
-    internal IReadOnlySet<string> DirtyPartPaths => _entries.Where(item => item.Dirty).Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    internal IReadOnlySet<string> DirtyPartPaths => _entries
+        .SelectMany(item => item.Query is { Dirty: true } query
+            ? item.Dirty ? new[] { item.Path, query.Path } : new[] { query.Path }
+            : item.Dirty ? new[] { item.Path } : [])
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     internal void Apply(IReadOnlyList<SpreadsheetTableArtifact> desired, bool sourceBound, ref uint nextTableId)
     {
@@ -104,7 +113,12 @@ internal sealed class XlsxTableCodec
         if (!sourceBound)
         {
             if (_entries.Count != 0) throw Invalid("Source-free worksheet unexpectedly contains table definitions.", _worksheetPath);
-            foreach (var table in desired) Add(table, ref nextTableId);
+            foreach (var table in desired)
+            {
+                if (table.QueryTable is not null)
+                    throw Invalid("Source-free XLSX authoring cannot fabricate a QueryTable/external-connection graph.", _worksheetPath);
+                Add(table, ref nextTableId);
+            }
             return;
         }
 
@@ -128,8 +142,10 @@ internal sealed class XlsxTableCodec
                 continue;
             }
             if (!HasCompleteSemantics(table)) throw Invalid("An editable source table is missing its bounded semantic fields.", entry.Path);
-            if (SemanticSha256(table).Equals(table.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
-            Patch(entry, table);
+            if (entry.Query is null && table.QueryTable is not null || entry.Query is not null && table.QueryTable is null)
+                throw Invalid("Source-preserving XLSX export cannot add or remove a worksheet QueryTable graph in this bounded slice.", entry.Path);
+            entry.Query?.Apply(table.QueryTable, sourceBound: true);
+            if (!SemanticSha256(table).Equals(table.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) Patch(entry, table);
         }
     }
 
@@ -141,6 +157,7 @@ internal sealed class XlsxTableCodec
             using var writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = false, OmitXmlDeclaration = false });
             entry.Document.Save(writer);
         }
+        foreach (var query in _entries.Select(item => item.Query).Where(item => item is not null)) query!.Save();
     }
 
     internal static void ValidateWorksheet(WorksheetArtifact worksheet)
@@ -187,7 +204,11 @@ internal sealed class XlsxTableCodec
             throw new CodecException("invalid_worksheet_table", "Worksheet table definition is not valid XML.", part.Uri.ToString(), exception);
         }
         var path = part.Uri.OriginalString.TrimStart('/');
-        var editable = TryRead(document, out var semantic) && !part.Parts.Any() && !part.ExternalRelationships.Any();
+        var tableReadable = TryRead(document, out var semantic);
+        var queryReadable = XlsxQueryTableCodec.TryLoad(part, _workbookPart, out var query);
+        var editable = tableReadable && queryReadable && !part.ExternalRelationships.Any();
+        if (!editable) semantic = null;
+        else if (query is not null) semantic!.QueryTable = query.Artifact.Clone();
         var binding = new SpreadsheetTableSourceBinding
         {
             WorksheetPartPath = _worksheetPath,
@@ -199,7 +220,16 @@ internal sealed class XlsxTableCodec
         };
         var artifact = semantic ?? new SpreadsheetTableArtifact { Id = $"table/{path}" };
         artifact.Source = binding;
-        _entries.Add(new Entry { Part = part, RelationshipId = relationshipId, Path = path, Document = document, Artifact = artifact, Editable = editable });
+        _entries.Add(new Entry
+        {
+            Part = part,
+            RelationshipId = relationshipId,
+            Path = path,
+            Document = document,
+            Artifact = artifact,
+            Query = editable ? query : null,
+            Editable = editable,
+        });
     }
 
     private void Add(SpreadsheetTableArtifact table, ref uint nextTableId)
@@ -270,6 +300,7 @@ internal sealed class XlsxTableCodec
             ValidateFilter(table, filter, location);
         }
         if (table.SortState is not null) ValidateSortState(table, bounds, location);
+        XlsxQueryTableCodec.Validate(table.QueryTable, location);
     }
 
     private static void ValidateFilter(SpreadsheetTableArtifact table, SpreadsheetTableFilterArtifact filter, string location)
