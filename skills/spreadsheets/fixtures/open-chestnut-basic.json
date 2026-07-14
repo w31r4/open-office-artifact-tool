@@ -4,6 +4,14 @@
   "codec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
   "dateSystem": "1904",
+  "theme": {
+    "name": "OpenChestnut Fixture",
+    "colors": {
+      "dk1": "#101820", "lt1": "#F8FAFC", "dk2": "#1E3A5F", "lt2": "#E2E8F0",
+      "accent1": "#0F766E", "accent2": "#C2410C", "accent3": "#4D7C0F", "accent4": "#7E22CE",
+      "accent5": "#0369A1", "accent6": "#BE123C", "hlink": "#1D4ED8", "folHlink": "#7E22CE"
+    }
+  },
   "sheets": [
     {
       "name": "Summary",

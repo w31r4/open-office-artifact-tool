@@ -171,6 +171,8 @@ try {
   assert.equal(wasmResult.qa.summary.renderFormat, "png");
   const wasmWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(wasmResult.workbookPath));
   assert.equal(wasmWorkbook.dateSystem, "1904");
+  assert.equal(wasmWorkbook.theme.name, "OpenChestnut Fixture");
+  assert.equal(wasmWorkbook.theme.colors.accent1, "#0F766E");
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("B2:D3").values, [[42.5, 85, 127.5], [85, 170, null]]);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.000 \"units\"");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B3").format.numberFormat, "0.00%");
@@ -191,6 +193,9 @@ try {
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").formulaType, "array");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").arrayRef, "D2:D3");
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmResult.workbookPath));
+  const wasmThemeXml = await wasmZip.file("xl/theme/theme1.xml").async("text");
+  assert.match(wasmThemeXml, /name="OpenChestnut Fixture"/);
+  assert.match(wasmThemeXml, /<a:accent1><a:srgbClr val="0F766E"/);
   const wasmStylesXml = await wasmZip.file("xl/styles.xml").async("text");
   assert.match(wasmStylesXml, /0\.000 &quot;units&quot;/);
   assert.match(wasmStylesXml, /patternType="darkGrid"/);

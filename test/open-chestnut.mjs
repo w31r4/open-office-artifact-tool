@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, WorkbookArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -23,6 +23,7 @@ const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(Presentat
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { numberFormatCode: "0.00%" }))[0], 0x22, "Spreadsheet number-format codes must use additive cell field 4.");
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { formulaMetadata: { kind: 1, sharedIndex: 7, reference: "C1:C2" } }))[0], 0x2a, "Spreadsheet formula topology must use additive cell field 5.");
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { style: { font: { bold: true } } }))[0], 0x32, "Spreadsheet static styles must use additive cell field 6.");
+assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { theme: { accent1Rgb: "0F766E" } }))[0], 0x22, "Spreadsheet workbook themes must use additive workbook field 4.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "hyperlink", value: { text: "x", target: { case: "externalUri", value: "https://example.test" } } } }))[0], 0x6a, "Document hyperlinks must use additive block field 13.");
 assert.equal(toBinary(DocumentBlockSchema, create(DocumentBlockSchema, { content: { case: "field", value: { instruction: "PAGE", display: "1" } } }))[0], 0x72, "Document fields must use additive block field 14.");
 assert.equal(toBinary(DocumentSourceBindingSchema, create(DocumentSourceBindingSchema, { residualSha256: "x" }))[0], 0x2a, "Document residual hashes must use additive field 5.");
@@ -145,7 +146,17 @@ assert.equal(toBinary(PresentationLayoutSourceBindingSchema, create(Presentation
 assert.deepEqual([...toBinary(PresentationLayoutSourceBindingSchema, create(PresentationLayoutSourceBindingSchema, { backgroundEditable: true }))], [0x30, 0x01], "Presentation layout background editability must use additive field 6.");
 assert.equal(toBinary(PresentationBackgroundSchema, create(PresentationBackgroundSchema, { color: { case: "colorScheme", value: "accent1" }, kind: { case: "styleReferenceIndex", value: 1001 } }))[0], 0x12, "Presentation background theme colors must retain field 2.");
 
-const workbook = Workbook.create({ dateSystem: "1904" });
+const workbook = Workbook.create({
+  dateSystem: "1904",
+  theme: {
+    name: "OpenChestnut Theme",
+    colors: {
+      dk1: "#101820", lt1: "#F8FAFC", dk2: "#1E3A5F", lt2: "#E2E8F0",
+      accent1: "#0F766E", accent2: "#C2410C", accent3: "#4D7C0F", accent4: "#7E22CE",
+      accent5: "#0369A1", accent6: "#BE123C", hlink: "#1D4ED8", folHlink: "#7E22CE",
+    },
+  },
+});
 const summary = workbook.worksheets.add("Summary");
 summary.getRange("A1:B2").values = [["Quarter", 42.5], [true, null]];
 summary.getRange("B2").formulas = [["=B1*2"]];
@@ -186,6 +197,8 @@ assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
 
 const imported = await importXlsxWithOpenChestnut(exported);
 assert.equal(imported.dateSystem, "1904");
+assert.equal(imported.theme.name, "OpenChestnut Theme");
+assert.equal(imported.theme.colors.accent1, "#0F766E");
 assert.equal(imported.worksheets.items.length, 2);
 assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
@@ -209,6 +222,8 @@ assert.equal(imported.resolve(imported.worksheets.getItem("Summary").id).name, "
 // coexist, so cross-codec fixtures compare semantics instead of XML spelling.
 const javascriptImported = await SpreadsheetFile.importXlsx(exported);
 assert.equal(javascriptImported.dateSystem, "1904");
+assert.equal(javascriptImported.theme.name, "OpenChestnut Theme");
+assert.equal(javascriptImported.theme.colors.accent1, "#0F766E");
 assert.equal(javascriptImported.worksheets.items.length, 2);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
@@ -220,6 +235,7 @@ assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").for
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.border.bottom.style, "double");
 
 imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat = "$#,##0.00";
+imported.setTheme({ name: "OpenChestnut Edited", colors: { ...imported.theme.colors, accent2: "#22C55E" } });
 imported.worksheets.getItem("Summary").getRange("A1").format = {
   ...imported.worksheets.getItem("Summary").getRange("A1").format,
   fill: "#22C55E",
@@ -229,8 +245,30 @@ const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: f
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
 const secondImported = await importXlsxWithOpenChestnut(secondExport);
 assert.equal(secondImported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "$#,##0.00");
+assert.equal(secondImported.theme.name, "OpenChestnut Edited");
+assert.equal(secondImported.theme.colors.accent2, "#22C55E");
 assert.equal(secondImported.worksheets.getItem("Summary").getRange("A1").format.fill, "#22C55E");
 assert.equal(secondImported.worksheets.getItem("Summary").getRange("A1").format.font.bold, false);
+
+const complexThemeZip = await JSZip.loadAsync(exported.bytes);
+const complexThemePath = "xl/theme/theme1.xml";
+const complexThemeSourceXml = await complexThemeZip.file(complexThemePath).async("text");
+const complexThemeXml = complexThemeSourceXml.replace(
+  '<a:accent1><a:srgbClr val="0F766E" /></a:accent1>',
+  '<a:accent1><a:hslClr hue="5400000" sat="100000" lum="50000" /></a:accent1>',
+);
+assert.notEqual(complexThemeXml, complexThemeSourceXml, "fixture must replace the authored RGB theme slot");
+complexThemeZip.file(complexThemePath, complexThemeXml);
+const complexThemeBytes = await complexThemeZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const complexThemeImported = await importXlsxWithOpenChestnut(complexThemeBytes);
+const complexThemePreserved = await exportXlsxWithOpenChestnut(complexThemeImported, { recalculate: false });
+const complexThemePreservedXml = await (await JSZip.loadAsync(complexThemePreserved.bytes)).file(complexThemePath).async("text");
+assert.equal(complexThemePreservedXml, complexThemeXml, "unmodeled workbook themes must remain byte-exact when unchanged");
+complexThemeImported.setTheme({ name: "Lossy replacement", colors: { ...complexThemeImported.theme.colors, accent1: "#2563EB" } });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(complexThemeImported, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_theme" && /cannot be replaced losslessly/i.test(error.message),
+);
 
 const externalZip = await JSZip.loadAsync(exported.bytes);
 const relationshipPath = "xl/_rels/workbook.xml.rels";
@@ -301,6 +339,14 @@ invalidBorderStyle.worksheets.getItem("Sheet1").getRange("A1").format = { border
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidBorderStyle),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_cell_style" && /border style/i.test(error.message),
+);
+
+const invalidWorkbookTheme = Workbook.create();
+invalidWorkbookTheme.worksheets.add("Sheet1").getRange("A1").values = [[1]];
+invalidWorkbookTheme.theme.colors.accent1 = "not-a-color";
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidWorkbookTheme),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_theme" && /color/i.test(error.message),
 );
 
 const formulaWorkbook = Workbook.create();

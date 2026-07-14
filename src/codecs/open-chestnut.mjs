@@ -441,7 +441,12 @@ function unsupportedWorkbookFeatures(workbook) {
 }
 
 function wireWorkbookTheme(theme, source) {
-  const normalized = normalizeXlsxThemeConfig(theme);
+  let normalized;
+  try {
+    normalized = normalizeXlsxThemeConfig(theme);
+  } catch (cause) {
+    throw new OpenChestnutCodecError(`Workbook theme is invalid: ${cause.message}`, [], { code: "invalid_workbook_theme", cause });
+  }
   return {
     name: normalized.name,
     ...Object.fromEntries(XLSX_THEME_WIRE_FIELDS.map(([model, wire]) => [wire, normalized.colors[model].replace(/^#/, "").toUpperCase()])),
