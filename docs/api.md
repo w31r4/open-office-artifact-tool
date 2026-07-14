@@ -38,7 +38,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
-| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, fixed-topology table-cell text, or direct and explicit paragraph-style-inherited numbered single-run paragraph text through the bundled OpenChestnut codec. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, fixed-topology table-cell text, or direct and style/numbering-style-linked numbered single-run paragraph text through the bundled OpenChestnut codec. |
 | `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation. |
 
 ### document details
@@ -588,11 +588,11 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 
 #### `exportDocxWithOpenChestnut`
 
-Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, fixed-topology table-cell text, or direct and explicit paragraph-style-inherited numbered single-run paragraph text through the bundled OpenChestnut codec.
+Experimentally export bounded DocumentModel paragraphs/runs/tables and source-bound hyperlinks, simple fields, fixed-topology table-cell text, or direct and style/numbering-style-linked numbered single-run paragraph text through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
-- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings for hyperlinks, simple fields, fixed-topology table-cell text, and direct or explicit paragraph-style-inherited numbered single-run paragraph text from the OpenChestnut importer.
+- `document` (DocumentModel) required — Document facade within the current paragraph/run/table authoring boundary or carrying validated source bindings for hyperlinks, simple fields, fixed-topology table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraph text from the OpenChestnut importer.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 
