@@ -3822,8 +3822,8 @@ Create an inspectable worksheet table over an A1 range with rich calculated-colu
 - `style` (string) — Table style name.
 - `columnNames` (string[]) — Compatibility projection of table-column names.
 - `columnDefinitions` (object[]) — Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata.
-- `filters` (object[]) — Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, or standard icon-set AutoFilters; omitted iconId means no icon.
-- `sortState` (object) — Bounded value/icon-sort state with reference, caseSensitive, and ordered single-column conditions; icon conditions add kind='icon', iconSet, and optional iconId.
+- `filters` (object[]) — Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, standard icon-set, or stable cell-fill/font-color AutoFilters; color filters use kind='color', target='cell'|'font', and color without exposing dxfId.
+- `sortState` (object) — Bounded value/icon/color-sort state with reference, caseSensitive, and ordered single-column conditions; color conditions use kind='color', target='cell'|'font', and color while the codec owns dxf allocation.
 - `showTotals` (boolean) — Expose the totals row required by totals metadata.
 
 **Schema returns:**
