@@ -413,6 +413,90 @@ function authoredDocumentTableGeometry(block) {
   return { gridColumns: block.gridColumns, rows };
 }
 
+function defaultDocumentTableColumnWidths(columns, widthDxa = 9360) {
+  const count = Math.max(1, Number(columns) || 1);
+  const base = Math.floor(widthDxa / count);
+  return Array.from({ length: count }, (_value, index) => base + (index < widthDxa - base * count ? 1 : 0));
+}
+
+function documentTableFormatting(block, logicalColumns) {
+  const invalid = (message) => {
+    throw new OpenChestnutCodecError(`Document table ${block.id} ${message}`, [], { code: "invalid_document_table" });
+  };
+  const dxa = (value, name, { positive = false } = {}) => {
+    if (!Number.isInteger(value) || value < (positive ? 1 : 0) || value > 1_000_000) {
+      invalid(`${name} must be an integer from ${positive ? 1 : 0} through 1000000.`);
+    }
+    return value;
+  };
+  const widthDxa = dxa(block.widthDxa, "widthDxa", { positive: true });
+  const indentDxa = dxa(block.indentDxa, "indentDxa");
+  if (!Number.isInteger(logicalColumns) || logicalColumns < 1 || logicalColumns > 4_096) {
+    invalid("requires between 1 and 4096 logical formatting columns.");
+  }
+  if (!Array.isArray(block.columnWidthsDxa) || block.columnWidthsDxa.length !== logicalColumns) {
+    invalid(`columnWidthsDxa must contain one width for each of ${logicalColumns} logical grid columns.`);
+  }
+  const columnWidthsDxa = block.columnWidthsDxa.map((value, index) => dxa(value, `columnWidthsDxa[${index}]`, { positive: true }));
+  if (columnWidthsDxa.reduce((sum, value) => sum + value, 0) !== widthDxa) {
+    invalid("columnWidthsDxa must sum exactly to widthDxa.");
+  }
+  const margins = block.cellMarginsDxa;
+  if (!margins || typeof margins !== "object") invalid("cellMarginsDxa must define top, bottom, start, and end margins.");
+  const cellMarginsDxa = {
+    top: dxa(margins.top, "cellMarginsDxa.top"),
+    bottom: dxa(margins.bottom, "cellMarginsDxa.bottom"),
+    start: dxa(margins.start, "cellMarginsDxa.start"),
+    end: dxa(margins.end, "cellMarginsDxa.end"),
+  };
+  const borderColor = String(block.borderColor ?? "");
+  const headerFill = String(block.headerFill ?? "");
+  if (!/^[0-9A-F]{6}$/.test(borderColor)) invalid("borderColor must be a six-digit uppercase RGB value.");
+  if (!/^[0-9A-F]{6}$/.test(headerFill)) invalid("headerFill must be a six-digit uppercase RGB value.");
+  const borderSize = block.borderSize;
+  if (!Number.isInteger(borderSize) || borderSize < 0 || borderSize > 96 || borderSize === 1) {
+    invalid("borderSize must be zero or an integer from 2 through 96 eighths of a point.");
+  }
+  return { widthDxa, indentDxa, columnWidthsDxa, cellMarginsDxa, borderColor, borderSize, headerFill };
+}
+
+function documentTableFormattingConfig(table) {
+  const logicalColumns = table.gridColumns || Math.max(1, ...table.rows.map((row) => row.cells.length));
+  const formatting = table.formatting;
+  if (formatting) {
+    return {
+      widthDxa: formatting.widthDxa,
+      indentDxa: formatting.indentDxa,
+      columnWidthsDxa: [...formatting.columnWidthsDxa],
+      cellMarginsDxa: { ...formatting.cellMarginsDxa },
+      borderColor: formatting.borderColor,
+      borderSize: formatting.borderSize,
+      headerFill: formatting.headerFill,
+    };
+  }
+  return {
+    widthDxa: 9360,
+    indentDxa: 120,
+    columnWidthsDxa: defaultDocumentTableColumnWidths(logicalColumns),
+    cellMarginsDxa: { top: 80, bottom: 80, start: 120, end: 120 },
+    borderColor: "D9D9D9",
+    borderSize: 4,
+    headerFill: "F2F4F7",
+  };
+}
+
+function sameDocumentTableFormatting(block, table) {
+  const expected = documentTableFormattingConfig(table);
+  return block.widthDxa === expected.widthDxa && block.indentDxa === expected.indentDxa &&
+    JSON.stringify(block.columnWidthsDxa) === JSON.stringify(expected.columnWidthsDxa) &&
+    block.cellMarginsDxa?.top === expected.cellMarginsDxa.top &&
+    block.cellMarginsDxa?.bottom === expected.cellMarginsDxa.bottom &&
+    block.cellMarginsDxa?.start === expected.cellMarginsDxa.start &&
+    block.cellMarginsDxa?.end === expected.cellMarginsDxa.end &&
+    block.borderColor === expected.borderColor && block.borderSize === expected.borderSize &&
+    block.headerFill === expected.headerFill;
+}
+
 function sameDocumentNumbering(block, paragraph) {
   const numbering = paragraph.numbering;
   if (!numbering || block.kind !== "listItem") return false;
@@ -607,7 +691,9 @@ function unchangedSourceBlock(block, original) {
       return block.runs.every((run) => Object.keys(run.style || {}).length === 0);
     }
     case "table": {
-      if (block.kind !== "table" || !sameTableValues(block, original) || !sameDocumentTableGeometry(block, original.content.value)) return false;
+      if (block.kind !== "table" || !sameTableValues(block, original) ||
+          !sameDocumentTableGeometry(block, original.content.value) ||
+          !sameDocumentTableFormatting(block, original.content.value)) return false;
       return block.styleId === original.styleId || (!original.styleId && block.styleId === "TableGrid");
     }
     case "hyperlink":
@@ -675,6 +761,9 @@ function documentBlock(block, original, directNumbering) {
     if (source && !sameDocumentTableGeometry(block, source)) {
       throw new OpenChestnutCodecError(`Document table ${block.id} grid, span, merge, and per-cell editability metadata are source-bound.`, [], { code: "unsupported_document_edit" });
     }
+    if (source && !sameDocumentTableFormatting(block, source)) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} direct formatting is source-bound and cannot be changed.`, [], { code: "unsupported_document_edit" });
+    }
     if (source) {
       for (let rowIndex = 0; rowIndex < source.rows.length; rowIndex += 1) {
         for (let cellIndex = 0; cellIndex < source.rows[rowIndex].cells.length; cellIndex += 1) {
@@ -691,6 +780,9 @@ function documentBlock(block, original, directNumbering) {
         case: "table",
         value: {
           ...(source ? { gridColumns: source.gridColumns } : authored ? { gridColumns: authored.gridColumns } : {}),
+          ...(source ? (source.formatting ? { formatting: { ...source.formatting, columnWidthsDxa: [...source.formatting.columnWidthsDxa], cellMarginsDxa: { ...source.formatting.cellMarginsDxa } } } : {}) : {
+            formatting: documentTableFormatting(block, authored?.gridColumns || Math.max(1, block.columns)),
+          }),
           rows: authored?.rows || (block.values || []).map((cells, rowIndex) => ({
             cells: cells.map((value) => String(value ?? "")),
             ...(source ? {
@@ -833,6 +925,8 @@ function documentFromEnvelope(envelope) {
           })) : undefined,
         };
       case "table":
+        {
+          const formatting = documentTableFormattingConfig(block.content.value);
         return {
           kind: "table",
           id: block.id,
@@ -841,7 +935,9 @@ function documentFromEnvelope(envelope) {
           values: block.content.value.rows.map((row) => [...row.cells]),
           gridColumns: block.content.value.gridColumns,
           cells: documentTableCells(block.content.value),
+          ...formatting,
         };
+        }
       case "hyperlink": {
         const hyperlink = block.content.value;
         return {

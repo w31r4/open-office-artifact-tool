@@ -27,13 +27,13 @@
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.Framework.wasm",
-      "bytes": 351509,
-      "sha256": "bce35b9eafd97b62efffb94048888b24e1253986ebe5f322d953f93f09dd9e0c"
+      "bytes": 352021,
+      "sha256": "230c4fead779a45748eb771d95e553f1f7e1b67d37e84de4864d59b5309acd3a"
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
-      "bytes": 5721369,
-      "sha256": "7dbed704f10d114497bc747f047f8fe5ed919ea3bea34bbe5df668bd5474bbc3"
+      "bytes": 5721881,
+      "sha256": "7258d257201bdaf063ffe831e20f3801a165f5eca01f606231cceee1b14f36f0"
     },
     {
       "path": "_framework/Google.Protobuf.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenChestnut.Codec.wasm",
-      "bytes": 537877,
-      "sha256": "1ed869f2e6f003f2eac8791c84192e15d6e7e8b3cd862ab535d693785de4ea3c"
+      "bytes": 555285,
+      "sha256": "4dbb4b4893c92a4875a5ef73ec9b40c5e70c2672ac0bce14dfb41f61c5d3246b"
     },
     {
       "path": "_framework/OpenChestnut.Runtime.wasm",
       "bytes": 6421,
-      "sha256": "f46d4ed5e308ed81019d8ebdbea4f6649514cbf02d5443831a6e7b25230ede4f"
+      "sha256": "c01305192054428a1b4a6f3178a6923fdeb370a92406e5e221ef36193bf3614c"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -93,7 +93,7 @@
     {
       "path": "_framework/System.Linq.wasm",
       "bytes": 46869,
-      "sha256": "47b6456203027deb0b2ce792b81ff449ff9e22939c134610f97dd4cf9072ad47"
+      "sha256": "dfede2a0746780869c53079c283708714836efbdc41c0124696cd4df80dfe2ce"
     },
     {
       "path": "_framework/System.Memory.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3140,
-      "sha256": "6b87a200fe7617a297ca424c4fadb12668d2f343aecaa48aa1449777c426a335"
+      "sha256": "af73a6f6ad97e6bca78d10495cb18e2ed4df3b388353ac98b22e71ff7a2c2fcd"
     },
     {
       "path": "_framework/dotnet.js",
@@ -201,5 +201,5 @@
       "sha256": "db0ec1415b0f61bca62217c12aec17824066591f4a9caa43d328bca5322b22f6"
     }
   ],
-  "totalBytes": 12960956
+  "totalBytes": 12979388
 }

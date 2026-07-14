@@ -37,6 +37,7 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxHyperlinkCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxPartContext.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxTableCodec.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/DocxTableFormatting.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxTableGeometry.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxNumberingResolver.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/DocxNumberingEditPlanner.cs",

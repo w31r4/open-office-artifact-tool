@@ -27,6 +27,13 @@
       "name": "merged-table",
       "styleId": "TableGrid",
       "gridColumns": 3,
+      "widthDxa": 9000,
+      "indentDxa": 240,
+      "columnWidthsDxa": [2400, 3000, 3600],
+      "cellMarginsDxa": { "top": 60, "bottom": 80, "start": 100, "end": 140 },
+      "borderColor": "445566",
+      "borderSize": 8,
+      "headerFill": "E2E8F0",
       "values": [
         ["Merged owner", "Status"],
         ["", "Ready"],

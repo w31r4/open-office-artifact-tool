@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -28,6 +28,9 @@ assert.equal(toBinary(DocumentFieldSchema, create(DocumentFieldSchema, { instruc
 assert.equal(toBinary(DocumentParagraphSchema, create(DocumentParagraphSchema, { numbering: { numberingId: 7 } }))[0], 0x1a, "Document paragraph numbering must use additive field 3.");
 assert.equal(toBinary(DocumentNumberingSchema, create(DocumentNumberingSchema, { numberingId: 7 }))[0], 0x08, "Document numbering IDs must use field 1.");
 assert.deepEqual([...toBinary(DocumentTableSchema, create(DocumentTableSchema, { gridColumns: 3 }))], [0x10, 0x03], "Document table grid width must use additive field 2.");
+assert.equal(toBinary(DocumentTableSchema, create(DocumentTableSchema, { formatting: { widthDxa: 1 } }))[0], 0x1a, "Document table formatting must use additive field 3.");
+assert.deepEqual([...toBinary(DocumentTableFormattingSchema, create(DocumentTableFormattingSchema, { widthDxa: 1 }))], [0x08, 0x01], "Document table formatting width must use field 1.");
+assert.deepEqual([...toBinary(DocumentTableCellMarginsSchema, create(DocumentTableCellMarginsSchema, { start: 1 }))], [0x18, 0x01], "Document table start margin must use field 3.");
 assert.deepEqual([...toBinary(DocumentTableCellSchema, create(DocumentTableCellSchema, { columnSpan: 2 }))], [0x10, 0x02], "Document table cell column spans must use field 2.");
 assert.equal(legacyTabWire[0], 0x72, "Presentation tab stops must retain repeated-message field 14.");
 assert.equal(fromBinary(PresentationTextParagraphSchema, legacyTabWire).tabStops[0].positionEmu, 120n);
@@ -231,7 +234,18 @@ const minimalDocument = DocumentModel.create({
   name: "OpenChestnut brief",
   blocks: [
     { kind: "paragraph", text: "Quarterly brief", styleId: "Normal", runs: [{ text: "Quarterly ", style: { bold: true } }, { text: "brief", style: { italic: true } }] },
-    { kind: "table", styleId: "TableGrid", values: [["Revenue", "42"], ["Status", "Ready"]] },
+    {
+      kind: "table",
+      styleId: "TableGrid",
+      values: [["Revenue", "42"], ["Status", "Ready"]],
+      widthDxa: 9000,
+      indentDxa: 240,
+      columnWidthsDxa: [3600, 5400],
+      cellMarginsDxa: { top: 60, bottom: 80, start: 100, end: 140 },
+      borderColor: "445566",
+      borderSize: 8,
+      headerFill: "E2E8F0",
+    },
   ],
 });
 const docxExported = await exportDocxWithOpenChestnut(minimalDocument);
@@ -239,11 +253,25 @@ assert.deepEqual([...docxExported.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
 assert.equal(docxExported.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 assert.equal(docxExported.metadata.codec, "open-chestnut");
 assert.equal((await DocumentFile.inspectDocx(docxExported)).ok, true);
+const directFormattedXml = await (await JSZip.loadAsync(docxExported.bytes)).file("word/document.xml").async("text");
+assert.match(directFormattedXml, /<w:tblW w:w="9000" w:type="dxa"\s*\/>/);
+assert.match(directFormattedXml, /<w:tblInd w:w="240" w:type="dxa"\s*\/>/);
+assert.match(directFormattedXml, /<w:tblGrid><w:gridCol w:w="3600"\s*\/><w:gridCol w:w="5400"\s*\/><\/w:tblGrid>/);
+assert.match(directFormattedXml, /<w:tblCellMar><w:top w:w="60" w:type="dxa"\s*\/><w:start w:w="100" w:type="dxa"\s*\/><w:bottom w:w="80" w:type="dxa"\s*\/><w:end w:w="140" w:type="dxa"\s*\/><\/w:tblCellMar>/);
+assert.match(directFormattedXml, /<w:top w:val="single" w:color="445566" w:sz="8" w:space="0"\s*\/>/);
+assert.match(directFormattedXml, /<w:tcW w:w="3600" w:type="dxa"\s*\/>[\s\S]*?<w:shd w:val="clear" w:color="auto" w:fill="E2E8F0"\s*\/>[\s\S]*?<w:rPr><w:b\s*\/><\/w:rPr>/);
 const docxImported = await importDocxWithOpenChestnut(docxExported);
 assert.equal(docxImported.name, "Imported document");
 assert.equal(docxImported.blocks[0].text, "Quarterly brief");
 assert.equal(docxImported.blocks[0].runs[0].style.bold, true);
 assert.deepEqual(docxImported.blocks[1].values, [["Revenue", "42"], ["Status", "Ready"]]);
+assert.equal(docxImported.blocks[1].widthDxa, 9000);
+assert.equal(docxImported.blocks[1].indentDxa, 240);
+assert.deepEqual(docxImported.blocks[1].columnWidthsDxa, [3600, 5400]);
+assert.deepEqual(docxImported.blocks[1].cellMarginsDxa, { top: 60, bottom: 80, start: 100, end: 140 });
+assert.equal(docxImported.blocks[1].borderColor, "445566");
+assert.equal(docxImported.blocks[1].borderSize, 8);
+assert.equal(docxImported.blocks[1].headerFill, "E2E8F0");
 assert.equal(docxImported.verify().ok, true);
 docxImported.blocks[1].values[0][1] = "84";
 const tableEditedDocx = await exportDocxWithOpenChestnut(docxImported);
@@ -254,6 +282,12 @@ tableTopologyImported.blocks[1].values[0].pop();
 await assert.rejects(
   exportDocxWithOpenChestnut(tableTopologyImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit",
+);
+const tableFormattingImported = await importDocxWithOpenChestnut(docxExported);
+tableFormattingImported.blocks[1].headerFill = "FFF2CC";
+await assert.rejects(
+  exportDocxWithOpenChestnut(tableFormattingImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_edit" && /formatting is source-bound/.test(error.message),
 );
 const authoredMergedDocument = DocumentModel.create({
   name: "Direct merged table",
@@ -273,9 +307,10 @@ const authoredMergedDocument = DocumentModel.create({
   }],
 });
 assert.equal(authoredMergedDocument.blocks[0].getCell(1, 0).editable, false);
+assert.deepEqual(authoredMergedDocument.blocks[0].columnWidthsDxa, [3120, 3120, 3120]);
 const authoredMergedDocx = await exportDocxWithOpenChestnut(authoredMergedDocument);
 const authoredMergedXml = await (await JSZip.loadAsync(authoredMergedDocx.bytes)).file("word/document.xml").async("text");
-assert.match(authoredMergedXml, /<w:tblGrid><w:gridCol\s*\/><w:gridCol\s*\/><w:gridCol\s*\/><\/w:tblGrid>/);
+assert.match(authoredMergedXml, /<w:tblGrid><w:gridCol w:w="3120"\s*\/><w:gridCol w:w="3120"\s*\/><w:gridCol w:w="3120"\s*\/><\/w:tblGrid>/);
 assert.match(authoredMergedXml, /<w:gridSpan w:val="2"\s*\/>/);
 assert.match(authoredMergedXml, /<w:vMerge w:val="restart"\s*\/>/);
 assert.match(authoredMergedXml, /<w:vMerge w:val="continue"\s*\/>/);
@@ -284,6 +319,7 @@ assert.equal(authoredMergedRoundTrip.blocks[0].gridColumns, 3);
 assert.equal(authoredMergedRoundTrip.blocks[0].getCell(0, 0).rowSpan, 2);
 assert.equal(authoredMergedRoundTrip.blocks[0].getCell(1, 0).verticalMerge, "continue");
 assert.equal(authoredMergedRoundTrip.blocks[0].getCell(2, 1).columnSpan, 2);
+assert.deepEqual(authoredMergedRoundTrip.blocks[0].columnWidthsDxa, [3120, 3120, 3120]);
 
 const invalidMergedAuthoring = DocumentModel.create({
   blocks: [{
@@ -299,6 +335,13 @@ const invalidMergedAuthoring = DocumentModel.create({
 await assert.rejects(
   exportDocxWithOpenChestnut(invalidMergedAuthoring),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_document_table" && /declares rowSpan 3 but spans 2 rows/.test(error.message),
+);
+
+const invalidTableFormatting = DocumentModel.create({ blocks: [{ kind: "table", values: [["A"]] }] });
+invalidTableFormatting.blocks[0].borderSize = 1;
+await assert.rejects(
+  exportDocxWithOpenChestnut(invalidTableFormatting),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_document_table" && /borderSize/.test(error.message),
 );
 
 const mergedZip = await JSZip.loadAsync(docxExported.bytes);

@@ -1095,7 +1095,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup." },
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append a tracked insertion with author/date metadata and native DOCX w:ins export." },
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export." },
-  { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table with physical cell values plus optional logical grid, horizontal-span, and vertical-merge geometry." },
+  { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity." },
   { artifactKind: "document", kind: "api", name: "document.replyToComment", summary: "Reply to a document comment on the same target through commentsExtended paraIdParent threading." },
   { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions." },
@@ -1785,9 +1785,11 @@ const DOCUMENT_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable table name." },
     styleId: { type: "string", description: "Table style ID." },
     widthDxa: { type: "number", description: "Table width in twentieths of a point." },
-    columnWidthsDxa: { type: "number[]", description: "Column widths in twentieths of a point." },
+    indentDxa: { type: "number", description: "Leading table indent in twentieths of a point." },
+    columnWidthsDxa: { type: "number[]", description: "One width per logical table-grid column in twentieths of a point; values must sum to widthDxa." },
     cellMarginsDxa: { type: "object", description: "Cell margins in twentieths of a point." },
     borderColor: { type: "string", description: "Table border color." },
+    borderSize: { type: "number", description: "Uniform border width in eighths of a point; zero disables borders." },
     headerFill: { type: "string", description: "Header-row fill color." },
   }, "table", "DocumentTableBlock", "Appended table block."),
   "document.addComment": helpSchema({
@@ -9430,11 +9432,12 @@ class DocumentTableBlock {
     }) : undefined;
     const derivedGridColumns = this.cells?.reduce((maximum, cell) => Math.max(maximum, cell.gridColumn + cell.columnSpan), 0) || 0;
     this.gridColumns = Math.max(0, Math.round(Number(config.gridColumns ?? Math.max(this.columns, derivedGridColumns))));
+    const formattingColumns = this.cells?.length ? this.gridColumns : this.columns;
     this.widthDxa = Math.round(Number(config.widthDxa ?? 9360));
     this.indentDxa = Math.round(Number(config.indentDxa ?? 120));
     this.columnWidthsDxa = Array.isArray(config.columnWidthsDxa)
       ? config.columnWidthsDxa.map((value) => Math.round(Number(value)))
-      : documentTableDefaultColumnWidths(this.columns, this.widthDxa);
+      : documentTableDefaultColumnWidths(formattingColumns, this.widthDxa);
     this.cellMarginsDxa = {
       top: Math.round(Number(config.cellMarginsDxa?.top ?? 80)),
       bottom: Math.round(Number(config.cellMarginsDxa?.bottom ?? 80)),
@@ -10121,7 +10124,8 @@ export class DocumentModel {
         if (block.columns > 12) issues.push(verificationIssue("document", "wideTable", `Table ${block.id} has ${block.columns} columns and may not fit the page.`, { severity: "warning", id: block.id, columns: block.columns }));
         if (!Number.isFinite(block.widthDxa) || block.widthDxa <= 0) issues.push(verificationIssue("document", "invalidTableWidth", `Table ${block.id} has an invalid width.`, { id: block.id, widthDxa: block.widthDxa }));
         if (!Number.isFinite(block.indentDxa) || block.indentDxa < 0) issues.push(verificationIssue("document", "invalidTableIndent", `Table ${block.id} has an invalid indent.`, { id: block.id, indentDxa: block.indentDxa }));
-        if (!Array.isArray(block.columnWidthsDxa) || block.columnWidthsDxa.length !== block.columns) issues.push(verificationIssue("document", "invalidTableColumnWidths", `Table ${block.id} needs one column width per column.`, { id: block.id, columns: block.columns, columnWidthsDxa: block.columnWidthsDxa }));
+        const formattingColumns = block.cells?.length ? block.gridColumns : block.columns;
+        if (!Array.isArray(block.columnWidthsDxa) || block.columnWidthsDxa.length !== formattingColumns) issues.push(verificationIssue("document", "invalidTableColumnWidths", `Table ${block.id} needs one column width per logical grid column.`, { id: block.id, columns: formattingColumns, columnWidthsDxa: block.columnWidthsDxa }));
         else {
           if (block.columnWidthsDxa.some((value) => !Number.isFinite(value) || value <= 0)) issues.push(verificationIssue("document", "invalidTableColumnWidth", `Table ${block.id} contains an invalid column width.`, { id: block.id, columnWidthsDxa: block.columnWidthsDxa }));
           const widthSum = block.columnWidthsDxa.reduce((sum, value) => sum + value, 0);

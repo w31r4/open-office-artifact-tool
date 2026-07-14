@@ -673,6 +673,34 @@ message DocumentTable {
   // Imported tables expose it as source-bound topology. Source-free authoring
   // accepts it only with a complete, validated physical-cell geometry graph.
   uint32 grid_columns = 2;
+  // Optional direct table formatting. Presence means every field is modeled
+  // as one bounded, fixed-layout profile. Source-free export authors the
+  // profile; imported profiles remain source-bound until structural table
+  // editing is explicitly supported.
+  DocumentTableFormatting formatting = 3;
+}
+
+message DocumentTableFormatting {
+  uint32 width_dxa = 1;
+  uint32 indent_dxa = 2;
+  // One positive width per logical tblGrid column. Widths must sum to
+  // width_dxa so the fixed layout is deterministic across Office renderers.
+  repeated uint32 column_widths_dxa = 3;
+  DocumentTableCellMargins cell_margins_dxa = 4;
+  // Direct six-digit RGB values. Theme/auto/transformed colors stay outside
+  // this first authoring profile and therefore fail closed.
+  string border_color = 5;
+  // Border width in eighths of a point. Zero means explicit no-border;
+  // non-zero values follow the WordprocessingML 2..96 range.
+  uint32 border_size = 6;
+  string header_fill = 7;
+}
+
+message DocumentTableCellMargins {
+  uint32 top = 1;
+  uint32 bottom = 2;
+  uint32 start = 3;
+  uint32 end = 4;
 }
 
 message DocumentTableRow {

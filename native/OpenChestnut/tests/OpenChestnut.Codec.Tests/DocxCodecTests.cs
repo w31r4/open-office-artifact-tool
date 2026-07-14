@@ -267,12 +267,24 @@ public sealed class DocxCodecTests
         using (var document = WordprocessingDocument.Open(stream, false))
         {
             var table = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
-            Assert.Equal(3, table.TableGrid!.Elements<W.GridColumn>().Count());
+            Assert.Equal(new[] { "3000", "3000", "3000" }, table.TableGrid!.Elements<W.GridColumn>().Select(column => column.Width!.Value));
+            Assert.Equal("9000", table.TableProperties!.TableWidth!.Width!.Value);
+            Assert.Equal(240, table.TableProperties.TableIndentation!.Width!.Value);
+            Assert.Equal(W.TableLayoutValues.Fixed, table.TableProperties.TableLayout!.Type!.Value);
+            Assert.Equal(4, table.TableProperties.TableCellMarginDefault!.ChildElements.Count);
+            Assert.All(table.TableProperties.TableBorders!.ChildElements, border =>
+            {
+                Assert.Equal("445566", border.GetAttribute("color", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+                Assert.Equal("8", border.GetAttribute("sz", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+            });
             var rows = table.Elements<W.TableRow>().ToArray();
             Assert.Equal(3, rows.Length);
             var first = rows[0].Elements<W.TableCell>().ToArray();
+            Assert.Equal("6000", first[0].TableCellProperties!.TableCellWidth!.Width!.Value);
             Assert.Equal(2, first[0].TableCellProperties!.GridSpan!.Val!.Value);
             Assert.Equal(W.MergedCellValues.Restart, first[0].TableCellProperties!.VerticalMerge!.Val!.Value);
+            Assert.Equal("E2E8F0", first[0].TableCellProperties!.Shading!.Fill!.Value);
+            Assert.NotNull(first[0].Descendants<W.Bold>().SingleOrDefault());
             Assert.Equal("Merged owner", first[0].InnerText);
             Assert.Equal(W.MergedCellValues.Continue, rows[1].Elements<W.TableCell>().First().TableCellProperties!.VerticalMerge!.Val!.Value);
             Assert.Equal(2, rows[2].Elements<W.TableCell>().ElementAt(1).TableCellProperties!.GridSpan!.Val!.Value);
@@ -298,6 +310,15 @@ public sealed class DocxCodecTests
         Assert.Equal(DocumentTableVerticalMerge.Restart, tableArtifact.Rows[0].RichCells[0].VerticalMerge);
         Assert.Equal(DocumentTableVerticalMerge.Continue, tableArtifact.Rows[1].RichCells[0].VerticalMerge);
         Assert.False(tableArtifact.Rows[1].RichCells[0].Editable);
+        Assert.NotNull(tableArtifact.Formatting);
+        Assert.Equal(9000u, tableArtifact.Formatting.WidthDxa);
+        Assert.Equal(240u, tableArtifact.Formatting.IndentDxa);
+        Assert.Equal(new uint[] { 3000, 3000, 3000 }, tableArtifact.Formatting.ColumnWidthsDxa);
+        Assert.Equal(80u, tableArtifact.Formatting.CellMarginsDxa.Top);
+        Assert.Equal(120u, tableArtifact.Formatting.CellMarginsDxa.Start);
+        Assert.Equal("445566", tableArtifact.Formatting.BorderColor);
+        Assert.Equal(8u, tableArtifact.Formatting.BorderSize);
+        Assert.Equal("E2E8F0", tableArtifact.Formatting.HeaderFill);
     }
 
     [Fact]
@@ -326,6 +347,42 @@ public sealed class DocxCodecTests
         var customStyleResponse = Invoke(customStyle);
         Assert.False(customStyleResponse.Ok);
         Assert.Equal("unsupported_document_features", Assert.Single(customStyleResponse.Diagnostics).Code);
+
+        var mismatchedWidths = MergedTableExportRequest();
+        mismatchedWidths.Artifact.Document.Blocks[0].Table.Formatting.ColumnWidthsDxa[2] = 2999;
+        var mismatchedWidthsResponse = Invoke(mismatchedWidths);
+        Assert.False(mismatchedWidthsResponse.Ok);
+        Assert.Equal("invalid_document_table", Assert.Single(mismatchedWidthsResponse.Diagnostics).Code);
+
+        var invalidBorder = MergedTableExportRequest();
+        invalidBorder.Artifact.Document.Blocks[0].Table.Formatting.BorderSize = 1;
+        var invalidBorderResponse = Invoke(invalidBorder);
+        Assert.False(invalidBorderResponse.Ok);
+        Assert.Equal("invalid_document_table", Assert.Single(invalidBorderResponse.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportedDirectTableFormattingIsSourceBound()
+    {
+        var authored = Invoke(MergedTableExportRequest());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        imported.Artifact.Document.Blocks[0].Table.Formatting.HeaderFill = "FFF2CC";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -1421,6 +1478,18 @@ public sealed class DocxCodecTests
         };
 
         var table = new DocumentTable { GridColumns = 3 };
+        table.Formatting = new DocumentTableFormatting
+        {
+            WidthDxa = 9000,
+            IndentDxa = 240,
+            CellMarginsDxa = new DocumentTableCellMargins { Top = 80, Bottom = 80, Start = 120, End = 120 },
+            BorderColor = "445566",
+            BorderSize = 8,
+            HeaderFill = "E2E8F0",
+        };
+        table.Formatting.ColumnWidthsDxa.Add(3000);
+        table.Formatting.ColumnWidthsDxa.Add(3000);
+        table.Formatting.ColumnWidthsDxa.Add(3000);
         var first = new DocumentTableRow();
         first.Cells.Add("Merged owner");
         first.Cells.Add("Status");

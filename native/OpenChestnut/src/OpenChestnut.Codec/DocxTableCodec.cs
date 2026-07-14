@@ -15,6 +15,7 @@ internal static class DocxTableCodec
     internal static DocumentTable Read(W.Table table, out bool editable)
     {
         var artifact = DocxTableGeometry.Read(table, out var validGeometry);
+        artifact.Formatting = DocxTableFormatting.Read(table, artifact);
         editable = validGeometry && HasSafeContainerTopology(table) &&
                    table.Descendants<W.TableCell>().All(DocxTableGeometry.IsSimpleCell) &&
                    artifact.Rows.SelectMany(row => row.RichCells).Any(cell => cell.Editable);
@@ -28,6 +29,8 @@ internal static class DocxTableCodec
         if (!editable) throw Unsupported("Source-preserving DOCX export cannot edit this table topology.");
         if (!DocxTableGeometry.SameTopology(requested, source))
             throw Unsupported("Source-preserving DOCX table grid, span, and merge topology cannot be changed.");
+        if (!DocxTableFormatting.Same(requested.Formatting, source.Formatting))
+            throw Unsupported("Source-preserving DOCX table formatting is source-bound and cannot be changed.");
 
         var rows = table.Elements<W.TableRow>().ToArray();
         if (rows.Length != requested.Rows.Count)
@@ -58,19 +61,26 @@ internal static class DocxTableCodec
                 "unsupported_document_features",
                 $"Direct DOCX table authoring cannot materialize custom table style {block.StyleId} without a modeled style graph.");
         var table = new W.Table();
-        if (!string.IsNullOrWhiteSpace(block.StyleId))
-            table.Append(new W.TableProperties(new W.TableStyle { Val = block.StyleId }));
+        var tableProperties = DocxTableFormatting.BuildProperties(block.StyleId, block.Table.Formatting);
+        if (tableProperties is not null) table.Append(tableProperties);
 
         if (block.Table.Rows.All(row => row.RichCells.Count == 0))
         {
             var columns = block.Table.Rows.Count == 0 ? 1 : Math.Max(1, block.Table.Rows.Max(row => row.Cells.Count));
             var simpleGrid = new W.TableGrid();
-            for (var column = 0; column < columns; column++) simpleGrid.Append(new W.GridColumn());
+            for (var column = 0; column < columns; column++)
+                simpleGrid.Append(DocxTableFormatting.BuildGridColumn(block.Table.Formatting, column));
             table.Append(simpleGrid);
-            foreach (var sourceRow in block.Table.Rows)
+            for (var rowIndex = 0; rowIndex < block.Table.Rows.Count; rowIndex++)
             {
+                var sourceRow = block.Table.Rows[rowIndex];
                 var row = new W.TableRow();
-                foreach (var value in sourceRow.Cells) row.Append(BuildCell(value));
+                for (var cellIndex = 0; cellIndex < sourceRow.Cells.Count; cellIndex++)
+                    row.Append(BuildCell(
+                        sourceRow.Cells[cellIndex],
+                        formatting: block.Table.Formatting,
+                        gridColumn: checked((uint)cellIndex),
+                        header: rowIndex == 0));
                 table.Append(row);
             }
             return table;
@@ -78,10 +88,12 @@ internal static class DocxTableCodec
 
         ValidateAuthoredGeometry(block.Table);
         var grid = new W.TableGrid();
-        for (var column = 0; column < block.Table.GridColumns; column++) grid.Append(new W.GridColumn());
+        for (var column = 0; column < block.Table.GridColumns; column++)
+            grid.Append(DocxTableFormatting.BuildGridColumn(block.Table.Formatting, column));
         table.Append(grid);
-        foreach (var sourceRow in block.Table.Rows)
+        for (var rowIndex = 0; rowIndex < block.Table.Rows.Count; rowIndex++)
         {
+            var sourceRow = block.Table.Rows[rowIndex];
             var row = new W.TableRow();
             if (sourceRow.GridBefore != 0 || sourceRow.GridAfter != 0)
             {
@@ -91,7 +103,12 @@ internal static class DocxTableCodec
                 row.Append(properties);
             }
             for (var cellIndex = 0; cellIndex < sourceRow.Cells.Count; cellIndex++)
-                row.Append(BuildCell(sourceRow.Cells[cellIndex], sourceRow.RichCells[cellIndex]));
+                row.Append(BuildCell(
+                    sourceRow.Cells[cellIndex],
+                    sourceRow.RichCells[cellIndex],
+                    block.Table.Formatting,
+                    sourceRow.RichCells[cellIndex].GridColumn,
+                    rowIndex == 0));
             table.Append(row);
         }
         return table;
@@ -111,6 +128,7 @@ internal static class DocxTableCodec
     internal static void Validate(DocumentTable? table)
     {
         if (table is null) throw Invalid("Document table payload is missing.");
+        DocxTableFormatting.Validate(table);
         for (var rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
         {
             var row = table.Rows[rowIndex];
@@ -195,24 +213,37 @@ internal static class DocxTableCodec
         foreach (var group in active.Values) Finish(group);
     }
 
-    private static W.TableCell BuildCell(string value, DocumentTableCell? geometry = null)
+    private static W.TableCell BuildCell(
+        string value,
+        DocumentTableCell? geometry = null,
+        DocumentTableFormatting? formatting = null,
+        uint gridColumn = 0,
+        bool header = false)
     {
         var cell = new W.TableCell();
+        var properties = new W.TableCellProperties();
+        var width = DocxTableFormatting.BuildCellWidth(formatting, gridColumn, geometry?.ColumnSpan ?? 1);
+        if (width is not null) properties.Append(width);
         if (geometry is not null)
         {
-            var properties = new W.TableCellProperties();
             if (geometry.ColumnSpan > 1) properties.Append(new W.GridSpan { Val = checked((int)geometry.ColumnSpan) });
             if (geometry.VerticalMerge == DocumentTableVerticalMerge.Restart)
                 properties.Append(new W.VerticalMerge { Val = W.MergedCellValues.Restart });
             else if (geometry.VerticalMerge == DocumentTableVerticalMerge.Continue)
                 properties.Append(new W.VerticalMerge { Val = W.MergedCellValues.Continue });
-            if (properties.ChildElements.Count > 0) cell.Append(properties);
         }
+        var shading = DocxTableFormatting.BuildHeaderShading(formatting, header);
+        if (shading is not null) properties.Append(shading);
+        if (properties.ChildElements.Count > 0) cell.Append(properties);
         var text = new W.Text(value)
         {
             Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null,
         };
-        cell.Append(new W.Paragraph(new W.Run(text)));
+        var run = new W.Run();
+        var runProperties = DocxTableFormatting.BuildHeaderRunProperties(formatting, header);
+        if (runProperties is not null) run.Append(runProperties);
+        run.Append(text);
+        cell.Append(new W.Paragraph(run));
         return cell;
     }
 
