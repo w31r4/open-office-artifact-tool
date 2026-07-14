@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Xml;
 using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using OpenOffice.Artifact.Wire.V1;
@@ -8,9 +7,9 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Models a direct w:numPr assignment and its resolved numbering level while
-// keeping the shared numbering graph source-bound. The initial editable shape
-// is deliberately one run/one text node: only that text may change.
+// Models an effective w:numPr assignment, including paragraph-style basedOn
+// inheritance, while keeping styles.xml and the shared numbering graph
+// source-bound. The editable shape remains one run/one text node.
 internal static class DocxNumberedParagraphCodec
 {
     internal static bool TryRead(
@@ -21,29 +20,24 @@ internal static class DocxNumberedParagraphCodec
     {
         artifact = new DocumentParagraph();
         editable = false;
-        var properties = paragraph.ParagraphProperties;
-        var numberingProperties = properties?.NumberingProperties;
-        var numberingId = numberingProperties?.NumberingId?.Val?.Value;
-        if (numberingProperties is null || numberingId is null || numberingId <= 0) return false;
-
-        var level = numberingProperties.NumberingLevelReference?.Val?.Value ?? 0;
+        if (!TryResolveAssignment(paragraph, context, out var numberingId, out var level)) return false;
         artifact.Text = string.Concat(paragraph.Descendants<W.Text>().Select(text => text.Text));
-        var resolved = Resolve(context, numberingId.Value, level);
+        var resolved = Resolve(context, numberingId, level);
         artifact.Numbering = resolved ?? new DocumentNumbering
         {
-            NumberingId = checked((uint)numberingId.Value),
+            NumberingId = checked((uint)numberingId),
             Level = checked((uint)Math.Max(0, level)),
         };
         if (paragraph.Elements<W.Run>().Count() == 1)
             artifact.Runs.Add(ReadRun(paragraph.Elements<W.Run>().Single()));
-        editable = resolved is not null && IsEditable(paragraph);
+        editable = resolved is not null && IsEditableTopology(paragraph);
         return true;
     }
 
     internal static void Apply(W.Paragraph paragraph, DocumentParagraph requested, DocumentParagraph original)
     {
         Validate(requested);
-        if (!IsEditable(paragraph)) throw Unsupported("Source-preserving DOCX export cannot edit this numbered paragraph topology.");
+        if (!IsEditableTopology(paragraph)) throw Unsupported("Source-preserving DOCX export cannot edit this numbered paragraph topology.");
         if (!SameNumbering(requested.Numbering, original.Numbering))
             throw Unsupported("Numbering identity, level, and shared definition metadata are source-bound in this codec slice.");
         if (requested.Runs.Count != 1 || requested.Text != requested.Runs[0].Text)
@@ -78,16 +72,8 @@ internal static class DocxNumberedParagraphCodec
     private static DocumentNumbering? Resolve(DocxPartContext context, int numberingId, int levelIndex)
     {
         if (levelIndex is < 0 or > 8) return null;
-        var part = context.Owner.NumberingDefinitionsPart;
-        if (part is null) return null;
-        XDocument document;
-        using (var stream = part.GetStream(FileMode.Open, FileAccess.Read))
-        using (var reader = XmlReader.Create(stream, new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-        }))
-            document = XDocument.Load(reader, LoadOptions.None);
+        var document = context.NumberingDocument;
+        if (document is null) return null;
 
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         static int? IntegerAttribute(XElement? element, XName name) =>
@@ -133,14 +119,45 @@ internal static class DocxNumberedParagraphCodec
         };
     }
 
-    private static bool IsEditable(W.Paragraph paragraph)
+    private static bool TryResolveAssignment(W.Paragraph paragraph, DocxPartContext context, out int numberingId, out int level)
+    {
+        numberingId = 0;
+        level = 0;
+        int? effectiveId = paragraph.ParagraphProperties?.NumberingProperties?.NumberingId?.Val?.Value;
+        int? effectiveLevel = paragraph.ParagraphProperties?.NumberingProperties?.NumberingLevelReference?.Val?.Value;
+        if (effectiveId == 0) return false;
+
+        var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
+        var styles = context.StylesDocument;
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        static int? IntegerAttribute(XElement? element, XName name) =>
+            int.TryParse(element?.Attribute(name)?.Value, out var value) ? value : null;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        for (var depth = 0; !string.IsNullOrWhiteSpace(styleId) && styles?.Root is not null && depth < 64; depth++)
+        {
+            if (!visited.Add(styleId)) return false;
+            var style = styles.Root.Elements(w + "style")
+                .SingleOrDefault(item => item.Attribute(w + "styleId")?.Value == styleId);
+            if (style is null) break;
+            var numbering = style.Element(w + "pPr")?.Element(w + "numPr");
+            effectiveLevel ??= IntegerAttribute(numbering?.Element(w + "ilvl"), w + "val");
+            effectiveId ??= IntegerAttribute(numbering?.Element(w + "numId"), w + "val");
+            if (effectiveId == 0) return false;
+            styleId = style.Element(w + "basedOn")?.Attribute(w + "val")?.Value;
+        }
+        if (effectiveId is null or <= 0 || effectiveLevel is < 0 or > 8) return false;
+        numberingId = effectiveId.Value;
+        level = effectiveLevel ?? 0;
+        return true;
+    }
+
+    private static bool IsEditableTopology(W.Paragraph paragraph)
     {
         if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
         var properties = paragraph.ParagraphProperties;
         if (properties is null || properties.ChildElements.Any(child => child is not W.ParagraphStyleId and not W.NumberingProperties)) return false;
         var numbering = properties.NumberingProperties;
-        if (numbering is null || numbering.ChildElements.Any(child => child is not W.NumberingLevelReference and not W.NumberingId)) return false;
-        if (numbering.NumberingId?.Val?.Value is null or <= 0) return false;
+        if (numbering?.ChildElements.Any(child => child is not W.NumberingLevelReference and not W.NumberingId) == true) return false;
         var runs = paragraph.Elements<W.Run>().ToArray();
         if (runs.Length != 1) return false;
         var run = runs[0];

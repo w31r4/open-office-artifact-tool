@@ -264,6 +264,61 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportEditsStyleInheritedNumberedParagraphText()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddStyleInheritedNumbering(authored.File.ToByteArray())),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.True(block.Source.Editable);
+        Assert.Equal("DerivedList", block.StyleId);
+        Assert.Equal(77u, block.Paragraph.Numbering.NumberingId);
+        Assert.Equal(1u, block.Paragraph.Numbering.Level);
+        Assert.Equal("lowerRoman", block.Paragraph.Numbering.NumberFormat);
+        Assert.Equal(4u, block.Paragraph.Numbering.Start);
+        Assert.Equal("%1.%2)", block.Paragraph.Numbering.LevelText);
+
+        block.Paragraph.Text = "Edited inherited list evidence";
+        block.Paragraph.Runs[0].Text = block.Paragraph.Text;
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            Assert.Equal("Edited inherited list evidence", paragraph.InnerText);
+            Assert.Equal("DerivedList", paragraph.ParagraphProperties!.ParagraphStyleId!.Val!.Value);
+            Assert.Null(paragraph.ParagraphProperties.NumberingProperties);
+            Assert.Equal(77, document.MainDocumentPart.StyleDefinitionsPart!.Styles!
+                .Elements<W.Style>().Single(style => style.StyleId == "BaseList")
+                .StyleParagraphProperties!.NumberingProperties!.NumberingId!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.Equal("Edited inherited list evidence", roundTrip.Artifact.Document.Blocks[1].Paragraph.Text);
+        Assert.Equal(1u, roundTrip.Artifact.Document.Blocks[1].Paragraph.Numbering.Level);
+    }
+
+    [Fact]
     public void SourcePreservingExportKeepsAdvancedParagraphAndRelationships()
     {
         var first = Invoke(ExportRequest(includeSecondParagraph: true));
@@ -838,6 +893,51 @@ public sealed class DocxCodecTests
                         new W.LevelText { Val = "%1)" }) { LevelIndex = 0 }) { AbstractNumberId = 9 },
                 new W.NumberingInstance(new W.AbstractNumId { Val = 9 }) { NumberID = 77 });
             mainPart.Document.Save();
+            numberingPart.Numbering.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddStyleInheritedNumbering(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var paragraph = mainPart.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            paragraph.ParagraphProperties = new W.ParagraphProperties(
+                new W.ParagraphStyleId { Val = "DerivedList" });
+
+            var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
+            stylesPart.Styles = new W.Styles(
+                new W.Style(
+                    new W.StyleName { Val = "Base list" },
+                    new W.StyleParagraphProperties(
+                        new W.NumberingProperties(new W.NumberingId { Val = 77 })))
+                { Type = W.StyleValues.Paragraph, StyleId = "BaseList" },
+                new W.Style(
+                    new W.StyleName { Val = "Derived list" },
+                    new W.BasedOn { Val = "BaseList" },
+                    new W.StyleParagraphProperties(
+                        new W.NumberingProperties(new W.NumberingLevelReference { Val = 1 })))
+                { Type = W.StyleValues.Paragraph, StyleId = "DerivedList" });
+
+            var numberingPart = mainPart.AddNewPart<NumberingDefinitionsPart>();
+            numberingPart.Numbering = new W.Numbering(
+                new W.AbstractNum(
+                    new W.Level(
+                        new W.StartNumberingValue { Val = 1 },
+                        new W.NumberingFormat { Val = W.NumberFormatValues.UpperLetter },
+                        new W.LevelText { Val = "%1)" }) { LevelIndex = 0 },
+                    new W.Level(
+                        new W.StartNumberingValue { Val = 4 },
+                        new W.NumberingFormat { Val = W.NumberFormatValues.LowerRoman },
+                        new W.LevelText { Val = "%1.%2)" }) { LevelIndex = 1 }) { AbstractNumberId = 9 },
+                new W.NumberingInstance(new W.AbstractNumId { Val = 9 }) { NumberID = 77 });
+            mainPart.Document.Save();
+            stylesPart.Styles.Save();
             numberingPart.Numbering.Save();
         }
         return stream.ToArray();

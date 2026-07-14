@@ -1,3 +1,5 @@
+using System.Xml;
+using System.Xml.Linq;
 using DocumentFormat.OpenXml.Packaging;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
@@ -10,6 +12,10 @@ namespace OpenChestnut.Codec;
 internal sealed class DocxPartContext
 {
     private readonly HashSet<string> _mutatedRelationshipIds = new(StringComparer.Ordinal);
+    private XDocument? _numberingDocument;
+    private XDocument? _stylesDocument;
+    private bool _numberingDocumentLoaded;
+    private bool _stylesDocumentLoaded;
 
     internal DocxPartContext(MainDocumentPart owner)
     {
@@ -18,6 +24,19 @@ internal sealed class DocxPartContext
 
     internal MainDocumentPart Owner { get; }
     internal IReadOnlyCollection<string> MutatedRelationshipIds => _mutatedRelationshipIds;
+
+    // Read semantic support parts without materializing an Open XML SDK root.
+    // This prevents AutoSave from normalizing untouched source XML during a
+    // document.xml-only edit and amortizes parsing across all body blocks.
+    internal XDocument? NumberingDocument => ReadCachedPart(
+        Owner.NumberingDefinitionsPart,
+        ref _numberingDocumentLoaded,
+        ref _numberingDocument);
+
+    internal XDocument? StylesDocument => ReadCachedPart(
+        Owner.StyleDefinitionsPart,
+        ref _stylesDocumentLoaded,
+        ref _stylesDocument);
 
     internal bool HasBookmark(string name) =>
         Owner.Document?.Descendants<W.BookmarkStart>().Any(item => item.Name?.Value == name) == true;
@@ -62,4 +81,19 @@ internal sealed class DocxPartContext
         relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
         relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
         _mutatedRelationshipIds.Contains(relationship.Id);
+
+    private static XDocument? ReadCachedPart(OpenXmlPart? part, ref bool loaded, ref XDocument? document)
+    {
+        if (loaded) return document;
+        loaded = true;
+        if (part is null) return null;
+        using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var reader = XmlReader.Create(stream, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+        });
+        document = XDocument.Load(reader, LoadOptions.None);
+        return document;
+    }
 }

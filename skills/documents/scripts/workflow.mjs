@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import JSZip from "jszip";
 
 import {
   DocumentFile,
@@ -27,6 +28,28 @@ const PREVIEW_EXTENSION = { svg: "svg", png: "png", webp: "webp", jpeg: "jpg", j
 
 function xmlEscape(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function regexEscape(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function inheritFixtureListNumberingFromStyle(docx, texts = []) {
+  if (!texts.length) return docx;
+  const zip = await JSZip.loadAsync(docx.bytes);
+  const part = zip.file("word/document.xml");
+  assert.ok(part, "OpenChestnut style-inherited list fixture requires word/document.xml.");
+  let xml = await part.async("text");
+  for (const text of texts) {
+    const pattern = new RegExp(`<w:p>(?:(?!<\\/w:p>)[\\s\\S])*?<w:t>${regexEscape(xmlEscape(text))}<\\/w:t>(?:(?!<\\/w:p>)[\\s\\S])*?<\\/w:p>`);
+    const paragraph = pattern.exec(xml)?.[0];
+    assert.ok(paragraph, `Missing style-inherited list fixture paragraph ${text}.`);
+    const inherited = paragraph.replace(/<w:numPr>[\s\S]*?<\/w:numPr>/, "");
+    assert.notEqual(inherited, paragraph, `List fixture paragraph ${text} has no direct w:numPr to remove.`);
+    xml = xml.replace(paragraph, inherited);
+  }
+  zip.file("word/document.xml", xml);
+  return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
 }
 
 function packageCommentsXml(comments = []) {
@@ -316,6 +339,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
   if (roundtripCodec === "open-chestnut") {
+    docx = await inheritFixtureListNumberingFromStyle(docx, fixture.openChestnutStyleInheritedLists || []);
     const imported = await importDocxWithOpenChestnut(docx);
     for (const edit of documentOpenChestnutEdits(fixture)) {
       if (edit.kind === "hyperlink") {

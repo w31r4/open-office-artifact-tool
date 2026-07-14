@@ -278,6 +278,34 @@ const numberedSourceRoundTrip = await DocumentFile.importDocx(numberedSourceEdit
 assert.equal(numberedSourceRoundTrip.blocks[0].kind, "listItem");
 assert.equal(numberedSourceRoundTrip.blocks[0].text, "Edited numbered source text");
 assert.equal(numberedSourceRoundTrip.blocks[0].numberFormat, "upperLetter");
+
+const inheritedNumberingZip = await JSZip.loadAsync(numberedSourceDocx.bytes);
+const inheritedDocumentXml = await inheritedNumberingZip.file("word/document.xml").async("text");
+inheritedNumberingZip.file("word/document.xml", inheritedDocumentXml.replace(
+  /<w:pStyle w:val="Normal"\/><w:numPr>[\s\S]*?<\/w:numPr>/,
+  '<w:pStyle w:val="DerivedList"/>',
+));
+const inheritedStylesXml = (await inheritedNumberingZip.file("word/styles.xml").async("text")).replace(
+  "</w:styles>",
+  '<w:style w:type="paragraph" w:styleId="BaseList"><w:name w:val="Base list"/><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="DerivedList"><w:name w:val="Derived list"/><w:basedOn w:val="BaseList"/><w:pPr><w:numPr><w:ilvl w:val="0"/></w:numPr></w:pPr></w:style></w:styles>',
+);
+inheritedNumberingZip.file("word/styles.xml", inheritedStylesXml);
+const inheritedNumberingXml = await inheritedNumberingZip.file("word/numbering.xml").async("text");
+const inheritedNumberingSource = await inheritedNumberingZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const inheritedNumberingImported = await importDocxWithOpenChestnut(inheritedNumberingSource);
+assert.equal(inheritedNumberingImported.blocks[0].kind, "listItem");
+assert.equal(inheritedNumberingImported.blocks[0].styleId, "DerivedList");
+assert.equal(inheritedNumberingImported.blocks[0].numberFormat, "upperLetter");
+inheritedNumberingImported.blocks[0].text = "Edited inherited numbering text";
+const inheritedNumberingEdited = await exportDocxWithOpenChestnut(inheritedNumberingImported);
+const inheritedNumberingEditedZip = await JSZip.loadAsync(inheritedNumberingEdited.bytes);
+assert.equal(await inheritedNumberingEditedZip.file("word/styles.xml").async("text"), inheritedStylesXml);
+assert.equal(await inheritedNumberingEditedZip.file("word/numbering.xml").async("text"), inheritedNumberingXml);
+const inheritedNumberingRoundTrip = await DocumentFile.importDocx(inheritedNumberingEdited, { preferNative: true });
+assert.equal(inheritedNumberingRoundTrip.blocks[0].kind, "listItem");
+assert.equal(inheritedNumberingRoundTrip.blocks[0].text, "Edited inherited numbering text");
+assert.equal(inheritedNumberingRoundTrip.blocks[0].styleId, "DerivedList");
+
 numberedSourceBlock.level = 1;
 await assert.rejects(
   exportDocxWithOpenChestnut(numberedSourceImported),

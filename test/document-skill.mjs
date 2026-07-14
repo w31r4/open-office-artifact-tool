@@ -160,7 +160,7 @@ try {
   const nativePageCountField = nativePreferredDocument.blocks.find((item) => item.kind === "field");
   assert.equal(nativePageCountField?.instruction, "NUMPAGES");
   assert.equal(nativePageCountField?.display, "2");
-  assert.equal(nativePreferredDocument.blocks.some((item) => item.kind === "listItem" && item.text === "Inspect stable OpenChestnut document blocks and comments."), true);
+  assert.equal(nativePreferredDocument.blocks.some((item) => item.kind === "listItem" && item.text === "Preserve inherited native numbering definitions."), true);
   const nativeCitation = nativePreferredDocument.blocks.find((item) => item.kind === "citation");
   assert.match(nativeCitation?.metadata?.bookmark || "", /^OpenOfficeCitation_/);
   assert.equal(nativeCitation?.metadata?.tag, "ECMA376");
@@ -168,7 +168,7 @@ try {
   assert.equal(nativePreferredDocument.resolve("OpenXmlSdk")?.corporateAuthor, "Microsoft");
   assert.equal(nativePreferredDocument.bibliography.selectedStyle, "\\APA.XSL");
   assert.equal(nativePreferredDocument.bibliography.styleName, "APA");
-  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Preserve native numbering definitions.")?.numberFormat, "upperLetter");
+  assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Preserve inherited native numbering definitions.")?.numberFormat, "upperLetter");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.numberFormat, "lowerRoman");
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.level, 1);
   assert.equal(nativePreferredDocument.blocks.find((item) => item.text === "Resolve nested numbering levels.")?.styleId, "BriefNumberedListNested");
