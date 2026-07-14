@@ -319,6 +319,47 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void CyclicStyleInheritedNumberingRemainsSourcePreservedAndReadOnly()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var source = AddStyleNumberingCycle(AddStyleInheritedNumbering(authored.File.ToByteArray()));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.Equal(DocumentBlock.ContentOneofCase.Paragraph, block.ContentCase);
+        Assert.False(block.Source.Editable);
+        Assert.Null(block.Paragraph.Numbering);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(source, unchanged.File.ToByteArray());
+
+        block.Paragraph.Text = "Unsafe cyclic list edit";
+        block.Paragraph.Runs[0].Text = block.Paragraph.Text;
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportKeepsAdvancedParagraphAndRelationships()
     {
         var first = Invoke(ExportRequest(includeSecondParagraph: true));
@@ -939,6 +980,21 @@ public sealed class DocxCodecTests
             mainPart.Document.Save();
             stylesPart.Styles.Save();
             numberingPart.Numbering.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddStyleNumberingCycle(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var styles = document.MainDocumentPart!.StyleDefinitionsPart!.Styles!;
+            var baseStyle = styles.Elements<W.Style>().Single(style => style.StyleId == "BaseList");
+            baseStyle.InsertAfter(new W.BasedOn { Val = "DerivedList" }, baseStyle.StyleName);
+            styles.Save();
         }
         return stream.ToArray();
     }

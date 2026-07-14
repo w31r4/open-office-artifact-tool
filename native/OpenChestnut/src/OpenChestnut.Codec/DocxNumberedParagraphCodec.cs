@@ -20,16 +20,19 @@ internal static class DocxNumberedParagraphCodec
     {
         artifact = new DocumentParagraph();
         editable = false;
-        if (!TryResolveAssignment(paragraph, context, out var numberingId, out var level)) return false;
-        artifact.Text = string.Concat(paragraph.Descendants<W.Text>().Select(text => text.Text));
+        if (!TryResolveAssignment(paragraph, context, out var numberingId, out var level, out var candidate))
+        {
+            if (!candidate) return false;
+            ReadContent(paragraph, artifact);
+            return true;
+        }
+        ReadContent(paragraph, artifact);
         var resolved = Resolve(context, numberingId, level);
         artifact.Numbering = resolved ?? new DocumentNumbering
         {
             NumberingId = checked((uint)numberingId),
             Level = checked((uint)Math.Max(0, level)),
         };
-        if (paragraph.Elements<W.Run>().Count() == 1)
-            artifact.Runs.Add(ReadRun(paragraph.Elements<W.Run>().Single()));
         editable = resolved is not null && IsEditableTopology(paragraph);
         return true;
     }
@@ -78,17 +81,25 @@ internal static class DocxNumberedParagraphCodec
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         static int? IntegerAttribute(XElement? element, XName name) =>
             int.TryParse(element?.Attribute(name)?.Value, out var value) ? value : null;
-        var instance = document.Root?.Elements(w + "num")
-            .SingleOrDefault(item => IntegerAttribute(item, w + "numId") == numberingId);
-        var abstractId = IntegerAttribute(instance?.Element(w + "abstractNumId"), w + "val");
+        if (!TryUnique(document.Root?.Elements(w + "num") ?? [],
+                item => IntegerAttribute(item, w + "numId") == numberingId,
+                out var instance) || instance is null) return null;
+        var abstractId = IntegerAttribute(instance.Element(w + "abstractNumId"), w + "val");
         if (abstractId is null or < 0) return null;
-        var abstractNumbering = document.Root?.Elements(w + "abstractNum")
-            .SingleOrDefault(item => IntegerAttribute(item, w + "abstractNumId") == abstractId.Value);
-        if (abstractNumbering is null) return null;
-        var levelOverride = instance?.Elements(w + "lvlOverride")
-            .SingleOrDefault(item => IntegerAttribute(item, w + "ilvl") == levelIndex);
-        var level = levelOverride?.Element(w + "lvl") ?? abstractNumbering.Elements(w + "lvl")
-            .SingleOrDefault(item => IntegerAttribute(item, w + "ilvl") == levelIndex);
+        if (!TryUnique(document.Root?.Elements(w + "abstractNum") ?? [],
+                item => IntegerAttribute(item, w + "abstractNumId") == abstractId.Value,
+                out var abstractNumbering) || abstractNumbering is null) return null;
+        if (!TryUnique(instance.Elements(w + "lvlOverride"),
+                item => IntegerAttribute(item, w + "ilvl") == levelIndex,
+                out var levelOverride)) return null;
+        XElement? level;
+        if (levelOverride is not null)
+        {
+            if (!TryUnique(levelOverride.Elements(w + "lvl"), _ => true, out level)) return null;
+        }
+        else if (!TryUnique(abstractNumbering.Elements(w + "lvl"),
+                     item => IntegerAttribute(item, w + "ilvl") == levelIndex,
+                     out level)) return null;
         if (level is null) return null;
         var format = level.Element(w + "numFmt")?.Attribute(w + "val")?.Value ?? string.Empty;
         var levelText = level.Element(w + "lvlText")?.Attribute(w + "val")?.Value ?? string.Empty;
@@ -119,12 +130,26 @@ internal static class DocxNumberedParagraphCodec
         };
     }
 
-    private static bool TryResolveAssignment(W.Paragraph paragraph, DocxPartContext context, out int numberingId, out int level)
+    private static void ReadContent(W.Paragraph paragraph, DocumentParagraph artifact)
+    {
+        artifact.Text = string.Concat(paragraph.Descendants<W.Text>().Select(text => text.Text));
+        if (paragraph.Elements<W.Run>().Count() == 1)
+            artifact.Runs.Add(ReadRun(paragraph.Elements<W.Run>().Single()));
+    }
+
+    private static bool TryResolveAssignment(
+        W.Paragraph paragraph,
+        DocxPartContext context,
+        out int numberingId,
+        out int level,
+        out bool candidate)
     {
         numberingId = 0;
         level = 0;
-        int? effectiveId = paragraph.ParagraphProperties?.NumberingProperties?.NumberingId?.Val?.Value;
-        int? effectiveLevel = paragraph.ParagraphProperties?.NumberingProperties?.NumberingLevelReference?.Val?.Value;
+        var direct = paragraph.ParagraphProperties?.NumberingProperties;
+        candidate = direct is not null;
+        int? effectiveId = direct?.NumberingId?.Val?.Value;
+        int? effectiveLevel = direct?.NumberingLevelReference?.Val?.Value;
         if (effectiveId == 0) return false;
 
         var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
@@ -133,22 +158,45 @@ internal static class DocxNumberedParagraphCodec
         static int? IntegerAttribute(XElement? element, XName name) =>
             int.TryParse(element?.Attribute(name)?.Value, out var value) ? value : null;
         var visited = new HashSet<string>(StringComparer.Ordinal);
-        for (var depth = 0; !string.IsNullOrWhiteSpace(styleId) && styles?.Root is not null && depth < 64; depth++)
+        var depth = 0;
+        for (; !string.IsNullOrWhiteSpace(styleId) && styles?.Root is not null && depth < 64; depth++)
         {
             if (!visited.Add(styleId)) return false;
-            var style = styles.Root.Elements(w + "style")
-                .SingleOrDefault(item => item.Attribute(w + "styleId")?.Value == styleId);
+            var matches = styles.Root.Elements(w + "style")
+                .Where(item => item.Attribute(w + "styleId")?.Value == styleId)
+                .Take(2)
+                .ToArray();
+            if (matches.Length > 1)
+            {
+                candidate |= matches.Any(item => item.Element(w + "pPr")?.Element(w + "numPr") is not null);
+                return false;
+            }
+            var style = matches.SingleOrDefault();
             if (style is null) break;
             var numbering = style.Element(w + "pPr")?.Element(w + "numPr");
+            candidate |= numbering is not null;
             effectiveLevel ??= IntegerAttribute(numbering?.Element(w + "ilvl"), w + "val");
             effectiveId ??= IntegerAttribute(numbering?.Element(w + "numId"), w + "val");
             if (effectiveId == 0) return false;
             styleId = style.Element(w + "basedOn")?.Attribute(w + "val")?.Value;
         }
+        if (depth == 64 && !string.IsNullOrWhiteSpace(styleId)) return false;
         if (effectiveId is null or <= 0 || effectiveLevel is < 0 or > 8) return false;
         numberingId = effectiveId.Value;
         level = effectiveLevel ?? 0;
         return true;
+    }
+
+    private static bool TryUnique(
+        IEnumerable<XElement> elements,
+        Func<XElement, bool> predicate,
+        out XElement? result)
+    {
+        result = null;
+        using var matches = elements.Where(predicate).Take(2).GetEnumerator();
+        if (!matches.MoveNext()) return true;
+        result = matches.Current;
+        return !matches.MoveNext();
     }
 
     private static bool IsEditableTopology(W.Paragraph paragraph)
