@@ -11,7 +11,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 
 - Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
 - Preserve an imported document's content, styles, structure, and review state unless the user requests a redesign.
-- For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in `docs/coverage.md`.
+- For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in the repository coverage matrix linked below.
 - Use real list items, tables, comments, hyperlinks, fields, tagged bibliography sources/native `CITATION` fields, images, sections, and tracked changes rather than visual text imitations.
 - For style-driven lists, give paragraph styles a shared `numberingId`, use a distinct derived style for each associated level, and give the numbering style the same `numberingId`. Set `numberingStyleId` on authored list items. Native import resolves paragraph-style `numPr`, `pStyle`, `styleLink`, and `numStyleLink` chains; malformed or cyclic chains are package errors.
 - Preserve direct and theme-backed run formatting. Theme fonts/colors and paired complex-script properties must survive a metadata-free native import before delivery.
@@ -151,6 +151,6 @@ node skills/documents/scripts/verify-document.mjs \
 ## References
 
 - Generated public API catalog: `../../docs/api.md`
-- Current implementation coverage: `../../docs/coverage.md`
+- Current implementation coverage: https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md
 - Fixture runner: `scripts/run-fixture.mjs`
 - Generic DOCX verifier: `scripts/verify-document.mjs`

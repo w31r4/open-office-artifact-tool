@@ -183,6 +183,27 @@ assert.ok(visibilityBook.verify().issues.some((issue) => issue.type === "noVisib
 await assert.rejects(() => SpreadsheetFile.exportXlsx(visibilityBook), /at least one visible worksheet/i);
 assert.throws(() => visibilityBook.worksheets.getActiveWorksheet(), /no visible worksheets/i);
 
+const activeWorksheetBook = Workbook.create();
+const firstActiveCandidate = activeWorksheetBook.worksheets.add("First");
+const selectedActiveWorksheet = activeWorksheetBook.worksheets.add("Selected");
+const inactiveHiddenWorksheet = activeWorksheetBook.worksheets.add("Hidden", { visibility: "hidden" });
+assert.equal(activeWorksheetBook.worksheets.setActiveWorksheet("Selected"), selectedActiveWorksheet);
+assert.equal(activeWorksheetBook.worksheets.getActiveWorksheet(), selectedActiveWorksheet);
+assert.match(activeWorksheetBook.inspect({ kind: "workbook" }).ndjson, /"activeSheet":"Selected"/);
+assert.equal(activeWorksheetBook.layoutJson().activeSheet, "Selected");
+assert.match(activeWorksheetBook.help("workbook.worksheets.setActiveWorksheet").ndjson, /zero-based position.*activeTab/i);
+assert.throws(() => activeWorksheetBook.worksheets.setActiveWorksheet(inactiveHiddenWorksheet), /must be visible/i);
+assert.throws(() => { selectedActiveWorksheet.visibility = "hidden"; }, /select another active worksheet first/i);
+const activeWorksheetXlsx = await SpreadsheetFile.exportXlsx(activeWorksheetBook);
+const activeWorksheetZip = await JSZip.loadAsync(activeWorksheetXlsx.bytes);
+assert.match(await activeWorksheetZip.file("xl/workbook.xml").async("text"), /<workbookView activeTab="1"\s*\/>/);
+activeWorksheetZip.remove("customXml/open-office-artifact.json");
+const activeWorksheetRoundtrip = await SpreadsheetFile.importXlsx(new FileBlob(await activeWorksheetZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: activeWorksheetXlsx.type }));
+assert.equal(activeWorksheetRoundtrip.worksheets.getActiveWorksheet().name, "Selected");
+activeWorksheetBook.worksheets.setActiveWorksheet(firstActiveCandidate);
+selectedActiveWorksheet.visibility = "hidden";
+assert.equal(activeWorksheetBook.worksheets.getActiveWorksheet(), firstActiveCandidate);
+
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
 sheet.getRange("A1:C3").values = [["A", "B", "Sum"], [2, 3, null], [5, 7, null]];

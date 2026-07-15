@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -59,6 +59,9 @@ assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { t
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { connections: [{ connectionId: 7, name: "Warehouse", type: 5, refreshedVersion: 8 }] }))[0], 0x2a, "Spreadsheet workbook connections must use additive workbook field 5.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { definedNames: [{ id: "defined-name/1", name: "Data", refersTo: "Sheet1!A1" }] }))[0], 0x32, "Spreadsheet workbook defined names must use additive workbook field 6.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { calculation: { mode: 1 } }))[0], 0x3a, "Spreadsheet workbook calculation policy must use additive workbook field 7.");
+assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { view: { activeWorksheetId: "worksheet/2" } }))[0], 0x42, "Spreadsheet workbook views must use additive workbook field 8.");
+assert.equal(toBinary(SpreadsheetWorkbookViewArtifactSchema, create(SpreadsheetWorkbookViewArtifactSchema, { source: { viewXmlSha256: "x" } }))[0], 0x12, "Spreadsheet workbook-view source bindings must use view field 2.");
+assert.equal(toBinary(SpreadsheetWorkbookViewSourceBindingSchema, create(SpreadsheetWorkbookViewSourceBindingSchema, { semanticSha256: "x" }))[0], 0x22, "Spreadsheet workbook-view semantic hashes must use source-binding field 4.");
 assert.deepEqual([...toBinary(SpreadsheetCalculationArtifactSchema, create(SpreadsheetCalculationArtifactSchema, { calculateOnSave: false }))], [0x10, 0x00], "Spreadsheet calculation booleans must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetDefinedNameArtifactSchema, create(SpreadsheetDefinedNameArtifactSchema, { hidden: false }))], [0x30, 0x00], "Spreadsheet defined-name hidden state must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetConnectionArtifactSchema, create(SpreadsheetConnectionArtifactSchema, { keepAlive: false }))], [0x30, 0x00], "Spreadsheet connection booleans must preserve explicit false values.");
@@ -330,6 +333,7 @@ colorTable.sortState = {
     { reference: "A2:A3", descending: false, kind: "color", target: "cell", color: "#E11D48" },
   ],
 };
+workbook.worksheets.setActiveWorksheet(iconRules);
 
 const concurrentWorkbook = Workbook.create();
 concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
@@ -345,7 +349,7 @@ assert.equal(exported.metadata.codec, "open-chestnut");
 assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
 const exportedZip = await JSZip.loadAsync(exported.bytes);
 const exportedWorkbookXml = await exportedZip.file("xl/workbook.xml").async("text");
-assert.match(exportedWorkbookXml, /<x:workbookView\b[^>]*activeTab="0"/);
+assert.match(exportedWorkbookXml, /<x:workbookView\b[^>]*activeTab="3"/);
 assert.match(exportedWorkbookXml, /<x:sheet\b[^>]*name="Details"[^>]*state="hidden"/);
 assert.match(exportedWorkbookXml, /<x:sheet\b[^>]*name="Advanced Filters"[^>]*state="veryHidden"/);
 assert.match(exportedWorkbookXml, /<x:definedName name="SummaryData" comment="Summary data body" hidden="0">Summary!\$A\$1:\$B\$2<\/x:definedName>/);
@@ -639,7 +643,13 @@ assert.equal(imported.theme.colors.accent1, "#0F766E");
 assert.deepEqual(imported.calculation, workbook.calculation);
 assert.equal(imported.worksheets.items.length, 5);
 assert.deepEqual(imported.worksheets.items.map((item) => item.visibility), ["visible", "hidden", "veryHidden", "visible", "visible"]);
-assert.equal(imported.worksheets.getActiveWorksheet().name, "Summary");
+assert.equal(imported.worksheets.getActiveWorksheet().name, "Icon Rules");
+assert.throws(() => { imported.worksheets.getActiveWorksheet().visibility = "hidden"; }, /select another active worksheet first/i);
+imported.worksheets.setActiveWorksheet("Color Rules");
+const activeEdited = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
+const activeEditedZip = await JSZip.loadAsync(activeEdited.bytes);
+assert.match(await activeEditedZip.file("xl/workbook.xml").async("text"), /<x:workbookView\b[^>]*activeTab="4"/);
+assert.equal((await importXlsxWithOpenChestnut(activeEdited)).worksheets.getActiveWorksheet().name, "Color Rules");
 assert.deepEqual(imported.definedNames.toJSON(), [
   { id: "defined-name/1", name: "SummaryData", refersTo: "Summary!$A$1:$B$2", scope: undefined, comment: "Summary data body", hidden: false },
   { id: "defined-name/2", name: "StatusData", refersTo: "Details!$A$2:$B$3", scope: "Details", comment: undefined, hidden: true },
@@ -800,10 +810,9 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_calculation" && /cannot remove imported calculation/i.test(error.message),
 );
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
-activeVisibilityEdit.worksheets.getItem("Summary").visibility = "hidden";
-await assert.rejects(
-  exportXlsxWithOpenChestnut(activeVisibilityEdit, { recalculate: false }),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_metadata" && /active worksheet/i.test(error.message),
+assert.throws(
+  () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },
+  /select another active worksheet first/i,
 );
 const noVisibleWorkbook = Workbook.create();
 noVisibleWorkbook.worksheets.add("Hidden", { visibility: "hidden" }).getRange("A1").values = [[1]];

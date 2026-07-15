@@ -168,6 +168,26 @@ message WorkbookArtifact {
   // Application/version identity, R1C1 mode, calculation-completed state,
   // concurrent-calculation controls, and extensions remain source-preserved.
   SpreadsheetCalculationArtifact calculation = 7;
+  // Active worksheet for one recognized primary workbook view. Additional
+  // windows, grouped worksheet selections, first-sheet scrolling, geometry,
+  // visibility, and extensions remain source-preserved.
+  SpreadsheetWorkbookViewArtifact view = 8;
+}
+
+message SpreadsheetWorkbookViewArtifact {
+  string active_worksheet_id = 1;
+  SpreadsheetWorkbookViewSourceBinding source = 2;
+}
+
+// Hash-bound locator for the one workbookView profile OpenChestnut currently
+// projects. The ordinal is reserved for a future multi-window model; today a
+// source-bound editable projection requires exactly one view at ordinal zero.
+message SpreadsheetWorkbookViewSourceBinding {
+  uint32 ordinal = 1;
+  string workbook_xml_sha256 = 2;
+  string view_xml_sha256 = 3;
+  string semantic_sha256 = 4;
+  bool editable = 5;
 }
 
 message SpreadsheetCalculationArtifact {

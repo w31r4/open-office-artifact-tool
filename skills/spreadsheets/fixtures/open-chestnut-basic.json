@@ -3,6 +3,7 @@
   "outputName": "open-chestnut-basic.xlsx",
   "codec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
+  "activeWorksheet": "Icon Rules",
   "dateSystem": "1904",
   "calculation": {
     "mode": "automaticExceptTables",

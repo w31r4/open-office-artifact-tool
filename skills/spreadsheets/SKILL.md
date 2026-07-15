@@ -21,7 +21,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 
 1. Create or import the workbook.
 2. Inspect the relevant sheets, ranges, formulas, styles, and drawings.
-3. Apply values, formulas, formatting, tables, validations, comments, and drawings through public facade APIs.
+3. Apply values, formulas, formatting, tables, validations, comments, and drawings through public facade APIs. When the workbook should open on a non-first visible sheet, call `workbook.worksheets.setActiveWorksheet(...)` explicitly before export.
 4. Recalculate and spot-check important results and formula traces.
 5. Export XLSX, inspect its bounded native package records, import the exported file again, and run the project verifier.
 6. Inspect the preview at full size. Fix formula errors, clipping, unreadable formatting, and broken objects before delivery.
@@ -203,6 +203,6 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 ## References
 
 - Generated public API catalog: `../../docs/api.md`
-- Current implementation coverage: `../../docs/coverage.md`
+- Current implementation coverage: https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md
 - Fixture runner: `scripts/run-fixture.mjs`
 - Generic workbook verifier: `scripts/verify-workbook.mjs`

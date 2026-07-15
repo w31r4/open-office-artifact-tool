@@ -107,6 +107,18 @@ function wireWorksheetMetadata(sheet, slot) {
   };
 }
 
+function workbookViewSnapshot(workbook) {
+  return { activeWorksheetId: workbook.worksheets.getActiveWorksheet().id };
+}
+
+function wireWorkbookView(workbook, state) {
+  const slot = state?.viewSlot;
+  if (state && !slot && !workbook._activeWorksheetId) return undefined;
+  const snapshot = workbookViewSnapshot(workbook);
+  if (slot && JSON.stringify(snapshot) === JSON.stringify(slot.publicSnapshot)) return slot.wire;
+  return { ...snapshot, source: slot?.wire.source };
+}
+
 function bytesFrom(value) {
   if (value instanceof Uint8Array) return value;
   if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
@@ -1044,6 +1056,7 @@ function workbookEnvelope(workbook) {
         connections: wireWorkbookConnections(workbook, state),
         definedNames: wireWorkbookDefinedNames(workbook, state),
         calculation: wireWorkbookCalculationForExport(workbook, state),
+        view: wireWorkbookView(workbook, state),
         worksheets: workbook.worksheets.items.map((sheet) => {
           const metadata = wireWorksheetMetadata(sheet, state?.worksheetSlots?.get(sheet.id));
           return {
@@ -1180,12 +1193,14 @@ function workbookFromEnvelope(envelope) {
     tablesBySheet.set(sheet.id, { slots });
   }
   for (const sourceDefinedName of source.definedNames || []) workbook.definedNames.add(publicWorkbookDefinedName(sourceDefinedName));
+  if (source.view) workbook.worksheets.setActiveWorksheet(source.view.activeWorksheetId);
   const definedNameSlots = (source.definedNames || []).map((wire, index) => ({
     wire,
     definedName: workbook.definedNames.items[index],
     publicSnapshot: definedNameSnapshot(workbook.definedNames.items[index]),
   }));
   const calculationSlot = source.calculation ? { wire: source.calculation, publicSnapshot: calculationSnapshot(workbook.calculation) } : undefined;
+  const viewSlot = source.view ? { wire: source.view, publicSnapshot: workbookViewSnapshot(workbook) } : undefined;
   Object.defineProperty(workbook, WORKBOOK_STATE, {
     configurable: true,
     value: {
@@ -1197,6 +1212,7 @@ function workbookFromEnvelope(envelope) {
       connectionSlots,
       definedNameSlots,
       calculationSlot,
+      viewSlot,
       worksheetSlots,
       tablesBySheet,
     },

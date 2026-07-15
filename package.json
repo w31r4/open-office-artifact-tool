@@ -33,7 +33,6 @@
   "files": [
     "src/**",
     "docs/api.md",
-    "docs/coverage.md",
     "scripts/**",
     "examples/**",
     "skills/**",

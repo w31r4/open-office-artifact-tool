@@ -16,7 +16,6 @@ const maxUnpackedBytes = 16_700_000;
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
   "docs/api.md",
-  "docs/coverage.md",
   "proto/open_office/artifact/v1/office_artifact.proto",
   "src/generated/open_office/artifact/v1/office_artifact_pb.js",
   "src/codecs/open-chestnut.mjs",
@@ -64,6 +63,7 @@ for (const required of [
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxThemeCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxTableCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Codec/XlsxWorksheetMetadataCodec.cs",
+  "native/OpenChestnut/src/OpenChestnut.Codec/XlsxWorkbookViewCodec.cs",
   "native/OpenChestnut/src/OpenChestnut.Runtime/Program.cs",
   "scripts/build-open-chestnut.mjs",
   "scripts/build-openxml-wasm.mjs",
@@ -143,7 +143,7 @@ for (const required of [
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
-assert.ok(!files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md") && !files.includes("native/OpenChestnut/README.md"), "npm runtime package must exclude repository-only release history and subsystem implementation notes");
+assert.ok(!files.includes("docs/coverage.md") && !files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md") && !files.includes("native/OpenChestnut/README.md"), "npm runtime package must exclude repository-only coverage, release history, and subsystem implementation notes");
 assert.ok(report.size < maxPackedBytes, `npm package archive unexpectedly large: ${report.size} (limit ${maxPackedBytes})`);
 assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);
 

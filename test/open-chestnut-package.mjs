@@ -23,6 +23,9 @@ try {
     const sheet = workbook.worksheets.add("Packaged");
     sheet.getRange("A1:F2").values = [["Label", "Date", "Status", "Value", "Fill", "Font"], ["clean install", 45853, "ready", 7, 1, 2]];
     const packagedTable = sheet.tables.add({ range: "A1:F2", name: "PackagedTable", style: "TableStyleMedium4" });
+    const selectedSheet = workbook.worksheets.add("Selected");
+    selectedSheet.getRange("A1").values = [["active"]];
+    workbook.worksheets.setActiveWorksheet(selectedSheet);
     packagedTable.columnDefinitions = [{ name: "Label" }, { name: "Date" }, { name: "Status" }, { name: "Value", calculatedColumnFormula: "=LEN([@Label])" }, { name: "Fill" }, { name: "Font" }];
     packagedTable.filters = [
       { columnIndex: 0, kind: "icon", iconSet: "3Arrows", iconId: 0 },
@@ -41,6 +44,7 @@ try {
     const imported = await importXlsxWithOpenChestnut(file);
     if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
     if (imported.worksheets.getItem("Packaged").getRange("A1:F2").values[1][3] !== 7) process.exit(2);
+    if (imported.worksheets.getActiveWorksheet().name !== "Selected") process.exit(17);
     const importedTable = imported.worksheets.getItem("Packaged").tables.getItemOrNullObject("PackagedTable");
     if (importedTable.style !== "TableStyleMedium4") process.exit(11);
     if (importedTable.columnDefinitions[3].calculatedColumnFormula !== "=LEN([@Label])") process.exit(12);

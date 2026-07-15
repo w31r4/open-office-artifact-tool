@@ -2062,6 +2062,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
 | `workbook.worksheets.add` | api | Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID. |
+| `workbook.worksheets.setActiveWorksheet` | api | Select the visible worksheet opened by default and used by workbook operations that omit an explicit sheet. |
 | `worksheet.freezePanes.freezeColumns` | api | Freeze a leading column count in the worksheet view while preserving any frozen rows. |
 | `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
 | `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
@@ -4333,6 +4334,18 @@ Append an editable visible, hidden, or very-hidden worksheet with a stable name 
 **Schema returns:**
 
 - `worksheet` (Worksheet) — Appended editable worksheet with bounded native visibility.
+
+#### `workbook.worksheets.setActiveWorksheet`
+
+Select the visible worksheet opened by default and used by workbook operations that omit an explicit sheet.
+
+**Schema parameters:**
+
+- `worksheet` (string|number|Worksheet) required — Visible worksheet name, zero-based collection index, or worksheet object from this workbook.
+
+**Schema returns:**
+
+- `worksheet` (Worksheet) — Selected visible worksheet. XLSX export writes its zero-based position to workbookView activeTab.
 
 #### `worksheet.freezePanes.freezeColumns`
 

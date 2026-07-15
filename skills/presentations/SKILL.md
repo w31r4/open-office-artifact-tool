@@ -164,6 +164,6 @@ node skills/presentations/scripts/run-fixture.mjs \
 ## References
 
 - Generated public API catalog: `../../docs/api.md`
-- Current implementation coverage: `../../docs/coverage.md`
+- Current implementation coverage: https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md
 - Fixture runner: `scripts/run-fixture.mjs`
 - Generic PPTX verifier: `scripts/verify-presentation.mjs`

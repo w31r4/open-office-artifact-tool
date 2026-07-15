@@ -7,12 +7,10 @@ using OpenOffice.Artifact.Wire.V1;
 namespace OpenChestnut.Codec;
 
 // Owns the bounded workbook.xml <sheet> name/visibility projection. Package
-// locators stay immutable, unknown state values remain opaque, and workbook
-// views are preserved rather than silently retargeted when a caller attempts
-// to hide an active worksheet.
+// locators stay immutable and unknown state values remain opaque. Workbook
+// view selection is independently owned by XlsxWorkbookViewCodec.
 internal sealed class XlsxWorksheetMetadataCodec
 {
-    private readonly Workbook _workbook;
     private readonly Entry[] _entries;
 
     private sealed record Entry(
@@ -23,8 +21,8 @@ internal sealed class XlsxWorksheetMetadataCodec
 
     internal XlsxWorksheetMetadataCodec(WorkbookPart workbookPart)
     {
-        _workbook = workbookPart.Workbook ?? throw Invalid("Workbook root is missing.");
-        var sheets = _workbook.Sheets?.Elements<Sheet>().ToArray() ?? [];
+        var workbook = workbookPart.Workbook ?? throw Invalid("Workbook root is missing.");
+        var sheets = workbook.Sheets?.Elements<Sheet>().ToArray() ?? [];
         _entries = sheets.Select((element, index) => ReadEntry(element, checked((uint)index))).ToArray();
     }
 
@@ -66,14 +64,6 @@ internal sealed class XlsxWorksheetMetadataCodec
         }
 
         ValidateVisibleSheet(desired);
-        foreach (var view in _workbook.BookViews?.Elements<WorkbookView>() ?? [])
-        {
-            var active = checked((int)(view.ActiveTab?.Value ?? 0U));
-            if (active < 0 || active >= desired.Count) continue;
-            var source = _entries[active];
-            if (source.Visibility == SpreadsheetWorksheetVisibility.Visible && desired[active].Visibility != SpreadsheetWorksheetVisibility.Visible)
-                throw Invalid($"Source-preserving XLSX export cannot hide active worksheet {source.Name} without explicitly modeling workbook-view selection.");
-        }
     }
 
     internal static Sheet Create(WorksheetArtifact source, uint ordinal, string relationshipId)
@@ -89,15 +79,6 @@ internal sealed class XlsxWorksheetMetadataCodec
         if (visibility != SpreadsheetWorksheetVisibility.Visible)
             sheet.State = visibility == SpreadsheetWorksheetVisibility.Hidden ? SheetStateValues.Hidden : SheetStateValues.VeryHidden;
         return sheet;
-    }
-
-    internal static void ConfigureSourceFreeView(Workbook workbook, IReadOnlyList<WorksheetArtifact> worksheets)
-    {
-        ValidateVisibleSheet(worksheets);
-        var activeTab = worksheets.Select((sheet, index) => (sheet, index)).First(item => EffectiveVisibility(item.sheet) == SpreadsheetWorksheetVisibility.Visible).index;
-        var views = new BookViews(new WorkbookView { ActiveTab = checked((uint)activeTab) });
-        if (workbook.Sheets is { } sheets) workbook.InsertBefore(views, sheets);
-        else workbook.Append(views);
     }
 
     internal static void ValidateArtifact(IReadOnlyList<WorksheetArtifact> worksheets)

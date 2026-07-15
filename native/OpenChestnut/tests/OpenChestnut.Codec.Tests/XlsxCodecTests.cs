@@ -283,6 +283,101 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesActiveWorksheetSelection()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets.Add(new WorksheetArtifact
+        {
+            Id = "worksheet/detail",
+            Name = "Detail",
+            Visibility = SpreadsheetWorksheetVisibility.Visible,
+            ShowGridLines = true,
+            Cells = { new CellArtifact { Row = 0, Column = 0, StringValue = "detail" } },
+        });
+        request.Artifact.Workbook.View = new SpreadsheetWorkbookViewArtifact { ActiveWorksheetId = "worksheet/detail" };
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        Assert.Equal(1U, ReadWorkbookViews(authored.File.ToByteArray()).Single().ActiveTab?.Value);
+
+        var profiled = MutateWorkbookViews(authored.File.ToByteArray(), views =>
+        {
+            var view = views.Elements<WorkbookView>().Single();
+            view.FirstSheet = 1U;
+            view.XWindow = 120;
+            view.YWindow = 240;
+        });
+        var imported = Import(profiled);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal("worksheet/2", imported.Artifact.Workbook.View.ActiveWorksheetId);
+        Assert.True(imported.Artifact.Workbook.View.Source.Editable);
+        Assert.Equal(64, imported.Artifact.Workbook.View.Source.ViewXmlSha256.Length);
+
+        imported.Artifact.Workbook.View.ActiveWorksheetId = "worksheet/1";
+        imported.Artifact.Workbook.Worksheets[1].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        var editedView = ReadWorkbookViews(edited.File.ToByteArray()).Single();
+        Assert.Equal(0U, editedView.ActiveTab?.Value);
+        Assert.Equal(1U, editedView.FirstSheet?.Value);
+        Assert.Equal(120, editedView.XWindow?.Value);
+        Assert.Equal(240, editedView.YWindow?.Value);
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.Equal("worksheet/1", reimported.Artifact.Workbook.View.ActiveWorksheetId);
+        Assert.Equal(SpreadsheetWorksheetVisibility.Hidden, reimported.Artifact.Workbook.Worksheets[1].Visibility);
+
+        imported = Import(profiled);
+        imported.Artifact.Workbook.View.Source.ViewXmlSha256 = new string('0', 64);
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_workbook_view", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Contains("source binding", rejected.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void WorkbookViewRejectsOpaqueMultiWindowEditsAndPreservesTheGraph()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets.Add(new WorksheetArtifact
+        {
+            Id = "worksheet/detail",
+            Name = "Detail",
+            Visibility = SpreadsheetWorksheetVisibility.Visible,
+            ShowGridLines = true,
+        });
+        request.Artifact.Workbook.View = new SpreadsheetWorkbookViewArtifact { ActiveWorksheetId = "worksheet/detail" };
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        var multiWindow = MutateWorkbookViews(authored.File.ToByteArray(), views => views.Append(new WorkbookView { ActiveTab = 0U, XWindow = 777 }));
+
+        var imported = Import(multiWindow);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Null(imported.Artifact.Workbook.View);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Collection(ReadWorkbookViews(preserved.File.ToByteArray()),
+            view => Assert.Equal(1U, view.ActiveTab?.Value),
+            view =>
+            {
+                Assert.Equal(0U, view.ActiveTab?.Value);
+                Assert.Equal(777, view.XWindow?.Value);
+            });
+
+        imported = Import(multiWindow);
+        imported.Artifact.Workbook.View = new SpreadsheetWorkbookViewArtifact { ActiveWorksheetId = "worksheet/1" };
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("multi-window", Assert.Single(rejected.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        imported = Import(multiWindow);
+        imported.Artifact.Workbook.Worksheets[1].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("active worksheet", Assert.Single(rejected.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ProtocolAuthorsImportsAndPreservesWorkbookAndWorksheetDefinedNames()
     {
         var request = DefinedNameExportRequest();
@@ -2952,6 +3047,27 @@ public sealed class XlsxCodecTests
             writer.Write(workbook.ToString(SaveOptions.DisableFormatting));
         }
         return stream.ToArray();
+    }
+
+    private static byte[] MutateWorkbookViews(byte[] bytes, Action<BookViews> mutate)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var views = document.WorkbookPart!.Workbook!.BookViews ?? throw new InvalidOperationException("Workbook views are missing.");
+            mutate(views);
+            document.WorkbookPart.Workbook.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static WorkbookView[] ReadWorkbookViews(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.Workbook!.BookViews!.Elements<WorkbookView>().Select(view => (WorkbookView)view.CloneNode(true)).ToArray();
     }
 
     private static byte[] AddQueryTableGraph(
