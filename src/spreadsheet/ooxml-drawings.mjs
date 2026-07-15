@@ -19,7 +19,7 @@ function elementBody(xml, name) {
 
 function directElementBody(xml, name) {
   const source = String(xml ?? "");
-  const tags = /<\s*(\/)?(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b[^>]*(\/)?\s*>/g;
+  const tags = /<\s*(\/)?(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b[^>]*>/g;
   let depth = 0;
   let start = -1;
   let match;
@@ -29,7 +29,7 @@ function directElementBody(xml, name) {
       if (start >= 0 && depth === 0 && match[2] === name) return source.slice(start, match.index);
       continue;
     }
-    const selfClosing = Boolean(match[3]);
+    const selfClosing = /\/\s*>$/.test(match[0]);
     if (depth === 0 && match[2] === name) {
       if (selfClosing) return "";
       start = tags.lastIndex;
