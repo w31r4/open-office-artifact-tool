@@ -393,6 +393,8 @@ message SpreadsheetChartArtifact {
   SpreadsheetTwoCellAnchorArtifact two_cell_anchor = 9;
   SpreadsheetAbsoluteAnchorArtifact absolute_anchor = 10;
   SpreadsheetChartSourceBinding source = 11;
+  SpreadsheetChartAxisArtifact x_axis = 12;
+  SpreadsheetChartAxisArtifact y_axis = 13;
 }
 
 message SpreadsheetChartSeriesArtifact {
@@ -400,6 +402,19 @@ message SpreadsheetChartSeriesArtifact {
   repeated double values = 2;
   string category_formula = 3;
   string value_formula = 4;
+}
+
+// Bounded primary-axis semantics for category/value worksheet charts. The x
+// axis is a text category axis and may use tick_label_interval. The y axis is
+// a numeric value axis and may use minimum, maximum, and major_unit. Message
+// and optional-scalar presence distinguish native defaults from explicit zero.
+message SpreadsheetChartAxisArtifact {
+  string title = 1;
+  string number_format_code = 2;
+  optional uint32 tick_label_interval = 3;
+  optional double minimum = 4;
+  optional double maximum = 5;
+  optional double major_unit = 6;
 }
 
 // Drawing and chart hashes bind editable semantics to one imported package.

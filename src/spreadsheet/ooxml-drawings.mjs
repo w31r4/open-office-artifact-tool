@@ -153,6 +153,37 @@ function chartPoints(xml = "", numeric = false) {
     .map((point) => numeric ? Number(point.value) || 0 : point.value);
 }
 
+function chartAxis(xml, name, kind) {
+  const body = elementBody(xml, name);
+  if (!body) return undefined;
+  const titleBody = elementBody(body, "title");
+  const title = [...titleBody.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => decodeXml(match[1])).join("") || elementValue(titleBody, "v");
+  const numberFormatTag = /<(?:[A-Za-z_][\w.-]*:)?numFmt\b[^>]*\/?\s*>/.exec(body)?.[0];
+  const numberFormatCode = numberFormatTag ? attributes(numberFormatTag).formatCode : undefined;
+  const valueAttribute = (source, element) => {
+    const tag = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${element}\\b[^>]*\\/?\\s*>`).exec(source)?.[0];
+    return tag ? Number(attributes(tag).val) : undefined;
+  };
+  const output = {
+    axisType: kind === "x" ? "textAxis" : "valueAxis",
+    title: { text: title || "" },
+    ...(numberFormatCode ? { numberFormatCode } : {}),
+  };
+  if (kind === "x") {
+    const interval = valueAttribute(body, "tickLblSkip");
+    if (Number.isInteger(interval) && interval > 0) output.tickLabelInterval = interval;
+  } else {
+    const scaling = elementBody(body, "scaling");
+    const minimum = valueAttribute(scaling, "min");
+    const maximum = valueAttribute(scaling, "max");
+    const majorUnit = valueAttribute(body, "majorUnit");
+    if (Number.isFinite(minimum)) output.min = minimum;
+    if (Number.isFinite(maximum)) output.max = maximum;
+    if (Number.isFinite(majorUnit) && majorUnit > 0) output.majorUnit = majorUnit;
+  }
+  return output;
+}
+
 export function parseSpreadsheetChart(xml = "") {
   const text = String(xml || "");
   const type = /<(?:[A-Za-z_][\w.-]*:)?pieChart\b/.test(text) ? "pie" : /<(?:[A-Za-z_][\w.-]*:)?lineChart\b/.test(text) ? "line" : "bar";
@@ -173,5 +204,13 @@ export function parseSpreadsheetChart(xml = "") {
       fill: color ? `#${color.toUpperCase()}` : undefined,
     };
   });
-  return { type, title, hasLegend: /<(?:[A-Za-z_][\w.-]*:)?legend\b/.test(text), categories: series[0]?.categories || [], series };
+  return {
+    type,
+    title,
+    hasLegend: /<(?:[A-Za-z_][\w.-]*:)?legend\b/.test(text),
+    categories: series[0]?.categories || [],
+    series,
+    xAxis: type === "pie" ? undefined : chartAxis(text, "catAx", "x"),
+    yAxis: type === "pie" ? undefined : chartAxis(text, "valAx", "y"),
+  };
 }

@@ -924,8 +924,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, and caches, through the bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, and bounded primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -968,7 +968,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, while xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
@@ -2216,7 +2216,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches and optional worksheet formulas, and recognized source-bound database connection-root metadata." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches, optional worksheet formulas, and text/value primary-axis titles, number formats, intervals, bounds and major units, plus recognized source-bound database connection-root metadata." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2224,7 +2224,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG pictures, recognized bar/line/pie worksheet charts, database connection-root metadata, and source/opaque package evidence for fail-closed drawing, chart, and image edits."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG pictures, recognized bar/line/pie worksheet charts and primary-axis semantics, database connection-root metadata, and source/opaque package evidence for fail-closed drawing, chart, and image edits."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
@@ -2424,6 +2424,8 @@ const WORKBOOK_HELP_SCHEMAS = {
     title: { type: "string", description: "Chart title." },
     categories: { type: "string[]", description: "Explicit categories." },
     series: { type: "object[]", description: "Explicit series definitions." },
+    xAxis: { type: "object", description: "Primary text category axis with title.text, numberFormatCode, and tickLabelInterval." },
+    yAxis: { type: "object", description: "Primary numeric value axis with title.text, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit." },
     position: { type: "object", description: "Pixel chart frame." },
   }, "chart", "WorksheetChart", "Editable worksheet chart facade."),
   "sheet.images.add": helpSchema({
@@ -3335,6 +3337,25 @@ class WorksheetChartSeriesCollection {
   toJSON() { return this.items.map((item) => ({ ...item })); }
 }
 
+function normalizeWorksheetChartAxis(value, kind) {
+  if (value == null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${kind}Axis must be an object.`);
+  const title = typeof value.title === "string" ? value.title : value.title?.text;
+  return {
+    axisType: value.axisType || (kind === "x" ? "textAxis" : "valueAxis"),
+    title: {
+      text: title == null ? "" : String(title),
+      ...(typeof value.title === "object" && value.title?.textStyle != null ? { textStyle: value.title.textStyle } : {}),
+    },
+    ...(value.textStyle == null ? {} : { textStyle: value.textStyle }),
+    ...(value.numberFormatCode == null ? {} : { numberFormatCode: String(value.numberFormatCode) }),
+    ...(value.tickLabelInterval == null ? {} : { tickLabelInterval: Number(value.tickLabelInterval) }),
+    ...(value.min == null ? {} : { min: Number(value.min) }),
+    ...(value.max == null ? {} : { max: Number(value.max) }),
+    ...(value.majorUnit == null ? {} : { majorUnit: Number(value.majorUnit) }),
+  };
+}
+
 class WorksheetChart {
   constructor(worksheet, chartType = "bar", sourceOrConfig = {}) {
     this.worksheet = worksheet;
@@ -3345,11 +3366,20 @@ class WorksheetChart {
     this.hasLegend = sourceOrConfig.hasLegend ?? true;
     this.categories = sourceOrConfig.categories || [];
     this.position = sourceOrConfig.position || { left: 420, top: 40, width: 360, height: 220 };
+    this._xAxis = undefined;
+    this._yAxis = undefined;
+    if (chartType !== "pie" || sourceOrConfig.xAxis != null) this.xAxis = sourceOrConfig.xAxis || {};
+    if (chartType !== "pie" || sourceOrConfig.yAxis != null) this.yAxis = sourceOrConfig.yAxis || {};
     this.series = new WorksheetChartSeriesCollection(this);
     if (sourceOrConfig.series) sourceOrConfig.series.forEach((series) => this.series.add(series.name, series.values || []));
     if (sourceOrConfig instanceof Range) this.setData(sourceOrConfig);
     else if (sourceOrConfig && sourceOrConfig.worksheet instanceof Worksheet) this.setData(sourceOrConfig);
   }
+
+  get xAxis() { return this._xAxis; }
+  set xAxis(value) { this._xAxis = normalizeWorksheetChartAxis(value, "x"); }
+  get yAxis() { return this._yAxis; }
+  set yAxis(value) { this._yAxis = normalizeWorksheetChartAxis(value, "y"); }
 
   setData(range) {
     const values = range.values;
@@ -3376,7 +3406,7 @@ class WorksheetChart {
     return this;
   }
 
-  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, categories: this.categories, series: this.series.items.length, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
+  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, categories: this.categories, series: this.series.items.length, xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
 
   toSvg() {
     const p = this.position;
@@ -3389,10 +3419,12 @@ class WorksheetChart {
       const h = plot.height * (Number(value) || 0) / max;
       return `<rect x="${plot.left + index * (barW + gap) + gap / 2}" y="${plot.top + plot.height - h}" width="${barW}" height="${h}" fill="#38bdf8"/>`;
     }).join("");
-    return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#94a3b8"/><text x="${p.left + 8}" y="${p.top + 22}" font-family="Arial" font-size="13" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.name)}</text>${bars}`;
+    const xTitle = this.xAxis?.title?.text ? `<text x="${plot.left + plot.width / 2}" y="${p.top + p.height - 6}" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.xAxis.title.text)}</text>` : "";
+    const yTitle = this.yAxis?.title?.text ? `<text x="${p.left + 10}" y="${plot.top + plot.height / 2}" text-anchor="middle" transform="rotate(-90 ${p.left + 10} ${plot.top + plot.height / 2})" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.yAxis.title.text)}</text>` : "";
+    return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#94a3b8"/><text x="${p.left + 8}" y="${p.top + 22}" font-family="Arial" font-size="13" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.name)}</text>${bars}${xTitle}${yTitle}`;
   }
 
-  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON() }; }
+  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis }; }
 }
 
 class WorksheetChartCollection {
@@ -7498,8 +7530,8 @@ function tableXml(table, tablePartId, styleTable) {
 
 function xlsxChartXml(chart) {
   const chartType = chart.type || chart.chartType || "bar";
-  const chartElementName = chartType === "line" ? "lineChart" : "barChart";
-  const grouping = chartType === "line" ? "<c:grouping val=\"standard\"/>" : "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>";
+  const chartElementName = chartType === "line" ? "lineChart" : chartType === "pie" ? "pieChart" : "barChart";
+  const grouping = chartType === "line" ? "<c:grouping val=\"standard\"/>" : chartType === "pie" ? "<c:varyColors val=\"1\"/>" : "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>";
   const seriesItems = chart.series?.items || chart.series || [];
   const seriesXml = (seriesItems.length ? seriesItems : [{ name: chart.title || "Series", values: [] }]).map((series, index) => {
     const values = series.values || [];
@@ -7508,7 +7540,33 @@ function xlsxChartXml(chart) {
     const valPts = values.map((value, pointIndex) => `<c:pt idx="${pointIndex}"><c:v>${Number(value) || 0}</c:v></c:pt>`).join("");
     return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx><c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val></c:ser>`;
   }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}<c:axId val="1"/><c:axId val="2"/></c:${chartElementName}><c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/><c:crossAx val="2"/></c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="l"/><c:crossAx val="1"/></c:valAx></c:plotArea><c:legend><c:legendPos val="r"/><c:layout/></c:legend><c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
+  const axisTitle = (axis) => axis?.title?.text ? `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(axis.title.text)}</a:t></a:r></a:p></c:rich></c:tx><c:layout/></c:title>` : "";
+  const numberFormat = (axis) => axis?.numberFormatCode ? `<c:numFmt formatCode="${attrEscape(axis.numberFormatCode)}" sourceLinked="0"/>` : "";
+  if (chartType === "pie" && (chart.xAxis != null || chart.yAxis != null)) throw new TypeError("Worksheet pie charts cannot carry category/value axes.");
+  const xAxis = chart.xAxis || { axisType: "textAxis", title: { text: "" } };
+  const yAxis = chart.yAxis || { axisType: "valueAxis", title: { text: "" } };
+  if (chartType !== "pie" && (xAxis.axisType !== "textAxis" || yAxis.axisType !== "valueAxis")) throw new TypeError("Worksheet chart axes must use textAxis and valueAxis.");
+  for (const [name, axis] of [["xAxis", xAxis], ["yAxis", yAxis]]) {
+    if (axis.textStyle != null || axis.title?.textStyle != null) throw new TypeError(`Worksheet chart ${name} text styling is outside the bounded native chart profile.`);
+    const title = String(axis.title?.text || "");
+    const format = String(axis.numberFormatCode || "");
+    if (title.length > 32_767 || /\p{Cc}/u.test(title)) throw new TypeError(`Worksheet chart ${name} title is invalid.`);
+    if (format.length > 255 || /\p{Cc}/u.test(format)) throw new TypeError(`Worksheet chart ${name} numberFormatCode is invalid.`);
+  }
+  if (xAxis.tickLabelInterval != null && (!Number.isInteger(Number(xAxis.tickLabelInterval)) || Number(xAxis.tickLabelInterval) < 1 || Number(xAxis.tickLabelInterval) > 1_048_576)) throw new TypeError("Worksheet chart xAxis.tickLabelInterval must be an integer from 1 through 1048576.");
+  if ([yAxis.min, yAxis.max].some((value) => value != null && !Number.isFinite(Number(value)))) throw new TypeError("Worksheet chart yAxis min/max must be finite.");
+  if (yAxis.min != null && yAxis.max != null && Number(yAxis.min) >= Number(yAxis.max)) throw new TypeError("Worksheet chart yAxis.min must be less than yAxis.max.");
+  const requestedMajorUnit = yAxis.majorUnit ?? yAxis.tickLabelInterval;
+  if (requestedMajorUnit != null && (!Number.isFinite(Number(requestedMajorUnit)) || Number(requestedMajorUnit) <= 0)) throw new TypeError("Worksheet chart yAxis majorUnit must be finite and positive.");
+  const interval = xAxis.tickLabelInterval == null ? "" : `<c:tickLblSkip val="${Math.trunc(Number(xAxis.tickLabelInterval))}"/>`;
+  const yMinimum = yAxis.min == null ? "" : `<c:min val="${Number(yAxis.min)}"/>`;
+  const yMaximum = yAxis.max == null ? "" : `<c:max val="${Number(yAxis.max)}"/>`;
+  const yMajorUnitValue = requestedMajorUnit;
+  const yMajorUnit = yMajorUnitValue == null ? "" : `<c:majorUnit val="${Number(yMajorUnitValue)}"/>`;
+  const axes = chartType === "pie" ? "" : `<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/>${axisTitle(xAxis)}${numberFormat(xAxis)}<c:crossAx val="2"/>${interval}</c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/>${yMaximum}${yMinimum}</c:scaling><c:axPos val="l"/>${axisTitle(yAxis)}${numberFormat(yAxis)}<c:crossAx val="1"/>${yMajorUnit}</c:valAx>`;
+  const axisReferences = chartType === "pie" ? "" : '<c:axId val="1"/><c:axId val="2"/>';
+  const legend = chart.hasLegend === false ? "" : '<c:legend><c:legendPos val="r"/><c:layout/></c:legend>';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
 }
 
 function pivotCacheDefinitionRelsXml(part) {
@@ -8283,7 +8341,7 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
         const chartXml = await zip.file(targetPath)?.async("text");
         if (!chartXml) continue;
         const parsed = parseSpreadsheetChart(chartXml);
-        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, hasLegend: parsed.hasLegend, categories: parsed.categories, position: frame, series: parsed.series });
+        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, hasLegend: parsed.hasLegend, categories: parsed.categories, xAxis: parsed.xAxis, yAxis: parsed.yAxis, position: frame, series: parsed.series });
         parsed.series.forEach((series, index) => Object.assign(chart.series.items[index], { formula: series.formula, categoryFormula: series.categoryFormula, fill: series.fill }));
       }
     }

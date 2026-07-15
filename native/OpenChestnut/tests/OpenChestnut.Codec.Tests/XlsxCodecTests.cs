@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Xml.Linq;
@@ -2722,6 +2723,7 @@ public sealed class XlsxCodecTests
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertOffice2021Valid(authored.File.ToByteArray());
+        AssertChartAxes(authored.File.ToByteArray(), "Quarter", "@", 2, "Revenue", "$#,##0.0", 0, 100, 25);
         using (var stream = new MemoryStream(authored.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2745,6 +2747,18 @@ public sealed class XlsxCodecTests
         Assert.Equal([42.5, 85], Assert.Single(chart.Series).Values);
         Assert.Equal("'Summary'!$A$1:$A$2", chart.Series[0].CategoryFormula);
         Assert.Equal("'Summary'!$B$1:$B$2", chart.Series[0].ValueFormula);
+        Assert.Equal("Quarter", chart.XAxis.Title);
+        Assert.Equal("@", chart.XAxis.NumberFormatCode);
+        Assert.True(chart.XAxis.HasTickLabelInterval);
+        Assert.Equal(2U, chart.XAxis.TickLabelInterval);
+        Assert.Equal("Revenue", chart.YAxis.Title);
+        Assert.Equal("$#,##0.0", chart.YAxis.NumberFormatCode);
+        Assert.True(chart.YAxis.HasMinimum);
+        Assert.Equal(0, chart.YAxis.Minimum);
+        Assert.True(chart.YAxis.HasMaximum);
+        Assert.Equal(100, chart.YAxis.Maximum);
+        Assert.True(chart.YAxis.HasMajorUnit);
+        Assert.Equal(25, chart.YAxis.MajorUnit);
         Assert.True(chart.Source.Editable);
         Assert.Equal(64, chart.Source.DrawingXmlSha256.Length);
         Assert.Equal(64, chart.Source.ChartXmlSha256.Length);
@@ -2757,9 +2771,18 @@ public sealed class XlsxCodecTests
         chart.Categories[1] = "Q2 actual";
         chart.Series[0].Name = "Actual revenue";
         chart.Series[0].Values[1] = 90;
+        chart.XAxis.Title = "Fiscal quarter";
+        chart.XAxis.NumberFormatCode = "mmm";
+        chart.XAxis.TickLabelInterval = 1;
+        chart.YAxis.Title = "Revenue USD";
+        chart.YAxis.NumberFormatCode = "$0";
+        chart.YAxis.Minimum = -10;
+        chart.YAxis.Maximum = 120;
+        chart.YAxis.MajorUnit = 10;
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertOffice2021Valid(preserved.File.ToByteArray());
+        AssertChartAxes(preserved.File.ToByteArray(), "Fiscal quarter", "mmm", 1, "Revenue USD", "$0", -10, 120, 10);
         using (var stream = new MemoryStream(preserved.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2801,11 +2824,42 @@ public sealed class XlsxCodecTests
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
 
+        var logarithmicSource = SetChartValueAxisLogarithmic(authored.File.ToByteArray());
+        var logarithmicXml = ReadChartXml(logarithmicSource);
+        var logarithmic = Import(logarithmicSource);
+        Assert.True(logarithmic.Ok, string.Join("\n", logarithmic.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var logarithmicChart = Assert.Single(logarithmic.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.False(logarithmicChart.Source.Editable);
+        var logarithmicRoundTrip = Export(logarithmic.Artifact);
+        Assert.True(logarithmicRoundTrip.Ok, string.Join("\n", logarithmicRoundTrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(logarithmicXml, ReadChartXml(logarithmicRoundTrip.File.ToByteArray()));
+        logarithmicChart.YAxis.Title = "Forbidden logarithmic edit";
+        rejected = Export(logarithmic.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
         var tampered = Import(source);
         tampered.Artifact.Workbook.Worksheets[0].Charts[0].Source.ChartXmlSha256 = new string('0', 64);
         rejected = Export(tampered.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("spreadsheet_chart_source_binding_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetChartAxes()
+    {
+        var reversed = ChartExportRequest();
+        reversed.Artifact.Workbook.Worksheets[0].Charts[0].YAxis.Minimum = 100;
+        reversed.Artifact.Workbook.Worksheets[0].Charts[0].YAxis.Maximum = 10;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(reversed.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var pie = ChartExportRequest();
+        pie.Artifact.Workbook.Worksheets[0].Charts[0].Type = SpreadsheetChartType.Pie;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(pie.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -3227,6 +3281,8 @@ public sealed class XlsxCodecTests
             Type = SpreadsheetChartType.Line,
             HasLegend = true,
             AbsoluteAnchor = new SpreadsheetAbsoluteAnchorArtifact { XEmu = 3_619_500, YEmu = 190_500, WidthEmu = 3_429_000, HeightEmu = 2_095_500 },
+            XAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter", NumberFormatCode = "@", TickLabelInterval = 2 },
+            YAxis = new SpreadsheetChartAxisArtifact { Title = "Revenue", NumberFormatCode = "$#,##0.0", Minimum = 0, Maximum = 100, MajorUnit = 25 },
         };
         chart.Categories.Add(["Q1", "Q2"]);
         chart.Series.Add(new SpreadsheetChartSeriesArtifact
@@ -3778,6 +3834,40 @@ public sealed class XlsxCodecTests
             chart.Save(output, SaveOptions.DisableFormatting);
         }
         return stream.ToArray();
+    }
+
+    private static byte[] SetChartValueAxisLogarithmic(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            chart.Descendants(c + "valAx").Single().Element(c + "scaling")!.AddFirst(new XElement(c + "logBase", new XAttribute("val", 10)));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
+    private static void AssertChartAxes(byte[] bytes, string xTitle, string xFormat, uint xInterval, string yTitle, string yFormat, double yMinimum, double yMaximum, double yMajorUnit)
+    {
+        var chart = XDocument.Parse(ReadChartXml(bytes));
+        XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+        XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        var xAxis = chart.Descendants(c + "catAx").Single();
+        var yAxis = chart.Descendants(c + "valAx").Single();
+        Assert.Equal(xTitle, string.Concat(xAxis.Element(c + "title")!.Descendants(a + "t").Select(item => item.Value)));
+        Assert.Equal(xFormat, (string?)xAxis.Element(c + "numFmt")!.Attribute("formatCode"));
+        Assert.Equal(xInterval.ToString(CultureInfo.InvariantCulture), (string?)xAxis.Element(c + "tickLblSkip")!.Attribute("val"));
+        Assert.Equal(yTitle, string.Concat(yAxis.Element(c + "title")!.Descendants(a + "t").Select(item => item.Value)));
+        Assert.Equal(yFormat, (string?)yAxis.Element(c + "numFmt")!.Attribute("formatCode"));
+        Assert.Equal(yMinimum.ToString("R", CultureInfo.InvariantCulture), (string?)yAxis.Element(c + "scaling")!.Element(c + "min")!.Attribute("val"));
+        Assert.Equal(yMaximum.ToString("R", CultureInfo.InvariantCulture), (string?)yAxis.Element(c + "scaling")!.Element(c + "max")!.Attribute("val"));
+        Assert.Equal(yMajorUnit.ToString("R", CultureInfo.InvariantCulture), (string?)yAxis.Element(c + "majorUnit")!.Attribute("val"));
     }
 
     private static string ReadChartXml(byte[] bytes)

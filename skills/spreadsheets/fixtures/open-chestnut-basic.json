@@ -11,6 +11,8 @@
         "title": "OpenChestnut edited trend",
         "hasLegend": false,
         "categories": ["Revenue", "Double actual"],
+        "xAxis": { "axisType": "textAxis", "title": { "text": "Edited metric" }, "numberFormatCode": "@", "tickLabelInterval": 1 },
+        "yAxis": { "axisType": "valueAxis", "title": { "text": "Edited value" }, "numberFormatCode": "0.0", "min": 0, "max": 100, "majorUnit": 20 },
         "series": [{ "index": 0, "name": "Edited value", "values": [42.5, 90] }]
       }
     ],
@@ -140,6 +142,8 @@
           "title": "OpenChestnut trend",
           "hasLegend": true,
           "categories": ["Revenue", "Double"],
+          "xAxis": { "axisType": "textAxis", "title": { "text": "Metric" }, "numberFormatCode": "@", "tickLabelInterval": 2 },
+          "yAxis": { "axisType": "valueAxis", "title": { "text": "Value" }, "numberFormatCode": "0.00", "min": 0, "max": 100, "majorUnit": 25 },
           "series": [
             {
               "name": "Value",

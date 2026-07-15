@@ -39,6 +39,21 @@ function chartSeries(chart) {
   return Array.isArray(chart?.series?.items) ? chart.series.items : Array.isArray(chart?.series) ? chart.series : [];
 }
 
+function axisSnapshot(axis, kind) {
+  if (axis == null) return null;
+  const title = typeof axis.title === "string" ? axis.title : axis.title?.text;
+  const aliasMajorUnit = kind === "y" && axis.majorUnit == null ? axis.tickLabelInterval : axis.majorUnit;
+  return {
+    axisType: String(axis.axisType || (kind === "x" ? "textAxis" : "valueAxis")),
+    title: String(title ?? ""),
+    numberFormatCode: axis.numberFormatCode == null ? "" : String(axis.numberFormatCode),
+    tickLabelInterval: kind === "x" && axis.tickLabelInterval != null ? Number(axis.tickLabelInterval) : null,
+    minimum: axis.min == null ? null : Number(axis.min),
+    maximum: axis.max == null ? null : Number(axis.max),
+    majorUnit: aliasMajorUnit == null ? null : Number(aliasMajorUnit),
+  };
+}
+
 export function spreadsheetChartSnapshot(chart) {
   const position = chart?.position || {};
   return {
@@ -48,6 +63,8 @@ export function spreadsheetChartSnapshot(chart) {
     type: String(chart?.type || chart?.chartType || "bar").toLowerCase(),
     hasLegend: chart?.hasLegend !== false,
     categories: [...(chart?.categories || [])].map((value) => String(value)),
+    xAxis: axisSnapshot(chart?.xAxis, "x"),
+    yAxis: axisSnapshot(chart?.yAxis, "y"),
     position: {
       left: Number(position.left ?? 420),
       top: Number(position.top ?? 40),
@@ -69,6 +86,19 @@ function validateSnapshot(snapshot, chart) {
   text(snapshot.title, "title", chart);
   const type = TYPES_TO_WIRE.get(snapshot.type);
   if (type == null) fail(chart, `type must be bar, line, or pie; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
+  if (snapshot.type === "pie") {
+    if (snapshot.xAxis != null || snapshot.yAxis != null) fail(chart, "pie charts cannot carry category/value axes in the bounded native profile.", "unsupported_spreadsheet_chart");
+  } else {
+    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar and line charts require primary xAxis and yAxis objects.");
+    if ([chart?.xAxis, chart?.yAxis].some((axis) => axis?.textStyle != null || axis?.title?.textStyle != null)) {
+      fail(chart, "axis text styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
+    }
+    validateAxis(snapshot.xAxis, "x", chart);
+    validateAxis(snapshot.yAxis, "y", chart);
+    if (chart?.yAxis?.majorUnit != null && chart?.yAxis?.tickLabelInterval != null && Number(chart.yAxis.majorUnit) !== Number(chart.yAxis.tickLabelInterval)) {
+      fail(chart, "yAxis.majorUnit and compatibility alias yAxis.tickLabelInterval must match when both are set.");
+    }
+  }
   if (snapshot.series.length < 1 || snapshot.series.length > MAX_SERIES) fail(chart, `must contain 1 through ${MAX_SERIES} series.`);
   if (chartSeries(chart).some((series) => series?.fill != null)) fail(chart, "series fill styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
   if (snapshot.categories.length > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-category budget.`);
@@ -90,6 +120,34 @@ function validateSnapshot(snapshot, chart) {
   return type;
 }
 
+function validateAxis(axis, kind, chart) {
+  const expectedType = kind === "x" ? "textAxis" : "valueAxis";
+  if (axis.axisType !== expectedType) fail(chart, `${kind}Axis.axisType must be ${expectedType}; received ${axis.axisType}.`, "unsupported_spreadsheet_chart");
+  text(axis.title, `${kind}Axis.title.text`, chart);
+  text(axis.numberFormatCode, `${kind}Axis.numberFormatCode`, chart, 255);
+  if (kind === "x") {
+    if (axis.minimum != null || axis.maximum != null || axis.majorUnit != null) fail(chart, "xAxis supports title, numberFormatCode, and tickLabelInterval only.", "unsupported_spreadsheet_chart");
+    if (axis.tickLabelInterval != null && (!Number.isInteger(axis.tickLabelInterval) || axis.tickLabelInterval < 1 || axis.tickLabelInterval > MAX_POINTS)) fail(chart, `xAxis.tickLabelInterval must be an integer from 1 through ${MAX_POINTS}.`);
+    return;
+  }
+  if (axis.tickLabelInterval != null) fail(chart, "yAxis.tickLabelInterval is normalized to majorUnit and cannot remain a category-axis interval.");
+  for (const [name, value] of [["min", axis.minimum], ["max", axis.maximum], ["majorUnit", axis.majorUnit]]) if (value != null) finite(value, `yAxis.${name}`, chart);
+  if (axis.minimum != null && axis.maximum != null && axis.minimum >= axis.maximum) fail(chart, "yAxis.min must be less than yAxis.max.");
+  if (axis.majorUnit != null && axis.majorUnit <= 0) fail(chart, "yAxis.majorUnit must be positive.");
+}
+
+function wireAxis(axis) {
+  if (axis == null) return undefined;
+  return {
+    title: axis.title,
+    numberFormatCode: axis.numberFormatCode,
+    tickLabelInterval: axis.tickLabelInterval == null ? undefined : axis.tickLabelInterval,
+    minimum: axis.minimum == null ? undefined : axis.minimum,
+    maximum: axis.maximum == null ? undefined : axis.maximum,
+    majorUnit: axis.majorUnit == null ? undefined : axis.majorUnit,
+  };
+}
+
 function wireChart(chart, original) {
   const snapshot = spreadsheetChartSnapshot(chart);
   const type = validateSnapshot(snapshot, chart);
@@ -100,6 +158,8 @@ function wireChart(chart, original) {
     type,
     hasLegend: snapshot.hasLegend,
     categories: snapshot.categories,
+    xAxis: wireAxis(snapshot.xAxis),
+    yAxis: wireAxis(snapshot.yAxis),
     series: snapshot.series.map((series) => ({
       name: series.name,
       values: series.values,
@@ -196,6 +256,19 @@ function positionFromWire(sheet, source) {
   };
 }
 
+function axisFromWire(axis, kind) {
+  if (axis == null) return undefined;
+  return {
+    axisType: kind === "x" ? "textAxis" : "valueAxis",
+    title: { text: axis.title || "" },
+    ...(axis.numberFormatCode ? { numberFormatCode: axis.numberFormatCode } : {}),
+    ...(axis.tickLabelInterval == null ? {} : { tickLabelInterval: axis.tickLabelInterval }),
+    ...(axis.minimum == null ? {} : { min: axis.minimum }),
+    ...(axis.maximum == null ? {} : { max: axis.maximum }),
+    ...(axis.majorUnit == null ? {} : { majorUnit: axis.majorUnit }),
+  };
+}
+
 export function spreadsheetChartFromWire(sheet, source) {
   const type = TYPES_FROM_WIRE.get(source.type);
   if (!type) fail(source, `has unsupported wire type ${source.type}.`, "unsupported_spreadsheet_chart");
@@ -204,6 +277,8 @@ export function spreadsheetChartFromWire(sheet, source) {
     title: source.title,
     hasLegend: source.hasLegend,
     categories: [...(source.categories || [])],
+    xAxis: axisFromWire(source.xAxis, "x"),
+    yAxis: axisFromWire(source.yAxis, "y"),
     position: positionFromWire(sheet, source),
     series: (source.series || []).map((series) => ({ name: series.name, values: [...series.values] })),
   });

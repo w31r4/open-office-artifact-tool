@@ -239,10 +239,12 @@ try {
   assert.equal(wasmChart.title, "OpenChestnut edited trend");
   assert.equal(wasmChart.hasLegend, false);
   assert.deepEqual(wasmChart.categories, ["Revenue", "Double actual"]);
+  assert.deepEqual(wasmChart.xAxis, { axisType: "textAxis", title: { text: "Edited metric" }, numberFormatCode: "@", tickLabelInterval: 1 });
+  assert.deepEqual(wasmChart.yAxis, { axisType: "valueAxis", title: { text: "Edited value" }, numberFormatCode: "0.0", min: 0, max: 100, majorUnit: 20 });
   assert.deepEqual(wasmChart.series.items[0].values, [42.5, 90]);
   assert.equal(wasmChart.series.items[0].categoryFormula, "'Summary'!$A$2:$A$3");
   assert.equal(wasmChart.series.items[0].formula, "'Summary'!$B$2:$B$3");
-  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"OpenChestnut edited trend"/);
+  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"OpenChestnut edited trend"[\s\S]*"Edited metric"[\s\S]*"Edited value"/);
   assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"OpenChestnut worksheet image"/);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedIndex, 7);
