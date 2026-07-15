@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -79,6 +79,8 @@ assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArt
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { absoluteAnchor: { widthEmu: 1n, heightEmu: 1n } }))[0], 0x42, "Spreadsheet absolute anchors must use additive image field 8.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { crop: { leftThousandthPercent: 1 } }))[0], 0x4a, "Spreadsheet image crops must use additive image field 9.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { effects: { grayscale: true } }))[0], 0x52, "Spreadsheet image effects must use additive image field 10.");
+assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { transform: { rotationAngle60000: 60_000 } }))[0], 0x5a, "Spreadsheet image transforms must use additive image field 11.");
+assert.deepEqual([...toBinary(SpreadsheetImageTransformArtifactSchema, create(SpreadsheetImageTransformArtifactSchema, { flipHorizontal: false }))], [0x10, 0x00], "Spreadsheet picture transforms must preserve explicit false flips.");
 assert.deepEqual([...toBinary(SpreadsheetOneCellAnchorArtifactSchema, create(SpreadsheetOneCellAnchorArtifactSchema, { widthEmu: 1n }))], [0x28, 0x01], "Spreadsheet image widths must use signed EMU field 5.");
 assert.equal(toBinary(SpreadsheetImageSourceBindingSchema, create(SpreadsheetImageSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet image semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetWorksheetSourceBindingSchema, create(SpreadsheetWorksheetSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet worksheet semantic hashes must use source-binding field 5.");
@@ -1176,6 +1178,80 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /between 0 and 100/i.test(error.message),
 );
 await assert.rejects(SpreadsheetFile.exportXlsx(invalidOpacityWorkbook), /between 0 and 100/i);
+const transformImageWorkbook = Workbook.create();
+transformImageWorkbook.worksheets.add("Picture transform").images.add({
+  name: "Transformed mark",
+  alt: "Rotated and mirrored worksheet picture",
+  dataUrl: twoCellImageDataUrl,
+  transform: { rotationDegrees: 30.5, flipHorizontal: true, flipVertical: false },
+  anchor: { from: { row: 1, col: 2 }, extent: { widthPx: 120, heightPx: 80 } },
+});
+const transformImageExport = await exportXlsxWithOpenChestnut(transformImageWorkbook);
+const transformImageZip = await JSZip.loadAsync(transformImageExport.bytes);
+const transformDrawingXml = await transformImageZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(transformDrawingXml, /<a:xfrm\b[^>]*rot="1830000"[^>]*flipH="1"[^>]*flipV="0"[^>]*\/>/);
+const transformImageImported = await importXlsxWithOpenChestnut(transformImageExport);
+const importedTransformImage = transformImageImported.worksheets.getItem("Picture transform").images.items[0];
+assert.deepEqual(importedTransformImage.transform, { rotationDegrees: 30.5, flipHorizontal: true, flipVertical: false });
+assert.match(importedTransformImage.toSvg(), /transform="translate\([^\"]+\) rotate\(30\.5\) scale\(-1 1\) translate\([^\"]+\)"/);
+importedTransformImage.transform = { rotationDegrees: -45, flipHorizontal: false, flipVertical: true };
+const editedTransformExport = await exportXlsxWithOpenChestnut(transformImageImported, { recalculate: false });
+assert.deepEqual((await importXlsxWithOpenChestnut(editedTransformExport)).worksheets.getItem("Picture transform").images.items[0].transform, importedTransformImage.transform);
+const removedTransformWorkbook = await importXlsxWithOpenChestnut(editedTransformExport);
+removedTransformWorkbook.worksheets.getItem("Picture transform").images.items[0].transform = undefined;
+const removedTransformExport = await exportXlsxWithOpenChestnut(removedTransformWorkbook, { recalculate: false });
+const removedTransformZip = await JSZip.loadAsync(removedTransformExport.bytes);
+assert.doesNotMatch(await removedTransformZip.file("xl/drawings/drawing1.xml").async("text"), /<a:xfrm\b/);
+assert.equal((await importXlsxWithOpenChestnut(removedTransformExport)).worksheets.getItem("Picture transform").images.items[0].transform, undefined);
+const javascriptTransformExport = await SpreadsheetFile.exportXlsx(transformImageWorkbook);
+const javascriptTransformZip = await JSZip.loadAsync(new Uint8Array(await javascriptTransformExport.arrayBuffer()));
+const javascriptTransformXml = await javascriptTransformZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(javascriptTransformXml, /<a:xfrm rot="1830000" flipH="1" flipV="0"\/>/);
+assert.deepEqual((await SpreadsheetFile.importXlsx(javascriptTransformExport)).worksheets.getItem("Picture transform").images.items[0].transform, {
+  rotationDegrees: 30.5,
+  flipHorizontal: true,
+  flipVertical: false,
+});
+javascriptTransformZip.file("xl/drawings/drawing1.xml", javascriptTransformXml.replace('rot="1830000"', 'rot="21600001"'));
+javascriptTransformZip.remove("customXml/open-office-artifact.json");
+assert.equal((await SpreadsheetFile.importXlsx(await javascriptTransformZip.generateAsync({ type: "uint8array" }))).worksheets.getItem("Picture transform").images.items[0].transform, undefined);
+const opaqueTransformZip = await JSZip.loadAsync(transformImageExport.bytes);
+opaqueTransformZip.file("xl/drawings/drawing1.xml", transformDrawingXml.replace('rot="1830000"', 'rot="21600001"'));
+const opaqueTransformWorkbook = await importXlsxWithOpenChestnut(await opaqueTransformZip.generateAsync({ type: "uint8array" }));
+const opaqueTransformImage = opaqueTransformWorkbook.worksheets.getItem("Picture transform").images.items[0];
+assert.equal(opaqueTransformImage.transform, undefined);
+opaqueTransformImage.name = "Opaque transform retained";
+const opaqueMetadataExport = await exportXlsxWithOpenChestnut(opaqueTransformWorkbook, { recalculate: false });
+const opaqueMetadataZip = await JSZip.loadAsync(opaqueMetadataExport.bytes);
+assert.match(await opaqueMetadataZip.file("xl/drawings/drawing1.xml").async("text"), /<a:xfrm\b[^>]*rot="21600001"/);
+const opaqueTransformEdit = await importXlsxWithOpenChestnut(opaqueMetadataExport);
+opaqueTransformEdit.worksheets.getItem("Picture transform").images.items[0].transform = { rotationDegrees: 10 };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(opaqueTransformEdit, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image_edit" && /transform/i.test(error.message),
+);
+const invalidTransformWorkbook = Workbook.create();
+invalidTransformWorkbook.worksheets.add("Invalid transform").images.add({
+  name: "Invalid transform",
+  dataUrl: twoCellImageDataUrl,
+  transform: { rotationDegrees: 360.001 },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidTransformWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /between -360 and 360/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidTransformWorkbook), /between -360 and 360/i);
+const emptyTransformWorkbook = Workbook.create();
+emptyTransformWorkbook.worksheets.add("Empty transform").images.add({
+  name: "Empty transform",
+  dataUrl: twoCellImageDataUrl,
+  transform: {},
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(emptyTransformWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /must define/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(emptyTransformWorkbook), /must define/i);
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },

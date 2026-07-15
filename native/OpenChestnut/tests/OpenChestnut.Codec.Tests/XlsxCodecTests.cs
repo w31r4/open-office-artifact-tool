@@ -2962,6 +2962,68 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsEditsRemovesAndBoundsWorksheetPictureTransform()
+    {
+        var request = TransformPictureExportRequest();
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        AssertPictureTransform(authored.File.ToByteArray(), 1_830_000, true, false, residual: false);
+
+        var source = AddPictureTransformResidual(AddPictureLocksResidual(authored.File.ToByteArray()));
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var image = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Equal(1_830_000, image.Transform.RotationAngle60000);
+        Assert.True(image.Transform.FlipHorizontal);
+        Assert.False(image.Transform.FlipVertical);
+        Assert.True(image.Transform.HasFlipHorizontal);
+        Assert.True(image.Transform.HasFlipVertical);
+
+        image.Transform.RotationAngle60000 = -2_700_000;
+        image.Transform.FlipHorizontal = false;
+        image.Transform.FlipVertical = true;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        AssertPictureTransform(edited.File.ToByteArray(), -2_700_000, false, true, residual: true);
+
+        var removed = Import(edited.File.ToByteArray());
+        removed.Artifact.Workbook.Worksheets[0].Images[0].Transform = null;
+        var withoutTransform = Export(removed.Artifact);
+        Assert.True(withoutTransform.Ok, string.Join("\n", withoutTransform.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(withoutTransform.File.ToByteArray());
+        AssertPictureTransform(withoutTransform.File.ToByteArray(), null, null, null, residual: true);
+        Assert.Null(Assert.Single(Import(withoutTransform.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Images).Transform);
+
+        var invalidRotation = TransformPictureExportRequest();
+        invalidRotation.Artifact.Workbook.Worksheets[0].Images[0].Transform.RotationAngle60000 = 21_600_001;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidRotation.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var empty = PictureExportRequest();
+        empty.Artifact.Workbook.Worksheets[0].Images[0].Transform = new SpreadsheetImageTransformArtifact();
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(empty.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var opaque = Import(SetPictureTransformRotation(authored.File.ToByteArray(), 21_600_001));
+        Assert.True(opaque.Ok, string.Join("\n", opaque.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var opaqueImage = Assert.Single(opaque.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Null(opaqueImage.Transform);
+        opaqueImage.Name = "Opaque transform retained";
+        var metadataOnly = Export(opaque.Artifact);
+        Assert.True(metadataOnly.Ok, string.Join("\n", metadataOnly.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertPictureTransform(metadataOnly.File.ToByteArray(), 21_600_001, true, false, residual: false);
+        var opaqueEdit = Import(metadataOnly.File.ToByteArray());
+        opaqueEdit.Artifact.Workbook.Worksheets[0].Images[0].Transform = new SpreadsheetImageTransformArtifact { RotationAngle60000 = 600_000 };
+        rejected = Export(opaqueEdit.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceBoundWorksheetPicturesRejectSharedOrCrossFormatReplacement()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PictureExportRequest().ToByteArray()));
@@ -3115,6 +3177,18 @@ public sealed class XlsxCodecTests
                 ContrastThousandthPercent = -10_000,
             },
             OpacityThousandthPercent = 65_000,
+        };
+        return request;
+    }
+
+    private static CodecRequest TransformPictureExportRequest()
+    {
+        var request = PictureExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Images[0].Transform = new SpreadsheetImageTransformArtifact
+        {
+            RotationAngle60000 = 1_830_000,
+            FlipHorizontal = true,
+            FlipVertical = false,
         };
         return request;
     }
@@ -3617,6 +3691,34 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] AddPictureTransformResidual(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
+            var transform = drawing.Descendants<Xdr.Picture>().Single().ShapeProperties!.GetFirstChild<A.Transform2D>()!;
+            transform.Append(new A.Offset { X = 123_456, Y = 234_567 });
+            transform.Append(new A.Extents { Cx = 1_111_111, Cy = 2_222_222 });
+            drawing.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetPictureTransformRotation(byte[] bytes, int rotation)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
+            drawing.Descendants<Xdr.Picture>().Single().ShapeProperties!.GetFirstChild<A.Transform2D>()!.Rotation = rotation;
+            drawing.Save();
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] AddSharedPictureReference(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -3821,6 +3923,35 @@ public sealed class XlsxCodecTests
         using var document = SpreadsheetDocument.Open(stream, false);
         var blip = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!.Descendants<A.Blip>().Single();
         Assert.Equal(expected, blip.Elements<A.Grayscale>().Count());
+    }
+
+    private static void AssertPictureTransform(byte[] bytes, int? rotation, bool? flipHorizontal, bool? flipVertical, bool residual)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var picture = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!.Descendants<Xdr.Picture>().Single();
+        var transform = picture.ShapeProperties!.GetFirstChild<A.Transform2D>();
+        Assert.NotNull(transform);
+        if (rotation.HasValue) Assert.Equal(rotation.Value, transform!.Rotation!.Value);
+        else Assert.Null(transform!.Rotation);
+        if (flipHorizontal.HasValue) Assert.Equal(flipHorizontal.Value, transform.HorizontalFlip!.Value);
+        else Assert.Null(transform.HorizontalFlip);
+        if (flipVertical.HasValue) Assert.Equal(flipVertical.Value, transform.VerticalFlip!.Value);
+        else Assert.Null(transform.VerticalFlip);
+        var shapeChildren = picture.ShapeProperties.ChildElements.ToList();
+        Assert.True(shapeChildren.IndexOf(transform) < shapeChildren.IndexOf(picture.ShapeProperties.GetFirstChild<A.PresetGeometry>()!));
+        if (residual)
+        {
+            Assert.Equal(123_456L, transform.Offset!.X!.Value);
+            Assert.Equal(234_567L, transform.Offset.Y!.Value);
+            Assert.Equal(1_111_111L, transform.Extents!.Cx!.Value);
+            Assert.Equal(2_222_222L, transform.Extents.Cy!.Value);
+        }
+        else
+        {
+            Assert.Null(transform.Offset);
+            Assert.Null(transform.Extents);
+        }
     }
 
     private static CodecResponse Import(byte[] bytes) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest

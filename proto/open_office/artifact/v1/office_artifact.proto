@@ -361,6 +361,8 @@ message SpreadsheetImageArtifact {
   SpreadsheetImageCropArtifact crop = 9;
   // Optional bounded effects applied by the picture blip.
   SpreadsheetImageEffectsArtifact effects = 10;
+  // Optional bounded rotation and mirror attributes on the picture transform.
+  SpreadsheetImageTransformArtifact transform = 11;
 }
 
 // SpreadsheetDrawingML stores one-cell geometry in English Metric Units.
@@ -432,6 +434,15 @@ message SpreadsheetImageEffectsArtifact {
 message SpreadsheetImageLuminanceEffectArtifact {
   sint32 brightness_thousandth_percent = 1;
   sint32 contrast_thousandth_percent = 2;
+}
+
+// Bounded DrawingML a:xfrm attributes for worksheet pictures. Scalar
+// presence distinguishes an omitted attribute from an explicit zero/false
+// value so source-bound edits do not erase native author intent.
+message SpreadsheetImageTransformArtifact {
+  optional sint32 rotation_angle_60000 = 1;
+  optional bool flip_horizontal = 2;
+  optional bool flip_vertical = 3;
 }
 
 // Hash-bound locator for one recognized picture anchor in a worksheet-owned

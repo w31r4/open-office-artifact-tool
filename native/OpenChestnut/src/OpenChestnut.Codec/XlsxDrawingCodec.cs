@@ -31,9 +31,12 @@ internal sealed class XlsxDrawingCodec
         Xdr.NonVisualDrawingProperties NonVisual,
         Xdr.BlipFill BlipFill,
         A.Blip Blip,
+        Xdr.ShapeProperties ShapeProperties,
+        A.Transform2D? Transform,
         A.SourceRectangle? SourceRectangle,
         bool CropEditable,
         bool EffectsEditable,
+        bool TransformEditable,
         ImagePart ImagePart,
         string RelationshipId,
         int Ordinal);
@@ -106,6 +109,7 @@ internal sealed class XlsxDrawingCodec
             else ValidateAnchor(image.AbsoluteAnchor!, worksheetId, image.Id);
             if (image.Crop is not null) ValidateCrop(image.Crop, worksheetId, image.Id);
             if (image.Effects is not null) ValidateEffects(image.Effects, worksheetId, image.Id);
+            if (image.Transform is not null) ValidateTransform(image.Transform, worksheetId, image.Id);
         }
     }
 
@@ -177,6 +181,7 @@ internal sealed class XlsxDrawingCodec
                 picture.GetFirstChild<Xdr.NonVisualPictureProperties>()?.GetFirstChild<Xdr.NonVisualDrawingProperties>() is not { Id.HasValue: true } nonVisual ||
                 picture.GetFirstChild<Xdr.BlipFill>() is not { } blipFill ||
                 blipFill.GetFirstChild<A.Blip>() is not { } blip ||
+                picture.GetFirstChild<Xdr.ShapeProperties>() is not { } shapeProperties ||
                 blip.Embed?.Value is not { Length: > 0 } imageRelationshipId ||
                 blip.Link?.Value is { Length: > 0 }) continue;
             var sourceRectangles = blipFill.Elements<A.SourceRectangle>().ToArray();
@@ -185,6 +190,7 @@ internal sealed class XlsxDrawingCodec
             SpreadsheetImageCropArtifact? crop = null;
             if (sourceRectangle is not null && !TryCrop(sourceRectangle, out crop)) cropEditable = false;
             var effectsEditable = TryEffects(blip, out var effects);
+            var transformEditable = TryTransform(shapeProperties, out var transform, out var nativeTransform);
             ImagePart imagePart;
             try
             {
@@ -216,6 +222,7 @@ internal sealed class XlsxDrawingCodec
             else artifact.AbsoluteAnchor = absoluteAnchor;
             if (cropEditable && crop is not null) artifact.Crop = crop;
             if (effectsEditable && effects is not null) artifact.Effects = effects;
+            if (transformEditable && transform is not null) artifact.Transform = transform;
             if (string.IsNullOrWhiteSpace(artifact.Name) || artifact.Name.Length > 255 || HasControls(artifact.Name) ||
                 artifact.AltText.Length > 32_767 || HasControls(artifact.AltText)) continue;
             artifact.Source = new SpreadsheetImageSourceBinding
@@ -229,7 +236,7 @@ internal sealed class XlsxDrawingCodec
                 NonVisualId = nonVisual.Id!.Value,
                 Editable = true,
             };
-            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, blipFill, blip, sourceRectangle, cropEditable, effectsEditable, imagePart, imageRelationshipId, ordinal));
+            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, blipFill, blip, shapeProperties, nativeTransform, sourceRectangle, cropEditable, effectsEditable, transformEditable, imagePart, imageRelationshipId, ordinal));
         }
         return records;
     }
@@ -241,8 +248,7 @@ internal sealed class XlsxDrawingCodec
                     new Xdr.NonVisualDrawingProperties { Id = nonVisualId, Name = source.Name, Description = source.AltText },
                     new Xdr.NonVisualPictureDrawingProperties()),
                 BuildBlipFill(source, relationshipId),
-                new Xdr.ShapeProperties(
-                    new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
+                BuildShapeProperties(source));
         if (source.Anchor is { } oneCell)
             return new Xdr.OneCellAnchor(
                 BuildFrom(oneCell.Row, oneCell.Column, oneCell.RowOffsetEmu, oneCell.ColumnOffsetEmu),
@@ -277,6 +283,14 @@ internal sealed class XlsxDrawingCodec
         return output;
     }
 
+    private static Xdr.ShapeProperties BuildShapeProperties(SpreadsheetImageArtifact source)
+    {
+        var output = new Xdr.ShapeProperties();
+        if (source.Transform is { } transform) output.Append(BuildTransform(transform));
+        output.Append(new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle });
+        return output;
+    }
+
     private void ReplaceAsset(PictureRecord record, SpreadsheetImageArtifact target)
     {
         var replacement = _assets.Get(target.AssetId);
@@ -300,13 +314,15 @@ internal sealed class XlsxDrawingCodec
             source.AltText.Equals(target.AltText, StringComparison.Ordinal) &&
             AnchorSemantics(source).Equals(AnchorSemantics(target), StringComparison.Ordinal) &&
             CropSemantics(source.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal) &&
-            EffectsSemantics(source.Effects).Equals(EffectsSemantics(target.Effects), StringComparison.Ordinal);
+            EffectsSemantics(source.Effects).Equals(EffectsSemantics(target.Effects), StringComparison.Ordinal) &&
+            TransformSemantics(source.Transform).Equals(TransformSemantics(target.Transform), StringComparison.Ordinal);
     }
 
     private static void PatchDrawing(PictureRecord record, SpreadsheetImageArtifact target)
     {
         if (!CropSemantics(record.Artifact.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal)) PatchCrop(record, target);
         if (!EffectsSemantics(record.Artifact.Effects).Equals(EffectsSemantics(target.Effects), StringComparison.Ordinal)) PatchEffects(record, target);
+        if (!TransformSemantics(record.Artifact.Transform).Equals(TransformSemantics(target.Transform), StringComparison.Ordinal)) PatchTransform(record, target);
         record.NonVisual.Name = target.Name;
         record.NonVisual.Description = target.AltText;
         if (target.Anchor is { } oneCell)
@@ -358,6 +374,30 @@ internal sealed class XlsxDrawingCodec
                      .Where(item => item is A.AlphaModulationFixed or A.Grayscale or A.LuminanceEffect)
                      .ToArray()) child.Remove();
         AppendEffects(record.Blip, target.Effects);
+    }
+
+    private static void PatchTransform(PictureRecord record, SpreadsheetImageArtifact target)
+    {
+        if (!record.TransformEditable)
+            throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} cannot replace an unrecognized source picture transform.", Path(record.Part));
+        var native = record.Transform;
+        if (target.Transform is null)
+        {
+            if (native is null) return;
+            native.Rotation = null;
+            native.HorizontalFlip = null;
+            native.VerticalFlip = null;
+            if (native.ChildElements.Count == 0) native.Remove();
+            return;
+        }
+        if (native is null)
+        {
+            record.ShapeProperties.PrependChild(BuildTransform(target.Transform));
+            return;
+        }
+        native.Rotation = target.Transform.HasRotationAngle60000 ? target.Transform.RotationAngle60000 : null;
+        native.HorizontalFlip = target.Transform.HasFlipHorizontal ? target.Transform.FlipHorizontal : null;
+        native.VerticalFlip = target.Transform.HasFlipVertical ? target.Transform.FlipVertical : null;
     }
 
     private static void ValidateBinding(SpreadsheetImageArtifact target, PictureRecord record)
@@ -462,6 +502,27 @@ internal sealed class XlsxDrawingCodec
         return true;
     }
 
+    private static bool TryTransform(Xdr.ShapeProperties source, out SpreadsheetImageTransformArtifact? transform, out A.Transform2D? native)
+    {
+        transform = null;
+        var transforms = source.Elements<A.Transform2D>().ToArray();
+        native = transforms.FirstOrDefault();
+        if (transforms.Length > 1) return false;
+        if (native is null) return true;
+        if (native.ExtendedAttributes.Any() ||
+            native.ChildElements.Count(item => item is A.Offset) > 1 ||
+            native.ChildElements.Count(item => item is A.Extents) > 1 ||
+            native.ChildElements.Any(item => item is not A.Offset and not A.Extents)) return false;
+        if (native.Rotation is { HasValue: false } || native.HorizontalFlip is { HasValue: false } || native.VerticalFlip is { HasValue: false }) return false;
+        if (native.Rotation?.Value is { } angle && angle is < -21_600_000 or > 21_600_000) return false;
+        if (native.Rotation is null && native.HorizontalFlip is null && native.VerticalFlip is null) return true;
+        transform = new SpreadsheetImageTransformArtifact();
+        if (native.Rotation?.Value is { } rotation) transform.RotationAngle60000 = rotation;
+        if (native.HorizontalFlip?.Value is { } horizontal) transform.FlipHorizontal = horizontal;
+        if (native.VerticalFlip?.Value is { } vertical) transform.FlipVertical = vertical;
+        return true;
+    }
+
     private static bool TryMarker(OpenXmlCompositeElement marker, out SpreadsheetCellMarkerArtifact output)
     {
         output = new SpreadsheetCellMarkerArtifact();
@@ -526,6 +587,14 @@ internal sealed class XlsxDrawingCodec
             throw InvalidImage(worksheetId, imageId, "has opacity outside 0% through 100%.");
     }
 
+    private static void ValidateTransform(SpreadsheetImageTransformArtifact transform, string worksheetId, string imageId)
+    {
+        if (!transform.HasRotationAngle60000 && !transform.HasFlipHorizontal && !transform.HasFlipVertical)
+            throw InvalidImage(worksheetId, imageId, "has an empty picture transform.");
+        if (transform.HasRotationAngle60000 && transform.RotationAngle60000 is < -21_600_000 or > 21_600_000)
+            throw InvalidImage(worksheetId, imageId, "has rotation outside -360 through 360 degrees.");
+    }
+
     private static bool CropValuesValid(SpreadsheetImageCropArtifact crop) =>
         crop.LeftThousandthPercent is >= -100_000 and <= 100_000 &&
         crop.TopThousandthPercent is >= -100_000 and <= 100_000 &&
@@ -560,6 +629,13 @@ internal sealed class XlsxDrawingCodec
                 Contrast = luminance.ContrastThousandthPercent,
             });
     }
+
+    private static A.Transform2D BuildTransform(SpreadsheetImageTransformArtifact source) => new()
+    {
+        Rotation = source.HasRotationAngle60000 ? source.RotationAngle60000 : null,
+        HorizontalFlip = source.HasFlipHorizontal ? source.FlipHorizontal : null,
+        VerticalFlip = source.HasFlipVertical ? source.FlipVertical : null,
+    };
 
     private static void ValidateMarker(SpreadsheetCellMarkerArtifact marker, string worksheetId, string imageId, string name)
     {
@@ -614,7 +690,7 @@ internal sealed class XlsxDrawingCodec
 
     private static string SemanticHash(SpreadsheetImageArtifact image)
     {
-        return Hash(string.Join('\0', image.Id, image.Name, image.AltText, image.AssetId, AnchorSemantics(image), CropSemantics(image.Crop), EffectsSemantics(image.Effects)));
+        return Hash(string.Join('\0', image.Id, image.Name, image.AltText, image.AssetId, AnchorSemantics(image), CropSemantics(image.Crop), EffectsSemantics(image.Effects), TransformSemantics(image.Transform)));
     }
 
     private static string AnchorSemantics(SpreadsheetImageArtifact image)
@@ -652,6 +728,15 @@ internal sealed class XlsxDrawingCodec
             effects.HasOpacityThousandthPercent
                 ? $"opacity:{effects.OpacityThousandthPercent.ToString(CultureInfo.InvariantCulture)}"
                 : "opacity-absent");
+
+    private static string TransformSemantics(SpreadsheetImageTransformArtifact? transform) => transform is null
+        ? "absent"
+        : string.Join('\0', "present",
+            transform.HasRotationAngle60000
+                ? $"rotation:{transform.RotationAngle60000.ToString(CultureInfo.InvariantCulture)}"
+                : "rotation-absent",
+            transform.HasFlipHorizontal ? $"flipH:{(transform.FlipHorizontal ? 1 : 0)}" : "flipH-absent",
+            transform.HasFlipVertical ? $"flipV:{(transform.FlipVertical ? 1 : 0)}" : "flipV-absent");
 
     private static string MarkerSemantics(SpreadsheetCellMarkerArtifact marker) => string.Join('\0',
         marker.Row.ToString(CultureInfo.InvariantCulture), marker.Column.ToString(CultureInfo.InvariantCulture),

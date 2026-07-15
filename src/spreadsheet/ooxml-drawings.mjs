@@ -88,6 +88,29 @@ function pictureEffects(pictureXml) {
   return Object.keys(output).length > 0 ? output : undefined;
 }
 
+function pictureTransform(pictureXml) {
+  const shapeProperties = elementBody(pictureXml, "spPr");
+  if (!shapeProperties) return undefined;
+  const tags = [...shapeProperties.matchAll(/<(?:[A-Za-z_][\w.-]*:)?xfrm\b[^>]*>/g)].map((match) => match[0]);
+  if (tags.length !== 1) return undefined;
+  const attrs = attributes(tags[0]);
+  if (Object.keys(attrs).some((name) => !["rot", "flipH", "flipV"].includes(name) && !name.startsWith("xmlns"))) return undefined;
+  const output = {};
+  if (attrs.rot != null) {
+    const angle = Number(attrs.rot);
+    if (!Number.isInteger(angle) || angle < -21_600_000 || angle > 21_600_000) return undefined;
+    output.rotationDegrees = angle / 60_000;
+  }
+  const booleanAttribute = (name, publicName) => {
+    if (attrs[name] == null) return true;
+    if (!["0", "1", "false", "true"].includes(attrs[name])) return false;
+    output[publicName] = attrs[name] === "1" || attrs[name] === "true";
+    return true;
+  };
+  if (!booleanAttribute("flipH", "flipHorizontal") || !booleanAttribute("flipV", "flipVertical")) return undefined;
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
 export function parseSpreadsheetDrawing(xml = "") {
   const records = [];
   const anchorPattern = /<(?:[A-Za-z_][\w.-]*:)?(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1>/g;
@@ -117,6 +140,7 @@ export function parseSpreadsheetDrawing(xml = "") {
       extent: drawingExtent(body),
       crop: picture ? pictureCrop(picture) : undefined,
       effects: picture ? pictureEffects(picture) : undefined,
+      transform: picture ? pictureTransform(picture) : undefined,
     });
   }
   return records;

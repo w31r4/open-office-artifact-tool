@@ -99,6 +99,25 @@ function wireEffects(image) {
   return output.grayscale || output.luminance || output.opacityThousandthPercent != null ? output : undefined;
 }
 
+function wireTransform(image) {
+  if (image.transform == null) return undefined;
+  if (typeof image.transform !== "object" || Array.isArray(image.transform)) fail(image, "transform must be an object.");
+  const has = (name) => Object.hasOwn(image.transform, name) && image.transform[name] != null;
+  const output = {};
+  if (has("rotationDegrees")) {
+    const degrees = Number(image.transform.rotationDegrees);
+    if (!Number.isFinite(degrees) || degrees < -360 || degrees > 360) fail(image, "transform.rotationDegrees must be finite and between -360 and 360 degrees.");
+    output.rotationAngle60000 = Math.round(degrees * 60_000);
+  }
+  for (const [publicName, wireName] of [["flipHorizontal", "flipHorizontal"], ["flipVertical", "flipVertical"]]) {
+    if (!has(publicName)) continue;
+    if (typeof image.transform[publicName] !== "boolean") fail(image, `transform.${publicName} must be a boolean.`);
+    output[wireName] = image.transform[publicName];
+  }
+  if (Object.keys(output).length === 0) fail(image, "transform must define rotationDegrees, flipHorizontal, or flipVertical.");
+  return output;
+}
+
 export function spreadsheetImageSnapshot(image) {
   const anchor = image.anchor || {};
   const from = anchor.from || {};
@@ -138,6 +157,13 @@ export function spreadsheetImageSnapshot(image) {
     effectContrastPercent: image.effects == null ? undefined : Number(image.effects.contrastPercent ?? 0),
     effectOpacityPresent: image.effects == null ? undefined : Object.hasOwn(image.effects, "opacityPercent"),
     effectOpacityPercent: image.effects == null ? undefined : Number(image.effects.opacityPercent ?? 0),
+    transformPresent: image.transform != null,
+    transformRotationPresent: image.transform == null ? undefined : Object.hasOwn(image.transform, "rotationDegrees"),
+    transformRotationDegrees: image.transform == null ? undefined : Number(image.transform.rotationDegrees ?? 0),
+    transformFlipHorizontalPresent: image.transform == null ? undefined : Object.hasOwn(image.transform, "flipHorizontal"),
+    transformFlipHorizontal: image.transform == null ? undefined : image.transform.flipHorizontal,
+    transformFlipVerticalPresent: image.transform == null ? undefined : Object.hasOwn(image.transform, "flipVertical"),
+    transformFlipVertical: image.transform == null ? undefined : image.transform.flipVertical,
   };
 }
 
@@ -179,6 +205,8 @@ function wireImage(image, assets, source) {
   if (crop) output.crop = crop;
   const effects = wireEffects(image);
   if (effects) output.effects = effects;
+  const transform = wireTransform(image);
+  if (transform) output.transform = transform;
   if (snapshot.anchorType === "absolute") {
     if (!image.anchor?.position || !image.anchor?.extent) fail(image, "absolute anchor requires anchor.position and anchor.extent.");
     if (image.anchor?.from || image.anchor?.to || snapshot.editAs != null || image.anchor?.widthPx != null || image.anchor?.heightPx != null) fail(image, "absolute anchor cannot carry cell markers, editAs, or legacy extent fields.");
@@ -294,6 +322,19 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
     }
     return Object.keys(output).length > 0 ? output : undefined;
   })();
+  const publicTransform = (() => {
+    if (!source.transform) return undefined;
+    const output = {};
+    if (source.transform.rotationAngle60000 != null) {
+      const angle = Number(source.transform.rotationAngle60000);
+      if (!Number.isSafeInteger(angle) || angle < -21_600_000 || angle > 21_600_000) fail(source, "has invalid picture rotation.");
+      output.rotationDegrees = angle / 60_000;
+    }
+    if (source.transform.flipHorizontal != null) output.flipHorizontal = Boolean(source.transform.flipHorizontal);
+    if (source.transform.flipVertical != null) output.flipVertical = Boolean(source.transform.flipVertical);
+    if (Object.keys(output).length === 0) fail(source, "has an empty picture transform.");
+    return output;
+  })();
   const publicMarker = (value, name) => {
     if (!value) fail(source, `has no ${name} marker.`);
     const row = Number(value.row);
@@ -346,6 +387,7 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
     anchor: publicAnchor,
     ...(publicCrop ? { crop: publicCrop } : {}),
     ...(publicEffects ? { effects: publicEffects } : {}),
+    ...(publicTransform ? { transform: publicTransform } : {}),
   });
   image.id = source.id || image.id;
   return image;
