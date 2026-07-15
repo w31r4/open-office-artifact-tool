@@ -145,6 +145,32 @@ message WorkbookArtifact {
   // non-secret refresh policy. Provider strings, commands, credentials,
   // paths, child graphs, and extensions remain source-preserved.
   repeated SpreadsheetConnectionArtifact connections = 5;
+  // Bounded workbook- or worksheet-scoped range names. Source-bound import
+  // exposes only ordinary range names; reserved built-ins, formula/constant
+  // names, macro attributes, and other advanced profiles remain hidden while
+  // source ordinal/count/order stay immutable.
+  repeated SpreadsheetDefinedNameArtifact defined_names = 6;
+}
+
+message SpreadsheetDefinedNameArtifact {
+  string id = 1;
+  string name = 2;
+  string refers_to = 3;
+  optional string scope_sheet_name = 4;
+  optional string comment = 5;
+  optional bool hidden = 6;
+  SpreadsheetDefinedNameSourceBinding source = 7;
+}
+
+// Hash-bound locator for one recognized <definedName> inside workbook.xml.
+// ordinal includes hidden/opaque sibling slots so a semantic projection cannot
+// reorder, add, remove, or replace native defined-name topology.
+message SpreadsheetDefinedNameSourceBinding {
+  uint32 ordinal = 1;
+  string workbook_xml_sha256 = 2;
+  string defined_name_xml_sha256 = 3;
+  string semantic_sha256 = 4;
+  bool editable = 5;
 }
 
 // One recognized <connection> root from the workbook ConnectionsPart.

@@ -46,6 +46,8 @@ internal static class XlsxCodec
             var styles = new XlsxCellStyleCodec(workbookPart);
             var connections = new XlsxConnectionCodec(workbookPart);
             connections.Apply(envelope.Workbook.Connections, sourceBound: false);
+            var sheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
+            var definedNames = new XlsxDefinedNameCodec(workbookPart, sheetNames);
             var nextTableId = 1U;
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
@@ -64,6 +66,7 @@ internal static class XlsxCodec
                     Name = source.Name,
                 });
             }
+            definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: false, sheetNames);
             theme.Save();
             styles.Save();
             workbookPart.Workbook.Save();
@@ -101,6 +104,8 @@ internal static class XlsxCodec
         var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
         if ((uint)sheets.Length > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"XLSX workbook has {sheets.Length} sheets and exceeds max_sheets ({limits.MaxSheets}).");
+        var definedNames = new XlsxDefinedNameCodec(workbookPart, sheets.Select((sheet, index) => sheet.Name?.Value ?? $"Sheet{index + 1}").ToArray());
+        workbook.DefinedNames.Add(definedNames.Read());
 
         ulong cellCount = 0;
         for (var index = 0; index < sheets.Length; index++)
@@ -147,6 +152,9 @@ internal static class XlsxCodec
             var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
             if (sheets.Length != envelope.Workbook.Worksheets.Count)
                 throw new CodecException("source_package_topology_changed", "Source-preserving XLSX export currently requires the imported worksheet count to remain unchanged.");
+            var sourceSheetNames = sheets.Select((sheet, index) => sheet.Name?.Value ?? $"Sheet{index + 1}").ToArray();
+            var targetSheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
+            var definedNames = new XlsxDefinedNameCodec(workbookPart, sourceSheetNames);
 
             if (workbookRoot.WorkbookProperties is null)
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
@@ -172,6 +180,7 @@ internal static class XlsxCodec
                 dirtyModeledPartPaths.UnionWith(tables.DirtyPartPaths);
                 worksheetPart.Worksheet!.Save();
             }
+            definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: true, targetSheetNames);
             connections.Save();
             if (connections.Dirty) dirtyModeledPartPaths.Add(connections.Path);
             theme.Save();
@@ -656,6 +665,7 @@ internal static class XlsxCodec
         if (workbook.Worksheets.Count == 0) throw new CodecException("missing_worksheets", "Workbook artifact must contain at least one worksheet.");
         if ((uint)workbook.Worksheets.Count > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"Workbook has {workbook.Worksheets.Count} sheets and exceeds max_sheets ({limits.MaxSheets}).");
+        XlsxDefinedNameCodec.ValidateArtifact(workbook.DefinedNames, workbook.Worksheets.Select(sheet => sheet.Name).ToArray());
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         ulong cells = 0;
