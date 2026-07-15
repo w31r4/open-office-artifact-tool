@@ -15,6 +15,7 @@ import {
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 import { presentationEnvelope, presentationFromEnvelope } from "./open-chestnut-presentation.mjs";
+import { spreadsheetChartFromWire, spreadsheetChartSnapshot, wireWorksheetCharts } from "./open-chestnut-spreadsheet-charts.mjs";
 import { spreadsheetImageFromWire, spreadsheetImageSnapshot, wireWorksheetImages } from "./open-chestnut-spreadsheet-images.mjs";
 
 export { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
@@ -491,7 +492,6 @@ function unsupportedWorkbookFeatures(workbook) {
   for (const sheet of workbook.worksheets?.items || []) {
     const prefix = `worksheet ${sheet.name}`;
     if (itemCount(sheet.pivotTables)) unsupported.push(`${prefix} pivot tables`);
-    if (itemCount(sheet.charts)) unsupported.push(`${prefix} charts`);
     if (itemCount(sheet.sparklineGroups)) unsupported.push(`${prefix} sparklines`);
     if (sheet.shapes?.length) unsupported.push(`${prefix} shapes`);
     if (sheet.dataValidations?.items?.length) unsupported.push(`${prefix} data validations`);
@@ -1088,6 +1088,7 @@ function workbookEnvelope(workbook) {
       sortState: wireTableSortState(sheet.sortState, `worksheet ${sheet.name}`),
       tables: wireWorksheetTables(sheet, state?.tablesBySheet?.get(sheet.id)),
       images: wireWorksheetImages(sheet, state?.imagesBySheet?.get(sheet.id), assets),
+      charts: wireWorksheetCharts(sheet, state?.chartsBySheet?.get(sheet.id)),
       cells: (() => {
         const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
         validateFormulaTopology(cells, sheet.name);
@@ -1153,6 +1154,7 @@ function workbookFromEnvelope(envelope) {
   workbook.id = source.id || workbook.id;
   const tablesBySheet = new Map();
   const imagesBySheet = new Map();
+  const chartsBySheet = new Map();
   const worksheetSlots = new Map();
   const assets = new Map((envelope.assets || []).map((asset) => [asset.id, asset]));
   const connectionSlots = (source.connections || []).map((wire, index) => ({
@@ -1233,6 +1235,12 @@ function workbookFromEnvelope(envelope) {
       imageSlots.push({ wire: sourceImage, image, publicSnapshot: spreadsheetImageSnapshot(image) });
     }
     imagesBySheet.set(sheet.id, { slots: imageSlots });
+    const chartSlots = [];
+    for (const sourceChart of sourceSheet.charts || []) {
+      const chart = spreadsheetChartFromWire(sheet, sourceChart);
+      chartSlots.push({ wire: sourceChart, chart, publicSnapshot: spreadsheetChartSnapshot(chart) });
+    }
+    chartsBySheet.set(sheet.id, { slots: chartSlots });
   }
   for (const sourceDefinedName of source.definedNames || []) workbook.definedNames.add(publicWorkbookDefinedName(sourceDefinedName));
   const sourceViews = source.view ? [source.view, ...(source.additionalViews || [])] : [];
@@ -1267,6 +1275,7 @@ function workbookFromEnvelope(envelope) {
       worksheetSlots,
       tablesBySheet,
       imagesBySheet,
+      chartsBySheet,
     },
     writable: true,
   });

@@ -53,6 +53,7 @@ internal static class XlsxCodec
             var sheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sheetNames);
             var drawings = new XlsxDrawingCodec(imageAssets);
+            var charts = new XlsxChartCodec();
             var nextTableId = 1U;
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
@@ -64,6 +65,7 @@ internal static class XlsxCodec
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
                 drawings.Apply(worksheetPart, source.Id, source.Images, sourceBound: false);
+                charts.Apply(worksheetPart, source.Id, source.Charts, sourceBound: false);
                 worksheetPart.Worksheet.Save();
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
             }
@@ -127,6 +129,7 @@ internal static class XlsxCodec
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
             target.Tables.Add(tables.Read());
             target.Images.Add(drawings.Read(worksheetPart, target.Id));
+            target.Charts.Add(new XlsxChartCodec().Read(worksheetPart, target.Id));
             workbook.Worksheets.Add(target);
         }
         var workbookView = new XlsxWorkbookViewCodec(workbookPart, workbook.Worksheets);
@@ -192,6 +195,7 @@ internal static class XlsxCodec
             var connections = new XlsxConnectionCodec(workbookPart);
             connections.Apply(envelope.Workbook.Connections, sourceBound: true);
             var drawings = new XlsxDrawingCodec(imageAssets);
+            var charts = new XlsxChartCodec();
             var nextTableId = 1U;
             for (var index = 0; index < sheets.Length; index++)
             {
@@ -204,8 +208,11 @@ internal static class XlsxCodec
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
                 tables.Save();
                 dirtyModeledPartPaths.UnionWith(tables.DirtyPartPaths);
-                drawings.Apply(worksheetPart, source.Id, source.Images, sourceBound: true);
+                var originalDrawingXmlSha256 = XlsxDrawingCodec.DrawingXmlSha256(worksheetPart);
+                drawings.Apply(worksheetPart, source.Id, source.Images, sourceBound: true, originalDrawingXmlSha256);
                 dirtyModeledPartPaths.UnionWith(drawings.DirtyPartPaths);
+                charts.Apply(worksheetPart, source.Id, source.Charts, sourceBound: true, originalDrawingXmlSha256);
+                dirtyModeledPartPaths.UnionWith(charts.DirtyPartPaths);
                 worksheetPart.Worksheet!.Save();
             }
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: true, targetSheetNames);
@@ -735,6 +742,7 @@ internal static class XlsxCodec
             if (sheet.SortState is not null)
                 XlsxSortStateCodec.Validate(sheet.SortState, null, sheet.Name, $"Worksheet {sheet.Name}", allowColumnSort: true);
             XlsxDrawingCodec.Validate(sheet.Images, sheet.Id);
+            XlsxChartCodec.Validate(sheet.Charts, sheet.Id);
             XlsxTableCodec.ValidateWorksheet(sheet);
             foreach (var table in sheet.Tables.Where(XlsxTableCodec.HasCompleteSemantics))
                 if (!tableNames.Add(table.Name)) throw new CodecException("invalid_worksheet_table", $"Workbook contains duplicate table name {table.Name}.", sheet.Name);

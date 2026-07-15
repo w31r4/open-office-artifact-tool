@@ -332,6 +332,11 @@ message WorksheetArtifact {
   // unmodeled picture properties remain source-preserved and hidden from
   // editable semantics.
   repeated SpreadsheetImageArtifact images = 13;
+  // Bounded native worksheet charts. OpenChestnut owns the chart relationship
+  // and ChartPart while retaining unsupported chart markup behind a hash-bound
+  // source binding. The first public profile covers one bar, line, or pie plot
+  // with title, legend, category/value caches, and optional worksheet formulas.
+  repeated SpreadsheetChartArtifact charts = 14;
 }
 
 message SpreadsheetWorksheetSourceBinding {
@@ -363,6 +368,54 @@ message SpreadsheetImageArtifact {
   SpreadsheetImageEffectsArtifact effects = 10;
   // Optional bounded rotation and mirror attributes on the picture transform.
   SpreadsheetImageTransformArtifact transform = 11;
+}
+
+enum SpreadsheetChartType {
+  SPREADSHEET_CHART_TYPE_UNSPECIFIED = 0;
+  SPREADSHEET_CHART_TYPE_BAR = 1;
+  SPREADSHEET_CHART_TYPE_LINE = 2;
+  SPREADSHEET_CHART_TYPE_PIE = 3;
+}
+
+// One worksheet chart graphic frame and its relationship-backed ChartPart.
+// Exactly one anchor message must be present. Category and value formulas do
+// not carry a leading equals sign; cached values remain authoritative for
+// deterministic inspection and rendering when no calculation engine runs.
+message SpreadsheetChartArtifact {
+  string id = 1;
+  string name = 2;
+  string title = 3;
+  SpreadsheetChartType type = 4;
+  bool has_legend = 5;
+  repeated string categories = 6;
+  repeated SpreadsheetChartSeriesArtifact series = 7;
+  SpreadsheetOneCellAnchorArtifact anchor = 8;
+  SpreadsheetTwoCellAnchorArtifact two_cell_anchor = 9;
+  SpreadsheetAbsoluteAnchorArtifact absolute_anchor = 10;
+  SpreadsheetChartSourceBinding source = 11;
+}
+
+message SpreadsheetChartSeriesArtifact {
+  string name = 1;
+  repeated double values = 2;
+  string category_formula = 3;
+  string value_formula = 4;
+}
+
+// Drawing and chart hashes bind editable semantics to one imported package.
+// Relationship IDs, non-visual IDs, anchor ordinals, and part paths are source
+// locators only; none are durable artifact identity.
+message SpreadsheetChartSourceBinding {
+  string drawing_part_path = 1;
+  string drawing_xml_sha256 = 2;
+  uint32 anchor_ordinal = 3;
+  string anchor_xml_sha256 = 4;
+  string chart_part_path = 5;
+  string chart_xml_sha256 = 6;
+  string semantic_sha256 = 7;
+  string relationship_id = 8;
+  uint32 non_visual_id = 9;
+  bool editable = 10;
 }
 
 // SpreadsheetDrawingML stores one-cell geometry in English Metric Units.

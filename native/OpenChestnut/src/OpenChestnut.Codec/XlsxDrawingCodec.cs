@@ -48,7 +48,7 @@ internal sealed class XlsxDrawingCodec
     internal IReadOnlyList<SpreadsheetImageArtifact> Read(WorksheetPart worksheetPart, string worksheetId) =>
         ReadRecords(worksheetPart, worksheetId).Select(item => item.Artifact).ToArray();
 
-    internal void Apply(WorksheetPart worksheetPart, string worksheetId, IReadOnlyList<SpreadsheetImageArtifact> images, bool sourceBound)
+    internal void Apply(WorksheetPart worksheetPart, string worksheetId, IReadOnlyList<SpreadsheetImageArtifact> images, bool sourceBound, string? originalDrawingXmlSha256 = null)
     {
         Validate(images, worksheetId);
         foreach (var image in images) _assets.Get(image.AssetId);
@@ -60,7 +60,7 @@ internal sealed class XlsxDrawingCodec
             return;
         }
 
-        var records = ReadRecords(worksheetPart, worksheetId);
+        var records = ReadRecords(worksheetPart, worksheetId, originalDrawingXmlSha256);
         if (records.Count != images.Count)
             throw new CodecException("invalid_spreadsheet_image_topology", $"Worksheet {worksheetId} source-bound image count cannot change from {records.Count} to {images.Count}.");
         var drawingDirty = false;
@@ -136,7 +136,23 @@ internal sealed class XlsxDrawingCodec
         else worksheet.InsertBefore(drawing, before);
     }
 
-    private IReadOnlyList<PictureRecord> ReadRecords(WorksheetPart worksheetPart, string worksheetId)
+    internal static string? DrawingXmlSha256(WorksheetPart worksheetPart)
+    {
+        var drawings = worksheetPart.Worksheet?.Elements<S.Drawing>().ToArray() ?? [];
+        if (drawings.Length != 1 || drawings[0].Id?.Value is not { Length: > 0 } relationshipId) return null;
+        try
+        {
+            return worksheetPart.GetPartById(relationshipId) is DrawingsPart { WorksheetDrawing: not null } part
+                ? Hash(part.WorksheetDrawing.OuterXml)
+                : null;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private IReadOnlyList<PictureRecord> ReadRecords(WorksheetPart worksheetPart, string worksheetId, string? originalDrawingXmlSha256 = null)
     {
         var worksheet = worksheetPart.Worksheet;
         var drawings = worksheet?.Elements<S.Drawing>().ToArray() ?? [];
@@ -151,7 +167,7 @@ internal sealed class XlsxDrawingCodec
         {
             return [];
         }
-        var drawingHash = Hash(drawingPart.WorksheetDrawing.OuterXml);
+        var drawingHash = originalDrawingXmlSha256 ?? Hash(drawingPart.WorksheetDrawing.OuterXml);
         var records = new List<PictureRecord>();
         for (var ordinal = 0; ordinal < drawingPart.WorksheetDrawing.ChildElements.Count; ordinal++)
         {
