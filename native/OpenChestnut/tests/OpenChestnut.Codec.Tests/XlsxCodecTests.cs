@@ -2830,6 +2830,69 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsEditsRemovesAndBoundsWorksheetPictureCrop()
+    {
+        var request = CropPictureExportRequest();
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        AssertPictureCrop(authored.File.ToByteArray(), 10_000, -5_000, 15_000, 20_000, locked: false);
+
+        var source = AddPictureLocksResidual(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var image = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Equal(10_000, image.Crop.LeftThousandthPercent);
+        Assert.Equal(-5_000, image.Crop.TopThousandthPercent);
+        Assert.Equal(15_000, image.Crop.RightThousandthPercent);
+        Assert.Equal(20_000, image.Crop.BottomThousandthPercent);
+
+        image.Crop.LeftThousandthPercent = 12_000;
+        image.Crop.TopThousandthPercent = 7_000;
+        image.Crop.RightThousandthPercent = -3_000;
+        image.Crop.BottomThousandthPercent = 18_000;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        AssertPictureCrop(edited.File.ToByteArray(), 12_000, 7_000, -3_000, 18_000, locked: true);
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(-3_000, Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Images).Crop.RightThousandthPercent);
+
+        var removed = Import(edited.File.ToByteArray());
+        removed.Artifact.Workbook.Worksheets[0].Images[0].Crop = null;
+        var withoutCrop = Export(removed.Artifact);
+        Assert.True(withoutCrop.Ok, string.Join("\n", withoutCrop.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(withoutCrop.File.ToByteArray());
+        AssertPictureCrop(withoutCrop.File.ToByteArray(), null, null, null, null, locked: true);
+        var removedImport = Import(withoutCrop.File.ToByteArray());
+        Assert.True(removedImport.Ok, string.Join("\n", removedImport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Null(Assert.Single(removedImport.Artifact.Workbook.Worksheets[0].Images).Crop);
+
+        var invalidPair = CropPictureExportRequest();
+        invalidPair.Artifact.Workbook.Worksheets[0].Images[0].Crop.LeftThousandthPercent = 60_000;
+        invalidPair.Artifact.Workbook.Worksheets[0].Images[0].Crop.RightThousandthPercent = 40_000;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidPair.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalidBound = CropPictureExportRequest();
+        invalidBound.Artifact.Workbook.Worksheets[0].Images[0].Crop.LeftThousandthPercent = 100_001;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidBound.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var opaque = Import(SetPictureCrop(authored.File.ToByteArray(), 100_001, 0, 0, 0));
+        Assert.True(opaque.Ok, string.Join("\n", opaque.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var opaqueImage = Assert.Single(opaque.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Null(opaqueImage.Crop);
+        opaqueImage.Crop = new SpreadsheetImageCropArtifact { LeftThousandthPercent = 1_000 };
+        rejected = Export(opaque.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceBoundWorksheetPicturesRejectSharedOrCrossFormatReplacement()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PictureExportRequest().ToByteArray()));
@@ -2954,6 +3017,19 @@ public sealed class XlsxCodecTests
             YEmu = 285_750,
             WidthEmu = 1_143_000,
             HeightEmu = 762_000,
+        };
+        return request;
+    }
+
+    private static CodecRequest CropPictureExportRequest()
+    {
+        var request = PictureExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Images[0].Crop = new SpreadsheetImageCropArtifact
+        {
+            LeftThousandthPercent = 10_000,
+            TopThousandthPercent = -5_000,
+            RightThousandthPercent = 15_000,
+            BottomThousandthPercent = 20_000,
         };
         return request;
     }
@@ -3405,6 +3481,40 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] AddPictureLocksResidual(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
+            var picture = drawing.Descendants<Xdr.Picture>().Single();
+            picture.NonVisualPictureProperties!.NonVisualPictureDrawingProperties!.Append(new A.PictureLocks { NoChangeAspect = true });
+            drawing.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetPictureCrop(byte[] bytes, int left, int top, int right, int bottom)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
+            var fill = drawing.Descendants<Xdr.Picture>().Single().BlipFill!;
+            var crop = fill.GetFirstChild<A.SourceRectangle>() ?? throw new InvalidOperationException("Expected an authored source rectangle.");
+            crop.Left = left;
+            crop.Top = top;
+            crop.Right = right;
+            crop.Bottom = bottom;
+            drawing.Save();
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] AddSharedPictureReference(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -3530,6 +3640,32 @@ public sealed class XlsxCodecTests
             Assert.Null(locks);
             Assert.Null(crop);
         }
+    }
+
+    private static void AssertPictureCrop(byte[] bytes, int? left, int? top, int? right, int? bottom, bool locked)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var picture = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!.Descendants<Xdr.Picture>().Single();
+        var crop = picture.BlipFill!.GetFirstChild<A.SourceRectangle>();
+        if (left.HasValue)
+        {
+            Assert.NotNull(crop);
+            Assert.Equal(left.Value, crop!.Left!.Value);
+            Assert.Equal(top!.Value, crop.Top!.Value);
+            Assert.Equal(right!.Value, crop.Right!.Value);
+            Assert.Equal(bottom!.Value, crop.Bottom!.Value);
+            var children = picture.BlipFill.ChildElements.ToList();
+            Assert.True(children.IndexOf(crop) > children.IndexOf(picture.BlipFill.Blip!));
+            Assert.True(children.IndexOf(crop) < children.IndexOf(picture.BlipFill.GetFirstChild<A.Stretch>()!));
+        }
+        else
+        {
+            Assert.Null(crop);
+        }
+        var locks = picture.NonVisualPictureProperties!.NonVisualPictureDrawingProperties!.GetFirstChild<A.PictureLocks>();
+        if (locked) Assert.True(locks!.NoChangeAspect!.Value);
+        else Assert.Null(locks);
     }
 
     private static CodecResponse Import(byte[] bytes) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest

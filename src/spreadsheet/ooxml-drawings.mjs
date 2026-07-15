@@ -44,6 +44,18 @@ function absolutePosition(anchorXml) {
   return tag ? { leftPx: Number(attrs.x || 0) / 9525, topPx: Number(attrs.y || 0) / 9525 } : undefined;
 }
 
+function pictureCrop(pictureXml) {
+  const tag = /<(?:[A-Za-z_][\w.-]*:)?srcRect\b[^>]*\/?\s*>/.exec(pictureXml)?.[0];
+  if (!tag) return undefined;
+  const attrs = attributes(tag);
+  return {
+    leftPercent: Number(attrs.l || 0) / 1000,
+    topPercent: Number(attrs.t || 0) / 1000,
+    rightPercent: Number(attrs.r || 0) / 1000,
+    bottomPercent: Number(attrs.b || 0) / 1000,
+  };
+}
+
 export function parseSpreadsheetDrawing(xml = "") {
   const records = [];
   const anchorPattern = /<(?:[A-Za-z_][\w.-]*:)?(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1>/g;
@@ -71,6 +83,7 @@ export function parseSpreadsheetDrawing(xml = "") {
       to: marker(body, "to"),
       position: absolutePosition(body),
       extent: drawingExtent(body),
+      crop: picture ? pictureCrop(picture) : undefined,
     });
   }
   return records;

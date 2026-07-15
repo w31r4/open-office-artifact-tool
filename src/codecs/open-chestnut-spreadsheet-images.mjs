@@ -3,6 +3,7 @@ import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const ASSET_PREFIX = "asset/workbook/image/";
 const EMU_PER_PIXEL = 9525;
+const THOUSANDTHS_PER_PERCENT = 1000;
 const ANCHOR_TYPES = new Set(["oneCell", "twoCell", "absolute"]);
 const EDIT_AS_TO_WIRE = new Map([["twoCell", 1], ["oneCell", 2], ["absolute", 3]]);
 const EDIT_AS_FROM_WIRE = new Map([...EDIT_AS_TO_WIRE].map(([name, value]) => [value, name]));
@@ -53,6 +54,28 @@ function signedPixels(value, name, image) {
   return number;
 }
 
+function cropPercent(value, name, image) {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number) || number < -100 || number > 100) fail(image, `${name} must be finite and between -100 and 100 percent.`);
+  return number;
+}
+
+function wireCrop(image) {
+  if (image.crop == null) return undefined;
+  if (typeof image.crop !== "object" || Array.isArray(image.crop)) fail(image, "crop must be an object with percent offsets.");
+  const left = cropPercent(image.crop.leftPercent, "crop.leftPercent", image);
+  const top = cropPercent(image.crop.topPercent, "crop.topPercent", image);
+  const right = cropPercent(image.crop.rightPercent, "crop.rightPercent", image);
+  const bottom = cropPercent(image.crop.bottomPercent, "crop.bottomPercent", image);
+  if (left + right >= 100 || top + bottom >= 100) fail(image, "crop opposing edges must leave a positive source rectangle.");
+  return {
+    leftThousandthPercent: Math.round(left * THOUSANDTHS_PER_PERCENT),
+    topThousandthPercent: Math.round(top * THOUSANDTHS_PER_PERCENT),
+    rightThousandthPercent: Math.round(right * THOUSANDTHS_PER_PERCENT),
+    bottomThousandthPercent: Math.round(bottom * THOUSANDTHS_PER_PERCENT),
+  };
+}
+
 export function spreadsheetImageSnapshot(image) {
   const anchor = image.anchor || {};
   const from = anchor.from || {};
@@ -79,6 +102,11 @@ export function spreadsheetImageSnapshot(image) {
     editAs: anchor.editAs == null ? undefined : String(anchor.editAs),
     leftPx: anchor.position ? Number(position.leftPx ?? 0) : undefined,
     topPx: anchor.position ? Number(position.topPx ?? 0) : undefined,
+    cropPresent: image.crop != null,
+    cropLeftPercent: image.crop == null ? undefined : Number(image.crop.leftPercent ?? 0),
+    cropTopPercent: image.crop == null ? undefined : Number(image.crop.topPercent ?? 0),
+    cropRightPercent: image.crop == null ? undefined : Number(image.crop.rightPercent ?? 0),
+    cropBottomPercent: image.crop == null ? undefined : Number(image.crop.bottomPercent ?? 0),
   };
 }
 
@@ -116,6 +144,8 @@ function wireImage(image, assets, source) {
     assetId: asset.id,
     source,
   };
+  const crop = wireCrop(image);
+  if (crop) output.crop = crop;
   if (snapshot.anchorType === "absolute") {
     if (!image.anchor?.position || !image.anchor?.extent) fail(image, "absolute anchor requires anchor.position and anchor.extent.");
     if (image.anchor?.from || image.anchor?.to || snapshot.editAs != null || image.anchor?.widthPx != null || image.anchor?.heightPx != null) fail(image, "absolute anchor cannot carry cell markers, editAs, or legacy extent fields.");
@@ -202,6 +232,17 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
     if (!Number.isSafeInteger(number) || Math.abs(number) > 95_250_000_000) fail(source, `has invalid ${name}.`);
     return number;
   };
+  const publicCrop = (() => {
+    if (!source.crop) return undefined;
+    const values = [source.crop.leftThousandthPercent, source.crop.topThousandthPercent, source.crop.rightThousandthPercent, source.crop.bottomThousandthPercent].map(Number);
+    if (values.some((value) => !Number.isSafeInteger(value) || value < -100_000 || value > 100_000) || values[0] + values[2] >= 100_000 || values[1] + values[3] >= 100_000) fail(source, "has invalid crop geometry.");
+    return {
+      leftPercent: values[0] / THOUSANDTHS_PER_PERCENT,
+      topPercent: values[1] / THOUSANDTHS_PER_PERCENT,
+      rightPercent: values[2] / THOUSANDTHS_PER_PERCENT,
+      bottomPercent: values[3] / THOUSANDTHS_PER_PERCENT,
+    };
+  })();
   const publicMarker = (value, name) => {
     if (!value) fail(source, `has no ${name} marker.`);
     const row = Number(value.row);
@@ -252,6 +293,7 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
     dataUrl: dataUrl(assets.get(source.assetId), source),
     fit: "contain",
     anchor: publicAnchor,
+    ...(publicCrop ? { crop: publicCrop } : {}),
   });
   image.id = source.id || image.id;
   return image;

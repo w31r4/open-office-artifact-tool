@@ -357,6 +357,8 @@ message SpreadsheetImageArtifact {
   SpreadsheetTwoCellAnchorArtifact two_cell_anchor = 7;
   // Additive page-relative alternative. Exactly one anchor message must be set.
   SpreadsheetAbsoluteAnchorArtifact absolute_anchor = 8;
+  // Optional source rectangle applied before the image is stretched.
+  SpreadsheetImageCropArtifact crop = 9;
 }
 
 // SpreadsheetDrawingML stores one-cell geometry in English Metric Units.
@@ -404,6 +406,16 @@ message SpreadsheetAbsoluteAnchorArtifact {
   int64 y_emu = 2;
   int64 width_emu = 3;
   int64 height_emu = 4;
+}
+
+// DrawingML ST_Percentage uses thousandths of one percent. This bounded
+// profile accepts signed insets/outsets from -100% through 100%, while each
+// opposing pair must leave a positive source rectangle.
+message SpreadsheetImageCropArtifact {
+  sint32 left_thousandth_percent = 1;
+  sint32 top_thousandth_percent = 2;
+  sint32 right_thousandth_percent = 3;
+  sint32 bottom_thousandth_percent = 4;
 }
 
 // Hash-bound locator for one recognized picture anchor in a worksheet-owned

@@ -29,6 +29,9 @@ internal sealed class XlsxDrawingCodec
         Xdr.Position? Position,
         Xdr.Extent? Extent,
         Xdr.NonVisualDrawingProperties NonVisual,
+        Xdr.BlipFill BlipFill,
+        A.SourceRectangle? SourceRectangle,
+        bool CropEditable,
         ImagePart ImagePart,
         string RelationshipId,
         int Ordinal);
@@ -99,6 +102,7 @@ internal sealed class XlsxDrawingCodec
             if (image.Anchor is not null) ValidateAnchor(image.Anchor, worksheetId, image.Id);
             else if (image.TwoCellAnchor is not null) ValidateAnchor(image.TwoCellAnchor, worksheetId, image.Id);
             else ValidateAnchor(image.AbsoluteAnchor!, worksheetId, image.Id);
+            if (image.Crop is not null) ValidateCrop(image.Crop, worksheetId, image.Id);
         }
     }
 
@@ -168,9 +172,15 @@ internal sealed class XlsxDrawingCodec
             }
             if (anchor.Elements<Xdr.Picture>().SingleOrDefault() is not { } picture ||
                 picture.GetFirstChild<Xdr.NonVisualPictureProperties>()?.GetFirstChild<Xdr.NonVisualDrawingProperties>() is not { Id.HasValue: true } nonVisual ||
-                picture.GetFirstChild<Xdr.BlipFill>()?.GetFirstChild<A.Blip>() is not { } blip ||
+                picture.GetFirstChild<Xdr.BlipFill>() is not { } blipFill ||
+                blipFill.GetFirstChild<A.Blip>() is not { } blip ||
                 blip.Embed?.Value is not { Length: > 0 } imageRelationshipId ||
                 blip.Link?.Value is { Length: > 0 }) continue;
+            var sourceRectangles = blipFill.Elements<A.SourceRectangle>().ToArray();
+            var cropEditable = sourceRectangles.Length <= 1;
+            A.SourceRectangle? sourceRectangle = sourceRectangles.FirstOrDefault();
+            SpreadsheetImageCropArtifact? crop = null;
+            if (sourceRectangle is not null && !TryCrop(sourceRectangle, out crop)) cropEditable = false;
             ImagePart imagePart;
             try
             {
@@ -200,6 +210,7 @@ internal sealed class XlsxDrawingCodec
             if (oneCellAnchor is not null) artifact.Anchor = oneCellAnchor;
             else if (twoCellAnchor is not null) artifact.TwoCellAnchor = twoCellAnchor;
             else artifact.AbsoluteAnchor = absoluteAnchor;
+            if (cropEditable && crop is not null) artifact.Crop = crop;
             if (string.IsNullOrWhiteSpace(artifact.Name) || artifact.Name.Length > 255 || HasControls(artifact.Name) ||
                 artifact.AltText.Length > 32_767 || HasControls(artifact.AltText)) continue;
             artifact.Source = new SpreadsheetImageSourceBinding
@@ -213,7 +224,7 @@ internal sealed class XlsxDrawingCodec
                 NonVisualId = nonVisual.Id!.Value,
                 Editable = true,
             };
-            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, imagePart, imageRelationshipId, ordinal));
+            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, blipFill, sourceRectangle, cropEditable, imagePart, imageRelationshipId, ordinal));
         }
         return records;
     }
@@ -224,9 +235,7 @@ internal sealed class XlsxDrawingCodec
                 new Xdr.NonVisualPictureProperties(
                     new Xdr.NonVisualDrawingProperties { Id = nonVisualId, Name = source.Name, Description = source.AltText },
                     new Xdr.NonVisualPictureDrawingProperties()),
-                new Xdr.BlipFill(
-                    new A.Blip { Embed = relationshipId },
-                    new A.Stretch(new A.FillRectangle())),
+                BuildBlipFill(source, relationshipId),
                 new Xdr.ShapeProperties(
                     new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
         if (source.Anchor is { } oneCell)
@@ -253,6 +262,14 @@ internal sealed class XlsxDrawingCodec
             new Xdr.ClientData());
     }
 
+    private static Xdr.BlipFill BuildBlipFill(SpreadsheetImageArtifact source, string relationshipId)
+    {
+        var output = new Xdr.BlipFill(new A.Blip { Embed = relationshipId });
+        if (source.Crop is { } crop) output.Append(BuildCrop(crop));
+        output.Append(new A.Stretch(new A.FillRectangle()));
+        return output;
+    }
+
     private void ReplaceAsset(PictureRecord record, SpreadsheetImageArtifact target)
     {
         var replacement = _assets.Get(target.AssetId);
@@ -274,11 +291,13 @@ internal sealed class XlsxDrawingCodec
     {
         return source.Name.Equals(target.Name, StringComparison.Ordinal) &&
             source.AltText.Equals(target.AltText, StringComparison.Ordinal) &&
-            AnchorSemantics(source).Equals(AnchorSemantics(target), StringComparison.Ordinal);
+            AnchorSemantics(source).Equals(AnchorSemantics(target), StringComparison.Ordinal) &&
+            CropSemantics(source.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal);
     }
 
     private static void PatchDrawing(PictureRecord record, SpreadsheetImageArtifact target)
     {
+        if (!CropSemantics(record.Artifact.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal)) PatchCrop(record, target);
         record.NonVisual.Name = target.Name;
         record.NonVisual.Description = target.AltText;
         if (target.Anchor is { } oneCell)
@@ -300,6 +319,26 @@ internal sealed class XlsxDrawingCodec
         record.Position.Y = absolute.YEmu;
         record.Extent!.Cx = absolute.WidthEmu;
         record.Extent.Cy = absolute.HeightEmu;
+    }
+
+    private static void PatchCrop(PictureRecord record, SpreadsheetImageArtifact target)
+    {
+        if (!record.CropEditable)
+            throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} cannot replace an unrecognized source crop profile.", Path(record.Part));
+        if (target.Crop is null)
+        {
+            record.SourceRectangle?.Remove();
+            return;
+        }
+        if (record.SourceRectangle is { } sourceRectangle)
+        {
+            sourceRectangle.Left = target.Crop.LeftThousandthPercent;
+            sourceRectangle.Top = target.Crop.TopThousandthPercent;
+            sourceRectangle.Right = target.Crop.RightThousandthPercent;
+            sourceRectangle.Bottom = target.Crop.BottomThousandthPercent;
+            return;
+        }
+        record.BlipFill.InsertAfter(BuildCrop(target.Crop), record.BlipFill.GetFirstChild<A.Blip>()!);
     }
 
     private static void ValidateBinding(SpreadsheetImageArtifact target, PictureRecord record)
@@ -364,6 +403,18 @@ internal sealed class XlsxDrawingCodec
         return true;
     }
 
+    private static bool TryCrop(A.SourceRectangle source, out SpreadsheetImageCropArtifact crop)
+    {
+        crop = new SpreadsheetImageCropArtifact
+        {
+            LeftThousandthPercent = source.Left?.Value ?? 0,
+            TopThousandthPercent = source.Top?.Value ?? 0,
+            RightThousandthPercent = source.Right?.Value ?? 0,
+            BottomThousandthPercent = source.Bottom?.Value ?? 0,
+        };
+        return CropValuesValid(crop);
+    }
+
     private static bool TryMarker(OpenXmlCompositeElement marker, out SpreadsheetCellMarkerArtifact output)
     {
         output = new SpreadsheetCellMarkerArtifact();
@@ -409,6 +460,28 @@ internal sealed class XlsxDrawingCodec
             anchor.HeightEmu <= 0 || anchor.HeightEmu > MaxEmu)
             throw InvalidImage(worksheetId, imageId, "has absolute geometry outside bounded signed-position/positive-extent EMU limits.");
     }
+
+    private static void ValidateCrop(SpreadsheetImageCropArtifact crop, string worksheetId, string imageId)
+    {
+        if (!CropValuesValid(crop))
+            throw InvalidImage(worksheetId, imageId, "has crop offsets outside -100% through 100% or opposing offsets that leave no positive source rectangle.");
+    }
+
+    private static bool CropValuesValid(SpreadsheetImageCropArtifact crop) =>
+        crop.LeftThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.TopThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.RightThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.BottomThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.LeftThousandthPercent + crop.RightThousandthPercent < 100_000 &&
+        crop.TopThousandthPercent + crop.BottomThousandthPercent < 100_000;
+
+    private static A.SourceRectangle BuildCrop(SpreadsheetImageCropArtifact crop) => new()
+    {
+        Left = crop.LeftThousandthPercent,
+        Top = crop.TopThousandthPercent,
+        Right = crop.RightThousandthPercent,
+        Bottom = crop.BottomThousandthPercent,
+    };
 
     private static void ValidateMarker(SpreadsheetCellMarkerArtifact marker, string worksheetId, string imageId, string name)
     {
@@ -463,7 +536,7 @@ internal sealed class XlsxDrawingCodec
 
     private static string SemanticHash(SpreadsheetImageArtifact image)
     {
-        return Hash(string.Join('\0', image.Id, image.Name, image.AltText, image.AssetId, AnchorSemantics(image)));
+        return Hash(string.Join('\0', image.Id, image.Name, image.AltText, image.AssetId, AnchorSemantics(image), CropSemantics(image.Crop)));
     }
 
     private static string AnchorSemantics(SpreadsheetImageArtifact image)
@@ -485,6 +558,12 @@ internal sealed class XlsxDrawingCodec
 
     private static int AnchorKind(SpreadsheetImageArtifact image) =>
         image.Anchor is not null ? 1 : image.TwoCellAnchor is not null ? 2 : image.AbsoluteAnchor is not null ? 3 : 0;
+
+    private static string CropSemantics(SpreadsheetImageCropArtifact? crop) => crop is null
+        ? "absent"
+        : string.Join('\0', "present",
+            crop.LeftThousandthPercent.ToString(CultureInfo.InvariantCulture), crop.TopThousandthPercent.ToString(CultureInfo.InvariantCulture),
+            crop.RightThousandthPercent.ToString(CultureInfo.InvariantCulture), crop.BottomThousandthPercent.ToString(CultureInfo.InvariantCulture));
 
     private static string MarkerSemantics(SpreadsheetCellMarkerArtifact marker) => string.Join('\0',
         marker.Row.ToString(CultureInfo.InvariantCulture), marker.Column.ToString(CultureInfo.InvariantCulture),

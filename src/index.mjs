@@ -3439,13 +3439,14 @@ class WorksheetImage {
     this.alt = config.alt || config.name || "image";
     this.anchor = config.anchor || { from: { row: 0, col: 0 }, extent: { widthPx: 160, heightPx: 120 } };
     this.fit = config.fit || "contain";
+    this.crop = config.crop;
   }
 
   get position() { return worksheetAnchorFrame(this.worksheet, this.anchor); }
-  inspectRecord() { const p = this.position; return { kind: "drawing", drawingType: "image", id: this.id, sheet: this.worksheet.name, name: this.name, alt: this.alt, prompt: this.prompt, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" }; }
+  inspectRecord() { const p = this.position; return { kind: "drawing", drawingType: "image", id: this.id, sheet: this.worksheet.name, name: this.name, alt: this.alt, prompt: this.prompt, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", crop: this.crop }; }
   replace(config = {}) { Object.assign(this, config); return this; }
   toSvg() { const p = this.position; const image = this.dataUrl ? `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#fef3c7" stroke="#f59e0b"/>`; return `${image}<text x="${p.left + 8}" y="${p.top + 20}" font-family="Arial" font-size="12" fill="#92400e">${xmlEscape(this.alt || this.prompt || this.name)}</text>`; }
-  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, anchor: this.anchor, fit: this.fit }; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, anchor: this.anchor, fit: this.fit, crop: this.crop }; }
 }
 
 class WorksheetImageCollection {
@@ -7283,12 +7284,21 @@ function drawingXml(imageParts, chartParts = []) {
     const value = markerValues(marker, `image anchor.${name}`);
     return `<xdr:${name}><xdr:col>${value.col}</xdr:col><xdr:colOff>${Math.round(value.colOffsetPx * 9525)}</xdr:colOff><xdr:row>${value.row}</xdr:row><xdr:rowOff>${Math.round(value.rowOffsetPx * 9525)}</xdr:rowOff></xdr:${name}>`;
   };
+  const cropXml = (image) => {
+    if (image.crop == null) return "";
+    if (typeof image.crop !== "object" || Array.isArray(image.crop)) throw new Error(`Worksheet image ${image.name || "(unnamed)"} crop must be an object.`);
+    const values = ["leftPercent", "topPercent", "rightPercent", "bottomPercent"].map((name) => Number(image.crop[name] ?? 0));
+    if (values.some((value) => !Number.isFinite(value) || value < -100 || value > 100) || values[0] + values[2] >= 100 || values[1] + values[3] >= 100) {
+      throw new Error(`Worksheet image ${image.name || "(unnamed)"} crop must use -100 through 100 percent offsets whose opposing edges leave a positive source rectangle.`);
+    }
+    return `<a:srcRect l="${Math.round(values[0] * 1000)}" t="${Math.round(values[1] * 1000)}" r="${Math.round(values[2] * 1000)}" b="${Math.round(values[3] * 1000)}"/>`;
+  };
   const imageAnchors = imageParts.map((part, index) => {
     const anchorType = part.image.anchor?.type;
     if (anchorType != null && !["oneCell", "twoCell", "absolute"].includes(anchorType)) throw new Error(`Worksheet image ${part.image.name || index + 1} has unsupported anchor.type ${anchorType}.`);
     if (anchorType === "oneCell" && part.image.anchor?.to) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine anchor.type oneCell with anchor.to.`);
     const from = part.image.anchor?.from || { row: 0, col: 0 };
-    const picture = `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${part.drawingRelId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>`;
+    const picture = `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${part.drawingRelId}"/>${cropXml(part.image)}<a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>`;
     if (anchorType === "absolute") {
       if (!part.image.anchor?.position || !part.image.anchor?.extent) throw new Error(`Worksheet image ${part.image.name || index + 1} absolute anchor requires anchor.position and anchor.extent.`);
       if (part.image.anchor?.from || part.image.anchor?.to || part.image.anchor?.editAs != null || part.image.anchor?.widthPx != null || part.image.anchor?.heightPx != null) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine absolute geometry with cell markers, editAs, or legacy extent fields.`);
@@ -8224,6 +8234,7 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
           dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined,
           uri: bytes ? undefined : targetPath,
           anchor,
+          ...(record.crop ? { crop: record.crop } : {}),
         });
       } else if (record.kind === "chart" && relationship.type.endsWith("/chart")) {
         const chartXml = await zip.file(targetPath)?.async("text");
