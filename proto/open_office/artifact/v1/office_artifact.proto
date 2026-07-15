@@ -327,8 +327,8 @@ message WorksheetArtifact {
   // sheet ID are package locators and remain immutable after import.
   SpreadsheetWorksheetSourceBinding source = 12;
   // Bounded worksheet pictures backed by content-addressed envelope assets.
-  // The bounded slice owns one-cell and two-cell anchors with embedded
-  // PNG/JPEG bytes; charts, shapes, external links, other anchor forms, and
+  // The bounded slice owns one-cell, two-cell, and absolute anchors with
+  // embedded PNG/JPEG bytes; charts, shapes, external links, other anchor forms, and
   // unmodeled picture properties remain source-preserved and hidden from
   // editable semantics.
   repeated SpreadsheetImageArtifact images = 13;
