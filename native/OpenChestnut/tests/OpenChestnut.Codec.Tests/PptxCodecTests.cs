@@ -506,7 +506,7 @@ public sealed class PptxCodecTests
         {
             var transform = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!;
             Assert.Equal(1_047_750L, transform.Offset!.X!.Value);
-            Assert.Contains(transform.GetAttributes(), attribute => attribute.NamespaceUri == "urn:open-office-artifact-tool:fixture" && attribute.Value == "keep");
+            Assert.Contains(transform.GetAttributes(), attribute => attribute.NamespaceUri == "urn:open-office-artifact-tool:fixture" && attribute.LocalName == "keep" && attribute.Value == "1");
         }
 
         var attributed = Import(attributedSource);
@@ -2393,14 +2393,18 @@ public sealed class PptxCodecTests
 
     private static byte[] AddUnmodeledPlaceholderTransformAttribute(byte[] bytes)
     {
+        const string fixtureNamespace = "urn:open-office-artifact-tool:fixture";
         using var stream = new MemoryStream();
         stream.Write(bytes);
         stream.Position = 0;
         using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
         {
             var layout = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+            layout.AddNamespaceDeclaration("fixture", fixtureNamespace);
+            layout.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
+            layout.MCAttributes = new MarkupCompatibilityAttributes { Ignorable = "fixture" };
             var transform = layout.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!;
-            transform.SetAttribute(new OpenXmlAttribute("fixture", "urn:open-office-artifact-tool:fixture", "keep"));
+            transform.SetAttribute(new OpenXmlAttribute("fixture", "keep", fixtureNamespace, "1"));
         }
         return stream.ToArray();
     }
