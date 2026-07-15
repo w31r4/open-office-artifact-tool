@@ -100,6 +100,7 @@ internal sealed class XlsxChartCodec
             XlsxChartAxisCodec.Validate(chart, worksheetId);
             XlsxChartTextStyleCodec.Validate(chart, worksheetId);
             XlsxChartLineOptionsCodec.Validate(chart, worksheetId);
+            XlsxChartDataLabelsCodec.Validate(chart, worksheetId);
             if ((chart.Anchor is null ? 0 : 1) + (chart.TwoCellAnchor is null ? 0 : 1) + (chart.AbsoluteAnchor is null ? 0 : 1) != 1) throw InvalidChart(worksheetId, chart.Id, "must carry exactly one one-cell, two-cell, or absolute anchor.");
             ValidateAnchor(chart, worksheetId);
             if (chart.Categories.Count > MaxPoints) throw InvalidChart(worksheetId, chart.Id, $"exceeds the {MaxPoints}-category budget.");
@@ -324,6 +325,7 @@ internal sealed class XlsxChartCodec
         }
         chart.Categories.Add(commonCategories ?? []);
         editable &= XlsxChartLineOptionsCodec.TryRead(plot, chart);
+        editable &= XlsxChartDataLabelsCodec.TryRead(plot, chart);
         if (!XlsxChartAxisCodec.TryRead(plotArea, plot, chart, out var axesEditable)) editable = false;
         else editable &= axesEditable;
         return chart.Title.Length <= 32_767 && !HasControls(chart.Title) && chart.Categories.Count <= MaxPoints;
@@ -417,10 +419,10 @@ internal sealed class XlsxChartCodec
         var series = chart.Series.Select((item, index) => SeriesElement(item, chart.Categories, index)).ToArray();
         XElement plot;
         if (chart.Type == SpreadsheetChartType.Bar)
-            plot = new XElement(ChartNs + "barChart", new XElement(ChartNs + "barDir", new XAttribute("val", "col")), new XElement(ChartNs + "grouping", new XAttribute("val", "clustered")), series, new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
+            plot = new XElement(ChartNs + "barChart", new XElement(ChartNs + "barDir", new XAttribute("val", "col")), new XElement(ChartNs + "grouping", new XAttribute("val", "clustered")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else if (chart.Type == SpreadsheetChartType.Line)
-            plot = new XElement(ChartNs + "lineChart", XlsxChartLineOptionsCodec.GroupingElement(chart.LineOptions), XlsxChartLineOptionsCodec.VaryColorsElement(chart.LineOptions), series, XlsxChartLineOptionsCodec.SmoothElement(chart.LineOptions), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
-        else plot = new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series);
+            plot = new XElement(ChartNs + "lineChart", XlsxChartLineOptionsCodec.GroupingElement(chart.LineOptions), XlsxChartLineOptionsCodec.VaryColorsElement(chart.LineOptions), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), XlsxChartLineOptionsCodec.SmoothElement(chart.LineOptions), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
+        else plot = new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels));
         var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
         XlsxChartAxisCodec.AppendAuthored(plotArea, chart);
         var nativeChart = new XElement(ChartNs + "chart");
@@ -517,6 +519,7 @@ internal sealed class XlsxChartCodec
         var nativeSeries = plot.Elements(ChartNs + "ser").ToArray();
         for (var index = 0; index < nativeSeries.Length; index++) PatchSeries(nativeSeries[index], target.Series[index], target.Categories);
         XlsxChartLineOptionsCodec.Patch(plot, target.LineOptions);
+        XlsxChartDataLabelsCodec.Patch(plot, target.DataLabels);
         XlsxChartAxisCodec.Patch(plotArea, plot, target);
         WriteXml(record.ChartPart, record.ChartDocument);
     }
@@ -580,7 +583,7 @@ internal sealed class XlsxChartCodec
         for (var index = 0; index < points.Length; index++) points[index].Element(ChartNs + "v")!.Value = format(requested[index]);
     }
 
-    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), XlsxChartLineOptionsCodec.Semantics(chart.LineOptions), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
+    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), XlsxChartLineOptionsCodec.Semantics(chart.LineOptions), XlsxChartDataLabelsCodec.Semantics(chart.DataLabels), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
 
     private static string AnchorSemantics(SpreadsheetChartArtifact chart)
     {

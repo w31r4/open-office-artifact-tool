@@ -16,6 +16,7 @@ import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray, spreadsheetChartSeriesLineXml } from "./spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartLineOptions, spreadsheetChartSmoothLinePath } from "./spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg, spreadsheetChartSeriesMarkerXml } from "./spreadsheet/chart-marker-style.mjs";
+import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelText } from "./spreadsheet/chart-data-labels.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
@@ -975,7 +976,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category labels, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
@@ -2472,6 +2473,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     title: { type: "string", description: "Chart title." },
     titleTextStyle: { type: "object", description: "Optional chart-title style with fontSize from 1 through 4000 points." },
     lineOptions: { type: "object", description: "Line-chart-only { grouping?, smooth?, varyColors? }. grouping is standard, stacked, or percentStacked; omission authors the standard default. smooth preserves explicit false as native c:smooth val=0. varyColors=true authors direct c:varyColors val=1; false or omission removes that optional node." },
+    dataLabels: { type: "boolean|object", description: "Optional plot-level labels. A boolean controls showValue; an object accepts only boolean showValue and showCategoryName. Per-series/per-point labels, positions, number formats, and label text styles remain outside this bounded profile." },
     categories: { type: "string[]", description: "Explicit categories." },
     series: { type: "object[]", description: "Explicit series definitions with name, numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line." },
     xAxis: { type: "object", description: "Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval." },
@@ -3423,6 +3425,7 @@ class WorksheetChart {
     if (sourceOrConfig.titleTextStyle != null && (typeof sourceOrConfig.titleTextStyle !== "object" || Array.isArray(sourceOrConfig.titleTextStyle))) throw new TypeError("Worksheet chart titleTextStyle must be an object.");
     this.titleTextStyle = { ...(sourceOrConfig.titleTextStyle || {}) };
     this.lineOptions = normalizeSpreadsheetChartLineOptions(sourceOrConfig.lineOptions) || undefined;
+    this.dataLabels = normalizeSpreadsheetChartDataLabels(sourceOrConfig.dataLabels);
     this.hasLegend = sourceOrConfig.hasLegend ?? true;
     this.categories = sourceOrConfig.categories || [];
     this.position = sourceOrConfig.position || { left: 420, top: 40, width: 360, height: 220 };
@@ -3473,12 +3476,13 @@ class WorksheetChart {
     return this;
   }
 
-  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: this.lineOptions, categories: this.categories, series: this.series.items.length, seriesItems: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
+  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: this.lineOptions, dataLabels: normalizeSpreadsheetChartDataLabels(this.dataLabels), categories: this.categories, series: this.series.items.length, seriesItems: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
 
   toSvg() {
     const p = this.position;
     const values = this.series.items[0]?.values || [];
     const lineOptions = normalizeSpreadsheetChartLineOptions(this.lineOptions);
+    const dataLabels = normalizeSpreadsheetChartDataLabels(this.dataLabels);
     const grouping = lineOptions?.grouping || "standard";
     const lineTotals = values.map((_, pointIndex) => this.series.items.reduce((total, series) => total + (Number(series.values?.[pointIndex]) || 0), 0));
     const lineValues = this.series.items.map((series, seriesIndex) => (series.values || []).map((value, pointIndex) => {
@@ -3499,7 +3503,10 @@ class WorksheetChart {
     const strokeAttributes = ` stroke="${previewStroke}" stroke-width="${previewStrokeWidth}"${dashArray ? ` stroke-dasharray="${dashArray}"` : ""}`;
     const bars = values.map((value, index) => {
       const h = plot.height * (Number(value) || 0) / max;
-      return `<rect x="${plot.left + index * (barW + gap) + gap / 2}" y="${plot.top + plot.height - h}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>`;
+      const x = plot.left + index * (barW + gap) + gap / 2;
+      const y = plot.top + plot.height - h;
+      const label = spreadsheetChartDataLabelText(dataLabels, this.categories[index], value);
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>${label ? `<text x="${x + barW / 2}" y="${Math.max(plot.top + 10, y - 4)}" text-anchor="middle" font-family="Arial" font-size="10" fill="#334155" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : ""}`;
     }).join("");
     const previewPalette = ["#38BDF8", "#F97316", "#22C55E", "#A855F7", "#E11D48", "#0F766E"];
     const lineMarks = lineValues.map((seriesValues, seriesIndex) => {
@@ -3515,7 +3522,11 @@ class WorksheetChart {
       const mark = lineOptions?.smooth === true
         ? `<path d="${spreadsheetChartSmoothLinePath(points)}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`
         : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`;
-      return `${mark}${points.map((point) => spreadsheetChartMarkerSvg(series?.marker, point.x, point.y, stroke)).join("")}`;
+      const labels = points.map((point, index) => {
+        const label = spreadsheetChartDataLabelText(dataLabels, this.categories[index], series?.values?.[index]);
+        return label ? `<text x="${point.x}" y="${Math.max(plot.top + 10, point.y - 7)}" text-anchor="middle" font-family="Arial" font-size="10" fill="#334155" data-chart-label-series="${seriesIndex}" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : "";
+      }).join("");
+      return `${mark}${points.map((point) => spreadsheetChartMarkerSvg(series?.marker, point.x, point.y, stroke)).join("")}${labels}`;
     }).join("");
     const plotMarks = this.type === "line" ? lineMarks : bars;
     const xTickSize = Number(this.xAxis?.textStyle?.fontSize);
@@ -3528,7 +3539,7 @@ class WorksheetChart {
     return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#94a3b8"/><text x="${p.left + 8}" y="${p.top + 22}" font-family="Arial" font-size="${titleSize}" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.name)}</text>${plotMarks}${xTicks}${yTicks}${xTitle}${yTitle}`;
   }
 
-  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: normalizeSpreadsheetChartLineOptions(this.lineOptions) || undefined, hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis }; }
+  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: normalizeSpreadsheetChartLineOptions(this.lineOptions) || undefined, dataLabels: normalizeSpreadsheetChartDataLabels(this.dataLabels), hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis }; }
 }
 
 class WorksheetChartCollection {
@@ -4346,6 +4357,8 @@ export class Workbook {
           const lineOptions = normalizeSpreadsheetChartLineOptions(chart.lineOptions);
           if (lineOptions != null && chart.type !== "line") issues.push(verificationIssue("workbook", "invalidChartLineOptions", `Chart ${chart.name} lineOptions require a line chart.`, { sheet: sheet.name, id: chart.id, lineOptions }));
         } catch (error) { issues.push(verificationIssue("workbook", "invalidChartLineOptions", String(error?.message || error), { sheet: sheet.name, id: chart.id, lineOptions: chart.lineOptions })); }
+        try { normalizeSpreadsheetChartDataLabels(chart.dataLabels); }
+        catch (error) { issues.push(verificationIssue("workbook", "invalidChartDataLabels", String(error?.message || error), { sheet: sheet.name, id: chart.id, dataLabels: chart.dataLabels })); }
         if (chart.xAxis?.title?.textStyle != null || chart.yAxis?.title?.textStyle != null) issues.push(verificationIssue("workbook", "unsupportedChartTextStyle", `Chart ${chart.name} axis-title text styling is outside the bounded chart profile.`, { sheet: sheet.name, id: chart.id }));
         if (chart.series.items.length === 0) issues.push(verificationIssue("workbook", "emptyChart", `Chart ${chart.name} on ${sheet.name} has no data series.`, { sheet: sheet.name, id: chart.id }));
         for (const series of chart.series.items) {
@@ -7681,6 +7694,8 @@ function xlsxChartXml(chart) {
   const lineGrouping = chartType === "line" ? `<c:grouping val="${lineOptions?.grouping || "standard"}"/>` : "";
   const varyColors = chartType === "line" && lineOptions?.varyColors === true ? '<c:varyColors val="1"/>' : "";
   const smooth = lineOptions?.smooth == null ? "" : `<c:smooth val="${lineOptions.smooth ? 1 : 0}"/>`;
+  const dataLabels = normalizeSpreadsheetChartDataLabels(chart.dataLabels);
+  const dataLabelsXml = dataLabels == null ? "" : `<c:dLbls><c:showVal val="${dataLabels.showValue ? 1 : 0}"/><c:showCatName val="${dataLabels.showCategoryName ? 1 : 0}"/></c:dLbls>`;
   const textStyle = (value, name) => {
     if (value == null) return undefined;
     if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${name} must be an object.`);
@@ -7724,7 +7739,7 @@ function xlsxChartXml(chart) {
   const titleFontSize = textStyle(chart.titleTextStyle, "titleTextStyle");
   if (titleFontSize != null && !String(chart.title || "").length) throw new TypeError("Worksheet chart titleTextStyle requires a non-empty title.");
   const titleRunProperties = titleFontSize == null ? "" : `<a:rPr sz="${Math.round(titleFontSize * 100)}"/>`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>${titleRunProperties}<a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${lineGrouping}${varyColors}${seriesXml}${smooth}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>${titleRunProperties}<a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${lineGrouping}${varyColors}${seriesXml}${dataLabelsXml}${smooth}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
 }
 
 function pivotCacheDefinitionRelsXml(part) {
@@ -8499,7 +8514,7 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
         const chartXml = await zip.file(targetPath)?.async("text");
         if (!chartXml) continue;
         const parsed = parseSpreadsheetChart(chartXml);
-        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, titleTextStyle: parsed.titleTextStyle, lineOptions: parsed.lineOptions, hasLegend: parsed.hasLegend, categories: parsed.categories, xAxis: parsed.xAxis, yAxis: parsed.yAxis, position: frame, series: parsed.series });
+        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, titleTextStyle: parsed.titleTextStyle, lineOptions: parsed.lineOptions, dataLabels: parsed.dataLabels, hasLegend: parsed.hasLegend, categories: parsed.categories, xAxis: parsed.xAxis, yAxis: parsed.yAxis, position: frame, series: parsed.series });
         parsed.series.forEach((series, index) => Object.assign(chart.series.items[index], { formula: series.formula, categoryFormula: series.categoryFormula, fill: series.fill }));
       }
     }

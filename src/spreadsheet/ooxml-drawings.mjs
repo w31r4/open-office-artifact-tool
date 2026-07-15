@@ -328,6 +328,28 @@ function chartLineOptions(xml) {
   return Object.keys(output).length ? output : undefined;
 }
 
+function chartDataLabels(xml) {
+  const plotChildren = directChildNames(xml);
+  if (plotChildren.filter((name) => name === "dLbls").length !== 1) return undefined;
+  const labels = directElement(xml, "dLbls");
+  if (!labels || Object.keys(attributes(labels.startTag)).some((name) => !name.startsWith("xmlns"))) return undefined;
+  const allowed = new Set(["showLegendKey", "showVal", "showCatName", "showSerName", "showPercent", "showBubbleSize"]);
+  const children = directChildNames(labels.body);
+  if (children.some((name) => !allowed.has(name)) || [...allowed].some((name) => children.filter((child) => child === name).length > 1) || children.filter((name) => name === "showVal").length !== 1 || children.filter((name) => name === "showCatName").length !== 1) return undefined;
+  const scalar = (name) => {
+    const element = directElement(labels.body, name);
+    if (!element) return undefined;
+    const attrs = attributes(element.startTag);
+    if (element.body.trim() || Object.keys(attrs).some((key) => key !== "val" && !key.startsWith("xmlns")) || !["0", "1", "false", "true"].includes(attrs.val)) return undefined;
+    return attrs.val === "1" || attrs.val === "true";
+  };
+  const showValue = scalar("showVal");
+  const showCategoryName = scalar("showCatName");
+  if (showValue == null || showCategoryName == null) return undefined;
+  for (const name of ["showLegendKey", "showSerName", "showPercent", "showBubbleSize"]) if (children.includes(name) && scalar(name) !== false) return undefined;
+  return { showValue, showCategoryName };
+}
+
 function chartAxis(xml, name, kind) {
   const body = elementBody(xml, name);
   if (!body) return undefined;
@@ -365,10 +387,12 @@ function chartAxis(xml, name, kind) {
 export function parseSpreadsheetChart(xml = "") {
   const text = String(xml || "");
   const type = /<(?:[A-Za-z_][\w.-]*:)?pieChart\b/.test(text) ? "pie" : /<(?:[A-Za-z_][\w.-]*:)?lineChart\b/.test(text) ? "line" : "bar";
+  const plotBody = elementBody(text, type === "pie" ? "pieChart" : type === "line" ? "lineChart" : "barChart");
   const titleBody = elementBody(text, "title");
   const title = [...titleBody.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => decodeXml(match[1])).join("") || elementValue(titleBody, "v");
   const titleFontSize = drawingFontSize(titleBody, "rPr");
-  const lineOptions = type === "line" ? chartLineOptions(elementBody(text, "lineChart")) : undefined;
+  const lineOptions = type === "line" ? chartLineOptions(plotBody) : undefined;
+  const dataLabels = chartDataLabels(plotBody);
   const series = [...text.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ser\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ser>/g)].map((match, index) => {
     const body = match[1];
     const tx = elementBody(body, "tx");
@@ -395,6 +419,7 @@ export function parseSpreadsheetChart(xml = "") {
     title,
     ...(titleFontSize == null ? {} : { titleTextStyle: { fontSize: titleFontSize } }),
     ...(lineOptions == null ? {} : { lineOptions }),
+    ...(dataLabels == null ? {} : { dataLabels }),
     hasLegend: /<(?:[A-Za-z_][\w.-]*:)?legend\b/.test(text),
     categories: series[0]?.categories || [],
     series,

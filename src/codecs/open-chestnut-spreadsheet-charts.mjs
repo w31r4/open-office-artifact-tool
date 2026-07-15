@@ -2,6 +2,7 @@ import { SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, Spreadshee
 import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
+import { normalizeSpreadsheetChartDataLabels } from "../spreadsheet/chart-data-labels.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -146,6 +147,14 @@ function lineOptionsSnapshot(value, chart) {
   }
 }
 
+function dataLabelsSnapshot(value, chart) {
+  try { return normalizeSpreadsheetChartDataLabels(value); }
+  catch (error) {
+    const message = String(error?.message || error).replace(/^Worksheet chart\s+/, "");
+    fail(chart, message, /supports only/i.test(message) ? "unsupported_spreadsheet_chart" : "invalid_spreadsheet_chart");
+  }
+}
+
 function textStyleSnapshot(value, name, chart) {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) fail(chart, `${name} must be an object.`);
@@ -187,6 +196,7 @@ export function spreadsheetChartSnapshot(chart) {
     title: String(chart?.title || ""),
     titleTextStyle: textStyleSnapshot(chart?.titleTextStyle, "titleTextStyle", chart),
     lineOptions: lineOptionsSnapshot(chart?.lineOptions, chart),
+    dataLabels: dataLabelsSnapshot(chart?.dataLabels, chart),
     type: String(chart?.type || chart?.chartType || "bar").toLowerCase(),
     hasLegend: chart?.hasLegend !== false,
     categories: [...(chart?.categories || [])].map((value) => String(value)),
@@ -292,6 +302,10 @@ function wireChart(chart, original) {
       grouping: snapshot.lineOptions.grouping == null ? undefined : LINE_GROUPINGS_TO_WIRE.get(snapshot.lineOptions.grouping),
       smooth: snapshot.lineOptions.smooth,
       varyColors: snapshot.lineOptions.varyColors === true,
+    },
+    dataLabels: snapshot.dataLabels == null ? undefined : {
+      showValue: snapshot.dataLabels.showValue,
+      showCategoryName: snapshot.dataLabels.showCategoryName,
     },
     type,
     hasLegend: snapshot.hasLegend,
@@ -447,11 +461,16 @@ export function spreadsheetChartFromWire(sheet, source) {
   }
   const lineOptions = lineOptionsSnapshot(lineOptionsInput, source);
   if (type !== "line" && lineOptions != null) fail(source, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
+  const dataLabels = source.dataLabels == null ? undefined : dataLabelsSnapshot({
+    showValue: source.dataLabels.showValue === true,
+    showCategoryName: source.dataLabels.showCategoryName === true,
+  }, source);
   const chart = sheet.charts.add(type, {
     name: source.name,
     title: source.title,
     ...(titleTextStyle == null ? {} : { titleTextStyle }),
     ...(lineOptions == null ? {} : { lineOptions }),
+    ...(dataLabels == null ? {} : { dataLabels }),
     hasLegend: source.hasLegend,
     categories: [...(source.categories || [])],
     xAxis: axisFromWire(source.xAxis, "x"),

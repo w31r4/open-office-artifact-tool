@@ -239,6 +239,7 @@ try {
   assert.equal(wasmChart.title, "OpenChestnut edited trend");
   assert.deepEqual(wasmChart.titleTextStyle, { fontSize: 14 });
   assert.deepEqual(wasmChart.lineOptions, { grouping: "percentStacked", smooth: false });
+  assert.deepEqual(wasmChart.dataLabels, { showValue: false, showCategoryName: true });
   assert.equal(wasmChart.hasLegend, false);
   assert.deepEqual(wasmChart.categories, ["Revenue", "Double actual"]);
   assert.deepEqual(wasmChart.xAxis, { axisType: "textAxis", title: { text: "Edited metric" }, textStyle: { fontSize: 11 }, numberFormatCode: "@", tickLabelInterval: 1 });
@@ -249,7 +250,7 @@ try {
   assert.deepEqual(wasmChart.series.items[0].marker, { symbol: "triangle", size: 10, fill: "#DCFCE7", line: { width: 2, fill: "#166534", style: "dashed" } });
   assert.equal(wasmChart.series.items[0].categoryFormula, "'Summary'!$A$2:$A$3");
   assert.equal(wasmChart.series.items[0].formula, "'Summary'!$B$2:$B$3");
-  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"OpenChestnut edited trend"[\s\S]*"titleTextStyle":\{"fontSize":14\}[\s\S]*"lineOptions":\{"grouping":"percentStacked","smooth":false\}[\s\S]*"fill":"#2563EB"[\s\S]*"line":\{"fill":"#7C3AED","style":"dash-dot","width":2\.5\}[\s\S]*"marker":\{"symbol":"triangle","size":10,"fill":"#DCFCE7","line":\{"fill":"#166534","style":"dashed","width":2\}\}[\s\S]*"Edited metric"[\s\S]*"fontSize":11[\s\S]*"Edited value"[\s\S]*"fontSize":8\.5/);
+  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"OpenChestnut edited trend"[\s\S]*"titleTextStyle":\{"fontSize":14\}[\s\S]*"lineOptions":\{"grouping":"percentStacked","smooth":false\}[\s\S]*"dataLabels":\{"showValue":false,"showCategoryName":true\}[\s\S]*"fill":"#2563EB"[\s\S]*"line":\{"fill":"#7C3AED","style":"dash-dot","width":2\.5\}[\s\S]*"marker":\{"symbol":"triangle","size":10,"fill":"#DCFCE7","line":\{"fill":"#166534","style":"dashed","width":2\}\}[\s\S]*"Edited metric"[\s\S]*"fontSize":11[\s\S]*"Edited value"[\s\S]*"fontSize":8\.5/);
   assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"OpenChestnut worksheet image"/);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedIndex, 7);

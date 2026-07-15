@@ -403,8 +403,12 @@ message SpreadsheetChartArtifact {
   // the initial bounded profile owns only a DrawingML font size in points.
   SpreadsheetChartTextStyleArtifact title_text_style = 14;
   // Optional line-plot behavior. The bounded profile owns explicit grouping
-  // and smooth interpolation; color variation remains future additive work.
+  // and smooth interpolation plus direct color variation.
   SpreadsheetChartLineOptionsArtifact line_options = 15;
+  // Optional plot-level labels. The first bounded profile owns only the
+  // standard show-value and show-category-name booleans. Per-series/per-point
+  // labels, positions, text styles, and number formats remain source-owned.
+  SpreadsheetChartDataLabelsArtifact data_labels = 16;
 }
 
 message SpreadsheetChartSeriesArtifact {
@@ -1576,4 +1580,12 @@ message SpreadsheetChartLineOptionsArtifact {
   // Matches the native default: false is omitted from the wire and package;
   // true authors one direct c:varyColors node.
   bool vary_colors = 3;
+}
+
+// Bounded plot-level worksheet-chart data labels. Message presence owns one
+// canonical c:dLbls container while the two booleans map to c:showVal and
+// c:showCatName. A present all-false message remains distinct from omission.
+message SpreadsheetChartDataLabelsArtifact {
+  bool show_value = 1;
+  bool show_category_name = 2;
 }
