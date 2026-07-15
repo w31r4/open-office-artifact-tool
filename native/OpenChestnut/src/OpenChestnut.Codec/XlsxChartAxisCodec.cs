@@ -7,7 +7,7 @@ namespace OpenChestnut.Codec;
 // Owns the bounded primary category/value-axis projection for worksheet charts.
 // Axis identity and all unmodeled formatting remain in the ChartPart; this
 // module reads and patches only titles, number formats, category label interval,
-// and linear value-axis bounds/unit.
+// linear value-axis bounds/unit, and the delegated bounded tick-label style.
 internal static class XlsxChartAxisCodec
 {
     private const uint MaxTickLabelInterval = 1_048_576;
@@ -112,7 +112,7 @@ internal static class XlsxChartAxisCodec
         if (!TryTitle(source, out var title, out var titleEditable) || !TryNumberFormat(source, out var numberFormat, out var numberFormatEditable)) return false;
         axis.Title = title;
         axis.NumberFormatCode = numberFormat;
-        editable &= titleEditable && numberFormatEditable;
+        editable &= titleEditable && numberFormatEditable && XlsxChartTextStyleCodec.TryReadAxis(source, axis);
         if (category)
         {
             if (scaling.Element(ChartNs + "min") is not null || scaling.Element(ChartNs + "max") is not null) editable = false;
@@ -166,6 +166,7 @@ internal static class XlsxChartAxisCodec
             new XElement(ChartNs + "scaling", new XElement(ChartNs + "orientation", new XAttribute("val", "minMax"))),
             new XElement(ChartNs + "axPos", new XAttribute("val", "b")));
         AppendTitleAndNumberFormat(output, axis);
+        XlsxChartTextStyleCodec.AppendAuthoredAxis(output, axis.TextStyle);
         output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", "2")));
         if (axis.HasTickLabelInterval) output.Add(ValueElement("tickLblSkip", axis.TickLabelInterval));
         return output;
@@ -180,6 +181,7 @@ internal static class XlsxChartAxisCodec
             new XElement(ChartNs + "axId", new XAttribute("val", "2")), scaling,
             new XElement(ChartNs + "axPos", new XAttribute("val", "l")));
         AppendTitleAndNumberFormat(output, axis);
+        XlsxChartTextStyleCodec.AppendAuthoredAxis(output, axis.TextStyle);
         output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", "1")));
         if (axis.HasMajorUnit) output.Add(ValueElement("majorUnit", axis.MajorUnit));
         return output;
@@ -195,6 +197,7 @@ internal static class XlsxChartAxisCodec
     {
         PatchTitle(native, target.Title);
         PatchNumberFormat(native, target.NumberFormatCode);
+        XlsxChartTextStyleCodec.PatchAxis(native, target.TextStyle);
         if (category)
         {
             PatchValue(native, "tickLblSkip", target.HasTickLabelInterval, target.TickLabelInterval, ["tickMarkSkip", "noMultiLvlLbl", "extLst"]);
@@ -293,6 +296,7 @@ internal static class XlsxChartAxisCodec
         axis.HasTickLabelInterval ? axis.TickLabelInterval.ToString(CultureInfo.InvariantCulture) : "-",
         axis.HasMinimum ? axis.Minimum.ToString("R", CultureInfo.InvariantCulture) : "-",
         axis.HasMaximum ? axis.Maximum.ToString("R", CultureInfo.InvariantCulture) : "-",
-        axis.HasMajorUnit ? axis.MajorUnit.ToString("R", CultureInfo.InvariantCulture) : "-");
+        axis.HasMajorUnit ? axis.MajorUnit.ToString("R", CultureInfo.InvariantCulture) : "-",
+        XlsxChartTextStyleCodec.Semantics(axis.TextStyle));
     private static CodecException Invalid(string worksheetId, string chartId, string message) => new("invalid_spreadsheet_chart", $"Worksheet {worksheetId} chart {chartId} {message}");
 }

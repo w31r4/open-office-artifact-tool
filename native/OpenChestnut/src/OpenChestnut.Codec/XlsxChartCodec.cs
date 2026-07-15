@@ -98,6 +98,7 @@ internal sealed class XlsxChartCodec
             if (chart.Title.Length > 32_767 || HasControls(chart.Title)) throw InvalidChart(worksheetId, chart.Id, "title must contain at most 32767 characters without controls.");
             if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, or pie.");
             XlsxChartAxisCodec.Validate(chart, worksheetId);
+            XlsxChartTextStyleCodec.Validate(chart, worksheetId);
             if ((chart.Anchor is null ? 0 : 1) + (chart.TwoCellAnchor is null ? 0 : 1) + (chart.AbsoluteAnchor is null ? 0 : 1) != 1) throw InvalidChart(worksheetId, chart.Id, "must carry exactly one one-cell, two-cell, or absolute anchor.");
             ValidateAnchor(chart, worksheetId);
             if (chart.Categories.Count > MaxPoints) throw InvalidChart(worksheetId, chart.Id, $"exceeds the {MaxPoints}-category budget.");
@@ -304,6 +305,7 @@ internal sealed class XlsxChartCodec
             var directValue = title.Descendants(ChartNs + "v").FirstOrDefault();
             chart.Title = richText.Length > 0 ? string.Concat(richText.Select(item => item.Value)) : directValue?.Value ?? string.Empty;
             if (richText.Length == 0) editable = false;
+            editable &= XlsxChartTextStyleCodec.TryReadTitle(title, chart);
         }
         chart.HasLegend = nativeChart.Element(ChartNs + "legend") is not null;
         var seriesElements = plot.Elements(ChartNs + "ser").ToArray();
@@ -416,7 +418,7 @@ internal sealed class XlsxChartCodec
         var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
         XlsxChartAxisCodec.AppendAuthored(plotArea, chart);
         var nativeChart = new XElement(ChartNs + "chart");
-        if (chart.Title.Length > 0) nativeChart.Add(TitleElement(chart.Title));
+        if (chart.Title.Length > 0) nativeChart.Add(XlsxChartTextStyleCodec.TitleElement(chart.Title, chart.TitleTextStyle));
         nativeChart.Add(plotArea);
         if (chart.HasLegend) nativeChart.Add(LegendElement());
         nativeChart.Add(new XElement(ChartNs + "plotVisOnly", new XAttribute("val", "1")));
@@ -453,7 +455,6 @@ internal sealed class XlsxChartCodec
         for (var index = 0; index < array.Length; index++) cache.Add(new XElement(ChartNs + "pt", new XAttribute("idx", index), new XElement(ChartNs + "v", format(array[index]))));
     }
 
-    private static XElement TitleElement(string title) => new(ChartNs + "title", new XElement(ChartNs + "tx", new XElement(ChartNs + "rich", new XElement(DrawingNs + "bodyPr"), new XElement(DrawingNs + "lstStyle"), new XElement(DrawingNs + "p", new XElement(DrawingNs + "r", new XElement(DrawingNs + "t", title))))), new XElement(ChartNs + "layout"));
     private static XElement LegendElement() => new(ChartNs + "legend", new XElement(ChartNs + "legendPos", new XAttribute("val", "r")), new XElement(ChartNs + "layout"));
 
     private static OpenXmlElement BuildAnchor(SpreadsheetChartArtifact source, string relationshipId, uint nonVisualId)
@@ -501,7 +502,7 @@ internal sealed class XlsxChartCodec
             if (requested.Values.Count != original.Values.Count || string.IsNullOrEmpty(requested.CategoryFormula) != string.IsNullOrEmpty(original.CategoryFormula) || string.IsNullOrEmpty(requested.ValueFormula) != string.IsNullOrEmpty(original.ValueFormula)) throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} series {index + 1} cannot change cache count or literal/reference topology.", Path(record.ChartPart));
         }
         var nativeChart = record.ChartDocument.Root!.Element(ChartNs + "chart")!;
-        PatchTitle(nativeChart, target.Title);
+        PatchTitle(nativeChart, target.Title, target.TitleTextStyle);
         PatchLegend(nativeChart, target.HasLegend);
         var plotArea = nativeChart.Element(ChartNs + "plotArea")!;
         var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", _ => throw new InvalidOperationException() };
@@ -512,13 +513,13 @@ internal sealed class XlsxChartCodec
         WriteXml(record.ChartPart, record.ChartDocument);
     }
 
-    private static void PatchTitle(XElement chart, string title)
+    private static void PatchTitle(XElement chart, string title, SpreadsheetChartTextStyleArtifact? style)
     {
         var existing = chart.Element(ChartNs + "title");
         if (title.Length == 0) { existing?.Remove(); return; }
         if (existing is null)
         {
-            var created = TitleElement(title);
+            var created = XlsxChartTextStyleCodec.TitleElement(title, style);
             var plotArea = chart.Element(ChartNs + "plotArea")!;
             plotArea.AddBeforeSelf(created);
             return;
@@ -527,6 +528,7 @@ internal sealed class XlsxChartCodec
         if (runs.Length == 0) throw new CodecException("unsupported_spreadsheet_chart_edit", "Referenced chart titles are read-only in the bounded worksheet chart slice.");
         runs[0].Value = title;
         foreach (var run in runs.Skip(1)) run.Value = string.Empty;
+        XlsxChartTextStyleCodec.PatchTitle(existing, style);
     }
 
     private static void PatchLegend(XElement chart, bool hasLegend)
@@ -568,7 +570,7 @@ internal sealed class XlsxChartCodec
         for (var index = 0; index < points.Length; index++) points[index].Element(ChartNs + "v")!.Value = format(requested[index]);
     }
 
-    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
+    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
 
     private static string AnchorSemantics(SpreadsheetChartArtifact chart)
     {

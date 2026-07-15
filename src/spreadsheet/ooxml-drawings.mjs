@@ -175,6 +175,14 @@ function chartPoints(xml = "", numeric = false) {
     .map((point) => numeric ? Number(point.value) || 0 : point.value);
 }
 
+function drawingFontSize(xml, elementName) {
+  const values = [...String(xml || "").matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${elementName}\\b[^>]*>`, "g"))]
+    .map((match) => Number(attributes(match[0]).sz))
+    .filter((value) => Number.isInteger(value) && value >= 100 && value <= 400_000);
+  if (values.length === 0 || values.some((value) => value !== values[0])) return undefined;
+  return values[0] / 100;
+}
+
 function chartAxis(xml, name, kind) {
   const body = elementBody(xml, name);
   if (!body) return undefined;
@@ -182,6 +190,8 @@ function chartAxis(xml, name, kind) {
   const title = [...titleBody.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => decodeXml(match[1])).join("") || elementValue(titleBody, "v");
   const numberFormatTag = /<(?:[A-Za-z_][\w.-]*:)?numFmt\b[^>]*\/?\s*>/.exec(body)?.[0];
   const numberFormatCode = numberFormatTag ? attributes(numberFormatTag).formatCode : undefined;
+  const tickTextProperties = directElementBody(body, "txPr");
+  const tickFontSize = drawingFontSize(tickTextProperties, "defRPr");
   const valueAttribute = (source, element) => {
     const tag = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${element}\\b[^>]*\\/?\\s*>`).exec(source)?.[0];
     return tag ? Number(attributes(tag).val) : undefined;
@@ -189,6 +199,7 @@ function chartAxis(xml, name, kind) {
   const output = {
     axisType: kind === "x" ? "textAxis" : "valueAxis",
     title: { text: title || "" },
+    ...(tickFontSize == null ? {} : { textStyle: { fontSize: tickFontSize } }),
     ...(numberFormatCode ? { numberFormatCode } : {}),
   };
   if (kind === "x") {
@@ -211,6 +222,7 @@ export function parseSpreadsheetChart(xml = "") {
   const type = /<(?:[A-Za-z_][\w.-]*:)?pieChart\b/.test(text) ? "pie" : /<(?:[A-Za-z_][\w.-]*:)?lineChart\b/.test(text) ? "line" : "bar";
   const titleBody = elementBody(text, "title");
   const title = [...titleBody.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => decodeXml(match[1])).join("") || elementValue(titleBody, "v");
+  const titleFontSize = drawingFontSize(titleBody, "rPr");
   const series = [...text.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ser\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ser>/g)].map((match, index) => {
     const body = match[1];
     const tx = elementBody(body, "tx");
@@ -231,6 +243,7 @@ export function parseSpreadsheetChart(xml = "") {
   return {
     type,
     title,
+    ...(titleFontSize == null ? {} : { titleTextStyle: { fontSize: titleFontSize } }),
     hasLegend: /<(?:[A-Za-z_][\w.-]*:)?legend\b/.test(text),
     categories: series[0]?.categories || [],
     series,

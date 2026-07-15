@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -80,7 +80,10 @@ assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, {
 assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { source: { chartPartPath: "xl/charts/chart1.xml" } }))[0], 0x5a, "Spreadsheet chart source bindings must use chart field 11.");
 assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { xAxis: { title: "Quarter" } }))[0], 0x62, "Spreadsheet chart x-axis semantics must use additive chart field 12.");
 assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { yAxis: { title: "Revenue" } }))[0], 0x6a, "Spreadsheet chart y-axis semantics must use additive chart field 13.");
+assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { titleTextStyle: { fontSizePoints: 12 } }))[0], 0x72, "Spreadsheet chart title text styles must use additive chart field 14.");
 assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { fill: { source: { case: "rgb", value: "F472B6" } } }))[0], 0x2a, "Spreadsheet chart series fills must use additive series field 5.");
+assert.equal(toBinary(SpreadsheetChartAxisArtifactSchema, create(SpreadsheetChartAxisArtifactSchema, { textStyle: { fontSizePoints: 10 } }))[0], 0x3a, "Spreadsheet chart axis tick-label styles must use additive axis field 7.");
+assert.equal(toBinary(SpreadsheetChartTextStyleArtifactSchema, create(SpreadsheetChartTextStyleArtifactSchema, { fontSizePoints: 10 }))[0], 0x09, "Spreadsheet chart font sizes must preserve optional double presence at text-style field 1.");
 assert.throws(
   () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.BAR, series: [{ name: "Malformed", fill: { source: { case: "rgb", value: "12345" } } }] }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /#RRGGBB solid color/i.test(error.message),
@@ -89,10 +92,29 @@ assert.throws(
   () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.BAR, series: [{ name: "Theme", fill: { source: { case: "theme", value: 4 } } }] }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /non-RGB fill source/i.test(error.message),
 );
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.BAR, title: "Malformed size", titleTextStyle: { fontSizePoints: 0 }, series: [] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /1 through 4000/i.test(error.message),
+  "Malformed wire font sizes must fail before a workbook is mutated.",
+);
 assert.equal(
   parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:barChart><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Series</c:v></c:tx><c:dPt><c:idx val="0"/><c:spPr><a:solidFill><a:srgbClr val="E11D48"/></a:solidFill></c:spPr></c:dPt><c:cat><c:strLit><c:ptCount val="1"/><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>').series[0].fill,
   undefined,
   "JavaScript chart import must not flatten a data-point fill into a series fill.",
+);
+assert.deepEqual(
+  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1250"/><a:t>Styled</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Value</c:v></c:tx><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart><c:catAx><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000"/></a:pPr><a:endParaRPr/></a:p></c:txPr></c:catAx><c:valAx><c:scaling/></c:valAx></c:plotArea></c:chart></c:chartSpace>'),
+  {
+    type: "line",
+    title: "Styled",
+    titleTextStyle: { fontSize: 12.5 },
+    hasLegend: false,
+    categories: ["A"],
+    series: [{ name: "Value", categoryFormula: undefined, formula: undefined, categories: ["A"], values: [1], fill: undefined }],
+    xAxis: { axisType: "textAxis", title: { text: "" }, textStyle: { fontSize: 10 } },
+    yAxis: { axisType: "valueAxis", title: { text: "" } },
+  },
+  "JavaScript fallback import must expose bounded title and tick-label font sizes.",
 );
 assert.equal(toBinary(SpreadsheetChartAxisArtifactSchema, create(SpreadsheetChartAxisArtifactSchema, { minimum: 0 }))[0], 0x21, "Spreadsheet value-axis minimum must preserve explicit zero at optional field 4.");
 assert.equal(toBinary(SpreadsheetChartSourceBindingSchema, create(SpreadsheetChartSourceBindingSchema, { semanticSha256: "x" }))[0], 0x3a, "Spreadsheet chart semantic hashes must use source-binding field 7.");
@@ -1059,12 +1081,57 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /textAxis/i.test(error.message),
 );
 const styledAxisWorkbook = Workbook.create();
-styledAxisWorkbook.worksheets.add("Styled axis").charts.add("line", { name: "Styled axis", categories: ["A"], series: [{ name: "Value", values: [1] }], xAxis: { textStyle: { fontSize: 10 } } });
+const styledAxisChart = styledAxisWorkbook.worksheets.add("Styled axis").charts.add("line", {
+  name: "Styled axis",
+  title: "Styled sizes",
+  titleTextStyle: { fontSize: 12.5 },
+  categories: ["A", "B"],
+  series: [{ name: "Value", values: [1, 2] }],
+  xAxis: { textStyle: { fontSize: 10 } },
+  yAxis: { textStyle: { fontSize: 9 } },
+});
+assert.match(styledAxisChart.toSvg(), /font-size="12.5"[\s\S]*font-size="10"/);
+const styledAxisNative = await exportXlsxWithOpenChestnut(styledAxisWorkbook);
+const styledAxisNativeZip = await JSZip.loadAsync(styledAxisNative.bytes);
+const styledAxisNativeChartPath = Object.keys(styledAxisNativeZip.files).find((name) => /\/charts\/chart\d+\.xml$/.test(name));
+assert.ok(styledAxisNativeChartPath, "OpenChestnut styled chart export must contain one ChartPart.");
+const styledAxisNativeXml = await styledAxisNativeZip.file(styledAxisNativeChartPath).async("text");
+assert.match(styledAxisNativeXml, /<a:rPr sz="1250"\s*\/>/);
+assert.match(styledAxisNativeXml, /<c:catAx>[\s\S]*?<a:defRPr sz="1000"\s*\/>/);
+assert.match(styledAxisNativeXml, /<c:valAx>[\s\S]*?<a:defRPr sz="900"\s*\/>/);
+const styledAxisImported = await importXlsxWithOpenChestnut(styledAxisNative);
+const importedStyledAxisChart = styledAxisImported.worksheets.getItem("Styled axis").charts.items[0];
+assert.deepEqual(importedStyledAxisChart.titleTextStyle, { fontSize: 12.5 });
+assert.deepEqual(importedStyledAxisChart.xAxis.textStyle, { fontSize: 10 });
+assert.deepEqual(importedStyledAxisChart.yAxis.textStyle, { fontSize: 9 });
+importedStyledAxisChart.titleTextStyle.fontSize = 14;
+importedStyledAxisChart.xAxis.textStyle.fontSize = 11;
+delete importedStyledAxisChart.yAxis.textStyle;
+const styledAxisEdited = await exportXlsxWithOpenChestnut(styledAxisImported, { recalculate: false });
+const styledAxisEditedRoundTrip = await importXlsxWithOpenChestnut(styledAxisEdited);
+const editedStyledAxisChart = styledAxisEditedRoundTrip.worksheets.getItem("Styled axis").charts.items[0];
+assert.deepEqual(editedStyledAxisChart.titleTextStyle, { fontSize: 14 });
+assert.deepEqual(editedStyledAxisChart.xAxis.textStyle, { fontSize: 11 });
+assert.equal(editedStyledAxisChart.yAxis.textStyle, undefined);
+const styledAxisFallback = await SpreadsheetFile.exportXlsx(styledAxisWorkbook);
+const styledAxisFallbackRoundTrip = await importXlsxWithOpenChestnut(styledAxisFallback);
+assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].titleTextStyle, { fontSize: 12.5 });
+
+const invalidTextStyleWorkbook = Workbook.create();
+invalidTextStyleWorkbook.worksheets.add("Invalid text style").charts.add("line", { name: "Invalid style", title: "Invalid", titleTextStyle: { fontSize: 0 }, categories: ["A"], series: [{ name: "Value", values: [1] }] });
+assert.ok(invalidTextStyleWorkbook.verify().issues.some((issue) => issue.type === "invalidChartTextStyle"));
 await assert.rejects(
-  exportXlsxWithOpenChestnut(styledAxisWorkbook),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /axis text styling/i.test(error.message),
+  exportXlsxWithOpenChestnut(invalidTextStyleWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /1 through 4000/i.test(error.message),
 );
-await assert.rejects(SpreadsheetFile.exportXlsx(styledAxisWorkbook), /axis text styling/i);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidTextStyleWorkbook), /1 through 4000/i);
+const unsupportedAxisTitleStyleWorkbook = Workbook.create();
+unsupportedAxisTitleStyleWorkbook.worksheets.add("Axis title style").charts.add("line", { name: "Axis title style", categories: ["A"], series: [{ name: "Value", values: [1] }], xAxis: { title: { text: "Category", textStyle: { fontSize: 10 } } } });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(unsupportedAxisTitleStyleWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /axis-title text styling/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(unsupportedAxisTitleStyleWorkbook), /axis-title text styling/i);
 const pieAxisWorkbook = Workbook.create();
 pieAxisWorkbook.worksheets.add("Pie axis").charts.add("pie", { name: "Pie axis", categories: ["A"], series: [{ name: "Value", values: [1] }], xAxis: { title: { text: "Forbidden" } } });
 await assert.rejects(

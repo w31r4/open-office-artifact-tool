@@ -924,8 +924,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, per-series solid RGB fills, and bounded primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized solid RGB series fills and primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, per-series solid RGB fills, title/tick-label font sizes, and bounded primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized solid RGB series fills, title/tick-label font sizes, and primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -2216,7 +2216,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches, optional worksheet formulas, and text/value primary-axis titles, number formats, intervals, bounds and major units, plus recognized source-bound database connection-root metadata." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches, optional worksheet formulas, title/tick-label font sizes, and text/value primary-axis titles, number formats, intervals, bounds and major units, plus recognized source-bound database connection-root metadata." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2224,7 +2224,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG pictures, recognized bar/line/pie worksheet charts and primary-axis semantics, database connection-root metadata, and source/opaque package evidence for fail-closed drawing, chart, and image edits."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG pictures, recognized bar/line/pie worksheet charts with title/tick-label font sizes and primary-axis semantics, database connection-root metadata, and source/opaque package evidence for fail-closed drawing, chart, and image edits."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
@@ -2422,10 +2422,11 @@ const WORKBOOK_HELP_SCHEMAS = {
     chartType: { type: "string", required: true, description: "Chart type such as bar, line, or pie." },
     source: { type: "Range|object", description: "Source range or explicit chart config." },
     title: { type: "string", description: "Chart title." },
+    titleTextStyle: { type: "object", description: "Optional chart-title style with fontSize from 1 through 4000 points." },
     categories: { type: "string[]", description: "Explicit categories." },
     series: { type: "object[]", description: "Explicit series definitions with name, numeric values, optional categoryFormula/formula, and optional #RRGGBB solid fill." },
-    xAxis: { type: "object", description: "Primary text category axis with title.text, numberFormatCode, and tickLabelInterval." },
-    yAxis: { type: "object", description: "Primary numeric value axis with title.text, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit." },
+    xAxis: { type: "object", description: "Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval." },
+    yAxis: { type: "object", description: "Primary numeric value axis with title.text, tick-label textStyle.fontSize, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit." },
     position: { type: "object", description: "Pixel chart frame." },
   }, "chart", "WorksheetChart", "Editable worksheet chart facade."),
   "sheet.images.add": helpSchema({
@@ -3363,6 +3364,8 @@ class WorksheetChart {
     this.type = chartType;
     this.name = sourceOrConfig.name || `Chart ${worksheet.charts.items.length + 1}`;
     this.title = sourceOrConfig.title || "";
+    if (sourceOrConfig.titleTextStyle != null && (typeof sourceOrConfig.titleTextStyle !== "object" || Array.isArray(sourceOrConfig.titleTextStyle))) throw new TypeError("Worksheet chart titleTextStyle must be an object.");
+    this.titleTextStyle = { ...(sourceOrConfig.titleTextStyle || {}) };
     this.hasLegend = sourceOrConfig.hasLegend ?? true;
     this.categories = sourceOrConfig.categories || [];
     this.position = sourceOrConfig.position || { left: 420, top: 40, width: 360, height: 220 };
@@ -3410,7 +3413,7 @@ class WorksheetChart {
     return this;
   }
 
-  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, categories: this.categories, series: this.series.items.length, seriesItems: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
+  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, categories: this.categories, series: this.series.items.length, seriesItems: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
 
   toSvg() {
     const p = this.position;
@@ -3424,12 +3427,17 @@ class WorksheetChart {
       const h = plot.height * (Number(value) || 0) / max;
       return `<rect x="${plot.left + index * (barW + gap) + gap / 2}" y="${plot.top + plot.height - h}" width="${barW}" height="${h}" fill="${previewFill}"/>`;
     }).join("");
+    const xTickSize = Number(this.xAxis?.textStyle?.fontSize);
+    const xTicks = Number.isFinite(xTickSize) && xTickSize > 0 && values.length ? this.categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / values.length}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : "";
+    const yTickSize = Number(this.yAxis?.textStyle?.fontSize);
+    const yTicks = Number.isFinite(yTickSize) && yTickSize > 0 ? `<text x="${plot.left - 4}" y="${plot.top + yTickSize}" text-anchor="end" font-family="Arial" font-size="${yTickSize}" fill="#64748b">${max}</text><text x="${plot.left - 4}" y="${plot.top + plot.height}" text-anchor="end" font-family="Arial" font-size="${yTickSize}" fill="#64748b">0</text>` : "";
     const xTitle = this.xAxis?.title?.text ? `<text x="${plot.left + plot.width / 2}" y="${p.top + p.height - 6}" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.xAxis.title.text)}</text>` : "";
     const yTitle = this.yAxis?.title?.text ? `<text x="${p.left + 10}" y="${plot.top + plot.height / 2}" text-anchor="middle" transform="rotate(-90 ${p.left + 10} ${plot.top + plot.height / 2})" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.yAxis.title.text)}</text>` : "";
-    return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#94a3b8"/><text x="${p.left + 8}" y="${p.top + 22}" font-family="Arial" font-size="13" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.name)}</text>${bars}${xTitle}${yTitle}`;
+    const titleSize = Number.isFinite(Number(this.titleTextStyle?.fontSize)) && Number(this.titleTextStyle.fontSize) > 0 ? Number(this.titleTextStyle.fontSize) : 13;
+    return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#94a3b8"/><text x="${p.left + 8}" y="${p.top + 22}" font-family="Arial" font-size="${titleSize}" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.name)}</text>${bars}${xTicks}${yTicks}${xTitle}${yTitle}`;
   }
 
-  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis }; }
+  toJSON() { return { id: this.id, type: this.type, name: this.name, title: this.title, titleTextStyle: this.titleTextStyle, hasLegend: this.hasLegend, categories: this.categories, position: this.position, series: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis }; }
 }
 
 class WorksheetChartCollection {
@@ -4236,6 +4244,14 @@ export class Workbook {
       }
       for (const chart of sheet.charts.items) {
         if (!chart.title) issues.push(verificationIssue("workbook", "untitledChart", `Chart ${chart.name} on ${sheet.name} has no title.`, { severity: "warning", sheet: sheet.name, id: chart.id }));
+        for (const [scope, style] of [["titleTextStyle", chart.titleTextStyle], ["xAxis.textStyle", chart.xAxis?.textStyle], ["yAxis.textStyle", chart.yAxis?.textStyle]]) {
+          if (style == null) continue;
+          const fontSize = Number(style?.fontSize);
+          const unsupported = typeof style === "object" && !Array.isArray(style) ? Object.keys(style).filter((key) => key !== "fontSize" && style[key] != null) : ["non-object"];
+          if (unsupported.length || style.fontSize != null && (!Number.isFinite(fontSize) || fontSize < 1 || fontSize > 4000)) issues.push(verificationIssue("workbook", "invalidChartTextStyle", `Chart ${chart.name} ${scope} must contain only a fontSize from 1 through 4000 points.`, { sheet: sheet.name, id: chart.id, scope, fontSize: style?.fontSize, unsupported }));
+        }
+        if (chart.titleTextStyle?.fontSize != null && !chart.title) issues.push(verificationIssue("workbook", "invalidChartTextStyle", `Chart ${chart.name} titleTextStyle requires a non-empty title.`, { sheet: sheet.name, id: chart.id, scope: "titleTextStyle" }));
+        if (chart.xAxis?.title?.textStyle != null || chart.yAxis?.title?.textStyle != null) issues.push(verificationIssue("workbook", "unsupportedChartTextStyle", `Chart ${chart.name} axis-title text styling is outside the bounded chart profile.`, { sheet: sheet.name, id: chart.id }));
         if (chart.series.items.length === 0) issues.push(verificationIssue("workbook", "emptyChart", `Chart ${chart.name} on ${sheet.name} has no data series.`, { sheet: sheet.name, id: chart.id }));
         for (const series of chart.series.items) {
           if (chart.categories.length && series.values.length && chart.categories.length !== series.values.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `Chart ${chart.name} series ${series.name || "Series"} has ${series.values.length} values for ${chart.categories.length} categories.`, { sheet: sheet.name, id: chart.id, series: series.name, values: series.values.length, categories: chart.categories.length }));
@@ -4835,7 +4851,7 @@ export class Worksheet {
     const merges = this.mergedRanges.map((range) => { const mergeBounds = parseRangeAddress(range); const frame = frameForBounds(mergeBounds); return { kind: "mergedCell", sheet: this.name, range, topLeftCell: makeCellAddress(mergeBounds.top, mergeBounds.left), bbox: [frame.left, frame.top, frame.width, frame.height], rows: mergeBounds.rowCount, cols: mergeBounds.colCount }; });
     const tables = this.tables.items.map((table) => ({ kind: "table", id: table.id, sheet: this.name, name: table.name, address: table.range, bbox: Object.values(frameForRange(table.range) || {}), rows: table.rowCount, cols: table.columnCount, hasHeaders: table.hasHeaders }));
     const pivots = this.pivotTables.items.map((pivot) => pivot.layoutJson(bounds));
-    const charts = this.charts.items.map((chart) => ({ kind: "chart", id: chart.id, sheet: this.name, name: chart.name, chartType: chart.type, title: chart.title, bbox: [chart.position.left, chart.position.top, chart.position.width, chart.position.height], series: chart.series.items.length, categories: chart.categories }));
+    const charts = this.charts.items.map((chart) => ({ kind: "chart", id: chart.id, sheet: this.name, name: chart.name, chartType: chart.type, title: chart.title, titleTextStyle: chart.titleTextStyle, bbox: [chart.position.left, chart.position.top, chart.position.width, chart.position.height], series: chart.series.items.length, seriesItems: chart.series.toJSON(), categories: chart.categories, xAxis: chart.xAxis, yAxis: chart.yAxis }));
     const images = this.images.items.map((image) => { const p = image.position; return { kind: "image", id: image.id, sheet: this.name, name: image.name, alt: image.alt, bbox: [p.left, p.top, p.width, p.height], fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt }; });
     const sparklines = this.sparklineGroups.items.map((group) => { const p = group.targetFrame(bounds); return { kind: "sparkline", id: group.id, sheet: this.name, type: group.type, targetRange: group.targetRange.address, sourceData: group.sourceData.address, bbox: [p.left, p.top, p.width, p.height], values: group.values() }; });
     const rules = [...this.dataValidations.items, ...this.conditionalFormattings.items].map((rule) => ({ kind: rule.kind, id: rule.id, sheet: this.name, range: rule.range, bbox: Object.values(frameForRange(rule.range) || {}), ruleType: rule.ruleType, rule: rule.rule }));
@@ -7548,14 +7564,28 @@ function xlsxChartXml(chart) {
     const fill = series.fill == null ? "" : `<c:spPr><a:solidFill><a:srgbClr val="${series.fill.slice(1).toUpperCase()}"/></a:solidFill></c:spPr>`;
     return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${fill}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val></c:ser>`;
   }).join("");
+  const textStyle = (value, name) => {
+    if (value == null) return undefined;
+    if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${name} must be an object.`);
+    const unsupported = Object.keys(value).filter((key) => key !== "fontSize" && value[key] != null);
+    if (unsupported.length) throw new TypeError(`Worksheet chart ${name} supports only fontSize.`);
+    if (value.fontSize == null) return undefined;
+    const fontSize = Number(value.fontSize);
+    if (!Number.isFinite(fontSize) || fontSize < 1 || fontSize > 4000) throw new TypeError(`Worksheet chart ${name}.fontSize must be from 1 through 4000 points.`);
+    return fontSize;
+  };
   const axisTitle = (axis) => axis?.title?.text ? `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(axis.title.text)}</a:t></a:r></a:p></c:rich></c:tx><c:layout/></c:title>` : "";
+  const axisTextProperties = (axis, name) => {
+    const fontSize = textStyle(axis?.textStyle, `${name}.textStyle`);
+    return fontSize == null ? "" : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(fontSize * 100)}"/></a:pPr><a:endParaRPr/></a:p></c:txPr>`;
+  };
   const numberFormat = (axis) => axis?.numberFormatCode ? `<c:numFmt formatCode="${attrEscape(axis.numberFormatCode)}" sourceLinked="0"/>` : "";
   if (chartType === "pie" && (chart.xAxis != null || chart.yAxis != null)) throw new TypeError("Worksheet pie charts cannot carry category/value axes.");
   const xAxis = chart.xAxis || { axisType: "textAxis", title: { text: "" } };
   const yAxis = chart.yAxis || { axisType: "valueAxis", title: { text: "" } };
   if (chartType !== "pie" && (xAxis.axisType !== "textAxis" || yAxis.axisType !== "valueAxis")) throw new TypeError("Worksheet chart axes must use textAxis and valueAxis.");
   for (const [name, axis] of [["xAxis", xAxis], ["yAxis", yAxis]]) {
-    if (axis.textStyle != null || axis.title?.textStyle != null) throw new TypeError(`Worksheet chart ${name} text styling is outside the bounded native chart profile.`);
+    if (axis.title?.textStyle != null) throw new TypeError(`Worksheet chart ${name} axis-title text styling is outside the bounded native chart profile.`);
     const title = String(axis.title?.text || "");
     const format = String(axis.numberFormatCode || "");
     if (title.length > 32_767 || /\p{Cc}/u.test(title)) throw new TypeError(`Worksheet chart ${name} title is invalid.`);
@@ -7571,10 +7601,13 @@ function xlsxChartXml(chart) {
   const yMaximum = yAxis.max == null ? "" : `<c:max val="${Number(yAxis.max)}"/>`;
   const yMajorUnitValue = requestedMajorUnit;
   const yMajorUnit = yMajorUnitValue == null ? "" : `<c:majorUnit val="${Number(yMajorUnitValue)}"/>`;
-  const axes = chartType === "pie" ? "" : `<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/>${axisTitle(xAxis)}${numberFormat(xAxis)}<c:crossAx val="2"/>${interval}</c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/>${yMaximum}${yMinimum}</c:scaling><c:axPos val="l"/>${axisTitle(yAxis)}${numberFormat(yAxis)}<c:crossAx val="1"/>${yMajorUnit}</c:valAx>`;
+  const axes = chartType === "pie" ? "" : `<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/>${axisTitle(xAxis)}${numberFormat(xAxis)}${axisTextProperties(xAxis, "xAxis")}<c:crossAx val="2"/>${interval}</c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/>${yMaximum}${yMinimum}</c:scaling><c:axPos val="l"/>${axisTitle(yAxis)}${numberFormat(yAxis)}${axisTextProperties(yAxis, "yAxis")}<c:crossAx val="1"/>${yMajorUnit}</c:valAx>`;
   const axisReferences = chartType === "pie" ? "" : '<c:axId val="1"/><c:axId val="2"/>';
   const legend = chart.hasLegend === false ? "" : '<c:legend><c:legendPos val="r"/><c:layout/></c:legend>';
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
+  const titleFontSize = textStyle(chart.titleTextStyle, "titleTextStyle");
+  if (titleFontSize != null && !String(chart.title || "").length) throw new TypeError("Worksheet chart titleTextStyle requires a non-empty title.");
+  const titleRunProperties = titleFontSize == null ? "" : `<a:rPr sz="${Math.round(titleFontSize * 100)}"/>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>${titleRunProperties}<a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
 }
 
 function pivotCacheDefinitionRelsXml(part) {
@@ -8349,7 +8382,7 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
         const chartXml = await zip.file(targetPath)?.async("text");
         if (!chartXml) continue;
         const parsed = parseSpreadsheetChart(chartXml);
-        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, hasLegend: parsed.hasLegend, categories: parsed.categories, xAxis: parsed.xAxis, yAxis: parsed.yAxis, position: frame, series: parsed.series });
+        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, titleTextStyle: parsed.titleTextStyle, hasLegend: parsed.hasLegend, categories: parsed.categories, xAxis: parsed.xAxis, yAxis: parsed.yAxis, position: frame, series: parsed.series });
         parsed.series.forEach((series, index) => Object.assign(chart.series.items[index], { formula: series.formula, categoryFormula: series.categoryFormula, fill: series.fill }));
       }
     }

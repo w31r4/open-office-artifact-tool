@@ -395,6 +395,9 @@ message SpreadsheetChartArtifact {
   SpreadsheetChartSourceBinding source = 11;
   SpreadsheetChartAxisArtifact x_axis = 12;
   SpreadsheetChartAxisArtifact y_axis = 13;
+  // Explicit chart-title text styling. Additive fields may extend this message;
+  // the initial bounded profile owns only a DrawingML font size in points.
+  SpreadsheetChartTextStyleArtifact title_text_style = 14;
 }
 
 message SpreadsheetChartSeriesArtifact {
@@ -419,6 +422,9 @@ message SpreadsheetChartAxisArtifact {
   optional double minimum = 4;
   optional double maximum = 5;
   optional double major_unit = 6;
+  // Tick-label style, not the axis-title style. The initial bounded profile
+  // owns only font_size_points; complex native txPr graphs remain opaque.
+  SpreadsheetChartTextStyleArtifact text_style = 7;
 }
 
 // Drawing and chart hashes bind editable semantics to one imported package.
@@ -1453,4 +1459,12 @@ message DocumentTableCell {
 message DocumentOpaqueBlock {
   string element_name = 1;
   string text = 2;
+}
+
+// Bounded worksheet-chart text style. Optional presence distinguishes an
+// inherited/native default from an explicit size. DrawingML stores this value
+// in hundredths of a point and permits 1 through 4,000 points. It is declared
+// at the end so additive wire evolution does not renumber generated descriptors.
+message SpreadsheetChartTextStyleArtifact {
+  optional double font_size_points = 1;
 }

@@ -9,10 +9,11 @@
         "sheet": "Summary",
         "name": "OpenChestnut chart",
         "title": "OpenChestnut edited trend",
+        "titleTextStyle": { "fontSize": 14 },
         "hasLegend": false,
         "categories": ["Revenue", "Double actual"],
-        "xAxis": { "axisType": "textAxis", "title": { "text": "Edited metric" }, "numberFormatCode": "@", "tickLabelInterval": 1 },
-        "yAxis": { "axisType": "valueAxis", "title": { "text": "Edited value" }, "numberFormatCode": "0.0", "min": 0, "max": 100, "majorUnit": 20 },
+        "xAxis": { "axisType": "textAxis", "title": { "text": "Edited metric" }, "textStyle": { "fontSize": 11 }, "numberFormatCode": "@", "tickLabelInterval": 1 },
+        "yAxis": { "axisType": "valueAxis", "title": { "text": "Edited value" }, "textStyle": { "fontSize": 8.5 }, "numberFormatCode": "0.0", "min": 0, "max": 100, "majorUnit": 20 },
         "series": [{ "index": 0, "name": "Edited value", "values": [42.5, 90], "fill": "#2563EB" }]
       }
     ],
@@ -140,10 +141,11 @@
           "chartType": "line",
           "name": "OpenChestnut chart",
           "title": "OpenChestnut trend",
+          "titleTextStyle": { "fontSize": 12.5 },
           "hasLegend": true,
           "categories": ["Revenue", "Double"],
-          "xAxis": { "axisType": "textAxis", "title": { "text": "Metric" }, "numberFormatCode": "@", "tickLabelInterval": 2 },
-          "yAxis": { "axisType": "valueAxis", "title": { "text": "Value" }, "numberFormatCode": "0.00", "min": 0, "max": 100, "majorUnit": 25 },
+          "xAxis": { "axisType": "textAxis", "title": { "text": "Metric" }, "textStyle": { "fontSize": 10 }, "numberFormatCode": "@", "tickLabelInterval": 2 },
+          "yAxis": { "axisType": "valueAxis", "title": { "text": "Value" }, "textStyle": { "fontSize": 9 }, "numberFormatCode": "0.00", "min": 0, "max": 100, "majorUnit": 25 },
           "series": [
             {
               "name": "Value",
