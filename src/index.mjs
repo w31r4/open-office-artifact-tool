@@ -1078,7 +1078,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
-  { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, text, and bounded DrawingML text-body layout." },
+  { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout." },
   { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets with RGB or theme marker colors; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.setName", summary: "Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.setPosition", summary: "Move or resize an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group by replacing only its outer pixel frame; nested coordinates and native payload graphs remain source-bound." },
@@ -1107,9 +1107,9 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective geometry from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective position, rotation, and flips from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame." },
   { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes and text semantics, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective geometry/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1999,6 +1999,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable shape name." },
     geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
+    transform: { type: "object", description: "Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. The JavaScript codec authors/imports this direct DrawingML transform; OpenChestnut currently exposes it only as a read-only source-bound slide-placeholder projection and rejects source-free shape transforms." },
     text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks." },
     textBodyProperties: { type: "object", description: "DrawingML text-frame layout: pixel insets; anchor/wrap/AutoFit; -360..360 degree rotation; horizontal/vertical/vertical270 text; horizontal/vertical overflow; 1-16 columns with pixel spacing and RTL flow; and upright text." },
     fill: { type: "string|object", description: "Shape fill." },
@@ -2185,7 +2186,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
     codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
     limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire."),
+  }, "presentation", "Presentation", "Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position/rotation/flips plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire."),
   "exportPptxWithOpenChestnut": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change name/outer frame, whose uniquely bound OLE XLSX payload may be replaced, and whose read-only slide-placeholder effective projections must remain unchanged." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
@@ -2194,7 +2195,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   "importPptxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable bounded shape text, read-only source-bound slide-placeholder effective position/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable bounded shape text, read-only source-bound slide-placeholder effective position/rotation/flips/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export."),
 };
 
 const WORKBOOK_HELP_SCHEMAS = {
@@ -8839,6 +8840,7 @@ class SlideLayoutTemplate {
         name: placeholder.name,
         geometry: "rect",
         position: placeholder.position,
+        transform: placeholder.transform,
         fill: "transparent",
         line: { fill: "transparent", width: 0 },
         text: placeholder.text,
@@ -9615,6 +9617,7 @@ export class Shape {
     this.geometry = config.geometry || "rect";
     this.name = config.name || "";
     this.position = config.position || { left: 0, top: 0, width: 160, height: 80 };
+    this.transform = config.transform == null ? undefined : normalizePresentationPlaceholderTransform(config.transform, `Presentation shape ${this.name || this.id} transform`);
     this.fill = config.fill || "transparent";
     this.line = config.line || { fill: "#334155", width: 1 };
     this.borderRadius = config.borderRadius;
@@ -9629,10 +9632,10 @@ export class Shape {
   inspectRecord(kind = "shape") {
     const p = this.position;
     const paragraphs = this.text.effectiveParagraphs();
-    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", placeholder: this.placeholder || undefined };
+    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, placeholder: this.placeholder || undefined };
   }
 
-  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }
+  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }
 
   toSvg() {
     const p = this.position;
@@ -9643,11 +9646,17 @@ export class Shape {
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`
       : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`;
     const text = this.text.value ? presentationParagraphsSvg(this.text.effectiveParagraphs(), p, this.text.style, { escape: xmlEscape }) : "";
-    return rect + text;
+    if (!this.transform) return rect + text;
+    const cx = p.left + p.width / 2;
+    const cy = p.top + p.height / 2;
+    const rotation = Number(this.transform.rotationDegrees || 0);
+    const flipHorizontal = this.transform.flipHorizontal === true ? -1 : 1;
+    const flipVertical = this.transform.flipVertical === true ? -1 : 1;
+    return `<g transform="translate(${cx} ${cy}) rotate(${rotation}) scale(${flipHorizontal} ${flipVertical}) translate(${-cx} ${-cy})">${rect}${text}</g>`;
   }
 
   toPptxShape(index, relationshipContext = {}) {
-    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, textStyle: this.text.style, bodyProperties: this.text.bodyProperties, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, pictureBulletRelIds: relationshipContext.pictureBulletRelIds, hyperlinkRelIds: relationshipContext.hyperlinkRelIds, hyperlinkCustomShowIds: relationshipContext.hyperlinkCustomShowIds, hyperlinkSlideParts: relationshipContext.hyperlinkSlideParts, nativeId: this.nativeId, creationId: this.creationId });
+    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, transform: this.transform, textStyle: this.text.style, bodyProperties: this.text.bodyProperties, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, pictureBulletRelIds: relationshipContext.pictureBulletRelIds, hyperlinkRelIds: relationshipContext.hyperlinkRelIds, hyperlinkCustomShowIds: relationshipContext.hyperlinkCustomShowIds, hyperlinkSlideParts: relationshipContext.hyperlinkSlideParts, nativeId: this.nativeId, creationId: this.creationId });
   }
 }
 
@@ -10602,7 +10611,7 @@ function pptxTextShapeXml(index, name, geometry, position, text = "", placeholde
   });
   const listStyle = presentationListStyleXml(options.paragraphStyles || options.inheritedParagraphStyles || {}, { pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) });
   const bodyProperties = presentationTextBodyPropertiesXml(options.bodyProperties, { defaults: options.bodyProperties === undefined });
-  const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "body")}" idx="${Number(placeholder.idx ?? 1)}"/>` : "";
+  const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "obj")}" idx="${Number(placeholder.idx ?? 0)}"/>` : "";
   const shapeProperties = transform ? `<p:spPr>${transform}<a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr>` : "<p:spPr/>";
   return `<p:sp><p:nvSpPr>${pptxNonVisualPropertiesXml(index, name, "", options)}<p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr>${shapeProperties}<p:txBody>${bodyProperties}${listStyle}${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
 }
@@ -10897,6 +10906,8 @@ async function parsePptxShape(owner, part, context = {}) {
     const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.idx === placeholder.idx) : undefined;
     const spPr = /<(?:[A-Za-z_][\w.-]*:)?spPr\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?spPr>/.exec(part)?.[1] || "";
     const hasDirectFrame = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(spPr);
+    const directTransform = hasDirectFrame ? parsePresentationPlaceholderTransformXml(spPr) : undefined;
+    const effectiveTransform = hasDirectFrame ? directTransform : inherited?.transform;
     const fill = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(spPr)?.[1];
     const lineBlock = /<(?:[A-Za-z_][\w.-]*:)?ln\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ln>/.exec(spPr);
     const lineColor = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(lineBlock?.[2] || "")?.[1];
@@ -10908,7 +10919,7 @@ async function parsePptxShape(owner, part, context = {}) {
     const localParagraphStyles = await resolvePresentationPictureBulletStyles(parsePresentationListStyleXml(part), relationshipContext);
     const paragraphStyles = mergePresentationParagraphStyles(inherited?.paragraphStyles || {}, localParagraphStyles);
     const paragraphs = await resolvePresentationPictureBulletParagraphs(parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles, relationshipContext }), relationshipContext);
-    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), text: paragraphs, textBodyProperties: parsePresentationTextBodyPropertiesXml(part), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id, geometrySource: hasDirectFrame ? "slide" : (inherited?.geometrySource || "unresolved") } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
+    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), transform: effectiveTransform, text: paragraphs, textBodyProperties: parsePresentationTextBodyPropertiesXml(part), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id, geometrySource: hasDirectFrame ? "slide" : (inherited?.geometrySource || "unresolved") } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
     applyPresentationElementIdentity(shape, part, "spMk");
     shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
     shape.text.inheritedParagraphStyles = paragraphStyles;

@@ -265,7 +265,9 @@ try {
   const inheritedSlideGeometry = wasmSlide.shapes.items.find((item) => item.placeholder?.idx === 3);
   assert.ok(inheritedSlideGeometry);
   assert.deepEqual(inheritedSlideGeometry.position, { left: 920, top: 670, width: 300, height: 48 });
+  assert.deepEqual(inheritedSlideGeometry.transform, { rotationDegrees: 4, flipVertical: true });
   assert.equal(inheritedSlideGeometry.placeholder.geometrySource, "layout");
+  assert.match(inheritedSlideGeometry.toSvg(), /rotate\(4\) scale\(1 -1\)/);
   assert.deepEqual(Object.keys(wasmTitle?.text.inheritedParagraphStyles), ["0", "8"]);
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletCharacter, "→");
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletColor, "accent6");

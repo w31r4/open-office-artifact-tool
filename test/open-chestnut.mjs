@@ -2810,6 +2810,10 @@ masterStyleSourceZip.file(layoutPartPath, masterStyleLayoutXml
   .replace("</p:spTree>", `${layoutPlaceholderXml}</p:spTree>`));
 const masterStyleSource = await masterStyleSourceZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 const inheritedSlidePlaceholderZip = await JSZip.loadAsync(masterStyleSource);
+const inheritedLayoutSourceXml = await inheritedSlidePlaceholderZip.file(layoutPartPath).async("text");
+const inheritedLayoutSourceShape = [...inheritedLayoutSourceXml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)].find((match) => /<p:ph\b[^>]*idx="2"/.test(match[0]))?.[0] || "";
+assert.match(inheritedLayoutSourceShape, /<a:xfrm>/);
+inheritedSlidePlaceholderZip.file(layoutPartPath, inheritedLayoutSourceXml.replace(inheritedLayoutSourceShape, inheritedLayoutSourceShape.replace("<a:xfrm>", '<a:xfrm rot="180000" flipH="1">')));
 const slidePlaceholderPartPath = "ppt/slides/slide1.xml";
 const slidePlaceholderSourceXml = await inheritedSlidePlaceholderZip.file(slidePlaceholderPartPath).async("text");
 const slidePlaceholderSourceShape = /<p:sp\b[\s\S]*?<\/p:sp>/.exec(slidePlaceholderSourceXml)?.[0] || "";
@@ -2823,13 +2827,25 @@ const inheritedSlidePlaceholderSource = await inheritedSlidePlaceholderZip.gener
 const inheritedSlidePlaceholderImported = await importPptxWithOpenChestnut(inheritedSlidePlaceholderSource);
 const inheritedSlidePlaceholderModel = inheritedSlidePlaceholderImported.slides.items[0].shapes.items[0];
 assert.deepEqual(inheritedSlidePlaceholderModel.position, { left: 80, top: 200, width: 720, height: 120 });
+assert.deepEqual(inheritedSlidePlaceholderModel.transform, { rotationDegrees: 3, flipHorizontal: true });
 assert.deepEqual(inheritedSlidePlaceholderModel.placeholder, {
   layoutId: inheritedSlidePlaceholderImported.layouts.items[0].id,
   type: "title",
   idx: 2,
   geometrySource: "layout",
 });
-assert.match(inheritedSlidePlaceholderImported.slides.items[0].toSvg(), /<rect x="80" y="200" width="720" height="120"/);
+assert.match(inheritedSlidePlaceholderImported.slides.items[0].toSvg(), /<g transform="translate\(440 260\) rotate\(3\) scale\(-1 1\) translate\(-440 -260\)">/);
+const atomicSlidePlaceholderZip = await JSZip.loadAsync(inheritedSlidePlaceholderSource);
+const atomicSlidePlaceholderXml = await atomicSlidePlaceholderZip.file(slidePlaceholderPartPath).async("text");
+atomicSlidePlaceholderZip.file(slidePlaceholderPartPath, atomicSlidePlaceholderXml.replace(
+  /(<p:spPr\b[^>]*>)/,
+  '$1<a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="952500" y="1143000"/><a:ext cx="2857500" cy="952500"/></a:xfrm>',
+));
+const atomicSlidePlaceholder = await importPptxWithOpenChestnut(await atomicSlidePlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+const atomicSlidePlaceholderModel = atomicSlidePlaceholder.slides.items[0].shapes.items[0];
+assert.deepEqual(atomicSlidePlaceholderModel.position, { left: 100, top: 120, width: 300, height: 100 });
+assert.equal(atomicSlidePlaceholderModel.transform, undefined, "A direct slide frame without rot/flip must atomically replace the inherited Layout transform.");
+assert.equal(atomicSlidePlaceholderModel.placeholder.geometrySource, "slide");
 const inheritedSlidePlaceholderRoundTripFile = await exportPptxWithOpenChestnut(inheritedSlidePlaceholderImported);
 const inheritedSlidePlaceholderRoundTripZip = await JSZip.loadAsync(inheritedSlidePlaceholderRoundTripFile.bytes);
 const inheritedSlidePlaceholderRoundTripXml = await inheritedSlidePlaceholderRoundTripZip.file(slidePlaceholderPartPath).async("text");
@@ -2837,6 +2853,7 @@ const inheritedSlidePlaceholderRoundTripShape = [...inheritedSlidePlaceholderRou
 assert.doesNotMatch(inheritedSlidePlaceholderRoundTripShape, /<a:xfrm\b/, "Unchanged effective geometry must not be flattened into the slide placeholder.");
 const inheritedSlidePlaceholderSecondImport = await importPptxWithOpenChestnut(inheritedSlidePlaceholderRoundTripFile);
 assert.deepEqual(inheritedSlidePlaceholderSecondImport.slides.items[0].shapes.items[0].position, { left: 80, top: 200, width: 720, height: 120 });
+assert.deepEqual(inheritedSlidePlaceholderSecondImport.slides.items[0].shapes.items[0].transform, { rotationDegrees: 3, flipHorizontal: true });
 const masterInheritedSlidePlaceholderZip = await JSZip.loadAsync(masterStyleSource);
 const masterInheritedSlidePlaceholderXml = await masterInheritedSlidePlaceholderZip.file(slidePlaceholderPartPath).async("text");
 const masterInheritedSlidePlaceholderShape = (/<p:sp\b[\s\S]*?<\/p:sp>/.exec(masterInheritedSlidePlaceholderXml)?.[0] || "")
@@ -2846,8 +2863,21 @@ masterInheritedSlidePlaceholderZip.file(slidePlaceholderPartPath, masterInherite
 const masterInheritedSlidePlaceholder = await importPptxWithOpenChestnut(await masterInheritedSlidePlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
 const masterInheritedSlidePlaceholderModel = masterInheritedSlidePlaceholder.slides.items[0].shapes.items[0];
 assert.deepEqual(masterInheritedSlidePlaceholderModel.position, { left: 80, top: 60, width: 720, height: 120 });
+assert.deepEqual(masterInheritedSlidePlaceholderModel.transform, { rotationDegrees: 1, flipHorizontal: true, flipVertical: false });
 assert.equal(masterInheritedSlidePlaceholderModel.placeholder.geometrySource, "master");
-inheritedSlidePlaceholderImported.slides.items[0].shapes.items[0].position.left = 81;
+const directSlidePlaceholderZip = await JSZip.loadAsync(masterStyleSource);
+const directSlidePlaceholderXml = await directSlidePlaceholderZip.file(slidePlaceholderPartPath).async("text");
+const directSlidePlaceholderShape = (/<p:sp\b[\s\S]*?<\/p:sp>/.exec(directSlidePlaceholderXml)?.[0] || "")
+  .replace(/<p:nvPr\s*\/>/, '<p:nvPr><p:ph type="body" idx="2"/></p:nvPr>')
+  .replace(/<a:xfrm\b([^>]*)>/, '<a:xfrm$1 rot="120000" flipV="0">');
+assert.match(directSlidePlaceholderShape, /<p:ph\b[^>]*idx="2"/);
+assert.match(directSlidePlaceholderShape, /<a:xfrm\b[^>]*rot="120000"[^>]*flipV="0"/);
+directSlidePlaceholderZip.file(slidePlaceholderPartPath, directSlidePlaceholderXml.replace(/<p:sp\b[\s\S]*?<\/p:sp>/, directSlidePlaceholderShape));
+const directSlidePlaceholder = await importPptxWithOpenChestnut(await directSlidePlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+const directSlidePlaceholderModel = directSlidePlaceholder.slides.items[0].shapes.items[0];
+assert.deepEqual(directSlidePlaceholderModel.transform, { rotationDegrees: 2, flipVertical: false });
+assert.equal(directSlidePlaceholderModel.placeholder.geometrySource, "slide");
+inheritedSlidePlaceholderImported.slides.items[0].shapes.items[0].transform.rotationDegrees = 4;
 await assert.rejects(
   exportPptxWithOpenChestnut(inheritedSlidePlaceholderImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit" && /read-only inherited projection/.test(error.message),
@@ -3472,6 +3502,12 @@ unsupportedSourceFreePlaceholderPresentation.slides.add().shapes.add({
 await assert.rejects(
   exportPptxWithOpenChestnut(unsupportedSourceFreePlaceholderPresentation),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_features" && /source-free placeholder authoring/.test(error.message),
+);
+const unsupportedSourceFreeTransformPresentation = Presentation.create();
+unsupportedSourceFreeTransformPresentation.slides.add().shapes.add({ transform: { rotationDegrees: 5 }, text: "Rotated" });
+await assert.rejects(
+  exportPptxWithOpenChestnut(unsupportedSourceFreeTransformPresentation),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_features" && /source-free shape transforms/.test(error.message),
 );
 
 richImportedShape.text.paragraphs = [

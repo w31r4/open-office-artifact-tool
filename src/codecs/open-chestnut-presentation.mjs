@@ -709,6 +709,9 @@ function presentationShape(shape, original, assetCatalog) {
   if (!new Set(["rect", "ellipse"]).has(shape.geometry)) {
     throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses unsupported geometry ${shape.geometry}.`, [], { code: "unsupported_presentation_features" });
   }
+  if (shape.transform != null) {
+    throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses a transform outside the source-bound placeholder projection.`, [], { code: "unsupported_presentation_features" });
+  }
   const position = shape.position || {};
   const lineWidth = Number(shape.line?.width ?? 1);
   if (!Number.isFinite(lineWidth) || lineWidth < 0) throw new OpenChestnutCodecError(`Presentation shape ${shape.id} has an invalid line width.`, [], { code: "invalid_presentation_frame" });
@@ -769,6 +772,7 @@ function unsupportedPresentationFeatures(presentation) {
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
     if (slide.shapes?.items?.some((shape) => shape.placeholder)) unsupported.push(`${prefix} source-free placeholder authoring`);
+    if (slide.shapes?.items?.some((shape) => shape.transform)) unsupported.push(`${prefix} source-free shape transforms`);
   }
   return unsupported;
 }
@@ -1177,6 +1181,7 @@ export async function presentationFromEnvelope(envelope) {
           ? layout?.effectivePlaceholders().find((candidate) => candidate.idx === Number(placeholderIdentity.index))
           : undefined;
         const directFrame = shape.directFrame ? modelPlaceholderFrame(shape.directFrame) : undefined;
+        const directTransform = shape.directFrame ? modelPlaceholderTransform(shape.directFrame) : undefined;
         const effectiveFrame = directFrame || inheritedPlaceholder?.position || {
           left: Number(shape.leftEmu) / EMU_PER_PIXEL,
           top: Number(shape.topEmu) / EMU_PER_PIXEL,
@@ -1190,11 +1195,13 @@ export async function presentationFromEnvelope(envelope) {
             : placeholderIdentity
               ? "slide-unrecognized"
               : undefined;
+        const effectiveTransform = directFrame ? directTransform : inheritedPlaceholder?.transform;
         model = slide.shapes.add({
           id: element.id,
           name: element.name || inheritedPlaceholder?.name,
           geometry: shape.geometry || "rect",
           position: { ...effectiveFrame },
+          ...(effectiveTransform && Object.keys(effectiveTransform).length ? { transform: effectiveTransform } : {}),
           ...(placeholderIdentity ? { placeholder: {
             layoutId: slide.layoutId,
             type: placeholderIdentity.type,

@@ -346,6 +346,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       const placeholder = imported.slides.getItem(Number(expected.slideIndex || 0))?.shapes.items.find((item) => item.placeholder?.idx === Number(expected.idx));
       assert.ok(placeholder, `Missing inherited OpenChestnut slide placeholder idx ${expected.idx}`);
       assert.deepEqual(placeholder.position, expected.position, `Inherited OpenChestnut slide placeholder idx ${expected.idx} effective position`);
+      assert.deepEqual(placeholder.transform, expected.transform, `Inherited OpenChestnut slide placeholder idx ${expected.idx} effective transform`);
       assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
     }
     for (const expected of openChestnut?.nativeObjects || []) {
@@ -407,6 +408,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       const placeholder = roundTrip.slides.getItem(Number(expected.slideIndex || 0))?.shapes.items.find((item) => item.placeholder?.idx === Number(expected.idx));
       assert.ok(placeholder, `Missing roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx}`);
       assert.deepEqual(placeholder.position, expected.position, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} effective position`);
+      assert.deepEqual(placeholder.transform, expected.transform, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} effective transform`);
       assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
     }
     if (openChestnut?.edit?.nativeObjects?.length) {

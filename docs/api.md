@@ -1031,7 +1031,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
-| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective geometry/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable. |
 | `nativeObject.setName` | api | Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed. |
@@ -1057,7 +1057,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary. |
-| `PresentationFile.importPptx` | api | Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective geometry from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame. |
+| `PresentationFile.importPptx` | api | Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective position, rotation, and flips from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets with RGB or theme marker colors; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip. |
@@ -1070,7 +1070,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
-| `slide.shapes.add` | api | Add a shape/textbox with geometry, position, fill, line, text, and bounded DrawingML text-body layout. |
+| `slide.shapes.add` | api | Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
 
 ### presentation details
@@ -1122,7 +1122,7 @@ Experimentally export bounded rectangle/ellipse shapes and text semantics, sourc
 
 #### `importPptxWithOpenChestnut`
 
-Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective geometry/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 
@@ -1131,7 +1131,7 @@ Experimentally import PPTX bytes through OpenChestnut with editable fixed-topolo
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text, read-only source-bound slide-placeholder effective position/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text, read-only source-bound slide-placeholder effective position/rotation/flips/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1486,7 +1486,7 @@ Serialize PPTX with options.codec set to javascript (default) or open-chestnut; 
 
 #### `PresentationFile.importPptx`
 
-Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective geometry from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame.
+Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective position, rotation, and flips from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame.
 
 **Schema parameters:**
 
@@ -1496,7 +1496,7 @@ Import PPTX with options.codec set to javascript (default) or open-chestnut; sou
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire.
+- `presentation` (Presentation) — Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position/rotation/flips plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire.
 
 #### `PresentationFile.inspectPptx`
 
@@ -1709,13 +1709,14 @@ Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit
 
 #### `slide.shapes.add`
 
-Add a shape/textbox with geometry, position, fill, line, text, and bounded DrawingML text-body layout.
+Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout.
 
 **Schema parameters:**
 
 - `name` (string) — Inspectable shape name.
 - `geometry` (string) — Shape geometry such as rect or ellipse.
 - `position` (object) — Pixel left/top/width/height frame.
+- `transform` (object) — Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. The JavaScript codec authors/imports this direct DrawingML transform; OpenChestnut currently exposes it only as a read-only source-bound slide-placeholder projection and rejects source-free shape transforms.
 - `text` (string|string[]|object|object[]) — Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks.
 - `textBodyProperties` (object) — DrawingML text-frame layout: pixel insets; anchor/wrap/AutoFit; -360..360 degree rotation; horizontal/vertical/vertical270 text; horizontal/vertical overflow; 1-16 columns with pixel spacing and RTL flow; and upright text.
 - `fill` (string|object) — Shape fill.

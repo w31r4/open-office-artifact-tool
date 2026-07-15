@@ -83,7 +83,7 @@ try {
     });
     template.master.placeholders[0].position = undefined;
     template.master.placeholders[0].transform = undefined;
-    const packagedLayout = template.layouts.add({ id: "layout/packaged", name: "Packaged Layout", type: "blank", masterId: "master/packaged", placeholders: [{ type: "body", idx: 2, name: "Packaged Layout Prompt", position: { left: 50, top: 180, width: 600, height: 90 }, transform: { flipHorizontal: false }, text: "layout before" }] });
+    const packagedLayout = template.layouts.add({ id: "layout/packaged", name: "Packaged Layout", type: "blank", masterId: "master/packaged", placeholders: [{ type: "body", idx: 2, name: "Packaged Layout Prompt", position: { left: 50, top: 180, width: 600, height: 90 }, transform: { rotationDegrees: 3, flipHorizontal: false }, text: "layout before" }] });
     template.slides.add({ name: "Template", layoutId: "layout/packaged" }).applyLayout(packagedLayout);
     const templateSource = await PresentationFile.exportPptx(template, { codec: "javascript" });
     const inheritedTemplateZip = await JSZip.loadAsync(templateSource.bytes);
@@ -96,10 +96,10 @@ try {
     inheritedTemplateZip.file("ppt/slides/slide1.xml", inheritedTemplateXml.slice(0, inheritedFrameStart) + inheritedTemplateXml.slice(inheritedFrameEnd));
     const inheritedTemplate = await PresentationFile.importPptx(await inheritedTemplateZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { codec: "open-chestnut" });
     const inheritedTemplateShape = inheritedTemplate.slides.items[0].shapes.items.find((shape) => shape.placeholder?.idx === 2);
-    if (inheritedTemplateShape.position.left !== 50 || inheritedTemplateShape.position.top !== 180 || inheritedTemplateShape.position.width !== 600 || inheritedTemplateShape.position.height !== 90 || inheritedTemplateShape.placeholder?.geometrySource !== "layout") process.exit(22);
+    if (inheritedTemplateShape.position.left !== 50 || inheritedTemplateShape.position.top !== 180 || inheritedTemplateShape.position.width !== 600 || inheritedTemplateShape.position.height !== 90 || inheritedTemplateShape.transform?.rotationDegrees !== 3 || inheritedTemplateShape.transform?.flipHorizontal !== false || inheritedTemplateShape.placeholder?.geometrySource !== "layout") process.exit(22);
     const inheritedTemplateRoundTrip = await PresentationFile.importPptx(await PresentationFile.exportPptx(inheritedTemplate, { codec: "open-chestnut" }), { codec: "open-chestnut" });
     const inheritedTemplateRoundTripShape = inheritedTemplateRoundTrip.slides.items[0].shapes.items.find((shape) => shape.placeholder?.idx === 2);
-    if (inheritedTemplateRoundTripShape?.position.left !== 50 || inheritedTemplateRoundTripShape.placeholder?.geometrySource !== "layout") process.exit(23);
+    if (inheritedTemplateRoundTripShape?.position.left !== 50 || inheritedTemplateRoundTripShape.transform?.rotationDegrees !== 3 || inheritedTemplateRoundTripShape.transform?.flipHorizontal !== false || inheritedTemplateRoundTripShape.placeholder?.geometrySource !== "layout") process.exit(23);
     const importedTemplate = await PresentationFile.importPptx(templateSource, { codec: "open-chestnut" });
     const packagedPlaceholder = importedTemplate.master.placeholders[0];
     const packagedLayoutPlaceholder = importedTemplate.layouts.items[0].placeholders[0];

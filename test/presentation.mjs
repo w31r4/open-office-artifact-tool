@@ -67,11 +67,19 @@ assert.deepEqual(directGeometry.position, { left: 88, top: 64, width: 680, heigh
 assert.equal(directGeometry.transform, undefined, "A direct layout a:xfrm must atomically replace, not partially inherit, the master transform.");
 assert.equal(directGeometry.geometrySource, "layout");
 const slidePlaceholderInheritancePresentation = Presentation.create({
-  layouts: [{ id: "layout/idx-inheritance", name: "Index Inheritance", placeholders: [{ type: "title", idx: 7, name: "Layout by index", position: { left: 96, top: 54, width: 700, height: 88 } }] }],
+  layouts: [{ id: "layout/idx-inheritance", name: "Index Inheritance", placeholders: [{ type: "title", idx: 7, name: "Layout by index", position: { left: 96, top: 54, width: 700, height: 88 }, transform: { rotationDegrees: 7, flipVertical: true } }] }],
 });
 const slidePlaceholderLayout = slidePlaceholderInheritancePresentation.layouts.getItem("layout/idx-inheritance");
 slidePlaceholderInheritancePresentation.slides.add().applyLayout(slidePlaceholderLayout);
 const slidePlaceholderInheritanceSource = await PresentationFile.exportPptx(slidePlaceholderInheritancePresentation);
+const atomicSlideFrameZip = await JSZip.loadAsync(new Uint8Array(await slidePlaceholderInheritanceSource.arrayBuffer()));
+const atomicSlideFrameXml = await atomicSlideFrameZip.file("ppt/slides/slide1.xml").async("text");
+atomicSlideFrameZip.file("ppt/slides/slide1.xml", atomicSlideFrameXml.replace(/<a:xfrm\b[^>]*>/, "<a:xfrm>"));
+const atomicSlideFrameLoaded = await PresentationFile.importPptx(new FileBlob(await atomicSlideFrameZip.generateAsync({ type: "uint8array", compression: "DEFLATE" })));
+const atomicSlideFrameShape = atomicSlideFrameLoaded.slides.items[0].shapes.items[0];
+assert.deepEqual(atomicSlideFrameShape.position, { left: 96, top: 54, width: 700, height: 88 });
+assert.equal(atomicSlideFrameShape.transform, undefined, "A direct slide a:xfrm without rot/flip must not inherit the Layout transform.");
+assert.equal(atomicSlideFrameShape.placeholder.geometrySource, "slide");
 const slidePlaceholderInheritanceZip = await JSZip.loadAsync(new Uint8Array(await slidePlaceholderInheritanceSource.arrayBuffer()));
 const slidePlaceholderInheritanceXml = await slidePlaceholderInheritanceZip.file("ppt/slides/slide1.xml").async("text");
 slidePlaceholderInheritanceZip.file("ppt/slides/slide1.xml", slidePlaceholderInheritanceXml
@@ -80,7 +88,25 @@ slidePlaceholderInheritanceZip.file("ppt/slides/slide1.xml", slidePlaceholderInh
 const slidePlaceholderInheritanceLoaded = await PresentationFile.importPptx(new FileBlob(await slidePlaceholderInheritanceZip.generateAsync({ type: "uint8array", compression: "DEFLATE" })));
 const inheritedSlidePlaceholder = slidePlaceholderInheritanceLoaded.slides.items[0].shapes.items[0];
 assert.deepEqual(inheritedSlidePlaceholder.position, { left: 96, top: 54, width: 700, height: 88 });
+assert.deepEqual(inheritedSlidePlaceholder.transform, { rotationDegrees: 7, flipVertical: true });
 assert.deepEqual(inheritedSlidePlaceholder.placeholder, { type: "body", idx: 7, name: "Layout by index", required: false, layoutId: slidePlaceholderInheritanceLoaded.layouts.items[0].id, geometrySource: "layout" });
+assert.match(inheritedSlidePlaceholder.toSvg(), /<g transform="translate\(446 98\) rotate\(7\) scale\(1 -1\) translate\(-446 -98\)">/);
+const transformedShapePresentation = Presentation.create();
+const transformedShape = transformedShapePresentation.slides.add().shapes.add({ name: "Rotated shape", position: { left: 20, top: 30, width: 200, height: 100 }, transform: { rotationDegrees: -12, flipHorizontal: false, flipVertical: true }, text: "Transformed" });
+assert.deepEqual(transformedShape.inspectRecord().transform, { rotationDegrees: -12, flipHorizontal: false, flipVertical: true });
+assert.deepEqual(transformedShape.layoutJson().transform, { rotationDegrees: -12, flipHorizontal: false, flipVertical: true });
+assert.match(transformedShape.toSvg(), /rotate\(-12\) scale\(1 -1\)/);
+const transformedShapePptx = await PresentationFile.exportPptx(transformedShapePresentation);
+const transformedShapeXml = await (await JSZip.loadAsync(new Uint8Array(await transformedShapePptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text");
+assert.match(transformedShapeXml, /<a:xfrm\b[^>]*rot="-720000"[^>]*flipH="0"[^>]*flipV="1"/);
+const transformedShapeRoundTrip = await PresentationFile.importPptx(transformedShapePptx);
+assert.deepEqual(transformedShapeRoundTrip.slides.items[0].shapes.items[0].transform, { rotationDegrees: -12, flipHorizontal: false, flipVertical: true });
+assert.throws(() => transformedShapePresentation.slides.items[0].shapes.add({ transform: { rotationDegrees: 361 } }), /between -360 and 360 degrees/);
+const defaultPlaceholderIndexPresentation = Presentation.create();
+defaultPlaceholderIndexPresentation.slides.add().shapes.add({ placeholder: { type: "title" }, text: "Default placeholder index" });
+const defaultPlaceholderIndexPptx = await PresentationFile.exportPptx(defaultPlaceholderIndexPresentation);
+const defaultPlaceholderIndexXml = await (await JSZip.loadAsync(new Uint8Array(await defaultPlaceholderIndexPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text");
+assert.match(defaultPlaceholderIndexXml, /<p:ph\b[^>]*type="title"[^>]*idx="0"/);
 const backgroundInheritancePresentation = Presentation.create({
   theme: { colors: { bg1: "#fefefe" } },
   master: { background: "#123456" },

@@ -49,6 +49,7 @@
           "idx": 3,
           "name": "Inherited Slide Geometry",
           "position": { "left": 920, "top": 670, "width": 300, "height": 48 },
+          "transform": { "rotationDegrees": 4, "flipVertical": true },
           "text": "Inherited slide frame"
         }
       ]
@@ -130,7 +131,7 @@
   "openChestnut": {
     "nativeGraphFixture": true,
     "sourcePlaceholderFrames": { "master": "absent", "layout": "direct", "slideIndex": 3 },
-    "inheritedSlidePlaceholder": { "slideIndex": 0, "idx": 3, "geometrySource": "layout", "position": { "left": 920, "top": 670, "width": 300, "height": 48 } },
+    "inheritedSlidePlaceholder": { "slideIndex": 0, "idx": 3, "geometrySource": "layout", "position": { "left": 920, "top": 670, "width": 300, "height": 48 }, "transform": { "rotationDegrees": 4, "flipVertical": true } },
     "embeddedWorkbook": { "sourceValue": "OpenChestnut source workbook" },
     "nativeObjects": [
       { "nativeKind": "oleObject", "relationships": 2, "parts": 2, "editable": true },

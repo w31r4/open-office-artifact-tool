@@ -580,6 +580,9 @@ public sealed class PptxCodecTests
         Assert.NotNull(directShape.DirectFrame);
         Assert.Equal(762_000L, directShape.DirectFrame.LeftEmu);
         Assert.Equal(6_858_000L, directShape.DirectFrame.WidthEmu);
+        Assert.Equal(120_000, directShape.DirectFrame.RotationAngle60000);
+        Assert.True(directShape.DirectFrame.HasFlipVertical);
+        Assert.False(directShape.DirectFrame.FlipVertical);
     }
 
     [Fact]
@@ -2423,6 +2426,8 @@ public sealed class PptxCodecTests
                 P.PlaceholderValues.Body,
                 2U,
                 "Slide placeholder text");
+            placeholder.ShapeProperties!.Transform2D!.Rotation = 120_000;
+            placeholder.ShapeProperties.Transform2D.VerticalFlip = false;
             if (removeTransform) placeholder.ShapeProperties!.Transform2D!.Remove();
             package.PresentationPart!.SlideParts.Single().Slide!.CommonSlideData!.ShapeTree!.Append(placeholder);
         }
