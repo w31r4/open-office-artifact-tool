@@ -215,6 +215,8 @@ The dynamic-array increment reuses `CellArtifact.formula_metadata` field 5 and a
 
 The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout process for render/convert/application checks; it is not part of the core codec path.
 
+Hosted Linux run [`29389011985`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29389011985) passes the dynamic-array milestone with OpenChestnut 121/121, OfficeBridge 5/5, the 150-file no-local-dotnet package, real Chromium/LibreOffice 24.2.7.2/Poppler 24.02.0, generated API/protobuf checks, and two byte-identical 38-file/13,431,998-byte runtime builds.
+
 ## Target architecture
 
 ```mermaid
