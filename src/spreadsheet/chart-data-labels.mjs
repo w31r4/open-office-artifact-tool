@@ -2,20 +2,43 @@ function dataLabelsError(message) {
   throw new TypeError(`Worksheet chart dataLabels ${message}`);
 }
 
+export const SPREADSHEET_CHART_DATA_LABEL_POSITIONS = Object.freeze([
+  "bestFit", "bottom", "center", "insideBase", "insideEnd", "left", "outsideEnd", "right", "top",
+]);
+
+const POSITION_ALIASES = new Map([
+  ...SPREADSHEET_CHART_DATA_LABEL_POSITIONS.map((value) => [value, value]),
+  ["b", "bottom"], ["ctr", "center"], ["inBase", "insideBase"], ["inEnd", "insideEnd"],
+  ["l", "left"], ["outEnd", "outsideEnd"], ["r", "right"], ["t", "top"],
+]);
+
+const POSITION_TO_OOXML = new Map([
+  ["bestFit", "bestFit"], ["bottom", "b"], ["center", "ctr"], ["insideBase", "inBase"],
+  ["insideEnd", "inEnd"], ["left", "l"], ["outsideEnd", "outEnd"], ["right", "r"], ["top", "t"],
+]);
+
 export function normalizeSpreadsheetChartDataLabels(value) {
   if (value == null) return undefined;
   if (typeof value === "boolean") return { showValue: value, showCategoryName: false };
   if (typeof value !== "object" || Array.isArray(value)) dataLabelsError("must be a boolean or object.");
-  const supported = new Set(["showValue", "showCategoryName"]);
+  const supported = new Set(["showValue", "showCategoryName", "position"]);
   const unsupported = Object.keys(value).filter((key) => !supported.has(key) && value[key] != null);
-  if (unsupported.length) dataLabelsError(`supports only showValue and showCategoryName; received ${unsupported.join(", ")}.`);
+  if (unsupported.length) dataLabelsError(`supports only showValue, showCategoryName, and position; received ${unsupported.join(", ")}.`);
   const present = [...supported].filter((key) => value[key] != null);
-  if (present.length === 0) dataLabelsError("must define showValue or showCategoryName.");
-  for (const key of present) if (typeof value[key] !== "boolean") dataLabelsError(`${key} must be a boolean.`);
+  if (present.length === 0) dataLabelsError("must define showValue, showCategoryName, or position.");
+  for (const key of ["showValue", "showCategoryName"]) if (value[key] != null && typeof value[key] !== "boolean") dataLabelsError(`${key} must be a boolean.`);
+  const position = value.position == null ? undefined : POSITION_ALIASES.get(value.position);
+  if (value.position != null && position == null) dataLabelsError(`position must be one of: ${SPREADSHEET_CHART_DATA_LABEL_POSITIONS.join(", ")}.`);
   return {
     showValue: value.showValue === true,
     showCategoryName: value.showCategoryName === true,
+    ...(position == null ? {} : { position }),
   };
+}
+
+export function spreadsheetChartDataLabelPositionXml(dataLabels) {
+  const position = normalizeSpreadsheetChartDataLabels(dataLabels)?.position;
+  return position == null ? "" : `<c:dLblPos val="${POSITION_TO_OOXML.get(position)}"/>`;
 }
 
 export function spreadsheetChartDataLabelText(dataLabels, category, value) {
@@ -23,4 +46,22 @@ export function spreadsheetChartDataLabelText(dataLabels, category, value) {
   if (!normalized?.showValue && !normalized?.showCategoryName) return "";
   if (normalized.showValue && normalized.showCategoryName) return `${category ?? ""}: ${value ?? ""}`;
   return normalized.showCategoryName ? String(category ?? "") : String(value ?? "");
+}
+
+export function spreadsheetChartDataLabelSvgPlacement(dataLabels, geometry = {}) {
+  const position = normalizeSpreadsheetChartDataLabels(dataLabels)?.position || "outsideEnd";
+  const x = Number(geometry.x || 0);
+  const y = Number(geometry.y || 0);
+  const width = Number(geometry.width || 0);
+  const height = Number(geometry.height || 0);
+  const top = Number(geometry.plotTop || 0);
+  const baseY = Number(geometry.baseY ?? y + height);
+  const point = geometry.kind === "point";
+  if (position === "bottom") return { x: point ? x : x + width / 2, y: point ? y + 14 : baseY - 3, textAnchor: "middle", position };
+  if (position === "center") return { x: point ? x : x + width / 2, y: point ? y + 3 : y + height / 2 + 3, textAnchor: "middle", position };
+  if (position === "insideBase") return { x: point ? x : x + width / 2, y: point ? y + 11 : baseY - 4, textAnchor: "middle", position };
+  if (position === "insideEnd") return { x: point ? x : x + width / 2, y: point ? y - 5 : y + 12, textAnchor: "middle", position };
+  if (position === "left") return { x: point ? x - 7 : x - 4, y: point ? y + 3 : y + height / 2 + 3, textAnchor: "end", position };
+  if (position === "right") return { x: point ? x + 7 : x + width + 4, y: point ? y + 3 : y + height / 2 + 3, textAnchor: "start", position };
+  return { x: point ? x : x + width / 2, y: Math.max(top + 10, y - 4), textAnchor: "middle", position };
 }

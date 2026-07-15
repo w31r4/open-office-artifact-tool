@@ -1,4 +1,4 @@
-import { SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartMarkerSymbol, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { SpreadsheetChartDataLabelPosition, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartMarkerSymbol, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
@@ -31,6 +31,18 @@ const LINE_GROUPINGS_TO_WIRE = new Map([
   ["percentStacked", SpreadsheetChartLineGrouping.PERCENT_STACKED],
 ]);
 const LINE_GROUPINGS_FROM_WIRE = new Map([...LINE_GROUPINGS_TO_WIRE].map(([name, value]) => [value, name]));
+const DATA_LABEL_POSITIONS_TO_WIRE = new Map([
+  ["bestFit", SpreadsheetChartDataLabelPosition.BEST_FIT],
+  ["bottom", SpreadsheetChartDataLabelPosition.BOTTOM],
+  ["center", SpreadsheetChartDataLabelPosition.CENTER],
+  ["insideBase", SpreadsheetChartDataLabelPosition.INSIDE_BASE],
+  ["insideEnd", SpreadsheetChartDataLabelPosition.INSIDE_END],
+  ["left", SpreadsheetChartDataLabelPosition.LEFT],
+  ["outsideEnd", SpreadsheetChartDataLabelPosition.OUTSIDE_END],
+  ["right", SpreadsheetChartDataLabelPosition.RIGHT],
+  ["top", SpreadsheetChartDataLabelPosition.TOP],
+]);
+const DATA_LABEL_POSITIONS_FROM_WIRE = new Map([...DATA_LABEL_POSITIONS_TO_WIRE].map(([name, value]) => [value, name]));
 const MARKER_SYMBOLS_TO_WIRE = new Map([
   ["none", SpreadsheetChartMarkerSymbol.NONE],
   ["dot", SpreadsheetChartMarkerSymbol.DOT],
@@ -306,6 +318,7 @@ function wireChart(chart, original) {
     dataLabels: snapshot.dataLabels == null ? undefined : {
       showValue: snapshot.dataLabels.showValue,
       showCategoryName: snapshot.dataLabels.showCategoryName,
+      position: snapshot.dataLabels.position == null ? undefined : DATA_LABEL_POSITIONS_TO_WIRE.get(snapshot.dataLabels.position),
     },
     type,
     hasLegend: snapshot.hasLegend,
@@ -461,10 +474,19 @@ export function spreadsheetChartFromWire(sheet, source) {
   }
   const lineOptions = lineOptionsSnapshot(lineOptionsInput, source);
   if (type !== "line" && lineOptions != null) fail(source, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
-  const dataLabels = source.dataLabels == null ? undefined : dataLabelsSnapshot({
-    showValue: source.dataLabels.showValue === true,
-    showCategoryName: source.dataLabels.showCategoryName === true,
-  }, source);
+  let dataLabelsInput;
+  if (source.dataLabels != null) {
+    dataLabelsInput = {
+      showValue: source.dataLabels.showValue === true,
+      showCategoryName: source.dataLabels.showCategoryName === true,
+    };
+    if (source.dataLabels.position != null) {
+      const position = DATA_LABEL_POSITIONS_FROM_WIRE.get(source.dataLabels.position);
+      if (!position) fail(source, `dataLabels has unsupported position ${source.dataLabels.position}.`, "unsupported_spreadsheet_chart");
+      dataLabelsInput.position = position;
+    }
+  }
+  const dataLabels = source.dataLabels == null ? undefined : dataLabelsSnapshot(dataLabelsInput, source);
   const chart = sheet.charts.add(type, {
     name: source.name,
     title: source.title,

@@ -333,7 +333,7 @@ function chartDataLabels(xml) {
   if (plotChildren.filter((name) => name === "dLbls").length !== 1) return undefined;
   const labels = directElement(xml, "dLbls");
   if (!labels || Object.keys(attributes(labels.startTag)).some((name) => !name.startsWith("xmlns"))) return undefined;
-  const allowed = new Set(["showLegendKey", "showVal", "showCatName", "showSerName", "showPercent", "showBubbleSize"]);
+  const allowed = new Set(["dLblPos", "showLegendKey", "showVal", "showCatName", "showSerName", "showPercent", "showBubbleSize"]);
   const children = directChildNames(labels.body);
   if (children.some((name) => !allowed.has(name)) || [...allowed].some((name) => children.filter((child) => child === name).length > 1) || children.filter((name) => name === "showVal").length !== 1 || children.filter((name) => name === "showCatName").length !== 1) return undefined;
   const scalar = (name) => {
@@ -347,7 +347,15 @@ function chartDataLabels(xml) {
   const showCategoryName = scalar("showCatName");
   if (showValue == null || showCategoryName == null) return undefined;
   for (const name of ["showLegendKey", "showSerName", "showPercent", "showBubbleSize"]) if (children.includes(name) && scalar(name) !== false) return undefined;
-  return { showValue, showCategoryName };
+  const positionElement = directElement(labels.body, "dLblPos");
+  let position;
+  if (positionElement) {
+    const attrs = attributes(positionElement.startTag);
+    const positions = new Map([["bestFit", "bestFit"], ["b", "bottom"], ["ctr", "center"], ["inBase", "insideBase"], ["inEnd", "insideEnd"], ["l", "left"], ["outEnd", "outsideEnd"], ["r", "right"], ["t", "top"]]);
+    if (positionElement.body.trim() || Object.keys(attrs).some((key) => key !== "val" && !key.startsWith("xmlns")) || !positions.has(attrs.val)) return undefined;
+    position = positions.get(attrs.val);
+  }
+  return { showValue, showCategoryName, ...(position == null ? {} : { position }) };
 }
 
 function chartAxis(xml, name, kind) {

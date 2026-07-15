@@ -2816,7 +2816,7 @@ public sealed class XlsxCodecTests
         AssertChartLineGrouping(authored.File.ToByteArray(), "stacked");
         AssertChartLineVaryColors(authored.File.ToByteArray(), true);
         AssertChartLineSmooth(authored.File.ToByteArray(), true);
-        AssertChartDataLabels(authored.File.ToByteArray(), true, false);
+        AssertChartDataLabels(authored.File.ToByteArray(), true, false, "outEnd");
         using (var stream = new MemoryStream(authored.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2859,6 +2859,8 @@ public sealed class XlsxCodecTests
         Assert.True(chart.LineOptions.Smooth);
         Assert.True(chart.DataLabels.ShowValue);
         Assert.False(chart.DataLabels.ShowCategoryName);
+        Assert.True(chart.DataLabels.HasPosition);
+        Assert.Equal(SpreadsheetChartDataLabelPosition.OutsideEnd, chart.DataLabels.Position);
         Assert.Equal("'Summary'!$A$1:$A$2", chart.Series[0].CategoryFormula);
         Assert.Equal("'Summary'!$B$1:$B$2", chart.Series[0].ValueFormula);
         Assert.Equal("Quarter", chart.XAxis.Title);
@@ -2903,6 +2905,7 @@ public sealed class XlsxCodecTests
         chart.LineOptions.Smooth = false;
         chart.DataLabels.ShowValue = false;
         chart.DataLabels.ShowCategoryName = true;
+        chart.DataLabels.Position = SpreadsheetChartDataLabelPosition.Top;
         chart.XAxis.Title = "Fiscal quarter";
         chart.XAxis.NumberFormatCode = "mmm";
         chart.XAxis.TickLabelInterval = 1;
@@ -2924,7 +2927,7 @@ public sealed class XlsxCodecTests
         AssertChartLineGrouping(preserved.File.ToByteArray(), "percentStacked");
         AssertChartLineVaryColors(preserved.File.ToByteArray(), null);
         AssertChartLineSmooth(preserved.File.ToByteArray(), false);
-        AssertChartDataLabels(preserved.File.ToByteArray(), false, true);
+        AssertChartDataLabels(preserved.File.ToByteArray(), false, true, "t");
         using (var stream = new MemoryStream(preserved.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -3015,10 +3018,15 @@ public sealed class XlsxCodecTests
         AssertChartDataLabels(withoutDataLabels.File.ToByteArray(), null, null);
         var addedDataLabels = Import(withoutDataLabels.File.ToByteArray());
         Assert.Null(addedDataLabels.Artifact.Workbook.Worksheets[0].Charts[0].DataLabels);
-        addedDataLabels.Artifact.Workbook.Worksheets[0].Charts[0].DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = true, ShowCategoryName = true };
+        addedDataLabels.Artifact.Workbook.Worksheets[0].Charts[0].DataLabels = new SpreadsheetChartDataLabelsArtifact
+        {
+            ShowValue = true,
+            ShowCategoryName = true,
+            Position = SpreadsheetChartDataLabelPosition.Center,
+        };
         var withAddedDataLabels = Export(addedDataLabels.Artifact);
         Assert.True(withAddedDataLabels.Ok, string.Join("\n", withAddedDataLabels.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        AssertChartDataLabels(withAddedDataLabels.File.ToByteArray(), true, true);
+        AssertChartDataLabels(withAddedDataLabels.File.ToByteArray(), true, true, "ctr");
 
         var residualDataLabels = Import(SetChartDataLabelFalseResidual(authored.File.ToByteArray()));
         var residualDataLabelsChart = Assert.Single(residualDataLabels.Artifact.Workbook.Worksheets[0].Charts);
@@ -3029,7 +3037,21 @@ public sealed class XlsxCodecTests
         var preservedDataLabelXml = ReadChartXml(preservedDataLabelResidual.File.ToByteArray());
         Assert.Contains("showLegendKey", preservedDataLabelXml, StringComparison.Ordinal);
         Assert.Contains("showSerName", preservedDataLabelXml, StringComparison.Ordinal);
-        AssertChartDataLabels(preservedDataLabelResidual.File.ToByteArray(), true, true);
+        AssertChartDataLabels(preservedDataLabelResidual.File.ToByteArray(), true, true, "outEnd");
+
+        var removedDataLabelPosition = Import(preserved.File.ToByteArray());
+        var removedDataLabelPositionChart = removedDataLabelPosition.Artifact.Workbook.Worksheets[0].Charts[0];
+        removedDataLabelPositionChart.DataLabels.ClearPosition();
+        var withoutDataLabelPosition = Export(removedDataLabelPosition.Artifact);
+        Assert.True(withoutDataLabelPosition.Ok, string.Join("\n", withoutDataLabelPosition.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartDataLabels(withoutDataLabelPosition.File.ToByteArray(), false, true, null);
+        var addedDataLabelPosition = Import(withoutDataLabelPosition.File.ToByteArray());
+        var addedDataLabelPositionChart = addedDataLabelPosition.Artifact.Workbook.Worksheets[0].Charts[0];
+        Assert.False(addedDataLabelPositionChart.DataLabels.HasPosition);
+        addedDataLabelPositionChart.DataLabels.Position = SpreadsheetChartDataLabelPosition.BestFit;
+        var withAddedDataLabelPosition = Export(addedDataLabelPosition.Artifact);
+        Assert.True(withAddedDataLabelPosition.Ok, string.Join("\n", withAddedDataLabelPosition.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartDataLabels(withAddedDataLabelPosition.File.ToByteArray(), false, true, "bestFit");
 
         var addedTextStyle = Import(preserved.File.ToByteArray());
         addedTextStyle.Artifact.Workbook.Worksheets[0].Charts[0].YAxis.TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 8.5 };
@@ -3138,6 +3160,21 @@ public sealed class XlsxCodecTests
         Assert.Equal(complexDataLabelsXml, ReadChartXml(complexDataLabelsRoundTrip.File.ToByteArray()));
         complexDataLabelsChart.DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = true };
         rejected = Export(complexDataLabels.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var pointDataLabelPositionSource = SetChartPointDataLabelPosition(authored.File.ToByteArray());
+        var pointDataLabelPositionXml = ReadChartXml(pointDataLabelPositionSource);
+        var pointDataLabelPosition = Import(pointDataLabelPositionSource);
+        Assert.True(pointDataLabelPosition.Ok, string.Join("\n", pointDataLabelPosition.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pointDataLabelPositionChart = Assert.Single(pointDataLabelPosition.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Null(pointDataLabelPositionChart.DataLabels);
+        Assert.False(pointDataLabelPositionChart.Source.Editable);
+        var pointDataLabelPositionRoundTrip = Export(pointDataLabelPosition.Artifact);
+        Assert.True(pointDataLabelPositionRoundTrip.Ok, string.Join("\n", pointDataLabelPositionRoundTrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(pointDataLabelPositionXml, ReadChartXml(pointDataLabelPositionRoundTrip.File.ToByteArray()));
+        pointDataLabelPositionChart.DataLabels = new SpreadsheetChartDataLabelsArtifact { Position = SpreadsheetChartDataLabelPosition.Top };
+        rejected = Export(pointDataLabelPosition.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
 
@@ -3786,7 +3823,12 @@ public sealed class XlsxCodecTests
             XAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter", NumberFormatCode = "@", TickLabelInterval = 2, TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 10 } },
             YAxis = new SpreadsheetChartAxisArtifact { Title = "Revenue", NumberFormatCode = "$#,##0.0", Minimum = 0, Maximum = 100, MajorUnit = 25, TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 9 } },
             LineOptions = new SpreadsheetChartLineOptionsArtifact { Grouping = SpreadsheetChartLineGrouping.Stacked, Smooth = true, VaryColors = true },
-            DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = true, ShowCategoryName = false },
+            DataLabels = new SpreadsheetChartDataLabelsArtifact
+            {
+                ShowValue = true,
+                ShowCategoryName = false,
+                Position = SpreadsheetChartDataLabelPosition.OutsideEnd,
+            },
         };
         chart.Categories.Add(["Q1", "Q2"]);
         chart.Series.Add(new SpreadsheetChartSeriesArtifact
@@ -4450,6 +4492,26 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] SetChartPointDataLabelPosition(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            chart.Descendants(c + "dLbls").Single().AddFirst(
+                new XElement(c + "dLbl",
+                    new XElement(c + "idx", new XAttribute("val", "0")),
+                    new XElement(c + "dLblPos", new XAttribute("val", "b"))));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] SetChartDataLabelFalseResidual(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -4461,7 +4523,7 @@ public sealed class XlsxCodecTests
             var chart = XDocument.Parse(ReadPartText(chartPart));
             XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
             var labels = chart.Descendants(c + "dLbls").Single();
-            labels.AddFirst(new XElement(c + "showLegendKey", new XAttribute("val", "0")));
+            labels.Element(c + "dLblPos")!.AddAfterSelf(new XElement(c + "showLegendKey", new XAttribute("val", "0")));
             labels.Add(new XElement(c + "showSerName", new XAttribute("val", "0")));
             using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
             chart.Save(output, SaveOptions.DisableFormatting);
@@ -4637,14 +4699,15 @@ public sealed class XlsxCodecTests
         Assert.Equal(expected.Value ? "1" : "0", (string?)smooth!.Attribute("val"));
     }
 
-    private static void AssertChartDataLabels(byte[] bytes, bool? showValue, bool? showCategoryName)
+    private static void AssertChartDataLabels(byte[] bytes, bool? showValue, bool? showCategoryName, string? position = null)
     {
         var chart = XDocument.Parse(ReadChartXml(bytes));
         XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
         var labels = chart.Descendants(c + "dLbls").SingleOrDefault();
         if (showValue is null || showCategoryName is null) { Assert.Null(labels); return; }
         Assert.NotNull(labels);
-        Assert.Equal(showValue.Value ? "1" : "0", (string?)labels!.Element(c + "showVal")?.Attribute("val"));
+        Assert.Equal(position, (string?)labels!.Element(c + "dLblPos")?.Attribute("val"));
+        Assert.Equal(showValue.Value ? "1" : "0", (string?)labels.Element(c + "showVal")?.Attribute("val"));
         Assert.Equal(showCategoryName.Value ? "1" : "0", (string?)labels.Element(c + "showCatName")?.Attribute("val"));
     }
 

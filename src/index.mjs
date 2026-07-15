@@ -16,7 +16,7 @@ import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray, spreadsheetChartSeriesLineXml } from "./spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartLineOptions, spreadsheetChartSmoothLinePath } from "./spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg, spreadsheetChartSeriesMarkerXml } from "./spreadsheet/chart-marker-style.mjs";
-import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelText } from "./spreadsheet/chart-data-labels.mjs";
+import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelPositionXml, spreadsheetChartDataLabelSvgPlacement, spreadsheetChartDataLabelText } from "./spreadsheet/chart-data-labels.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
@@ -976,7 +976,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category labels, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category visibility and bounded position, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
@@ -2473,7 +2473,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     title: { type: "string", description: "Chart title." },
     titleTextStyle: { type: "object", description: "Optional chart-title style with fontSize from 1 through 4000 points." },
     lineOptions: { type: "object", description: "Line-chart-only { grouping?, smooth?, varyColors? }. grouping is standard, stacked, or percentStacked; omission authors the standard default. smooth preserves explicit false as native c:smooth val=0. varyColors=true authors direct c:varyColors val=1; false or omission removes that optional node." },
-    dataLabels: { type: "boolean|object", description: "Optional plot-level labels. A boolean controls showValue; an object accepts only boolean showValue and showCategoryName. Per-series/per-point labels, positions, number formats, and label text styles remain outside this bounded profile." },
+    dataLabels: { type: "boolean|object", description: "Optional plot-level labels. A boolean controls showValue; an object accepts boolean showValue/showCategoryName and position: bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, or top. Per-series/per-point labels, number formats, and label text styles remain outside this bounded profile." },
     categories: { type: "string[]", description: "Explicit categories." },
     series: { type: "object[]", description: "Explicit series definitions with name, numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line." },
     xAxis: { type: "object", description: "Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval." },
@@ -3506,7 +3506,8 @@ class WorksheetChart {
       const x = plot.left + index * (barW + gap) + gap / 2;
       const y = plot.top + plot.height - h;
       const label = spreadsheetChartDataLabelText(dataLabels, this.categories[index], value);
-      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>${label ? `<text x="${x + barW / 2}" y="${Math.max(plot.top + 10, y - 4)}" text-anchor="middle" font-family="Arial" font-size="10" fill="#334155" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : ""}`;
+      const placement = spreadsheetChartDataLabelSvgPlacement(dataLabels, { x, y, width: barW, height: h, baseY: plot.top + plot.height, plotTop: plot.top });
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>${label ? `<text x="${placement.x}" y="${placement.y}" text-anchor="${placement.textAnchor}" font-family="Arial" font-size="10" fill="#334155" data-chart-label-position="${placement.position}" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : ""}`;
     }).join("");
     const previewPalette = ["#38BDF8", "#F97316", "#22C55E", "#A855F7", "#E11D48", "#0F766E"];
     const lineMarks = lineValues.map((seriesValues, seriesIndex) => {
@@ -3524,7 +3525,8 @@ class WorksheetChart {
         : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`;
       const labels = points.map((point, index) => {
         const label = spreadsheetChartDataLabelText(dataLabels, this.categories[index], series?.values?.[index]);
-        return label ? `<text x="${point.x}" y="${Math.max(plot.top + 10, point.y - 7)}" text-anchor="middle" font-family="Arial" font-size="10" fill="#334155" data-chart-label-series="${seriesIndex}" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : "";
+        const placement = spreadsheetChartDataLabelSvgPlacement(dataLabels, { x: point.x, y: point.y, kind: "point", plotTop: plot.top });
+        return label ? `<text x="${placement.x}" y="${placement.y}" text-anchor="${placement.textAnchor}" font-family="Arial" font-size="10" fill="#334155" data-chart-label-position="${placement.position}" data-chart-label-series="${seriesIndex}" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : "";
       }).join("");
       return `${mark}${points.map((point) => spreadsheetChartMarkerSvg(series?.marker, point.x, point.y, stroke)).join("")}${labels}`;
     }).join("");
@@ -7695,7 +7697,7 @@ function xlsxChartXml(chart) {
   const varyColors = chartType === "line" && lineOptions?.varyColors === true ? '<c:varyColors val="1"/>' : "";
   const smooth = lineOptions?.smooth == null ? "" : `<c:smooth val="${lineOptions.smooth ? 1 : 0}"/>`;
   const dataLabels = normalizeSpreadsheetChartDataLabels(chart.dataLabels);
-  const dataLabelsXml = dataLabels == null ? "" : `<c:dLbls><c:showVal val="${dataLabels.showValue ? 1 : 0}"/><c:showCatName val="${dataLabels.showCategoryName ? 1 : 0}"/></c:dLbls>`;
+  const dataLabelsXml = dataLabels == null ? "" : `<c:dLbls>${spreadsheetChartDataLabelPositionXml(dataLabels)}<c:showVal val="${dataLabels.showValue ? 1 : 0}"/><c:showCatName val="${dataLabels.showCategoryName ? 1 : 0}"/></c:dLbls>`;
   const textStyle = (value, name) => {
     if (value == null) return undefined;
     if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${name} must be an object.`);
