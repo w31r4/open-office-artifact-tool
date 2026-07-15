@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2017,7 +2017,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2033,7 +2033,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
-| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and value/icon-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
+| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
@@ -2066,13 +2066,14 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
 | `worksheet.mergeCells` | api | Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content. |
+| `worksheet.sortState` | api | Get or set bounded worksheet-level row/column sorting; columnSort=true uses unique single-row conditions across the sort range. |
 | `worksheet.unmergeCells` | api | Remove every merged region intersecting an A1 range without discarding the retained upper-left content. |
 
 ### workbook details
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
@@ -3589,7 +3590,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
+Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -3813,7 +3814,7 @@ Create line/column/stacked sparklines from sourceData into a targetRange; range.
 
 #### `sheet.tables.add`
 
-Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and value/icon-sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
+Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
 
 **Schema parameters:**
 
@@ -3824,7 +3825,7 @@ Create an inspectable worksheet table over an A1 range with rich calculated-colu
 - `columnNames` (string[]) — Compatibility projection of table-column names.
 - `columnDefinitions` (object[]) — Rich columns with name, calculatedColumnFormula/array, and totalsRowFunction/label/formula/array metadata.
 - `filters` (object[]) — Zero-based table-column exact-value/blank, grouped-date/calendar, one/two-criterion custom, dynamic type/threshold, top/bottom item/percent, standard icon-set, or stable cell-fill/font-color AutoFilters; color filters use kind='color', target='cell'|'font', and color without exposing dxfId.
-- `sortState` (object) — Bounded value/icon/color-sort state with reference, caseSensitive, optional sortMethod ('none'|'pinYin'|'stroke'), and ordered single-column conditions; value conditions may carry customList, while color conditions use kind='color', target='cell'|'font', and color and the codec owns dxf allocation.
+- `sortState` (object) — Bounded row-oriented value/icon/color-sort state with reference, caseSensitive, optional sortMethod ('none'|'pinYin'|'stroke'), and ordered single-column conditions; value conditions may carry customList. Table AutoFilter sorts reject columnSort per SpreadsheetML.
 - `showTotals` (boolean) — Expose the totals row required by totals metadata.
 
 **Schema returns:**
@@ -4348,6 +4349,22 @@ Merge an A1 range as one region or merge each row separately with across=true, r
 **Schema returns:**
 
 - `worksheet` (Worksheet) — The same worksheet with native merged-range state.
+
+#### `worksheet.sortState`
+
+Get or set bounded worksheet-level row/column sorting; columnSort=true uses unique single-row conditions across the sort range.
+
+**Schema parameters:**
+
+- `reference` (string) required — Whole worksheet range whose rows or columns are sorted.
+- `caseSensitive` (boolean) — Whether text comparisons are case-sensitive.
+- `sortMethod` ('none'|'pinYin'|'stroke') — Optional locale-specific SpreadsheetML method; omission remains distinct from explicit 'none'.
+- `columnSort` (boolean) — Optional presence-aware direction. true sorts columns left-to-right; false explicitly selects ordinary row sorting.
+- `conditions` (object[]) required — Ordered unique single rows when columnSort=true, otherwise unique single columns; value conditions may add customList and icon/color selectors reuse the table-sort shape.
+
+**Schema returns:**
+
+- `sortState` (object) — Bounded worksheet-level sort state. columnSort is legal here and on QueryTable refresh sorts, but never inside a table AutoFilter.
 
 #### `worksheet.unmergeCells`
 
