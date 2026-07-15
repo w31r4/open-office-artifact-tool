@@ -326,6 +326,11 @@ message WorksheetArtifact {
   // Hash-bound workbook.xml sheet identity. Ordinal, relationship ID, and
   // sheet ID are package locators and remain immutable after import.
   SpreadsheetWorksheetSourceBinding source = 12;
+  // Bounded worksheet pictures backed by content-addressed envelope assets.
+  // The first slice owns one-cell anchors with embedded PNG/JPEG bytes only;
+  // charts, shapes, external links, other anchor forms, and unmodeled picture
+  // properties remain source-preserved and hidden from editable semantics.
+  repeated SpreadsheetImageArtifact images = 13;
 }
 
 message SpreadsheetWorksheetSourceBinding {
@@ -335,6 +340,44 @@ message SpreadsheetWorksheetSourceBinding {
   string sheet_element_sha256 = 4;
   string semantic_sha256 = 5;
   bool editable = 6;
+}
+
+// One embedded worksheet picture. Asset identity is content-addressed and
+// independent from package relationship IDs. The relationship ID and Drawing
+// part path are source locators only and never act as durable object identity.
+message SpreadsheetImageArtifact {
+  string id = 1;
+  string name = 2;
+  string alt_text = 3;
+  string asset_id = 4;
+  SpreadsheetOneCellAnchorArtifact anchor = 5;
+  SpreadsheetImageSourceBinding source = 6;
+}
+
+// SpreadsheetDrawingML stores one-cell geometry in English Metric Units.
+// Keeping that native unit on the wire avoids precision loss across repeated
+// source-bound imports while the JavaScript model continues exposing pixels.
+message SpreadsheetOneCellAnchorArtifact {
+  uint32 row = 1;
+  uint32 column = 2;
+  int64 row_offset_emu = 3;
+  int64 column_offset_emu = 4;
+  int64 width_emu = 5;
+  int64 height_emu = 6;
+}
+
+// Hash-bound locator for one recognized picture anchor in a worksheet-owned
+// Drawing part. Anchor ordinal includes opaque siblings so modeled pictures
+// cannot silently reorder or replace unknown charts/shapes during export.
+message SpreadsheetImageSourceBinding {
+  string part_path = 1;
+  string drawing_xml_sha256 = 2;
+  uint32 anchor_ordinal = 3;
+  string anchor_xml_sha256 = 4;
+  string semantic_sha256 = 5;
+  string relationship_id = 6;
+  uint32 non_visual_id = 7;
+  bool editable = 8;
 }
 
 // A bounded projection of one worksheet-owned TableDefinitionPart. Cell data

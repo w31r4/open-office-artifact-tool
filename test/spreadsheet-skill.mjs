@@ -207,6 +207,12 @@ try {
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("C2").format.fill, "#DCFCE7");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("C2").format.font.bold, true);
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").mergedRanges, ["A4:B4"]);
+  const wasmImage = wasmWorkbook.worksheets.getItem("Summary").images.items[0];
+  assert.equal(wasmImage.name, "OpenChestnut mark");
+  assert.equal(wasmImage.alt, "OpenChestnut worksheet image");
+  assert.match(wasmImage.dataUrl, /^data:image\/png;base64,/);
+  assert.deepEqual(wasmImage.anchor, { from: { row: 4, col: 0, rowOffsetPx: 6, colOffsetPx: 4 }, extent: { widthPx: 96, heightPx: 64 } });
+  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"OpenChestnut worksheet image"/);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedIndex, 7);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedRef, "C2:C3");

@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -73,6 +73,10 @@ assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, {
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { sortState: { reference: "A1:B2" } }))[0], 0x52, "Spreadsheet worksheet sort state must use additive worksheet field 10.");
 assert.deepEqual([...toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { visibility: SpreadsheetWorksheetVisibility.HIDDEN }))], [0x58, 0x02], "Spreadsheet worksheet visibility must use additive worksheet field 11.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { source: { ordinal: 1 } }))[0], 0x62, "Spreadsheet worksheet source bindings must use additive worksheet field 12.");
+assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { images: [{ id: "image/1" }] }))[0], 0x6a, "Spreadsheet worksheet images must use additive worksheet field 13.");
+assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { assetId: "asset/1" }))[0], 0x22, "Spreadsheet image assets must use image field 4.");
+assert.deepEqual([...toBinary(SpreadsheetOneCellAnchorArtifactSchema, create(SpreadsheetOneCellAnchorArtifactSchema, { widthEmu: 1n }))], [0x28, 0x01], "Spreadsheet image widths must use signed EMU field 5.");
+assert.equal(toBinary(SpreadsheetImageSourceBindingSchema, create(SpreadsheetImageSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet image semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetWorksheetSourceBindingSchema, create(SpreadsheetWorksheetSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet worksheet semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { source: { tablePartPath: "xl/tables/table1.xml" } }))[0], 0x6a, "Spreadsheet table source bindings must use additive table field 13.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { columns: [{ name: "Revenue" }] }))[0], 0x72, "Spreadsheet rich table columns must use additive table field 14.");
@@ -264,6 +268,12 @@ summary.showGridLines = false;
 summary.columnDimensions.set(0, { width: 18, bestFit: true });
 summary.rowDimensions.set(0, { height: 24 });
 summary.mergeCells("A3:B3");
+const summaryImage = summary.images.add({
+  name: "Quarter mark",
+  alt: "Quarterly performance",
+  dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+  anchor: { from: { row: 3, col: 2, rowOffsetPx: 10, colOffsetPx: 5 }, extent: { widthPx: 120, heightPx: 80 } },
+});
 summary.sortState = {
   reference: "A1:B2",
   caseSensitive: true,
@@ -368,6 +378,17 @@ const summaryWorksheetXml = await exportedZip.file("xl/worksheets/sheet1.xml").a
 assert.match(summaryWorksheetXml, /<x:sortState\b[^>]*ref="A1:B2"/);
 assert.match(summaryWorksheetXml, /<x:sortState\b[^>]*columnSort="1"/);
 assert.match(summaryWorksheetXml, /<x:sortCondition\b[^>]*ref="A2:B2"[^>]*customList="Actual,Plan"/);
+assert.match(summaryWorksheetXml, /<x:drawing\b[^>]*r:id="[^"]+"/);
+const summaryDrawingXml = await exportedZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(summaryDrawingXml, /<xdr:oneCellAnchor>/);
+assert.match(summaryDrawingXml, /name="Quarter mark"/);
+assert.match(summaryDrawingXml, /descr="Quarterly performance"/);
+assert.match(summaryDrawingXml, /<xdr:row>3<\/xdr:row>/);
+assert.match(summaryDrawingXml, /<xdr:col>2<\/xdr:col>/);
+assert.match(summaryDrawingXml, /cx="1143000" cy="762000"/);
+const summaryMediaPath = Object.keys(exportedZip.files).find((path) => /^xl\/media\/[^/]+\.png$/i.test(path));
+assert.ok(summaryMediaPath, "OpenChestnut must author a worksheet PNG ImagePart");
+assert.deepEqual([...(await exportedZip.file(summaryMediaPath).async("uint8array"))], [...Buffer.from(summaryImage.dataUrl.split(",")[1], "base64")]);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:calculatedColumnFormula>LEN\(\[@Status\]\)<\/x:calculatedColumnFormula>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:filterColumn colId="0"><x:filters blank="1"><x:filter val="ready"\s*\/><\/x:filters><\/x:filterColumn>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="1"\s*\/><x:customFilter operator="lessThanOrEqual" val="2"\s*\/><\/x:customFilters>/);
@@ -727,6 +748,12 @@ assert.equal(imported.worksheets.getItem("Summary").getRange("A1").format.font.u
 assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1").format.fill, { patternType: "darkGrid", foreground: { theme: 4, tint: 0.4 }, background: "#E2E8F0" });
 assert.equal(imported.worksheets.getItem("Summary").getRange("A1").format.border.bottom.style, "double");
 assert.deepEqual(imported.worksheets.getItem("Summary").getRange("A1").format.protection, { locked: false, hidden: true });
+const importedSummaryImage = imported.worksheets.getItem("Summary").images.items[0];
+assert.equal(importedSummaryImage.name, "Quarter mark");
+assert.equal(importedSummaryImage.alt, "Quarterly performance");
+assert.equal(importedSummaryImage.dataUrl, summaryImage.dataUrl);
+assert.deepEqual(importedSummaryImage.anchor, { from: { row: 3, col: 2, rowOffsetPx: 10, colOffsetPx: 5 }, extent: { widthPx: 120, heightPx: 80 } });
+assert.equal(imported.resolve(importedSummaryImage.id), importedSummaryImage);
 assert.match(imported.inspect({ kind: "workbook,sheet,formula" }).ndjson, /"dateSystem":"1904"/);
 assert.equal(imported.verify().ok, true);
 assert.equal(imported.resolve(imported.worksheets.getItem("Summary").id).name, "Summary");
@@ -764,6 +791,8 @@ assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B2").for
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.font.bold, true);
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.fill.patternType, "darkGrid");
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.border.bottom.style, "double");
+assert.equal(javascriptImported.worksheets.getItem("Summary").images.items[0].name, "Quarter mark");
+assert.equal(javascriptImported.worksheets.getItem("Summary").images.items[0].dataUrl, summaryImage.dataUrl);
 
 imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat = "$#,##0.00";
 imported.worksheets.getItem("Details").visibility = "veryHidden";
@@ -806,6 +835,9 @@ importedColorTable.filters[0].color = "#22C55E";
 importedColorTable.sortState.conditions[1].color = "#22C55E";
 importedColorTable.filters[1].color = "#2563EB";
 importedColorTable.sortState.conditions[0].color = "#2563EB";
+importedSummaryImage.name = "Updated quarter mark";
+importedSummaryImage.alt = "Updated quarterly performance";
+importedSummaryImage.anchor = { from: { row: 5, col: 4, rowOffsetPx: 12, colOffsetPx: 6 }, extent: { widthPx: 160, heightPx: 100 } };
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
 const secondImported = await importXlsxWithOpenChestnut(secondExport);
@@ -829,6 +861,11 @@ assert.deepEqual(secondImported.definedNames.getItem("SummaryRange").toJSON(), {
   comment: "Updated summary range",
   hidden: true,
 });
+const secondImage = secondImported.worksheets.getItem("Summary").images.items[0];
+assert.equal(secondImage.name, "Updated quarter mark");
+assert.equal(secondImage.alt, "Updated quarterly performance");
+assert.deepEqual(secondImage.anchor, { from: { row: 5, col: 4, rowOffsetPx: 12, colOffsetPx: 6 }, extent: { widthPx: 160, heightPx: 100 } });
+assert.equal(secondImage.dataUrl, summaryImage.dataUrl);
 const removedDefinedName = await importXlsxWithOpenChestnut(exported);
 removedDefinedName.definedNames.delete("SummaryData");
 await assert.rejects(
@@ -840,6 +877,30 @@ removedCalculation.setCalculation(undefined);
 await assert.rejects(
   exportXlsxWithOpenChestnut(removedCalculation, { recalculate: false }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_calculation" && /cannot remove imported calculation/i.test(error.message),
+);
+const removedImage = await importXlsxWithOpenChestnut(exported);
+removedImage.worksheets.getItem("Summary").images.deleteAll();
+await assert.rejects(
+  exportXlsxWithOpenChestnut(removedImage, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image_topology" && /cannot remove imported image/i.test(error.message),
+);
+const addedImage = await importXlsxWithOpenChestnut(exported);
+addedImage.worksheets.getItem("Summary").images.add({ name: "Unexpected image", dataUrl: summaryImage.dataUrl });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(addedImage, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image_topology" && /cannot add image/i.test(error.message),
+);
+const replacedImage = await importXlsxWithOpenChestnut(exported);
+replacedImage.worksheets.getItem("Summary").images.items[0].dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC";
+await assert.rejects(
+  exportXlsxWithOpenChestnut(replacedImage, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image_edit" && /cannot replace embedded bytes/i.test(error.message),
+);
+const externalImageWorkbook = Workbook.create();
+externalImageWorkbook.worksheets.add("External").images.add({ name: "External image", uri: "https://example.test/image.png" });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(externalImageWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image" && /embedded dataUrl bytes/i.test(error.message),
 );
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(

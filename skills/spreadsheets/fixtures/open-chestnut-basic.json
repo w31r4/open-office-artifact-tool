@@ -113,6 +113,17 @@
           "values": [["Ready", true]],
           "merge": true
         }
+      ],
+      "images": [
+        {
+          "name": "OpenChestnut mark",
+          "alt": "OpenChestnut worksheet image",
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          "anchor": {
+            "from": { "row": 4, "col": 0, "rowOffsetPx": 6, "colOffsetPx": 4 },
+            "extent": { "widthPx": 96, "heightPx": 64 }
+          }
+        }
       ]
     },
     {
@@ -283,9 +294,9 @@
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:F4",
+    "range": "A1:F8",
     "renderFormat": "png",
-    "inspectKind": "workbook,sheet,formula,merge,dimension",
+    "inspectKind": "workbook,sheet,formula,merge,dimension,drawing",
     "maxChars": 16000,
     "nativeRender": "auto"
   }

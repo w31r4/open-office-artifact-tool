@@ -34,6 +34,7 @@ internal static class XlsxCodec
             diagnostics.Add(CodecProtocol.Warning("opaque_content_discarded", $"Discarded {opaqueCount} opaque OPC parts or relationships under explicit allow_lossy policy."));
 
         using var stream = new MemoryStream();
+        var imageAssets = new XlsxImageAssetCatalog(envelope.Assets, limits);
         using (var document = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook, autoSave: true))
         {
             var workbookPart = document.AddWorkbookPart();
@@ -51,6 +52,7 @@ internal static class XlsxCodec
             calculation.Apply(envelope.Workbook.Calculation, sourceBound: false);
             var sheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sheetNames);
+            var drawings = new XlsxDrawingCodec(imageAssets);
             var nextTableId = 1U;
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
@@ -61,6 +63,7 @@ internal static class XlsxCodec
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
+                drawings.Apply(worksheetPart, source.Id, source.Images, sourceBound: false);
                 worksheetPart.Worksheet.Save();
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
             }
@@ -87,6 +90,8 @@ internal static class XlsxCodec
         var workbookPart = document.WorkbookPart ?? throw new CodecException("missing_workbook_part", "XLSX package has no Workbook part.", "xl/workbook.xml");
         var workbookRoot = workbookPart.Workbook ?? throw new CodecException("missing_workbook_root", "XLSX package has no Workbook root element.", "xl/workbook.xml");
         var dynamicArrays = new XlsxDynamicArrayCodec(workbookPart);
+        var imageAssets = new XlsxImageAssetCatalog(null, limits);
+        var drawings = new XlsxDrawingCodec(imageAssets);
         var workbook = new WorkbookArtifact
         {
             Id = "workbook/1",
@@ -121,6 +126,7 @@ internal static class XlsxCodec
             worksheetMetadata.ReadInto(target, index);
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
             target.Tables.Add(tables.Read());
+            target.Images.Add(drawings.Read(worksheetPart, target.Id));
             workbook.Worksheets.Add(target);
         }
         var workbookView = new XlsxWorkbookViewCodec(workbookPart, workbook.Worksheets);
@@ -144,6 +150,7 @@ internal static class XlsxCodec
                 Producer = "open-office-artifact-tool/OpenChestnut",
             },
         };
+        envelope.Assets.Add(imageAssets.ImportedAssets);
         envelope.Diagnostics.Add(diagnostics);
         return new XlsxImportResult(envelope, diagnostics);
     }
@@ -151,6 +158,7 @@ internal static class XlsxCodec
     private static XlsxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
     {
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
+        var imageAssets = new XlsxImageAssetCatalog(envelope.Assets, limits);
         var ownsTheme = false;
         string? themePartPath = null;
         var dirtyModeledPartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -183,6 +191,7 @@ internal static class XlsxCodec
             var styles = new XlsxCellStyleCodec(workbookPart);
             var connections = new XlsxConnectionCodec(workbookPart);
             connections.Apply(envelope.Workbook.Connections, sourceBound: true);
+            var drawings = new XlsxDrawingCodec(imageAssets);
             var nextTableId = 1U;
             for (var index = 0; index < sheets.Length; index++)
             {
@@ -195,6 +204,8 @@ internal static class XlsxCodec
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
                 tables.Save();
                 dirtyModeledPartPaths.UnionWith(tables.DirtyPartPaths);
+                drawings.Apply(worksheetPart, source.Id, source.Images, sourceBound: true);
+                dirtyModeledPartPaths.UnionWith(drawings.DirtyPartPaths);
                 worksheetPart.Worksheet!.Save();
             }
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: true, targetSheetNames);
@@ -723,6 +734,7 @@ internal static class XlsxCodec
             if (!names.Add(sheet.Name)) throw new CodecException("duplicate_sheet_name", $"Workbook contains duplicate worksheet name {sheet.Name}.");
             if (sheet.SortState is not null)
                 XlsxSortStateCodec.Validate(sheet.SortState, null, sheet.Name, $"Worksheet {sheet.Name}", allowColumnSort: true);
+            XlsxDrawingCodec.Validate(sheet.Images, sheet.Id);
             XlsxTableCodec.ValidateWorksheet(sheet);
             foreach (var table in sheet.Tables.Where(XlsxTableCodec.HasCompleteSemantics))
                 if (!tableNames.Add(table.Name)) throw new CodecException("invalid_worksheet_table", $"Workbook contains duplicate table name {table.Name}.", sheet.Name);
