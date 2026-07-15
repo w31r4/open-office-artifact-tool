@@ -1116,6 +1116,17 @@ message PresentationShape {
   // (when placeholder.inherits_geometry is true) or an unrecognized direct
   // transform that must remain opaque and fail closed.
   PresentationPlaceholderFrame direct_frame = 12;
+  // Presence-aware direct visual transform for an ordinary, non-placeholder
+  // p:sp. Position and extents remain in fields 2-5; this independently
+  // designed message owns only the optional a:xfrm attributes. Unknown or
+  // structurally complex native transforms remain source-bound and read-only.
+  PresentationShapeTransform transform = 13;
+}
+
+message PresentationShapeTransform {
+  optional sint32 rotation_angle_60000 = 1;
+  optional bool flip_horizontal = 2;
+  optional bool flip_vertical = 3;
 }
 
 message PresentationPlaceholderIdentity {

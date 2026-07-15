@@ -544,6 +544,7 @@ internal static class PptxCodec
         var properties = shape.ShapeProperties;
         var textBody = PptxTextCodec.Read(shape.TextBody, slideContext);
         var placeholder = PptxPlaceholderCodec.ReadIdentity(shape);
+        var transform = properties?.Transform2D;
         return new PresentationShape
         {
             Geometry = Geometry(properties),
@@ -558,6 +559,9 @@ internal static class PptxCodec
             LineWidthEmu = properties?.GetFirstChild<A.Outline>()?.Width?.Value ?? 0,
             Placeholder = placeholder,
             DirectFrame = placeholder is null ? null : PptxPlaceholderCodec.ReadDirectFrame(shape),
+            Transform = placeholder is null && PptxShapeTransformCodec.Supports(transform)
+                ? PptxShapeTransformCodec.Read(transform!)
+                : null,
         };
     }
 
@@ -567,7 +571,7 @@ internal static class PptxCodec
         if (shape.ShapeStyle is not null) return false;
         var properties = shape.ShapeProperties;
         var transform = properties?.Transform2D;
-        if (properties is null || transform?.Offset is null || transform.Extents is null || transform.Rotation is not null || transform.HorizontalFlip is not null || transform.VerticalFlip is not null) return false;
+        if (properties is null || properties.Elements<A.Transform2D>().Count() != 1 || !PptxShapeTransformCodec.Supports(transform)) return false;
         if (Geometry(properties) is not ("rect" or "ellipse")) return false;
         if (!SimpleFill(properties)) return false;
         var outline = properties.GetFirstChild<A.Outline>();
@@ -596,6 +600,7 @@ internal static class PptxCodec
         var extents = transform.Extents ??= new A.Extents();
         extents.Cx = semantic.WidthEmu;
         extents.Cy = semantic.HeightEmu;
+        PptxShapeTransformCodec.Apply(transform, semantic.Transform);
         var geometry = properties.GetFirstChild<A.PresetGeometry>();
         if (geometry is null)
         {
@@ -809,10 +814,12 @@ internal static class PptxCodec
     private static P.Shape BuildShape(PresentationElement source, uint nativeId, PptxPartContext slideContext)
     {
         var semantic = source.Shape;
+        var transform = new A.Transform2D(
+            new A.Offset { X = semantic.LeftEmu, Y = semantic.TopEmu },
+            new A.Extents { Cx = semantic.WidthEmu, Cy = semantic.HeightEmu });
+        PptxShapeTransformCodec.Apply(transform, semantic.Transform);
         var properties = new P.ShapeProperties(
-            new A.Transform2D(
-                new A.Offset { X = semantic.LeftEmu, Y = semantic.TopEmu },
-                new A.Extents { Cx = semantic.WidthEmu, Cy = semantic.HeightEmu }),
+            transform,
             new A.PresetGeometry(new A.AdjustValueList()) { Preset = semantic.Geometry == "ellipse" ? A.ShapeTypeValues.Ellipse : A.ShapeTypeValues.Rectangle });
         properties.Append(string.IsNullOrWhiteSpace(semantic.FillRgb)
             ? new A.NoFill()
@@ -1014,6 +1021,8 @@ internal static class PptxCodec
                 {
                     if (element.Shape.Placeholder is not null && !hasSourcePackage)
                         throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} uses source-free slide placeholder authoring, which is not supported by this codec slice.");
+                    if (element.Shape.Placeholder is not null && element.Shape.Transform is not null)
+                        throw new CodecException("invalid_presentation_transform", $"Presentation placeholder shape {element.Id} cannot carry an ordinary shape transform.");
                     var inheritedPlaceholderGeometry = element.Shape.Placeholder?.InheritsGeometry == true &&
                         element.Shape.DirectFrame is null && element.Source?.Editable == false;
                     if ((!inheritedPlaceholderGeometry && (element.Shape.LeftEmu < 0 || element.Shape.TopEmu < 0 || element.Shape.WidthEmu <= 0 || element.Shape.HeightEmu <= 0)) ||
@@ -1029,6 +1038,7 @@ internal static class PptxCodec
                         throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
                     if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);
                     if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) PptxColor.Normalize(element.Shape.LineRgb);
+                    PptxShapeTransformCodec.Validate(element.Shape.Transform, element.Id);
                     PptxTextCodec.Validate(element.Shape);
                     foreach (var paragraph in element.Shape.TextBody?.Paragraphs ?? [])
                         if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
@@ -1527,6 +1537,7 @@ internal static class PptxCodec
             {
                 if (transform.Offset is { } offset) { offset.X = 0L; offset.Y = 0L; }
                 if (transform.Extents is { } extents) { extents.Cx = 1L; extents.Cy = 1L; }
+                PptxShapeTransformCodec.Scrub(transform);
             }
             if (properties.GetFirstChild<A.PresetGeometry>() is { } geometry) geometry.Preset = A.ShapeTypeValues.Rectangle;
             foreach (var fill in properties.ChildElements.Where(child => child is A.NoFill or A.SolidFill).ToArray()) fill.Remove();
