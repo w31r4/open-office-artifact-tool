@@ -443,6 +443,14 @@ public sealed class PptxCodecTests
     public void OleWorkbookPayloadReplacementIsValidatedAndGraphBound()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var sharedSource = ReplaceZipText(source, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace(
+            "</Relationships>",
+            "<Relationship Id=\"rIdSharedOlePackage\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/native-workbook.xlsx\"/></Relationships>",
+            StringComparison.Ordinal));
+        var sharedImported = Import(sharedSource);
+        Assert.True(sharedImported.Ok, Diagnostics(sharedImported));
+        Assert.Null(sharedImported.Artifact.Presentation.Slides[0].Elements[1].Opaque.OleWorkbook);
+
         var imported = Import(source);
         Assert.True(imported.Ok, Diagnostics(imported));
         var oleElement = imported.Artifact.Presentation.Slides[0].Elements[1];

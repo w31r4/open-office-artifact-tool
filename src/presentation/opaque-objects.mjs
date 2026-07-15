@@ -7,6 +7,7 @@ const RELATIONSHIP_NAMESPACES = new Set([
 ]);
 const EMU_PER_PIXEL = 9525;
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const INBOUND_RELATIONSHIPS = new WeakMap();
 
 function decodeXml(value) {
   return String(value ?? "")
@@ -40,6 +41,35 @@ function relationshipPartPath(source) {
   const safeSource = safePartPath(source);
   const dir = path.posix.dirname(safeSource);
   return `${dir === "." ? "" : `${dir}/`}_rels/${path.posix.basename(safeSource)}.rels`;
+}
+
+function relationshipSourcePath(relationshipPath) {
+  const safe = safePartPath(relationshipPath);
+  if (safe === "_rels/.rels") return "";
+  const match = /^(.*)\/_rels\/([^/]+)\.rels$/.exec(safe);
+  if (!match) throw new Error(`Invalid PPTX relationship-part path: ${relationshipPath}`);
+  return `${match[1]}/${match[2]}`;
+}
+
+async function packageInboundRelationshipCounts(zip) {
+  let pending = INBOUND_RELATIONSHIPS.get(zip);
+  if (pending) return pending;
+  pending = (async () => {
+    const counts = new Map();
+    const relationshipPaths = Object.keys(zip.files).filter((partPath) => partPath === "_rels/.rels" || /\/_rels\/[^/]+\.rels$/i.test(partPath));
+    for (const relationshipPath of relationshipPaths) {
+      const sourcePath = relationshipSourcePath(relationshipPath);
+      const xml = await zip.file(relationshipPath)?.async("text");
+      for (const relationship of parseRelationships(xml)) {
+        if (relationship.targetMode.toLowerCase() === "external") continue;
+        const targetPath = resolveTarget(sourcePath, relationship.target);
+        counts.set(targetPath, (counts.get(targetPath) || 0) + 1);
+      }
+    }
+    return counts;
+  })();
+  INBOUND_RELATIONSHIPS.set(zip, pending);
+  return pending;
 }
 
 function resolveTarget(source, target) {
@@ -147,7 +177,7 @@ export async function capturePresentationOpaqueObject({ zip, slidePath, slideXml
     if (relationship.targetMode.toLowerCase() === "external") continue;
     await capture(resolveTarget(slidePath, relationship.target));
   }
-  const oleWorkbook = presentationOleWorkbook(fragment, slideXml, slidePath, relationships, parts);
+  const oleWorkbook = presentationOleWorkbook(fragment, slideXml, slidePath, relationships, parts, await packageInboundRelationshipCounts(zip));
   return {
     sourcePart: safePartPath(slidePath),
     rawXml: selfContainedPresentationFragment(fragment, slideXml),
@@ -158,7 +188,7 @@ export async function capturePresentationOpaqueObject({ zip, slidePath, slideXml
   };
 }
 
-function presentationOleWorkbook(fragment, sourceXml, slidePath, relationships, parts) {
+function presentationOleWorkbook(fragment, sourceXml, slidePath, relationships, parts, inboundCounts) {
   const oleTags = [...String(fragment).matchAll(/<(?:[A-Za-z_][\w.-]*:)?oleObj\b[^>]*>/g)].map((match) => match[0]);
   if (oleTags.length !== 1) return undefined;
   const relationshipMatch = /\b([A-Za-z_][\w.-]*):id\s*=\s*(["'])(.*?)\2/.exec(oleTags[0]);
@@ -172,8 +202,7 @@ function presentationOleWorkbook(fragment, sourceXml, slidePath, relationships, 
   const partPath = resolveTarget(slidePath, relationship.target);
   const part = parts.get(partPath);
   if (!part || part.contentType.toLowerCase() !== XLSX_CONTENT_TYPE) return undefined;
-  const inbound = relationships.filter((candidate) => candidate.targetMode.toLowerCase() !== "external" && resolveTarget(slidePath, candidate.target) === partPath);
-  if (inbound.length !== 1) return undefined;
+  if (inboundCounts.get(partPath) !== 1) return undefined;
   return {
     partPath,
     contentType: XLSX_CONTENT_TYPE,

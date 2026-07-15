@@ -68,7 +68,7 @@ async function addOpaqueOpcGraph(bytes) {
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
-async function addPresentationNativeGraph(bytes, embeddedWorkbookBytes) {
+async function addPresentationNativeGraph(bytes, embeddedWorkbookBytes, { sharedOleOnSecondSlide = false } = {}) {
   const zip = await JSZip.loadAsync(bytes);
   const namespaces = ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
   const ole = `<p:graphicFrame${namespaces}><p:nvGraphicFramePr><p:cNvPr id="100" name="Embedded workbook"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdNativeOle" imgW="965200" imgH="609600" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdNativePreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>`;
@@ -81,9 +81,24 @@ async function addPresentationNativeGraph(bytes, embeddedWorkbookBytes) {
   zip.file(slidePath, updatedSlide);
 
   const relationshipsPath = "ppt/slides/_rels/slide1.xml.rels";
-  const relationshipsXml = await zip.file(relationshipsPath).async("text");
+  const relationshipsXml = await zip.file(relationshipsPath)?.async("text") || '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
   const nativeRelationships = '<Relationship Id="rIdNativeOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/native-workbook.xlsx"/><Relationship Id="rIdNativePreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/native-preview.png"/><Relationship Id="rIdNativeDm" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="../diagrams/native-data.xml"/><Relationship Id="rIdNativeLo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout" Target="../diagrams/native-layout.xml"/><Relationship Id="rIdNativeQs" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle" Target="../diagrams/native-style.xml"/><Relationship Id="rIdNativeCs" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors" Target="../diagrams/native-colors.xml"/><Relationship Id="rIdNativeContent" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/native-content.xml"/>';
   zip.file(relationshipsPath, relationshipsXml.replace("</Relationships>", `${nativeRelationships}</Relationships>`));
+
+  if (sharedOleOnSecondSlide) {
+    const secondSlidePath = "ppt/slides/slide2.xml";
+    const secondSlideXml = await zip.file(secondSlidePath)?.async("text");
+    assert.ok(secondSlideXml?.includes("</p:spTree>"), "shared OLE fixture requires slide2.xml");
+    const secondOle = ole
+      .replace('id="100" name="Embedded workbook"', 'id="200" name="Shared embedded workbook"')
+      .replaceAll("rIdNativeOle", "rIdSharedNativeOle")
+      .replaceAll("rIdNativePreview", "rIdSharedNativePreview");
+    zip.file(secondSlidePath, secondSlideXml.replace("</p:spTree>", `${secondOle}</p:spTree>`));
+    const secondRelationshipsPath = "ppt/slides/_rels/slide2.xml.rels";
+    const secondRelationshipsXml = await zip.file(secondRelationshipsPath)?.async("text") || '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+    const sharedRelationships = '<Relationship Id="rIdSharedNativeOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/native-workbook.xlsx"/><Relationship Id="rIdSharedNativePreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/native-preview.png"/>';
+    zip.file(secondRelationshipsPath, secondRelationshipsXml.replace("</Relationships>", `${sharedRelationships}</Relationships>`));
+  }
 
   const contentTypesPath = "[Content_Types].xml";
   const contentTypes = await zip.file(contentTypesPath).async("text");
@@ -3350,6 +3365,20 @@ const presentationSource = await PresentationFile.exportPptx(preservedPresentati
 const originalEmbeddedWorkbook = Workbook.create();
 originalEmbeddedWorkbook.worksheets.add("Embedded").getRange("A1").values = [["Original embedded workbook"]];
 const originalEmbeddedWorkbookFile = await SpreadsheetFile.exportXlsx(originalEmbeddedWorkbook);
+const sharedOlePresentation = Presentation.create();
+sharedOlePresentation.slides.add({ name: "Shared OLE one" }).shapes.add({ name: "One", position: { left: 40, top: 40, width: 300, height: 80 }, text: "One" });
+sharedOlePresentation.slides.add({ name: "Shared OLE two" }).shapes.add({ name: "Two", position: { left: 40, top: 40, width: 300, height: 80 }, text: "Two" });
+const sharedOleSource = await PresentationFile.exportPptx(sharedOlePresentation);
+const sharedOleBytes = await addPresentationNativeGraph(sharedOleSource.bytes, originalEmbeddedWorkbookFile.bytes, { sharedOleOnSecondSlide: true });
+const sharedOleFallback = await PresentationFile.importPptx(sharedOleBytes);
+const sharedFallbackObjects = sharedOleFallback.slides.items.flatMap((slide) => slide.nativeObjects.items).filter((object) => object.nativeKind === "oleObject");
+assert.equal(sharedFallbackObjects.length, 2);
+assert.equal(sharedFallbackObjects.every((object) => object.oleWorkbook === undefined), true);
+assert.throws(() => sharedFallbackObjects[0].getEmbeddedWorkbook(), /no editable embedded XLSX workbook/);
+const sharedOleOpenChestnut = await importPptxWithOpenChestnut(sharedOleBytes);
+const sharedOpenChestnutObjects = sharedOleOpenChestnut.slides.items.flatMap((slide) => slide.nativeObjects.items).filter((object) => object.nativeKind === "oleObject");
+assert.equal(sharedOpenChestnutObjects.length, 2);
+assert.equal(sharedOpenChestnutObjects.every((object) => object.oleWorkbook === undefined), true);
 const presentationNativeSource = await addPresentationNativeGraph(new Uint8Array(await presentationSource.arrayBuffer()), originalEmbeddedWorkbookFile.bytes);
 const presentationImported = await importPptxWithOpenChestnut(presentationNativeSource);
 const importedNativeObjects = presentationImported.slides.getItem(0).nativeObjects.items;
