@@ -348,6 +348,13 @@ public sealed class PptxCodecTests
         var rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Presentation.Slides[0].Elements[1].Source.Editable = true;
+        imported.Artifact.Presentation.Slides[0].Elements[1].Name = "Escalated picture";
+        var escalated = Export(imported.Artifact);
+        Assert.False(escalated.Ok);
+        Assert.Equal("presentation_element_binding_mismatch", Assert.Single(escalated.Diagnostics).Code);
     }
 
     [Fact]
@@ -359,24 +366,45 @@ public sealed class PptxCodecTests
         var slide = Assert.Single(imported.Artifact.Presentation.Slides);
         Assert.Equal(4, slide.Elements.Count);
 
-        var ole = slide.Elements[1].Opaque;
+        var oleElement = slide.Elements[1];
+        var ole = oleElement.Opaque;
         Assert.Equal("oleObject", ole.NativeKind);
+        Assert.True(oleElement.Source.Editable);
         Assert.Equal(["rIdNativeOle", "rIdNativePreview"], ole.RelationshipReferences.Select(item => item.RelationshipId));
         Assert.Equal(["ppt/embeddings/native-workbook.xlsx", "ppt/media/native-preview.png"], ole.PreservedPartPaths);
 
-        var diagram = slide.Elements[2].Opaque;
+        var diagramElement = slide.Elements[2];
+        var diagram = diagramElement.Opaque;
         Assert.Equal("diagram", diagram.NativeKind);
+        Assert.True(diagramElement.Source.Editable);
         Assert.Equal(["rIdNativeDm", "rIdNativeLo", "rIdNativeQs", "rIdNativeCs"], diagram.RelationshipReferences.Select(item => item.RelationshipId));
         Assert.Equal(4, diagram.PreservedPartPaths.Count);
         Assert.All(diagram.RelationshipReferences, item => Assert.Contains("relationships", item.NamespaceUri));
 
-        var content = slide.Elements[3].Opaque;
+        var contentElement = slide.Elements[3];
+        var content = contentElement.Opaque;
         Assert.Equal("contentPart", content.NativeKind);
+        Assert.True(contentElement.Source.Editable);
         Assert.Equal("rIdNativeContent", Assert.Single(content.RelationshipReferences).RelationshipId);
         Assert.Equal(["ppt/customXml/native-content.xml", "ppt/customXml/itemProps1.xml"], content.PreservedPartPaths);
         Assert.Equal(2, content.PreservedPartPaths.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 
         slide.Elements[0].Shape.Text = "Edited beside native objects";
+        oleElement.Name = "Edited embedded workbook";
+        ole.LeftEmu = 1_500_000;
+        ole.TopEmu = 1_250_000;
+        ole.WidthEmu = 4_000_000;
+        ole.HeightEmu = 2_500_000;
+        diagramElement.Name = "Edited SmartArt";
+        diagram.LeftEmu = 750_000;
+        diagram.TopEmu = 4_000_000;
+        diagram.WidthEmu = 5_250_000;
+        diagram.HeightEmu = 1_500_000;
+        contentElement.Name = "Edited content part";
+        content.LeftEmu = 7_250_000;
+        content.TopEmu = 4_750_000;
+        content.WidthEmu = 1_250_000;
+        content.HeightEmu = 1_100_000;
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, Diagnostics(preserved));
         Assert.Equal("opaque_content_preserved", Assert.Single(preserved.Diagnostics).Code);
@@ -385,7 +413,24 @@ public sealed class PptxCodecTests
 
         var reimported = Import(preserved.File.ToByteArray());
         Assert.True(reimported.Ok, Diagnostics(reimported));
-        Assert.Equal(["oleObject", "diagram", "contentPart"], reimported.Artifact.Presentation.Slides[0].Elements.Skip(1).Select(item => item.Opaque.NativeKind));
+        var edited = reimported.Artifact.Presentation.Slides[0].Elements.Skip(1).ToArray();
+        Assert.Equal(["oleObject", "diagram", "contentPart"], edited.Select(item => item.Opaque.NativeKind));
+        Assert.Equal(["Edited embedded workbook", "Edited SmartArt", "Edited content part"], edited.Select(item => item.Name));
+        Assert.Equal([(1_500_000L, 1_250_000L, 4_000_000L, 2_500_000L), (750_000L, 4_000_000L, 5_250_000L, 1_500_000L), (7_250_000L, 4_750_000L, 1_250_000L, 1_100_000L)],
+            edited.Select(item => (item.Opaque.LeftEmu, item.Opaque.TopEmu, item.Opaque.WidthEmu, item.Opaque.HeightEmu)));
+        Assert.All(edited, item => Assert.True(item.Source.Editable));
+
+        imported = Import(source);
+        imported.Artifact.Presentation.Slides[0].Elements[1].Opaque.RawXml += " ";
+        var rawXmlRejected = Export(imported.Artifact);
+        Assert.False(rawXmlRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rawXmlRejected.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Presentation.Slides[0].Elements[1].Opaque.WidthEmu = 0;
+        var frameRejected = Export(imported.Artifact);
+        Assert.False(frameRejected.Ok);
+        Assert.Equal("invalid_presentation_frame", Assert.Single(frameRejected.Diagnostics).Code);
     }
 
     [Fact]

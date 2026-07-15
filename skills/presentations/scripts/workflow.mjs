@@ -340,6 +340,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       assert.ok(object, `Missing OpenChestnut native object ${expected.nativeKind}`);
       assert.equal(object.rootRelationships.length, Number(expected.relationships), `${expected.nativeKind} root relationship count`);
       assert.equal(object.parts.length, Number(expected.parts), `${expected.nativeKind} preserved part count`);
+      assert.equal(object.editable, expected.editable === true, `${expected.nativeKind} placement editability`);
       assert.equal(imported.resolve(object.id), object, `${expected.nativeKind} must resolve by stable import ID`);
       const inspected = imported.inspect({ kind: "nativeObject", maxChars: fixture.qa?.maxChars || 30_000 }).ndjson;
       assert.match(inspected, new RegExp(`"nativeKind":"${expected.nativeKind}"`));
@@ -362,6 +363,12 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         if (edit.layoutPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.layoutPlaceholder.textBodyProperties;
       }
       if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;
+      for (const nativeEdit of edit.nativeObjects || []) {
+        const object = imported.slides.items.flatMap((item) => item.nativeObjects.items).find((item) => item.nativeKind === nativeEdit.nativeKind);
+        assert.ok(object, `Missing OpenChestnut editable native object ${nativeEdit.nativeKind}`);
+        object.setName(nativeEdit.name ?? object.name);
+        if (nativeEdit.position) object.setPosition(nativeEdit.position);
+      }
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
       assert.ok(shape, `Missing OpenChestnut editable shape ${edit.shapeName || edit.shapeId}`);
@@ -370,6 +377,16 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;
     }
     pptx = await PresentationFile.exportPptx(imported, { codec: "open-chestnut" });
+    if (openChestnut?.edit?.nativeObjects?.length) {
+      const edited = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
+      for (const expected of openChestnut.edit.nativeObjects) {
+        const object = edited.slides.items.flatMap((slide) => slide.nativeObjects.items).find((item) => item.nativeKind === expected.nativeKind);
+        assert.ok(object, `Missing edited OpenChestnut native object ${expected.nativeKind}`);
+        assert.equal(object.name, expected.name, `${expected.nativeKind} edited name`);
+        assert.deepEqual(object.position, expected.position, `${expected.nativeKind} edited position`);
+        assert.equal(object.editable, true, `${expected.nativeKind} remains placement-editable`);
+      }
+    }
   }
   await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {

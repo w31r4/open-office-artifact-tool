@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-// Builds a standards-valid, read-only native-object graph for the runnable
+// Builds a standards-valid, source-bound native-object graph for the runnable
 // OpenChestnut fixture. The graph deliberately crosses an embedded package,
 // a SmartArt four-part root, and a recursive contentPart/customXmlProps edge.
 export async function addOpenChestnutNativeGraphFixture(bytes) {

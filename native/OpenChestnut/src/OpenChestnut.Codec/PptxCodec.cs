@@ -427,18 +427,38 @@ internal static class PptxCodec
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} does not match its source element.",
                             PartPath(slidePart));
                     var original = ReadElement(sourceElement, slideIndex, elementIndex, slideContext, nativeObjects);
+                    if (elementBinding.Editable != original.Source.Editable)
+                        throw new CodecException(
+                            "presentation_element_binding_mismatch",
+                            $"Presentation slide {slideIndex + 1} element {elementIndex + 1} changed its source editability contract.",
+                            PartPath(slidePart));
                     if (!SemanticHash(original).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                         throw new CodecException(
                             "presentation_source_semantics_mismatch",
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} source semantics do not match its binding.",
                             PartPath(slidePart));
+                    if (original.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
+                        requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
+                        PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
+                        ValidateNativePlacementRequest(original, requested);
                     if (SemanticHash(requested).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!elementBinding.Editable || sourceElement is not P.Shape sourceShape || requested.ContentCase != PresentationElement.ContentOneofCase.Shape)
-                        throw new CodecException(
-                            "unsupported_presentation_edit",
-                            $"Presentation slide {slideIndex + 1} element {elementIndex + 1} is preserved but not safely editable by this codec slice.",
-                            PartPath(slidePart));
-                    ApplyShape(sourceShape, requested, slideContext);
+                    if (!elementBinding.Editable)
+                        throw UnsupportedPresentationEdit(slideIndex, elementIndex, slidePart);
+                    if (sourceElement is P.Shape sourceShape &&
+                        requested.ContentCase == PresentationElement.ContentOneofCase.Shape &&
+                        IsSimpleShape(sourceShape))
+                    {
+                        ApplyShape(sourceShape, requested, slideContext);
+                    }
+                    else if (requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
+                             PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
+                    {
+                        ApplyNativePlacement(sourceElement, requested);
+                    }
+                    else
+                    {
+                        throw UnsupportedPresentationEdit(slideIndex, elementIndex, slidePart);
+                    }
                     changed = true;
                 }
                 if (changed)
@@ -495,6 +515,7 @@ internal static class PptxCodec
                 HeightEmu = frame.Height,
             };
             nativeObjects?.Populate(element.Opaque, source, PartPath(slideContext.Owner));
+            editable = PptxNativeObjectCatalog.SupportsPlacementEditing(source);
         }
         element.Source = new PresentationElementSourceBinding
         {
@@ -583,6 +604,83 @@ internal static class PptxCodec
         if (shape.NonVisualShapeProperties?.NonVisualDrawingProperties is { } nonVisual)
             nonVisual.Name = source.Name;
         PptxTextCodec.Apply(shape, semantic, slideContext);
+    }
+
+    private static CodecException UnsupportedPresentationEdit(int slideIndex, int elementIndex, OpenXmlPart slidePart) => new(
+        "unsupported_presentation_edit",
+        $"Presentation slide {slideIndex + 1} element {elementIndex + 1} is preserved but not safely editable by this codec slice.",
+        PartPath(slidePart));
+
+    private static void ValidateNativePlacementRequest(PresentationElement original, PresentationElement requested)
+    {
+        var allowed = original.Clone();
+        allowed.Name = requested.Name;
+        allowed.Opaque.LeftEmu = requested.Opaque.LeftEmu;
+        allowed.Opaque.TopEmu = requested.Opaque.TopEmu;
+        allowed.Opaque.WidthEmu = requested.Opaque.WidthEmu;
+        allowed.Opaque.HeightEmu = requested.Opaque.HeightEmu;
+        // Source binding equality is checked against the actual source above;
+        // reuse the caller's equivalent instance to keep protobuf equality
+        // focused on the semantic payload.
+        allowed.Source = requested.Source.Clone();
+        if (!allowed.Equals(requested))
+            throw new CodecException(
+                "unsupported_presentation_edit",
+                $"Presentation native object {requested.Id} may edit only its name and outer frame.");
+    }
+
+    private static void ApplyNativePlacement(OpenXmlElement source, PresentationElement requested)
+    {
+        var frame = requested.Opaque;
+        if (source is P.GraphicFrame graphicFrame)
+        {
+            if (graphicFrame.NonVisualGraphicFrameProperties?.NonVisualDrawingProperties is { } nonVisual)
+                nonVisual.Name = requested.Name;
+            SetFrame(graphicFrame.Transform!, frame);
+            if (PptxNativeObjectCatalog.Classify(source) == "oleObject")
+            {
+                // PowerPoint stores a second transform on the OLE preview
+                // picture. Keep it derived from the outer frame so Office and
+                // fallback renderers agree after a move/resize.
+                var previewTransform = graphicFrame.Descendants<A.Transform2D>().FirstOrDefault();
+                if (previewTransform is not null) SetFrame(previewTransform, frame);
+            }
+            return;
+        }
+        if (source is P.GroupShape group)
+        {
+            if (group.GetFirstChild<P.NonVisualGroupShapeProperties>()?.NonVisualDrawingProperties is { } nonVisual)
+                nonVisual.Name = requested.Name;
+            SetFrame(group.GetFirstChild<P.GroupShapeProperties>()!.GetFirstChild<A.TransformGroup>()!, frame);
+            return;
+        }
+        throw new CodecException("unsupported_presentation_edit", $"Presentation native object {requested.Id} has no supported placement owner.");
+    }
+
+    private static void SetFrame(P.Transform transform, PresentationOpaqueElement frame)
+    {
+        transform.Offset!.X = frame.LeftEmu;
+        transform.Offset.Y = frame.TopEmu;
+        transform.Extents!.Cx = frame.WidthEmu;
+        transform.Extents.Cy = frame.HeightEmu;
+    }
+
+    private static void SetFrame(A.Transform2D transform, PresentationOpaqueElement frame)
+    {
+        transform.Offset ??= new A.Offset();
+        transform.Extents ??= new A.Extents();
+        transform.Offset.X = frame.LeftEmu;
+        transform.Offset.Y = frame.TopEmu;
+        transform.Extents.Cx = frame.WidthEmu;
+        transform.Extents.Cy = frame.HeightEmu;
+    }
+
+    private static void SetFrame(A.TransformGroup transform, PresentationOpaqueElement frame)
+    {
+        transform.Offset!.X = frame.LeftEmu;
+        transform.Offset.Y = frame.TopEmu;
+        transform.Extents!.Cx = frame.WidthEmu;
+        transform.Extents.Cy = frame.HeightEmu;
     }
 
     private static void ReplaceFill(OpenXmlCompositeElement parent, string rgb)
@@ -784,6 +882,10 @@ internal static class PptxCodec
 
     private static (long Left, long Top, long Width, long Height) ReadFrame(OpenXmlElement element)
     {
+        if (element is P.GraphicFrame graphicFrame && graphicFrame.Transform?.Offset is { } graphicOffset && graphicFrame.Transform.Extents is { } graphicExtents)
+            return (graphicOffset.X?.Value ?? 0, graphicOffset.Y?.Value ?? 0, graphicExtents.Cx?.Value ?? 0, graphicExtents.Cy?.Value ?? 0);
+        if (element is P.GroupShape group && group.GetFirstChild<P.GroupShapeProperties>()?.GetFirstChild<A.TransformGroup>() is { Offset: { } groupOffset, Extents: { } groupExtents })
+            return (groupOffset.X?.Value ?? 0, groupOffset.Y?.Value ?? 0, groupExtents.Cx?.Value ?? 0, groupExtents.Cy?.Value ?? 0);
         var transform = element.Descendants<A.Transform2D>().FirstOrDefault();
         if (transform?.Offset is not null && transform.Extents is not null)
             return (transform.Offset.X?.Value ?? 0, transform.Offset.Y?.Value ?? 0, transform.Extents.Cx?.Value ?? 0, transform.Extents.Cy?.Value ?? 0);
@@ -808,9 +910,11 @@ internal static class PptxCodec
     private static string SemanticHash(PresentationElement element)
     {
         var semantic = element.Clone();
+        var placementEditable = semantic.ContentCase == PresentationElement.ContentOneofCase.Opaque && semantic.Source?.Editable == true;
         semantic.Id = string.Empty;
         semantic.Source = null;
         if (semantic.ContentCase == PresentationElement.ContentOneofCase.Shape) PptxTextCodec.NormalizeSemantics(semantic.Shape);
+        else if (placementEditable) semantic.Opaque.RawXml = string.Empty;
         return Hash(semantic.ToByteArray());
     }
 
@@ -898,6 +1002,19 @@ internal static class PptxCodec
                 }
                 else if (element.ContentCase != PresentationElement.ContentOneofCase.Opaque)
                     throw new CodecException("missing_presentation_element_content", $"Presentation element {element.Id} has no content.");
+                else
+                {
+                    // Preserve arbitrary read-only source objects even when
+                    // they have no useful frame. Only the narrow placement-
+                    // editable contract requires writable name/frame values.
+                    if (element.Source?.Editable == true)
+                    {
+                        if (element.Name.Length > 1_024)
+                            throw new CodecException("invalid_presentation_native_object", $"Presentation native object {element.Id} name exceeds 1024 characters.");
+                        if (element.Opaque.LeftEmu < 0 || element.Opaque.TopEmu < 0 || element.Opaque.WidthEmu <= 0 || element.Opaque.HeightEmu <= 0)
+                            throw new CodecException("invalid_presentation_frame", $"Presentation native object {element.Id} has an invalid frame.");
+                    }
+                }
             }
         }
         return assetCatalog;
@@ -1057,6 +1174,23 @@ internal static class PptxCodec
                         throw new CodecException(
                             "presentation_unchanged_element_modified",
                             $"PPTX slide {slideIndex + 1} unchanged element {elementIndex + 1} was modified during export.",
+                            PartPath(outputSlides[slideIndex]));
+                    continue;
+                }
+                if (request.ContentCase == PresentationElement.ContentOneofCase.Opaque)
+                {
+                    if (!NativeObjectResidualHash(before[elementIndex]).Equals(NativeObjectResidualHash(after[elementIndex]), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "presentation_unmodeled_native_content_changed",
+                            $"PPTX slide {slideIndex + 1} edited native object {elementIndex + 1} changed unmodeled native content.",
+                            PartPath(outputSlides[slideIndex]));
+                    var outputFrame = ReadFrame(after[elementIndex]);
+                    if (!ElementName(after[elementIndex], elementIndex).Equals(request.Name, StringComparison.Ordinal) ||
+                        outputFrame.Left != request.Opaque.LeftEmu || outputFrame.Top != request.Opaque.TopEmu ||
+                        outputFrame.Width != request.Opaque.WidthEmu || outputFrame.Height != request.Opaque.HeightEmu)
+                        throw new CodecException(
+                            "presentation_postwrite_semantics_mismatch",
+                            $"PPTX slide {slideIndex + 1} edited native object {elementIndex + 1} does not match the requested name/frame.",
                             PartPath(outputSlides[slideIndex]));
                     continue;
                 }
@@ -1353,6 +1487,46 @@ internal static class PptxCodec
         }
         PptxTextCodec.ScrubModeledContent(shape.TextBody, slideContext);
         return HashElement(shape);
+    }
+
+    private static string NativeObjectResidualHash(OpenXmlElement source)
+    {
+        var clone = source.CloneNode(true);
+        if (clone.Descendants<P.NonVisualDrawingProperties>().FirstOrDefault() is { } nonVisual)
+            nonVisual.Name = string.Empty;
+        if (clone is P.GraphicFrame graphicFrame && graphicFrame.Transform is { } transform)
+        {
+            ScrubFrame(transform);
+            if (PptxNativeObjectCatalog.Classify(clone) == "oleObject" && graphicFrame.Descendants<A.Transform2D>().FirstOrDefault() is { } preview)
+                ScrubFrame(preview);
+        }
+        else if (clone is P.GroupShape group && group.GetFirstChild<P.GroupShapeProperties>()?.GetFirstChild<A.TransformGroup>() is { } groupTransform)
+        {
+            ScrubFrame(groupTransform);
+        }
+        return HashElement(clone);
+    }
+
+    private static void ScrubFrame(P.Transform transform)
+    {
+        transform.Offset!.X = 0L;
+        transform.Offset.Y = 0L;
+        transform.Extents!.Cx = 1L;
+        transform.Extents.Cy = 1L;
+    }
+
+    private static void ScrubFrame(A.Transform2D transform)
+    {
+        if (transform.Offset is { } offset) { offset.X = 0L; offset.Y = 0L; }
+        if (transform.Extents is { } extents) { extents.Cx = 1L; extents.Cy = 1L; }
+    }
+
+    private static void ScrubFrame(A.TransformGroup transform)
+    {
+        transform.Offset!.X = 0L;
+        transform.Offset.Y = 0L;
+        transform.Extents!.Cx = 1L;
+        transform.Extents.Cy = 1L;
     }
 
     private static string MasterResidualHash(P.SlideMaster source, PptxPartContext partContext)

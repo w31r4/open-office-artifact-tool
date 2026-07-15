@@ -80,7 +80,7 @@
           "position": { "left": 48, "top": 610, "width": 1184, "height": 56 },
           "fill": "#EFF6FF",
           "line": { "fill": "#2563EB", "width": 1 },
-          "text": "Unsupported native objects stay source-bound and read-only until their semantic codec lands.",
+          "text": "Native objects keep their payload graph source-bound while bounded placement edits stay explicit.",
           "textStyle": { "fontSize": 18, "color": "#1E3A8A" }
         }
       ],
@@ -112,13 +112,18 @@
   "openChestnut": {
     "nativeGraphFixture": true,
     "nativeObjects": [
-      { "nativeKind": "oleObject", "relationships": 2, "parts": 2 },
-      { "nativeKind": "diagram", "relationships": 4, "parts": 4 },
-      { "nativeKind": "contentPart", "relationships": 1, "parts": 2 }
+      { "nativeKind": "oleObject", "relationships": 2, "parts": 2, "editable": true },
+      { "nativeKind": "diagram", "relationships": 4, "parts": 4, "editable": true },
+      { "nativeKind": "contentPart", "relationships": 1, "parts": 2, "editable": true }
     ],
     "edit": {
       "slideIndex": 0,
       "shapeName": "wasm-title",
+      "nativeObjects": [
+        { "nativeKind": "oleObject", "name": "Edited embedded workbook", "position": { "left": 1182, "top": 235, "width": 72, "height": 64 } },
+        { "nativeKind": "diagram", "name": "Edited SmartArt", "position": { "left": 1180, "top": 340, "width": 74, "height": 66 } },
+        { "nativeKind": "contentPart", "name": "Edited content part", "position": { "left": 1178, "top": 445, "width": 76, "height": 68 } }
+      ],
       "masterBackground": { "fill": "accent4", "mode": "reference", "index": 1003 },
       "layoutBackground": { "fill": "#F0FDF4", "mode": "solid" },
       "masterPlaceholder": { "type": "title", "idx": 0, "text": "After master placeholder" },

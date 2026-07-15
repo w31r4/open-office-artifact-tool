@@ -4,6 +4,7 @@ const RELATIONSHIP_NAMESPACES = new Set([
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
   "http://purl.oclc.org/ooxml/officeDocument/relationships",
 ]);
+const EMU_PER_PIXEL = 9525;
 
 function decodeXml(value) {
   return String(value ?? "")
@@ -173,6 +174,45 @@ function rewriteFragmentRelationships(xml, replacements, relationshipReferences 
   });
 }
 
+function nativeFrameEmu(object) {
+  const position = object.position || {};
+  const values = Object.fromEntries(["left", "top", "width", "height"].map((field) => [field, Number(position[field])]));
+  if (!Number.isFinite(values.left) || !Number.isFinite(values.top) || !Number.isFinite(values.width) || !Number.isFinite(values.height) ||
+      values.left < 0 || values.top < 0 || values.width <= 0 || values.height <= 0) {
+    throw new Error(`Native ${object.nativeKind} object ${object.id} has an invalid editable frame.`);
+  }
+  return Object.fromEntries(Object.entries(values).map(([field, value]) => [field, Math.round(value * EMU_PER_PIXEL)]));
+}
+
+function replaceXmlAttribute(tag, name, value) {
+  const pattern = new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`);
+  if (pattern.test(tag)) return tag.replace(pattern, `${name}="${attrEscape(value)}"`);
+  return tag.replace(/\/?\s*>$/, (ending) => ` ${name}="${attrEscape(value)}"${ending}`);
+}
+
+function rewriteTransformFrame(xml, frame, { limit = 1 } = {}) {
+  let count = 0;
+  const rewritten = String(xml).replace(/<(?:[A-Za-z_][\w.-]*:)?xfrm\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?xfrm>/g, (transform) => {
+    if (count >= limit) return transform;
+    count++;
+    const withOffset = transform.replace(/<(?:[A-Za-z_][\w.-]*:)?off\b[^>]*\/?\s*>/, (tag) => replaceXmlAttribute(replaceXmlAttribute(tag, "x", frame.left), "y", frame.top));
+    return withOffset.replace(/<(?:[A-Za-z_][\w.-]*:)?ext\b[^>]*\/?\s*>/, (tag) => replaceXmlAttribute(replaceXmlAttribute(tag, "cx", frame.width), "cy", frame.height));
+  });
+  if (count === 0) throw new Error("Editable native presentation object has no writable outer transform.");
+  return rewritten;
+}
+
+function rewriteNativeObjectPlacement(xml, object) {
+  if (!object.editable) return xml;
+  const name = String(object.name ?? "");
+  if (name.length > 1_024) throw new Error(`Native presentation object ${object.id} name exceeds 1024 characters.`);
+  const named = String(xml).replace(/<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*\/?\s*>/, (tag) => replaceXmlAttribute(tag, "name", name));
+  // OLE roots carry one outer GraphicFrame transform and may carry one
+  // preview-picture transform for the same visual frame. Never rewrite later
+  // nested transforms in an otherwise opaque payload.
+  return rewriteTransformFrame(named, nativeFrameEmu(object), { limit: object.nativeKind === "oleObject" ? 2 : 1 });
+}
+
 export function planPresentationOpaqueParts(slides, options = {}) {
   const reserved = new Set(options.reservedPaths || []);
   const allParts = new Map();
@@ -211,7 +251,7 @@ export function planPresentationOpaqueParts(slides, options = {}) {
         const originalTarget = resolveTarget(object.sourcePart || options.slidePath(slide, slideIndex), relationship.target);
         return { ...relationship, id, target: relativeTarget(options.slidePath(slide, slideIndex), pathMap.get(originalTarget)) };
       });
-      entries.set(object.id, { xml: rewriteFragmentRelationships(object.rawXml, replacements, object.relationshipReferences), relationships: rootRelationships });
+      entries.set(object.id, { xml: rewriteFragmentRelationships(rewriteNativeObjectPlacement(object.rawXml, object), replacements, object.relationshipReferences), relationships: rootRelationships });
     }
     bySlide.set(slide, { entries, relationships: [...entries.values()].flatMap((entry) => entry.relationships), nextRelationshipIndex });
   }

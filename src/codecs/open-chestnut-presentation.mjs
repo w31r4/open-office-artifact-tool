@@ -724,15 +724,35 @@ function unsupportedPresentationFeatures(presentation) {
   return unsupported;
 }
 
-function opaquePresentationSnapshot(object) {
+function opaquePresentationSnapshot(object, { includePlacement = true } = {}) {
   return JSON.stringify({
     id: object.id,
-    name: object.name,
+    ...(includePlacement ? { name: object.name, position: object.position } : {}),
     nativeKind: object.nativeKind,
-    position: object.position,
     rawXml: object.rawXml,
     ...presentationNativeGraphSnapshot(object),
   });
+}
+
+function presentationOpaqueElement(object, original) {
+  const name = String(object.name ?? "");
+  if (name.length > 1_024) throw new OpenChestnutCodecError(`Presentation native object ${object.id} name exceeds 1024 characters.`, [], { code: "invalid_presentation_native_object" });
+  const position = object.position || {};
+  return {
+    id: original.id,
+    name,
+    source: original.source,
+    content: {
+      case: "opaque",
+      value: {
+        ...original.content.value,
+        leftEmu: emuFromPixels(position.left, `${object.id}.position.left`),
+        topEmu: emuFromPixels(position.top, `${object.id}.position.top`),
+        widthEmu: emuFromPixels(position.width, `${object.id}.position.width`),
+        heightEmu: emuFromPixels(position.height, `${object.id}.position.height`),
+      },
+    },
+  };
 }
 
 export function presentationEnvelope(presentation, protocolVersion) {
@@ -770,9 +790,11 @@ export function presentationEnvelope(presentation, protocolVersion) {
       source: sourceState?.wire.source,
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
       elements: sourceState
-        ? sourceState.entries.map((entry) => {
+          ? sourceState.entries.map((entry) => {
             if (entry.wire.content.case === "shape") return presentationShape(entry.model, entry.wire, assetCatalog);
-            if (opaquePresentationSnapshot(entry.model) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} is preserved but not editable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
+            const placementEditable = entry.wire.source?.editable === true;
+            if (opaquePresentationSnapshot(entry.model, { includePlacement: !placementEditable }) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} changed outside its ${placementEditable ? "name/frame" : "read-only"} native-object boundary.`, [], { code: "unsupported_presentation_edit" });
+            if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire);
             return entry.wire;
           })
         : slide.shapes.items.map((shape) => presentationShape(shape, undefined, assetCatalog)),
@@ -1056,12 +1078,19 @@ export async function presentationFromEnvelope(envelope) {
           },
           rawXml: opaque.rawXml,
           sourcePart,
+          editable: element.source?.editable === true,
           ...nativeGraph(opaque, sourcePart),
         });
       } else {
         throw new OpenChestnutCodecError(`Presentation element ${element.id} has no supported wire content.`, [], { code: "invalid_presentation_artifact" });
       }
-      entries.push({ wire: element, model, snapshot: element.content.case === "opaque" ? opaquePresentationSnapshot(model) : undefined });
+      entries.push({
+        wire: element,
+        model,
+        snapshot: element.content.case === "opaque"
+          ? opaquePresentationSnapshot(model, { includePlacement: element.source?.editable !== true })
+          : undefined,
+      });
     }
     slideStates.push({ wire: sourceSlide, name: slide.name, entries });
   }

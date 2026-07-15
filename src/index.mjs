@@ -1070,7 +1070,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable slide with optional name, layout identity, and speaker notes." },
   { artifactKind: "presentation", kind: "api", name: "presentation.customShows.add", summary: "Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships." },
   { artifactKind: "presentation", kind: "api", name: "presentation.customShows.getItem", summary: "Resolve a custom slide show by zero-based index, stable facade ID, or exact name." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and read-only native contentPart/OLE/diagram objects with bounded relationship-reference, root-relationship, and preserved-part summaries; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, and preserved-part summaries; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
   { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to editable facade objects, including custom shows." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
@@ -1078,6 +1078,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
   { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, fill, line, text, and bounded DrawingML text-body layout." },
   { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets with RGB or theme marker colors; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip." },
+  { artifactKind: "presentation", kind: "api", name: "nativeObject.setName", summary: "Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed." },
+  { artifactKind: "presentation", kind: "api", name: "nativeObject.setPosition", summary: "Move or resize an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group by replacing only its outer pixel frame; nested coordinates and native payload graphs remain source-bound." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -1098,8 +1100,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice." },
-  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled OpenChestnut codec, preserving unsupported native content fail-closed." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes and text semantics plus name/outer-frame edits for recognized top-level OLE, SmartArt/diagram, and contentPart groups through the bundled OpenChestnut codec, preserving every native payload graph and unsupported object fail-closed." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object name/outer-frame placement, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -2006,6 +2008,12 @@ const PRESENTATION_HELP_SCHEMAS = {
   "shape.text.set": helpSchema({
     text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, inline arrays, or paragraph objects. Ordered inlines are ordinary text, { break: true } with optional style, or { field: { id?, type, text } } with optional style; fields receive a brace-wrapped UUID when id is omitted. Paragraph tabStops use strictly increasing pixel positions and left, center, right, or decimal alignment. Paragraphs also accept level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and styles. bulletColor accepts a six-digit RGB color or one of the 16 DrawingML theme tokens. An inline link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI." },
   }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),
+  "nativeObject.setName": helpSchema({
+    name: { type: "string", required: true, description: "Native-object display name, limited to 1,024 characters." },
+  }, "nativeObject", "NativePresentationObject", "The same placement-editable native-object facade; raw XML, relationships, parts, and topology remain source-bound."),
+  "nativeObject.setPosition": helpSchema({
+    position: { type: "object", required: true, description: "Outer pixel frame with non-negative left/top and positive width/height." },
+  }, "nativeObject", "NativePresentationObject", "The same placement-editable native-object facade; contentPart child coordinates and every native payload graph remain source-bound."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
     position: { type: "object", required: true, description: "Group frame in parent or slide pixel coordinates." },
@@ -2159,14 +2167,14 @@ const PRESENTATION_HELP_SCHEMAS = {
     limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "presentation", "Presentation", "Imported editable presentation facade."),
   "exportPptxWithOpenChestnut": helpSchema({
-    presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse; ordered text/field/line-break inline; paragraph tab-stop; character/auto/none marker; direct marker-style; and external/internal/relative-action link boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
+    presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change only name and outer frame." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
   "importPptxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable ordered text/field/line-break inlines, paragraph tab stops, direct list markers/styles, and bounded links plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable bounded shape text and recognized native-object name/outer-frame placement plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export."),
 };
 
 const WORKBOOK_HELP_SCHEMAS = {
@@ -9147,9 +9155,24 @@ class NativePresentationObject {
     this.position = normalizeFrame(config, { left: 0, top: 0, width: 1, height: 1 });
     this.rawXml = String(config.rawXml || "");
     this.sourcePart = config.sourcePart;
+    Object.defineProperty(this, "editable", { enumerable: true, value: config.editable === true, writable: false });
     this.relationshipReferences = (config.relationshipReferences || []).map((reference) => ({ ...reference }));
     this.rootRelationships = (config.rootRelationships || []).map((relationship) => ({ ...relationship }));
     this.parts = (config.parts || []).map((part) => ({ ...part, bytes: new Uint8Array(part.bytes), relationships: (part.relationships || []).map((relationship) => ({ ...relationship })) }));
+  }
+
+  setName(value) {
+    if (!this.editable) throw new Error(`Native ${this.nativeKind} object ${this.id} is read-only.`);
+    const name = String(value ?? "");
+    if (name.length > 1_024) throw new RangeError("Native presentation object names cannot exceed 1024 characters.");
+    this.name = name;
+    return this;
+  }
+
+  setPosition(value = {}) {
+    if (!this.editable) throw new Error(`Native ${this.nativeKind} object ${this.id} is read-only.`);
+    this.position = normalizeFrame({ position: { ...this.position, ...value } }, this.position);
+    return this;
   }
 
   inspectRecord() {
@@ -9170,12 +9193,13 @@ class NativePresentationObject {
       nativeParts: this.parts.map((part) => ({ path: part.path, contentType: part.contentType, relationships: part.relationships.length })),
       bbox: [frame.left, frame.top, frame.width, frame.height],
       bboxUnit: "px",
-      editable: false,
+      editable: this.editable,
+      editableFields: this.editable ? ["name", "position"] : [],
     };
   }
 
   layoutJson() {
-    return { kind: "nativeObject", id: this.id, name: this.name, nativeKind: this.nativeKind, frame: this.position, relationships: this.rootRelationships.length, preservedParts: this.parts.length, editable: false };
+    return { kind: "nativeObject", id: this.id, name: this.name, nativeKind: this.nativeKind, frame: this.position, relationships: this.rootRelationships.length, preservedParts: this.parts.length, editable: this.editable, editableFields: this.editable ? ["name", "position"] : [] };
   }
 
   toSvg() {

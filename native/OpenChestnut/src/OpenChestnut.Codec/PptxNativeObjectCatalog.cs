@@ -1,6 +1,8 @@
 using System.IO.Compression;
 using DocumentFormat.OpenXml;
 using OpenOffice.Artifact.Wire.V1;
+using A = DocumentFormat.OpenXml.Drawing;
+using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
 
@@ -126,6 +128,31 @@ internal sealed class PptxNativeObjectCatalog
         }
     }
 
+    // Placement editing is intentionally narrower than native-object graph
+    // discovery. Only the three recognized top-level roots with complete
+    // owner transforms and non-visual names are editable; every relationship,
+    // part, descendant and other attribute remains source-bound.
+    internal static bool SupportsPlacementEditing(OpenXmlElement source)
+    {
+        var kind = Classify(source);
+        if (kind is "oleObject" or "diagram" && source is P.GraphicFrame frame)
+        {
+            return frame.NonVisualGraphicFrameProperties?.NonVisualDrawingProperties is not null &&
+                   frame.Transform?.Offset is not null &&
+                   frame.Transform.Extents is not null;
+        }
+        if (kind == "contentPart" && source is P.GroupShape group)
+        {
+            var transform = group.GetFirstChild<P.GroupShapeProperties>()?.GetFirstChild<A.TransformGroup>();
+            return group.GetFirstChild<P.NonVisualGroupShapeProperties>()?.NonVisualDrawingProperties is not null &&
+                   transform?.Offset is not null &&
+                   transform.Extents is not null &&
+                   transform.ChildOffset is not null &&
+                   transform.ChildExtents is not null;
+        }
+        return false;
+    }
+
     private string[] Closure(string rootPath, string sourcePart)
     {
         if (_closureByTarget.TryGetValue(rootPath, out var cached)) return cached;
@@ -177,7 +204,7 @@ internal sealed class PptxNativeObjectCatalog
         return result;
     }
 
-    private static string Classify(OpenXmlElement source)
+    internal static string Classify(OpenXmlElement source)
     {
         var descendants = Elements(source).ToArray();
         if (descendants.Any(element =>

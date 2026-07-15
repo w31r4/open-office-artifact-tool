@@ -3360,18 +3360,39 @@ assert.equal(importedDiagram.parts.length, 4);
 assert.equal(importedContentPart.rootRelationships.length, 1);
 assert.equal(importedContentPart.parts.length, 2);
 assert.deepEqual(importedContentPart.parts.map((part) => part.path), ["ppt/customXml/native-content.xml", "ppt/customXml/itemProps1.xml"]);
+assert.equal(importedOle.editable, true);
+assert.equal(importedDiagram.editable, true);
+assert.equal(importedContentPart.editable, true);
+assert.equal(importedNativeObjects.filter((object) => !new Set(["oleObject", "diagram", "contentPart"]).has(object.nativeKind)).every((object) => object.editable === false), true);
 const nativeInspect = presentationImported.inspect({ kind: "nativeObject", maxChars: 50_000 }).ndjson;
 assert.match(nativeInspect, /"nativeKind":"oleObject"/);
 assert.match(nativeInspect, /"nativeKind":"diagram"/);
 assert.match(nativeInspect, /"nativeKind":"contentPart"/);
 assert.match(nativeInspect, /"nativeParts":\[\{"path":"ppt\/customXml\/native-content.xml"/);
+assert.match(nativeInspect, /"editableFields":\["name","position"\]/);
 assert.equal(presentationImported.slides.getItem(0).resolve(importedDiagram.id), importedDiagram);
 presentationImported.slides.getItem(0).shapes.items[0].text.set("After WASM");
+importedOle.setName("Edited embedded workbook").setPosition({ left: 160, top: 120, width: 420, height: 260 });
+importedDiagram.setName("Edited SmartArt").setPosition({ left: 80, top: 410, width: 540, height: 150 });
+importedContentPart.setName("Edited content part").setPosition({ left: 730, top: 480, width: 130, height: 110 });
 const presentationPreserved = await exportPptxWithOpenChestnut(presentationImported);
 assert.equal(presentationPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
 const presentationPreservedZip = await JSZip.loadAsync(presentationPreserved.bytes);
 assert.deepEqual([...await presentationPreservedZip.file("ppt/embeddings/native-workbook.xlsx").async("uint8array")], [0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
 assert.match(await presentationPreservedZip.file("ppt/customXml/native-content.xml").async("text"), /preserve me/);
+const presentationPreservedSlideXml = await presentationPreservedZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(presentationPreservedSlideXml, /name="Edited embedded workbook"/);
+assert.match(presentationPreservedSlideXml, /<a:off x="1524000" y="1143000"\s*\/>/);
+assert.match(presentationPreservedSlideXml, /name="Edited SmartArt"/);
+assert.match(presentationPreservedSlideXml, /name="Edited content part"/);
+const presentationNativeRoundTrip = await importPptxWithOpenChestnut(presentationPreserved);
+const editedNativeRoundTrip = presentationNativeRoundTrip.slides.getItem(0).nativeObjects.items.filter((object) => object.editable);
+assert.deepEqual(editedNativeRoundTrip.map((object) => object.name), ["Edited embedded workbook", "Edited SmartArt", "Edited content part"]);
+assert.deepEqual(editedNativeRoundTrip.map((object) => object.position), [
+  { left: 160, top: 120, width: 420, height: 260 },
+  { left: 80, top: 410, width: 540, height: 150 },
+  { left: 730, top: 480, width: 130, height: 110 },
+]);
 const presentationRoundTrip = await PresentationFile.importPptx(presentationPreserved);
 assert.equal(presentationRoundTrip.slides.getItem(0).shapes.items[0].text.value, "After WASM");
 assert.equal(presentationRoundTrip.slides.getItem(0).images.items.length, 1);
@@ -3381,11 +3402,27 @@ const presentationFallbackRoundTrip = await PresentationFile.importPptx(presenta
 const presentationFallbackSlide = presentationFallbackRoundTrip.slides.getItem(0);
 assert.deepEqual(presentationFallbackSlide.nativeObjects.items.map((object) => object.nativeKind).sort(), ["diagram", "oleObject"].sort());
 assert.equal(presentationFallbackSlide.groups.items[0].nativeObjects.items[0].nativeKind, "contentPart");
-presentationImported.slides.getItem(0).nativeObjects.items[0].name = "Unsafe native edit";
+assert.equal(presentationFallbackSlide.nativeObjects.items.find((object) => object.nativeKind === "oleObject").name, "Edited embedded workbook");
+assert.deepEqual(presentationFallbackSlide.nativeObjects.items.find((object) => object.nativeKind === "diagram").position, { left: 80, top: 410, width: 540, height: 150 });
+assert.equal(presentationFallbackSlide.groups.items[0].name, "Edited content part");
+assert.deepEqual(presentationFallbackSlide.groups.items[0].position, { left: 730, top: 480, width: 130, height: 110 });
+const readOnlyNativeObject = presentationImported.slides.getItem(0).nativeObjects.items.find((object) => !object.editable);
+assert.ok(readOnlyNativeObject);
+assert.throws(() => readOnlyNativeObject.setPosition({ left: 1 }), /read-only/);
+const readOnlyNativeName = readOnlyNativeObject.name;
+readOnlyNativeObject.name = "Unsafe native edit";
 await assert.rejects(
   exportPptxWithOpenChestnut(presentationImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
 );
+readOnlyNativeObject.name = readOnlyNativeName;
+const originalNativeRawXml = importedOle.rawXml;
+importedOle.rawXml += " ";
+await assert.rejects(
+  exportPptxWithOpenChestnut(presentationImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
+);
+importedOle.rawXml = originalNativeRawXml;
 
 const unsupportedPresentation = Presentation.create();
 unsupportedPresentation.slides.add().images.add({ prompt: "Unsupported direct image authoring" });
