@@ -902,6 +902,15 @@ await assert.rejects(
   exportXlsxWithOpenChestnut(externalImageWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image" && /embedded dataUrl bytes/i.test(error.message),
 );
+const jpegImageWorkbook = Workbook.create();
+jpegImageWorkbook.worksheets.add("JPEG").images.add({
+  name: "JPEG marker",
+  alt: "JPEG marker",
+  dataUrl: "data:image/jpeg;base64,/9j/2Q==",
+  anchor: { from: { row: 0, col: 0 }, extent: { widthPx: 32, heightPx: 24 } },
+});
+const jpegImageRoundTrip = await importXlsxWithOpenChestnut(await exportXlsxWithOpenChestnut(jpegImageWorkbook));
+assert.equal(jpegImageRoundTrip.worksheets.getItem("JPEG").images.items[0].dataUrl, "data:image/jpeg;base64,/9j/2Q==");
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },

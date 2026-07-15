@@ -1,5 +1,4 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { DocumentModel, FileBlob, Workbook } from "../index.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
@@ -16,6 +15,7 @@ import {
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 import { presentationEnvelope, presentationFromEnvelope } from "./open-chestnut-presentation.mjs";
+import { spreadsheetImageFromWire, spreadsheetImageSnapshot, wireWorksheetImages } from "./open-chestnut-spreadsheet-images.mjs";
 
 export { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
@@ -29,12 +29,6 @@ const MANIFEST_URL = new URL("../../runtime/open-chestnut/manifest.json", import
 const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-state");
 const TABLE_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-table-state");
 const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-document-state");
-const XLSX_IMAGE_ASSET_PREFIX = "asset/workbook/image/";
-const XLSX_IMAGE_EMU_PER_PIXEL = 9525;
-const XLSX_IMAGE_CONTENT_TYPES = new Map([
-  ["image/png", { extension: "png", signature: (bytes) => bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from("89504e470d0a1a0a", "hex")) }],
-  ["image/jpeg", { extension: "jpg", signature: (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff }],
-]);
 const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const MAX_XLSX_FORMULA_LENGTH = 8192;
 const MAX_XLSX_FORMULA_TOPOLOGY_CELLS = 1_048_576;
@@ -509,112 +503,6 @@ function unsupportedWorkbookFeatures(workbook) {
     }
   }
   return unsupported;
-}
-
-function spreadsheetImageError(image, message, code = "invalid_spreadsheet_image") {
-  throw new OpenChestnutCodecError(`Worksheet image ${image?.name || image?.id || "(unnamed)"} ${message}`, [], { code });
-}
-
-function spreadsheetImageAsset(image) {
-  if (image.uri || image.prompt) spreadsheetImageError(image, "must use embedded dataUrl bytes; external URIs and prompts are outside the bounded OpenChestnut slice.", "unsupported_spreadsheet_image");
-  if (image.fit && image.fit !== "contain") spreadsheetImageError(image, `uses unsupported fit mode ${image.fit}; expected contain.`, "unsupported_spreadsheet_image");
-  const match = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/]*={0,2})$/i.exec(String(image.dataUrl || ""));
-  if (!match || match[2].length === 0 || match[2].length % 4 === 1) spreadsheetImageError(image, "requires a base64 PNG or JPEG data URL.");
-  const contentType = match[1].toLowerCase();
-  const profile = XLSX_IMAGE_CONTENT_TYPES.get(contentType);
-  const data = new Uint8Array(Buffer.from(match[2], "base64"));
-  const canonical = Buffer.from(data).toString("base64").replace(/=+$/, "");
-  if (canonical !== match[2].replace(/=+$/, "") || !profile?.signature(data)) spreadsheetImageError(image, `data URL bytes do not match ${contentType}.`);
-  const sha256 = createHash("sha256").update(data).digest("hex");
-  return {
-    id: `${XLSX_IMAGE_ASSET_PREFIX}${sha256}`,
-    fileName: `worksheet-image-${sha256.slice(0, 16)}.${profile.extension}`,
-    contentType,
-    data,
-    sha256,
-  };
-}
-
-function imageCoordinate(value, name, maximum, image) {
-  const number = Number(value ?? 0);
-  if (!Number.isInteger(number) || number < 0 || number >= maximum) spreadsheetImageError(image, `${name} must be an integer from 0 through ${maximum - 1}.`);
-  return number;
-}
-
-function imagePixels(value, name, image, { positive = false } = {}) {
-  const number = Number(value ?? 0);
-  if (!Number.isFinite(number) || number < 0 || (positive && number <= 0) || number > 10_000_000) spreadsheetImageError(image, `${name} must be ${positive ? "positive" : "non-negative"} and at most 10000000 pixels.`);
-  return number;
-}
-
-function spreadsheetImageSnapshot(image) {
-  const from = image.anchor?.from || {};
-  const extent = image.anchor?.extent || {};
-  return {
-    id: String(image.id || ""),
-    name: String(image.name || ""),
-    alt: String(image.alt || ""),
-    dataUrl: String(image.dataUrl || ""),
-    fit: String(image.fit || "contain"),
-    row: Number(from.row ?? 0),
-    column: Number(from.col ?? 0),
-    rowOffsetPx: Number(from.rowOffsetPx ?? 0),
-    columnOffsetPx: Number(from.colOffsetPx ?? 0),
-    widthPx: Number(extent.widthPx ?? image.anchor?.widthPx ?? 160),
-    heightPx: Number(extent.heightPx ?? image.anchor?.heightPx ?? 120),
-  };
-}
-
-function wireSpreadsheetImage(image, assets, source) {
-  const snapshot = spreadsheetImageSnapshot(image);
-  const asset = spreadsheetImageAsset(image);
-  if (!assets.has(asset.id)) assets.set(asset.id, asset);
-  const row = imageCoordinate(snapshot.row, "anchor.from.row", 1_048_576, image);
-  const column = imageCoordinate(snapshot.column, "anchor.from.col", 16_384, image);
-  const rowOffsetPx = imagePixels(snapshot.rowOffsetPx, "anchor.from.rowOffsetPx", image);
-  const columnOffsetPx = imagePixels(snapshot.columnOffsetPx, "anchor.from.colOffsetPx", image);
-  const widthPx = imagePixels(snapshot.widthPx, "anchor.extent.widthPx", image, { positive: true });
-  const heightPx = imagePixels(snapshot.heightPx, "anchor.extent.heightPx", image, { positive: true });
-  if (!snapshot.id || snapshot.id.length > 512 || /\p{Cc}/u.test(snapshot.id)) spreadsheetImageError(image, "id must contain 1 through 512 characters without controls.");
-  if (!snapshot.name || snapshot.name.length > 255 || /\p{Cc}/u.test(snapshot.name)) spreadsheetImageError(image, "name must contain 1 through 255 characters without controls.");
-  if (snapshot.alt.length > 32_767 || /\p{Cc}/u.test(snapshot.alt)) spreadsheetImageError(image, "alt text must contain at most 32767 characters without controls.");
-  return {
-    id: snapshot.id,
-    name: snapshot.name,
-    altText: snapshot.alt,
-    assetId: asset.id,
-    anchor: {
-      row,
-      column,
-      rowOffsetEmu: BigInt(Math.round(rowOffsetPx * XLSX_IMAGE_EMU_PER_PIXEL)),
-      columnOffsetEmu: BigInt(Math.round(columnOffsetPx * XLSX_IMAGE_EMU_PER_PIXEL)),
-      widthEmu: BigInt(Math.round(widthPx * XLSX_IMAGE_EMU_PER_PIXEL)),
-      heightEmu: BigInt(Math.round(heightPx * XLSX_IMAGE_EMU_PER_PIXEL)),
-    },
-    source,
-  };
-}
-
-function wireWorksheetImages(sheet, state, assets) {
-  const remaining = new Set(sheet.images?.items || []);
-  const output = [];
-  for (const slot of state?.slots || []) {
-    if (!remaining.delete(slot.image)) {
-      throw new OpenChestnutCodecError(`Worksheet ${sheet.name} cannot remove imported image ${slot.image?.name || slot.wire.id} in the bounded OpenChestnut slice.`, [], { code: "invalid_spreadsheet_image_topology" });
-    }
-    const unchanged = JSON.stringify(spreadsheetImageSnapshot(slot.image)) === JSON.stringify(slot.publicSnapshot);
-    if (unchanged) {
-      output.push(slot.wire);
-      const asset = spreadsheetImageAsset(slot.image);
-      if (!assets.has(asset.id)) assets.set(asset.id, asset);
-    } else output.push(wireSpreadsheetImage(slot.image, assets, slot.wire.source));
-  }
-  if (state && remaining.size) {
-    const image = [...remaining][0];
-    throw new OpenChestnutCodecError(`Worksheet ${sheet.name} cannot add image ${image.name} to an imported source package in the bounded OpenChestnut slice.`, [], { code: "invalid_spreadsheet_image_topology" });
-  }
-  output.push(...[...remaining].map((image) => wireSpreadsheetImage(image, assets)));
-  return output;
 }
 
 function wireWorkbookTheme(theme, source) {
@@ -1246,47 +1134,6 @@ export async function exportXlsxWithOpenChestnut(workbook, options = {}) {
     type: XLSX_MIME,
     metadata: { artifactKind: "workbook", codec: "open-chestnut", diagnostics: response.diagnostics },
   });
-}
-
-function spreadsheetImageDataUrl(asset, image) {
-  if (!asset) spreadsheetImageError(image, `references missing asset ${image.assetId}.`);
-  const profile = XLSX_IMAGE_CONTENT_TYPES.get(String(asset.contentType || "").toLowerCase());
-  const bytes = bytesFrom(asset.data);
-  if (!profile?.signature(bytes)) spreadsheetImageError(image, `asset ${asset.id} bytes do not match a supported PNG or JPEG content type.`);
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  if (asset.sha256 !== digest || asset.id !== `${XLSX_IMAGE_ASSET_PREFIX}${digest}`) spreadsheetImageError(image, `asset ${asset.id} is not content-addressed by its bytes.`);
-  return `data:${asset.contentType};base64,${Buffer.from(bytes).toString("base64")}`;
-}
-
-function spreadsheetImageFromWire(sheet, source, assets) {
-  const anchor = source.anchor;
-  if (!anchor) spreadsheetImageError(source, "has no one-cell anchor.");
-  const numberFromWire = (value, name) => {
-    const number = Number(value);
-    if (!Number.isSafeInteger(number) || number < 0) spreadsheetImageError(source, `has invalid ${name}.`);
-    return number;
-  };
-  const image = sheet.images.add({
-    id: source.id,
-    name: source.name,
-    alt: source.altText,
-    dataUrl: spreadsheetImageDataUrl(assets.get(source.assetId), source),
-    fit: "contain",
-    anchor: {
-      from: {
-        row: anchor.row,
-        col: anchor.column,
-        rowOffsetPx: numberFromWire(anchor.rowOffsetEmu, "row offset") / XLSX_IMAGE_EMU_PER_PIXEL,
-        colOffsetPx: numberFromWire(anchor.columnOffsetEmu, "column offset") / XLSX_IMAGE_EMU_PER_PIXEL,
-      },
-      extent: {
-        widthPx: numberFromWire(anchor.widthEmu, "width") / XLSX_IMAGE_EMU_PER_PIXEL,
-        heightPx: numberFromWire(anchor.heightEmu, "height") / XLSX_IMAGE_EMU_PER_PIXEL,
-      },
-    },
-  });
-  image.id = source.id || image.id;
-  return image;
 }
 
 function workbookFromEnvelope(envelope) {
