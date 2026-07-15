@@ -212,6 +212,9 @@ try {
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedRef, "C2:C3");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").formulaType, "array");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").arrayRef, "D2:D3");
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("E2").formulaType, "dynamicArray");
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("E2").dynamicArrayRef, "E2:F3");
+  assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("E2:F3").values, [[101, 102], [103, 104]]);
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").sortState, {
     reference: "A1:D3",
     caseSensitive: true,
@@ -286,6 +289,10 @@ try {
   assert.match(wasmWorksheetXml, /<x:f t="shared" ref="C2:C3" si="7">B2\*2<\/x:f>/);
   assert.match(wasmWorksheetXml, /<x:f t="shared" si="7"\s*\/>/);
   assert.match(wasmWorksheetXml, /<x:f t="array" ref="D2:D3">SUM\(B2:B3\)<\/x:f>/);
+  assert.match(wasmWorksheetXml, /<x:c\b(?=[^>]*\br="E2")(?=[^>]*\bcm="1")[^>]*><x:f t="array" ref="E2:F3">SEQUENCE\(2,2,101,1\)<\/x:f>/);
+  const wasmDynamicMetadataPath = Object.keys(wasmZip.files).find((partPath) => /^xl\/metadata\d*\.xml$/.test(partPath));
+  assert.ok(wasmDynamicMetadataPath, "runnable OpenChestnut fixture must retain its dynamic-array metadata part");
+  assert.match(await wasmZip.file(wasmDynamicMetadataPath).async("text"), /dynamicArrayProperties\b[^>]*fDynamic="1"[^>]*fCollapsed="0"/);
   assert.match(wasmWorksheetXml, /<x:sortState\b[^>]*ref="A1:D3"/);
   assert.match(wasmWorksheetXml, /<x:sortState\b[^>]*columnSort="1"/);
   assert.match(wasmWorksheetXml, /<x:sortCondition\b[^>]*ref="A3:D3"[^>]*customList="Double,Revenue"/);

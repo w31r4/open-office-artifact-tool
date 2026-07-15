@@ -1190,6 +1190,49 @@ assert.deepEqual(
 assert.equal(importedFormulaSheet.store.get("E1").formulaType, "array");
 assert.equal(importedFormulaSheet.store.get("E1").arrayRef, "E1:E2");
 
+const dynamicWorkbook = Workbook.create();
+const dynamicSheet = dynamicWorkbook.worksheets.add("DynamicArray");
+dynamicSheet.getRange("A1").formulas = [["=SEQUENCE(2,2,101,1)"]];
+const dynamicExported = await exportXlsxWithOpenChestnut(dynamicWorkbook);
+const dynamicZip = await JSZip.loadAsync(dynamicExported.bytes);
+const dynamicMetadataPath = Object.keys(dynamicZip.files).find((path) => /^xl\/metadata\d*\.xml$/.test(path));
+assert.ok(dynamicMetadataPath, "OpenChestnut must emit a workbook cell-metadata part for dynamic arrays.");
+const dynamicXml = await dynamicZip.file("xl/worksheets/sheet1.xml").async("text");
+const dynamicMetadataXml = await dynamicZip.file(dynamicMetadataPath).async("text");
+assert.match(dynamicXml, /<x:c\b(?=[^>]*\br="A1")(?=[^>]*\bcm="1")[^>]*><x:f t="array" ref="A1:B2">SEQUENCE\(2,2,101,1\)<\/x:f>/);
+assert.match(dynamicMetadataXml, /name="XLDAPR"/);
+assert.match(dynamicMetadataXml, /dynamicArrayProperties\b[^>]*fDynamic="1"[^>]*fCollapsed="0"/);
+const dynamicImported = await importXlsxWithOpenChestnut(dynamicExported);
+assert.equal(dynamicImported.worksheets.getItem("DynamicArray").store.get("A1").formulaType, "dynamicArray");
+assert.equal(dynamicImported.worksheets.getItem("DynamicArray").store.get("A1").dynamicArrayRef, "A1:B2");
+assert.deepEqual(dynamicImported.worksheets.getItem("DynamicArray").getRange("A1:B2").values, [[101, 102], [103, 104]]);
+const dynamicJavaScriptImported = await SpreadsheetFile.importXlsx(dynamicExported);
+assert.equal(dynamicJavaScriptImported.worksheets.getItem("DynamicArray").store.get("A1").formulaType, "dynamicArray");
+assert.deepEqual(dynamicJavaScriptImported.worksheets.getItem("DynamicArray").getRange("A1:B2").values, [[101, 102], [103, 104]]);
+dynamicImported.worksheets.getItem("DynamicArray").getRange("A1").formulas = [["=SEQUENCE(2,2,201,1)"]];
+const dynamicEdited = await exportXlsxWithOpenChestnut(dynamicImported);
+const dynamicEditedImport = await importXlsxWithOpenChestnut(dynamicEdited);
+assert.equal(dynamicEditedImport.worksheets.getItem("DynamicArray").store.get("A1").formulaType, "dynamicArray");
+assert.deepEqual(dynamicEditedImport.worksheets.getItem("DynamicArray").getRange("A1:B2").values, [[201, 202], [203, 204]]);
+
+const blockedDynamicWorkbook = Workbook.create();
+const blockedDynamicSheet = blockedDynamicWorkbook.worksheets.add("BlockedDynamic");
+blockedDynamicSheet.getRange("C1").values = [["occupied"]];
+blockedDynamicSheet.getRange("A1").formulas = [["=SEQUENCE(1,3)"]];
+await assert.rejects(
+  exportXlsxWithOpenChestnut(blockedDynamicWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_dynamic_array_edit" && /blocked dynamic array/.test(error.message),
+);
+
+const sourceWithoutDynamicMetadata = Workbook.create();
+sourceWithoutDynamicMetadata.worksheets.add("Plain").getRange("A1").values = [["plain"]];
+const importedSourceWithoutDynamicMetadata = await importXlsxWithOpenChestnut(await exportXlsxWithOpenChestnut(sourceWithoutDynamicMetadata));
+importedSourceWithoutDynamicMetadata.worksheets.getItem("Plain").getRange("C1").formulas = [["=SEQUENCE(1,2)"]];
+await assert.rejects(
+  exportXlsxWithOpenChestnut(importedSourceWithoutDynamicMetadata),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_dynamic_array_edit" && /recognized XLDAPR/.test(error.message),
+);
+
 const formulaJavaScriptImported = await SpreadsheetFile.importXlsx(formulaExported);
 assert.deepEqual(formulaJavaScriptImported.worksheets.getItem("FormulaTopology").getRange("C1:C2").formulas, [["=A1+B1"], ["=A2+B2"]]);
 assert.equal(formulaJavaScriptImported.worksheets.getItem("FormulaTopology").store.get("C2").sharedRef, "C1:C2");

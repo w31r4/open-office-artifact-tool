@@ -63,6 +63,10 @@
           "values": [["Shared", "Array"]]
         },
         {
+          "range": "E1:F1",
+          "values": [["Dynamic", "Spill"]]
+        },
+        {
           "range": "C2:C3",
           "formulas": [["=B2*2"], ["=B3*2"]],
           "formulaMetadata": { "kind": "shared", "sharedIndex": 7, "reference": "C2:C3" }
@@ -73,7 +77,12 @@
           "formulaMetadata": { "kind": "array", "reference": "D2:D3" }
         },
         {
-          "range": "A1:D1",
+          "range": "E2",
+          "formulas": [["=SEQUENCE(2,2,101,1)"]],
+          "formulaMetadata": { "kind": "dynamicArray", "reference": "E2:F3" }
+        },
+        {
+          "range": "A1:F1",
           "format": {
             "fill": { "patternType": "darkGrid", "foreground": { "theme": 4, "tint": 0.4 }, "background": "#E2E8F0" },
             "font": { "bold": true, "underline": "double", "color": "#FFFFFF", "size": 12, "name": "Aptos Display" },
@@ -269,11 +278,12 @@
     }
   ],
   "expectations": [
-    { "sheet": "Summary", "range": "B2:D3", "values": [[42.5, 85, 127.5], [85, 170, null]] }
+    { "sheet": "Summary", "range": "B2:D3", "values": [[42.5, 85, 127.5], [85, 170, null]] },
+    { "sheet": "Summary", "range": "E2:F3", "values": [[101, 102], [103, 104]] }
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:D4",
+    "range": "A1:F4",
     "renderFormat": "png",
     "inspectKind": "workbook,sheet,formula,merge,dimension",
     "maxChars": 16000,

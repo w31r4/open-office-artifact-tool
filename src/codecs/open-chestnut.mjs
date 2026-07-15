@@ -233,6 +233,7 @@ function translateSharedFormula(value, source, target) {
 function cellFormulaMetadata(address, cell) {
   const location = address;
   const type = cell.formulaType == null ? "" : String(cell.formulaType);
+  if (!type && cell.formula && cell.spillError) throw new OpenChestnutCodecError(`Cell ${location} blocked dynamic array cannot be exported through the current bounded OpenChestnut slice.`, [], { code: "unsupported_dynamic_array_edit" });
   const inferredDynamic = !type && Boolean(cell.formula) && Boolean(cell.spillRange) && !cell.spillError;
   if (!type && !inferredDynamic && [cell.sharedIndex, cell.sharedRef, cell.arrayRef, cell.dynamicArrayRef].every((value) => value == null || value === "")) return undefined;
   if (type === "shared") {

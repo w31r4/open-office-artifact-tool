@@ -924,8 +924,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -957,7 +957,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
-  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared), legacy arrays, and XLDAPR-marked dynamic-array anchors with explicit formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef metadata; OpenChestnut validates complete topology and preserves formula plus package metadata across safe source-bound edits." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "workbook.setCalculation", summary: "Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
@@ -2216,7 +2216,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, worksheet tables/QueryTables, and recognized source-bound database connection-root metadata." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, and recognized source-bound database connection-root metadata." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2224,7 +2224,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable worksheet tables/QueryTables, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
@@ -2359,10 +2359,10 @@ const WORKBOOK_HELP_SCHEMAS = {
     selector: { type: "string", required: true, description: "Column, escaped special-character header, section, current-row, range, union, or space-intersection selector." },
   }, "value", "unknown", "Calculated scalar/array value with stable table-cell precedents."),
   "workbook.sharedArrayFormulas": helpSchema({
-    xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared or array formula records." },
-    formula: { type: "string", description: "Shared/array formula expression." },
-    ref: { type: "string", description: "Shared or spill A1 range." },
-  }, "metadata", "object", "formulaType/sharedIndex/sharedRef/arrayRef/spill inspect metadata; writing a formula into one shared member detaches the complete group to ordinary formulas."),
+    xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared, legacy-array, or XLDAPR dynamic-array formula records." },
+    formula: { type: "string", description: "Shared, legacy-array, or dynamic-array formula expression." },
+    ref: { type: "string", description: "Shared group, legacy array, or dynamic spill A1 range." },
+  }, "metadata", "object", "formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef/spill inspect metadata; writing a formula into a native group detaches stale topology before recalculation and export."),
   "workbook.definedNames.add": helpSchema({
     name: { type: "string", required: true, description: "Defined name." },
     refersTo: { type: "string", required: true, description: "Sheet-qualified A1 reference." },
@@ -3985,6 +3985,7 @@ export class Workbook {
     if (this._recalculating) return this._lastFormulaGraph;
     this._recalculating = true;
     try {
+      hydrateDeclaredDynamicArraySpills(this);
       clearFormulaSpills(this);
       const graph = buildWorkbookFormulaGraph(this);
       const formulaNodes = new Map(graph.nodes.map((node) => [node.key, node]));
@@ -4507,13 +4508,14 @@ function detachNativeFormulaTopology(sheet, address) {
       detachShared = !sharedRef || !candidate.sharedRef || String(candidate.sharedRef).toUpperCase() === String(sharedRef).toUpperCase();
     }
     let detachArray = false;
+    let arrayBounds;
     const arrayReference = candidate.formulaType === "array"
       ? candidate.arrayRef
       : candidate.formulaType === "dynamicArray" ? candidate.dynamicArrayRef : undefined;
     if (arrayReference) {
       try {
-        const bounds = parseRangeAddress(arrayReference);
-        detachArray = target.row >= bounds.top && target.row <= bounds.bottom && target.col >= bounds.left && target.col <= bounds.right;
+        arrayBounds = parseRangeAddress(arrayReference);
+        detachArray = target.row >= arrayBounds.top && target.row <= arrayBounds.bottom && target.col >= arrayBounds.left && target.col <= arrayBounds.right;
       } catch {
         detachArray = candidateAddress === address;
       }
@@ -4524,6 +4526,7 @@ function detachNativeFormulaTopology(sheet, address) {
       delete candidate.sharedRef;
     }
     if (detachArray) {
+      if (candidate.formulaType === "dynamicArray" && arrayBounds) markDeclaredDynamicArrayChildren(sheet, candidateAddress, arrayReference, arrayBounds);
       delete candidate.formulaType;
       delete candidate.arrayRef;
       delete candidate.dynamicArrayRef;
@@ -5682,6 +5685,35 @@ function clearFormulaSpills(workbook) {
         delete cell.spillError;
       }
     }
+  }
+}
+
+function hydrateDeclaredDynamicArraySpills(workbook) {
+  for (const sheet of workbook.worksheets) {
+    const cells = sheet.store.entries();
+    for (const [anchorAddress, anchorCell] of cells) {
+      if (anchorCell.formulaType !== "dynamicArray" || !anchorCell.formula || !anchorCell.dynamicArrayRef) continue;
+      let bounds;
+      try {
+        bounds = parseRangeAddress(anchorCell.dynamicArrayRef);
+      } catch {
+        continue;
+      }
+      if (makeCellAddress(bounds.top, bounds.left) !== anchorAddress) continue;
+      markDeclaredDynamicArrayChildren(sheet, anchorAddress, anchorCell.dynamicArrayRef, bounds, cells);
+    }
+  }
+}
+
+function markDeclaredDynamicArrayChildren(sheet, anchorAddress, reference, bounds, cells = sheet.store.entries()) {
+  const parentKey = formulaCellKey(sheet.name, anchorAddress);
+  for (const [address, cell] of cells) {
+    if (address === anchorAddress || cell.formula) continue;
+    const position = parseCellAddress(address);
+    if (position.row < bounds.top || position.row > bounds.bottom || position.col < bounds.left || position.col > bounds.right) continue;
+    cell.spillParent = parentKey;
+    cell.spillAnchor = anchorAddress;
+    cell.spillRange = reference;
   }
 }
 
