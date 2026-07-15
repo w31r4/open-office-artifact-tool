@@ -128,6 +128,7 @@
           "name": "OpenChestnut mark",
           "alt": "OpenChestnut worksheet image",
           "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          "crop": { "leftPercent": 10, "topPercent": -5, "rightPercent": 15, "bottomPercent": 20 },
           "anchor": {
             "from": { "row": 4, "col": 0, "rowOffsetPx": 6, "colOffsetPx": 4 },
             "extent": { "widthPx": 96, "heightPx": 64 }

@@ -77,6 +77,7 @@ assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, {
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { assetId: "asset/1" }))[0], 0x22, "Spreadsheet image assets must use image field 4.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { twoCellAnchor: { from: {}, to: {} } }))[0], 0x3a, "Spreadsheet two-cell anchors must use additive image field 7.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { absoluteAnchor: { widthEmu: 1n, heightEmu: 1n } }))[0], 0x42, "Spreadsheet absolute anchors must use additive image field 8.");
+assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { crop: { leftThousandthPercent: 1 } }))[0], 0x4a, "Spreadsheet image crops must use additive image field 9.");
 assert.deepEqual([...toBinary(SpreadsheetOneCellAnchorArtifactSchema, create(SpreadsheetOneCellAnchorArtifactSchema, { widthEmu: 1n }))], [0x28, 0x01], "Spreadsheet image widths must use signed EMU field 5.");
 assert.equal(toBinary(SpreadsheetImageSourceBindingSchema, create(SpreadsheetImageSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet image semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetWorksheetSourceBindingSchema, create(SpreadsheetWorksheetSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet worksheet semantic hashes must use source-binding field 5.");
@@ -1047,6 +1048,67 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /positive/i.test(error.message),
 );
 await assert.rejects(SpreadsheetFile.exportXlsx(invalidAbsoluteWorkbook), /positive extent geometry/i);
+const cropImageWorkbook = Workbook.create();
+const cropImageSheet = cropImageWorkbook.worksheets.add("Crop image");
+cropImageSheet.images.add({
+  name: "Cropped mark",
+  alt: "Inset and outset source rectangle",
+  dataUrl: twoCellImageDataUrl,
+  crop: { leftPercent: 10, topPercent: -5, rightPercent: 15, bottomPercent: 20 },
+  anchor: { from: { row: 1, col: 2 }, extent: { widthPx: 120, heightPx: 80 } },
+});
+const cropImageExport = await exportXlsxWithOpenChestnut(cropImageWorkbook);
+const cropImageZip = await JSZip.loadAsync(cropImageExport.bytes);
+const cropDrawingXml = await cropImageZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(cropDrawingXml, /<a:srcRect l="10000" t="-5000" r="15000" b="20000"[^>]*\/>/);
+assert.ok(cropDrawingXml.indexOf("<a:blip") < cropDrawingXml.indexOf("<a:srcRect"));
+assert.ok(cropDrawingXml.indexOf("<a:srcRect") < cropDrawingXml.indexOf("<a:stretch"));
+const cropImageImported = await importXlsxWithOpenChestnut(cropImageExport);
+const importedCropImage = cropImageImported.worksheets.getItem("Crop image").images.items[0];
+assert.deepEqual(importedCropImage.crop, { leftPercent: 10, topPercent: -5, rightPercent: 15, bottomPercent: 20 });
+importedCropImage.crop = { leftPercent: 12, topPercent: 7, rightPercent: -3, bottomPercent: 18 };
+const editedCropExport = await exportXlsxWithOpenChestnut(cropImageImported, { recalculate: false });
+const editedCropRoundTrip = await importXlsxWithOpenChestnut(editedCropExport);
+assert.deepEqual(editedCropRoundTrip.worksheets.getItem("Crop image").images.items[0].crop, importedCropImage.crop);
+editedCropRoundTrip.worksheets.getItem("Crop image").images.items[0].crop = undefined;
+const removedCropExport = await exportXlsxWithOpenChestnut(editedCropRoundTrip, { recalculate: false });
+const removedCropZip = await JSZip.loadAsync(removedCropExport.bytes);
+assert.doesNotMatch(await removedCropZip.file("xl/drawings/drawing1.xml").async("text"), /srcRect/);
+assert.equal((await importXlsxWithOpenChestnut(removedCropExport)).worksheets.getItem("Crop image").images.items[0].crop, undefined);
+const javascriptCropExport = await SpreadsheetFile.exportXlsx(cropImageWorkbook);
+const javascriptCropZip = await JSZip.loadAsync(new Uint8Array(await javascriptCropExport.arrayBuffer()));
+assert.match(await javascriptCropZip.file("xl/drawings/drawing1.xml").async("text"), /<a:srcRect l="10000" t="-5000" r="15000" b="20000"\/>/);
+assert.deepEqual((await SpreadsheetFile.importXlsx(javascriptCropExport)).worksheets.getItem("Crop image").images.items[0].crop, {
+  leftPercent: 10,
+  topPercent: -5,
+  rightPercent: 15,
+  bottomPercent: 20,
+});
+javascriptCropZip.file("xl/drawings/drawing1.xml", (await javascriptCropZip.file("xl/drawings/drawing1.xml").async("text")).replace('l="10000"', 'l="100001"'));
+javascriptCropZip.remove("customXml/open-office-artifact.json");
+assert.equal((await SpreadsheetFile.importXlsx(await javascriptCropZip.generateAsync({ type: "uint8array" }))).worksheets.getItem("Crop image").images.items[0].crop, undefined);
+const invalidCropPairWorkbook = Workbook.create();
+invalidCropPairWorkbook.worksheets.add("Invalid crop").images.add({
+  name: "Invalid crop",
+  dataUrl: twoCellImageDataUrl,
+  crop: { leftPercent: 60, rightPercent: 40 },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidCropPairWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /positive source rectangle/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidCropPairWorkbook), /positive source rectangle/i);
+const invalidCropBoundWorkbook = Workbook.create();
+invalidCropBoundWorkbook.worksheets.add("Invalid crop bound").images.add({
+  name: "Invalid crop bound",
+  dataUrl: twoCellImageDataUrl,
+  crop: { leftPercent: 100.001 },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidCropBoundWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /between -100 and 100/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidCropBoundWorkbook), /-100 through 100/i);
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },

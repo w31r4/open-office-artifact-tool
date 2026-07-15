@@ -48,11 +48,14 @@ function pictureCrop(pictureXml) {
   const tag = /<(?:[A-Za-z_][\w.-]*:)?srcRect\b[^>]*\/?\s*>/.exec(pictureXml)?.[0];
   if (!tag) return undefined;
   const attrs = attributes(tag);
+  const values = [attrs.l, attrs.t, attrs.r, attrs.b].map((value) => Number(value || 0));
+  if (values.some((value) => !Number.isFinite(value) || !Number.isInteger(value) || value < -100_000 || value > 100_000) ||
+      values[0] + values[2] >= 100_000 || values[1] + values[3] >= 100_000) return undefined;
   return {
-    leftPercent: Number(attrs.l || 0) / 1000,
-    topPercent: Number(attrs.t || 0) / 1000,
-    rightPercent: Number(attrs.r || 0) / 1000,
-    bottomPercent: Number(attrs.b || 0) / 1000,
+    leftPercent: values[0] / 1000,
+    topPercent: values[1] / 1000,
+    rightPercent: values[2] / 1000,
+    bottomPercent: values[3] / 1000,
   };
 }
 

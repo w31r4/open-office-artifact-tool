@@ -213,6 +213,7 @@ try {
   assert.equal(wasmImage.alt, "OpenChestnut worksheet image");
   assert.equal(wasmImage.dataUrl, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC");
   assert.deepEqual(wasmImage.anchor, { from: { row: 4, col: 0, rowOffsetPx: 6, colOffsetPx: 4 }, extent: { widthPx: 96, heightPx: 64 } });
+  assert.deepEqual(wasmImage.crop, { leftPercent: 10, topPercent: -5, rightPercent: 15, bottomPercent: 20 });
   const wasmTwoCellImage = wasmWorkbook.worksheets.getItem("Summary").images.items[1];
   assert.equal(wasmTwoCellImage.name, "OpenChestnut two-cell mark");
   assert.equal(wasmTwoCellImage.alt, "OpenChestnut move-only two-cell image");
