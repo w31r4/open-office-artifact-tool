@@ -2,6 +2,8 @@
 
 OpenChestnut is the source-built, clean-room Office package codec in this repository. It uses the public Microsoft Open XML SDK and this project's independent protobuf contract from `proto/open_office/artifact/v1/office_artifact.proto`.
 
+For PPTX, `PptxNativeObjectCatalog` performs namespace-aware classification of read-only `contentPart`, OLE, SmartArt/diagram, picture, group, connector, and generic graphic-frame elements. It records relationship-valued XML attributes and a cycle-safe, budgeted transitive closure of internal part paths while leaving the canonical content types, relationships, hashes, and source bytes in `ArtifactEnvelope.opaque_opc`. Missing IDs/parts, duplicate relationship IDs, unsafe targets, and traversal-budget excess return structured diagnostics before semantic editing begins.
+
 The boundary is intentionally narrow:
 
 - JavaScript owns the public artifact model, editing APIs, formulas, inspect/render workflows, and QA orchestration.

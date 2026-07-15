@@ -1036,7 +1036,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
-| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and read-only native contentPart/OLE/diagram objects with bounded relationship-reference, root-relationship, and preserved-part summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts. |
 | `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
@@ -1186,7 +1186,7 @@ Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or targe
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, read-only native contentPart/OLE/diagram objects, notes, comments, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and read-only native contentPart/OLE/diagram objects with bounded relationship-reference, root-relationship, and preserved-part summaries; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 

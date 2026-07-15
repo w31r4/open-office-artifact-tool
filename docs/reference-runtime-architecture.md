@@ -1,7 +1,7 @@
 # Reference runtime architecture and clean-room direction
 
 - Status: accepted direction, XLSX, DOCX, and PPTX WebAssembly vertical slices implemented; migration active
-- Evidence snapshot: 2026-07-13
+- Evidence snapshot: 2026-07-16
 - Reference package: `office-artifact-tool@2.8.22`
 - Reference runtime asset package: `@officer/walnut@0.1.210`
 
@@ -20,18 +20,11 @@ The target split is:
 
 The existing JavaScript OOXML codecs remain useful as a fallback, a patch/inspection layer, a test oracle, and a migration safety net. They should not be deleted before the WebAssembly path proves equal or better behavior fixture by fixture.
 
-## Clean-room boundary
+## Reference boundary
 
-This study used only observable and redistributable package facts:
+The project owner permits broad structural research of the checked-in reference package, including package/runtime inspection, black-box behavior, decompilation, disassembly, private wire/schema comparison, and generated-code or method-level study when it materially unblocks compatibility. Those observations are evidence, not a runtime dependency or publication shortcut.
 
-- package manifests and file names;
-- runtime boot metadata;
-- public ESM exports and public object methods;
-- public `.NET WebAssembly` assembly export names;
-- shipped README, skills, and smoke tests;
-- black-box calls using generated empty artifacts and byte counts.
-
-It did not decompile, disassemble, copy, or translate the reference JavaScript bundle, the `Walnut` assembly, its WebAssembly binaries, native bindings, method bodies, or protobuf implementation. No reference runtime artifact may be copied into this project.
+OpenChestnut release artifacts remain independently source-built from this repository and public dependencies. The npm/GitHub deliverable does not redistribute the reference package's compiled JavaScript, Walnut assembly/WASM, native bindings, or runtime assets, and normal use never resolves them. Public ECMA-376/ISO 29500/OPC semantics, the Microsoft Open XML SDK, the project's versioned protobuf contract, and repository tests remain the authoritative implementation boundary.
 
 ## Package evidence
 

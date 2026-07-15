@@ -19,6 +19,8 @@ OpenChestnut's public opaque-OPC contract is loss-aware rather than a second cop
 
 ## Current status
 
+OpenChestnut now projects unsupported PPTX drawing objects as bounded read-only graphs instead of anonymous XML only. The public wire classifies `contentPart`, OLE, SmartArt/diagram, picture, group, connector, and generic graphic-frame elements; records namespace-qualified relationship attributes and the transitive reachable part paths; and keeps content types, relationship metadata, hashes, and package bytes single-owned by `opaque_opc`. The JavaScript adapter materializes those paths into ordinary `nativeObject` facades, so `inspect` exposes safe relationship/part metadata, `resolve` returns the facade, both OpenChestnut and JavaScript exports preserve the graph, and missing relationships/parts, cycles, traversal budgets, unsafe paths, or hash mismatches fail closed.
+
 Spreadsheet formulas support relationship-driven native table import plus a shared structured-reference parser for evaluation, dependency graphs, and trace output. This includes `#This Row`/`@`, unqualified calculated-column references, space intersections over the common cells of two or more table references, and apostrophe escaping for special-character headers such as `Sales['#Items]` and `Sales[Bracket'[Value']]`; metadata-free XLSX roundtrips retain table column names and exact effective precedents.
 
 The six conditional aggregation functions `COUNTIF(S)`, `SUMIF(S)`, and `AVERAGEIF(S)` share case-insensitive Excel-style comparison and `?`/`*`/`~` wildcard matching. Multi-range `IFS` variants validate equal dimensions and propagate matched aggregation errors instead of silently coercing them.
