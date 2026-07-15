@@ -73,6 +73,24 @@ try {
     const marker = importedPresentation.slides.getItem(0).shapes.items[0].text.paragraphs[0];
     if (marker.bulletCharacter !== "•" || marker.bulletFont !== "Georgia" || marker.bulletColor.toLowerCase() !== "#2563eb" || marker.bulletSizePercent !== 1.25) process.exit(7);
     if (marker.runs[0].link?.uri !== "https://example.com/packaged" || marker.runs[0].link?.tooltip !== "Packaged link") process.exit(8);
+    const template = Presentation.create({
+      master: {
+        id: "master/packaged",
+        name: "Packaged Master",
+        placeholders: [{ type: "title", idx: 0, name: "Packaged Prompt", position: { left: 40, top: 30, width: 640, height: 80 }, transform: { rotationDegrees: 1, flipHorizontal: true, flipVertical: false }, text: "before" }],
+      },
+    });
+    template.layouts.add({ id: "layout/packaged", name: "Packaged Layout", type: "blank", masterId: "master/packaged" });
+    template.slides.add({ name: "Template", layoutId: "layout/packaged" });
+    const templateSource = await PresentationFile.exportPptx(template, { codec: "javascript" });
+    const importedTemplate = await PresentationFile.importPptx(templateSource, { codec: "open-chestnut" });
+    const packagedPlaceholder = importedTemplate.master.placeholders[0];
+    if (packagedPlaceholder.transform?.rotationDegrees !== 1 || packagedPlaceholder.transform?.flipHorizontal !== true || packagedPlaceholder.transform?.flipVertical !== false) process.exit(20);
+    packagedPlaceholder.position = { left: 48, top: 36, width: 620, height: 72 };
+    packagedPlaceholder.transform = { rotationDegrees: -15, flipHorizontal: false, flipVertical: true };
+    const editedTemplate = await PresentationFile.exportPptx(importedTemplate, { codec: "open-chestnut" });
+    const roundTripTemplate = await PresentationFile.importPptx(editedTemplate, { codec: "open-chestnut" });
+    if (roundTripTemplate.master.placeholders[0].position.left !== 48 || roundTripTemplate.master.placeholders[0].transform?.rotationDegrees !== -15 || roundTripTemplate.master.placeholders[0].transform?.flipHorizontal !== false || roundTripTemplate.master.placeholders[0].transform?.flipVertical !== true) process.exit(21);
   `;
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
     PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin",
