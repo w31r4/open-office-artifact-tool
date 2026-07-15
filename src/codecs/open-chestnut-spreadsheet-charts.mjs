@@ -1,4 +1,4 @@
-import { SpreadsheetChartLineDashStyle, SpreadsheetChartMarkerSymbol, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartMarkerSymbol, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
@@ -24,6 +24,12 @@ const LINE_STYLES_TO_WIRE = new Map([
   ["dash-dot-dot", SpreadsheetChartLineDashStyle.DASH_DOT_DOT],
 ]);
 const LINE_STYLES_FROM_WIRE = new Map([...LINE_STYLES_TO_WIRE].map(([name, value]) => [value, name]));
+const LINE_GROUPINGS_TO_WIRE = new Map([
+  ["standard", SpreadsheetChartLineGrouping.STANDARD],
+  ["stacked", SpreadsheetChartLineGrouping.STACKED],
+  ["percentStacked", SpreadsheetChartLineGrouping.PERCENT_STACKED],
+]);
+const LINE_GROUPINGS_FROM_WIRE = new Map([...LINE_GROUPINGS_TO_WIRE].map(([name, value]) => [value, name]));
 const MARKER_SYMBOLS_TO_WIRE = new Map([
   ["none", SpreadsheetChartMarkerSymbol.NONE],
   ["dot", SpreadsheetChartMarkerSymbol.DOT],
@@ -280,7 +286,10 @@ function wireChart(chart, original) {
     name: snapshot.name,
     title: snapshot.title,
     titleTextStyle: snapshot.titleTextStyle == null ? undefined : { fontSizePoints: snapshot.titleTextStyle.fontSize },
-    lineOptions: snapshot.lineOptions == null ? undefined : { smooth: snapshot.lineOptions.smooth },
+    lineOptions: snapshot.lineOptions == null ? undefined : {
+      grouping: snapshot.lineOptions.grouping == null ? undefined : LINE_GROUPINGS_TO_WIRE.get(snapshot.lineOptions.grouping),
+      smooth: snapshot.lineOptions.smooth,
+    },
     type,
     hasLegend: snapshot.hasLegend,
     categories: snapshot.categories,
@@ -415,8 +424,18 @@ export function spreadsheetChartFromWire(sheet, source) {
   const importedMarkers = sourceSeries.map((series, index) => seriesMarkerFromWire(series.marker, `series ${index + 1} marker`, source));
   if (type !== "line" && importedMarkers.some((marker) => marker != null)) fail(source, "series markers require a line chart.", "unsupported_spreadsheet_chart");
   const titleTextStyle = textStyleFromWire(source.titleTextStyle, "titleTextStyle", source);
-  if (source.lineOptions != null && source.lineOptions.smooth == null) fail(source, "lineOptions must carry explicit smooth presence.");
-  const lineOptions = lineOptionsSnapshot(source.lineOptions == null ? null : { smooth: source.lineOptions.smooth }, source);
+  let lineOptionsInput = null;
+  if (source.lineOptions != null) {
+    lineOptionsInput = {};
+    if (source.lineOptions.grouping != null) {
+      const grouping = LINE_GROUPINGS_FROM_WIRE.get(source.lineOptions.grouping);
+      if (!grouping) fail(source, `lineOptions has unsupported grouping ${source.lineOptions.grouping}.`, "unsupported_spreadsheet_chart");
+      lineOptionsInput.grouping = grouping;
+    }
+    if (source.lineOptions.smooth != null) lineOptionsInput.smooth = source.lineOptions.smooth;
+    if (Object.keys(lineOptionsInput).length === 0) fail(source, "lineOptions must carry explicit grouping or smooth presence.");
+  }
+  const lineOptions = lineOptionsSnapshot(lineOptionsInput, source);
   if (type !== "line" && lineOptions != null) fail(source, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
   const chart = sheet.charts.add(type, {
     name: source.name,

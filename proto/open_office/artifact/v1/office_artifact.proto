@@ -398,8 +398,8 @@ message SpreadsheetChartArtifact {
   // Explicit chart-title text styling. Additive fields may extend this message;
   // the initial bounded profile owns only a DrawingML font size in points.
   SpreadsheetChartTextStyleArtifact title_text_style = 14;
-  // Optional line-plot behavior. The first profile owns only explicit smooth
-  // interpolation; grouping and color variation remain future additive work.
+  // Optional line-plot behavior. The bounded profile owns explicit grouping
+  // and smooth interpolation; color variation remains future additive work.
   SpreadsheetChartLineOptionsArtifact line_options = 15;
 }
 
@@ -1518,8 +1518,17 @@ message SpreadsheetChartMarkerArtifact {
   optional uint32 size = 2;
 }
 
+enum SpreadsheetChartLineGrouping {
+  SPREADSHEET_CHART_LINE_GROUPING_UNSPECIFIED = 0;
+  SPREADSHEET_CHART_LINE_GROUPING_STANDARD = 1;
+  SPREADSHEET_CHART_LINE_GROUPING_STACKED = 2;
+  SPREADSHEET_CHART_LINE_GROUPING_PERCENT_STACKED = 3;
+}
+
 // Bounded chart-level options for one worksheet line plot. Scalar presence
-// distinguishes no native smooth node from explicit true or false.
+// distinguishes omitted/default standard grouping from an explicit grouping,
+// and no native smooth node from explicit true or false.
 message SpreadsheetChartLineOptionsArtifact {
   optional bool smooth = 1;
+  optional SpreadsheetChartLineGrouping grouping = 2;
 }

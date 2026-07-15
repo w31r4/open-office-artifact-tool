@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -83,6 +83,7 @@ assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArt
 assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { titleTextStyle: { fontSizePoints: 12 } }))[0], 0x72, "Spreadsheet chart title text styles must use additive chart field 14.");
 assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { lineOptions: { smooth: true } }))[0], 0x7a, "Spreadsheet chart line options must use additive chart field 15.");
 assert.deepEqual([...toBinary(SpreadsheetChartLineOptionsArtifactSchema, create(SpreadsheetChartLineOptionsArtifactSchema, { smooth: false }))], [0x08, 0x00], "Spreadsheet chart smooth options must preserve explicit false at optional field 1.");
+assert.deepEqual([...toBinary(SpreadsheetChartLineOptionsArtifactSchema, create(SpreadsheetChartLineOptionsArtifactSchema, { grouping: SpreadsheetChartLineGrouping.STACKED }))], [0x10, 0x02], "Spreadsheet chart grouping must preserve explicit stacked presence at optional field 2.");
 assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { fill: { source: { case: "rgb", value: "F472B6" } } }))[0], 0x2a, "Spreadsheet chart series fills must use additive series field 5.");
 assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { line: {} }))[0], 0x32, "Spreadsheet chart series lines must use additive series field 6.");
 assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { marker: {} }))[0], 0x3a, "Spreadsheet chart series markers must use additive series field 7.");
@@ -127,8 +128,13 @@ assert.throws(
 );
 assert.throws(
   () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, lineOptions: {}, series: [] }),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /explicit smooth presence/i.test(error.message),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /explicit grouping or smooth presence/i.test(error.message),
   "Malformed wire line options must fail before a workbook is mutated.",
+);
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, lineOptions: { grouping: 99 }, series: [] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /unsupported grouping 99/i.test(error.message),
+  "Unknown wire grouping values must fail before a workbook is mutated.",
 );
 assert.equal(
   parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:barChart><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Series</c:v></c:tx><c:dPt><c:idx val="0"/><c:spPr><a:solidFill><a:srgbClr val="E11D48"/></a:solidFill></c:spPr></c:dPt><c:cat><c:strLit><c:ptCount val="1"/><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>').series[0].fill,
@@ -165,9 +171,9 @@ assert.equal(
   "JavaScript fallback import must not flatten marker fill/stroke graphs into the bounded marker model.",
 );
 assert.deepEqual(
-  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Smooth</c:v></c:tx><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser><c:smooth val="0"/></c:lineChart></c:plotArea></c:chart></c:chartSpace>').lineOptions,
-  { smooth: false },
-  "JavaScript fallback import must preserve explicit chart-level smooth false.",
+  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:lineChart><c:grouping val="stacked"/><c:ser><c:tx><c:v>Smooth</c:v></c:tx><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser><c:smooth val="0"/></c:lineChart></c:plotArea></c:chart></c:chartSpace>').lineOptions,
+  { grouping: "stacked", smooth: false },
+  "JavaScript fallback import must preserve chart-level grouping and explicit smooth false.",
 );
 assert.equal(
   parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:lineChart><c:smooth val="1"/><c:smooth val="0"/></c:lineChart></c:plotArea></c:chart></c:chartSpace>').lineOptions,
@@ -385,7 +391,7 @@ const summaryImage = summary.images.add({
 const summaryChart = summary.charts.add("line", {
   name: "Quarter chart",
   title: "Quarter trend",
-  lineOptions: { smooth: true },
+  lineOptions: { grouping: "stacked", smooth: true },
   hasLegend: true,
   categories: ["Q1", "Q2"],
   series: [{ name: "Revenue", values: [42.5, 85], fill: "#F472B6", line: { fill: "#0EA5E9", style: "dashed", width: 2 }, marker: { symbol: "diamond", size: 8 } }],
@@ -879,7 +885,7 @@ const importedSummaryChart = imported.worksheets.getItem("Summary").charts.items
 assert.equal(importedSummaryChart.type, "line");
 assert.equal(importedSummaryChart.name, "Quarter chart");
 assert.equal(importedSummaryChart.title, "Quarter trend");
-assert.deepEqual(importedSummaryChart.lineOptions, { smooth: true });
+assert.deepEqual(importedSummaryChart.lineOptions, { grouping: "stacked", smooth: true });
 assert.equal(importedSummaryChart.hasLegend, true);
 assert.deepEqual(importedSummaryChart.categories, ["Q1", "Q2"]);
 assert.deepEqual(importedSummaryChart.series.items[0], {
@@ -988,7 +994,7 @@ importedSummaryImage.alt = "Updated quarterly performance";
 importedSummaryImage.anchor = { from: { row: 5, col: 4, rowOffsetPx: 12, colOffsetPx: 6 }, extent: { widthPx: 160, heightPx: 100 } };
 importedSummaryChart.name = "Updated quarter chart";
 importedSummaryChart.title = "Updated quarter trend";
-importedSummaryChart.lineOptions = { smooth: false };
+importedSummaryChart.lineOptions = { grouping: "percentStacked", smooth: false };
 importedSummaryChart.hasLegend = false;
 importedSummaryChart.categories[1] = "Q2 actual";
 importedSummaryChart.series.items[0].name = "Actual revenue";
@@ -1035,7 +1041,7 @@ assert.equal(secondImage.dataUrl, summaryImage.dataUrl);
 const secondChart = secondImported.worksheets.getItem("Summary").charts.items[0];
 assert.equal(secondChart.name, "Updated quarter chart");
 assert.equal(secondChart.title, "Updated quarter trend");
-assert.deepEqual(secondChart.lineOptions, { smooth: false });
+assert.deepEqual(secondChart.lineOptions, { grouping: "percentStacked", smooth: false });
 assert.equal(secondChart.hasLegend, false);
 assert.deepEqual(secondChart.categories, ["Q1", "Q2 actual"]);
 assert.deepEqual(secondChart.series.items[0].values, [42.5, 90]);
@@ -1196,13 +1202,13 @@ await assert.rejects(SpreadsheetFile.exportXlsx(barMarkerWorkbook), /markers req
 const invalidLineOptionsWorkbook = Workbook.create();
 const invalidLineOptionsSheet = invalidLineOptionsWorkbook.worksheets.add("Invalid line options");
 assert.throws(
-  () => invalidLineOptionsSheet.charts.add("line", { name: "Rejected options", categories: ["A"], series: [{ name: "Value", values: [1] }], lineOptions: { smooth: true, grouping: "stacked" } }),
-  /supports only smooth/i,
+  () => invalidLineOptionsSheet.charts.add("line", { name: "Rejected options", categories: ["A"], series: [{ name: "Value", values: [1] }], lineOptions: { grouping: "clustered" } }),
+  /grouping must be one of standard, stacked, percentStacked/i,
 );
 const invalidLineOptionsChart = invalidLineOptionsSheet.charts.add("line", { name: "Invalid options", categories: ["A"], series: [{ name: "Value", values: [1] }] });
-invalidLineOptionsChart.lineOptions = { smooth: true, grouping: "stacked" };
+invalidLineOptionsChart.lineOptions = { smooth: true, varyColors: true };
 assert.ok(invalidLineOptionsWorkbook.verify().issues.some((issue) => issue.type === "invalidChartLineOptions"));
-await assert.rejects(exportXlsxWithOpenChestnut(invalidLineOptionsWorkbook), /supports only smooth/i);
+await assert.rejects(exportXlsxWithOpenChestnut(invalidLineOptionsWorkbook), /supports only grouping and smooth/i);
 invalidLineOptionsChart.lineOptions = { smooth: "true" };
 await assert.rejects(exportXlsxWithOpenChestnut(invalidLineOptionsWorkbook), /smooth must be a boolean/i);
 invalidLineOptionsChart.lineOptions = { smooth: true };
@@ -1226,7 +1232,7 @@ const styledAxisChart = styledAxisWorkbook.worksheets.add("Styled axis").charts.
   name: "Styled axis",
   title: "Styled sizes",
   titleTextStyle: { fontSize: 12.5 },
-  lineOptions: { smooth: true },
+  lineOptions: { grouping: "stacked", smooth: true },
   categories: ["A", "B"],
   series: [{ name: "Value", values: [1, 2], line: { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 }, marker: { symbol: "star", size: 10 } }],
   xAxis: { textStyle: { fontSize: 10 } },
@@ -1235,6 +1241,21 @@ const styledAxisChart = styledAxisWorkbook.worksheets.add("Styled axis").charts.
 assert.match(styledAxisChart.toSvg(), /stroke="#2563EB" stroke-width="2.25" stroke-dasharray="8 4 2 4 2 4"[\s\S]*font-size="10"/);
 assert.match(styledAxisChart.toSvg(), /<polygon points="[^"]+" fill="#2563EB" stroke="#2563EB" stroke-width="1.5"/);
 assert.match(styledAxisChart.toSvg(), /<path d="M [^"]+ C [^"]+" fill="none"/);
+const groupedPreviewChart = styledAxisWorkbook.worksheets.getItem("Styled axis").charts.add("line", {
+  name: "Grouped preview",
+  lineOptions: { grouping: "standard" },
+  categories: ["A", "B"],
+  series: [{ name: "One", values: [1, 2] }, { name: "Two", values: [3, 4] }],
+});
+const standardPreview = groupedPreviewChart.toSvg();
+groupedPreviewChart.lineOptions = { grouping: "stacked" };
+const stackedPreview = groupedPreviewChart.toSvg();
+groupedPreviewChart.lineOptions = { grouping: "percentStacked" };
+const percentPreview = groupedPreviewChart.toSvg();
+assert.equal([...stackedPreview.matchAll(/data-series-index=/g)].length, 2, "Worksheet SVG preview must render every grouped line series.");
+assert.notEqual(stackedPreview, standardPreview, "Stacked grouping must change deterministic worksheet SVG coordinates.");
+assert.notEqual(percentPreview, stackedPreview, "Percent-stacked grouping must normalize deterministic worksheet SVG coordinates.");
+styledAxisWorkbook.worksheets.getItem("Styled axis").charts.items.pop();
 const styledAxisNative = await exportXlsxWithOpenChestnut(styledAxisWorkbook);
 const styledAxisNativeZip = await JSZip.loadAsync(styledAxisNative.bytes);
 const styledAxisNativeChartPath = Object.keys(styledAxisNativeZip.files).find((name) => /\/charts\/chart\d+\.xml$/.test(name));
@@ -1245,6 +1266,7 @@ assert.match(styledAxisNativeXml, /<c:catAx>[\s\S]*?<a:defRPr sz="1000"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:valAx>[\s\S]*?<a:defRPr sz="900"\s*\/>/);
 assert.match(styledAxisNativeXml, /<a:ln w="28575"><a:solidFill><a:srgbClr val="2563EB"\s*\/><\/a:solidFill><a:prstDash val="lgDashDotDot"\s*\/><\/a:ln>/);
 assert.match(styledAxisNativeXml, /<c:marker><c:symbol val="star"\s*\/><c:size val="10"\s*\/><\/c:marker>/);
+assert.match(styledAxisNativeXml, /<c:grouping val="stacked"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:smooth val="1"\s*\/>/);
 const styledAxisImported = await importXlsxWithOpenChestnut(styledAxisNative);
 const importedStyledAxisChart = styledAxisImported.worksheets.getItem("Styled axis").charts.items[0];
@@ -1253,7 +1275,7 @@ assert.deepEqual(importedStyledAxisChart.xAxis.textStyle, { fontSize: 10 });
 assert.deepEqual(importedStyledAxisChart.yAxis.textStyle, { fontSize: 9 });
 assert.deepEqual(importedStyledAxisChart.series.items[0].line, { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 });
 assert.deepEqual(importedStyledAxisChart.series.items[0].marker, { symbol: "star", size: 10 });
-assert.deepEqual(importedStyledAxisChart.lineOptions, { smooth: true });
+assert.deepEqual(importedStyledAxisChart.lineOptions, { grouping: "stacked", smooth: true });
 importedStyledAxisChart.titleTextStyle.fontSize = 14;
 importedStyledAxisChart.xAxis.textStyle.fontSize = 11;
 delete importedStyledAxisChart.yAxis.textStyle;
@@ -1273,7 +1295,7 @@ const styledAxisFallbackRoundTrip = await importXlsxWithOpenChestnut(styledAxisF
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].titleTextStyle, { fontSize: 12.5 });
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].line, { width: 2.25, fill: "#2563EB", style: "dash-dot-dot" });
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].marker, { symbol: "star", size: 10 });
-assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].lineOptions, { smooth: true });
+assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].lineOptions, { grouping: "stacked", smooth: true });
 
 const invalidTextStyleWorkbook = Workbook.create();
 invalidTextStyleWorkbook.worksheets.add("Invalid text style").charts.add("line", { name: "Invalid style", title: "Invalid", titleTextStyle: { fontSize: 0 }, categories: ["A"], series: [{ name: "Value", values: [1] }] });

@@ -281,12 +281,22 @@ function chartSeriesMarker(seriesBody) {
 }
 
 function chartLineOptions(xml) {
-  if (directChildNames(xml).filter((name) => name === "smooth").length !== 1) return undefined;
+  const children = directChildNames(xml);
+  if (children.filter((name) => name === "grouping").length > 1 || children.filter((name) => name === "smooth").length > 1) return undefined;
+  const output = {};
+  const grouping = directElement(xml, "grouping");
+  if (grouping) {
+    const groupingAttributes = attributes(grouping.startTag);
+    if (grouping.body.trim() || Object.keys(groupingAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !["standard", "stacked", "percentStacked"].includes(groupingAttributes.val)) return undefined;
+    output.grouping = groupingAttributes.val;
+  }
   const smooth = directElement(xml, "smooth");
-  if (!smooth) return undefined;
-  const smoothAttributes = attributes(smooth.startTag);
-  if (smooth.body.trim() || Object.keys(smoothAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !["0", "1", "false", "true"].includes(smoothAttributes.val)) return undefined;
-  return { smooth: smoothAttributes.val === "1" || smoothAttributes.val === "true" };
+  if (smooth) {
+    const smoothAttributes = attributes(smooth.startTag);
+    if (smooth.body.trim() || Object.keys(smoothAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !["0", "1", "false", "true"].includes(smoothAttributes.val)) return undefined;
+    output.smooth = smoothAttributes.val === "1" || smoothAttributes.val === "true";
+  }
+  return Object.keys(output).length ? output : undefined;
 }
 
 function chartAxis(xml, name, kind) {

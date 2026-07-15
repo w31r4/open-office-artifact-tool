@@ -419,7 +419,7 @@ internal sealed class XlsxChartCodec
         if (chart.Type == SpreadsheetChartType.Bar)
             plot = new XElement(ChartNs + "barChart", new XElement(ChartNs + "barDir", new XAttribute("val", "col")), new XElement(ChartNs + "grouping", new XAttribute("val", "clustered")), series, new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else if (chart.Type == SpreadsheetChartType.Line)
-            plot = new XElement(ChartNs + "lineChart", new XElement(ChartNs + "grouping", new XAttribute("val", "standard")), series, XlsxChartLineOptionsCodec.Element(chart.LineOptions), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
+            plot = new XElement(ChartNs + "lineChart", XlsxChartLineOptionsCodec.GroupingElement(chart.LineOptions), series, XlsxChartLineOptionsCodec.SmoothElement(chart.LineOptions), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else plot = new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series);
         var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
         XlsxChartAxisCodec.AppendAuthored(plotArea, chart);

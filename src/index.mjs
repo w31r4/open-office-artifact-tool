@@ -971,7 +971,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.comments.addThread", summary: "Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships." },
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets a direct symbol/size, lineOptions.smooth controls chart-level line interpolation, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets a direct symbol/size, lineOptions controls standard/stacked/percent-stacked grouping and smooth interpolation, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds." },
   { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
@@ -2426,7 +2426,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     source: { type: "Range|object", description: "Source range or explicit chart config." },
     title: { type: "string", description: "Chart title." },
     titleTextStyle: { type: "object", description: "Optional chart-title style with fontSize from 1 through 4000 points." },
-    lineOptions: { type: "object", description: "Line-chart-only options. The bounded worksheet-chart profile accepts exactly { smooth: boolean }; explicit false is preserved as native c:smooth val=0." },
+    lineOptions: { type: "object", description: "Line-chart-only { grouping?, smooth? }. grouping is standard, stacked, or percentStacked; omission authors the standard default. smooth preserves explicit false as native c:smooth val=0." },
     categories: { type: "string[]", description: "Explicit categories." },
     series: { type: "object[]", description: "Explicit series definitions with name, numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size }. line.fill is #RRGGBB; style is solid, dashed, dotted, dash-dot, or dash-dot-dot; width is 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a compatibility alias and must not conflict with line." },
     xAxis: { type: "object", description: "Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval." },
@@ -3433,7 +3433,16 @@ class WorksheetChart {
   toSvg() {
     const p = this.position;
     const values = this.series.items[0]?.values || [];
-    const max = Math.max(1, ...values.map((value) => Number(value) || 0));
+    const lineOptions = normalizeSpreadsheetChartLineOptions(this.lineOptions);
+    const grouping = lineOptions?.grouping || "standard";
+    const lineTotals = values.map((_, pointIndex) => this.series.items.reduce((total, series) => total + (Number(series.values?.[pointIndex]) || 0), 0));
+    const lineValues = this.series.items.map((series, seriesIndex) => (series.values || []).map((value, pointIndex) => {
+      const raw = Number(value) || 0;
+      if (grouping === "standard") return raw;
+      const stacked = this.series.items.slice(0, seriesIndex + 1).reduce((total, item) => total + (Number(item.values?.[pointIndex]) || 0), 0);
+      return grouping === "percentStacked" ? (lineTotals[pointIndex] === 0 ? 0 : stacked / lineTotals[pointIndex]) : stacked;
+    }));
+    const max = this.type === "line" ? Math.max(1, ...lineValues.flat()) : Math.max(1, ...values.map((value) => Number(value) || 0));
     const plot = { left: p.left + 28, top: p.top + 36, width: Math.max(0, p.width - 44), height: Math.max(0, p.height - 62) };
     const barW = values.length ? plot.width / values.length * 0.65 : 0;
     const gap = values.length ? plot.width / values.length * 0.35 : 0;
@@ -3447,12 +3456,23 @@ class WorksheetChart {
       const h = plot.height * (Number(value) || 0) / max;
       return `<rect x="${plot.left + index * (barW + gap) + gap / 2}" y="${plot.top + plot.height - h}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>`;
     }).join("");
-    const linePointItems = values.map((value, index) => ({ x: plot.left + (index + 0.5) * plot.width / Math.max(1, values.length), y: plot.top + plot.height - plot.height * (Number(value) || 0) / max }));
-    const linePoints = linePointItems.map((point) => `${point.x},${point.y}`).join(" ");
-    const lineOptions = normalizeSpreadsheetChartLineOptions(this.lineOptions);
-    const lineMark = lineOptions?.smooth === true ? `<path d="${spreadsheetChartSmoothLinePath(linePointItems)}" fill="none"${strokeAttributes}/>` : `<polyline points="${linePoints}" fill="none"${strokeAttributes}/>`;
-    const markerMarks = this.type === "line" ? linePointItems.map((point) => spreadsheetChartMarkerSvg(this.series.items[0]?.marker, point.x, point.y, previewStroke)).join("") : "";
-    const plotMarks = this.type === "line" ? `${lineMark}${markerMarks}` : bars;
+    const previewPalette = ["#38BDF8", "#F97316", "#22C55E", "#A855F7", "#E11D48", "#0F766E"];
+    const lineMarks = lineValues.map((seriesValues, seriesIndex) => {
+      const series = this.series.items[seriesIndex];
+      const fallback = previewPalette[seriesIndex % previewPalette.length];
+      const fill = /^#[0-9a-f]{6}$/i.test(series?.fill || "") ? series.fill.toUpperCase() : fallback;
+      const line = normalizeSpreadsheetChartSeriesLine(series);
+      const stroke = line?.fill || fill;
+      const width = line?.width ?? 2;
+      const dash = spreadsheetChartLineDashArray(line?.style);
+      const attributes = ` stroke="${stroke}" stroke-width="${width}"${dash ? ` stroke-dasharray="${dash}"` : ""}`;
+      const points = seriesValues.map((value, index) => ({ x: plot.left + (index + 0.5) * plot.width / Math.max(1, seriesValues.length), y: plot.top + plot.height - plot.height * value / max }));
+      const mark = lineOptions?.smooth === true
+        ? `<path d="${spreadsheetChartSmoothLinePath(points)}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`
+        : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`;
+      return `${mark}${points.map((point) => spreadsheetChartMarkerSvg(series?.marker, point.x, point.y, stroke)).join("")}`;
+    }).join("");
+    const plotMarks = this.type === "line" ? lineMarks : bars;
     const xTickSize = Number(this.xAxis?.textStyle?.fontSize);
     const xTicks = Number.isFinite(xTickSize) && xTickSize > 0 && values.length ? this.categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / values.length}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : "";
     const yTickSize = Number(this.yAxis?.textStyle?.fontSize);
@@ -7588,7 +7608,7 @@ function tableXml(table, tablePartId, styleTable) {
 function xlsxChartXml(chart) {
   const chartType = chart.type || chart.chartType || "bar";
   const chartElementName = chartType === "line" ? "lineChart" : chartType === "pie" ? "pieChart" : "barChart";
-  const grouping = chartType === "line" ? "<c:grouping val=\"standard\"/>" : chartType === "pie" ? "<c:varyColors val=\"1\"/>" : "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>";
+  const grouping = chartType === "pie" ? "<c:varyColors val=\"1\"/>" : chartType === "bar" ? "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>" : "";
   const seriesItems = chart.series?.items || chart.series || [];
   const seriesXml = (seriesItems.length ? seriesItems : [{ name: chart.title || "Series", values: [] }]).map((series, index) => {
     const values = series.values || [];
@@ -7605,6 +7625,7 @@ function xlsxChartXml(chart) {
   }).join("");
   const lineOptions = normalizeSpreadsheetChartLineOptions(chart.lineOptions);
   if (lineOptions != null && chartType !== "line") throw new TypeError("Worksheet chart lineOptions require a line chart.");
+  const lineGrouping = chartType === "line" ? `<c:grouping val="${lineOptions?.grouping || "standard"}"/>` : "";
   const smooth = lineOptions?.smooth == null ? "" : `<c:smooth val="${lineOptions.smooth ? 1 : 0}"/>`;
   const textStyle = (value, name) => {
     if (value == null) return undefined;
@@ -7649,7 +7670,7 @@ function xlsxChartXml(chart) {
   const titleFontSize = textStyle(chart.titleTextStyle, "titleTextStyle");
   if (titleFontSize != null && !String(chart.title || "").length) throw new TypeError("Worksheet chart titleTextStyle requires a non-empty title.");
   const titleRunProperties = titleFontSize == null ? "" : `<a:rPr sz="${Math.round(titleFontSize * 100)}"/>`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>${titleRunProperties}<a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${seriesXml}${smooth}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>${titleRunProperties}<a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${lineGrouping}${seriesXml}${smooth}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
 }
 
 function pivotCacheDefinitionRelsXml(part) {

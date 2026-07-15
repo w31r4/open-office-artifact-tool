@@ -2,14 +2,24 @@ function lineOptionsError(message) {
   throw new TypeError(`Worksheet chart lineOptions ${message}`);
 }
 
+export const SPREADSHEET_CHART_LINE_GROUPINGS = Object.freeze(["standard", "stacked", "percentStacked"]);
+const GROUPINGS = new Set(SPREADSHEET_CHART_LINE_GROUPINGS);
+
 export function normalizeSpreadsheetChartLineOptions(value) {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) lineOptionsError("must be an object.");
-  const unsupported = Object.keys(value).filter((key) => key !== "smooth" && value[key] != null);
-  if (unsupported.length) lineOptionsError(`supports only smooth; received ${unsupported.join(", ")}.`);
-  if (value.smooth == null) return null;
-  if (typeof value.smooth !== "boolean") lineOptionsError("smooth must be a boolean.");
-  return { smooth: value.smooth };
+  const unsupported = Object.keys(value).filter((key) => !["grouping", "smooth"].includes(key) && value[key] != null);
+  if (unsupported.length) lineOptionsError(`supports only grouping and smooth; received ${unsupported.join(", ")}.`);
+  const output = {};
+  if (value.grouping != null) {
+    if (typeof value.grouping !== "string" || !GROUPINGS.has(value.grouping)) lineOptionsError(`grouping must be one of ${SPREADSHEET_CHART_LINE_GROUPINGS.join(", ")}.`);
+    output.grouping = value.grouping;
+  }
+  if (value.smooth != null) {
+    if (typeof value.smooth !== "boolean") lineOptionsError("smooth must be a boolean.");
+    output.smooth = value.smooth;
+  }
+  return Object.keys(output).length ? output : null;
 }
 
 export function spreadsheetChartSmoothLinePath(points = []) {
