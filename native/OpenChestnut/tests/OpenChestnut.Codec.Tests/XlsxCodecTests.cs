@@ -2443,6 +2443,107 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesDynamicArrayMetadata()
+    {
+        var request = FormulaExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact
+        {
+            Row = 0,
+            Column = 6,
+            Formula = "=SEQUENCE(2,2)",
+            NumberValue = 1,
+            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.DynamicArray, Reference = "G1:H2" },
+        });
+        request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 0, Column = 7, NumberValue = 2 });
+        request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 1, Column = 6, NumberValue = 3 });
+        request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 1, Column = 7, NumberValue = 4 });
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        string metadataPartPath;
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var workbookPart = document.WorkbookPart!;
+            var metadata = workbookPart.CellMetadataPart?.Metadata;
+            Assert.NotNull(metadata);
+            metadataPartPath = workbookPart.CellMetadataPart!.Uri.OriginalString.TrimStart('/');
+            Assert.Contains("dynamicArrayProperties", metadata!.OuterXml);
+            Assert.Contains("fDynamic=\"1\"", metadata.OuterXml);
+            Assert.Contains("fCollapsed=\"0\"", metadata.OuterXml);
+            var cells = workbookPart.WorksheetParts.Single().Worksheet!.Descendants<Cell>().ToDictionary(item => item.CellReference!.Value!);
+            Assert.Equal(1U, cells["G1"].CellMetaIndex!.Value);
+            Assert.Equal(CellFormulaValues.Array, cells["G1"].CellFormula!.FormulaType!.Value);
+            Assert.Equal("G1:H2", cells["G1"].CellFormula!.Reference!.Value);
+            Assert.Null(cells["E1"].CellMetaIndex);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var dynamic = imported.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 0 && cell.Column == 6);
+        Assert.Equal(CellFormulaKind.DynamicArray, dynamic.FormulaMetadata.Kind);
+        Assert.Equal("G1:H2", dynamic.FormulaMetadata.Reference);
+
+        var metadataBefore = ReadEntry(authored.File.ToByteArray(), metadataPartPath);
+        dynamic.Formula = "=SEQUENCE(2,2,10,1)";
+        dynamic.NumberValue = 10;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(metadataBefore, ReadEntry(edited.File.ToByteArray(), metadataPartPath));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var anchor = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(cell => cell.CellReference?.Value == "G1");
+            Assert.Equal(1U, anchor.CellMetaIndex!.Value);
+            Assert.Equal("SEQUENCE(2,2,10,1)", anchor.CellFormula!.Text);
+        }
+
+        dynamic.FormulaMetadata = null;
+        var detached = Export(imported.Artifact);
+        Assert.True(detached.Ok, string.Join("\n", detached.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        using var detachedStream = new MemoryStream(detached.File.ToByteArray());
+        using var detachedDocument = SpreadsheetDocument.Open(detachedStream, false);
+        var detachedAnchor = detachedDocument.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(cell => cell.CellReference?.Value == "G1");
+        Assert.Null(detachedAnchor.CellMetaIndex);
+        Assert.Null(detachedAnchor.CellFormula!.FormulaType);
+        Assert.Equal(metadataBefore, ReadEntry(detached.File.ToByteArray(), metadataPartPath));
+    }
+
+    [Fact]
+    public void DynamicArrayMetadataEditsFailClosedWithoutAnOwnedRecord()
+    {
+        var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
+        var imported = Import(first.File.ToByteArray());
+        imported.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact
+        {
+            Row = 0,
+            Column = 6,
+            Formula = "=SEQUENCE(2)",
+            NumberValue = 1,
+            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.DynamicArray, Reference = "G1:G2" },
+        });
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_dynamic_array_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var dynamicRequest = FormulaExportRequest();
+        dynamicRequest.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact
+        {
+            Row = 0,
+            Column = 6,
+            Formula = "=SEQUENCE(2)",
+            NumberValue = 1,
+            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.DynamicArray, Reference = "G1:G2" },
+        });
+        var dynamicFile = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(dynamicRequest.ToByteArray()));
+        var malformed = SetCellMetadataIndex(dynamicFile.File.ToByteArray(), "C1", 1U);
+        var malformedImport = Import(malformed);
+        Assert.False(malformedImport.Ok);
+        Assert.Equal("invalid_cell_formula", Assert.Single(malformedImport.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingCachedValueAndNumberFormatEditsKeepFormulaXmlExact()
     {
         var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
@@ -3111,6 +3212,21 @@ public sealed class XlsxCodecTests
             var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
             var formula = worksheet.Descendants<Cell>().Single(cell => cell.CellReference?.Value == reference).CellFormula!;
             formula.CalculateCell = true;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetCellMetadataIndex(byte[] bytes, string reference, uint index)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            var cell = worksheet.Descendants<Cell>().Single(item => item.CellReference?.Value == reference);
+            cell.CellMetaIndex = index;
             worksheet.Save();
         }
         return stream.ToArray();

@@ -602,11 +602,18 @@ enum CellFormulaKind {
   CELL_FORMULA_KIND_UNSPECIFIED = 0;
   CELL_FORMULA_KIND_SHARED = 1;
   CELL_FORMULA_KIND_ARRAY = 2;
+  // A spill-capable Office 2019+ array formula whose anchor is linked to an
+  // XLDAPR record in the workbook CellMetadataPart. This is intentionally
+  // distinct from the legacy Ctrl+Shift+Enter array formula represented by
+  // CELL_FORMULA_KIND_ARRAY even though both serialize as f@t="array".
+  CELL_FORMULA_KIND_DYNAMIC_ARRAY = 3;
 }
 
 message CellFormulaMetadata {
   CellFormulaKind kind = 1;
   uint32 shared_index = 2;
+  // Shared-group range, legacy-array range, or dynamic spill range according
+  // to kind. The formula cell must be the top-left anchor for array kinds.
   string reference = 3;
 }
 

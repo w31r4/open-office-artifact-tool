@@ -20,6 +20,7 @@ internal sealed class XlsxFormulaCodec
 
     private readonly string _sheetName;
     private readonly Dictionary<(uint Row, uint Column), FormulaRecord> _records;
+    private readonly XlsxDynamicArrayCodec _dynamicArrays;
 
     private sealed record FormulaRecord(string Formula, CellFormulaMetadata? Metadata, CellFormula Source);
     private readonly record struct RangeBounds(uint Top, uint Left, uint Bottom, uint Right)
@@ -27,22 +28,29 @@ internal sealed class XlsxFormulaCodec
         internal ulong CellCount => checked(((ulong)Bottom - Top + 1) * ((ulong)Right - Left + 1));
     }
 
-    private XlsxFormulaCodec(string sheetName, Dictionary<(uint Row, uint Column), FormulaRecord> records)
+    private XlsxFormulaCodec(string sheetName, Dictionary<(uint Row, uint Column), FormulaRecord> records, XlsxDynamicArrayCodec dynamicArrays)
     {
         _sheetName = sheetName;
         _records = records;
+        _dynamicArrays = dynamicArrays;
     }
 
-    internal static XlsxFormulaCodec ForWorksheet(Worksheet worksheet, string sheetName)
+    internal static XlsxFormulaCodec ForWorksheet(Worksheet worksheet, string sheetName, XlsxDynamicArrayCodec dynamicArrays)
     {
-        var formulas = worksheet.GetFirstChild<SheetData>()?.Descendants<Cell>()
+        var worksheetCells = worksheet.GetFirstChild<SheetData>()?.Descendants<Cell>().ToArray() ?? [];
+        foreach (var cell in worksheetCells.Where(dynamicArrays.IsDynamic))
+        {
+            if (cell.CellFormula is null || FormulaType(cell.CellFormula) != CellFormulaValues.Array)
+                throw Invalid(cell, sheetName, "has an XLDAPR dynamic-array marker but no array formula");
+        }
+        var formulas = worksheetCells
             .Where(cell => cell.CellFormula is not null)
             .Select(cell =>
             {
                 var coordinate = ParseCellReference(cell.CellReference?.Value, sheetName);
                 return (Coordinate: coordinate, Cell: cell, Formula: cell.CellFormula!);
             })
-            .ToArray() ?? [];
+            .ToArray();
         var records = new Dictionary<(uint Row, uint Column), FormulaRecord>();
         var duplicate = formulas.GroupBy(item => item.Coordinate).FirstOrDefault(group => group.Count() > 1);
         if (duplicate is not null)
@@ -100,15 +108,17 @@ internal sealed class XlsxFormulaCodec
         foreach (var entry in formulas.Where(item => FormulaType(item.Formula) == CellFormulaValues.Array))
         {
             if (entry.Formula.Reference?.Value is not { Length: > 0 } reference)
-                throw Invalid(entry.Cell, sheetName, "legacy array formula requires ref");
+                throw Invalid(entry.Cell, sheetName, dynamicArrays.IsDynamic(entry.Cell) ? "dynamic array formula requires ref" : "legacy array formula requires ref");
             var bounds = ParseRange(reference, sheetName);
-            topologyRanges.Add((bounds, $"array {CellReference(entry.Coordinate.Row, entry.Coordinate.Column)}", entry.Coordinate, CellFormulaKind.Array));
+            var kind = dynamicArrays.IsDynamic(entry.Cell) ? CellFormulaKind.DynamicArray : CellFormulaKind.Array;
+            var label = kind == CellFormulaKind.DynamicArray ? "dynamic array" : "legacy array";
+            topologyRanges.Add((bounds, $"{label} {CellReference(entry.Coordinate.Row, entry.Coordinate.Column)}", entry.Coordinate, kind));
             if (entry.Coordinate != (bounds.Top, bounds.Left))
-                throw Invalid(entry.Cell, sheetName, $"legacy array formula must be anchored at the top-left cell of {reference}");
+                throw Invalid(entry.Cell, sheetName, $"{label} formula must be anchored at the top-left cell of {reference}");
             var body = ValidateFormulaBody(entry.Formula.Text, entry.Cell.CellReference?.Value ?? "cell", required: true);
             records.Add(entry.Coordinate, new FormulaRecord($"={body}", new CellFormulaMetadata
             {
-                Kind = CellFormulaKind.Array,
+                Kind = kind,
                 Reference = reference,
             }, entry.Formula));
         }
@@ -128,13 +138,13 @@ internal sealed class XlsxFormulaCodec
                     if (occupied.TryGetValue(coordinate, out var previous) && previous != topology.Owner)
                         throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} formula range owned by {topology.Owner} overlaps {previous} at {CellReference(row, column)}.", sheetName);
                     occupied[coordinate] = topology.Owner;
-                    if (topology.Kind == CellFormulaKind.Array && coordinate != topology.Anchor && formulasByCoordinate.TryGetValue(coordinate, out var nested))
-                        throw Invalid(nested.Cell, sheetName, $"must not contain another formula inside legacy array range owned by {topology.Owner}");
+                    if ((topology.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray) && coordinate != topology.Anchor && formulasByCoordinate.TryGetValue(coordinate, out var nested))
+                        throw Invalid(nested.Cell, sheetName, $"must not contain another formula inside array range owned by {topology.Owner}");
                 }
             }
         }
 
-        return new XlsxFormulaCodec(sheetName, records);
+        return new XlsxFormulaCodec(sheetName, records, dynamicArrays);
     }
 
     internal static void ValidateArtifact(WorksheetArtifact sheet)
@@ -147,7 +157,9 @@ internal sealed class XlsxFormulaCodec
             ValidateFormulaBody(cell.Formula, $"{sheet.Name}!{CellReference(cell.Row, cell.Column)}", required: cell.FormulaMetadata is not null);
             if (cell.FormulaMetadata is null) continue;
             if (cell.FormulaMetadata.Kind == CellFormulaKind.Unspecified)
-                throw Invalid(cell, sheet.Name, "formula_metadata.kind must be shared or array");
+                throw Invalid(cell, sheet.Name, "formula_metadata.kind must be shared, array, or dynamic_array");
+            if (cell.FormulaMetadata.Kind is not (CellFormulaKind.Shared or CellFormulaKind.Array or CellFormulaKind.DynamicArray))
+                throw Invalid(cell, sheet.Name, "formula_metadata.kind is unsupported");
             if (string.IsNullOrWhiteSpace(cell.FormulaMetadata.Reference))
                 throw Invalid(cell, sheet.Name, "formula metadata requires reference");
         }
@@ -185,7 +197,7 @@ internal sealed class XlsxFormulaCodec
             .Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Shared)
             .GroupBy(cell => cell.FormulaMetadata!.SharedIndex)
             .Select(group => group.First())
-            .Concat(sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Array));
+            .Concat(sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray));
         ulong topologyCellCount = 0;
         foreach (var cell in topologyRoots)
         {
@@ -194,11 +206,13 @@ internal sealed class XlsxFormulaCodec
             topologyCellCount = checked(topologyCellCount + bounds.CellCount);
             if (topologyCellCount > MaxFormulaTopologyCells)
                 throw Invalid(cell, sheet.Name, $"native formula topology exceeds {MaxFormulaTopologyCells} cells");
-            var owner = metadata.Kind == CellFormulaKind.Shared ? $"shared si={metadata.SharedIndex}" : $"array {CellReference(cell.Row, cell.Column)}";
-            if (metadata.Kind == CellFormulaKind.Array && (cell.Row != bounds.Top || cell.Column != bounds.Left))
-                throw Invalid(cell, sheet.Name, $"legacy array formula must be anchored at the top-left cell of {metadata.Reference}");
-            if (metadata.Kind == CellFormulaKind.Array && metadata.SharedIndex != 0)
-                throw Invalid(cell, sheet.Name, "legacy array formula must not set shared_index");
+            var arrayKind = metadata.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray;
+            var label = metadata.Kind == CellFormulaKind.DynamicArray ? "dynamic array" : "legacy array";
+            var owner = metadata.Kind == CellFormulaKind.Shared ? $"shared si={metadata.SharedIndex}" : $"{label} {CellReference(cell.Row, cell.Column)}";
+            if (arrayKind && (cell.Row != bounds.Top || cell.Column != bounds.Left))
+                throw Invalid(cell, sheet.Name, $"{label} formula must be anchored at the top-left cell of {metadata.Reference}");
+            if (arrayKind && metadata.SharedIndex != 0)
+                throw Invalid(cell, sheet.Name, $"{label} formula must not set shared_index");
             for (var row = bounds.Top; row <= bounds.Bottom; row++)
             {
                 for (var column = bounds.Left; column <= bounds.Right; column++)
@@ -206,9 +220,9 @@ internal sealed class XlsxFormulaCodec
                     if (topology.TryGetValue((row, column), out var previous) && previous != owner)
                         throw Invalid(cell, sheet.Name, $"formula range {metadata.Reference} overlaps {previous}");
                     topology[(row, column)] = owner;
-                    if (metadata.Kind == CellFormulaKind.Array && (row != cell.Row || column != cell.Column) &&
+                    if (arrayKind && (row != cell.Row || column != cell.Column) &&
                         cellsByCoordinate.TryGetValue((row, column), out var nested) && !string.IsNullOrWhiteSpace(nested.Formula))
-                        throw Invalid(nested, sheet.Name, $"must not contain another formula inside legacy array range {metadata.Reference}");
+                        throw Invalid(nested, sheet.Name, $"must not contain another formula inside {label} range {metadata.Reference}");
                 }
             }
         }
@@ -246,7 +260,12 @@ internal sealed class XlsxFormulaCodec
                 FormulaType = CellFormulaValues.Array,
                 Reference = metadata.Reference,
             },
-            _ => throw Invalid(source, "worksheet", "formula_metadata.kind must be shared or array"),
+            CellFormulaKind.DynamicArray => new CellFormula(body)
+            {
+                FormulaType = CellFormulaValues.Array,
+                Reference = metadata.Reference,
+            },
+            _ => throw Invalid(source, "worksheet", "formula_metadata.kind must be shared, array, or dynamic_array"),
         };
     }
 
@@ -255,6 +274,7 @@ internal sealed class XlsxFormulaCodec
         var coordinate = (desired.Row, desired.Column);
         if (_records.TryGetValue(coordinate, out var current) && HasUnmodeledAttributes(current.Source))
             throw new CodecException("unsupported_cell_formula_edit", $"Cell {_sheetName}!{CellReference(desired.Row, desired.Column)} has unmodeled formula attributes and cannot be edited losslessly.", _sheetName);
+        _dynamicArrays.ApplyFormulaMetadata(target, desired, sourceBound: true);
         target.CellFormula = Build(desired);
     }
 

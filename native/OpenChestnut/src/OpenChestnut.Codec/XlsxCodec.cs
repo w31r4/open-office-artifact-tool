@@ -38,6 +38,7 @@ internal static class XlsxCodec
         {
             var workbookPart = document.AddWorkbookPart();
             workbookPart.Workbook = new Workbook();
+            var dynamicArrays = new XlsxDynamicArrayCodec(workbookPart);
             if (envelope.Workbook.DateSystem == WorkbookDateSystem._1904)
                 workbookPart.Workbook.WorkbookProperties = new WorkbookProperties { Date1904 = true };
             var sheets = workbookPart.Workbook.AppendChild(new Sheets());
@@ -56,7 +57,7 @@ internal static class XlsxCodec
             {
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
-                worksheetPart.Worksheet = BuildWorksheet(source, styles);
+                worksheetPart.Worksheet = BuildWorksheet(source, styles, dynamicArrays);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
@@ -85,6 +86,7 @@ internal static class XlsxCodec
         using var document = SpreadsheetDocument.Open(stream, isEditable: false);
         var workbookPart = document.WorkbookPart ?? throw new CodecException("missing_workbook_part", "XLSX package has no Workbook part.", "xl/workbook.xml");
         var workbookRoot = workbookPart.Workbook ?? throw new CodecException("missing_workbook_root", "XLSX package has no Workbook root element.", "xl/workbook.xml");
+        var dynamicArrays = new XlsxDynamicArrayCodec(workbookPart);
         var workbook = new WorkbookArtifact
         {
             Id = "workbook/1",
@@ -115,7 +117,7 @@ internal static class XlsxCodec
             var sheet = sheets[index];
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
-            var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, ref cellCount, limits);
+            var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, dynamicArrays, ref cellCount, limits);
             worksheetMetadata.ReadInto(target, index);
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
             target.Tables.Add(tables.Read());
@@ -159,6 +161,7 @@ internal static class XlsxCodec
         {
             var workbookPart = document.WorkbookPart ?? throw new CodecException("missing_workbook_part", "Source XLSX package has no Workbook part.", "xl/workbook.xml");
             var workbookRoot = workbookPart.Workbook ?? throw new CodecException("missing_workbook_root", "Source XLSX package has no Workbook root element.", "xl/workbook.xml");
+            var dynamicArrays = new XlsxDynamicArrayCodec(workbookPart);
             var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
             if (sheets.Length != envelope.Workbook.Worksheets.Count)
                 throw new CodecException("source_package_topology_changed", "Source-preserving XLSX export currently requires the imported worksheet count to remain unchanged.");
@@ -187,7 +190,7 @@ internal static class XlsxCodec
                 var source = envelope.Workbook.Worksheets[index];
                 if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
-                PatchWorksheet(worksheetPart, source, sharedStrings, styles);
+                PatchWorksheet(worksheetPart, source, sharedStrings, styles, dynamicArrays);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
                 tables.Save();
@@ -224,13 +227,13 @@ internal static class XlsxCodec
         ]);
     }
 
-    private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles)
+    private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxDynamicArrayCodec dynamicArrays)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {source.Name} has no Worksheet root element.");
-        var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, source.Name);
+        var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, source.Name, dynamicArrays);
         PatchSheetView(worksheet, source);
         PatchColumnDimensions(worksheet, source);
-        PatchRowsAndCells(worksheet, source, sharedStrings, styles, formulas);
+        PatchRowsAndCells(worksheet, source, sharedStrings, styles, formulas, dynamicArrays);
         PatchMergedRanges(worksheet, source);
         PatchWorksheetSortState(worksheet, source, styles);
         worksheet.Save();
@@ -349,7 +352,7 @@ internal static class XlsxCodec
         else worksheet.InsertBefore(replacement, sheetData);
     }
 
-    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxFormulaCodec formulas)
+    private static void PatchRowsAndCells(Worksheet worksheet, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxFormulaCodec formulas, XlsxDynamicArrayCodec dynamicArrays)
     {
         var sheetData = worksheet.GetFirstChild<SheetData>();
         if (sheetData is null)
@@ -378,7 +381,7 @@ internal static class XlsxCodec
             if (current is not null && CellSemanticallyEqual(current, sourceCell)) continue;
             if (cell is null)
             {
-                cell = BuildCell(sourceCell, styles);
+                cell = BuildCell(sourceCell, styles, dynamicArrays, sourceBound: true);
                 var before = row.Elements<Cell>().FirstOrDefault(item => ParseCellReference(item.CellReference?.Value, sourceCell.Row).Column > sourceCell.Column);
                 if (before is null) row.Append(cell);
                 else row.InsertBefore(cell, before);
@@ -496,7 +499,7 @@ internal static class XlsxCodec
         else worksheet.InsertBefore(replacement, before);
     }
 
-    private static Worksheet BuildWorksheet(WorksheetArtifact source, XlsxCellStyleCodec styles)
+    private static Worksheet BuildWorksheet(WorksheetArtifact source, XlsxCellStyleCodec styles, XlsxDynamicArrayCodec dynamicArrays)
     {
         var worksheet = new Worksheet();
         var sheetView = new SheetView { WorkbookViewId = 0U, ShowGridLines = source.ShowGridLines };
@@ -550,7 +553,7 @@ internal static class XlsxCodec
                 row.Hidden = dimension.Hidden;
             }
             if (cellsByRow.TryGetValue(rowIndex, out var cells))
-                foreach (var cell in cells) row.Append(BuildCell(cell, styles));
+                foreach (var cell in cells) row.Append(BuildCell(cell, styles, dynamicArrays, sourceBound: false));
             sheetData.Append(row);
         }
         worksheet.Append(sheetData);
@@ -570,10 +573,11 @@ internal static class XlsxCodec
         return worksheet;
     }
 
-    private static Cell BuildCell(CellArtifact source, XlsxCellStyleCodec? styles)
+    private static Cell BuildCell(CellArtifact source, XlsxCellStyleCodec? styles, XlsxDynamicArrayCodec? dynamicArrays = null, bool sourceBound = false)
     {
         var cell = new Cell { CellReference = CellReference(source.Row, source.Column) };
         cell.CellFormula = XlsxFormulaCodec.Build(source);
+        dynamicArrays?.ConfigureNewCell(cell, source, sourceBound);
         switch (source.ValueCase)
         {
             case CellArtifact.ValueOneofCase.StringValue:
@@ -605,10 +609,10 @@ internal static class XlsxCodec
         return cell;
     }
 
-    private static WorksheetArtifact ReadWorksheet(WorksheetPart worksheetPart, string name, int index, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, ref ulong cellCount, EffectiveCodecLimits limits)
+    private static WorksheetArtifact ReadWorksheet(WorksheetPart worksheetPart, string name, int index, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxDynamicArrayCodec dynamicArrays, ref ulong cellCount, EffectiveCodecLimits limits)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {name} has no Worksheet root element.");
-        var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, name);
+        var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, name, dynamicArrays);
         var target = new WorksheetArtifact { Id = $"worksheet/{index + 1}", Name = name, ShowGridLines = true };
         var view = worksheet.SheetViews?.Elements<SheetView>().FirstOrDefault();
         if (view?.ShowGridLines?.HasValue == true) target.ShowGridLines = view.ShowGridLines.Value;

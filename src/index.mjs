@@ -41,6 +41,9 @@ import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormula
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./spreadsheet/workbook-windows.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml";
+const XLSX_DYNAMIC_ARRAY_METADATA_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata";
+const XLSX_DYNAMIC_ARRAY_METADATA_EXTENSION_URI = "{BDBB8CDC-FA1E-496E-A857-3C3F30C029C3}";
 const CSV_MIME = "text/csv";
 const TSV_MIME = "text/tab-separated-values";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -4456,7 +4459,7 @@ function clearMergedSubordinateContents(sheet, bounds) {
       if (!cell) continue;
       cell.value = null;
       cell.formula = null;
-      for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
+      for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
     }
   }
 }
@@ -4488,7 +4491,7 @@ function formulaFillTranslation(formula, sourceAddress, targetAddress) {
 function cloneCellForFill(source, sourceAddress, targetAddress) {
   const cell = structuredClone(source || { value: null, formula: null, style: {} });
   if (cell.formula) cell.formula = formulaFillTranslation(cell.formula, sourceAddress, targetAddress);
-  for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
+  for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
   return cell;
 }
 
@@ -4504,9 +4507,12 @@ function detachNativeFormulaTopology(sheet, address) {
       detachShared = !sharedRef || !candidate.sharedRef || String(candidate.sharedRef).toUpperCase() === String(sharedRef).toUpperCase();
     }
     let detachArray = false;
-    if (candidate.formulaType === "array" && candidate.arrayRef) {
+    const arrayReference = candidate.formulaType === "array"
+      ? candidate.arrayRef
+      : candidate.formulaType === "dynamicArray" ? candidate.dynamicArrayRef : undefined;
+    if (arrayReference) {
       try {
-        const bounds = parseRangeAddress(candidate.arrayRef);
+        const bounds = parseRangeAddress(arrayReference);
         detachArray = target.row >= bounds.top && target.row <= bounds.bottom && target.col >= bounds.left && target.col <= bounds.right;
       } catch {
         detachArray = candidateAddress === address;
@@ -4520,6 +4526,7 @@ function detachNativeFormulaTopology(sheet, address) {
     if (detachArray) {
       delete candidate.formulaType;
       delete candidate.arrayRef;
+      delete candidate.dynamicArrayRef;
     }
   }
 }
@@ -4660,6 +4667,7 @@ export class Worksheet {
         sharedIndex: cell.sharedIndex,
         sharedRef: cell.sharedRef,
         arrayRef: cell.arrayRef,
+        dynamicArrayRef: cell.dynamicArrayRef,
         spillRange: cell.spillRange,
         spillValues: cell.spillValues,
         spillError: cell.spillError,
@@ -6497,7 +6505,9 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
 function evaluateFormula(sheet, formula, address, context = {}) {
   const raw = String(formula || "").trim();
   if (!raw.startsWith("=")) return raw;
-  const expr = raw.slice(1).trim();
+  // Excel persists post-2010 worksheet functions with compatibility prefixes.
+  // They are package syntax, not part of the agent-facing formula language.
+  const expr = raw.slice(1).trim().replace(/_xlfn\.(?:_xlws\.)?/gi, "");
   const evaluationContext = address && !context.formulaAddress ? { ...context, formulaAddress: address } : context;
   const functionMatch = /^([A-Z][A-Z0-9.]*)\((.*)\)$/i.exec(expr);
   if (functionMatch) {
@@ -6694,13 +6704,15 @@ export class SpreadsheetFile {
     const threadedCommentPlan = planSpreadsheetThreadedComments(threadParts);
     const sharedStrings = collectWorkbookSharedStrings(workbook);
     const styleTable = collectWorkbookStyles(workbook);
-    const workbookRels = workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0, sharedStrings.strings.length > 0, pivotParts);
-    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts, threadParts, sharedStrings, pivotParts));
+    const hasDynamicArrays = workbookHasDynamicArrays(workbook);
+    const workbookRels = workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0, sharedStrings.strings.length > 0, pivotParts, hasDynamicArrays);
+    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts, threadParts, sharedStrings, pivotParts, hasDynamicArrays));
     zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "xl/workbook.xml" }]));
     zip.file("xl/workbook.xml", workbookXml(workbook, pivotParts));
     zip.file("xl/_rels/workbook.xml.rels", workbookRels);
     zip.file("xl/styles.xml", xlsxStylesXml(styleTable));
     zip.file("xl/theme/theme1.xml", xlsxThemeXml(workbook.theme));
+    if (hasDynamicArrays) zip.file("xl/metadata.xml", xlsxDynamicArrayMetadataXml());
     if (sharedStrings.strings.length) zip.file("xl/sharedStrings.xml", sharedStringsXml(sharedStrings));
     zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
     workbook.worksheets.items.forEach((sheet, index) => {
@@ -6751,6 +6763,9 @@ export class SpreadsheetFile {
     }
     const workbookRelationshipRecords = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
     const workbookRelationships = new Map(workbookRelationshipRecords.map((relationship) => [relationship.id, relationship]));
+    const metadataRelationship = workbookRelationshipRecords.find((relationship) => relationship.type === XLSX_DYNAMIC_ARRAY_METADATA_RELATIONSHIP_TYPE && String(relationship.targetMode || "").toLowerCase() !== "external");
+    const metadataPartPath = metadataRelationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", metadataRelationship.target) : undefined;
+    const dynamicArrayMetadataIndexes = dynamicArrayCellMetadataIndexes(metadataPartPath ? await zip.file(metadataPartPath)?.async("text") : "");
     const connectionRelationships = workbookRelationshipRecords.filter((relationship) => relationship.type.endsWith("/connections") && String(relationship.targetMode || "").toLowerCase() !== "external");
     if (connectionRelationships.length === 1) {
       const connectionPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", connectionRelationships[0].target);
@@ -6776,7 +6791,7 @@ export class SpreadsheetFile {
       const sheet = workbook.worksheets.add(name, { visibility });
       const xml = await zip.file(partPath)?.async("text");
       if (xml) {
-        parseWorksheetXml(sheet, xml, { sharedStrings, styles });
+        parseWorksheetXml(sheet, xml, { sharedStrings, styles, dynamicArrayMetadataIndexes });
         await importNativeWorksheetTables(sheet, zip, partPath, styles);
         await importNativeWorksheetDrawings(sheet, zip, partPath);
         await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches, options);
@@ -6967,7 +6982,61 @@ function parseAttrs(attrs = "") {
   return Object.fromEntries([...String(attrs || "").matchAll(/\b([A-Za-z_:][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
 }
 
-function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = [], sharedStrings = { strings: [] }, pivotParts = []) {
+function dynamicArrayReference(address, cell) {
+  if (!cell?.formula || cell.formulaType === "array" || cell.formulaType === "shared") return undefined;
+  if (cell.formulaType === "dynamicArray") return String(cell.dynamicArrayRef || cell.spillRange || address);
+  if (!cell.formulaType && cell.spillRange) return String(cell.spillError ? address : cell.spillRange);
+  return undefined;
+}
+
+function workbookHasDynamicArrays(workbook) {
+  return workbook.worksheets.items.some((sheet) => [...sheet.store.entries()].some(([address, cell]) => dynamicArrayReference(address, cell)));
+}
+
+function xlsxDynamicArrayMetadataXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray"><metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes><futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="${XLSX_DYNAMIC_ARRAY_METADATA_EXTENSION_URI}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata><cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>`;
+}
+
+function dynamicArrayCellMetadataIndexes(xml = "") {
+  const source = String(xml || "");
+  if (!source) return new Set();
+  const typeTags = [...source.matchAll(/<(?:[A-Za-z_][\w.-]*:)?metadataType\b([^>]*)\/?\s*>/g)];
+  const typeIndexes = typeTags
+    .map((match, index) => ({ attrs: ooxmlXmlAttributes(match[1] || ""), index: index + 1 }))
+    .filter((item) => item.attrs.name === "XLDAPR" && ["1", "true"].includes(String(item.attrs.cellMeta || "").toLowerCase()))
+    .map((item) => item.index);
+  if (typeIndexes.length !== 1) return new Set();
+
+  const futureMatches = [...source.matchAll(/<(?:[A-Za-z_][\w.-]*:)?futureMetadata\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?futureMetadata\s*>/g)]
+    .filter((match) => ooxmlXmlAttributes(match[1] || "").name === "XLDAPR");
+  if (futureMatches.length !== 1) return new Set();
+  const dynamicValues = new Set([...futureMatches[0][2].matchAll(/<(?:[A-Za-z_][\w.-]*:)?bk\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?bk\s*>/g)]
+    .map((match, index) => ({ body: match[1] || "", index }))
+    .filter(({ body }) => {
+      const extension = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ext\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ext\s*>/g)]
+        .find((match) => String(ooxmlXmlAttributes(match[1] || "").uri || "").toUpperCase() === XLSX_DYNAMIC_ARRAY_METADATA_EXTENSION_URI);
+      if (!extension) return false;
+      const properties = /<(?:[A-Za-z_][\w.-]*:)?dynamicArrayProperties\b([^>]*)\/?\s*>/.exec(extension[2] || "");
+      if (!properties) return false;
+      const attrs = ooxmlXmlAttributes(properties[1] || "");
+      return ["1", "true"].includes(String(attrs.fDynamic || "").toLowerCase()) && !["1", "true"].includes(String(attrs.fCollapsed || "").toLowerCase());
+    })
+    .map((item) => item.index));
+  if (!dynamicValues.size) return new Set();
+
+  const cellMetadata = /<(?:[A-Za-z_][\w.-]*:)?cellMetadata\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?cellMetadata\s*>/.exec(source)?.[1] || "";
+  const indexes = new Set();
+  [...cellMetadata.matchAll(/<(?:[A-Za-z_][\w.-]*:)?bk\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?bk\s*>/g)].forEach((block, index) => {
+    const dynamic = [...String(block[1] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?rc\b([^>]*)\/?\s*>/g)].some((record) => {
+      const attrs = ooxmlXmlAttributes(record[1] || "");
+      return Number(attrs.t) === typeIndexes[0] && dynamicValues.has(Number(attrs.v));
+    });
+    if (dynamic) indexes.add(index + 1);
+  });
+  return indexes;
+}
+
+function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = [], sharedStrings = { strings: [] }, pivotParts = [], hasDynamicArrays = false) {
   const sheets = Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
   const tables = tableParts.map((part) => `<Override PartName="/xl/tables/table${part.tablePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`).join("");
   const drawingSheetIndexes = [...new Set([...imageParts, ...chartParts].map((part) => part.sheetIndex))].sort((left, right) => left - right);
@@ -6984,7 +7053,8 @@ function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartPar
   const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="${XLSX_THREADED_COMMENTS_CONTENT_TYPE}"/>`).join("");
   const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="${XLSX_PERSON_CONTENT_TYPE}"/>` : "";
   const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${shared}${sheets}${tables}${drawings}${charts}${pivots}${threadedComments}${persons}</Types>`;
+  const metadata = hasDynamicArrays ? `<Override PartName="/xl/metadata.xml" ContentType="${XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE}"/>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${metadata}${shared}${sheets}${tables}${drawings}${charts}${pivots}${threadedComments}${persons}</Types>`;
 }
 
 function relsXml(rels) {
@@ -7079,11 +7149,12 @@ function parseWorkbookDefinedNames(workbook, xml = "") {
   }
 }
 
-function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrings = false, pivotParts = []) {
+function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrings = false, pivotParts = [], hasDynamicArrays = false) {
   const rels = Array.from({ length: sheetCount }, (_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", target: `worksheets/sheet${i + 1}.xml` }));
   rels.push({ id: `rId${sheetCount + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" });
   let nextId = sheetCount + 2;
   if (hasSharedStrings) rels.push({ id: `rId${nextId++}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings", target: "sharedStrings.xml" });
+  if (hasDynamicArrays) rels.push({ id: `rId${nextId++}`, type: XLSX_DYNAMIC_ARRAY_METADATA_RELATIONSHIP_TYPE, target: "metadata.xml" });
   if (hasThreadedComments) rels.push({ id: `rId${nextId++}`, type: XLSX_PERSON_RELATIONSHIP_TYPE, target: "persons/person.xml" });
   for (const part of pivotParts) {
     part.cacheRelId = `rId${nextId++}`;
@@ -7413,7 +7484,7 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${tableSortStateXml(sheet.sortState, styleTable)}${worksheetMergeCellsXml(sheet)}${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
-function cellFormulaXml(address, cell) {
+function cellFormulaXml(address, cell, dynamicRef = dynamicArrayReference(address, cell)) {
   if (!cell.formula) return "";
   const text = String(cell.formula).replace(/^=/, "");
   const formulaType = cell.formulaType || "";
@@ -7437,26 +7508,28 @@ function cellFormulaXml(address, cell) {
     const ref = cell.arrayRef ? ` ref="${attrEscape(cell.arrayRef)}"` : "";
     return `<f t="array"${ref}>${xmlEscape(text)}</f>`;
   }
-  if (cell.spillRange && !cell.spillError) {
-    return `<f t="array" ref="${attrEscape(cell.spillRange)}">${xmlEscape(text)}</f>`;
+  if (dynamicRef) {
+    return `<f t="array" ref="${attrEscape(dynamicRef)}">${xmlEscape(text)}</f>`;
   }
   const type = formulaType ? ` t="${attrEscape(formulaType)}"` : "";
   return `<f${type}>${xmlEscape(text)}</f>`;
 }
 
 function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
-  const f = cellFormulaXml(address, cell);
+  const dynamicRef = dynamicArrayReference(address, cell);
+  const f = cellFormulaXml(address, cell, dynamicRef);
   const styleIndex = xlsxStyleIndex(cell, styleTable);
   const s = styleIndex ? ` s="${styleIndex}"` : "";
+  const cm = dynamicRef ? ' cm="1"' : "";
   if (cell.value instanceof Date && !Number.isNaN(cell.value.valueOf())) {
     const value = cell.value.toISOString();
-    return f ? `<c r="${address}" t="str"${s}>${f}<v>${value}</v></c>` : `<c r="${address}" t="inlineStr"${s}><is><t>${value}</t></is></c>`;
+    return f ? `<c r="${address}" t="str"${s}${cm}>${f}<v>${value}</v></c>` : `<c r="${address}" t="inlineStr"${s}><is><t>${value}</t></is></c>`;
   }
-  if (typeof cell.value === "number") return `<c r="${address}"${s}>${f}<v>${cell.value}</v></c>`;
-  if (typeof cell.value === "boolean") return `<c r="${address}" t="b"${s}>${f}<v>${cell.value ? 1 : 0}</v></c>`;
+  if (typeof cell.value === "number") return `<c r="${address}"${s}${cm}>${f}<v>${cell.value}</v></c>`;
+  if (typeof cell.value === "boolean") return `<c r="${address}" t="b"${s}${cm}>${f}<v>${cell.value ? 1 : 0}</v></c>`;
   if (cell.value == null && !f) return styleIndex ? `<c r="${address}"${s}/>` : "";
-  if (cell.value == null) return `<c r="${address}"${s}>${f}</c>`;
-  if (f) return `<c r="${address}" t="str"${s}>${f}<v>${xmlEscape(cell.value)}</v></c>`;
+  if (cell.value == null) return `<c r="${address}"${s}${cm}>${f}</c>`;
+  if (f) return `<c r="${address}" t="str"${s}${cm}>${f}<v>${xmlEscape(cell.value)}</v></c>`;
   const sharedIndex = sharedStrings.indexByText?.get(String(cell.value));
   if (sharedIndex !== undefined) return `<c r="${address}" t="s"${s}><v>${sharedIndex}</v></c>`;
   return `<c r="${address}" t="inlineStr"${s}><is><t>${xmlEscape(cell.value)}</t></is></c>`;
@@ -7536,6 +7609,7 @@ function parseWorksheetXml(sheet, xml, options = {}) {
   }
   for (const item of cellMatches) {
     const { attrs, body, address, formulaAttrs, formulaBody } = item;
+    const cellAttrs = parseAttrs(attrs);
     const cell = sheet.store.get(address);
     const styleIndex = Number(/\bs="([^"]+)"/.exec(attrs)?.[1] || 0);
     if (options.styles?.[styleIndex]) cell.style = { ...options.styles[styleIndex] };
@@ -7549,8 +7623,14 @@ function parseWorksheetXml(sheet, xml, options = {}) {
         cell.sharedRef = formulaAttrs.ref || shared?.ref;
       } else if (formulaAttrs.t === "array") {
         if (formulaBody) cell.formula = `=${formulaBody}`;
-        cell.formulaType = "array";
-        cell.arrayRef = formulaAttrs.ref;
+        const metadataIndex = Number(cellAttrs.cm);
+        if (Number.isInteger(metadataIndex) && options.dynamicArrayMetadataIndexes?.has(metadataIndex)) {
+          cell.formulaType = "dynamicArray";
+          cell.dynamicArrayRef = formulaAttrs.ref;
+        } else {
+          cell.formulaType = "array";
+          cell.arrayRef = formulaAttrs.ref;
+        }
       } else if (formulaBody) {
         cell.formula = `=${formulaBody}`;
         cell.formulaType = formulaAttrs.t || undefined;

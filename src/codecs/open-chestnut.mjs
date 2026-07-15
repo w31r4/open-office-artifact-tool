@@ -31,7 +31,10 @@ const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-docum
 const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const MAX_XLSX_FORMULA_LENGTH = 8192;
 const MAX_XLSX_FORMULA_TOPOLOGY_CELLS = 1_048_576;
-const XLSX_FORMULA_METADATA_KEYS = new Set(["formulaType", "sharedIndex", "sharedRef", "arrayRef"]);
+const XLSX_FORMULA_METADATA_KEYS = new Set([
+  "formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef",
+  "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError",
+]);
 const XLSX_NUMBER_FORMAT_STYLE_KEYS = new Set(["numberFormat", "numFmt"]);
 const EXCEL_ERRORS = new Set(["#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#UNKNOWN!", "#CONNECT!", "#CYCLE!"]);
 const XLSX_THEME_WIRE_FIELDS = [
@@ -230,7 +233,8 @@ function translateSharedFormula(value, source, target) {
 function cellFormulaMetadata(address, cell) {
   const location = address;
   const type = cell.formulaType == null ? "" : String(cell.formulaType);
-  if (!type && [cell.sharedIndex, cell.sharedRef, cell.arrayRef].every((value) => value == null || value === "")) return undefined;
+  const inferredDynamic = !type && Boolean(cell.formula) && Boolean(cell.spillRange) && !cell.spillError;
+  if (!type && !inferredDynamic && [cell.sharedIndex, cell.sharedRef, cell.arrayRef, cell.dynamicArrayRef].every((value) => value == null || value === "")) return undefined;
   if (type === "shared") {
     if (!Number.isInteger(cell.sharedIndex) || cell.sharedIndex < 0 || cell.sharedIndex > 0xffff_ffff) throw new OpenChestnutCodecError(`Cell ${location} shared formula requires an unsigned sharedIndex.`, [], { code: "invalid_cell_formula" });
     const reference = String(cell.sharedRef || "");
@@ -245,6 +249,16 @@ function cellFormulaMetadata(address, cell) {
     validateFormulaText(cell.formula, location, true);
     if (cell.sharedIndex != null || cell.sharedRef != null) throw new OpenChestnutCodecError(`Cell ${location} legacy array formula must not set shared metadata.`, [], { code: "invalid_cell_formula" });
     return { kind: CellFormulaKind.ARRAY, sharedIndex: 0, reference };
+  }
+  if (type === "dynamicArray" || inferredDynamic) {
+    const reference = String(cell.dynamicArrayRef || cell.spillRange || "");
+    const bounds = formulaRangeBounds(reference, location);
+    const anchor = cellCoordinates(address);
+    if (anchor.row !== bounds.top || anchor.column !== bounds.left) throw new OpenChestnutCodecError(`Cell ${location} dynamic array formula must be the top-left anchor of ${reference}.`, [], { code: "invalid_cell_formula" });
+    validateFormulaText(cell.formula, location, true);
+    if (cell.spillError) throw new OpenChestnutCodecError(`Cell ${location} blocked dynamic array cannot be exported through the current bounded OpenChestnut slice.`, [], { code: "unsupported_dynamic_array_edit" });
+    if (cell.sharedIndex != null || cell.sharedRef != null || cell.arrayRef != null) throw new OpenChestnutCodecError(`Cell ${location} dynamic array formula must not set shared or legacy-array metadata.`, [], { code: "invalid_cell_formula" });
+    return { kind: CellFormulaKind.DYNAMIC_ARRAY, sharedIndex: 0, reference };
   }
   throw new OpenChestnutCodecError(`Cell ${location} formula type ${type || "unspecified"} is outside the OpenChestnut XLSX formula slice.`, [], { code: "unsupported_cell_formula" });
 }
@@ -282,22 +296,24 @@ function validateFormulaTopology(cells, sheetName) {
   }
   const occupied = new Map();
   const sharedRoots = [...sharedGroups.values()].map((members) => members[0]);
-  const topologyRoots = [...sharedRoots, ...cells.filter((item) => item.formulaMetadata?.kind === CellFormulaKind.ARRAY)];
+  const topologyRoots = [...sharedRoots, ...cells.filter((item) => [CellFormulaKind.ARRAY, CellFormulaKind.DYNAMIC_ARRAY].includes(item.formulaMetadata?.kind))];
   let topologyCellCount = 0;
   for (const cell of topologyRoots) {
     const metadata = cell.formulaMetadata;
     const bounds = formulaRangeBounds(metadata.reference, `${sheetName}!${cellAddress(cell.row, cell.column)}`);
     topologyCellCount += bounds.cellCount;
     if (topologyCellCount > MAX_XLSX_FORMULA_TOPOLOGY_CELLS) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} native formula topology exceeds ${MAX_XLSX_FORMULA_TOPOLOGY_CELLS} cells.`, [], { code: "invalid_cell_formula" });
-    const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `array:${cell.row}:${cell.column}`;
-    if (metadata.kind === CellFormulaKind.ARRAY && (cell.row !== bounds.top || cell.column !== bounds.left)) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} legacy array formula must be the top-left anchor of ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
+    const dynamic = metadata.kind === CellFormulaKind.DYNAMIC_ARRAY;
+    const array = metadata.kind === CellFormulaKind.ARRAY || dynamic;
+    const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `${dynamic ? "dynamic" : "array"}:${cell.row}:${cell.column}`;
+    if (array && (cell.row !== bounds.top || cell.column !== bounds.left)) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} ${dynamic ? "dynamic" : "legacy"} array formula must be the top-left anchor of ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
     for (let row = bounds.top; row <= bounds.bottom; row += 1) {
       for (let column = bounds.left; column <= bounds.right; column += 1) {
         const key = `${row}:${column}`;
         if (occupied.has(key) && occupied.get(key) !== owner) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} formula range ${metadata.reference} overlaps another native formula range.`, [], { code: "invalid_cell_formula" });
         occupied.set(key, owner);
         const nested = byCoordinate.get(key);
-        if (metadata.kind === CellFormulaKind.ARRAY && (row !== cell.row || column !== cell.column) && nested?.formula) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(row, column)} must not contain another formula inside legacy array range ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
+        if (array && (row !== cell.row || column !== cell.column) && nested?.formula) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(row, column)} must not contain another formula inside ${dynamic ? "dynamic" : "legacy"} array range ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
       }
     }
   }
@@ -1160,6 +1176,9 @@ function workbookFromEnvelope(envelope) {
       } else if (sourceCell.formulaMetadata?.kind === CellFormulaKind.ARRAY) {
         cell.formulaType = "array";
         cell.arrayRef = sourceCell.formulaMetadata.reference;
+      } else if (sourceCell.formulaMetadata?.kind === CellFormulaKind.DYNAMIC_ARRAY) {
+        cell.formulaType = "dynamicArray";
+        cell.dynamicArrayRef = sourceCell.formulaMetadata.reference;
       }
       const staticStyle = cellStyleFromWire(sourceCell.style);
       if (staticStyle || sourceCell.numberFormatCode) cell.style = { ...(staticStyle || {}), ...(sourceCell.numberFormatCode ? { numberFormat: sourceCell.numberFormatCode } : {}) };
