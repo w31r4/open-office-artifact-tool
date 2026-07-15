@@ -1030,15 +1030,17 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics plus name/outer-frame edits for recognized top-level OLE, SmartArt/diagram, and contentPart groups through the bundled OpenChestnut codec, preserving every native payload graph and unsupported object fail-closed. |
-| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object name/outer-frame placement, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
+| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
+| `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable. |
 | `nativeObject.setName` | api | Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed. |
 | `nativeObject.setPosition` | api | Move or resize an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group by replacing only its outer pixel frame; nested coordinates and native payload graphs remain source-bound. |
 | `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
 | `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
-| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, and preserved-part summaries; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts. |
 | `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
@@ -1102,11 +1104,11 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenChestnut`
 
-Experimentally export bounded rectangle/ellipse shapes and text semantics plus name/outer-frame edits for recognized top-level OLE, SmartArt/diagram, and contentPart groups through the bundled OpenChestnut codec, preserving every native payload graph and unsupported object fail-closed.
+Experimentally export bounded rectangle/ellipse shapes and text semantics, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change only name and outer frame.
+- `presentation` (Presentation) required — Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change name/outer frame and whose uniquely bound OLE XLSX payload may be replaced.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -1116,7 +1118,7 @@ Experimentally export bounded rectangle/ellipse shapes and text semantics plus n
 
 #### `importPptxWithOpenChestnut`
 
-Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object name/outer-frame placement, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 
@@ -1125,7 +1127,27 @@ Experimentally import PPTX bytes through OpenChestnut with editable fixed-topolo
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text and recognized native-object name/outer-frame placement plus source/opaque package evidence and loss-aware slide element bindings for fail-closed second export.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export.
+
+#### `nativeObject.getEmbeddedWorkbook`
+
+Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation.
+
+**Schema returns:**
+
+- `workbook` (FileBlob) — Defensive XLSX FileBlob copy with source part-path and SHA-256 metadata. Available only for a uniquely bound top-level OLE package relationship.
+
+#### `nativeObject.replaceEmbeddedWorkbook`
+
+Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable.
+
+**Schema parameters:**
+
+- `workbook` (FileBlob|Uint8Array|ArrayBuffer) required — Replacement XLSX OPC package, limited to 16 MiB and validated before export.
+
+**Schema returns:**
+
+- `nativeObject` (NativePresentationObject) — The same native-object facade with only its recognized embedded workbook bytes replaced. The source preview image is retained and may be visually stale until an Office host regenerates it.
 
 #### `nativeObject.setName`
 
@@ -1212,7 +1234,7 @@ Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or targe
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, and preserved-part summaries; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 

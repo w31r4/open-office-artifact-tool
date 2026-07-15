@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 const RELATIONSHIP_NAMESPACES = new Set([
@@ -5,6 +6,7 @@ const RELATIONSHIP_NAMESPACES = new Set([
   "http://purl.oclc.org/ooxml/officeDocument/relationships",
 ]);
 const EMU_PER_PIXEL = 9525;
+const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function decodeXml(value) {
   return String(value ?? "")
@@ -133,7 +135,7 @@ export async function capturePresentationOpaqueObject({ zip, slidePath, slideXml
     const bytes = await entry.async("uint8array");
     const relsPath = relationshipPartPath(safePath);
     const partRelationships = parseRelationships(await zip.file(relsPath)?.async("text"));
-    const record = { path: safePath, bytes, contentType: contentTypeFor(safePath, maps), relationships: partRelationships };
+    const record = { path: safePath, bytes, sourceSha256: createHash("sha256").update(bytes).digest("hex"), contentType: contentTypeFor(safePath, maps), relationships: partRelationships };
     parts.set(safePath, record);
     for (const relationship of partRelationships) {
       if (relationship.targetMode.toLowerCase() === "external") continue;
@@ -145,12 +147,38 @@ export async function capturePresentationOpaqueObject({ zip, slidePath, slideXml
     if (relationship.targetMode.toLowerCase() === "external") continue;
     await capture(resolveTarget(slidePath, relationship.target));
   }
+  const oleWorkbook = presentationOleWorkbook(fragment, slideXml, slidePath, relationships, parts);
   return {
     sourcePart: safePartPath(slidePath),
     rawXml: selfContainedPresentationFragment(fragment, slideXml),
     relationshipReferences: references,
     rootRelationships,
     parts: [...parts.values()],
+    ...(oleWorkbook ? { oleWorkbook } : {}),
+  };
+}
+
+function presentationOleWorkbook(fragment, sourceXml, slidePath, relationships, parts) {
+  const oleTags = [...String(fragment).matchAll(/<(?:[A-Za-z_][\w.-]*:)?oleObj\b[^>]*>/g)].map((match) => match[0]);
+  if (oleTags.length !== 1) return undefined;
+  const relationshipMatch = /\b([A-Za-z_][\w.-]*):id\s*=\s*(["'])(.*?)\2/.exec(oleTags[0]);
+  if (!relationshipMatch) return undefined;
+  const namespaces = presentationNamespaceMap(sourceXml);
+  for (const [prefix, namespace] of presentationNamespaceDeclarations(fragment)) namespaces.set(prefix, namespace);
+  if (!RELATIONSHIP_NAMESPACES.has(namespaces.get(relationshipMatch[1]))) return undefined;
+  const relationshipId = decodeXml(relationshipMatch[3]);
+  const relationship = relationships.find((candidate) => candidate.id === relationshipId);
+  if (!relationship || relationship.targetMode.toLowerCase() === "external" || !relationship.type.endsWith("/package")) return undefined;
+  const partPath = resolveTarget(slidePath, relationship.target);
+  const part = parts.get(partPath);
+  if (!part || part.contentType.toLowerCase() !== XLSX_CONTENT_TYPE) return undefined;
+  const inbound = relationships.filter((candidate) => candidate.targetMode.toLowerCase() !== "external" && resolveTarget(slidePath, candidate.target) === partPath);
+  if (inbound.length !== 1) return undefined;
+  return {
+    partPath,
+    contentType: XLSX_CONTENT_TYPE,
+    sourceSha256: part.sourceSha256,
+    relationshipId,
   };
 }
 
@@ -216,10 +244,16 @@ function rewriteNativeObjectPlacement(xml, object) {
 export function planPresentationOpaqueParts(slides, options = {}) {
   const reserved = new Set(options.reservedPaths || []);
   const allParts = new Map();
-  for (const slide of slides) for (const object of options.objectsForSlide(slide)) for (const part of object.parts || []) {
-    const existing = allParts.get(part.path);
-    if (existing && (existing.bytes.length !== part.bytes.length || !existing.bytes.every((byte, index) => byte === part.bytes[index]))) throw new Error(`PPTX native objects contain conflicting bytes for ${part.path}.`);
-    allParts.set(part.path, part);
+  for (const slide of slides) for (const object of options.objectsForSlide(slide)) {
+    for (const part of object.parts || []) {
+      const currentSha256 = createHash("sha256").update(part.bytes || []).digest("hex");
+      if (part.sourceSha256 && currentSha256 !== String(part.sourceSha256).toLowerCase() && part.path !== object.oleWorkbook?.partPath) {
+        throw new Error(`PPTX native object ${object.id} changed read-only part ${part.path}.`);
+      }
+      const existing = allParts.get(part.path);
+      if (existing && (existing.bytes.length !== part.bytes.length || !existing.bytes.every((byte, index) => byte === part.bytes[index]))) throw new Error(`PPTX native objects contain conflicting bytes for ${part.path}.`);
+      allParts.set(part.path, part);
+    }
   }
   const pathMap = new Map();
   const assigned = new Set();

@@ -6,6 +6,7 @@ using System.IO.Compression;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
+using S = DocumentFormat.OpenXml.Spreadsheet;
 using Xunit;
 
 namespace OpenChestnut.Codec.Tests;
@@ -372,6 +373,11 @@ public sealed class PptxCodecTests
         Assert.True(oleElement.Source.Editable);
         Assert.Equal(["rIdNativeOle", "rIdNativePreview"], ole.RelationshipReferences.Select(item => item.RelationshipId));
         Assert.Equal(["ppt/embeddings/native-workbook.xlsx", "ppt/media/native-preview.png"], ole.PreservedPartPaths);
+        Assert.NotNull(ole.OleWorkbook);
+        Assert.Equal("ppt/embeddings/native-workbook.xlsx", ole.OleWorkbook.PartPath);
+        Assert.Equal("rIdNativeOle", ole.OleWorkbook.RelationshipId);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(ZipBytes(source, ole.OleWorkbook.PartPath))).ToLowerInvariant(), ole.OleWorkbook.SourceSha256);
+        Assert.Empty(ole.OleWorkbook.ReplacementAssetId);
 
         var diagramElement = slide.Elements[2];
         var diagram = diagramElement.Opaque;
@@ -431,6 +437,58 @@ public sealed class PptxCodecTests
         var frameRejected = Export(imported.Artifact);
         Assert.False(frameRejected.Ok);
         Assert.Equal("invalid_presentation_frame", Assert.Single(frameRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void OleWorkbookPayloadReplacementIsValidatedAndGraphBound()
+    {
+        var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var oleElement = imported.Artifact.Presentation.Slides[0].Elements[1];
+        var binding = Assert.IsType<PresentationOleWorkbook>(oleElement.Opaque.OleWorkbook);
+        var preview = ZipBytes(source, "ppt/media/native-preview.png");
+        var diagram = ZipBytes(source, "ppt/diagrams/native-data.xml");
+        var replacement = CreateEmbeddedWorkbook("Replacement workbook marker");
+        var replacementId = AddOleWorkbookAsset(imported.Artifact, replacement);
+        binding.ReplacementAssetId = replacementId;
+
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        Assert.Equal(replacement, ZipBytes(exported.File.ToByteArray(), binding.PartPath));
+        Assert.Equal(preview, ZipBytes(exported.File.ToByteArray(), "ppt/media/native-preview.png"));
+        Assert.Equal(diagram, ZipBytes(exported.File.ToByteArray(), "ppt/diagrams/native-data.xml"));
+
+        var reimported = Import(exported.File.ToByteArray());
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        var rebound = Assert.IsType<PresentationOleWorkbook>(reimported.Artifact.Presentation.Slides[0].Elements[1].Opaque.OleWorkbook);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(replacement)).ToLowerInvariant(), rebound.SourceSha256);
+        Assert.Empty(rebound.ReplacementAssetId);
+
+        imported = Import(source);
+        imported.Artifact.Presentation.Slides[0].Elements[1].Opaque.OleWorkbook.PartPath = "ppt/embeddings/other.xlsx";
+        var pathRejected = Export(imported.Artifact);
+        Assert.False(pathRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(pathRejected.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Presentation.Slides[0].Elements[2].Opaque.OleWorkbook = imported.Artifact.Presentation.Slides[0].Elements[1].Opaque.OleWorkbook.Clone();
+        var diagramRejected = Export(imported.Artifact);
+        Assert.False(diagramRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(diagramRejected.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Presentation.Slides[0].Elements[1].Opaque.OleWorkbook.ReplacementAssetId = "asset/presentation/ole-workbook/" + new string('0', 64);
+        var missingAsset = Export(imported.Artifact);
+        Assert.False(missingAsset.Ok);
+        Assert.Equal("invalid_presentation_asset", Assert.Single(missingAsset.Diagnostics).Code);
+
+        imported = Import(source);
+        var malformed = new byte[] { 0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4 };
+        imported.Artifact.Presentation.Slides[0].Elements[1].Opaque.OleWorkbook.ReplacementAssetId = AddOleWorkbookAsset(imported.Artifact, malformed);
+        var malformedRejected = Export(imported.Artifact);
+        Assert.False(malformedRejected.Ok);
+        Assert.Contains(Assert.Single(malformedRejected.Diagnostics).Code, new[] { "invalid_opc_package", "invalid_presentation_ole_workbook" });
     }
 
     [Fact]
@@ -1891,6 +1949,21 @@ public sealed class PptxCodecTests
         return id;
     }
 
+    private static string AddOleWorkbookAsset(ArtifactEnvelope envelope, byte[] data)
+    {
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)).ToLowerInvariant();
+        var id = $"asset/presentation/ole-workbook/{digest}";
+        envelope.Assets.Add(new Asset
+        {
+            Id = id,
+            FileName = $"embedded-workbook-{digest[..16]}.xlsx",
+            ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Data = ByteString.CopyFrom(data),
+            Sha256 = digest,
+        });
+        return id;
+    }
+
     private static SlidePart[] OrderedSlides(PresentationDocument package)
     {
         var presentationPart = package.PresentationPart!;
@@ -2095,7 +2168,7 @@ public sealed class PptxCodecTests
             ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{selfContainedOle}{selfContainedDiagram}{selfContainedContent}</p:spTree>", StringComparison.Ordinal));
             ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationships}</Relationships>", StringComparison.Ordinal));
             ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{validContentTypes}</Types>", StringComparison.Ordinal));
-            AddZipBytes(archive, "ppt/embeddings/native-workbook.xlsx", [0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+            AddZipBytes(archive, "ppt/embeddings/native-workbook.xlsx", CreateEmbeddedWorkbook("Original embedded workbook"));
             AddZipBytes(archive, "ppt/media/native-preview.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
             AddZipText(archive, "ppt/diagrams/native-data.xml", "<dgm:dataModel xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>");
             AddZipText(archive, "ppt/diagrams/native-layout.xml", "<dgm:layoutDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:native-layout\"><dgm:title val=\"Native\"/><dgm:desc val=\"Native layout\"/><dgm:catLst/><dgm:layoutNode name=\"root\"/></dgm:layoutDef>");
@@ -2104,6 +2177,33 @@ public sealed class PptxCodecTests
             AddZipText(archive, "ppt/customXml/native-content.xml", "<native xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:link=\"rIdPayload\">preserve me</native>");
             AddZipText(archive, "ppt/customXml/_rels/native-content.xml.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdPayload\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps\" Target=\"itemProps1.xml\"/></Relationships>");
             AddZipText(archive, "ppt/customXml/itemProps1.xml", "<ds:datastoreItem ds:itemID=\"{00112233-4455-6677-8899-AABBCCDDEEFF}\" xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\"><ds:schemaRefs/></ds:datastoreItem>");
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] CreateEmbeddedWorkbook(string value)
+    {
+        using var stream = new MemoryStream();
+        using (var document = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook, autoSave: true))
+        {
+            var workbookPart = document.AddWorkbookPart();
+            workbookPart.Workbook = new S.Workbook();
+            var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
+            worksheetPart.Worksheet = new S.Worksheet(new S.SheetData(
+                new S.Row(new S.Cell
+                {
+                    CellReference = "A1",
+                    DataType = S.CellValues.InlineString,
+                    InlineString = new S.InlineString(new S.Text(value)),
+                })));
+            workbookPart.Workbook.AppendChild(new S.Sheets(new S.Sheet
+            {
+                Id = workbookPart.GetIdOfPart(worksheetPart),
+                SheetId = 1,
+                Name = "Embedded",
+            }));
+            workbookPart.Workbook.Save();
+            worksheetPart.Worksheet.Save();
         }
         return stream.ToArray();
     }

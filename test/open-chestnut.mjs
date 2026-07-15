@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationOpaqueElementSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -68,7 +68,7 @@ async function addOpaqueOpcGraph(bytes) {
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
-async function addPresentationNativeGraph(bytes) {
+async function addPresentationNativeGraph(bytes, embeddedWorkbookBytes) {
   const zip = await JSZip.loadAsync(bytes);
   const namespaces = ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
   const ole = `<p:graphicFrame${namespaces}><p:nvGraphicFramePr><p:cNvPr id="100" name="Embedded workbook"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdNativeOle" imgW="965200" imgH="609600" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdNativePreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>`;
@@ -89,7 +89,8 @@ async function addPresentationNativeGraph(bytes) {
   const contentTypes = await zip.file(contentTypesPath).async("text");
   const overrides = '<Override PartName="/ppt/embeddings/native-workbook.xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/><Override PartName="/ppt/media/native-preview.png" ContentType="image/png"/><Override PartName="/ppt/diagrams/native-data.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/><Override PartName="/ppt/diagrams/native-layout.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml"/><Override PartName="/ppt/diagrams/native-style.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml"/><Override PartName="/ppt/diagrams/native-colors.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml"/><Override PartName="/ppt/customXml/native-content.xml" ContentType="application/xml"/><Override PartName="/ppt/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>';
   zip.file(contentTypesPath, contentTypes.replace("</Types>", `${overrides}</Types>`));
-  zip.file("ppt/embeddings/native-workbook.xlsx", Uint8Array.of(0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4));
+  assert.ok(embeddedWorkbookBytes?.length, "fixture requires a valid embedded XLSX workbook");
+  zip.file("ppt/embeddings/native-workbook.xlsx", embeddedWorkbookBytes);
   zip.file("ppt/media/native-preview.png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", { base64: true });
   zip.file("ppt/diagrams/native-data.xml", '<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>');
   zip.file("ppt/diagrams/native-layout.xml", '<dgm:layoutDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:native-layout"><dgm:title val="Native"/><dgm:desc val="Native layout"/><dgm:catLst/><dgm:layoutNode name="root"/></dgm:layoutDef>');
@@ -118,6 +119,7 @@ assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { t
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { connections: [{ connectionId: 7, name: "Warehouse", type: 5, refreshedVersion: 8 }] }))[0], 0x2a, "Spreadsheet workbook connections must use additive workbook field 5.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { definedNames: [{ id: "defined-name/1", name: "Data", refersTo: "Sheet1!A1" }] }))[0], 0x32, "Spreadsheet workbook defined names must use additive workbook field 6.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { calculation: { mode: 1 } }))[0], 0x3a, "Spreadsheet workbook calculation policy must use additive workbook field 7.");
+assert.equal(toBinary(PresentationOpaqueElementSchema, create(PresentationOpaqueElementSchema, { oleWorkbook: { partPath: "ppt/embeddings/book.xlsx" } }))[0], 0x5a, "Presentation OLE workbooks must use additive opaque-element field 11.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { view: { activeWorksheetId: "worksheet/2" } }))[0], 0x42, "Spreadsheet workbook views must use additive workbook field 8.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { additionalViews: [{ activeWorksheetId: "worksheet/3" }] }))[0], 0x4a, "Spreadsheet additional workbook windows must use additive workbook field 9.");
 assert.equal(toBinary(SpreadsheetWorkbookViewArtifactSchema, create(SpreadsheetWorkbookViewArtifactSchema, { source: { viewXmlSha256: "x" } }))[0], 0x12, "Spreadsheet workbook-view source bindings must use view field 2.");
@@ -3345,7 +3347,10 @@ preservedSlide.charts.add("bar", {
   series: [{ name: "Evidence", values: [8, 12] }],
 });
 const presentationSource = await PresentationFile.exportPptx(preservedPresentation);
-const presentationNativeSource = await addPresentationNativeGraph(new Uint8Array(await presentationSource.arrayBuffer()));
+const originalEmbeddedWorkbook = Workbook.create();
+originalEmbeddedWorkbook.worksheets.add("Embedded").getRange("A1").values = [["Original embedded workbook"]];
+const originalEmbeddedWorkbookFile = await SpreadsheetFile.exportXlsx(originalEmbeddedWorkbook);
+const presentationNativeSource = await addPresentationNativeGraph(new Uint8Array(await presentationSource.arrayBuffer()), originalEmbeddedWorkbookFile.bytes);
 const presentationImported = await importPptxWithOpenChestnut(presentationNativeSource);
 const importedNativeObjects = presentationImported.slides.getItem(0).nativeObjects.items;
 assert.equal(importedNativeObjects.length, 5);
@@ -3355,6 +3360,14 @@ const importedContentPart = importedNativeObjects.find((object) => object.native
 assert.ok(importedOle && importedDiagram && importedContentPart);
 assert.equal(importedOle.rootRelationships.length, 2);
 assert.equal(importedOle.parts.length, 2);
+assert.deepEqual(importedOle.oleWorkbook, {
+  partPath: "ppt/embeddings/native-workbook.xlsx",
+  contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  sourceSha256: importedOle.parts.find((part) => part.path === "ppt/embeddings/native-workbook.xlsx").sourceSha256,
+  relationshipId: "rIdNativeOle",
+});
+const readOriginalEmbeddedWorkbook = await SpreadsheetFile.importXlsx(importedOle.getEmbeddedWorkbook());
+assert.equal(readOriginalEmbeddedWorkbook.worksheets.getItem(0).getRange("A1").values[0][0], "Original embedded workbook");
 assert.equal(importedDiagram.rootRelationships.length, 4);
 assert.equal(importedDiagram.parts.length, 4);
 assert.equal(importedContentPart.rootRelationships.length, 1);
@@ -3369,16 +3382,20 @@ assert.match(nativeInspect, /"nativeKind":"oleObject"/);
 assert.match(nativeInspect, /"nativeKind":"diagram"/);
 assert.match(nativeInspect, /"nativeKind":"contentPart"/);
 assert.match(nativeInspect, /"nativeParts":\[\{"path":"ppt\/customXml\/native-content.xml"/);
-assert.match(nativeInspect, /"editableFields":\["name","position"\]/);
+assert.match(nativeInspect, /"editableFields":\["name","position","embeddedWorkbook"\]/);
 assert.equal(presentationImported.slides.getItem(0).resolve(importedDiagram.id), importedDiagram);
 presentationImported.slides.getItem(0).shapes.items[0].text.set("After WASM");
+const replacementEmbeddedWorkbook = Workbook.create();
+replacementEmbeddedWorkbook.worksheets.add("Embedded").getRange("A1").values = [["Replacement workbook marker"]];
+const replacementEmbeddedWorkbookFile = await SpreadsheetFile.exportXlsx(replacementEmbeddedWorkbook);
+importedOle.replaceEmbeddedWorkbook(replacementEmbeddedWorkbookFile);
 importedOle.setName("Edited embedded workbook").setPosition({ left: 160, top: 120, width: 420, height: 260 });
 importedDiagram.setName("Edited SmartArt").setPosition({ left: 80, top: 410, width: 540, height: 150 });
 importedContentPart.setName("Edited content part").setPosition({ left: 730, top: 480, width: 130, height: 110 });
 const presentationPreserved = await exportPptxWithOpenChestnut(presentationImported);
 assert.equal(presentationPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
 const presentationPreservedZip = await JSZip.loadAsync(presentationPreserved.bytes);
-assert.deepEqual([...await presentationPreservedZip.file("ppt/embeddings/native-workbook.xlsx").async("uint8array")], [0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+assert.deepEqual(await presentationPreservedZip.file("ppt/embeddings/native-workbook.xlsx").async("uint8array"), replacementEmbeddedWorkbookFile.bytes);
 assert.match(await presentationPreservedZip.file("ppt/customXml/native-content.xml").async("text"), /preserve me/);
 const presentationPreservedSlideXml = await presentationPreservedZip.file("ppt/slides/slide1.xml").async("text");
 assert.match(presentationPreservedSlideXml, /name="Edited embedded workbook"/);
@@ -3386,6 +3403,9 @@ assert.match(presentationPreservedSlideXml, /<a:off x="1524000" y="1143000"\s*\/
 assert.match(presentationPreservedSlideXml, /name="Edited SmartArt"/);
 assert.match(presentationPreservedSlideXml, /name="Edited content part"/);
 const presentationNativeRoundTrip = await importPptxWithOpenChestnut(presentationPreserved);
+const roundTripOle = presentationNativeRoundTrip.slides.getItem(0).nativeObjects.items.find((object) => object.nativeKind === "oleObject");
+const readReplacementEmbeddedWorkbook = await SpreadsheetFile.importXlsx(roundTripOle.getEmbeddedWorkbook());
+assert.equal(readReplacementEmbeddedWorkbook.worksheets.getItem(0).getRange("A1").values[0][0], "Replacement workbook marker");
 const editedNativeRoundTrip = presentationNativeRoundTrip.slides.getItem(0).nativeObjects.items.filter((object) => object.editable);
 assert.deepEqual(editedNativeRoundTrip.map((object) => object.name), ["Edited embedded workbook", "Edited SmartArt", "Edited content part"]);
 assert.deepEqual(editedNativeRoundTrip.map((object) => object.position), [
@@ -3403,12 +3423,24 @@ const presentationFallbackSlide = presentationFallbackRoundTrip.slides.getItem(0
 assert.deepEqual(presentationFallbackSlide.nativeObjects.items.map((object) => object.nativeKind).sort(), ["diagram", "oleObject"].sort());
 assert.equal(presentationFallbackSlide.groups.items[0].nativeObjects.items[0].nativeKind, "contentPart");
 assert.equal(presentationFallbackSlide.nativeObjects.items.find((object) => object.nativeKind === "oleObject").name, "Edited embedded workbook");
+const fallbackOle = presentationFallbackSlide.nativeObjects.items.find((object) => object.nativeKind === "oleObject");
+assert.ok(fallbackOle.oleWorkbook);
+const fallbackEmbeddedWorkbook = await SpreadsheetFile.importXlsx(fallbackOle.getEmbeddedWorkbook());
+assert.equal(fallbackEmbeddedWorkbook.worksheets.getItem(0).getRange("A1").values[0][0], "Replacement workbook marker");
+const fallbackOnlyReplacement = Workbook.create();
+fallbackOnlyReplacement.worksheets.add("Embedded").getRange("A1").values = [["JavaScript fallback replacement"]];
+fallbackOle.replaceEmbeddedWorkbook(await SpreadsheetFile.exportXlsx(fallbackOnlyReplacement));
+const fallbackOnlyExport = await PresentationFile.exportPptx(presentationFallbackRoundTrip);
+const fallbackOnlyRoundTrip = await PresentationFile.importPptx(fallbackOnlyExport);
+const fallbackOnlyWorkbook = await SpreadsheetFile.importXlsx(fallbackOnlyRoundTrip.slides.getItem(0).nativeObjects.items.find((object) => object.nativeKind === "oleObject").getEmbeddedWorkbook());
+assert.equal(fallbackOnlyWorkbook.worksheets.getItem(0).getRange("A1").values[0][0], "JavaScript fallback replacement");
 assert.deepEqual(presentationFallbackSlide.nativeObjects.items.find((object) => object.nativeKind === "diagram").position, { left: 80, top: 410, width: 540, height: 150 });
 assert.equal(presentationFallbackSlide.groups.items[0].name, "Edited content part");
 assert.deepEqual(presentationFallbackSlide.groups.items[0].position, { left: 730, top: 480, width: 130, height: 110 });
 const readOnlyNativeObject = presentationImported.slides.getItem(0).nativeObjects.items.find((object) => !object.editable);
 assert.ok(readOnlyNativeObject);
 assert.throws(() => readOnlyNativeObject.setPosition({ left: 1 }), /read-only/);
+assert.throws(() => importedDiagram.replaceEmbeddedWorkbook(replacementEmbeddedWorkbookFile), /no editable embedded XLSX workbook/);
 const readOnlyNativeName = readOnlyNativeObject.name;
 readOnlyNativeObject.name = "Unsafe native edit";
 await assert.rejects(
@@ -3423,6 +3455,23 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
 );
 importedOle.rawXml = originalNativeRawXml;
+const originalReplacementBytes = Uint8Array.from(importedOle.embeddedWorkbookPart().bytes);
+importedOle.replaceEmbeddedWorkbook(Uint8Array.of(0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4));
+await assert.rejects(
+  exportPptxWithOpenChestnut(presentationImported),
+  (error) => error instanceof OpenChestnutCodecError && new Set(["invalid_opc_package", "invalid_presentation_ole_workbook"]).has(error.code),
+);
+await assert.rejects(PresentationFile.exportPptx(presentationImported), /not a valid XLSX package/);
+importedOle.replaceEmbeddedWorkbook(originalReplacementBytes);
+const previewPart = importedOle.parts.find((part) => part.path === "ppt/media/native-preview.png");
+const originalPreviewBytes = Uint8Array.from(previewPart.bytes);
+previewPart.bytes[previewPart.bytes.length - 1] ^= 0x01;
+await assert.rejects(
+  exportPptxWithOpenChestnut(presentationImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
+);
+await assert.rejects(PresentationFile.exportPptx(presentationImported), /changed read-only part/);
+previewPart.bytes = originalPreviewBytes;
 
 const unsupportedPresentation = Presentation.create();
 unsupportedPresentation.slides.add().images.add({ prompt: "Unsupported direct image authoring" });

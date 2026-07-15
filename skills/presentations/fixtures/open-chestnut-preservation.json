@@ -111,6 +111,7 @@
   ],
   "openChestnut": {
     "nativeGraphFixture": true,
+    "embeddedWorkbook": { "sourceValue": "OpenChestnut source workbook" },
     "nativeObjects": [
       { "nativeKind": "oleObject", "relationships": 2, "parts": 2, "editable": true },
       { "nativeKind": "diagram", "relationships": 4, "parts": 4, "editable": true },
@@ -120,7 +121,7 @@
       "slideIndex": 0,
       "shapeName": "wasm-title",
       "nativeObjects": [
-        { "nativeKind": "oleObject", "name": "Edited embedded workbook", "position": { "left": 1182, "top": 235, "width": 72, "height": 64 } },
+        { "nativeKind": "oleObject", "name": "Edited embedded workbook", "position": { "left": 1182, "top": 235, "width": 72, "height": 64 }, "embeddedWorkbookValue": "OpenChestnut replacement workbook" },
         { "nativeKind": "diagram", "name": "Edited SmartArt", "position": { "left": 1180, "top": 340, "width": 74, "height": 66 } },
         { "nativeKind": "contentPart", "name": "Edited content part", "position": { "left": 1178, "top": 445, "width": 76, "height": 68 } }
       ],

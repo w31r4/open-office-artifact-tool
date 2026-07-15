@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 253);
+assert.equal(HELP_CATALOG.length, 255);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -216,10 +216,12 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 38);
+assert.equal(presentationCatalog.length, 40);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
+assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbeddedWorkbook")?.schema?.returns?.workbook?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /bulletFont.*bulletColor.*bulletSizePercent.*FollowText/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*tooltip.*targetFrame/);

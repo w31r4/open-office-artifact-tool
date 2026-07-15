@@ -332,7 +332,10 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   if (roundtripCodec === "open-chestnut") {
     const openChestnut = presentationOpenChestnutConfig(fixture);
     if (openChestnut?.nativeGraphFixture) {
-      pptx = new FileBlob(await addOpenChestnutNativeGraphFixture(new Uint8Array(await pptx.arrayBuffer())), { type: PPTX_MIME });
+      const embeddedWorkbook = Workbook.create();
+      embeddedWorkbook.worksheets.add("Embedded").getRange("A1").values = [[openChestnut.embeddedWorkbook?.sourceValue || "OpenChestnut source workbook"]];
+      const embeddedWorkbookFile = await SpreadsheetFile.exportXlsx(embeddedWorkbook);
+      pptx = new FileBlob(await addOpenChestnutNativeGraphFixture(new Uint8Array(await pptx.arrayBuffer()), embeddedWorkbookFile.bytes), { type: PPTX_MIME });
     }
     const imported = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
     for (const expected of openChestnut?.nativeObjects || []) {
@@ -368,6 +371,11 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         assert.ok(object, `Missing OpenChestnut editable native object ${nativeEdit.nativeKind}`);
         object.setName(nativeEdit.name ?? object.name);
         if (nativeEdit.position) object.setPosition(nativeEdit.position);
+        if (nativeEdit.embeddedWorkbookValue) {
+          const replacement = Workbook.create();
+          replacement.worksheets.add("Embedded").getRange("A1").values = [[nativeEdit.embeddedWorkbookValue]];
+          object.replaceEmbeddedWorkbook(await SpreadsheetFile.exportXlsx(replacement));
+        }
       }
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
@@ -385,6 +393,10 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         assert.equal(object.name, expected.name, `${expected.nativeKind} edited name`);
         assert.deepEqual(object.position, expected.position, `${expected.nativeKind} edited position`);
         assert.equal(object.editable, true, `${expected.nativeKind} remains placement-editable`);
+        if (expected.embeddedWorkbookValue) {
+          const workbook = await SpreadsheetFile.importXlsx(object.getEmbeddedWorkbook());
+          assert.equal(workbook.worksheets.getItem(0).getRange("A1").values[0][0], expected.embeddedWorkbookValue, `${expected.nativeKind} embedded workbook replacement`);
+        }
       }
     }
   }
