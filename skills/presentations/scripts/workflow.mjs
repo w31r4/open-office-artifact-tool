@@ -359,12 +359,14 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         const placeholder = imported.master.placeholders.find((item) => item.type === edit.masterPlaceholder.type && item.idx === Number(edit.masterPlaceholder.idx));
         assert.ok(placeholder, `Missing OpenChestnut master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);
         if (Object.hasOwn(edit.masterPlaceholder, "text")) placeholder.text = edit.masterPlaceholder.text;
+        if (edit.masterPlaceholder.position) placeholder.position = { ...edit.masterPlaceholder.position };
         if (edit.masterPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.masterPlaceholder.textBodyProperties;
       }
       if (edit.layoutPlaceholder) {
         const placeholder = imported.layouts.items[0].placeholders.find((item) => item.type === edit.layoutPlaceholder.type && item.idx === Number(edit.layoutPlaceholder.idx));
         assert.ok(placeholder, `Missing OpenChestnut layout placeholder ${edit.layoutPlaceholder.type}:${edit.layoutPlaceholder.idx}`);
         if (Object.hasOwn(edit.layoutPlaceholder, "text")) placeholder.text = edit.layoutPlaceholder.text;
+        if (edit.layoutPlaceholder.position) placeholder.position = { ...edit.layoutPlaceholder.position };
         if (edit.layoutPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.layoutPlaceholder.textBodyProperties;
       }
       if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;

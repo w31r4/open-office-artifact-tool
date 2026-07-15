@@ -3,12 +3,14 @@ using System.Text;
 using DocumentFormat.OpenXml;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
+using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
 
-// Owns direct p:ph identity plus its local a:txBody. Geometry, fills, shape
-// style, and inherited/effective formatting remain in the source element.
+// Owns direct p:ph identity, its local a:txBody, and the four coordinates of
+// an already-present, recognized direct a:xfrm. Rotation, fills, shape style,
+// and inherited/effective formatting remain in the source element.
 internal static class PptxPlaceholderCodec
 {
     private static readonly HashSet<string> PlaceholderTypes = new(StringComparer.Ordinal)
@@ -30,6 +32,7 @@ internal static class PptxPlaceholderCodec
             var native = NativePlaceholder(shape);
             if (native is null) continue;
             var textBody = PptxTextCodec.Read(shape.TextBody, partContext);
+            var directFrame = ReadDirectFrame(shape);
             var placeholder = new PresentationPlaceholder
             {
                 Id = $"{ownerId}/placeholder/{shapeTreeIndex + 1}",
@@ -37,11 +40,12 @@ internal static class PptxPlaceholderCodec
                 Type = NativeType(native),
                 Index = native.Index?.Value ?? 0U,
                 TextBody = textBody,
+                DirectFrame = directFrame,
                 Source = new PresentationElementSourceBinding
                 {
                     ShapeTreeIndex = checked((uint)shapeTreeIndex),
                     ElementSha256 = HashElement(shape),
-                    Editable = PptxTextCodec.SupportsEditing(shape.TextBody),
+                    Editable = PptxTextCodec.SupportsEditing(shape.TextBody) || directFrame is not null,
                 },
             };
             placeholder.Source.SemanticSha256 = SemanticHash(placeholder);
@@ -69,11 +73,13 @@ internal static class PptxPlaceholderCodec
             throw new CodecException("invalid_presentation_placeholder", $"Presentation placeholder {source.Id} name exceeds 1024 characters.");
         if (!PlaceholderTypes.Contains(source.Type))
             throw new CodecException("invalid_presentation_placeholder", $"Presentation placeholder {source.Id} uses unsupported type {source.Type}.");
+        ValidateDirectFrame(source.DirectFrame, source.Id);
         PptxTextCodec.Validate(TextShape(source.TextBody));
     }
 
     internal static void Apply(
         P.Shape sourceShape,
+        PresentationPlaceholder source,
         PresentationPlaceholder requested,
         PptxPartContext partContext)
     {
@@ -85,7 +91,20 @@ internal static class PptxPlaceholderCodec
             !requested.Type.Equals(NativeType(native), StringComparison.Ordinal) ||
             requested.Index != (native.Index?.Value ?? 0U))
             throw new CodecException("unsupported_presentation_edit", $"Presentation placeholder {requested.Id} cannot change name, type, or index in this codec slice.");
-        PptxTextCodec.Apply(sourceShape, TextShape(requested.TextBody), partContext);
+
+        var textChanged = !TextSemanticHash(source.TextBody).Equals(TextSemanticHash(requested.TextBody), StringComparison.OrdinalIgnoreCase);
+        if (textChanged)
+        {
+            if (!PptxTextCodec.SupportsEditing(sourceShape.TextBody))
+                throw new CodecException("unsupported_presentation_edit", $"Presentation placeholder {requested.Id} has an unrecognized local text graph.");
+            PptxTextCodec.Apply(sourceShape, TextShape(requested.TextBody), partContext);
+        }
+
+        if (FrameEquals(source.DirectFrame, requested.DirectFrame)) return;
+        if (source.DirectFrame is null || requested.DirectFrame is null || !SupportsDirectFrame(sourceShape))
+            throw new CodecException("unsupported_presentation_edit", $"Presentation placeholder {requested.Id} cannot add, remove, or replace an unrecognized direct frame in this codec slice.");
+        ValidateDirectFrame(requested.DirectFrame, requested.Id);
+        ApplyDirectFrame(sourceShape, requested.DirectFrame);
     }
 
     internal static void ScrubModeledContent(P.ShapeTree? shapeTree, PptxPartContext partContext)
@@ -93,8 +112,9 @@ internal static class PptxPlaceholderCodec
         if (shapeTree is null) return;
         foreach (var shape in ShapeElements(shapeTree).OfType<P.Shape>())
         {
-            if (NativePlaceholder(shape) is null || !PptxTextCodec.SupportsEditing(shape.TextBody)) continue;
-            PptxTextCodec.ScrubModeledContent(shape.TextBody, partContext);
+            if (NativePlaceholder(shape) is null) continue;
+            if (PptxTextCodec.SupportsEditing(shape.TextBody)) PptxTextCodec.ScrubModeledContent(shape.TextBody, partContext);
+            if (SupportsDirectFrame(shape)) ScrubDirectFrame(shape);
         }
     }
 
@@ -113,6 +133,65 @@ internal static class PptxPlaceholderCodec
         TextBody = body?.Clone() ?? new PresentationTextBody(),
         Text = PptxTextCodec.Flatten(body),
     };
+
+    private static string TextSemanticHash(PresentationTextBody? body)
+    {
+        var shape = TextShape(body);
+        PptxTextCodec.NormalizeSemantics(shape);
+        return Hash((shape.TextBody ?? new PresentationTextBody()).ToByteArray());
+    }
+
+    private static PresentationPlaceholderFrame? ReadDirectFrame(P.Shape shape)
+    {
+        if (!SupportsDirectFrame(shape)) return null;
+        var transform = shape.ShapeProperties!.Transform2D!;
+        return new PresentationPlaceholderFrame
+        {
+            LeftEmu = transform.Offset!.X!.Value,
+            TopEmu = transform.Offset.Y!.Value,
+            WidthEmu = transform.Extents!.Cx!.Value,
+            HeightEmu = transform.Extents.Cy!.Value,
+        };
+    }
+
+    private static bool SupportsDirectFrame(P.Shape shape)
+    {
+        var transform = shape.ShapeProperties?.Transform2D;
+        if (transform is null || transform.ChildElements.Count != 2 ||
+            transform.ChildElements[0] is not A.Offset offset ||
+            transform.ChildElements[1] is not A.Extents extents ||
+            offset.X is null || offset.Y is null || extents.Cx is null || extents.Cy is null)
+            return false;
+        return offset.X.Value >= 0 && offset.Y.Value >= 0 && extents.Cx.Value > 0 && extents.Cy.Value > 0;
+    }
+
+    private static void ValidateDirectFrame(PresentationPlaceholderFrame? frame, string placeholderId)
+    {
+        if (frame is null) return;
+        if (frame.LeftEmu < 0 || frame.TopEmu < 0 || frame.WidthEmu <= 0 || frame.HeightEmu <= 0)
+            throw new CodecException("invalid_presentation_frame", $"Presentation placeholder {placeholderId} has an invalid direct frame.");
+    }
+
+    private static bool FrameEquals(PresentationPlaceholderFrame? left, PresentationPlaceholderFrame? right) =>
+        left is null ? right is null : right is not null && left.Equals(right);
+
+    private static void ApplyDirectFrame(P.Shape shape, PresentationPlaceholderFrame frame)
+    {
+        var transform = shape.ShapeProperties!.Transform2D!;
+        transform.Offset!.X = frame.LeftEmu;
+        transform.Offset.Y = frame.TopEmu;
+        transform.Extents!.Cx = frame.WidthEmu;
+        transform.Extents.Cy = frame.HeightEmu;
+    }
+
+    private static void ScrubDirectFrame(P.Shape shape)
+    {
+        var transform = shape.ShapeProperties!.Transform2D!;
+        transform.Offset!.X = 0L;
+        transform.Offset.Y = 0L;
+        transform.Extents!.Cx = 1L;
+        transform.Extents.Cy = 1L;
+    }
 
     private static P.PlaceholderShape? NativePlaceholder(P.Shape shape) =>
         shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties?.GetFirstChild<P.PlaceholderShape>();

@@ -1030,8 +1030,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
-| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, recognized existing Master/Layout placeholder direct-frame edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
+| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized existing Master/Layout placeholder direct frames, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable. |
 | `nativeObject.setName` | api | Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed. |
@@ -1043,8 +1043,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layout.clearBackground` | api | Remove the direct layout background so slides inherit from the linked master; recognized OpenChestnut source bindings delete only p:bg. |
 | `presentation.layout.setBackground` | api | Set a direct layout RGB/scheme background or native style reference without flattening its linked master. |
-| `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts. |
-| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets. |
+| `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; OpenChestnut source-bound placeholders may move/resize only an already-present recognized direct frame. |
+| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles. OpenChestnut source-bound placeholders may move/resize only an already-present recognized direct frame. |
 | `presentation.master.clearBackground` | api | Remove the direct Slide Master background so slides inherit the effective theme background; recognized OpenChestnut source bindings delete only p:bg. |
 | `presentation.master.setBackground` | api | Set a direct Slide Master RGB/scheme background or native style reference without flattening theme inheritance. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
@@ -1108,7 +1108,7 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenChestnut`
 
-Experimentally export bounded rectangle/ellipse shapes and text semantics, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec.
+Experimentally export bounded rectangle/ellipse shapes and text semantics, recognized existing Master/Layout placeholder direct-frame edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -1122,7 +1122,7 @@ Experimentally export bounded rectangle/ellipse shapes and text semantics, name/
 
 #### `importPptxWithOpenChestnut`
 
-Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized existing Master/Layout placeholder direct frames, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 
@@ -1295,7 +1295,7 @@ Set a direct layout RGB/scheme background or native style reference without flat
 
 #### `presentation.layouts.add`
 
-Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts.
+Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; OpenChestnut source-bound placeholders may move/resize only an already-present recognized direct frame.
 
 **Schema parameters:**
 
@@ -1311,7 +1311,7 @@ Create a reusable slide layout with background and typed placeholder overrides, 
 
 #### `presentation.master`
 
-Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets.
+Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles. OpenChestnut source-bound placeholders may move/resize only an already-present recognized direct frame.
 
 **Schema parameters:**
 

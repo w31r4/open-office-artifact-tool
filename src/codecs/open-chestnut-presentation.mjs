@@ -582,11 +582,21 @@ function wirePlaceholder(placeholder, original, assetCatalog) {
     index: original.index,
     textBody: presentationTextBody(shape, { textBody: original.textBody }, assetCatalog),
     source: original.source,
+    ...(original.directFrame ? {
+      directFrame: {
+        leftEmu: emuFromPixels(placeholder.position?.left, `${placeholder.id}.position.left`),
+        topEmu: emuFromPixels(placeholder.position?.top, `${placeholder.id}.position.top`),
+        widthEmu: emuFromPixels(placeholder.position?.width, `${placeholder.id}.position.width`),
+        heightEmu: emuFromPixels(placeholder.position?.height, `${placeholder.id}.position.height`),
+      },
+    } : {}),
   };
 }
 
-function placeholderReadOnlySnapshot(placeholder) {
-  const { text: _text, paragraphStyles: _paragraphStyles, textBodyProperties: _textBodyProperties, ...readOnly } = placeholder;
+function placeholderReadOnlySnapshot(placeholder, { directFrameEditable = false } = {}) {
+  const { text: _text, paragraphStyles: _paragraphStyles, textBodyProperties: _textBodyProperties, ...rest } = placeholder;
+  const { position: _position, ...withoutPosition } = rest;
+  const readOnly = directFrameEditable ? withoutPosition : rest;
   return JSON.stringify(readOnly);
 }
 
@@ -595,8 +605,8 @@ function sourcePlaceholders(placeholders, entries, ownerId, assetCatalog) {
     throw new OpenChestnutCodecError(`Source-preserving PPTX export requires ${ownerId}'s original ${entries.length}-placeholder topology.`, [], { code: "presentation_placeholder_topology_changed" });
   }
   return entries.map((entry) => {
-    if (placeholderReadOnlySnapshot(entry.model) !== entry.snapshot) {
-      throw new OpenChestnutCodecError(`Presentation placeholder ${entry.model.id} can edit only local text and paragraph/body properties in this codec slice.`, [], { code: "unsupported_presentation_edit" });
+    if (placeholderReadOnlySnapshot(entry.model, { directFrameEditable: entry.directFrameEditable }) !== entry.snapshot) {
+      throw new OpenChestnutCodecError(`Presentation placeholder ${entry.model.id} can edit only local text/paragraph/body properties and an already-present recognized direct frame in this codec slice.`, [], { code: "unsupported_presentation_edit" });
     }
     return wirePlaceholder(entry.model, entry.wire, assetCatalog);
   });
@@ -1011,6 +1021,14 @@ function modelPlaceholder(source, assetCatalog) {
     name: source.name,
     type: source.type,
     idx: source.index,
+    ...(source.directFrame ? {
+      position: {
+        left: Number(source.directFrame.leftEmu) / EMU_PER_PIXEL,
+        top: Number(source.directFrame.topEmu) / EMU_PER_PIXEL,
+        width: Number(source.directFrame.widthEmu) / EMU_PER_PIXEL,
+        height: Number(source.directFrame.heightEmu) / EMU_PER_PIXEL,
+      },
+    } : {}),
     text: modelText(shape, assetCatalog),
     paragraphStyles: modelListStyles(shape, assetCatalog),
     textBodyProperties: modelTextBodyProperties(shape),
@@ -1040,12 +1058,20 @@ export async function presentationFromEnvelope(envelope) {
         textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
       });
       if (!sourceMaster.background) model.background = undefined;
+      for (let index = 0; index < sourceMaster.placeholders.length; index += 1) {
+        if (!sourceMaster.placeholders[index].directFrame) model.placeholders[index].position = undefined;
+      }
       masterStates.push({
         wire: sourceMaster,
         model,
         snapshot: masterReadOnlySnapshot(model),
         backgroundSnapshot: JSON.stringify(model.background),
-        placeholders: (sourceMaster.placeholders || []).map((wire, index) => ({ wire, model: model.placeholders[index], snapshot: placeholderReadOnlySnapshot(model.placeholders[index]) })),
+        placeholders: (sourceMaster.placeholders || []).map((wire, index) => ({
+          wire,
+          model: model.placeholders[index],
+          directFrameEditable: Boolean(wire.directFrame),
+          snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: Boolean(wire.directFrame) }),
+        })),
       });
     }
   }
@@ -1064,7 +1090,12 @@ export async function presentationFromEnvelope(envelope) {
       model,
       snapshot: layoutReadOnlySnapshot(model),
       backgroundSnapshot: JSON.stringify(model.background),
-      placeholders: (sourceLayout.placeholders || []).map((wire, index) => ({ wire, model: model.placeholders[index], snapshot: placeholderReadOnlySnapshot(model.placeholders[index]) })),
+      placeholders: (sourceLayout.placeholders || []).map((wire, index) => ({
+        wire,
+        model: model.placeholders[index],
+        directFrameEditable: Boolean(wire.directFrame),
+        snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: Boolean(wire.directFrame) }),
+      })),
     });
   }
   const slideStates = [];

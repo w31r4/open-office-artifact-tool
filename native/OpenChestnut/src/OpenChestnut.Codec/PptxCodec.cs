@@ -1467,9 +1467,9 @@ internal static class PptxCodec
             if (!binding.Editable)
                 throw new CodecException(
                     "unsupported_presentation_edit",
-                    $"Presentation placeholder {index + 1} under {ownerId} is preserved but its text is not safely editable by this codec slice.",
+                    $"Presentation placeholder {index + 1} under {ownerId} has no safely editable semantic component in this codec slice.",
                     partPath);
-            PptxPlaceholderCodec.Apply(sourceShape, target, partContext);
+            PptxPlaceholderCodec.Apply(sourceShape, original, target, partContext);
             changed = true;
         }
         return changed;

@@ -290,15 +290,28 @@ public sealed class PptxCodecTests
         Assert.Equal("title", masterPlaceholder.Type);
         Assert.Equal(0U, masterPlaceholder.Index);
         Assert.Equal("Master prompt", PptxTextCodec.Flatten(masterPlaceholder.TextBody));
+        Assert.Equal(762_000L, masterPlaceholder.DirectFrame.LeftEmu);
+        Assert.Equal(571_500L, masterPlaceholder.DirectFrame.TopEmu);
+        Assert.Equal(6_858_000L, masterPlaceholder.DirectFrame.WidthEmu);
+        Assert.Equal(1_143_000L, masterPlaceholder.DirectFrame.HeightEmu);
         Assert.True(masterPlaceholder.Source.Editable);
         Assert.Equal("body", layoutPlaceholder.Type);
         Assert.Equal(2U, layoutPlaceholder.Index);
         Assert.Equal("Layout prompt", PptxTextCodec.Flatten(layoutPlaceholder.TextBody));
+        Assert.Equal(762_000L, layoutPlaceholder.DirectFrame.LeftEmu);
         Assert.True(layoutPlaceholder.Source.Editable);
         Assert.NotEqual(uint.MaxValue, masterPlaceholder.Source.ShapeTreeIndex);
 
         masterPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited master prompt";
+        masterPlaceholder.DirectFrame.LeftEmu = 914_400L;
+        masterPlaceholder.DirectFrame.TopEmu = 666_750L;
+        masterPlaceholder.DirectFrame.WidthEmu = 6_667_500L;
+        masterPlaceholder.DirectFrame.HeightEmu = 1_047_750L;
         layoutPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited layout prompt";
+        layoutPlaceholder.DirectFrame.LeftEmu = 838_200L;
+        layoutPlaceholder.DirectFrame.TopEmu = 2_095_500L;
+        layoutPlaceholder.DirectFrame.WidthEmu = 6_477_000L;
+        layoutPlaceholder.DirectFrame.HeightEmu = 952_500L;
         layoutPlaceholder.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink
         {
             Uri = "https://example.com/layout-help",
@@ -314,18 +327,28 @@ public sealed class PptxCodecTests
             Assert.Equal("Edited master prompt", nativeMaster.Descendants<A.Text>().Single().Text);
             Assert.True(nativeMaster.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.HasCustomPrompt!.Value);
             Assert.Equal(60_000, nativeMaster.ShapeProperties!.Transform2D!.Rotation!.Value);
+            Assert.Equal(914_400L, nativeMaster.ShapeProperties.Transform2D.Offset!.X!.Value);
+            Assert.Equal(666_750L, nativeMaster.ShapeProperties.Transform2D.Offset.Y!.Value);
+            Assert.Equal(6_667_500L, nativeMaster.ShapeProperties.Transform2D.Extents!.Cx!.Value);
+            Assert.Equal(1_047_750L, nativeMaster.ShapeProperties.Transform2D.Extents.Cy!.Value);
             var layoutPart = masterPart.SlideLayoutParts.Single();
             var nativeLayout = layoutPart.SlideLayout!.CommonSlideData!.ShapeTree!.Elements<P.Shape>().Single();
             Assert.Equal("Edited layout prompt", nativeLayout.Descendants<A.Text>().Single().Text);
+            Assert.Equal(838_200L, nativeLayout.ShapeProperties!.Transform2D!.Offset!.X!.Value);
+            Assert.Equal(2_095_500L, nativeLayout.ShapeProperties.Transform2D.Offset.Y!.Value);
+            Assert.Equal(6_477_000L, nativeLayout.ShapeProperties.Transform2D.Extents!.Cx!.Value);
+            Assert.Equal(952_500L, nativeLayout.ShapeProperties.Transform2D.Extents.Cy!.Value);
             Assert.Contains(layoutPart.HyperlinkRelationships, relationship =>
                 relationship.Uri.OriginalString == "https://example.com/layout-help");
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
         var roundTrip = Import(edited.File.ToByteArray());
         Assert.Equal("Edited master prompt", PptxTextCodec.Flatten(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders).TextBody));
+        Assert.Equal(914_400L, Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders).DirectFrame.LeftEmu);
         var roundTripLayoutRun = Assert.Single(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders).TextBody.Paragraphs).Runs.Single();
         Assert.Equal("Edited layout prompt", roundTripLayoutRun.Text);
         Assert.Equal("https://example.com/layout-help", roundTripLayoutRun.RunHyperlink.Uri);
+        Assert.Equal(2_095_500L, Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders).DirectFrame.TopEmu);
 
         var topology = Import(source);
         Assert.Single(topology.Artifact.Presentation.Layouts).Placeholders.Clear();
@@ -335,11 +358,31 @@ public sealed class PptxCodecTests
 
         var unsupported = Import(AddUnsupportedPlaceholderRun(source));
         var unsupportedPlaceholder = Assert.Single(Assert.Single(unsupported.Artifact.Presentation.Layouts).Placeholders);
-        Assert.False(unsupportedPlaceholder.Source.Editable);
+        Assert.True(unsupportedPlaceholder.Source.Editable);
         unsupportedPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Unsafe edit";
         var unsupportedRejected = Export(unsupported.Artifact);
         Assert.False(unsupportedRejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(unsupportedRejected.Diagnostics).Code);
+
+        var invalidFrame = Import(source);
+        Assert.Single(Assert.Single(invalidFrame.Artifact.Presentation.Layouts).Placeholders).DirectFrame.WidthEmu = 0;
+        var invalidFrameRejected = Export(invalidFrame.Artifact);
+        Assert.False(invalidFrameRejected.Ok);
+        Assert.Equal("invalid_presentation_frame", Assert.Single(invalidFrameRejected.Diagnostics).Code);
+
+        var unsupportedFrame = Import(AddUnsupportedPlaceholderTransform(source));
+        var unsupportedFramePlaceholder = Assert.Single(Assert.Single(unsupportedFrame.Artifact.Presentation.Layouts).Placeholders);
+        Assert.Null(unsupportedFramePlaceholder.DirectFrame);
+        unsupportedFramePlaceholder.DirectFrame = new PresentationPlaceholderFrame
+        {
+            LeftEmu = 762_000L,
+            TopEmu = 571_500L,
+            WidthEmu = 6_858_000L,
+            HeightEmu = 1_143_000L,
+        };
+        var unsupportedFrameRejected = Export(unsupportedFrame.Artifact);
+        Assert.False(unsupportedFrameRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(unsupportedFrameRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -2178,6 +2221,23 @@ public sealed class PptxCodecTests
             var layout = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
             var textBody = layout.Descendants<P.TextBody>().Single();
             textBody.PrependChild(new A.BodyProperties());
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnsupportedPlaceholderTransform(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var layout = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+            var transform = layout.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!;
+            var unknown = new OpenXmlUnknownElement("a", "chOff", "http://schemas.openxmlformats.org/drawingml/2006/main");
+            unknown.SetAttribute(new OpenXmlAttribute("x", string.Empty, "0"));
+            unknown.SetAttribute(new OpenXmlAttribute("y", string.Empty, "0"));
+            transform.Append(unknown);
         }
         return stream.ToArray();
     }

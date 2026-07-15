@@ -128,10 +128,11 @@
       ],
       "clearMasterBackground": true,
       "clearLayoutBackground": true,
-      "masterPlaceholder": { "type": "title", "idx": 0, "text": "After master placeholder" },
+      "masterPlaceholder": { "type": "title", "idx": 0, "position": { "left": 64, "top": 28, "width": 1152, "height": 72 }, "text": "After master placeholder" },
       "layoutPlaceholder": {
         "type": "body",
         "idx": 2,
+        "position": { "left": 64, "top": 548, "width": 1152, "height": 52 },
         "textBodyProperties": { "anchor": "bottom" },
         "text": [
           { "runs": [{ "text": "After layout placeholder", "link": { "uri": "https://example.com/layout-placeholder", "tooltip": "Layout-owned link" } }] }
