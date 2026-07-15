@@ -352,6 +352,8 @@ message SpreadsheetImageArtifact {
   string asset_id = 4;
   SpreadsheetOneCellAnchorArtifact anchor = 5;
   SpreadsheetImageSourceBinding source = 6;
+  // Additive alternative to anchor. Exactly one anchor message must be set.
+  SpreadsheetTwoCellAnchorArtifact two_cell_anchor = 7;
 }
 
 // SpreadsheetDrawingML stores one-cell geometry in English Metric Units.
@@ -364,6 +366,31 @@ message SpreadsheetOneCellAnchorArtifact {
   int64 column_offset_emu = 4;
   int64 width_emu = 5;
   int64 height_emu = 6;
+}
+
+// One cell-relative marker in a two-cell DrawingML anchor. Native EMUs are
+// retained so repeated source-bound edits do not accumulate pixel rounding.
+message SpreadsheetCellMarkerArtifact {
+  uint32 row = 1;
+  uint32 column = 2;
+  int64 row_offset_emu = 3;
+  int64 column_offset_emu = 4;
+}
+
+enum SpreadsheetTwoCellEditAs {
+  SPREADSHEET_TWO_CELL_EDIT_AS_UNSPECIFIED = 0;
+  SPREADSHEET_TWO_CELL_EDIT_AS_TWO_CELL = 1;
+  SPREADSHEET_TWO_CELL_EDIT_AS_ONE_CELL = 2;
+  SPREADSHEET_TWO_CELL_EDIT_AS_ABSOLUTE = 3;
+}
+
+// SpreadsheetDrawingML two-cell geometry. Attribute presence is retained:
+// an omitted edit_as keeps the native default, while explicit values model
+// move-and-resize, move-only, or absolute positioning behavior.
+message SpreadsheetTwoCellAnchorArtifact {
+  SpreadsheetCellMarkerArtifact from = 1;
+  SpreadsheetCellMarkerArtifact to = 2;
+  optional SpreadsheetTwoCellEditAs edit_as = 3;
 }
 
 // Hash-bound locator for one recognized picture anchor in a worksheet-owned

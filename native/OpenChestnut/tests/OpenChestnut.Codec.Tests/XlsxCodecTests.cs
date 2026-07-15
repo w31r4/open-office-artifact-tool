@@ -2716,6 +2716,64 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesTwoCellWorksheetPictures()
+    {
+        var request = TwoCellPictureExportRequest();
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        AssertTwoCellPicture(authored.File.ToByteArray(), "Quarter mark", "Quarterly performance", 3, 2, 7, 6, Xdr.EditAsValues.OneCell, residual: false);
+
+        var source = AddPictureResidual(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var image = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Null(image.Anchor);
+        Assert.NotNull(image.TwoCellAnchor);
+        Assert.Equal(3U, image.TwoCellAnchor.From.Row);
+        Assert.Equal(2U, image.TwoCellAnchor.From.Column);
+        Assert.Equal(7U, image.TwoCellAnchor.To.Row);
+        Assert.Equal(6U, image.TwoCellAnchor.To.Column);
+        Assert.True(image.TwoCellAnchor.HasEditAs);
+        Assert.Equal(SpreadsheetTwoCellEditAs.OneCell, image.TwoCellAnchor.EditAs);
+
+        image.Name = "Updated two-cell mark";
+        image.AltText = "Updated two-cell performance";
+        image.TwoCellAnchor.From.Row = 4;
+        image.TwoCellAnchor.From.Column = 3;
+        image.TwoCellAnchor.To.Row = 9;
+        image.TwoCellAnchor.To.Column = 8;
+        image.TwoCellAnchor.EditAs = SpreadsheetTwoCellEditAs.Absolute;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(preserved.File.ToByteArray());
+        AssertTwoCellPicture(preserved.File.ToByteArray(), "Updated two-cell mark", "Updated two-cell performance", 4, 3, 9, 8, Xdr.EditAsValues.Absolute, residual: true);
+
+        var withoutEditAs = Import(preserved.File.ToByteArray());
+        withoutEditAs.Artifact.Workbook.Worksheets[0].Images[0].TwoCellAnchor.ClearEditAs();
+        var omitted = Export(withoutEditAs.Artifact);
+        Assert.True(omitted.Ok, string.Join("\n", omitted.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(omitted.File.ToByteArray());
+        AssertTwoCellPicture(omitted.File.ToByteArray(), "Updated two-cell mark", "Updated two-cell performance", 4, 3, 9, 8, null, residual: true);
+        var omittedImport = Import(omitted.File.ToByteArray());
+        Assert.False(Assert.Single(omittedImport.Artifact.Workbook.Worksheets[0].Images).TwoCellAnchor.HasEditAs);
+
+        var changedKind = Import(source);
+        var changedImage = changedKind.Artifact.Workbook.Worksheets[0].Images[0];
+        changedImage.Anchor = new SpreadsheetOneCellAnchorArtifact { Row = 3, Column = 2, WidthEmu = 1_143_000, HeightEmu = 762_000 };
+        changedImage.TwoCellAnchor = null;
+        var rejected = Export(changedKind.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalidGeometry = TwoCellPictureExportRequest();
+        invalidGeometry.Artifact.Workbook.Worksheets[0].Images[0].TwoCellAnchor.To.Row = 2;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidGeometry.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceBoundWorksheetPicturesRejectSharedOrCrossFormatReplacement()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PictureExportRequest().ToByteArray()));
@@ -2812,6 +2870,20 @@ public sealed class XlsxCodecTests
                 HeightEmu = 762_000,
             },
         });
+        return request;
+    }
+
+    private static CodecRequest TwoCellPictureExportRequest()
+    {
+        var request = PictureExportRequest();
+        var image = request.Artifact.Workbook.Worksheets[0].Images[0];
+        image.Anchor = null;
+        image.TwoCellAnchor = new SpreadsheetTwoCellAnchorArtifact
+        {
+            From = new SpreadsheetCellMarkerArtifact { Row = 3, Column = 2, RowOffsetEmu = 95_250, ColumnOffsetEmu = 47_625 },
+            To = new SpreadsheetCellMarkerArtifact { Row = 7, Column = 6, RowOffsetEmu = 190_500, ColumnOffsetEmu = 142_875 },
+            EditAs = SpreadsheetTwoCellEditAs.OneCell,
+        };
         return request;
     }
 
@@ -3309,6 +3381,37 @@ public sealed class XlsxCodecTests
         Assert.Equal(column.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.FromMarker.ColumnId!.Text);
         Assert.Equal(width, anchor.Extent!.Cx!.Value);
         Assert.Equal(height, anchor.Extent.Cy!.Value);
+        var picture = anchor.GetFirstChild<Xdr.Picture>()!;
+        Assert.Equal(name, picture.NonVisualPictureProperties!.NonVisualDrawingProperties!.Name!.Value);
+        Assert.Equal(description, picture.NonVisualPictureProperties.NonVisualDrawingProperties.Description!.Value);
+        Assert.Single(worksheetPart.DrawingsPart.ImageParts);
+        var locks = picture.NonVisualPictureProperties.NonVisualPictureDrawingProperties!.GetFirstChild<A.PictureLocks>();
+        var crop = picture.BlipFill!.GetFirstChild<A.SourceRectangle>();
+        if (residual)
+        {
+            Assert.True(locks!.NoChangeAspect!.Value);
+            Assert.Equal(1_000, crop!.Left!.Value);
+            Assert.Equal(2_000, crop.Top!.Value);
+        }
+        else
+        {
+            Assert.Null(locks);
+            Assert.Null(crop);
+        }
+    }
+
+    private static void AssertTwoCellPicture(byte[] bytes, string name, string description, uint fromRow, uint fromColumn, uint toRow, uint toColumn, Xdr.EditAsValues? editAs, bool residual)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var worksheetPart = document.WorkbookPart!.WorksheetParts.Single();
+        Assert.NotNull(worksheetPart.Worksheet!.GetFirstChild<Drawing>());
+        var anchor = Assert.Single(worksheetPart.DrawingsPart!.WorksheetDrawing!.Elements<Xdr.TwoCellAnchor>());
+        Assert.Equal(fromRow.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.FromMarker!.RowId!.Text);
+        Assert.Equal(fromColumn.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.FromMarker.ColumnId!.Text);
+        Assert.Equal(toRow.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.ToMarker!.RowId!.Text);
+        Assert.Equal(toColumn.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.ToMarker.ColumnId!.Text);
+        Assert.Equal(editAs, anchor.EditAs?.Value);
         var picture = anchor.GetFirstChild<Xdr.Picture>()!;
         Assert.Equal(name, picture.NonVisualPictureProperties!.NonVisualDrawingProperties!.Name!.Value);
         Assert.Equal(description, picture.NonVisualPictureProperties.NonVisualDrawingProperties.Description!.Value);

@@ -3403,10 +3403,17 @@ class WorksheetChartCollection {
 
 function worksheetAnchorFrame(worksheet, anchor = {}) {
   const from = anchor.from || { row: 0, col: 0 };
+  const left = 40 + worksheetAxisOffset(worksheet, "column", Number(from.col || 0)) + Number(anchor.colOffsetPx || from.colOffsetPx || 0);
+  const top = 40 + worksheetAxisOffset(worksheet, "row", Number(from.row || 0)) + Number(anchor.rowOffsetPx || from.rowOffsetPx || 0);
+  if (anchor.to) {
+    const right = 40 + worksheetAxisOffset(worksheet, "column", Number(anchor.to.col || 0)) + Number(anchor.to.colOffsetPx || 0);
+    const bottom = 40 + worksheetAxisOffset(worksheet, "row", Number(anchor.to.row || 0)) + Number(anchor.to.rowOffsetPx || 0);
+    return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  }
   const extent = anchor.extent || {};
   return {
-    left: 40 + worksheetAxisOffset(worksheet, "column", Number(from.col || 0)) + Number(anchor.colOffsetPx || from.colOffsetPx || 0),
-    top: 40 + worksheetAxisOffset(worksheet, "row", Number(from.row || 0)) + Number(anchor.rowOffsetPx || from.rowOffsetPx || 0),
+    left,
+    top,
     width: Number(extent.widthPx || anchor.widthPx || 160),
     height: Number(extent.heightPx || anchor.heightPx || 120),
   };
@@ -7252,14 +7259,20 @@ function drawingRelsXml(imageParts, chartParts = []) {
 }
 
 function drawingXml(imageParts, chartParts = []) {
+  const markerXml = (name, marker = {}) => `<xdr:${name}><xdr:col>${Number(marker.col || 0)}</xdr:col><xdr:colOff>${Math.round(Number(marker.colOffsetPx || 0) * 9525)}</xdr:colOff><xdr:row>${Number(marker.row || 0)}</xdr:row><xdr:rowOff>${Math.round(Number(marker.rowOffsetPx || 0) * 9525)}</xdr:rowOff></xdr:${name}>`;
   const imageAnchors = imageParts.map((part, index) => {
     const from = part.image.anchor?.from || { row: 0, col: 0 };
+    const picture = `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${part.drawingRelId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>`;
+    if (part.image.anchor?.type === "twoCell" || part.image.anchor?.to) {
+      const editAs = part.image.anchor?.editAs ? ` editAs="${attrEscape(part.image.anchor.editAs)}"` : "";
+      return `<xdr:twoCellAnchor${editAs}>${markerXml("from", from)}${markerXml("to", part.image.anchor.to)}${picture}</xdr:twoCellAnchor>`;
+    }
     const extent = part.image.anchor?.extent || {};
     const widthPx = Number(extent.widthPx || part.image.anchor?.widthPx || 160);
     const heightPx = Number(extent.heightPx || part.image.anchor?.heightPx || 120);
     const cx = Math.round(widthPx * 9525);
     const cy = Math.round(heightPx * 9525);
-    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${Number(from.col || 0)}</xdr:col><xdr:colOff>${Math.round(Number(from.colOffsetPx || 0) * 9525)}</xdr:colOff><xdr:row>${Number(from.row || 0)}</xdr:row><xdr:rowOff>${Math.round(Number(from.rowOffsetPx || 0) * 9525)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${part.drawingRelId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+    return `<xdr:oneCellAnchor>${markerXml("from", from)}<xdr:ext cx="${cx}" cy="${cy}"/>${picture}</xdr:oneCellAnchor>`;
   }).join("");
   const chartAnchors = chartParts.map((part, index) => {
     const p = part.chart.position;
@@ -8153,12 +8166,15 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
       if (record.kind === "image" && relationship.type.endsWith("/image")) {
         const bytes = await zip.file(targetPath)?.async("uint8array");
         const extension = /\.([A-Za-z0-9+]+)$/.exec(targetPath)?.[1] || "bin";
+        const anchor = record.anchorType === "twoCellAnchor" && record.to
+          ? { type: "twoCell", from: record.from || { row: 0, col: 0 }, to: record.to, ...(record.editAs ? { editAs: record.editAs } : {}) }
+          : { from: { row: record.from?.row || 0, col: record.from?.col || 0, rowOffsetPx: record.position?.topPx ?? record.from?.rowOffsetPx ?? 0, colOffsetPx: record.position?.leftPx ?? record.from?.colOffsetPx ?? 0 }, extent: { widthPx: frame.width, heightPx: frame.height } };
         sheet.images.add({
           name: record.name,
           alt: record.alt,
           dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined,
           uri: bytes ? undefined : targetPath,
-          anchor: { from: { row: record.from?.row || 0, col: record.from?.col || 0, rowOffsetPx: record.position?.topPx ?? record.from?.rowOffsetPx ?? 0, colOffsetPx: record.position?.leftPx ?? record.from?.colOffsetPx ?? 0 }, extent: { widthPx: frame.width, heightPx: frame.height } },
+          anchor,
         });
       } else if (record.kind === "chart" && relationship.type.endsWith("/chart")) {
         const chartXml = await zip.file(targetPath)?.async("text");

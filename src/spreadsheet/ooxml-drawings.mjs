@@ -49,6 +49,7 @@ export function parseSpreadsheetDrawing(xml = "") {
   const anchorPattern = /<(?:[A-Za-z_][\w.-]*:)?(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1>/g;
   for (const match of String(xml).matchAll(anchorPattern)) {
     const body = match[2];
+    const anchorAttributes = attributes(/^<[^>]+>/.exec(match[0])?.[0]);
     const picture = /<(?:[A-Za-z_][\w.-]*:)?pic\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?pic>/.exec(body)?.[0];
     const graphicFrame = /<(?:[A-Za-z_][\w.-]*:)?graphicFrame\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?graphicFrame>/.exec(body)?.[0];
     const objectXml = picture || graphicFrame;
@@ -65,6 +66,7 @@ export function parseSpreadsheetDrawing(xml = "") {
       name: properties.name,
       alt: properties.descr || properties.title,
       anchorType: match[1],
+      editAs: anchorAttributes.editAs,
       from: marker(body, "from"),
       to: marker(body, "to"),
       position: absolutePosition(body),

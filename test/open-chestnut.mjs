@@ -75,6 +75,7 @@ assert.deepEqual([...toBinary(WorksheetArtifactSchema, create(WorksheetArtifactS
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { source: { ordinal: 1 } }))[0], 0x62, "Spreadsheet worksheet source bindings must use additive worksheet field 12.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { images: [{ id: "image/1" }] }))[0], 0x6a, "Spreadsheet worksheet images must use additive worksheet field 13.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { assetId: "asset/1" }))[0], 0x22, "Spreadsheet image assets must use image field 4.");
+assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { twoCellAnchor: { from: {}, to: {} } }))[0], 0x3a, "Spreadsheet two-cell anchors must use additive image field 7.");
 assert.deepEqual([...toBinary(SpreadsheetOneCellAnchorArtifactSchema, create(SpreadsheetOneCellAnchorArtifactSchema, { widthEmu: 1n }))], [0x28, 0x01], "Spreadsheet image widths must use signed EMU field 5.");
 assert.equal(toBinary(SpreadsheetImageSourceBindingSchema, create(SpreadsheetImageSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet image semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetWorksheetSourceBindingSchema, create(SpreadsheetWorksheetSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet worksheet semantic hashes must use source-binding field 5.");
@@ -917,6 +918,72 @@ jpegImageWorkbook.worksheets.add("JPEG").images.add({
 });
 const jpegImageRoundTrip = await importXlsxWithOpenChestnut(await exportXlsxWithOpenChestnut(jpegImageWorkbook));
 assert.equal(jpegImageRoundTrip.worksheets.getItem("JPEG").images.items[0].dataUrl, "data:image/jpeg;base64,/9j/2Q==");
+const twoCellImageWorkbook = Workbook.create();
+const twoCellImageSheet = twoCellImageWorkbook.worksheets.add("Two-cell image");
+twoCellImageSheet.getRange("A1:F8").values = Array.from({ length: 8 }, (_, row) => Array.from({ length: 6 }, (_, column) => `${row + 1}:${column + 1}`));
+const twoCellImageDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+twoCellImageSheet.images.add({
+  name: "Two-cell mark",
+  alt: "Move without resize",
+  dataUrl: twoCellImageDataUrl,
+  anchor: {
+    type: "twoCell",
+    from: { row: 1, col: 1, rowOffsetPx: 2, colOffsetPx: 3 },
+    to: { row: 4, col: 5, rowOffsetPx: 6, colOffsetPx: 7 },
+    editAs: "oneCell",
+  },
+});
+const twoCellImageExport = await exportXlsxWithOpenChestnut(twoCellImageWorkbook);
+const twoCellImageZip = await JSZip.loadAsync(twoCellImageExport.bytes);
+const twoCellDrawingXml = await twoCellImageZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(twoCellDrawingXml, /<xdr:twoCellAnchor editAs="oneCell">/);
+assert.match(twoCellDrawingXml, /<xdr:from><xdr:col>1<\/xdr:col><xdr:colOff>28575<\/xdr:colOff><xdr:row>1<\/xdr:row><xdr:rowOff>19050<\/xdr:rowOff><\/xdr:from>/);
+assert.match(twoCellDrawingXml, /<xdr:to><xdr:col>5<\/xdr:col><xdr:colOff>66675<\/xdr:colOff><xdr:row>4<\/xdr:row><xdr:rowOff>57150<\/xdr:rowOff><\/xdr:to>/);
+const twoCellImageImported = await importXlsxWithOpenChestnut(twoCellImageExport);
+const importedTwoCellImage = twoCellImageImported.worksheets.getItem("Two-cell image").images.items[0];
+assert.deepEqual(importedTwoCellImage.anchor, {
+  type: "twoCell",
+  from: { row: 1, col: 1, rowOffsetPx: 2, colOffsetPx: 3 },
+  to: { row: 4, col: 5, rowOffsetPx: 6, colOffsetPx: 7 },
+  editAs: "oneCell",
+});
+importedTwoCellImage.name = "Edited two-cell mark";
+importedTwoCellImage.anchor = {
+  type: "twoCell",
+  from: { row: 2, col: 2, rowOffsetPx: 4, colOffsetPx: 5 },
+  to: { row: 6, col: 7, rowOffsetPx: 8, colOffsetPx: 9 },
+  editAs: "absolute",
+};
+const editedTwoCellExport = await exportXlsxWithOpenChestnut(twoCellImageImported, { recalculate: false });
+const editedTwoCellRoundTrip = await importXlsxWithOpenChestnut(editedTwoCellExport);
+assert.equal(editedTwoCellRoundTrip.worksheets.getItem("Two-cell image").images.items[0].name, "Edited two-cell mark");
+assert.deepEqual(editedTwoCellRoundTrip.worksheets.getItem("Two-cell image").images.items[0].anchor, importedTwoCellImage.anchor);
+const javascriptTwoCellExport = await SpreadsheetFile.exportXlsx(twoCellImageWorkbook);
+const javascriptTwoCellZip = await JSZip.loadAsync(new Uint8Array(await javascriptTwoCellExport.arrayBuffer()));
+assert.match(await javascriptTwoCellZip.file("xl/drawings/drawing1.xml").async("text"), /<xdr:twoCellAnchor editAs="oneCell">/);
+const javascriptTwoCellImport = await SpreadsheetFile.importXlsx(javascriptTwoCellExport);
+assert.deepEqual(javascriptTwoCellImport.worksheets.getItem("Two-cell image").images.items[0].anchor, {
+  type: "twoCell",
+  from: { row: 1, col: 1, rowOffsetPx: 2, colOffsetPx: 3 },
+  to: { row: 4, col: 5, rowOffsetPx: 6, colOffsetPx: 7 },
+  editAs: "oneCell",
+});
+const changedTwoCellKind = await importXlsxWithOpenChestnut(twoCellImageExport);
+changedTwoCellKind.worksheets.getItem("Two-cell image").images.items[0].anchor = { from: { row: 1, col: 1 }, extent: { widthPx: 120, heightPx: 80 } };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(changedTwoCellKind, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image_edit" && /anchor kind/i.test(error.message),
+);
+const invalidTwoCellWorkbook = Workbook.create();
+invalidTwoCellWorkbook.worksheets.add("Invalid").images.add({
+  name: "Invalid two-cell mark",
+  dataUrl: twoCellImageDataUrl,
+  anchor: { type: "twoCell", from: { row: 4, col: 4 }, to: { row: 3, col: 5 } },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidTwoCellWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /strictly after/i.test(error.message),
+);
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },
