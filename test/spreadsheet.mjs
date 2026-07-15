@@ -474,6 +474,7 @@ assert.equal(sheet.getRange("E3").values[0][0], 350);
 const chartFromRange = sheet.charts.add("line", chartSource);
 chartFromRange.title = "Revenue Trend";
 chartFromRange.hasLegend = false;
+chartFromRange.series.items[0].line = { fill: "#2563EB", style: "dash-dot", width: 2 };
 chartFromRange.setPosition("I1", "M10");
 const chartFromConfig = sheet.charts.add("bar", { name: "ScoresChart", title: "Scores", categories: ["A", "B"], series: [{ name: "Score", values: [9, 7] }], position: { left: 40, top: 220, width: 240, height: 160 } });
 const revenuePivot = sheet.pivotTables.add({
@@ -892,6 +893,7 @@ assert.match(workbook.help("sheet.images.add").ndjson, /worksheet image/);
 assert.match(workbook.help("sheet.sparklineGroups.add").ndjson, /sparklines/);
 assert.equal(chartFromRange.series.items[0].name, "Revenue");
 assert.match(chartFromRange.series.items[0].formula, /G2:G4/);
+assert.deepEqual(chartFromRange.series.items[0].line, { fill: "#2563EB", style: "dash-dot", width: 2 });
 assert.equal(chartFromConfig.series.getItemAt(0).values[1], 7);
 
 const metadataInspect = workbook.inspect({ kind: "dataValidation,conditionalFormat,thread,table,pivotTable,drawing", maxChars: 16000 }).ndjson;
@@ -2002,6 +2004,7 @@ assert.match(chartXml, /<c:chartSpace/);
 assert.match(chartXml, /Revenue Trend/);
 assert.match(chartXml, /<c:lineChart>/);
 assert.match(chartXml, /<c:v>130<\/c:v>/);
+assert.match(chartXml, /<a:ln w="25400"><a:solidFill><a:srgbClr val="2563EB"\/><\/a:solidFill><a:prstDash val="dashDot"\/><\/a:ln>/);
 const threadedCommentsXml = await zip.file("xl/threadedComments/threadedComment1.xml").async("text");
 assert.match(threadedCommentsXml, /<ThreadedComments/);
 assert.match(threadedCommentsXml, /ref="C2"/);
@@ -2088,6 +2091,7 @@ const nativeOnlyRevenueChart = nativeOnlySheet.charts.items.find((chart) => char
 assert.equal(nativeOnlyRevenueChart.type, "line");
 assert.deepEqual(nativeOnlyRevenueChart.categories, ["Jan", "Feb", "Mar"]);
 assert.deepEqual(nativeOnlyRevenueChart.series.items[0].values, [100, 120, 130]);
+assert.deepEqual(nativeOnlyRevenueChart.series.items[0].line, { width: 2, fill: "#2563EB", style: "dash-dot" });
 assert.ok(nativeOnlyRevenueChart.position.width > 100 && nativeOnlyRevenueChart.position.height > 80);
 assert.equal(nativeOnlyWorkbook.resolve(nativeOnlyImage.id), nativeOnlyImage);
 assert.match(nativeOnlyWorkbook.inspect({ kind: "drawing", target: nativeOnlyImage.id, maxChars: 4000 }).ndjson, /LogoImage/);

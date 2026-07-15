@@ -56,10 +56,12 @@ internal static class XlsxChartSeriesStyleCodec
         return true;
     }
 
-    internal static XElement? PropertiesElement(SpreadsheetChartSeriesArtifact series) =>
-        series.Fill is null
-            ? null
-            : new XElement(ChartNs + "spPr", SolidFillElement(series.Fill.Rgb));
+    internal static XElement? PropertiesElement(SpreadsheetChartSeriesArtifact series)
+    {
+        var fill = series.Fill is null ? null : SolidFillElement(series.Fill.Rgb);
+        var line = XlsxChartSeriesLineStyleCodec.Element(series.Line);
+        return fill is null && line is null ? null : new XElement(ChartNs + "spPr", fill, line);
+    }
 
     internal static void Patch(XElement nativeSeries, SpreadsheetChartSeriesArtifact target)
     {

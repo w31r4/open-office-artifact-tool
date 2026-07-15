@@ -255,6 +255,8 @@ export function createWorkbookFromFixture(fixture = {}) {
         if (series.formula != null) created.series.items[index].formula = series.formula;
         if (series.categoryFormula != null) created.series.items[index].categoryFormula = series.categoryFormula;
         if (series.fill != null) created.series.items[index].fill = series.fill;
+        if (series.line != null) created.series.items[index].line = { ...series.line };
+        if (series.stroke != null) created.series.items[index].stroke = { ...series.stroke };
       });
     }
     for (const imageFixture of sheetFixture.images || []) sheet.images.add(imageFixture);

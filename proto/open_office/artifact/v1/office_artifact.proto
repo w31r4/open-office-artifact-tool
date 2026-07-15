@@ -409,6 +409,10 @@ message SpreadsheetChartSeriesArtifact {
   // profile currently accepts only the RGB branch; other color sources stay
   // reserved for future additive fidelity work.
   SpreadsheetColor fill = 5;
+  // Optional bounded series outline. The public JS surface uses
+  // line { fill, style, width } and accepts stroke { color, style, weight }
+  // as an alias. Unknown native line graphs remain source-owned.
+  SpreadsheetChartLineStyleArtifact line = 6;
 }
 
 // Bounded primary-axis semantics for category/value worksheet charts. The x
@@ -1467,4 +1471,22 @@ message DocumentOpaqueBlock {
 // at the end so additive wire evolution does not renumber generated descriptors.
 message SpreadsheetChartTextStyleArtifact {
   optional double font_size_points = 1;
+}
+
+enum SpreadsheetChartLineDashStyle {
+  SPREADSHEET_CHART_LINE_DASH_STYLE_UNSPECIFIED = 0;
+  SPREADSHEET_CHART_LINE_DASH_STYLE_SOLID = 1;
+  SPREADSHEET_CHART_LINE_DASH_STYLE_DASHED = 2;
+  SPREADSHEET_CHART_LINE_DASH_STYLE_DOTTED = 3;
+  SPREADSHEET_CHART_LINE_DASH_STYLE_DASH_DOT = 4;
+  SPREADSHEET_CHART_LINE_DASH_STYLE_DASH_DOT_DOT = 5;
+}
+
+// Bounded DrawingML line graph for a worksheet-chart series. Message and
+// optional scalar presence distinguish no direct line, an explicit empty line,
+// and explicit width zero. Only direct RGB, preset dash, and width are owned.
+message SpreadsheetChartLineStyleArtifact {
+  SpreadsheetColor color = 1;
+  SpreadsheetChartLineDashStyle dash_style = 2;
+  optional double width_points = 3;
 }

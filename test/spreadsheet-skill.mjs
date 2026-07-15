@@ -244,9 +244,10 @@ try {
   assert.deepEqual(wasmChart.yAxis, { axisType: "valueAxis", title: { text: "Edited value" }, textStyle: { fontSize: 8.5 }, numberFormatCode: "0.0", min: 0, max: 100, majorUnit: 20 });
   assert.deepEqual(wasmChart.series.items[0].values, [42.5, 90]);
   assert.equal(wasmChart.series.items[0].fill, "#2563EB");
+  assert.deepEqual(wasmChart.series.items[0].line, { fill: "#7C3AED", style: "dash-dot", width: 2.5 });
   assert.equal(wasmChart.series.items[0].categoryFormula, "'Summary'!$A$2:$A$3");
   assert.equal(wasmChart.series.items[0].formula, "'Summary'!$B$2:$B$3");
-  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"OpenChestnut edited trend"[\s\S]*"titleTextStyle":\{"fontSize":14\}[\s\S]*"fill":"#2563EB"[\s\S]*"Edited metric"[\s\S]*"fontSize":11[\s\S]*"Edited value"[\s\S]*"fontSize":8\.5/);
+  assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"chart"[\s\S]*"title":"OpenChestnut edited trend"[\s\S]*"titleTextStyle":\{"fontSize":14\}[\s\S]*"fill":"#2563EB"[\s\S]*"line":\{"fill":"#7C3AED","style":"dash-dot","width":2\.5\}[\s\S]*"Edited metric"[\s\S]*"fontSize":11[\s\S]*"Edited value"[\s\S]*"fontSize":8\.5/);
   assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"OpenChestnut worksheet image"/);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedIndex, 7);

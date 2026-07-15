@@ -39,6 +39,47 @@ function directElementBody(xml, name) {
   return "";
 }
 
+function directElement(xml, name) {
+  const source = String(xml ?? "");
+  const tags = /<\s*(\/)?(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b[^>]*>/g;
+  let depth = 0;
+  let start = -1;
+  let bodyStart = -1;
+  let startTag = "";
+  let match;
+  while ((match = tags.exec(source))) {
+    if (match[1]) {
+      depth -= 1;
+      if (start >= 0 && depth === 0 && match[2] === name) return { startTag, body: source.slice(bodyStart, match.index), xml: source.slice(start, tags.lastIndex) };
+      continue;
+    }
+    const selfClosing = /\/\s*>$/.test(match[0]);
+    if (depth === 0 && match[2] === name) {
+      if (selfClosing) return { startTag: match[0], body: "", xml: match[0] };
+      start = match.index;
+      bodyStart = tags.lastIndex;
+      startTag = match[0];
+    }
+    if (!selfClosing) depth += 1;
+  }
+  return undefined;
+}
+
+function directChildNames(xml) {
+  const source = String(xml ?? "");
+  const tags = /<\s*(\/)?(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b[^>]*>/g;
+  const names = [];
+  let depth = 0;
+  let match;
+  while ((match = tags.exec(source))) {
+    if (match[1]) { depth -= 1; continue; }
+    const selfClosing = /\/\s*>$/.test(match[0]);
+    if (depth === 0) names.push(match[2]);
+    if (!selfClosing) depth += 1;
+  }
+  return names;
+}
+
 function elementValue(xml, name) {
   return decodeXml(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${name}>`).exec(String(xml))?.[1] || "");
 }
@@ -183,6 +224,38 @@ function drawingFontSize(xml, elementName) {
   return values[0] / 100;
 }
 
+function chartSeriesLineStyle(shapeProperties) {
+  const line = directElement(shapeProperties, "ln");
+  if (!line) return undefined;
+  const lineAttributes = attributes(line.startTag);
+  if (Object.keys(lineAttributes).some((name) => name !== "w" && !name.startsWith("xmlns"))) return undefined;
+  const children = directChildNames(line.body);
+  if (children.some((name) => !["solidFill", "prstDash"].includes(name)) || children.filter((name) => name === "solidFill").length > 1 || children.filter((name) => name === "prstDash").length > 1) return undefined;
+
+  const output = {};
+  if (lineAttributes.w != null) {
+    const width = Number(lineAttributes.w);
+    if (!Number.isInteger(width) || width < 0 || width > 20_116_800) return undefined;
+    output.width = width / 12_700;
+  }
+  const solidFill = directElement(line.body, "solidFill");
+  if (solidFill) {
+    if (Object.keys(attributes(solidFill.startTag)).some((name) => !name.startsWith("xmlns")) || directChildNames(solidFill.body).join("\0") !== "srgbClr") return undefined;
+    const color = directElement(solidFill.body, "srgbClr");
+    const colorAttributes = attributes(color?.startTag);
+    if (!color || color.body.trim() || Object.keys(colorAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !/^[0-9a-f]{6}$/i.test(colorAttributes.val || "")) return undefined;
+    output.fill = `#${colorAttributes.val.toUpperCase()}`;
+  }
+  const dash = directElement(line.body, "prstDash");
+  if (dash) {
+    const dashAttributes = attributes(dash.startTag);
+    const style = new Map([["solid", "solid"], ["dash", "dashed"], ["dot", "dotted"], ["dashDot", "dash-dot"], ["lgDashDotDot", "dash-dot-dot"]]).get(dashAttributes.val);
+    if (!style || dash.body.trim() || Object.keys(dashAttributes).some((name) => name !== "val" && !name.startsWith("xmlns"))) return undefined;
+    output.style = style;
+  }
+  return output;
+}
+
 function chartAxis(xml, name, kind) {
   const body = elementBody(xml, name);
   if (!body) return undefined;
@@ -229,8 +302,9 @@ export function parseSpreadsheetChart(xml = "") {
     const categoryBody = elementBody(body, "cat") || elementBody(body, "xVal");
     const valueBody = elementBody(body, "val") || elementBody(body, "yVal");
     const shapeProperties = directElementBody(body, "spPr");
-    const solidFill = elementBody(shapeProperties, "solidFill");
+    const solidFill = directElement(shapeProperties, "solidFill")?.body || "";
     const color = /<(?:[A-Za-z_][\w.-]*:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/.exec(solidFill)?.[1];
+    const line = chartSeriesLineStyle(shapeProperties);
     return {
       name: elementValue(tx, "v") || elementValue(tx, "f") || `Series ${index + 1}`,
       categoryFormula: elementValue(categoryBody, "f") || undefined,
@@ -238,6 +312,7 @@ export function parseSpreadsheetChart(xml = "") {
       categories: chartPoints(categoryBody),
       values: chartPoints(valueBody, true),
       fill: color ? `#${color.toUpperCase()}` : undefined,
+      line,
     };
   });
   return {

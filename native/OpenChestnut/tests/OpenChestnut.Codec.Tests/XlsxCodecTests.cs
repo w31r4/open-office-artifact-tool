@@ -2726,6 +2726,7 @@ public sealed class XlsxCodecTests
         AssertChartAxes(authored.File.ToByteArray(), "Quarter", "@", 2, "Revenue", "$#,##0.0", 0, 100, 25);
         AssertChartTextStyles(authored.File.ToByteArray(), 12, 10, 9);
         AssertChartSeriesFill(authored.File.ToByteArray(), "F472B6");
+        AssertChartSeriesLine(authored.File.ToByteArray(), "0EA5E9", "dash", 2);
         using (var stream = new MemoryStream(authored.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2750,6 +2751,10 @@ public sealed class XlsxCodecTests
         Assert.Equal([42.5, 85], Assert.Single(chart.Series).Values);
         Assert.Equal(SpreadsheetColor.SourceOneofCase.Rgb, chart.Series[0].Fill.SourceCase);
         Assert.Equal("F472B6", chart.Series[0].Fill.Rgb);
+        Assert.Equal("0EA5E9", chart.Series[0].Line.Color.Rgb);
+        Assert.Equal(SpreadsheetChartLineDashStyle.Dashed, chart.Series[0].Line.DashStyle);
+        Assert.True(chart.Series[0].Line.HasWidthPoints);
+        Assert.Equal(2, chart.Series[0].Line.WidthPoints);
         Assert.Equal("'Summary'!$A$1:$A$2", chart.Series[0].CategoryFormula);
         Assert.Equal("'Summary'!$B$1:$B$2", chart.Series[0].ValueFormula);
         Assert.Equal("Quarter", chart.XAxis.Title);
@@ -2780,6 +2785,9 @@ public sealed class XlsxCodecTests
         chart.Series[0].Name = "Actual revenue";
         chart.Series[0].Values[1] = 90;
         chart.Series[0].Fill.Rgb = "2563EB";
+        chart.Series[0].Line.Color.Rgb = "7C3AED";
+        chart.Series[0].Line.DashStyle = SpreadsheetChartLineDashStyle.DashDot;
+        chart.Series[0].Line.WidthPoints = 2.5;
         chart.XAxis.Title = "Fiscal quarter";
         chart.XAxis.NumberFormatCode = "mmm";
         chart.XAxis.TickLabelInterval = 1;
@@ -2796,6 +2804,7 @@ public sealed class XlsxCodecTests
         AssertChartAxes(preserved.File.ToByteArray(), "Fiscal quarter", "mmm", 1, "Revenue USD", "$0", -10, 120, 10);
         AssertChartTextStyles(preserved.File.ToByteArray(), 15, 11, null);
         AssertChartSeriesFill(preserved.File.ToByteArray(), "2563EB");
+        AssertChartSeriesLine(preserved.File.ToByteArray(), "7C3AED", "dashDot", 2.5);
         using (var stream = new MemoryStream(preserved.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2821,6 +2830,23 @@ public sealed class XlsxCodecTests
         var withAddedFill = Export(addedFill.Artifact);
         Assert.True(withAddedFill.Ok, string.Join("\n", withAddedFill.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertChartSeriesFill(withAddedFill.File.ToByteArray(), "22C55E");
+
+        var removedLine = Import(preserved.File.ToByteArray());
+        removedLine.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line = null;
+        var withoutLine = Export(removedLine.Artifact);
+        Assert.True(withoutLine.Ok, string.Join("\n", withoutLine.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartSeriesLine(withoutLine.File.ToByteArray(), null, null, null);
+        var addedLine = Import(withoutLine.File.ToByteArray());
+        Assert.Null(addedLine.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line);
+        addedLine.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line = new SpreadsheetChartLineStyleArtifact
+        {
+            Color = new SpreadsheetColor { Rgb = "22C55E" },
+            DashStyle = SpreadsheetChartLineDashStyle.Dotted,
+            WidthPoints = 1.25,
+        };
+        var withAddedLine = Export(addedLine.Artifact);
+        Assert.True(withAddedLine.Ok, string.Join("\n", withAddedLine.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartSeriesLine(withAddedLine.File.ToByteArray(), "22C55E", "dot", 1.25);
 
         var addedTextStyle = Import(preserved.File.ToByteArray());
         addedTextStyle.Artifact.Workbook.Worksheets[0].Charts[0].YAxis.TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 8.5 };
@@ -2882,6 +2908,21 @@ public sealed class XlsxCodecTests
         Assert.Equal(schemeFillXml, ReadChartXml(schemeFillRoundTrip.File.ToByteArray()));
         schemeFillChart.Series[0].Fill = new SpreadsheetColor { Rgb = "E11D48" };
         rejected = Export(schemeFill.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var complexLineSource = SetChartSeriesComplexLine(authored.File.ToByteArray());
+        var complexLineXml = ReadChartXml(complexLineSource);
+        var complexLine = Import(complexLineSource);
+        Assert.True(complexLine.Ok, string.Join("\n", complexLine.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var complexLineChart = Assert.Single(complexLine.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Null(Assert.Single(complexLineChart.Series).Line);
+        Assert.False(complexLineChart.Source.Editable);
+        var complexLineRoundTrip = Export(complexLine.Artifact);
+        Assert.True(complexLineRoundTrip.Ok, string.Join("\n", complexLineRoundTrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(complexLineXml, ReadChartXml(complexLineRoundTrip.File.ToByteArray()));
+        complexLineChart.Series[0].Line = new SpreadsheetChartLineStyleArtifact { Color = new SpreadsheetColor { Rgb = "E11D48" } };
+        rejected = Export(complexLine.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
 
@@ -2954,6 +2995,34 @@ public sealed class XlsxCodecTests
         var malformed = ChartExportRequest();
         malformed.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Fill = new SpreadsheetColor { Rgb = "blue" };
         rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(malformed.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetChartSeriesLines()
+    {
+        var theme = ChartExportRequest();
+        theme.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line.Color = new SpreadsheetColor { Theme = 4 };
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(theme.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var tinted = ChartExportRequest();
+        tinted.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line.Color.Tint = 0;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(tinted.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var oversized = ChartExportRequest();
+        oversized.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line.WidthPoints = 1_584.1;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(oversized.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var unknownDash = ChartExportRequest();
+        unknownDash.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line.DashStyle = (SpreadsheetChartLineDashStyle)99;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(unknownDash.ToByteArray()));
         Assert.False(rejected.Ok);
         Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
     }
@@ -3388,6 +3457,12 @@ public sealed class XlsxCodecTests
             CategoryFormula = "'Summary'!$A$1:$A$2",
             ValueFormula = "'Summary'!$B$1:$B$2",
             Fill = new SpreadsheetColor { Rgb = "F472B6" },
+            Line = new SpreadsheetChartLineStyleArtifact
+            {
+                Color = new SpreadsheetColor { Rgb = "0EA5E9" },
+                DashStyle = SpreadsheetChartLineDashStyle.Dashed,
+                WidthPoints = 2,
+            },
             Values = { 42.5, 85 },
         });
         request.Artifact.Workbook.Worksheets[0].Charts.Add(chart);
@@ -3970,6 +4045,25 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] SetChartSeriesComplexLine(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+            chart.Descendants(c + "ser").Single().Element(c + "spPr")!.Element(a + "ln")!
+                .Add(new XElement(a + "headEnd", new XAttribute("type", "triangle")));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] SetChartAxisComplexTextStyle(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -4025,6 +4119,19 @@ public sealed class XlsxCodecTests
         var solidFill = chart.Descendants(c + "ser").Single().Element(c + "spPr")?.Element(a + "solidFill");
         if (expectedRgb is null) Assert.Null(solidFill);
         else Assert.Equal(expectedRgb, (string?)solidFill!.Element(a + "srgbClr")!.Attribute("val"));
+    }
+
+    private static void AssertChartSeriesLine(byte[] bytes, string? expectedRgb, string? expectedDash, double? expectedWidthPoints)
+    {
+        var chart = XDocument.Parse(ReadChartXml(bytes));
+        XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+        XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        var line = chart.Descendants(c + "ser").Single().Element(c + "spPr")?.Element(a + "ln");
+        if (expectedRgb is null && expectedDash is null && expectedWidthPoints is null) { Assert.Null(line); return; }
+        Assert.NotNull(line);
+        Assert.Equal(expectedRgb, (string?)line!.Element(a + "solidFill")?.Element(a + "srgbClr")?.Attribute("val"));
+        Assert.Equal(expectedDash, (string?)line.Element(a + "prstDash")?.Attribute("val"));
+        Assert.Equal(expectedWidthPoints is null ? null : Math.Round(expectedWidthPoints.Value * 12_700, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture), (string?)line.Attribute("w"));
     }
 
     private static string ReadChartXml(byte[] bytes)

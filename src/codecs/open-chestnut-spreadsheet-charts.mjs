@@ -1,4 +1,5 @@
-import { SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { SpreadsheetChartLineDashStyle, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -13,6 +14,14 @@ const TYPES_TO_WIRE = new Map([
   ["pie", SpreadsheetChartType.PIE],
 ]);
 const TYPES_FROM_WIRE = new Map([...TYPES_TO_WIRE].map(([name, value]) => [value, name]));
+const LINE_STYLES_TO_WIRE = new Map([
+  ["solid", SpreadsheetChartLineDashStyle.SOLID],
+  ["dashed", SpreadsheetChartLineDashStyle.DASHED],
+  ["dotted", SpreadsheetChartLineDashStyle.DOTTED],
+  ["dash-dot", SpreadsheetChartLineDashStyle.DASH_DOT],
+  ["dash-dot-dot", SpreadsheetChartLineDashStyle.DASH_DOT_DOT],
+]);
+const LINE_STYLES_FROM_WIRE = new Map([...LINE_STYLES_TO_WIRE].map(([name, value]) => [value, name]));
 
 function fail(chart, message, code = "invalid_spreadsheet_chart") {
   throw new OpenChestnutCodecError(`Worksheet chart ${chart?.name || chart?.id || "(unnamed)"} ${message}`, [], { code });
@@ -50,6 +59,37 @@ function seriesFillFromWire(value, name, chart) {
   if (value == null) return undefined;
   if (value.source?.case !== "rgb") fail(chart, `${name} has an unsupported non-RGB fill source.`, "unsupported_spreadsheet_chart");
   return seriesFill(`#${String(value.source.value)}`, name, chart);
+}
+
+function seriesLineSnapshot(series, chart) {
+  try {
+    return normalizeSpreadsheetChartSeriesLine(series);
+  } catch (error) {
+    const message = String(error?.message || error).replace(/^Worksheet chart\s+/, "");
+    const unsupported = /supports only|aliases must describe the same/i.test(message);
+    fail(chart, message, unsupported ? "unsupported_spreadsheet_chart" : "invalid_spreadsheet_chart");
+  }
+}
+
+function seriesLineFromWire(value, name, chart) {
+  if (value == null) return undefined;
+  const output = {};
+  if (value.color != null) {
+    if (value.color.source?.case !== "rgb") fail(chart, `${name} has an unsupported non-RGB color source.`, "unsupported_spreadsheet_chart");
+    output.fill = seriesFill(`#${String(value.color.source.value)}`, `${name}.fill`, chart);
+  }
+  const dashStyle = value.dashStyle ?? SpreadsheetChartLineDashStyle.UNSPECIFIED;
+  if (dashStyle !== SpreadsheetChartLineDashStyle.UNSPECIFIED) {
+    const style = LINE_STYLES_FROM_WIRE.get(dashStyle);
+    if (!style) fail(chart, `${name} has unsupported dash style ${dashStyle}.`, "unsupported_spreadsheet_chart");
+    output.style = style;
+  }
+  if (value.widthPoints != null) {
+    const width = finite(value.widthPoints, `${name}.width`, chart);
+    if (width < 0 || width > SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS) fail(chart, `${name}.width must be from 0 through ${SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS} points.`);
+    output.width = width;
+  }
+  return output;
 }
 
 function textStyleSnapshot(value, name, chart) {
@@ -109,6 +149,7 @@ export function spreadsheetChartSnapshot(chart) {
       categoryFormula: series?.categoryFormula == null ? "" : String(series.categoryFormula),
       formula: series?.formula == null ? "" : String(series.formula),
       fill: series?.fill == null ? null : String(series.fill),
+      line: seriesLineSnapshot(series, chart),
     })),
   };
 }
@@ -200,6 +241,11 @@ function wireChart(chart, original) {
       categoryFormula: series.categoryFormula,
       valueFormula: series.formula,
       fill: series.fill == null ? undefined : { source: { case: "rgb", value: series.fill.slice(1) } },
+      line: series.line == null ? undefined : {
+        color: series.line.fill == null ? undefined : { source: { case: "rgb", value: series.line.fill.slice(1) } },
+        dashStyle: series.line.style == null ? SpreadsheetChartLineDashStyle.UNSPECIFIED : LINE_STYLES_TO_WIRE.get(series.line.style),
+        widthPoints: series.line.width == null ? undefined : series.line.width,
+      },
     })),
     source: original?.source,
   };
@@ -310,6 +356,7 @@ export function spreadsheetChartFromWire(sheet, source) {
   if (!type) fail(source, `has unsupported wire type ${source.type}.`, "unsupported_spreadsheet_chart");
   const sourceSeries = source.series || [];
   const importedFills = sourceSeries.map((series, index) => seriesFillFromWire(series.fill, `series ${index + 1} fill`, source));
+  const importedLines = sourceSeries.map((series, index) => seriesLineFromWire(series.line, `series ${index + 1} line`, source));
   const titleTextStyle = textStyleFromWire(source.titleTextStyle, "titleTextStyle", source);
   const chart = sheet.charts.add(type, {
     name: source.name,
@@ -325,6 +372,7 @@ export function spreadsheetChartFromWire(sheet, source) {
         name: series.name,
         values: [...series.values],
         ...(importedFills[index] == null ? {} : { fill: importedFills[index] }),
+        ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
       };
     }),
   });
@@ -333,6 +381,7 @@ export function spreadsheetChartFromWire(sheet, source) {
     categoryFormula: series.categoryFormula || undefined,
     formula: series.valueFormula || undefined,
     fill: importedFills[index],
+    ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
   }));
   return chart;
 }
