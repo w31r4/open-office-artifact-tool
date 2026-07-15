@@ -2055,6 +2055,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.recalculate` | api | Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
 | `workbook.resolve` | api | Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
+| `workbook.setCalculation` | api | Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
 | `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits. |
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
@@ -4062,6 +4063,7 @@ Create an empty workbook with an explicit date system and optional native Spread
 - `dateSystem` (string) — Excel serial-date system: '1900' (default) or '1904'.
 - `date1904` (boolean) — Boolean alias for dateSystem; true selects the 1904 system.
 - `theme` (object) — Theme name and dk1/lt1/dk2/lt2, accent1-accent6, hlink, and folHlink colors written to xl/theme/theme1.xml.
+- `calculation` (object) — Optional bounded workbook calcPr policy; omitted means no authored calculation-properties element.
 
 **Schema returns:**
 
@@ -4201,6 +4203,41 @@ Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart
 **Schema returns:**
 
 - `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+#### `workbook.setCalculation`
+
+Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy.
+
+**Examples:**
+
+- workbook.setCalculation({ mode: 'automatic', fullCalculationOnLoad: true, forceFullCalculation: true })
+- workbook.setCalculation({ mode: 'manual', iteration: { enabled: true, maxIterations: 100, maxChange: 0.001 } })
+
+**Options:**
+
+- mode
+- calculateOnSave
+- fullCalculationOnLoad
+- forceFullCalculation
+- iteration
+- fullPrecision
+
+**Schema parameters:**
+
+- `mode` (string) — automatic, automaticExceptTables, or manual.
+- `calculateOnSave` (boolean) — Request calculation when a host application saves the workbook.
+- `fullCalculationOnLoad` (boolean) — Request a full calculation when a host application opens the workbook.
+- `forceFullCalculation` (boolean) — Force full rather than dependency-only recalculation.
+- `iteration` (object) — Optional { enabled, maxIterations, maxChange } circular-calculation policy.
+- `fullPrecision` (boolean) — Calculate using stored values rather than displayed precision when true.
+
+**Schema returns:**
+
+- `workbook` (Workbook) — The same workbook with a bounded native workbook.xml calcPr policy.
+
+**Returns:**
+
+Workbook facade with bounded native calcPr policy
 
 #### `workbook.setDateSystem`
 

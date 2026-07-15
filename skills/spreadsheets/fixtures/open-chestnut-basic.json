@@ -4,6 +4,14 @@
   "codec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
   "dateSystem": "1904",
+  "calculation": {
+    "mode": "automaticExceptTables",
+    "calculateOnSave": false,
+    "fullCalculationOnLoad": true,
+    "forceFullCalculation": true,
+    "iteration": { "enabled": true, "maxIterations": 100, "maxChange": 0.001 },
+    "fullPrecision": false
+  },
   "theme": {
     "name": "OpenChestnut Fixture",
     "colors": {

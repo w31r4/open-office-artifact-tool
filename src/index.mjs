@@ -945,6 +945,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.setCalculation", summary: "Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade." },
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitColumns", summary: "Measure displayed range values deterministically and set native best-fit widths on each selected column." },
@@ -1239,6 +1240,11 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["workbook.definedNames.add('RevenueData', 'Sheet1!G2:G4')", "sheet.getRange('E3').formulas = [['=SUM(RevenueData)']]"] ,
     options: ["name", "refersTo", "scope/sheetName", "comment", "hidden"],
     returns: "DefinedName facade with id/name/refersTo/scope",
+  },
+  "workbook.setCalculation": {
+    examples: ["workbook.setCalculation({ mode: 'automatic', fullCalculationOnLoad: true, forceFullCalculation: true })", "workbook.setCalculation({ mode: 'manual', iteration: { enabled: true, maxIterations: 100, maxChange: 0.001 } })"],
+    options: ["mode", "calculateOnSave", "fullCalculationOnLoad", "forceFullCalculation", "iteration", "fullPrecision"],
+    returns: "Workbook facade with bounded native calcPr policy",
   },
   "range.format": {
     examples: ["sheet.getRange('A1:D1').format = { fill: '#0f172a', font: { bold: true }, columnWidth: 18, rowHeight: 24 }", "sheet.getRange('A1:D20').format.columnWidthPx = 120"],
@@ -2127,10 +2133,19 @@ const WORKBOOK_HELP_SCHEMAS = {
     dateSystem: { type: "string", description: "Excel serial-date system: '1900' (default) or '1904'." },
     date1904: { type: "boolean", description: "Boolean alias for dateSystem; true selects the 1904 system." },
     theme: { type: "object", description: "Theme name and dk1/lt1/dk2/lt2, accent1-accent6, hlink, and folHlink colors written to xl/theme/theme1.xml." },
+    calculation: { type: "object", description: "Optional bounded workbook calcPr policy; omitted means no authored calculation-properties element." },
   }, "workbook", "Workbook", "Empty editable workbook facade with a normalized date system."),
   "workbook.setDateSystem": helpSchema({
     dateSystem: { type: "string|boolean", required: true, description: "'1900' or false for the 1900 system; '1904' or true for the 1904 system." },
   }, "workbook", "Workbook", "The same workbook after changing its formula and OOXML date-system context."),
+  "workbook.setCalculation": helpSchema({
+    mode: { type: "string", description: "automatic, automaticExceptTables, or manual." },
+    calculateOnSave: { type: "boolean", description: "Request calculation when a host application saves the workbook." },
+    fullCalculationOnLoad: { type: "boolean", description: "Request a full calculation when a host application opens the workbook." },
+    forceFullCalculation: { type: "boolean", description: "Force full rather than dependency-only recalculation." },
+    iteration: { type: "object", description: "Optional { enabled, maxIterations, maxChange } circular-calculation policy." },
+    fullPrecision: { type: "boolean", description: "Calculate using stored values rather than displayed precision when true." },
+  }, "workbook", "Workbook", "The same workbook with a bounded native workbook.xml calcPr policy."),
   "workbook.connections": helpSchema({}, "connections", "object[]", "Recognized source-bound database/type-5 connection roots. ID, type, version, count, and order are immutable; provider strings, commands, credentials, source paths, children, extensions, and unsupported types remain hidden and preserved."),
   "workbook.worksheets.add": helpSchema({
     name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
@@ -3787,6 +3802,48 @@ function normalizeExcelDateSystem(value, fallback = "1900") {
   throw new Error(`Unsupported Excel date system ${value}; expected 1900 or 1904.`);
 }
 
+const WORKBOOK_CALCULATION_MODES = new Map([
+  ["auto", "automatic"],
+  ["automatic", "automatic"],
+  ["autonotable", "automaticExceptTables"],
+  ["automaticexcepttables", "automaticExceptTables"],
+  ["manual", "manual"],
+]);
+const WORKBOOK_CALCULATION_MAX_ITERATIONS = 1_000_000;
+const WORKBOOK_CALCULATION_MAX_CHANGE = 1_000_000_000;
+
+function normalizeWorkbookCalculation(value) {
+  if (value == null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("Workbook calculation settings must be an object.");
+  const result = {};
+  if (value.mode != null && value.mode !== "") {
+    const mode = WORKBOOK_CALCULATION_MODES.get(String(value.mode).replace(/[\s_-]/g, "").toLowerCase());
+    if (!mode) throw new Error(`Unsupported workbook calculation mode ${value.mode}; expected automatic, automaticExceptTables, or manual.`);
+    result.mode = mode;
+  }
+  for (const field of ["calculateOnSave", "fullCalculationOnLoad", "forceFullCalculation", "fullPrecision"])
+    if (value[field] !== undefined) result[field] = Boolean(value[field]);
+  const sourceIteration = value.iteration;
+  if (sourceIteration != null && (typeof sourceIteration !== "object" || Array.isArray(sourceIteration))) throw new Error("Workbook calculation iteration settings must be an object.");
+  const iteration = {};
+  const enabled = sourceIteration?.enabled ?? value.iterationEnabled ?? value.iterate;
+  const maxIterations = sourceIteration?.maxIterations ?? value.maxIterations ?? value.iterateCount;
+  const maxChange = sourceIteration?.maxChange ?? value.maxChange ?? value.iterateDelta;
+  if (enabled !== undefined) iteration.enabled = Boolean(enabled);
+  if (maxIterations !== undefined) {
+    const number = Number(maxIterations);
+    if (!Number.isInteger(number) || number < 1 || number > WORKBOOK_CALCULATION_MAX_ITERATIONS) throw new Error(`Workbook maximum calculation iterations must be an integer from 1 to ${WORKBOOK_CALCULATION_MAX_ITERATIONS}.`);
+    iteration.maxIterations = number;
+  }
+  if (maxChange !== undefined) {
+    const number = Number(maxChange);
+    if (!Number.isFinite(number) || number <= 0 || number > WORKBOOK_CALCULATION_MAX_CHANGE) throw new Error(`Workbook maximum calculation change must be greater than zero and at most ${WORKBOOK_CALCULATION_MAX_CHANGE}.`);
+    iteration.maxChange = number;
+  }
+  if (Object.keys(iteration).length) result.iteration = iteration;
+  return result;
+}
+
 const WORKBOOK_CONNECTION_BOOLEAN_FIELDS = ["keepAlive", "background", "refreshOnLoad", "saveData"];
 
 function normalizeWorkbookConnection(value = {}) {
@@ -3810,6 +3867,7 @@ export class Workbook {
     this.theme = normalizeXlsxThemeConfig(options.theme || {});
     this.indexedColors = Array.isArray(options.indexedColors) ? [...options.indexedColors] : undefined;
     this.connections = Array.isArray(options.connections) ? options.connections.map(normalizeWorkbookConnection) : [];
+    this.calculation = options.calculation === undefined ? undefined : normalizeWorkbookCalculation(options.calculation);
     this.worksheets = new WorksheetCollection(this);
     this.comments = new CommentsCollection(this);
     this.definedNames = new DefinedNameCollection(this);
@@ -3826,6 +3884,11 @@ export class Workbook {
 
   setTheme(theme = {}) {
     this.theme = normalizeXlsxThemeConfig(theme);
+    return this;
+  }
+
+  setCalculation(calculation) {
+    this.calculation = calculation == null ? undefined : normalizeWorkbookCalculation(calculation);
     return this;
   }
 
@@ -3909,7 +3972,7 @@ export class Workbook {
     const kinds = normalizeKinds(options.kind, ["workbook", "sheet", "table", "formula"]);
     const records = [];
     const graph = (kinds.has("formula") || kinds.has("formulaGraph") || kinds.has("formulaNode") || kinds.has("formulaEdge") || kinds.has("formulaCycle")) ? this.formulaGraph({ ...options, recalculate: false, maxChars: Infinity }) : null;
-    if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904", theme: this.theme.name });
+    if (kinds.has("workbook")) records.push({ kind: "workbook", id: this.id, sheets: this.worksheets.items.length, dateSystem: this.dateSystem, date1904: this.dateSystem === "1904", theme: this.theme.name, calculation: this.calculation });
     if (kinds.has("theme")) records.push({ kind: "workbookTheme", id: `${this.id}/theme`, name: this.theme.name, colors: this.theme.colors });
     if (kinds.has("connection") || kinds.has("externalConnection")) records.push(...this.connections.map((connection) => ({ kind: "connection", id: `connection/${connection.connectionId}`, ...connection })));
     for (const sheet of this.worksheets) {
@@ -3939,6 +4002,8 @@ export class Workbook {
     const graph = this.formulaGraph({ recalculate: false, maxChars: Infinity });
     const issues = [];
     if (this.dateSystem !== "1900" && this.dateSystem !== "1904") issues.push(verificationIssue("workbook", "invalidDateSystem", `Workbook date system ${this.dateSystem} is invalid; expected 1900 or 1904.`, { dateSystem: this.dateSystem }));
+    try { if (this.calculation !== undefined) normalizeWorkbookCalculation(this.calculation); }
+    catch (error) { issues.push(verificationIssue("workbook", "invalidCalculation", error.message, { calculation: this.calculation })); }
     if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
     const connectionIds = new Set();
     for (const connection of this.connections) {
@@ -6359,6 +6424,7 @@ function workbookMetadata(workbook) {
   return {
     version: 1,
     dateSystem: workbook.dateSystem,
+    calculation: workbook.calculation,
     theme: workbook.theme,
     indexedColors: workbook.indexedColors,
     comments: workbook.comments.toJSON(),
@@ -6377,6 +6443,7 @@ function workbookMetadata(workbook) {
 }
 
 function applyWorkbookMetadata(workbook, metadata = {}) {
+  if (Object.prototype.hasOwnProperty.call(metadata, "calculation")) workbook.setCalculation(metadata.calculation);
   if (metadata.theme) workbook.setTheme(metadata.theme);
   if (Array.isArray(metadata.indexedColors)) workbook.indexedColors = [...metadata.indexedColors];
   workbook.definedNames.items = [];
@@ -6581,6 +6648,7 @@ export class SpreadsheetFile {
     }
     hydrateImportedWorksheetCharts(workbook);
     parseWorkbookDefinedNames(workbook, workbookText);
+    parseWorkbookCalculation(workbook, workbookText);
     const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
     if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
     else await importNativeThreadedComments(workbook, zip, "xl/workbook.xml", workbookRelationshipRecords, sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]);
@@ -6788,8 +6856,47 @@ function workbookXml(workbook, pivotParts = []) {
       return `<definedName name="${attrEscape(item.name)}"${localSheetId >= 0 ? ` localSheetId="${localSheetId}"` : ""}${comment}${hidden}>${xmlEscape(item.refersTo)}</definedName>`;
     }).join("")}</definedNames>`
     : "";
+  const calculation = workbookCalculationXml(workbook.calculation);
   const pivotCaches = pivotParts.length ? `<pivotCaches>${pivotParts.map((part) => `<pivotCache cacheId="${part.cacheId}" r:id="${part.cacheRelId}"/>`).join("")}</pivotCaches>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${workbookProperties}<sheets>${sheets}</sheets>${definedNames}${pivotCaches}</workbook>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${workbookProperties}<sheets>${sheets}</sheets>${definedNames}${calculation}${pivotCaches}</workbook>`;
+}
+
+function workbookCalculationXml(value) {
+  if (value === undefined) return "";
+  const calculation = normalizeWorkbookCalculation(value);
+  const mode = calculation.mode === "automatic" ? "auto" : calculation.mode === "automaticExceptTables" ? "autoNoTable" : calculation.mode;
+  const attrs = [
+    calculation.mode !== undefined ? `calcMode="${mode}"` : "",
+    calculation.calculateOnSave !== undefined ? `calcOnSave="${calculation.calculateOnSave ? 1 : 0}"` : "",
+    calculation.fullCalculationOnLoad !== undefined ? `fullCalcOnLoad="${calculation.fullCalculationOnLoad ? 1 : 0}"` : "",
+    calculation.forceFullCalculation !== undefined ? `forceFullCalc="${calculation.forceFullCalculation ? 1 : 0}"` : "",
+    calculation.iteration?.enabled !== undefined ? `iterate="${calculation.iteration.enabled ? 1 : 0}"` : "",
+    calculation.iteration?.maxIterations !== undefined ? `iterateCount="${calculation.iteration.maxIterations}"` : "",
+    calculation.iteration?.maxChange !== undefined ? `iterateDelta="${calculation.iteration.maxChange}"` : "",
+    calculation.fullPrecision !== undefined ? `fullPrecision="${calculation.fullPrecision ? 1 : 0}"` : "",
+  ].filter(Boolean).join(" ");
+  return `<calcPr${attrs ? ` ${attrs}` : ""}/>`;
+}
+
+function parseWorkbookCalculation(workbook, xml = "") {
+  const match = /<(?:[A-Za-z_][\w.-]*:)?calcPr\b[^>]*\/?\s*>/.exec(String(xml || ""));
+  if (!match) return;
+  const attrs = ooxmlXmlAttributes(match[0]);
+  if ((attrs.refMode != null && attrs.refMode !== "A1") || attrs.calcCompleted != null || attrs.concurrentCalc != null || attrs.concurrentManualCount != null) return;
+  const calculation = {};
+  if (attrs.calcMode != null) {
+    const mode = { auto: "automatic", autoNoTable: "automaticExceptTables", manual: "manual" }[attrs.calcMode];
+    if (!mode) return;
+    calculation.mode = mode;
+  }
+  for (const [attribute, field] of [["calcOnSave", "calculateOnSave"], ["fullCalcOnLoad", "fullCalculationOnLoad"], ["forceFullCalc", "forceFullCalculation"], ["fullPrecision", "fullPrecision"]])
+    if (attrs[attribute] !== undefined) calculation[field] = xlsxBoolean(attrs[attribute]);
+  const iteration = {};
+  if (attrs.iterate !== undefined) iteration.enabled = xlsxBoolean(attrs.iterate);
+  if (attrs.iterateCount !== undefined) iteration.maxIterations = Number(attrs.iterateCount);
+  if (attrs.iterateDelta !== undefined) iteration.maxChange = Number(attrs.iterateDelta);
+  if (Object.keys(iteration).length) calculation.iteration = iteration;
+  try { workbook.setCalculation(calculation); } catch { /* Unsupported native profiles stay outside the bounded semantic model. */ }
 }
 
 function parseWorkbookDefinedNames(workbook, xml = "") {

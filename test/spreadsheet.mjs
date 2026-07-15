@@ -133,6 +133,28 @@ assert.deepEqual(mutableDateSystemPivot.computedValues(), [["Date", "sum of Amou
 mutableDateSystemBook.setDateSystem("1904");
 assert.deepEqual(mutableDateSystemPivot.computedValues(), [["Date", "sum of Amount"], [0, 10]]);
 
+const calculationBook = Workbook.create({ calculation: { mode: "autoNoTable", calculateOnSave: false, fullCalculationOnLoad: true, forceFullCalculation: true, iteration: { enabled: true, maxIterations: 100, maxChange: 0.001 }, fullPrecision: false } });
+calculationBook.worksheets.add("Calculation").getRange("A1").formulas = [["=1+1"]];
+assert.deepEqual(calculationBook.calculation, {
+  mode: "automaticExceptTables",
+  calculateOnSave: false,
+  fullCalculationOnLoad: true,
+  forceFullCalculation: true,
+  iteration: { enabled: true, maxIterations: 100, maxChange: 0.001 },
+  fullPrecision: false,
+});
+assert.match(calculationBook.help("workbook.setCalculation").ndjson, /automaticExceptTables/);
+assert.match(calculationBook.inspect({ kind: "workbook" }).ndjson, /"calculation":\{"mode":"automaticExceptTables"/);
+const calculationXlsx = await SpreadsheetFile.exportXlsx(calculationBook);
+const calculationZip = await JSZip.loadAsync(calculationXlsx.bytes);
+assert.match(await calculationZip.file("xl/workbook.xml").async("text"), /<calcPr calcMode="autoNoTable" calcOnSave="0" fullCalcOnLoad="1" forceFullCalc="1" iterate="1" iterateCount="100" iterateDelta="0.001" fullPrecision="0"\/>/);
+calculationZip.remove("customXml/open-office-artifact.json");
+const calculationRoundtrip = await SpreadsheetFile.importXlsx(new FileBlob(await calculationZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: calculationXlsx.type }));
+assert.deepEqual(calculationRoundtrip.calculation, calculationBook.calculation);
+assert.throws(() => Workbook.create({ calculation: { mode: "automatic", iteration: { maxIterations: 0 } } }), /maximum calculation iterations/);
+calculationRoundtrip.calculation.iteration.maxChange = 0;
+assert.ok(calculationRoundtrip.verify().issues.some((issue) => issue.type === "invalidCalculation"));
+
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
 sheet.getRange("A1:C3").values = [["A", "B", "Sum"], [2, 3, null], [5, 7, null]];

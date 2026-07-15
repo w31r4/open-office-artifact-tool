@@ -36,6 +36,13 @@ enum WorkbookDateSystem {
   WORKBOOK_DATE_SYSTEM_1904 = 2;
 }
 
+enum SpreadsheetCalculationMode {
+  SPREADSHEET_CALCULATION_MODE_UNSPECIFIED = 0;
+  SPREADSHEET_CALCULATION_MODE_AUTOMATIC = 1;
+  SPREADSHEET_CALCULATION_MODE_AUTOMATIC_EXCEPT_TABLES = 2;
+  SPREADSHEET_CALCULATION_MODE_MANUAL = 3;
+}
+
 message CodecLimits {
   uint64 max_input_bytes = 1;
   uint64 max_uncompressed_bytes = 2;
@@ -150,6 +157,32 @@ message WorkbookArtifact {
   // names, macro attributes, and other advanced profiles remain hidden while
   // source ordinal/count/order stay immutable.
   repeated SpreadsheetDefinedNameArtifact defined_names = 6;
+  // Bounded workbook-level calculation policy from workbook.xml calcPr.
+  // Application/version identity, R1C1 mode, calculation-completed state,
+  // concurrent-calculation controls, and extensions remain source-preserved.
+  SpreadsheetCalculationArtifact calculation = 7;
+}
+
+message SpreadsheetCalculationArtifact {
+  optional SpreadsheetCalculationMode mode = 1;
+  optional bool calculate_on_save = 2;
+  optional bool full_calculation_on_load = 3;
+  optional bool force_full_calculation = 4;
+  optional bool iteration_enabled = 5;
+  optional uint32 max_iterations = 6;
+  optional double max_change = 7;
+  optional bool full_precision = 8;
+  SpreadsheetCalculationSourceBinding source = 9;
+}
+
+// Hash-bound locator for one recognized workbook.xml calcPr element. Element
+// presence is immutable during source-preserving export, while every modeled
+// optional scalar retains native omission versus an explicit default value.
+message SpreadsheetCalculationSourceBinding {
+  string workbook_xml_sha256 = 1;
+  string calculation_xml_sha256 = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
 }
 
 message SpreadsheetDefinedNameArtifact {

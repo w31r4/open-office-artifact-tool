@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -58,6 +58,8 @@ assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { style: { 
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { theme: { accent1Rgb: "0F766E" } }))[0], 0x22, "Spreadsheet workbook themes must use additive workbook field 4.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { connections: [{ connectionId: 7, name: "Warehouse", type: 5, refreshedVersion: 8 }] }))[0], 0x2a, "Spreadsheet workbook connections must use additive workbook field 5.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { definedNames: [{ id: "defined-name/1", name: "Data", refersTo: "Sheet1!A1" }] }))[0], 0x32, "Spreadsheet workbook defined names must use additive workbook field 6.");
+assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { calculation: { mode: 1 } }))[0], 0x3a, "Spreadsheet workbook calculation policy must use additive workbook field 7.");
+assert.deepEqual([...toBinary(SpreadsheetCalculationArtifactSchema, create(SpreadsheetCalculationArtifactSchema, { calculateOnSave: false }))], [0x10, 0x00], "Spreadsheet calculation booleans must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetDefinedNameArtifactSchema, create(SpreadsheetDefinedNameArtifactSchema, { hidden: false }))], [0x30, 0x00], "Spreadsheet defined-name hidden state must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetConnectionArtifactSchema, create(SpreadsheetConnectionArtifactSchema, { keepAlive: false }))], [0x30, 0x00], "Spreadsheet connection booleans must preserve explicit false values.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { tables: [{ name: "Sales" }] }))[0], 0x4a, "Spreadsheet worksheet tables must use additive worksheet field 9.");
@@ -213,6 +215,14 @@ assert.equal(toBinary(PresentationBackgroundSchema, create(PresentationBackgroun
 
 const workbook = Workbook.create({
   dateSystem: "1904",
+  calculation: {
+    mode: "automaticExceptTables",
+    calculateOnSave: false,
+    fullCalculationOnLoad: true,
+    forceFullCalculation: true,
+    iteration: { enabled: true, maxIterations: 100, maxChange: 0.001 },
+    fullPrecision: false,
+  },
   theme: {
     name: "OpenChestnut Theme",
     colors: {
@@ -618,6 +628,7 @@ const imported = await importXlsxWithOpenChestnut(exported);
 assert.equal(imported.dateSystem, "1904");
 assert.equal(imported.theme.name, "OpenChestnut Theme");
 assert.equal(imported.theme.colors.accent1, "#0F766E");
+assert.deepEqual(imported.calculation, workbook.calculation);
 assert.equal(imported.worksheets.items.length, 5);
 assert.deepEqual(imported.definedNames.toJSON(), [
   { id: "defined-name/1", name: "SummaryData", refersTo: "Summary!$A$1:$B$2", scope: undefined, comment: "Summary data body", hidden: false },
@@ -675,6 +686,7 @@ const javascriptImported = await SpreadsheetFile.importXlsx(exported);
 assert.equal(javascriptImported.dateSystem, "1904");
 assert.equal(javascriptImported.theme.name, "OpenChestnut Theme");
 assert.equal(javascriptImported.theme.colors.accent1, "#0F766E");
+assert.deepEqual(javascriptImported.calculation, workbook.calculation);
 assert.equal(javascriptImported.worksheets.items.length, 5);
 assert.deepEqual(javascriptImported.definedNames.items.map((item) => item.toJSON()), [
   { id: javascriptImported.definedNames.items[0].id, name: "SummaryData", refersTo: "Summary!$A$1:$B$2", scope: undefined, comment: "Summary data body", hidden: false },
@@ -703,6 +715,7 @@ assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").for
 imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat = "$#,##0.00";
 Object.assign(imported.definedNames.getItem("SummaryData"), { name: "SummaryRange", refersTo: "Summary!$B$1:$B$2", comment: "Updated summary range", hidden: true });
 imported.setTheme({ name: "OpenChestnut Edited", colors: { ...imported.theme.colors, accent2: "#22C55E" } });
+imported.setCalculation({ ...imported.calculation, mode: "manual", forceFullCalculation: false, iteration: { ...imported.calculation.iteration, maxIterations: 250, maxChange: 0.0001 } });
 imported.worksheets.getItem("Summary").getRange("A1").format = {
   ...imported.worksheets.getItem("Summary").getRange("A1").format,
   fill: "#22C55E",
@@ -745,6 +758,14 @@ const secondImported = await importXlsxWithOpenChestnut(secondExport);
 assert.equal(secondImported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "$#,##0.00");
 assert.equal(secondImported.theme.name, "OpenChestnut Edited");
 assert.equal(secondImported.theme.colors.accent2, "#22C55E");
+assert.deepEqual(secondImported.calculation, {
+  mode: "manual",
+  calculateOnSave: false,
+  fullCalculationOnLoad: true,
+  forceFullCalculation: false,
+  iteration: { enabled: true, maxIterations: 250, maxChange: 0.0001 },
+  fullPrecision: false,
+});
 assert.deepEqual(secondImported.definedNames.getItem("SummaryRange").toJSON(), {
   id: "defined-name/1",
   name: "SummaryRange",
@@ -758,6 +779,12 @@ removedDefinedName.definedNames.delete("SummaryData");
 await assert.rejects(
   exportXlsxWithOpenChestnut(removedDefinedName, { recalculate: false }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_defined_name" && /cannot remove imported defined name/i.test(error.message),
+);
+const removedCalculation = await importXlsxWithOpenChestnut(exported);
+removedCalculation.setCalculation(undefined);
+await assert.rejects(
+  exportXlsxWithOpenChestnut(removedCalculation, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_workbook_calculation" && /cannot remove imported calculation/i.test(error.message),
 );
 assert.equal(secondImported.worksheets.getItem("Summary").getRange("A1").format.fill, "#22C55E");
 assert.equal(secondImported.worksheets.getItem("Summary").getRange("A1").format.font.bold, false);

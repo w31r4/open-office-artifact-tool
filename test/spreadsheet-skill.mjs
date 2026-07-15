@@ -172,6 +172,14 @@ try {
   assert.equal(wasmResult.qa.summary.renderFormat, "png");
   const wasmWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(wasmResult.workbookPath));
   assert.equal(wasmWorkbook.dateSystem, "1904");
+  assert.deepEqual(wasmWorkbook.calculation, {
+    mode: "automaticExceptTables",
+    calculateOnSave: false,
+    fullCalculationOnLoad: true,
+    forceFullCalculation: true,
+    iteration: { enabled: true, maxIterations: 100, maxChange: 0.001 },
+    fullPrecision: false,
+  });
   assert.equal(wasmWorkbook.theme.name, "OpenChestnut Fixture");
   assert.equal(wasmWorkbook.theme.colors.accent1, "#0F766E");
   assert.deepEqual(wasmWorkbook.definedNames.items.map((item) => ({ name: item.name, refersTo: item.refersTo, scope: item.scope, comment: item.comment, hidden: item.hidden })), [

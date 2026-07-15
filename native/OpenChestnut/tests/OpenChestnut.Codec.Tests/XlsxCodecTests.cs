@@ -59,6 +59,118 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesWorkbookCalculationPolicy()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Calculation = new SpreadsheetCalculationArtifact
+        {
+            Mode = SpreadsheetCalculationMode.AutomaticExceptTables,
+            CalculateOnSave = false,
+            FullCalculationOnLoad = true,
+            ForceFullCalculation = true,
+            IterationEnabled = true,
+            MaxIterations = 100,
+            MaxChange = 0.001,
+            FullPrecision = false,
+        };
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var calculation = document.WorkbookPart!.Workbook!.CalculationProperties!;
+            Assert.Equal(CalculateModeValues.AutoNoTable, calculation.CalculationMode?.Value);
+            Assert.False(calculation.CalculationOnSave!.Value);
+            Assert.True(calculation.FullCalculationOnLoad!.Value);
+            Assert.True(calculation.ForceFullCalculation!.Value);
+            Assert.True(calculation.Iterate!.Value);
+            Assert.Equal(100U, calculation.IterateCount?.Value);
+            Assert.Equal(0.001, calculation.IterateDelta?.Value);
+            Assert.False(calculation.FullPrecision!.Value);
+        }
+
+        var source = SetCalculationProfile(authored.File.ToByteArray(), calculation => calculation.CalculationId = 191029U);
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var policy = imported.Artifact.Workbook.Calculation;
+        Assert.NotNull(policy);
+        Assert.Equal(SpreadsheetCalculationMode.AutomaticExceptTables, policy.Mode);
+        Assert.True(policy.HasCalculateOnSave);
+        Assert.False(policy.CalculateOnSave);
+        Assert.Equal(100U, policy.MaxIterations);
+        Assert.Equal(0.001, policy.MaxChange);
+        Assert.True(policy.Source.Editable);
+        Assert.Equal(64, policy.Source.WorkbookXmlSha256.Length);
+
+        policy.Mode = SpreadsheetCalculationMode.Manual;
+        policy.ForceFullCalculation = false;
+        policy.MaxIterations = 250;
+        policy.MaxChange = 0.0001;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        using var preservedStream = new MemoryStream(preserved.File.ToByteArray());
+        using var preservedDocument = SpreadsheetDocument.Open(preservedStream, false);
+        var edited = preservedDocument.WorkbookPart!.Workbook!.CalculationProperties!;
+        Assert.Equal(191029U, edited.CalculationId?.Value);
+        Assert.Equal(CalculateModeValues.Manual, edited.CalculationMode?.Value);
+        Assert.False(edited.ForceFullCalculation!.Value);
+        Assert.Equal(250U, edited.IterateCount?.Value);
+        Assert.Equal(0.0001, edited.IterateDelta?.Value);
+    }
+
+    [Fact]
+    public void WorkbookCalculationPolicyRejectsInvalidTopologyAndPreservesOpaqueProfiles()
+    {
+        var invalid = ExportRequest();
+        invalid.Artifact.Workbook.Calculation = new SpreadsheetCalculationArtifact { Mode = SpreadsheetCalculationMode.Automatic, MaxIterations = 0 };
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalid.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_calculation", Assert.Single(response.Diagnostics).Code);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var absent = Import(authored.File.ToByteArray());
+        absent.Artifact.Workbook.Calculation = new SpreadsheetCalculationArtifact { Mode = SpreadsheetCalculationMode.Automatic };
+        response = Export(absent.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("cannot add", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        var boundedRequest = ExportRequest();
+        boundedRequest.Artifact.Workbook.Calculation = new SpreadsheetCalculationArtifact { Mode = SpreadsheetCalculationMode.Automatic };
+        var boundedSource = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(boundedRequest.ToByteArray()));
+        var bounded = Import(boundedSource.File.ToByteArray());
+        bounded.Artifact.Workbook.Calculation.Source.CalculationXmlSha256 = new string('0', 64);
+        response = Export(bounded.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("source binding", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        bounded = Import(boundedSource.File.ToByteArray());
+        bounded.Artifact.Workbook.Calculation = null;
+        response = Export(bounded.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("cannot remove", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        var opaqueSource = SetCalculationProfile(authored.File.ToByteArray(), calculation =>
+        {
+            calculation.CalculationMode = CalculateModeValues.Auto;
+            calculation.ReferenceMode = ReferenceModeValues.R1C1;
+            calculation.CalculationId = 191029U;
+        });
+        var opaqueXml = ReadCalculationXml(opaqueSource);
+        var opaque = Import(opaqueSource);
+        Assert.True(opaque.Ok, string.Join("\n", opaque.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Null(opaque.Artifact.Workbook.Calculation);
+        var roundtrip = Export(opaque.Artifact);
+        Assert.True(roundtrip.Ok, string.Join("\n", roundtrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(opaqueXml, ReadCalculationXml(roundtrip.File.ToByteArray()));
+
+        opaque.Artifact.Workbook.Calculation = new SpreadsheetCalculationArtifact { Mode = SpreadsheetCalculationMode.Manual };
+        response = Export(opaque.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("opaque workbook calculation profile", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ProtocolAuthorsImportsAndPreservesWorkbookAndWorksheetDefinedNames()
     {
         var request = DefinedNameExportRequest();
@@ -2684,6 +2796,29 @@ public sealed class XlsxCodecTests
         using var document = SpreadsheetDocument.Open(stream, false);
         return document.WorkbookPart!.Workbook!.DefinedNames!.Elements<DefinedName>()
             .Single(item => item.Name?.Value == name).OuterXml;
+    }
+
+    private static byte[] SetCalculationProfile(byte[] bytes, Action<CalculationProperties> mutate)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var workbook = document.WorkbookPart!.Workbook!;
+            var calculation = workbook.CalculationProperties ?? new CalculationProperties();
+            workbook.CalculationProperties = calculation;
+            mutate(calculation);
+            workbook.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string ReadCalculationXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.Workbook!.CalculationProperties!.OuterXml;
     }
 
     private static byte[] AddQueryTableGraph(

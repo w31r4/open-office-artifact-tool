@@ -46,6 +46,8 @@ internal static class XlsxCodec
             var styles = new XlsxCellStyleCodec(workbookPart);
             var connections = new XlsxConnectionCodec(workbookPart);
             connections.Apply(envelope.Workbook.Connections, sourceBound: false);
+            var calculation = new XlsxCalculationCodec(workbookPart);
+            calculation.Apply(envelope.Workbook.Calculation, sourceBound: false);
             var sheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sheetNames);
             var nextTableId = 1U;
@@ -106,6 +108,8 @@ internal static class XlsxCodec
             throw new CodecException("sheet_budget_exceeded", $"XLSX workbook has {sheets.Length} sheets and exceeds max_sheets ({limits.MaxSheets}).");
         var definedNames = new XlsxDefinedNameCodec(workbookPart, sheets.Select((sheet, index) => sheet.Name?.Value ?? $"Sheet{index + 1}").ToArray());
         workbook.DefinedNames.Add(definedNames.Read());
+        var calculation = new XlsxCalculationCodec(workbookPart);
+        if (calculation.Read() is { } importedCalculation) workbook.Calculation = importedCalculation;
 
         ulong cellCount = 0;
         for (var index = 0; index < sheets.Length; index++)
@@ -155,6 +159,7 @@ internal static class XlsxCodec
             var sourceSheetNames = sheets.Select((sheet, index) => sheet.Name?.Value ?? $"Sheet{index + 1}").ToArray();
             var targetSheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sourceSheetNames);
+            var calculation = new XlsxCalculationCodec(workbookPart);
 
             if (workbookRoot.WorkbookProperties is null)
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
@@ -181,6 +186,7 @@ internal static class XlsxCodec
                 worksheetPart.Worksheet!.Save();
             }
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: true, targetSheetNames);
+            calculation.Apply(envelope.Workbook.Calculation, sourceBound: true);
             connections.Save();
             if (connections.Dirty) dirtyModeledPartPaths.Add(connections.Path);
             theme.Save();

@@ -9,6 +9,7 @@ import {
   CodecRequestSchema,
   CodecResponseSchema,
   DocumentTableVerticalMerge,
+  SpreadsheetCalculationMode,
   WorkbookDateSystem,
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
@@ -558,6 +559,70 @@ function wireWorkbookDefinedNames(workbook, state) {
   return output;
 }
 
+function publicWorkbookCalculation(value) {
+  if (!value) return undefined;
+  const calculation = {};
+  if (value.mode !== undefined) {
+    calculation.mode = value.mode === SpreadsheetCalculationMode.AUTOMATIC ? "automatic"
+      : value.mode === SpreadsheetCalculationMode.AUTOMATIC_EXCEPT_TABLES ? "automaticExceptTables"
+      : value.mode === SpreadsheetCalculationMode.MANUAL ? "manual" : undefined;
+    if (!calculation.mode) throw new OpenChestnutCodecError("OpenChestnut returned an unsupported workbook calculation mode.", [], { code: "invalid_workbook_calculation" });
+  }
+  for (const [wireField, publicField] of [["calculateOnSave", "calculateOnSave"], ["fullCalculationOnLoad", "fullCalculationOnLoad"], ["forceFullCalculation", "forceFullCalculation"], ["fullPrecision", "fullPrecision"]])
+    if (value[wireField] !== undefined) calculation[publicField] = Boolean(value[wireField]);
+  const iteration = {};
+  if (value.iterationEnabled !== undefined) iteration.enabled = Boolean(value.iterationEnabled);
+  if (value.maxIterations !== undefined) iteration.maxIterations = value.maxIterations;
+  if (value.maxChange !== undefined) iteration.maxChange = value.maxChange;
+  if (Object.keys(iteration).length) calculation.iteration = iteration;
+  return calculation;
+}
+
+function calculationSnapshot(value) {
+  if (value === undefined) return undefined;
+  return {
+    ...(value.mode !== undefined ? { mode: value.mode } : {}),
+    ...(value.calculateOnSave !== undefined ? { calculateOnSave: Boolean(value.calculateOnSave) } : {}),
+    ...(value.fullCalculationOnLoad !== undefined ? { fullCalculationOnLoad: Boolean(value.fullCalculationOnLoad) } : {}),
+    ...(value.forceFullCalculation !== undefined ? { forceFullCalculation: Boolean(value.forceFullCalculation) } : {}),
+    ...(value.iteration ? { iteration: {
+      ...(value.iteration.enabled !== undefined ? { enabled: Boolean(value.iteration.enabled) } : {}),
+      ...(value.iteration.maxIterations !== undefined ? { maxIterations: Number(value.iteration.maxIterations) } : {}),
+      ...(value.iteration.maxChange !== undefined ? { maxChange: Number(value.iteration.maxChange) } : {}),
+    } } : {}),
+    ...(value.fullPrecision !== undefined ? { fullPrecision: Boolean(value.fullPrecision) } : {}),
+  };
+}
+
+function wireWorkbookCalculation(value, source) {
+  if (value === undefined) return undefined;
+  const calculation = calculationSnapshot(value);
+  const mode = calculation.mode === "automatic" ? SpreadsheetCalculationMode.AUTOMATIC
+    : calculation.mode === "automaticExceptTables" ? SpreadsheetCalculationMode.AUTOMATIC_EXCEPT_TABLES
+    : calculation.mode === "manual" ? SpreadsheetCalculationMode.MANUAL : undefined;
+  if (calculation.mode !== undefined && mode === undefined) throw new OpenChestnutCodecError(`Unsupported workbook calculation mode ${calculation.mode}.`, [], { code: "invalid_workbook_calculation" });
+  return {
+    ...(mode !== undefined ? { mode } : {}),
+    ...(calculation.calculateOnSave !== undefined ? { calculateOnSave: calculation.calculateOnSave } : {}),
+    ...(calculation.fullCalculationOnLoad !== undefined ? { fullCalculationOnLoad: calculation.fullCalculationOnLoad } : {}),
+    ...(calculation.forceFullCalculation !== undefined ? { forceFullCalculation: calculation.forceFullCalculation } : {}),
+    ...(calculation.iteration?.enabled !== undefined ? { iterationEnabled: calculation.iteration.enabled } : {}),
+    ...(calculation.iteration?.maxIterations !== undefined ? { maxIterations: calculation.iteration.maxIterations } : {}),
+    ...(calculation.iteration?.maxChange !== undefined ? { maxChange: calculation.iteration.maxChange } : {}),
+    ...(calculation.fullPrecision !== undefined ? { fullPrecision: calculation.fullPrecision } : {}),
+    source,
+  };
+}
+
+function wireWorkbookCalculationForExport(workbook, state) {
+  const slot = state?.calculationSlot;
+  if (!slot) return wireWorkbookCalculation(workbook.calculation);
+  if (workbook.calculation === undefined) throw new OpenChestnutCodecError("Workbook cannot remove imported calculation properties in the bounded OpenChestnut slice.", [], { code: "invalid_workbook_calculation" });
+  return JSON.stringify(calculationSnapshot(workbook.calculation)) === JSON.stringify(slot.publicSnapshot)
+    ? slot.wire
+    : wireWorkbookCalculation(workbook.calculation, slot.wire.source);
+}
+
 function tableColumnNames(table) {
   let bounds;
   try {
@@ -951,6 +1016,7 @@ function workbookEnvelope(workbook) {
         theme,
         connections: wireWorkbookConnections(workbook, state),
         definedNames: wireWorkbookDefinedNames(workbook, state),
+        calculation: wireWorkbookCalculationForExport(workbook, state),
         worksheets: workbook.worksheets.items.map((sheet) => ({
           id: sheet.id,
           name: sheet.name,
@@ -1001,10 +1067,12 @@ function workbookFromEnvelope(envelope) {
   const source = envelope.payload.value;
   const importedTheme = workbookThemeFromWire(source.theme);
   const importedConnections = (source.connections || []).map(publicWorkbookConnection);
+  const importedCalculation = publicWorkbookCalculation(source.calculation);
   const workbook = Workbook.create({
     dateSystem: source.dateSystem === WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 ? "1904" : "1900",
     ...(importedTheme ? { theme: importedTheme } : {}),
     connections: importedConnections,
+    ...(importedCalculation !== undefined ? { calculation: importedCalculation } : {}),
   });
   workbook.id = source.id || workbook.id;
   const tablesBySheet = new Map();
@@ -1083,6 +1151,7 @@ function workbookFromEnvelope(envelope) {
     definedName: workbook.definedNames.items[index],
     publicSnapshot: definedNameSnapshot(workbook.definedNames.items[index]),
   }));
+  const calculationSlot = source.calculation ? { wire: source.calculation, publicSnapshot: calculationSnapshot(workbook.calculation) } : undefined;
   Object.defineProperty(workbook, WORKBOOK_STATE, {
     configurable: true,
     value: {
@@ -1093,6 +1162,7 @@ function workbookFromEnvelope(envelope) {
       publicTheme: normalizeXlsxThemeConfig(workbook.theme),
       connectionSlots,
       definedNameSlots,
+      calculationSlot,
       tablesBySheet,
     },
     writable: true,
