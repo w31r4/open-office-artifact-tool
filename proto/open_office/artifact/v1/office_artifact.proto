@@ -129,6 +129,10 @@ message SourcePackageSnapshot {
   string sha256 = 2;
 }
 
+// Public metadata for one source OPC part. Imported parts always carry their
+// resolved content type and source-local outgoing relationships. When a
+// SourcePackageSnapshot is present, data stays empty to avoid duplicating the
+// package bytes; sha256 binds this metadata to the preserved source entry.
 message OpaqueOpcPart {
   string path = 1;
   string content_type = 2;

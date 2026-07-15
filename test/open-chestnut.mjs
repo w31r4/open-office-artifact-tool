@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -14,6 +14,7 @@ import {
   importDocxWithOpenChestnut,
   importPptxWithOpenChestnut,
   importXlsxWithOpenChestnut,
+  invokeOpenChestnut,
   openChestnutStatus,
 } from "../src/codecs/open-chestnut.mjs";
 import { spreadsheetChartFromWire } from "../src/codecs/open-chestnut-spreadsheet-charts.mjs";
@@ -48,6 +49,21 @@ async function addQueryTableGraph(bytes) {
   zip.file("xl/tables/_rels/table1.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/></Relationships>');
   zip.file("xl/connections.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture"><x:connection id="7" name="Fixture warehouse" description="Read-only warehouse source" type="5" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="0" saveData="1" savePassword="0" credentials="integrated"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Status, Value FROM Metrics" commandType="2"/><x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst></x:connection><x:connection id="8" name="Opaque companion" type="1" refreshedVersion="8"><x:dbPr connection="Provider=Opaque.Provider;Data Source=opaque.invalid" command="SELECT 1" commandType="2"/></x:connection></x:connections>');
   zip.file("xl/queryTables/queryTable1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse metrics" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Status" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField><x:queryTableField id="2" name="Value" dataBound="1" tableColumnId="2"/></x:queryTableFields><x:queryTableDeletedFields count="2"><x:deletedField name="Legacy Status"/><x:deletedField name="Legacy Value"/></x:queryTableDeletedFields><x:sortState ref="A2:B3" caseSensitive="1" sortMethod="stroke"><x:sortCondition ref="B2:B3" descending="1" customList="ready,pending"/><x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="0"/><x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:opaque value="kept"/></x:ext></x:extLst></x:queryTable>');
+  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+async function addOpaqueOpcGraph(bytes) {
+  const zip = await JSZip.loadAsync(bytes);
+  const contentTypesPath = "[Content_Types].xml";
+  const contentTypes = await zip.file(contentTypesPath).async("text");
+  const updatedContentTypes = contentTypes.replace(
+    "</Types>",
+    '<Override PartName="/xl/custom/native.xml" ContentType="application/vnd.open-office-artifact-tool.native+xml"/></Types>',
+  );
+  assert.notEqual(updatedContentTypes, contentTypes, "fixture must register the custom OPC part content type");
+  zip.file(contentTypesPath, updatedContentTypes);
+  zip.file("xl/custom/native.xml", '<native xmlns="urn:open-office-artifact-tool:native">preserve me</native>');
+  zip.file("xl/custom/_rels/native.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdPayload" Type="urn:open-office-artifact-tool:native-payload" Target="https://example.invalid/native-payload" TargetMode="External"/></Relationships>');
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
@@ -1852,6 +1868,34 @@ const preservedZip = await JSZip.loadAsync(preserved.bytes);
 assert.match(await preservedZip.file(relationshipPath).async("text"), /Id="rIdExternal"[^>]*Target="https:\/\/example\.invalid\/data"/);
 const preservedImported = await importXlsxWithOpenChestnut(preserved);
 assert.equal(preservedImported.worksheets.getItem("Summary").getRange("B1").values[0][0], 99);
+
+const opaqueGraphResponse = await invokeOpenChestnut({
+  protocolVersion: 1,
+  operation: CodecOperation.IMPORT_XLSX,
+  family: ArtifactFamily.WORKBOOK,
+  file: await addOpaqueOpcGraph(exported.bytes),
+});
+const nativeOpaquePart = opaqueGraphResponse.artifact.opaqueOpc.parts.find((part) => part.path === "xl/custom/native.xml");
+assert.ok(nativeOpaquePart, "bundled WASM import must expose the custom OPC part");
+assert.equal(nativeOpaquePart.contentType, "application/vnd.open-office-artifact-tool.native+xml");
+assert.equal(nativeOpaquePart.data.length, 0, "source-backed opaque parts must not duplicate package bytes");
+const nativeOutgoingRelationship = nativeOpaquePart.relationships.find((relationship) => relationship.id === "rIdPayload");
+assert.ok(nativeOutgoingRelationship, "bundled WASM import must expose source-local OPC relationship adjacency");
+assert.equal(nativeOutgoingRelationship.sourcePath, nativeOpaquePart.path);
+assert.equal(nativeOutgoingRelationship.target, "https://example.invalid/native-payload");
+assert.ok(opaqueGraphResponse.artifact.opaqueOpc.packageRelationships.some((relationship) =>
+  relationship.sourcePath === nativeOpaquePart.path && relationship.id === nativeOutgoingRelationship.id));
+nativeOutgoingRelationship.target = "https://example.invalid/tampered";
+await assert.rejects(
+  invokeOpenChestnut({
+    protocolVersion: 1,
+    operation: CodecOperation.EXPORT_XLSX,
+    family: ArtifactFamily.WORKBOOK,
+    artifact: opaqueGraphResponse.artifact,
+  }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "source_package_graph_mismatch",
+  "the bundled runtime must bind per-part relationship metadata to the source snapshot",
+);
 
 await assert.rejects(
   importXlsxWithOpenChestnut(exported, { limits: { maxInputBytes: 16 } }),

@@ -121,6 +121,8 @@ internal sealed class OpcPackageProfile
 
 internal static class PackageGuards
 {
+    private const string ContentTypesNamespace = "http://schemas.openxmlformats.org/package/2006/content-types";
+
     internal static OpaqueOpcGraph ValidateAndCollectOpaque(byte[] bytes, EffectiveCodecLimits limits, OpcPackageProfile profile, bool includeSourcePackage = true)
     {
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
@@ -151,6 +153,11 @@ internal static class PackageGuards
                     if (ratio > limits.MaxCompressionRatio)
                         throw new CodecException("compression_ratio_exceeded", $"{profile.Format} part {entry.FullName} has compression ratio {ratio}, above max_compression_ratio ({limits.MaxCompressionRatio}).", entry.FullName);
                 }
+            }
+
+            var contentTypes = ReadContentTypes(archive, profile);
+            foreach (var entry in archive.Entries)
+            {
 
                 if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;
                 using var partStream = entry.Open();
@@ -163,8 +170,15 @@ internal static class PackageGuards
                 opaque.Parts.Add(new OpaqueOpcPart
                 {
                     Path = entry.FullName,
+                    ContentType = contentTypes.ForPart(entry.FullName, profile),
                     Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
                 });
+            }
+            var partByPath = opaque.Parts.ToDictionary(part => part.Path, StringComparer.OrdinalIgnoreCase);
+            foreach (var relationship in opaque.PackageRelationships)
+            {
+                if (partByPath.TryGetValue(relationship.SourcePath, out var sourcePart))
+                    sourcePart.Relationships.Add(relationship.Clone());
             }
             if (includeSourcePackage)
             {
@@ -257,7 +271,10 @@ internal static class PackageGuards
                 throw new CodecException("opaque_part_hash_mismatch", $"Opaque part {part.Path} does not match its recorded hash.", part.Path);
             hash = dataHash;
         }
-        return $"{part.Path}\0{hash.ToLowerInvariant()}";
+        var relationships = part.Relationships
+            .Select(RelationshipSignature)
+            .OrderBy(item => item, StringComparer.Ordinal);
+        return $"{part.Path}\0{part.ContentType.ToLowerInvariant()}\0{hash.ToLowerInvariant()}\0{string.Join('\u0001', relationships)}";
     }
 
     private static string RelationshipSignature(OpaqueOpcRelationship relationship) =>
@@ -305,6 +322,111 @@ internal static class PackageGuards
         var directory = relationshipPath[..marker];
         var fileName = relationshipPath[(marker + "/_rels/".Length)..^".rels".Length];
         return directory.Length == 0 ? fileName : $"{directory}/{fileName}";
+    }
+
+    private static OpcContentTypes ReadContentTypes(ZipArchive archive, OpcPackageProfile profile)
+    {
+        var entry = archive.Entries.FirstOrDefault(item => item.FullName.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase)) ??
+            throw new CodecException("missing_content_types", $"{profile.Format} package is missing [Content_Types].xml.", "[Content_Types].xml");
+        try
+        {
+            using var stream = entry.Open();
+            using var reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+            var document = XDocument.Load(reader, LoadOptions.None);
+            var root = document.Root;
+            if (root is null || root.Name.LocalName != "Types" || root.Name.NamespaceName != ContentTypesNamespace)
+                throw InvalidContentTypes("Content-types manifest has an invalid root element.");
+
+            var defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var overrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var element in root.Elements())
+            {
+                if (element.Name.NamespaceName != ContentTypesNamespace || element.HasElements ||
+                    element.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+                    throw InvalidContentTypes("Content-types manifest contains an unsupported child.");
+                switch (element.Name.LocalName)
+                {
+                    case "Default":
+                    {
+                        if (HasUnexpectedAttributes(element, "Extension", "ContentType"))
+                            throw InvalidContentTypes("Content-types Default contains unsupported attributes.");
+                        var extension = element.Attribute("Extension")?.Value ?? string.Empty;
+                        var contentType = element.Attribute("ContentType")?.Value ?? string.Empty;
+                        ValidateExtension(extension);
+                        ValidateContentType(contentType);
+                        if (!defaults.TryAdd(extension, contentType))
+                            throw new CodecException("duplicate_content_type_default", $"{profile.Format} package declares more than one default content type for .{extension}.", "[Content_Types].xml");
+                        break;
+                    }
+                    case "Override":
+                    {
+                        if (HasUnexpectedAttributes(element, "PartName", "ContentType"))
+                            throw InvalidContentTypes("Content-types Override contains unsupported attributes.");
+                        var rawPartName = element.Attribute("PartName")?.Value ?? string.Empty;
+                        if (!rawPartName.StartsWith("/", StringComparison.Ordinal) || rawPartName.EndsWith("/", StringComparison.Ordinal) || rawPartName.Contains('?') || rawPartName.Contains('#'))
+                            throw InvalidContentTypes($"Content-types Override has invalid PartName {rawPartName}.");
+                        var partName = rawPartName[1..];
+                        ValidateEntryPath(partName, profile);
+                        var contentType = element.Attribute("ContentType")?.Value ?? string.Empty;
+                        ValidateContentType(contentType);
+                        if (!overrides.TryAdd(partName, contentType))
+                            throw new CodecException("duplicate_content_type_override", $"{profile.Format} package declares more than one content type for {rawPartName}.", "[Content_Types].xml");
+                        break;
+                    }
+                    default:
+                        throw InvalidContentTypes($"Content-types manifest contains unsupported {element.Name.LocalName} content.");
+                }
+            }
+            return new OpcContentTypes(defaults, overrides);
+        }
+        catch (CodecException)
+        {
+            throw;
+        }
+        catch (XmlException exception)
+        {
+            throw new CodecException("invalid_content_types_xml", $"{profile.Format} [Content_Types].xml is not valid XML.", "[Content_Types].xml", exception);
+        }
+
+        CodecException InvalidContentTypes(string message) =>
+            new("invalid_content_types_xml", $"{profile.Format} {message}", "[Content_Types].xml");
+    }
+
+    private static bool HasUnexpectedAttributes(XElement element, params string[] allowed)
+    {
+        var names = new HashSet<string>(allowed, StringComparer.Ordinal);
+        return element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
+            (attribute.Name.NamespaceName.Length > 0 || !names.Contains(attribute.Name.LocalName)));
+    }
+
+    private static void ValidateExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension) || extension.Length > 255 || extension.StartsWith(".", StringComparison.Ordinal) ||
+            extension.Contains('/') || extension.Contains('\\') || extension.Any(char.IsControl) || extension.Any(char.IsWhiteSpace))
+            throw new CodecException("invalid_content_types_xml", $"Content-types manifest has invalid default extension {extension}.", "[Content_Types].xml");
+    }
+
+    private static void ValidateContentType(string contentType)
+    {
+        var mediaType = contentType.Split(';', 2)[0].Trim();
+        if (string.IsNullOrWhiteSpace(contentType) || contentType.Length > 4_096 || contentType.Any(char.IsControl) ||
+            mediaType.IndexOf('/') is <= 0 || mediaType.EndsWith("/", StringComparison.Ordinal))
+            throw new CodecException("invalid_content_types_xml", $"Content-types manifest has invalid media type {contentType}.", "[Content_Types].xml");
+    }
+
+    private sealed class OpcContentTypes(
+        IReadOnlyDictionary<string, string> defaults,
+        IReadOnlyDictionary<string, string> overrides)
+    {
+        internal string ForPart(string path, OpcPackageProfile profile)
+        {
+            if (overrides.TryGetValue(path, out var contentType)) return contentType;
+            var fileName = path[(path.LastIndexOf('/') + 1)..];
+            var dot = fileName.LastIndexOf('.');
+            var extension = dot >= 0 && dot + 1 < fileName.Length ? fileName[(dot + 1)..] : string.Empty;
+            if (extension.Length > 0 && defaults.TryGetValue(extension, out contentType)) return contentType;
+            throw new CodecException("missing_part_content_type", $"{profile.Format} part {path} has no matching content type declaration.", path);
+        }
     }
 
     private static void ValidateEntryPath(string path, OpcPackageProfile profile)

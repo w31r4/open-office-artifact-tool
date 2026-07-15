@@ -322,9 +322,15 @@ public sealed class PptxCodecTests
         Assert.True(slide.Elements[0].Source.Editable);
         Assert.False(slide.Elements[1].Source.Editable);
         Assert.Equal("pic", slide.Elements[1].Opaque.ElementName);
-        Assert.Contains(imported.Artifact.OpaqueOpc.Parts, part => part.Path.EndsWith("/image.png", StringComparison.OrdinalIgnoreCase) || part.Path.EndsWith("/image1.png", StringComparison.OrdinalIgnoreCase));
+        Assert.All(imported.Artifact.OpaqueOpc.Parts, part => Assert.False(string.IsNullOrWhiteSpace(part.ContentType)));
+        var imagePart = Assert.Single(imported.Artifact.OpaqueOpc.Parts,
+            part => part.Path.EndsWith("/image.png", StringComparison.OrdinalIgnoreCase) || part.Path.EndsWith("/image1.png", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("image/png", imagePart.ContentType);
         Assert.Contains(imported.Artifact.OpaqueOpc.PackageRelationships,
             relationship => relationship.SourcePath == "ppt/slides/slide1.xml" && relationship.Id == "rIdImage1");
+        var slidePart = Assert.Single(imported.Artifact.OpaqueOpc.Parts, part => part.Path == "ppt/slides/slide1.xml");
+        Assert.Contains(slidePart.Relationships,
+            relationship => relationship.SourcePath == slidePart.Path && relationship.Id == "rIdImage1");
 
         slide.Elements[0].Shape.Text = "Edited safely";
         var preserved = Export(imported.Artifact);

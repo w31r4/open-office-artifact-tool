@@ -735,6 +735,88 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ImportPopulatesOpaquePartContentTypesAndOutgoingRelationships()
+    {
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var source = AddOpaqueOpcGraph(firstExport.File.ToByteArray());
+        var imported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportXlsx,
+            Family = ArtifactFamily.Workbook,
+            File = ByteString.CopyFrom(source),
+        }.ToByteArray()));
+
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var nativePart = Assert.Single(imported.Artifact.OpaqueOpc.Parts, part => part.Path == "xl/custom/native.xml");
+        Assert.Equal("application/vnd.open-office-artifact-tool.native+xml", nativePart.ContentType);
+        Assert.True(nativePart.Data.IsEmpty);
+        var outgoing = Assert.Single(nativePart.Relationships);
+        Assert.Equal("xl/custom/native.xml", outgoing.SourcePath);
+        Assert.Equal("rIdPayload", outgoing.Id);
+        Assert.Equal("https://example.invalid/native-payload", outgoing.Target);
+        Assert.Equal("External", outgoing.TargetMode);
+        Assert.Contains(imported.Artifact.OpaqueOpc.PackageRelationships, relationship =>
+            relationship.SourcePath == outgoing.SourcePath && relationship.Id == outgoing.Id && relationship.Target == outgoing.Target);
+        var relationshipPart = Assert.Single(imported.Artifact.OpaqueOpc.Parts, part => part.Path == "xl/custom/_rels/native.xml.rels");
+        Assert.Equal("application/vnd.openxmlformats-package.relationships+xml", relationshipPart.ContentType);
+        Assert.Empty(relationshipPart.Relationships);
+
+        imported.Artifact.Workbook.Worksheets[0].Cells[1].NumberValue = 77;
+        var preserved = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(source, "xl/custom/native.xml"), ReadEntry(preserved.File.ToByteArray(), "xl/custom/native.xml"));
+        Assert.Equal(ReadEntry(source, "xl/custom/_rels/native.xml.rels"), ReadEntry(preserved.File.ToByteArray(), "xl/custom/_rels/native.xml.rels"));
+
+        nativePart.ContentType = "application/octet-stream";
+        var tampered = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(tampered.Ok);
+        Assert.Equal("source_package_graph_mismatch", Assert.Single(tampered.Diagnostics).Code);
+
+        nativePart.ContentType = "application/vnd.open-office-artifact-tool.native+xml";
+        outgoing.Target = "https://example.invalid/tampered";
+        tampered = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+        Assert.False(tampered.Ok);
+        Assert.Equal("source_package_graph_mismatch", Assert.Single(tampered.Diagnostics).Code);
+    }
+
+    [Theory]
+    [InlineData("duplicate-default", "duplicate_content_type_default")]
+    [InlineData("duplicate-override", "duplicate_content_type_override")]
+    [InlineData("missing", "missing_part_content_type")]
+    public void ImportRejectsMalformedOpaqueContentTypeGraphs(string profile, string expectedCode)
+    {
+        var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportXlsx,
+            Family = ArtifactFamily.Workbook,
+            File = ByteString.CopyFrom(AddMalformedContentTypeGraph(firstExport.File.ToByteArray(), profile)),
+        }.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal(expectedCode, Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ImportPreservesUnknownRelationshipFromHashBoundSourcePackage()
     {
         var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
@@ -5222,6 +5304,50 @@ public sealed class XlsxCodecTests
             var replacement = archive.CreateEntry("xl/_rels/workbook.xml.rels");
             using var writer = new StreamWriter(replacement.Open());
             writer.Write(xml.Replace("</Relationships>", "<Relationship Id=\"rIdExternal\" Type=\"urn:open-office-artifact-tool:test\" Target=\"https://example.invalid/data\" TargetMode=\"External\"/></Relationships>", StringComparison.Ordinal));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddOpaqueOpcGraph(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var contentTypes = archive.GetEntry("[Content_Types].xml") ?? throw new InvalidOperationException("Content types are missing.");
+            string contentTypesXml;
+            using (var reader = new StreamReader(contentTypes.Open())) contentTypesXml = reader.ReadToEnd();
+            contentTypes.Delete();
+            using (var writer = new StreamWriter(archive.CreateEntry("[Content_Types].xml").Open()))
+                writer.Write(contentTypesXml.Replace("</Types>", "<Override PartName=\"/xl/custom/native.xml\" ContentType=\"application/vnd.open-office-artifact-tool.native+xml\"/></Types>", StringComparison.Ordinal));
+            using (var writer = new StreamWriter(archive.CreateEntry("xl/custom/native.xml").Open()))
+                writer.Write("<native xmlns=\"urn:open-office-artifact-tool:native\">preserve me</native>");
+            using (var writer = new StreamWriter(archive.CreateEntry("xl/custom/_rels/native.xml.rels").Open()))
+                writer.Write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdPayload\" Type=\"urn:open-office-artifact-tool:native-payload\" Target=\"https://example.invalid/native-payload\" TargetMode=\"External\"/></Relationships>");
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddMalformedContentTypeGraph(byte[] bytes, string profile)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var contentTypes = archive.GetEntry("[Content_Types].xml") ?? throw new InvalidOperationException("Content types are missing.");
+            string xml;
+            using (var reader = new StreamReader(contentTypes.Open())) xml = reader.ReadToEnd();
+            contentTypes.Delete();
+            xml = profile switch
+            {
+                "duplicate-default" => xml.Replace("</Types>", "<Default Extension=\"xml\" ContentType=\"application/duplicate+xml\"/></Types>", StringComparison.Ordinal),
+                "duplicate-override" => xml.Replace("</Types>", "<Override PartName=\"/xl/custom/duplicate.xml\" ContentType=\"application/first+xml\"/><Override PartName=\"/xl/custom/duplicate.xml\" ContentType=\"application/second+xml\"/></Types>", StringComparison.Ordinal),
+                "missing" => xml,
+                _ => throw new ArgumentOutOfRangeException(nameof(profile)),
+            };
+            using (var writer = new StreamWriter(archive.CreateEntry("[Content_Types].xml").Open())) writer.Write(xml);
+            if (profile == "missing")
+                using (var writer = new StreamWriter(archive.CreateEntry("xl/custom/no-content-type.opaque").Open())) writer.Write("opaque");
         }
         return stream.ToArray();
     }

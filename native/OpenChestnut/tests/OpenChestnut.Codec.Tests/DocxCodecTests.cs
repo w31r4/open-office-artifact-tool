@@ -1053,8 +1053,12 @@ public sealed class DocxCodecTests
         Assert.True(imported.Ok, Diagnostics(imported));
         Assert.False(imported.Artifact.Document.Blocks[0].Source.Editable);
         Assert.True(imported.Artifact.Document.Blocks[1].Source.Editable);
+        Assert.All(imported.Artifact.OpaqueOpc.Parts, part => Assert.False(string.IsNullOrWhiteSpace(part.ContentType)));
         Assert.Contains(imported.Artifact.OpaqueOpc.PackageRelationships,
             relationship => relationship.SourcePath == "word/document.xml" && relationship.Id == "rIdExternal");
+        var documentPart = Assert.Single(imported.Artifact.OpaqueOpc.Parts, part => part.Path == "word/document.xml");
+        Assert.Contains(documentPart.Relationships,
+            relationship => relationship.SourcePath == documentPart.Path && relationship.Id == "rIdExternal");
 
         var editable = imported.Artifact.Document.Blocks[1].Paragraph;
         editable.Text = "Edited safely";
