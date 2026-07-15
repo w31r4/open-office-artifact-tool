@@ -16,6 +16,39 @@ const masterOnlyLoaded = await PresentationFile.importPptx(await PresentationFil
 assert.equal(masterOnlyLoaded.layouts.items.length, 1);
 assert.equal(masterOnlyLoaded.master.name, "Master Only");
 assert.deepEqual(masterOnlyLoaded.slides.items[0].effectiveBackground(), { fill: "#123456", mode: "solid" });
+const placeholderFramePresencePresentation = Presentation.create({
+  master: {
+    name: "Frame Presence Master",
+    placeholders: [{ id: "master/frame-slot", type: "title", idx: 1, name: "Inherited master frame", position: { left: 40, top: 30, width: 700, height: 80 } }],
+  },
+  layouts: [{
+    id: "layout/frame-slot",
+    name: "Frame Presence Layout",
+    masterId: "master/default",
+    placeholders: [{ id: "layout/frame-slot/body", type: "body", idx: 2, name: "Removable layout frame", position: { left: 80, top: 180, width: 640, height: 120 }, transform: { flipHorizontal: false } }],
+  }],
+});
+placeholderFramePresencePresentation.master.placeholders[0].position = undefined;
+placeholderFramePresencePresentation.slides.add({ layoutId: "layout/frame-slot" });
+const placeholderFramePresenceSource = await PresentationFile.exportPptx(placeholderFramePresencePresentation);
+const placeholderFramePresenceSourceZip = await JSZip.loadAsync(new Uint8Array(await placeholderFramePresenceSource.arrayBuffer()));
+assert.doesNotMatch(await placeholderFramePresenceSourceZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<a:xfrm\b/);
+assert.match(await placeholderFramePresenceSourceZip.file("ppt/slideLayouts/slideLayout1.xml").async("text"), /<a:xfrm\b[^>]*flipH="0"/);
+const placeholderFramePresenceLoaded = await PresentationFile.importPptx(placeholderFramePresenceSource);
+assert.equal(placeholderFramePresenceLoaded.master.placeholders[0].position, undefined);
+assert.deepEqual(placeholderFramePresenceLoaded.layouts.items[0].placeholders[0].position, { left: 80, top: 180, width: 640, height: 120 });
+placeholderFramePresenceLoaded.master.placeholders[0].position = { left: 60, top: 50, width: 680, height: 90 };
+placeholderFramePresenceLoaded.master.placeholders[0].transform = { rotationDegrees: 10, flipVertical: true };
+placeholderFramePresenceLoaded.layouts.items[0].placeholders[0].position = undefined;
+placeholderFramePresenceLoaded.layouts.items[0].placeholders[0].transform = undefined;
+const placeholderFramePresenceEdited = await PresentationFile.exportPptx(placeholderFramePresenceLoaded);
+const placeholderFramePresenceEditedZip = await JSZip.loadAsync(new Uint8Array(await placeholderFramePresenceEdited.arrayBuffer()));
+assert.match(await placeholderFramePresenceEditedZip.file("ppt/slideMasters/slideMaster1.xml").async("text"), /<a:xfrm\b[^>]*rot="600000"[^>]*flipV="1"[^>]*><a:off x="571500" y="476250"\s*\/><a:ext cx="6477000" cy="857250"\s*\/><\/a:xfrm>/);
+assert.doesNotMatch(await placeholderFramePresenceEditedZip.file("ppt/slideLayouts/slideLayout1.xml").async("text"), /<a:xfrm\b/);
+const placeholderFramePresenceRoundTrip = await PresentationFile.importPptx(placeholderFramePresenceEdited);
+assert.deepEqual(placeholderFramePresenceRoundTrip.master.placeholders[0].position, { left: 60, top: 50, width: 680, height: 90 });
+assert.deepEqual(placeholderFramePresenceRoundTrip.master.placeholders[0].transform, { rotationDegrees: 10, flipVertical: true });
+assert.equal(placeholderFramePresenceRoundTrip.layouts.items[0].placeholders[0].position, undefined);
 const backgroundInheritancePresentation = Presentation.create({
   theme: { colors: { bg1: "#fefefe" } },
   master: { background: "#123456" },

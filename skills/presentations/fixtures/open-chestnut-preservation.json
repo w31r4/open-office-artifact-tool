@@ -114,6 +114,7 @@
   ],
   "openChestnut": {
     "nativeGraphFixture": true,
+    "sourcePlaceholderFrames": { "master": "absent", "layout": "direct" },
     "embeddedWorkbook": { "sourceValue": "OpenChestnut source workbook" },
     "nativeObjects": [
       { "nativeKind": "oleObject", "relationships": 2, "parts": 2, "editable": true },
@@ -134,8 +135,8 @@
       "layoutPlaceholder": {
         "type": "body",
         "idx": 2,
-        "position": { "left": 64, "top": 548, "width": 1152, "height": 52 },
-        "transform": { "flipHorizontal": true, "flipVertical": false },
+        "position": null,
+        "transform": null,
         "textBodyProperties": { "anchor": "bottom" },
         "text": [
           { "runs": [{ "text": "After layout placeholder", "link": { "uri": "https://example.com/layout-placeholder", "tooltip": "Layout-owned link" } }] }

@@ -3,7 +3,19 @@ import JSZip from "jszip";
 // Builds a standards-valid, source-bound native-object graph for the runnable
 // OpenChestnut fixture. The graph deliberately crosses an embedded package,
 // a SmartArt four-part root, and a recursive contentPart/customXmlProps edge.
-export async function addOpenChestnutNativeGraphFixture(bytes, embeddedWorkbookBytes) {
+function removeFirstPlaceholderTransform(xml, partPath) {
+  let removed = false;
+  const output = String(xml || "").replace(/<p:sp\b[\s\S]*?<\/p:sp>/g, (shape) => {
+    if (removed || !/<p:ph\b/.test(shape)) return shape;
+    const next = shape.replace(/<a:xfrm\b[^>]*>[\s\S]*?<\/a:xfrm>/, "");
+    removed = next !== shape;
+    return next;
+  });
+  if (!removed) throw new Error(`OpenChestnut native fixture could not remove a placeholder transform from ${partPath}.`);
+  return output;
+}
+
+export async function addOpenChestnutNativeGraphFixture(bytes, embeddedWorkbookBytes, options = {}) {
   const zip = await JSZip.loadAsync(bytes);
   const namespaces = ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
   const ole = `<p:graphicFrame${namespaces}><p:nvGraphicFramePr><p:cNvPr id="100" name="Embedded workbook"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="11191875" y="2190750"/><a:ext cx="762000" cy="762000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdNativeOle" imgW="762000" imgH="762000" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdNativePreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="11191875" y="2190750"/><a:ext cx="762000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>`;
@@ -13,6 +25,11 @@ export async function addOpenChestnutNativeGraphFixture(bytes, embeddedWorkbookB
   const slideXml = await zip.file(slidePath)?.async("text");
   if (!slideXml?.includes("</p:spTree>")) throw new Error(`OpenChestnut native fixture requires ${slidePath} with a p:spTree.`);
   zip.file(slidePath, slideXml.replace("</p:spTree>", `${ole}${diagram}${content}</p:spTree>`));
+
+  if (options.removeMasterPlaceholderFrame) {
+    const masterPath = "ppt/slideMasters/slideMaster1.xml";
+    zip.file(masterPath, removeFirstPlaceholderTransform(await zip.file(masterPath)?.async("text"), masterPath));
+  }
 
   const relationshipsPath = "ppt/slides/_rels/slide1.xml.rels";
   const relationshipsXml = await zip.file(relationshipsPath)?.async("text");

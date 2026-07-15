@@ -113,10 +113,15 @@ export function mergePresentationPlaceholders(masterPlaceholders = [], layoutPla
   for (const placeholder of layoutPlaceholders) {
     const key = placeholderKey(placeholder);
     const inherited = merged.get(key) || {};
+    const position = placeholder.position
+      ? { ...(inherited.position || {}), ...placeholder.position }
+      : inherited.position
+        ? { ...inherited.position }
+        : undefined;
     merged.set(key, {
       ...inherited,
       ...placeholder,
-      position: { ...(inherited.position || {}), ...(placeholder.position || {}) },
+      ...(position ? { position } : {}),
       style: { ...(inherited.style || {}), ...(placeholder.style || {}) },
       paragraphStyles: mergeParagraphStyles(inherited.paragraphStyles, placeholder.paragraphStyles),
     });

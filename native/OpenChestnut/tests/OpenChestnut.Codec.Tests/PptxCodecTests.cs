@@ -301,6 +301,7 @@ public sealed class PptxCodecTests
         Assert.True(masterPlaceholder.DirectFrame.HasFlipVertical);
         Assert.False(masterPlaceholder.DirectFrame.FlipVertical);
         Assert.True(masterPlaceholder.Source.Editable);
+        Assert.True(masterPlaceholder.Source.DirectFramePresenceEditable);
         Assert.Equal("body", layoutPlaceholder.Type);
         Assert.Equal(2U, layoutPlaceholder.Index);
         Assert.Equal("Layout prompt", PptxTextCodec.Flatten(layoutPlaceholder.TextBody));
@@ -309,6 +310,7 @@ public sealed class PptxCodecTests
         Assert.False(layoutPlaceholder.DirectFrame.HasFlipHorizontal);
         Assert.False(layoutPlaceholder.DirectFrame.HasFlipVertical);
         Assert.True(layoutPlaceholder.Source.Editable);
+        Assert.True(layoutPlaceholder.Source.DirectFramePresenceEditable);
         Assert.NotEqual(uint.MaxValue, masterPlaceholder.Source.ShapeTreeIndex);
 
         masterPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited master prompt";
@@ -409,6 +411,7 @@ public sealed class PptxCodecTests
         var unsupportedFrame = Import(AddUnsupportedPlaceholderTransform(source));
         var unsupportedFramePlaceholder = Assert.Single(Assert.Single(unsupportedFrame.Artifact.Presentation.Layouts).Placeholders);
         Assert.Null(unsupportedFramePlaceholder.DirectFrame);
+        Assert.False(unsupportedFramePlaceholder.Source.DirectFramePresenceEditable);
         unsupportedFramePlaceholder.DirectFrame = new PresentationPlaceholderFrame
         {
             LeftEmu = 762_000L,
@@ -419,6 +422,101 @@ public sealed class PptxCodecTests
         var unsupportedFrameRejected = Export(unsupportedFrame.Artifact);
         Assert.False(unsupportedFrameRejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(unsupportedFrameRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void MasterAndLayoutPlaceholderDirectFramesAddAndRemoveOnlyForRecognizedSlots()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = RemoveMasterPlaceholderTransform(AddTemplatePlaceholders(authored.File.ToByteArray()));
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var masterPlaceholder = Assert.Single(Assert.Single(imported.Artifact.Presentation.Masters).Placeholders);
+        var layoutPlaceholder = Assert.Single(Assert.Single(imported.Artifact.Presentation.Layouts).Placeholders);
+        Assert.Null(masterPlaceholder.DirectFrame);
+        Assert.True(masterPlaceholder.Source.DirectFramePresenceEditable);
+        Assert.NotNull(layoutPlaceholder.DirectFrame);
+        Assert.True(layoutPlaceholder.Source.DirectFramePresenceEditable);
+
+        masterPlaceholder.DirectFrame = new PresentationPlaceholderFrame
+        {
+            LeftEmu = 1_143_000L,
+            TopEmu = 762_000L,
+            WidthEmu = 6_096_000L,
+            HeightEmu = 1_333_500L,
+            RotationAngle60000 = 900_000,
+            FlipHorizontal = false,
+        };
+        layoutPlaceholder.DirectFrame = null;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var masterShape = package.PresentationPart!.SlideMasterParts.Single().SlideMaster!.Descendants<P.Shape>().Single();
+            Assert.Equal(1_143_000L, masterShape.ShapeProperties!.Transform2D!.Offset!.X!.Value);
+            Assert.Equal(900_000, masterShape.ShapeProperties.Transform2D.Rotation!.Value);
+            Assert.False(masterShape.ShapeProperties.Transform2D.HorizontalFlip!.Value);
+            Assert.NotNull(masterShape.ShapeProperties.GetFirstChild<A.PresetGeometry>());
+            Assert.NotNull(masterShape.ShapeProperties.GetFirstChild<A.NoFill>());
+            var layoutShape = package.PresentationPart.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!.Descendants<P.Shape>().Single();
+            Assert.Null(layoutShape.ShapeProperties!.Transform2D);
+            Assert.NotNull(layoutShape.ShapeProperties.GetFirstChild<A.PresetGeometry>());
+            Assert.NotNull(layoutShape.ShapeProperties.GetFirstChild<A.NoFill>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var roundTrip = Import(edited.File.ToByteArray());
+        masterPlaceholder = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders);
+        layoutPlaceholder = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders);
+        Assert.NotNull(masterPlaceholder.DirectFrame);
+        Assert.Null(layoutPlaceholder.DirectFrame);
+        Assert.True(layoutPlaceholder.Source.DirectFramePresenceEditable);
+        masterPlaceholder.DirectFrame = null;
+        layoutPlaceholder.DirectFrame = new PresentationPlaceholderFrame
+        {
+            LeftEmu = 952_500L,
+            TopEmu = 2_286_000L,
+            WidthEmu = 6_286_500L,
+            HeightEmu = 952_500L,
+            FlipVertical = true,
+        };
+        var second = Export(roundTrip.Artifact);
+        Assert.True(second.Ok, Diagnostics(second));
+        var secondRoundTrip = Import(second.File.ToByteArray());
+        Assert.Null(Assert.Single(Assert.Single(secondRoundTrip.Artifact.Presentation.Masters).Placeholders).DirectFrame);
+        Assert.True(Assert.Single(Assert.Single(secondRoundTrip.Artifact.Presentation.Layouts).Placeholders).DirectFrame.FlipVertical);
+
+        var tamperedBinding = Import(source);
+        Assert.Single(Assert.Single(tamperedBinding.Artifact.Presentation.Masters).Placeholders).Source.DirectFramePresenceEditable = false;
+        var tamperedBindingRejected = Export(tamperedBinding.Artifact);
+        Assert.False(tamperedBindingRejected.Ok);
+        Assert.Equal("presentation_placeholder_binding_mismatch", Assert.Single(tamperedBindingRejected.Diagnostics).Code);
+
+        var attributedSource = AddUnmodeledPlaceholderTransformAttribute(AddTemplatePlaceholders(authored.File.ToByteArray()));
+        var attributedCoordinateEdit = Import(attributedSource);
+        var attributedCoordinatePlaceholder = Assert.Single(Assert.Single(attributedCoordinateEdit.Artifact.Presentation.Layouts).Placeholders);
+        Assert.False(attributedCoordinatePlaceholder.Source.DirectFramePresenceEditable);
+        attributedCoordinatePlaceholder.DirectFrame.LeftEmu = 1_047_750L;
+        var attributedCoordinateResult = Export(attributedCoordinateEdit.Artifact);
+        Assert.True(attributedCoordinateResult.Ok, Diagnostics(attributedCoordinateResult));
+        using (var stream = new MemoryStream(attributedCoordinateResult.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var transform = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!;
+            Assert.Equal(1_047_750L, transform.Offset!.X!.Value);
+            Assert.Contains(transform.GetAttributes(), attribute => attribute.NamespaceUri == "urn:open-office-artifact-tool:fixture" && attribute.Value == "keep");
+        }
+
+        var attributed = Import(attributedSource);
+        var attributedPlaceholder = Assert.Single(Assert.Single(attributed.Artifact.Presentation.Layouts).Placeholders);
+        Assert.NotNull(attributedPlaceholder.DirectFrame);
+        Assert.False(attributedPlaceholder.Source.DirectFramePresenceEditable);
+        attributedPlaceholder.DirectFrame = null;
+        var attributedRejected = Export(attributed.Artifact);
+        Assert.False(attributedRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(attributedRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -2276,6 +2374,33 @@ public sealed class PptxCodecTests
             unknown.SetAttribute(new OpenXmlAttribute("x", string.Empty, "0"));
             unknown.SetAttribute(new OpenXmlAttribute("y", string.Empty, "0"));
             transform.Append(unknown);
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] RemoveMasterPlaceholderTransform(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var master = package.PresentationPart!.SlideMasterParts.Single().SlideMaster!;
+            master.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!.Remove();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnmodeledPlaceholderTransformAttribute(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var layout = package.PresentationPart!.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!;
+            var transform = layout.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!;
+            transform.SetAttribute(new OpenXmlAttribute("fixture", "urn:open-office-artifact-tool:fixture", "keep"));
         }
         return stream.ToArray();
     }

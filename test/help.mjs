@@ -45,6 +45,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /drawing/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.images.add")?.schema?.parameters?.transform?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.placeholders?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.placeholders?.description || "", /position to undefined removes the direct frame/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.getItem"));

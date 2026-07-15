@@ -1453,6 +1453,7 @@ internal static class PptxCodec
                 !binding.ElementSha256.Equals(sourceBinding.ElementSha256, StringComparison.OrdinalIgnoreCase) ||
                 !binding.SemanticSha256.Equals(sourceBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
                 binding.Editable != sourceBinding.Editable ||
+                binding.DirectFramePresenceEditable != sourceBinding.DirectFramePresenceEditable ||
                 !binding.ElementSha256.Equals(PptxPlaceholderCodec.ElementHash(sourceShape), StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "presentation_placeholder_binding_mismatch",

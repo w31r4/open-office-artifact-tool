@@ -1026,10 +1026,10 @@ message PresentationBackground {
 }
 
 // Bounded owner-local placeholder semantics. Type/index/name are identity and
-// remain read-only for a source-bound package. text_body and a recognized,
-// already-present direct_frame participate in the edit slice; fill, shape
-// style, inherited geometry, and unmodeled p:ph attributes stay behind the
-// element and residual hashes.
+// remain read-only for a source-bound package. text_body and a recognized
+// direct_frame slot participate in the edit slice, including bounded presence
+// changes recorded by source evidence; fill, shape style, inherited geometry,
+// and unmodeled p:ph attributes stay behind the element and residual hashes.
 message PresentationPlaceholder {
   string id = 1;
   string name = 2;
@@ -1087,6 +1087,10 @@ message PresentationElementSourceBinding {
   string element_sha256 = 2;
   string semantic_sha256 = 3;
   bool editable = 4;
+  // Source evidence only: true when the placeholder's direct a:xfrm slot is
+  // either absent or a fully recognized owned transform, so message presence
+  // may safely change without flattening a complex native graph.
+  bool direct_frame_presence_editable = 5;
 }
 
 message PresentationShape {

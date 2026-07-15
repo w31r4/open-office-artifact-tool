@@ -599,8 +599,16 @@ function wirePlaceholderTransform(transform, placeholderId) {
   return output;
 }
 
+function placeholderDirectFrameEditable(source) {
+  return Boolean(source?.directFrame) || source?.source?.directFramePresenceEditable === true;
+}
+
 function wirePlaceholder(placeholder, original, assetCatalog) {
   const shape = placeholderShape(placeholder);
+  const directFrameEditable = placeholderDirectFrameEditable(original);
+  if (placeholder.transform != null && !placeholder.position) {
+    throw new OpenChestnutCodecError(`Presentation placeholder ${placeholder.id} cannot define a transform without a direct position.`, [], { code: "invalid_presentation_transform" });
+  }
   return {
     id: original.id,
     name: original.name,
@@ -608,7 +616,7 @@ function wirePlaceholder(placeholder, original, assetCatalog) {
     index: original.index,
     textBody: presentationTextBody(shape, { textBody: original.textBody }, assetCatalog),
     source: original.source,
-    ...(original.directFrame ? {
+    ...(placeholder.position && directFrameEditable ? {
       directFrame: {
         leftEmu: emuFromPixels(placeholder.position?.left, `${placeholder.id}.position.left`),
         topEmu: emuFromPixels(placeholder.position?.top, `${placeholder.id}.position.top`),
@@ -1101,8 +1109,8 @@ export async function presentationFromEnvelope(envelope) {
         placeholders: (sourceMaster.placeholders || []).map((wire, index) => ({
           wire,
           model: model.placeholders[index],
-          directFrameEditable: Boolean(wire.directFrame),
-          snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: Boolean(wire.directFrame) }),
+          directFrameEditable: placeholderDirectFrameEditable(wire),
+          snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: placeholderDirectFrameEditable(wire) }),
         })),
       });
     }
@@ -1125,8 +1133,8 @@ export async function presentationFromEnvelope(envelope) {
       placeholders: (sourceLayout.placeholders || []).map((wire, index) => ({
         wire,
         model: model.placeholders[index],
-        directFrameEditable: Boolean(wire.directFrame),
-        snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: Boolean(wire.directFrame) }),
+        directFrameEditable: placeholderDirectFrameEditable(wire),
+        snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: placeholderDirectFrameEditable(wire) }),
       })),
     });
   }

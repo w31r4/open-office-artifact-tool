@@ -8,8 +8,9 @@ using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
 
-// Owns direct p:ph identity, its local a:txBody, and the bounded coordinates,
-// rotation, and flips of an already-present, recognized direct a:xfrm. Fills,
+// Owns direct p:ph identity, its local a:txBody, and a bounded direct a:xfrm.
+// Fully recognized transform slots may add/remove the frame; less exact but
+// readable transforms retain coordinate/rotation/flip editing only. Fills,
 // shape style, and inherited/effective formatting remain in the source element.
 internal static class PptxPlaceholderCodec
 {
@@ -47,8 +48,10 @@ internal static class PptxPlaceholderCodec
                     ShapeTreeIndex = checked((uint)shapeTreeIndex),
                     ElementSha256 = HashElement(shape),
                     Editable = PptxTextCodec.SupportsEditing(shape.TextBody) || directFrame is not null,
+                    DirectFramePresenceEditable = SupportsDirectFramePresenceEditing(shape),
                 },
             };
+            placeholder.Source.Editable = placeholder.Source.Editable || placeholder.Source.DirectFramePresenceEditable;
             placeholder.Source.SemanticSha256 = SemanticHash(placeholder);
             placeholders.Add(placeholder);
         }
@@ -102,8 +105,21 @@ internal static class PptxPlaceholderCodec
         }
 
         if (FrameEquals(source.DirectFrame, requested.DirectFrame)) return;
-        if (source.DirectFrame is null || requested.DirectFrame is null || !SupportsDirectFrame(sourceShape))
-            throw new CodecException("unsupported_presentation_edit", $"Presentation placeholder {requested.Id} cannot add, remove, or replace an unrecognized direct frame in this codec slice.");
+        if (source.DirectFrame is not null && requested.DirectFrame is not null)
+        {
+            if (!SupportsDirectFrame(sourceShape))
+                throw new CodecException("unsupported_presentation_edit", $"Presentation placeholder {requested.Id} cannot replace an unrecognized direct frame in this codec slice.");
+            ValidateDirectFrame(requested.DirectFrame, requested.Id);
+            ApplyDirectFrame(sourceShape, requested.DirectFrame);
+            return;
+        }
+        if (source.Source?.DirectFramePresenceEditable != true || !SupportsDirectFramePresenceEditing(sourceShape))
+            throw new CodecException("unsupported_presentation_edit", $"Presentation placeholder {requested.Id} cannot add or remove an unrecognized direct frame in this codec slice.");
+        if (requested.DirectFrame is null)
+        {
+            sourceShape.ShapeProperties!.Transform2D!.Remove();
+            return;
+        }
         ValidateDirectFrame(requested.DirectFrame, requested.Id);
         ApplyDirectFrame(sourceShape, requested.DirectFrame);
     }
@@ -115,7 +131,10 @@ internal static class PptxPlaceholderCodec
         {
             if (NativePlaceholder(shape) is null) continue;
             if (PptxTextCodec.SupportsEditing(shape.TextBody)) PptxTextCodec.ScrubModeledContent(shape.TextBody, partContext);
-            if (SupportsDirectFrame(shape)) ScrubDirectFrame(shape);
+            if (SupportsDirectFramePresenceEditing(shape))
+                shape.ShapeProperties!.Transform2D?.Remove();
+            else if (SupportsDirectFrame(shape))
+                ScrubDirectFrame(shape);
         }
     }
 
@@ -171,6 +190,26 @@ internal static class PptxPlaceholderCodec
         return transform.Rotation?.Value is not { } rotation || Math.Abs((long)rotation) <= MaxRotationAngle60000;
     }
 
+    private static bool SupportsDirectFramePresenceEditing(P.Shape shape)
+    {
+        var properties = shape.ShapeProperties;
+        if (properties is null) return false;
+        var transforms = properties.Elements<A.Transform2D>().ToArray();
+        if (transforms.Length == 0) return true;
+        if (transforms.Length != 1 || !SupportsDirectFrame(shape)) return false;
+        var transform = transforms[0];
+        return HasOnlyAttributes(transform, "rot", "flipH", "flipV") &&
+            HasOnlyAttributes(transform.Offset!, "x", "y") &&
+            HasOnlyAttributes(transform.Extents!, "cx", "cy");
+    }
+
+    private static bool HasOnlyAttributes(OpenXmlElement element, params string[] names)
+    {
+        var allowed = names.ToHashSet(StringComparer.Ordinal);
+        return element.GetAttributes().All(attribute =>
+            string.IsNullOrEmpty(attribute.NamespaceUri) && allowed.Contains(attribute.LocalName));
+    }
+
     private static void ValidateDirectFrame(PresentationPlaceholderFrame? frame, string placeholderId)
     {
         if (frame is null) return;
@@ -185,7 +224,13 @@ internal static class PptxPlaceholderCodec
 
     private static void ApplyDirectFrame(P.Shape shape, PresentationPlaceholderFrame frame)
     {
-        var transform = shape.ShapeProperties!.Transform2D!;
+        var properties = shape.ShapeProperties!;
+        var transform = properties.Transform2D;
+        if (transform is null)
+        {
+            transform = new A.Transform2D(new A.Offset(), new A.Extents());
+            properties.Transform2D = transform;
+        }
         transform.Offset!.X = frame.LeftEmu;
         transform.Offset.Y = frame.TopEmu;
         transform.Extents!.Cx = frame.WidthEmu;

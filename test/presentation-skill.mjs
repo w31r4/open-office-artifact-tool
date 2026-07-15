@@ -260,8 +260,8 @@ try {
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].text[0].runs[0].text, "After layout placeholder");
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].text[0].runs[0].link.uri, "https://example.com/layout-placeholder");
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].textBodyProperties.anchor, "bottom");
-  assert.deepEqual(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].position, { left: 64, top: 548, width: 1152, height: 52 });
-  assert.deepEqual(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].transform, { flipHorizontal: true, flipVertical: false });
+  assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].position, undefined);
+  assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].transform, undefined);
   assert.deepEqual(Object.keys(wasmTitle?.text.inheritedParagraphStyles), ["0", "8"]);
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletCharacter, "→");
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletColor, "accent6");
@@ -289,8 +289,10 @@ try {
   assert.match(wasmMasterXml, /<p:ph\b[^>]*type="title"[^>]*idx="0"[^>]*\/>[\s\S]*?<a:t>After master placeholder<\/a:t>/);
   assert.match(wasmLayoutXml, /<p:ph\b[^>]*type="body"[^>]*idx="2"[^>]*\/>[\s\S]*?<a:bodyPr\b[^>]*anchor="b"[\s\S]*?<a:t>After layout placeholder<\/a:t>/);
   assert.match(wasmMasterXml, /<a:xfrm\b[^>]*rot="750000"[^>]*flipH="0"[^>]*flipV="1"[^>]*><a:off x="609600" y="266700"\s*\/><a:ext cx="10972800" cy="685800"\s*\/><\/a:xfrm>/);
-  assert.match(wasmLayoutXml, /<a:xfrm\b[^>]*flipH="1"[^>]*flipV="0"[^>]*><a:off x="609600" y="5219700"\s*\/><a:ext cx="10972800" cy="495300"\s*\/><\/a:xfrm>/);
-  assert.doesNotMatch(wasmLayoutXml, /<a:xfrm\b[^>]*\brot=/);
+  const wasmLayoutPlaceholderXml = /<p:sp\b[\s\S]*?<\/p:sp>/.exec(wasmLayoutXml)?.[0] || "";
+  assert.doesNotMatch(wasmLayoutPlaceholderXml, /<a:xfrm\b/);
+  assert.match(wasmLayoutPlaceholderXml, /<a:prstGeom\b[^>]*prst="rect"/);
+  assert.match(wasmLayoutPlaceholderXml, /<a:noFill\s*\/>/);
   assert.match(wasmMasterXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="r"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3150"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent2"\s*\/>[\s\S]*?<a:latin typeface="Georgia"\s*\/>/);
   const wasmMasterBodyLevel2 = /<p:bodyStyle>[\s\S]*?(<a:lvl2pPr\b[\s\S]*?<\/a:lvl2pPr>)/.exec(wasmMasterXml)?.[1] || "";
   assert.match(wasmMasterBodyLevel2, /<a:ea typeface="\+mn-ea"\s*\/>/);
