@@ -984,6 +984,7 @@ await assert.rejects(
   exportXlsxWithOpenChestnut(invalidTwoCellWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /strictly after/i.test(error.message),
 );
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidTwoCellWorkbook), /strictly after/i);
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },

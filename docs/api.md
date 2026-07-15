@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures with safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell or two-cell pictures with safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2017,7 +2017,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell or two-cell pictures, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2030,7 +2030,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.merge` | api | Merge the target range as one region or as separate row-wise regions when across=true. |
 | `range.unmerge` | api | Remove merged regions intersecting the target range. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas. |
-| `sheet.images.add` | api | Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents. |
+| `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with a 0-based one-cell pixel extent or two-cell marker anchor. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
 | `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
@@ -2084,11 +2084,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures with safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell or two-cell pictures with safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG one-cell pictures with unique-reference same-format source-bound byte replacement, and recognized source-bound database connection-root metadata.
+- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG one-cell or two-cell pictures with unique-reference same-format source-bound byte replacement, and recognized source-bound database connection-root metadata.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
@@ -3601,7 +3601,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
+Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell or two-cell pictures, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -3610,7 +3610,7 @@ Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynami
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG one-cell pictures, recognized database connection-root metadata, and source/opaque package evidence for fail-closed metadata, geometry, and safe same-format image-byte edits.
+- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG one-cell or two-cell pictures, recognized database connection-root metadata, and source/opaque package evidence for fail-closed metadata, geometry, and safe same-format image-byte edits.
 
 #### `invokeOpenChestnut`
 
@@ -3769,7 +3769,7 @@ Create an inspectable worksheet chart from a range or config; setData(range) inf
 
 #### `sheet.images.add`
 
-Create an inspectable worksheet image placeholder from a data URL, URI, or prompt with 0-based cell anchors and pixel extents.
+Create an inspectable worksheet image from a data URL, URI, or prompt with a 0-based one-cell pixel extent or two-cell marker anchor.
 
 **Schema parameters:**
 
@@ -3777,7 +3777,7 @@ Create an inspectable worksheet image placeholder from a data URL, URI, or promp
 - `uri` (string) — External image URI metadata.
 - `prompt` (string) — Generation/source prompt metadata.
 - `alt` (string) — Alternative text.
-- `anchor` (object) — Zero-based cell anchor and pixel extent.
+- `anchor` (object) — One-cell { from, extent } geometry, or two-cell { type:'twoCell', from, to, editAs? } geometry. Markers use 0-based row/col plus optional rowOffsetPx/colOffsetPx; editAs is twoCell, oneCell, or absolute.
 - `fit` (string) — contain or cover intent.
 
 **Schema returns:**
