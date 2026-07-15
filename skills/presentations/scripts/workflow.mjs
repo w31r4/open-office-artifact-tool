@@ -17,6 +17,7 @@ import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/l
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
 import { normalizeOpenChestnutCodecName, presentationOpenChestnutConfig } from "../../shared/open-chestnut-compat.mjs";
+import { addOpenChestnutNativeGraphFixture } from "./open-chestnut-native-fixture.mjs";
 import {
   prepareNumberedVisualBaselines,
   runPngVisualQa,
@@ -329,8 +330,22 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported presentation roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
   if (roundtripCodec === "open-chestnut") {
+    const openChestnut = presentationOpenChestnutConfig(fixture);
+    if (openChestnut?.nativeGraphFixture) {
+      pptx = new FileBlob(await addOpenChestnutNativeGraphFixture(new Uint8Array(await pptx.arrayBuffer())), { type: PPTX_MIME });
+    }
     const imported = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
-    const edit = presentationOpenChestnutConfig(fixture)?.edit;
+    for (const expected of openChestnut?.nativeObjects || []) {
+      const object = imported.slides.items.flatMap((slide) => slide.nativeObjects.items).find((item) => item.nativeKind === expected.nativeKind);
+      assert.ok(object, `Missing OpenChestnut native object ${expected.nativeKind}`);
+      assert.equal(object.rootRelationships.length, Number(expected.relationships), `${expected.nativeKind} root relationship count`);
+      assert.equal(object.parts.length, Number(expected.parts), `${expected.nativeKind} preserved part count`);
+      assert.equal(imported.resolve(object.id), object, `${expected.nativeKind} must resolve by stable import ID`);
+      const inspected = imported.inspect({ kind: "nativeObject", maxChars: fixture.qa?.maxChars || 30_000 }).ndjson;
+      assert.match(inspected, new RegExp(`"nativeKind":"${expected.nativeKind}"`));
+      assert.match(inspected, new RegExp(`"preservedParts":${Number(expected.parts)}`));
+    }
+    const edit = openChestnut?.edit;
     if (edit) {
       if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
       if (edit.layoutBackground) imported.layouts.items[0].background = edit.layoutBackground;

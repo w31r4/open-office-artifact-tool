@@ -392,6 +392,11 @@ public sealed class PptxCodecTests
     public void NativeObjectGraphRejectsMissingRelationshipsPartsAndExcessiveTraversal()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var cyclic = AddZipText(source, "ppt/customXml/_rels/itemProps1.xml.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdCycle\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml\" Target=\"native-content.xml\"/></Relationships>");
+        var cyclicImported = Import(cyclic);
+        Assert.True(cyclicImported.Ok, Diagnostics(cyclicImported));
+        Assert.Equal(2, cyclicImported.Artifact.Presentation.Slides[0].Elements[3].Opaque.PreservedPartPaths.Count);
+
         var missingRelationship = ReplaceZipText(source, "ppt/slides/slide1.xml", xml => xml.Replace("rIdNativeOle", "rIdMissingOle", StringComparison.Ordinal));
         var relationshipRejected = Import(missingRelationship);
         Assert.False(relationshipRejected.Ok);
@@ -2100,6 +2105,15 @@ public sealed class PptxCodecTests
     {
         using var writer = new StreamWriter(archive.CreateEntry(path).Open());
         writer.Write(text);
+    }
+
+    private static byte[] AddZipText(byte[] bytes, string path, string text)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true)) AddZipText(archive, path, text);
+        return stream.ToArray();
     }
 
     private static void AddZipBytes(ZipArchive archive, string path, byte[] bytes)

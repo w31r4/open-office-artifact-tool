@@ -18,6 +18,7 @@ import {
   openChestnutStatus,
 } from "../src/codecs/open-chestnut.mjs";
 import { spreadsheetChartFromWire } from "../src/codecs/open-chestnut-spreadsheet-charts.mjs";
+import { materializePresentationNativeGraphs } from "../src/codecs/open-chestnut-presentation-native.mjs";
 import { parseSpreadsheetChart } from "../src/spreadsheet/ooxml-drawings.mjs";
 
 function appendComplexColorDifferentialFormat(stylesXml) {
@@ -67,9 +68,49 @@ async function addOpaqueOpcGraph(bytes) {
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
+async function addPresentationNativeGraph(bytes) {
+  const zip = await JSZip.loadAsync(bytes);
+  const namespaces = ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const ole = `<p:graphicFrame${namespaces}><p:nvGraphicFramePr><p:cNvPr id="100" name="Embedded workbook"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdNativeOle" imgW="965200" imgH="609600" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdNativePreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>`;
+  const diagram = `<p:graphicFrame${namespaces}><p:nvGraphicFramePr><p:cNvPr id="101" name="Preserved diagram"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="457200" y="3657600"/><a:ext cx="5486400" cy="1828800"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="rIdNativeDm" r:lo="rIdNativeLo" r:qs="rIdNativeQs" r:cs="rIdNativeCs"/></a:graphicData></a:graphic></p:graphicFrame>`;
+  const content = `<p:grpSp${namespaces}><p:nvGrpSpPr><p:cNvPr id="102" name="Native content group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="7000000" y="5000000"/><a:ext cx="952500" cy="952500"/><a:chOff x="0" y="0"/><a:chExt cx="952500" cy="952500"/></a:xfrm></p:grpSpPr><p:contentPart r:id="rIdNativeContent"/></p:grpSp>`;
+  const slidePath = "ppt/slides/slide1.xml";
+  const slideXml = await zip.file(slidePath).async("text");
+  const updatedSlide = slideXml.replace("</p:spTree>", `${ole}${diagram}${content}</p:spTree>`);
+  assert.notEqual(updatedSlide, slideXml, "fixture must append native PresentationML objects");
+  zip.file(slidePath, updatedSlide);
+
+  const relationshipsPath = "ppt/slides/_rels/slide1.xml.rels";
+  const relationshipsXml = await zip.file(relationshipsPath).async("text");
+  const nativeRelationships = '<Relationship Id="rIdNativeOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/native-workbook.xlsx"/><Relationship Id="rIdNativePreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/native-preview.png"/><Relationship Id="rIdNativeDm" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="../diagrams/native-data.xml"/><Relationship Id="rIdNativeLo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout" Target="../diagrams/native-layout.xml"/><Relationship Id="rIdNativeQs" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle" Target="../diagrams/native-style.xml"/><Relationship Id="rIdNativeCs" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors" Target="../diagrams/native-colors.xml"/><Relationship Id="rIdNativeContent" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/native-content.xml"/>';
+  zip.file(relationshipsPath, relationshipsXml.replace("</Relationships>", `${nativeRelationships}</Relationships>`));
+
+  const contentTypesPath = "[Content_Types].xml";
+  const contentTypes = await zip.file(contentTypesPath).async("text");
+  const overrides = '<Override PartName="/ppt/embeddings/native-workbook.xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/><Override PartName="/ppt/media/native-preview.png" ContentType="image/png"/><Override PartName="/ppt/diagrams/native-data.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/><Override PartName="/ppt/diagrams/native-layout.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml"/><Override PartName="/ppt/diagrams/native-style.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml"/><Override PartName="/ppt/diagrams/native-colors.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml"/><Override PartName="/ppt/customXml/native-content.xml" ContentType="application/xml"/><Override PartName="/ppt/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>';
+  zip.file(contentTypesPath, contentTypes.replace("</Types>", `${overrides}</Types>`));
+  zip.file("ppt/embeddings/native-workbook.xlsx", Uint8Array.of(0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4));
+  zip.file("ppt/media/native-preview.png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", { base64: true });
+  zip.file("ppt/diagrams/native-data.xml", '<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>');
+  zip.file("ppt/diagrams/native-layout.xml", '<dgm:layoutDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:native-layout"><dgm:title val="Native"/><dgm:desc val="Native layout"/><dgm:catLst/><dgm:layoutNode name="root"/></dgm:layoutDef>');
+  zip.file("ppt/diagrams/native-style.xml", '<dgm:styleDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:native-style"><dgm:title val="Native"/><dgm:desc val="Native style"/><dgm:catLst/><dgm:styleLbl name="node0"/></dgm:styleDef>');
+  zip.file("ppt/diagrams/native-colors.xml", '<dgm:colorsDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:native-colors"><dgm:title val="Native"/><dgm:desc val="Native colors"/><dgm:catLst/></dgm:colorsDef>');
+  zip.file("ppt/customXml/native-content.xml", '<native xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:link="rIdPayload">preserve me</native>');
+  zip.file("ppt/customXml/_rels/native-content.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdPayload" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="itemProps1.xml"/></Relationships>');
+  zip.file("ppt/customXml/itemProps1.xml", '<ds:datastoreItem ds:itemID="{00112233-4455-6677-8899-AABBCCDDEEFF}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs/></ds:datastoreItem>');
+  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
 const legacyTabWire = toBinary(PresentationTextParagraphSchema, create(PresentationTextParagraphSchema, {
   tabStops: [{ positionEmu: 120n, alignment: "left" }],
 }));
+await assert.rejects(
+  materializePresentationNativeGraphs({
+    payload: { case: "presentation", value: { slides: [{ elements: [{ content: { case: "opaque", value: { preservedPartPaths: ["ppt/native/../escape.xml"] } } }] }] } },
+    opaqueOpc: { parts: [] },
+  }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_presentation_native_graph",
+);
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { numberFormatCode: "0.00%" }))[0], 0x22, "Spreadsheet number-format codes must use additive cell field 4.");
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { formulaMetadata: { kind: 1, sharedIndex: 7, reference: "C1:C2" } }))[0], 0x2a, "Spreadsheet formula topology must use additive cell field 5.");
 assert.equal(toBinary(CellArtifactSchema, create(CellArtifactSchema, { style: { font: { bold: true } } }))[0], 0x32, "Spreadsheet static styles must use additive cell field 6.");
@@ -3304,15 +3345,42 @@ preservedSlide.charts.add("bar", {
   series: [{ name: "Evidence", values: [8, 12] }],
 });
 const presentationSource = await PresentationFile.exportPptx(preservedPresentation);
-const presentationImported = await importPptxWithOpenChestnut(presentationSource);
-assert.equal(presentationImported.slides.getItem(0).nativeObjects.items.length, 2);
+const presentationNativeSource = await addPresentationNativeGraph(new Uint8Array(await presentationSource.arrayBuffer()));
+const presentationImported = await importPptxWithOpenChestnut(presentationNativeSource);
+const importedNativeObjects = presentationImported.slides.getItem(0).nativeObjects.items;
+assert.equal(importedNativeObjects.length, 5);
+const importedOle = importedNativeObjects.find((object) => object.nativeKind === "oleObject");
+const importedDiagram = importedNativeObjects.find((object) => object.nativeKind === "diagram");
+const importedContentPart = importedNativeObjects.find((object) => object.nativeKind === "contentPart");
+assert.ok(importedOle && importedDiagram && importedContentPart);
+assert.equal(importedOle.rootRelationships.length, 2);
+assert.equal(importedOle.parts.length, 2);
+assert.equal(importedDiagram.rootRelationships.length, 4);
+assert.equal(importedDiagram.parts.length, 4);
+assert.equal(importedContentPart.rootRelationships.length, 1);
+assert.equal(importedContentPart.parts.length, 2);
+assert.deepEqual(importedContentPart.parts.map((part) => part.path), ["ppt/customXml/native-content.xml", "ppt/customXml/itemProps1.xml"]);
+const nativeInspect = presentationImported.inspect({ kind: "nativeObject", maxChars: 50_000 }).ndjson;
+assert.match(nativeInspect, /"nativeKind":"oleObject"/);
+assert.match(nativeInspect, /"nativeKind":"diagram"/);
+assert.match(nativeInspect, /"nativeKind":"contentPart"/);
+assert.match(nativeInspect, /"nativeParts":\[\{"path":"ppt\/customXml\/native-content.xml"/);
+assert.equal(presentationImported.slides.getItem(0).resolve(importedDiagram.id), importedDiagram);
 presentationImported.slides.getItem(0).shapes.items[0].text.set("After WASM");
 const presentationPreserved = await exportPptxWithOpenChestnut(presentationImported);
 assert.equal(presentationPreserved.metadata.diagnostics.some((item) => item.code === "opaque_content_preserved"), true);
+const presentationPreservedZip = await JSZip.loadAsync(presentationPreserved.bytes);
+assert.deepEqual([...await presentationPreservedZip.file("ppt/embeddings/native-workbook.xlsx").async("uint8array")], [0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+assert.match(await presentationPreservedZip.file("ppt/customXml/native-content.xml").async("text"), /preserve me/);
 const presentationRoundTrip = await PresentationFile.importPptx(presentationPreserved);
 assert.equal(presentationRoundTrip.slides.getItem(0).shapes.items[0].text.value, "After WASM");
 assert.equal(presentationRoundTrip.slides.getItem(0).images.items.length, 1);
 assert.equal(presentationRoundTrip.slides.getItem(0).charts.items.length, 1);
+const presentationFallback = await PresentationFile.exportPptx(presentationImported);
+const presentationFallbackRoundTrip = await PresentationFile.importPptx(presentationFallback);
+const presentationFallbackSlide = presentationFallbackRoundTrip.slides.getItem(0);
+assert.deepEqual(presentationFallbackSlide.nativeObjects.items.map((object) => object.nativeKind).sort(), ["diagram", "oleObject"].sort());
+assert.equal(presentationFallbackSlide.groups.items[0].nativeObjects.items[0].nativeKind, "contentPart");
 presentationImported.slides.getItem(0).nativeObjects.items[0].name = "Unsafe native edit";
 await assert.rejects(
   exportPptxWithOpenChestnut(presentationImported),

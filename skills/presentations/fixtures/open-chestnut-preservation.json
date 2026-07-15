@@ -110,6 +110,12 @@
     }
   ],
   "openChestnut": {
+    "nativeGraphFixture": true,
+    "nativeObjects": [
+      { "nativeKind": "oleObject", "relationships": 2, "parts": 2 },
+      { "nativeKind": "diagram", "relationships": 4, "parts": 4 },
+      { "nativeKind": "contentPart", "relationships": 1, "parts": 2 }
+    ],
     "edit": {
       "slideIndex": 0,
       "shapeName": "wasm-title",
@@ -187,6 +193,6 @@
   "qa": {
     "nativeRender": "auto",
     "inspectKind": "deck,slide,shape,chart,image,notes,nativeObject",
-    "maxChars": 18000
+    "maxChars": 30000
   }
 }

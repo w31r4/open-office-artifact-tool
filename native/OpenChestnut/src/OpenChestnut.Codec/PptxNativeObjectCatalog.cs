@@ -56,6 +56,16 @@ internal sealed class PptxNativeObjectCatalog
             .Where(entry => !entry.FullName.EndsWith("/", StringComparison.Ordinal))
             .Select(entry => entry.FullName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var relationship in opaque.PackageRelationships)
+        {
+            if (relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase)) continue;
+            var targetPath = ResolveTarget(relationship.SourcePath, relationship.Target);
+            if (!_packagePaths.Contains(targetPath))
+                throw new CodecException(
+                    "missing_presentation_native_part",
+                    $"PPTX relationship {relationship.Id} from {relationship.SourcePath} references missing part {targetPath}.",
+                    targetPath);
+        }
     }
 
     internal void Populate(PresentationOpaqueElement target, OpenXmlElement source, string sourcePart)

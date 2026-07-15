@@ -8,9 +8,11 @@ function fail(code, message) {
 }
 
 function safePartPath(value) {
-  const raw = String(value || "").replaceAll("\\", "/").replace(/^\//, "");
-  const normalized = path.posix.normalize(raw).replace(/^\.\//, "");
-  if (!normalized || normalized === "." || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../") || normalized.includes("\0")) {
+  const raw = String(value || "");
+  const segments = raw.split("/");
+  const normalized = path.posix.normalize(raw);
+  if (!raw || raw.startsWith("/") || raw.includes("\\") || [...raw].some((character) => character.charCodeAt(0) < 0x20) ||
+      segments.some((segment) => !segment || segment === "." || segment === "..") || normalized !== raw) {
     fail("invalid_presentation_native_graph", `OpenChestnut returned an unsafe native-object part path: ${value}`);
   }
   return normalized;
