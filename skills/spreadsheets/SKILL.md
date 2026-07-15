@@ -7,6 +7,8 @@ description: Create, edit, inspect, render, and verify XLSX/CSV spreadsheet arti
 
 Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work. It is the clean-room workflow for `open-office-artifact-tool`; it does not control a live Microsoft Excel session.
 
+For XLSX, use the main facade's explicit codec selector: `SpreadsheetFile.importXlsx(input, { codec: "open-chestnut" })` and `SpreadsheetFile.exportXlsx(workbook, { codec: "open-chestnut" })`. Omission keeps the JavaScript codec. A source-bound workbook imported through OpenChestnut must use OpenChestnut again for every preservation-sensitive export; use the JavaScript default only for model features that intentionally remain outside the current OpenChestnut boundary.
+
 ## Contract
 
 - Use `open-office-artifact-tool` public exports. Do not import reference implementation internals.

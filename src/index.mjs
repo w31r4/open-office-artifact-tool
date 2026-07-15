@@ -42,6 +42,9 @@ import { analyzePdfReadingOrder, inspectPdfReadingOrderIds, normalizePdfReadingO
 import { inspectPdfFigureAccessibility, normalizePdfFigureAccessibility, normalizePdfHeadingLevel, pdfFigureAccessibilityIssue, pdfHeadingNestingIssues } from "./pdf/accessibility.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./spreadsheet/formula-coercion.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./spreadsheet/workbook-windows.mjs";
+import { OFFICE_CODEC_IDS, codecDelegateOptions, loadOpenChestnutCodec, resolveOfficeCodec } from "./codecs/office-codec-policy.mjs";
+
+export { OFFICE_CODEC_IDS };
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml";
@@ -925,8 +928,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbookWindow.getSelectedWorksheets", summary: "Return one window's visible selected worksheet tabs in workbook order." },
   { artifactKind: "workbook", kind: "api", name: "workbookWindow.setSelectedWorksheets", summary: "Set one window's non-empty visible selected tab group, which must include its active worksheet." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX into an editable Workbook facade with options.codec set to javascript (default) or open-chestnut." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to XLSX with options.codec set to javascript (default) or open-chestnut." },
   { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, per-series solid RGB fills, bounded RGB line color/dash/width, direct line-marker symbol/size, chart-level line smoothing, title/tick-label font sizes, and primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec." },
   { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized solid RGB series fills, bounded direct line styles and line-marker symbol/size, chart-level line smoothing, title/tick-label font sizes, and primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
@@ -1093,8 +1096,8 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice." },
   { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes; ordered text, field, and line-break inlines; paragraph tab stops; character/auto/none plus embedded or external picture markers; direct marker styles; and external/internal/relative-action links through the bundled OpenChestnut codec, preserving unsupported native content fail-closed." },
   { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology text/field/line-break inlines, paragraph tab stops, direct list markers/styles including content-addressed picture assets, bounded links, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
@@ -1128,8 +1131,8 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice." },
   { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables and direct text-marker numbering graphs, plus source-bound hyperlinks/simple fields/table text, recognized direct table-formatting edits, and coherent numbering-definition group edits through the bundled OpenChestnut codec." },
   { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -1894,10 +1897,15 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "report", "object", "Document semantic/layout QA result."),
   "DocumentFile.exportDocx": helpSchema({
     document: { type: "DocumentModel", required: true, description: "Document facade to serialize." },
+    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
+    allowLossy: { type: "boolean", description: "OpenChestnut only: explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
+    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "DOCX package bytes."),
   "DocumentFile.importDocx": helpSchema({
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
-    preferNative: { type: "boolean", description: "Parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks." },
+    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
+    preferNative: { type: "boolean", description: "JavaScript codec only: parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks." },
+    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "document", "DocumentModel", "Imported editable document facade."),
   "exportDocxWithOpenChestnut": helpSchema({
     document: { type: "DocumentModel", required: true, description: "Document facade within the current paragraph/run/table authoring boundary. Source-free export accepts complete explicit gridSpan/vMerge geometry and direct text-marker list items grouped by numberingId/abstractNumberingId with consistent levels; picture bullets and style-linked numbering remain on the JavaScript codec. Imported hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraphs retain source bindings. Complete direct numId/level groups may coherently edit numberFormat/start/levelText through an instance-local override; partial, linked, nested, or cross-part edits fail closed." },
@@ -2130,9 +2138,14 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "blob", "FileBlob", "Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
+    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
+    allowLossy: { type: "boolean", description: "OpenChestnut only: explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
+    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "Native OOXML PPTX package bytes."),
   "PresentationFile.importPptx": helpSchema({
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
+    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
+    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "presentation", "Presentation", "Imported editable presentation facade."),
   "exportPptxWithOpenChestnut": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade within the top-level rect/ellipse; ordered text/field/line-break inline; paragraph tab-stop; character/auto/none marker; direct marker-style; and external/internal/relative-action link boundary, or carrying validated fixed-topology source bindings from the WASM importer." },
@@ -2213,10 +2226,16 @@ const WORKBOOK_HELP_SCHEMAS = {
   "worksheet.freezePanes.unfreeze": helpSchema({}, "freezePanes", "object", "Worksheet frozen-pane facade reset to zero frozen rows and columns."),
   "SpreadsheetFile.importXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
-    relativeDateAsOf: { type: "string|Date", description: "Optional deterministic ISO/Date evaluation anchor for metadata-free native relative Pivot filters; defaults to the current UTC date." },
+    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
+    relativeDateAsOf: { type: "string|Date", description: "JavaScript codec only: optional deterministic ISO/Date evaluation anchor for metadata-free native relative Pivot filters; defaults to the current UTC date." },
+    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "workbook", "Workbook", "Imported editable workbook facade with relationship-driven worksheet tables, worksheet-backed pivots/caches, and basic chart or embedded-image drawings restored from native OOXML parts."),
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
+    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
+    recalculate: { type: "boolean", description: "OpenChestnut only: recalculate formulas before serialization; defaults to true." },
+    allowLossy: { type: "boolean", description: "OpenChestnut only: explicitly permit discarding detected opaque OPC content on a second export; defaults to false." },
+    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches, optional worksheet formulas, per-series solid RGB fills, direct RGB line color/dash/width, direct line-marker symbol/size, chart-level line smoothing, title/tick-label font sizes, and text/value primary-axis titles, number formats, intervals, bounds and major units, plus recognized source-bound database connection-root metadata." },
@@ -6853,7 +6872,11 @@ export class SpreadsheetFile {
     return new FileBlob(patched.bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
-  static async exportXlsx(workbook) {
+  static async exportXlsx(workbook, options = {}) {
+    if (resolveOfficeCodec(options, "SpreadsheetFile.exportXlsx") === "open-chestnut") {
+      const { exportXlsxWithOpenChestnut } = await loadOpenChestnutCodec();
+      return exportXlsxWithOpenChestnut(workbook, codecDelegateOptions(options));
+    }
     const queryTable = workbook.worksheets.items.flatMap((sheet) => sheet.tables.items).find((table) => table.queryTable != null || table[WORKSHEET_TABLE_QUERY_UNSUPPORTED] === true);
     if (queryTable)
       throw new Error(`The JavaScript XLSX codec cannot author or source-preserve QueryTable/external-connection graphs for ${queryTable.name}; use the source-bound OpenChestnut XLSX codec.`);
@@ -6910,10 +6933,14 @@ export class SpreadsheetFile {
     threadedCommentPlan.parts.forEach((part) => zip.file(`xl/threadedComments/threadedComment${part.threadPartId}.xml`, spreadsheetThreadedCommentsXml(part)));
     if (threadParts.length) zip.file("xl/persons/person.xml", spreadsheetPersonsXml(threadedCommentPlan));
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-    return new FileBlob(bytes, { type: XLSX_MIME });
+    return new FileBlob(bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", codec: "javascript" } });
   }
 
   static async importXlsx(blobOrBuffer, options = {}) {
+    if (resolveOfficeCodec(options, "SpreadsheetFile.importXlsx") === "open-chestnut") {
+      const { importXlsxWithOpenChestnut } = await loadOpenChestnutCodec();
+      return importXlsxWithOpenChestnut(blobOrBuffer, codecDelegateOptions(options));
+    }
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const workbook = Workbook.create();
@@ -9860,7 +9887,11 @@ export class PresentationFile {
     return new FileBlob(patched.bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
-  static async exportPptx(presentation) {
+  static async exportPptx(presentation, options = {}) {
+    if (resolveOfficeCodec(options, "PresentationFile.exportPptx") === "open-chestnut") {
+      const { exportPptxWithOpenChestnut } = await loadOpenChestnutCodec();
+      return exportPptxWithOpenChestnut(presentation, codecDelegateOptions(options));
+    }
     const zip = new JSZip();
     planPresentationNativeIdentities(presentation);
     const { masterParts, layoutParts, themeParts } = collectPresentationMasterGraph(presentation);
@@ -9943,10 +9974,14 @@ export class PresentationFile {
       if (part.relationshipsXml) zip.file(ooxmlRelationshipPartPath(part.outputPath, "PPTX"), part.relationshipsXml);
     });
     const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-    return new FileBlob(bytes, { type: PPTX_MIME });
+    return new FileBlob(bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", codec: "javascript" } });
   }
 
-  static async importPptx(blobOrBuffer) {
+  static async importPptx(blobOrBuffer, options = {}) {
+    if (resolveOfficeCodec(options, "PresentationFile.importPptx") === "open-chestnut") {
+      const { importPptxWithOpenChestnut } = await loadOpenChestnutCodec();
+      return importPptxWithOpenChestnut(blobOrBuffer, codecDelegateOptions(options));
+    }
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const presentation = Presentation.create();
@@ -12541,7 +12576,11 @@ export class DocumentFile {
     return new FileBlob(patched.bytes, { type: DOCX_MIME, metadata: { artifactKind: "document", patchedParts: patched.patchedParts, recipesApplied: patched.recipesApplied, contentTypesUpdated: patched.contentTypesUpdated, relationshipsUpdated: patched.relationshipsUpdated, sourceReferencesUpdated: patched.sourceReferencesUpdated, validated: patched.validated, validationIssues: patched.validationIssues } });
   }
 
-  static async exportDocx(document) {
+  static async exportDocx(document, options = {}) {
+    if (resolveOfficeCodec(options, "DocumentFile.exportDocx") === "open-chestnut") {
+      const { exportDocxWithOpenChestnut } = await loadOpenChestnutCodec();
+      return exportDocxWithOpenChestnut(document, codecDelegateOptions(options));
+    }
     const zip = new JSZip();
     const commentPlan = planDocxComments(document.comments);
     const bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks);
@@ -12615,10 +12654,14 @@ export class DocumentFile {
     numbering.mediaParts.forEach((part) => zip.file(part.outputPath, part.bytes));
     zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
     zip.file("word/document.xml", docxDocumentXml(document, relIds, bookmarkPlan));
-    return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
+    return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME, metadata: { artifactKind: "document", codec: "javascript" } });
   }
 
   static async importDocx(blobOrBuffer, options = {}) {
+    if (resolveOfficeCodec(options, "DocumentFile.importDocx") === "open-chestnut") {
+      const { importDocxWithOpenChestnut } = await loadOpenChestnutCodec();
+      return importDocxWithOpenChestnut(blobOrBuffer, codecDelegateOptions(options));
+    }
     const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
     const zip = await JSZip.loadAsync(bytes);
     const metadataText = await zip.file("word/open-office-artifact.json")?.async("text");

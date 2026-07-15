@@ -240,6 +240,16 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.setDateSystem")
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.category, "date-time");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.WORKDAY.INTL")?.category, "date-time");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.returns?.blob?.type, "FileBlob");
+for (const name of [
+  "SpreadsheetFile.importXlsx",
+  "SpreadsheetFile.exportXlsx",
+  "PresentationFile.importPptx",
+  "PresentationFile.exportPptx",
+  "DocumentFile.importDocx",
+  "DocumentFile.exportDocx",
+]) {
+  assert.equal(HELP_CATALOG.find((item) => item.name === name)?.schema?.parameters?.codec?.type, "string");
+}
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");

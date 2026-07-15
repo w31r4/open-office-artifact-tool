@@ -7,6 +7,8 @@ description: Create, edit, inspect, render, and verify DOCX artifacts with open-
 
 Use this project skill for standalone `.docx` artifact work. It is the clean-room Documents workflow for `open-office-artifact-tool`; it uses only the package's public facade and legally usable renderers.
 
+Select OpenChestnut through the normal file facade: `DocumentFile.importDocx(input, { codec: "open-chestnut" })` and `DocumentFile.exportDocx(document, { codec: "open-chestnut" })`. Omission keeps the JavaScript codec. A source-bound document imported through OpenChestnut must use OpenChestnut again for every preservation-sensitive export; direct `codecs/open-chestnut` helpers are advanced equivalents, not a separate implementation.
+
 ## Contract
 
 - Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
@@ -22,7 +24,7 @@ Use this project skill for standalone `.docx` artifact work. It is the clean-roo
 
 ## Authoring workflow
 
-1. Create a `DocumentModel` or import an existing DOCX with `DocumentFile.importDocx`. After package-level OOXML patches, pass `{ preferNative: true }` so relationship-driven native parts take precedence over stale embedded model metadata.
+1. Create a `DocumentModel` or import an existing DOCX with `DocumentFile.importDocx`. Choose `{ codec: "open-chestnut" }` for the bundled C# codec. After package-level OOXML patches on the JavaScript path, pass `{ preferNative: true }` so relationship-driven native parts take precedence over stale embedded model metadata.
 2. Inspect the relevant blocks, styles, comments, and layout before editing.
 3. Apply focused changes through public APIs.
    For clean-room package surgery, `DocumentFile.patchDocx(...)` can create a Comments part and add matching block, paragraph, or table-cell anchors with `recipe: { kind: "comments", source: "word/document.xml", sourceReference: { anchors: [...] } }`. It can also relocate valid `commentsExtended`, `commentsIds`, `commentsExtensible`, and `people` parts with matching recipe kinds; semantic validation rejects orphan/multiple parts, unresolved or duplicate paragraph/durable identities, invalid UTC metadata, reply placeholders, and conflicting people.

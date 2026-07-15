@@ -15,8 +15,8 @@ try {
 
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", tarball], temporary);
   const probe = `
-    import { DocumentModel, Presentation, Workbook } from "open-office-artifact-tool";
-    import { exportDocxWithOpenChestnut, exportPptxWithOpenChestnut, exportXlsxWithOpenChestnut, importDocxWithOpenChestnut, importPptxWithOpenChestnut, importXlsxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
+    import { DocumentFile, DocumentModel, Presentation, PresentationFile, SpreadsheetFile, Workbook } from "open-office-artifact-tool";
+    import { exportXlsxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
     import { exportXlsxWithOpenXmlWasm } from "open-office-artifact-tool/codecs/openxml-wasm";
     if (exportXlsxWithOpenXmlWasm !== exportXlsxWithOpenChestnut) process.exit(9);
     const workbook = Workbook.create({ dateSystem: "1904" });
@@ -42,8 +42,8 @@ try {
       { reference: "E2:E2", descending: false, kind: "color", target: "cell", color: "#E11D48" },
       { reference: "F2:F2", descending: true, kind: "color", target: "font", color: { theme: 4, tint: -0.25 } },
     ] };
-    const file = await exportXlsxWithOpenChestnut(workbook);
-    const imported = await importXlsxWithOpenChestnut(file);
+    const file = await SpreadsheetFile.exportXlsx(workbook, { codec: "open-chestnut" });
+    const imported = await SpreadsheetFile.importXlsx(file, { codec: "open-chestnut" });
     if (file.bytes[0] !== 0x50 || file.bytes[1] !== 0x4b) process.exit(1);
     if (imported.worksheets.getItem("Packaged").getRange("A1:F2").values[1][3] !== 7) process.exit(2);
     if (imported.worksheets.getActiveWorksheet().name !== "Selected") process.exit(17);
@@ -59,15 +59,15 @@ try {
     const legacyFile = await exportXlsxWithOpenXmlWasm(workbook);
     if (legacyFile.metadata.codec !== "open-chestnut") process.exit(10);
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });
-    const docx = await exportDocxWithOpenChestnut(document);
-    const importedDocument = await importDocxWithOpenChestnut(docx);
+    const docx = await DocumentFile.exportDocx(document, { codec: "open-chestnut" });
+    const importedDocument = await DocumentFile.importDocx(docx, { codec: "open-chestnut" });
     if (docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(3);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(4);
     const presentation = Presentation.create();
     const packagedSlide = presentation.slides.add({ name: "Packaged" });
     packagedSlide.shapes.add({ name: "Title", text: [{ bulletCharacter: "•", bulletFont: "Georgia", bulletColor: "#2563EB", bulletSizePercent: 1.25, runs: [{ text: "clean install PPTX", link: { uri: "https://example.com/packaged", tooltip: "Packaged link" } }] }], position: { left: 40, top: 40, width: 640, height: 80 } });
-    const pptx = await exportPptxWithOpenChestnut(presentation);
-    const importedPresentation = await importPptxWithOpenChestnut(pptx);
+    const pptx = await PresentationFile.exportPptx(presentation, { codec: "open-chestnut" });
+    const importedPresentation = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
     if (pptx.bytes[0] !== 0x50 || pptx.bytes[1] !== 0x4b) process.exit(5);
     if (importedPresentation.slides.getItem(0).shapes.items[0].text.value !== "clean install PPTX") process.exit(6);
     const marker = importedPresentation.slides.getItem(0).shapes.items[0].text.paragraphs[0];

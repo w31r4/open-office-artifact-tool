@@ -33,8 +33,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
-| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields. |
-| `DocumentFile.importDocx` | api | Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments. |
+| `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary. |
+| `DocumentFile.importDocx` | api | Import relationship-driven DOCX semantics with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
@@ -499,11 +499,14 @@ Return QA issues for fake lists, invalid links/citations/bibliography sources, d
 
 #### `DocumentFile.exportDocx`
 
-Export DocumentModel to DOCX with native Theme/styles/settings/numbering, comments/people, section-scoped headers/footers, links, bookmarks, fields, and customXml bibliography sources/CITATION fields.
+Export DocumentModel to DOCX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary.
 
 **Schema parameters:**
 
 - `document` (DocumentModel) required — Document facade to serialize.
+- `codec` (string) — Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed.
+- `allowLossy` (boolean) — OpenChestnut only: explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
+- `limits` (object) — OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
@@ -511,12 +514,14 @@ Export DocumentModel to DOCX with native Theme/styles/settings/numbering, commen
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven DOCX semantics, including relocated/prefix-agnostic bibliography sources and CITATION fields alongside sections, styles, numbering, links, bookmarks, fields, and comments.
+Import relationship-driven DOCX semantics with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice.
 
 **Schema parameters:**
 
 - `docx` (FileBlob|Uint8Array) required — DOCX package bytes.
-- `preferNative` (boolean) — Parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks.
+- `codec` (string) — Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed.
+- `preferNative` (boolean) — JavaScript codec only: parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks.
+- `limits` (object) — OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
@@ -1043,8 +1048,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.theme` | api | Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
-| `PresentationFile.exportPptx` | api | Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts. |
-| `PresentationFile.importPptx` | api | Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs. |
+| `PresentationFile.exportPptx` | api | Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary. |
+| `PresentationFile.importPptx` | api | Import PPTX with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets with RGB or theme marker colors; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip. |
@@ -1374,11 +1379,14 @@ Return QA issues for layout validation, missing master/layout references, placeh
 
 #### `PresentationFile.exportPptx`
 
-Serialize native PPTX with every master/layout ownership chain, per-master Theme relationships, slide layout bindings, comment author registry, and recursively preserved opaque native-object parts.
+Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary.
 
 **Schema parameters:**
 
 - `presentation` (Presentation) required — Presentation facade to serialize.
+- `codec` (string) — Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed.
+- `allowLossy` (boolean) — OpenChestnut only: explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
+- `limits` (object) — OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
@@ -1386,11 +1394,13 @@ Serialize native PPTX with every master/layout ownership chain, per-master Theme
 
 #### `PresentationFile.importPptx`
 
-Import arbitrary relationship-driven PPTX master/layout/slide graphs, preserving multiple masters, unused layouts, custom shows and links, native IDs, grouped shape trees, standard master Theme targets, notes, comments, charts, images, and read-only contentPart/OLE/diagram object graphs.
+Import PPTX with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice.
 
 **Schema parameters:**
 
 - `pptx` (FileBlob|Uint8Array) required — PPTX package bytes.
+- `codec` (string) — Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed.
+- `limits` (object) — OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
@@ -2037,11 +2047,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
-| `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to an XLSX FileBlob. |
+| `SpreadsheetFile.exportXlsx` | api | Serialize a Workbook facade to XLSX with options.codec set to javascript (default) or open-chestnut. |
 | `SpreadsheetFile.importCsv` | api | Import UTF-8 CSV bytes into an editable Workbook through the bounded delimited parser. |
 | `SpreadsheetFile.importDelimited` | api | Parse bounded RFC-style CSV/TSV bytes into an editable Workbook, including quoted delimiters, escaped quotes, and embedded newlines. |
 | `SpreadsheetFile.importTsv` | api | Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser. |
-| `SpreadsheetFile.importXlsx` | api | Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade. |
+| `SpreadsheetFile.importXlsx` | api | Load XLSX into an editable Workbook facade with options.codec set to javascript (default) or open-chestnut. |
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
@@ -3913,11 +3923,15 @@ Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting
 
 #### `SpreadsheetFile.exportXlsx`
 
-Serialize a Workbook facade to an XLSX FileBlob.
+Serialize a Workbook facade to XLSX with options.codec set to javascript (default) or open-chestnut.
 
 **Schema parameters:**
 
 - `workbook` (Workbook) required — Workbook facade to recalculate and serialize.
+- `codec` (string) — Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed.
+- `recalculate` (boolean) — OpenChestnut only: recalculate formulas before serialization; defaults to true.
+- `allowLossy` (boolean) — OpenChestnut only: explicitly permit discarding detected opaque OPC content on a second export; defaults to false.
+- `limits` (object) — OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
@@ -3977,12 +3991,14 @@ Import UTF-8 tab-separated bytes into an editable Workbook through the bounded d
 
 #### `SpreadsheetFile.importXlsx`
 
-Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade.
+Load XLSX into an editable Workbook facade with options.codec set to javascript (default) or open-chestnut.
 
 **Schema parameters:**
 
 - `xlsx` (FileBlob|Uint8Array) required — XLSX package bytes.
-- `relativeDateAsOf` (string|Date) — Optional deterministic ISO/Date evaluation anchor for metadata-free native relative Pivot filters; defaults to the current UTC date.
+- `codec` (string) — Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed.
+- `relativeDateAsOf` (string|Date) — JavaScript codec only: optional deterministic ISO/Date evaluation anchor for metadata-free native relative Pivot filters; defaults to the current UTC date.
+- `limits` (object) — OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
