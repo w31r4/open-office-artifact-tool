@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -74,6 +74,9 @@ assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, {
 assert.deepEqual([...toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { visibility: SpreadsheetWorksheetVisibility.HIDDEN }))], [0x58, 0x02], "Spreadsheet worksheet visibility must use additive worksheet field 11.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { source: { ordinal: 1 } }))[0], 0x62, "Spreadsheet worksheet source bindings must use additive worksheet field 12.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { images: [{ id: "image/1" }] }))[0], 0x6a, "Spreadsheet worksheet images must use additive worksheet field 13.");
+assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { charts: [{ id: "chart/1" }] }))[0], 0x72, "Spreadsheet worksheet charts must use additive worksheet field 14.");
+assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { source: { chartPartPath: "xl/charts/chart1.xml" } }))[0], 0x5a, "Spreadsheet chart source bindings must use chart field 11.");
+assert.equal(toBinary(SpreadsheetChartSourceBindingSchema, create(SpreadsheetChartSourceBindingSchema, { semanticSha256: "x" }))[0], 0x3a, "Spreadsheet chart semantic hashes must use source-binding field 7.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { assetId: "asset/1" }))[0], 0x22, "Spreadsheet image assets must use image field 4.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { twoCellAnchor: { from: {}, to: {} } }))[0], 0x3a, "Spreadsheet two-cell anchors must use additive image field 7.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { absoluteAnchor: { widthEmu: 1n, heightEmu: 1n } }))[0], 0x42, "Spreadsheet absolute anchors must use additive image field 8.");
@@ -280,6 +283,16 @@ const summaryImage = summary.images.add({
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
   anchor: { from: { row: 3, col: 2, rowOffsetPx: 10, colOffsetPx: 5 }, extent: { widthPx: 120, heightPx: 80 } },
 });
+const summaryChart = summary.charts.add("line", {
+  name: "Quarter chart",
+  title: "Quarter trend",
+  hasLegend: true,
+  categories: ["Q1", "Q2"],
+  series: [{ name: "Revenue", values: [42.5, 85] }],
+  position: { left: 420, top: 40, width: 360, height: 220 },
+});
+summaryChart.series.items[0].categoryFormula = "'Summary'!$A$1:$A$2";
+summaryChart.series.items[0].formula = "'Summary'!$B$1:$B$2";
 summary.sortState = {
   reference: "A1:B2",
   caseSensitive: true,
@@ -760,6 +773,21 @@ assert.equal(importedSummaryImage.alt, "Quarterly performance");
 assert.equal(importedSummaryImage.dataUrl, summaryImage.dataUrl);
 assert.deepEqual(importedSummaryImage.anchor, { from: { row: 3, col: 2, rowOffsetPx: 10, colOffsetPx: 5 }, extent: { widthPx: 120, heightPx: 80 } });
 assert.equal(imported.resolve(importedSummaryImage.id), importedSummaryImage);
+const importedSummaryChart = imported.worksheets.getItem("Summary").charts.items[0];
+assert.equal(importedSummaryChart.type, "line");
+assert.equal(importedSummaryChart.name, "Quarter chart");
+assert.equal(importedSummaryChart.title, "Quarter trend");
+assert.equal(importedSummaryChart.hasLegend, true);
+assert.deepEqual(importedSummaryChart.categories, ["Q1", "Q2"]);
+assert.deepEqual(importedSummaryChart.series.items[0], {
+  name: "Revenue",
+  values: [42.5, 85],
+  categoryFormula: "'Summary'!$A$1:$A$2",
+  formula: "'Summary'!$B$1:$B$2",
+  fill: undefined,
+});
+assert.deepEqual(importedSummaryChart.position, { left: 420, top: 40, width: 360, height: 220 });
+assert.equal(imported.resolve(importedSummaryChart.id), importedSummaryChart);
 assert.match(imported.inspect({ kind: "workbook,sheet,formula" }).ndjson, /"dateSystem":"1904"/);
 assert.equal(imported.verify().ok, true);
 assert.equal(imported.resolve(imported.worksheets.getItem("Summary").id).name, "Summary");
@@ -799,6 +827,8 @@ assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").for
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.border.bottom.style, "double");
 assert.equal(javascriptImported.worksheets.getItem("Summary").images.items[0].name, "Quarter mark");
 assert.equal(javascriptImported.worksheets.getItem("Summary").images.items[0].dataUrl, summaryImage.dataUrl);
+assert.equal(javascriptImported.worksheets.getItem("Summary").charts.items[0].title, "Quarter trend");
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].categories, ["Q1", "Q2"]);
 
 imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat = "$#,##0.00";
 imported.worksheets.getItem("Details").visibility = "veryHidden";
@@ -844,6 +874,12 @@ importedColorTable.sortState.conditions[0].color = "#2563EB";
 importedSummaryImage.name = "Updated quarter mark";
 importedSummaryImage.alt = "Updated quarterly performance";
 importedSummaryImage.anchor = { from: { row: 5, col: 4, rowOffsetPx: 12, colOffsetPx: 6 }, extent: { widthPx: 160, heightPx: 100 } };
+importedSummaryChart.name = "Updated quarter chart";
+importedSummaryChart.title = "Updated quarter trend";
+importedSummaryChart.hasLegend = false;
+importedSummaryChart.categories[1] = "Q2 actual";
+importedSummaryChart.series.items[0].name = "Actual revenue";
+importedSummaryChart.series.items[0].values[1] = 90;
 const secondExport = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 assert.deepEqual([...secondExport.bytes.slice(0, 2)], [0x50, 0x4b]);
 const secondImported = await importXlsxWithOpenChestnut(secondExport);
@@ -872,6 +908,13 @@ assert.equal(secondImage.name, "Updated quarter mark");
 assert.equal(secondImage.alt, "Updated quarterly performance");
 assert.deepEqual(secondImage.anchor, { from: { row: 5, col: 4, rowOffsetPx: 12, colOffsetPx: 6 }, extent: { widthPx: 160, heightPx: 100 } });
 assert.equal(secondImage.dataUrl, summaryImage.dataUrl);
+const secondChart = secondImported.worksheets.getItem("Summary").charts.items[0];
+assert.equal(secondChart.name, "Updated quarter chart");
+assert.equal(secondChart.title, "Updated quarter trend");
+assert.equal(secondChart.hasLegend, false);
+assert.deepEqual(secondChart.categories, ["Q1", "Q2 actual"]);
+assert.deepEqual(secondChart.series.items[0].values, [42.5, 90]);
+assert.equal(secondChart.series.items[0].formula, "'Summary'!$B$1:$B$2");
 const removedDefinedName = await importXlsxWithOpenChestnut(exported);
 removedDefinedName.definedNames.delete("SummaryData");
 await assert.rejects(
@@ -890,6 +933,41 @@ await assert.rejects(
   exportXlsxWithOpenChestnut(removedImage, { recalculate: false }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image_topology" && /cannot remove imported image/i.test(error.message),
 );
+const removedChart = await importXlsxWithOpenChestnut(exported);
+removedChart.worksheets.getItem("Summary").charts.deleteAll();
+await assert.rejects(
+  exportXlsxWithOpenChestnut(removedChart, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart_topology" && /cannot remove imported chart/i.test(error.message),
+);
+const addedChart = await importXlsxWithOpenChestnut(exported);
+addedChart.worksheets.getItem("Summary").charts.add("bar", { name: "Unexpected chart", categories: ["A"], series: [{ name: "Value", values: [1] }] });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(addedChart, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart_topology" && /cannot be added/i.test(error.message),
+);
+const movedChart = await importXlsxWithOpenChestnut(exported);
+movedChart.worksheets.getItem("Summary").charts.items[0].position.left += 1;
+await assert.rejects(
+  exportXlsxWithOpenChestnut(movedChart, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart_edit" && /anchor geometry/i.test(error.message),
+);
+const chartTypesWorkbook = Workbook.create();
+const chartTypesSheet = chartTypesWorkbook.worksheets.add("Chart types");
+for (const [index, chartType] of ["bar", "line", "pie"].entries()) {
+  chartTypesSheet.charts.add(chartType, {
+    name: `${chartType} chart`,
+    title: `${chartType} title`,
+    hasLegend: index !== 2,
+    categories: ["A", "B"],
+    series: [{ name: "Score", values: [index + 1, index + 2] }],
+    position: { left: 40 + index * 240, top: 40, width: 220, height: 160 },
+  });
+}
+const chartTypesExport = await exportXlsxWithOpenChestnut(chartTypesWorkbook);
+const chartTypesRoundTrip = await importXlsxWithOpenChestnut(chartTypesExport);
+assert.deepEqual(chartTypesRoundTrip.worksheets.getItem("Chart types").charts.items.map((chart) => chart.type), ["bar", "line", "pie"]);
+assert.deepEqual(chartTypesRoundTrip.worksheets.getItem("Chart types").charts.items.map((chart) => chart.hasLegend), [true, true, false]);
+assert.deepEqual((await SpreadsheetFile.importXlsx(chartTypesExport)).worksheets.getItem("Chart types").charts.items.map((chart) => chart.type), ["bar", "line", "pie"]);
 const addedImage = await importXlsxWithOpenChestnut(exported);
 addedImage.worksheets.getItem("Summary").images.add({ name: "Unexpected image", dataUrl: summaryImage.dataUrl });
 await assert.rejects(

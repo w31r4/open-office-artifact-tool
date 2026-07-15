@@ -4,6 +4,16 @@
   "codec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
   "roundtripEdits": {
+    "charts": [
+      {
+        "sheet": "Summary",
+        "name": "OpenChestnut chart",
+        "title": "OpenChestnut edited trend",
+        "hasLegend": false,
+        "categories": ["Revenue", "Double actual"],
+        "series": [{ "index": 0, "name": "Edited value", "values": [42.5, 90] }]
+      }
+    ],
     "images": [
       {
         "sheet": "Summary",
@@ -121,6 +131,24 @@
           "range": "A4:B4",
           "values": [["Ready", true]],
           "merge": true
+        }
+      ],
+      "charts": [
+        {
+          "chartType": "line",
+          "name": "OpenChestnut chart",
+          "title": "OpenChestnut trend",
+          "hasLegend": true,
+          "categories": ["Revenue", "Double"],
+          "series": [
+            {
+              "name": "Value",
+              "values": [42.5, 85],
+              "categoryFormula": "'Summary'!$A$2:$A$3",
+              "formula": "'Summary'!$B$2:$B$3"
+            }
+          ],
+          "position": { "left": 460, "top": 300, "width": 320, "height": 200 }
         }
       ],
       "images": [

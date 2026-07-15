@@ -2716,6 +2716,99 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesWorksheetChartsBesidePictures()
+    {
+        var request = ChartExportRequest();
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var drawingPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!;
+            Assert.Single(drawingPart.WorksheetDrawing!.Descendants<Xdr.Picture>());
+            Assert.Single(drawingPart.WorksheetDrawing.Descendants<Xdr.GraphicFrame>());
+            Assert.Single(drawingPart.ChartParts);
+            Assert.Contains("Quarter trend", ReadPartText(drawingPart.ChartParts.Single()), StringComparison.Ordinal);
+        }
+
+        var source = AddChartResidual(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
+        Assert.Single(sheet.Images);
+        var chart = Assert.Single(sheet.Charts);
+        Assert.Equal(SpreadsheetChartType.Line, chart.Type);
+        Assert.Equal("Quarter trend", chart.Title);
+        Assert.True(chart.HasLegend);
+        Assert.Equal(["Q1", "Q2"], chart.Categories);
+        Assert.Equal([42.5, 85], Assert.Single(chart.Series).Values);
+        Assert.Equal("'Summary'!$A$1:$A$2", chart.Series[0].CategoryFormula);
+        Assert.Equal("'Summary'!$B$1:$B$2", chart.Series[0].ValueFormula);
+        Assert.True(chart.Source.Editable);
+        Assert.Equal(64, chart.Source.DrawingXmlSha256.Length);
+        Assert.Equal(64, chart.Source.ChartXmlSha256.Length);
+        Assert.Equal(64, chart.Source.SemanticSha256.Length);
+
+        sheet.Images[0].Name = "Picture edited with chart";
+        chart.Name = "Edited native chart";
+        chart.Title = "Edited quarter trend";
+        chart.HasLegend = false;
+        chart.Categories[1] = "Q2 actual";
+        chart.Series[0].Name = "Actual revenue";
+        chart.Series[0].Values[1] = 90;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(preserved.File.ToByteArray());
+        using (var stream = new MemoryStream(preserved.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var drawingPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!;
+            Assert.Equal("Picture edited with chart", drawingPart.WorksheetDrawing!.Descendants<Xdr.Picture>().Single().NonVisualPictureProperties!.NonVisualDrawingProperties!.Name!.Value);
+            Assert.Equal("Edited native chart", drawingPart.WorksheetDrawing.Descendants<Xdr.GraphicFrame>().Single().NonVisualGraphicFrameProperties!.NonVisualDrawingProperties!.Name!.Value);
+            var xml = ReadPartText(drawingPart.ChartParts.Single());
+            Assert.Contains("Edited quarter trend", xml, StringComparison.Ordinal);
+            Assert.Contains("Q2 actual", xml, StringComparison.Ordinal);
+            Assert.Contains(">90<", xml, StringComparison.Ordinal);
+            Assert.Contains("preserve-me", xml, StringComparison.Ordinal);
+            Assert.DoesNotContain("<c:legend>", xml, StringComparison.Ordinal);
+        }
+
+        var removed = Import(source);
+        removed.Artifact.Workbook.Worksheets[0].Charts.Clear();
+        var rejected = Export(removed.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart_topology", Assert.Single(rejected.Diagnostics).Code);
+
+        var changedType = Import(source);
+        changedType.Artifact.Workbook.Worksheets[0].Charts[0].Type = SpreadsheetChartType.Bar;
+        rejected = Export(changedType.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var referencedSource = SetChartSeriesNameReference(authored.File.ToByteArray());
+        var referencedXml = ReadChartXml(referencedSource);
+        var referenced = Import(referencedSource);
+        Assert.True(referenced.Ok, string.Join("\n", referenced.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var readOnlyChart = Assert.Single(referenced.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal("Revenue from cache", Assert.Single(readOnlyChart.Series).Name);
+        Assert.False(readOnlyChart.Source.Editable);
+        var exactRoundTrip = Export(referenced.Artifact);
+        Assert.True(exactRoundTrip.Ok, string.Join("\n", exactRoundTrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(referencedXml, ReadChartXml(exactRoundTrip.File.ToByteArray()));
+        readOnlyChart.Title = "Forbidden edit";
+        rejected = Export(referenced.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var tampered = Import(source);
+        tampered.Artifact.Workbook.Worksheets[0].Charts[0].Source.ChartXmlSha256 = new string('0', 64);
+        rejected = Export(tampered.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("spreadsheet_chart_source_binding_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolAuthorsImportsAndSourcePreservesTwoCellWorksheetPictures()
     {
         var request = TwoCellPictureExportRequest();
@@ -3120,6 +3213,30 @@ public sealed class XlsxCodecTests
                 HeightEmu = 762_000,
             },
         });
+        return request;
+    }
+
+    private static CodecRequest ChartExportRequest()
+    {
+        var request = PictureExportRequest();
+        var chart = new SpreadsheetChartArtifact
+        {
+            Id = "worksheet/summary/chart/quarter-trend",
+            Name = "Quarter chart",
+            Title = "Quarter trend",
+            Type = SpreadsheetChartType.Line,
+            HasLegend = true,
+            AbsoluteAnchor = new SpreadsheetAbsoluteAnchorArtifact { XEmu = 3_619_500, YEmu = 190_500, WidthEmu = 3_429_000, HeightEmu = 2_095_500 },
+        };
+        chart.Categories.Add(["Q1", "Q2"]);
+        chart.Series.Add(new SpreadsheetChartSeriesArtifact
+        {
+            Name = "Revenue",
+            CategoryFormula = "'Summary'!$A$1:$A$2",
+            ValueFormula = "'Summary'!$B$1:$B$2",
+            Values = { 42.5, 85 },
+        });
+        request.Artifact.Workbook.Worksheets[0].Charts.Add(chart);
         return request;
     }
 
@@ -3622,6 +3739,59 @@ public sealed class XlsxCodecTests
         },
         Protection = new SpreadsheetProtectionStyle { Locked = false, Hidden = true },
     };
+
+    private static byte[] AddChartResidual(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            XNamespace fixture = "urn:openchestnut:worksheet-chart";
+            chart.Root!.Add(new XElement(c + "extLst", new XElement(c + "ext", new XAttribute("uri", "{B6E80C28-38CE-4C9A-91B6-784D65016615}"), new XElement(fixture + "probe", "preserve-me"))));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetChartSeriesNameReference(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            var tx = chart.Descendants(c + "ser").Single().Element(c + "tx")!;
+            tx.ReplaceNodes(new XElement(c + "strRef",
+                new XElement(c + "f", "'Summary'!$B$1"),
+                new XElement(c + "strCache",
+                    new XElement(c + "ptCount", new XAttribute("val", 1)),
+                    new XElement(c + "pt", new XAttribute("idx", 0), new XElement(c + "v", "Revenue from cache")))));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
+    private static string ReadChartXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return ReadPartText(document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single());
+    }
+
+    private static string ReadPartText(OpenXmlPart part)
+    {
+        using var reader = new StreamReader(part.GetStream(FileMode.Open, FileAccess.Read));
+        return reader.ReadToEnd();
+    }
 
     private static byte[] AddPictureResidual(byte[] bytes)
     {

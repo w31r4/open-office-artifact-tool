@@ -250,6 +250,12 @@ export function createWorkbookFromFixture(fixture = {}) {
       if (chartFixture.hasLegend != null) created.hasLegend = Boolean(chartFixture.hasLegend);
       if (chartFixture.topLeft && chartFixture.bottomRight) created.setPosition(chartFixture.topLeft, chartFixture.bottomRight);
       else if (chartFixture.position) created.position = { ...chartFixture.position };
+      if (!chartFixture.sourceRange) (chartFixture.series || []).forEach((series, index) => {
+        if (!created.series.items[index]) return;
+        if (series.formula != null) created.series.items[index].formula = series.formula;
+        if (series.categoryFormula != null) created.series.items[index].categoryFormula = series.categoryFormula;
+        if (series.fill != null) created.series.items[index].fill = series.fill;
+      });
     }
     for (const imageFixture of sheetFixture.images || []) sheet.images.add(imageFixture);
   }
@@ -505,6 +511,23 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
       const { sheet: _sheet, id: _id, name: lookupName, ...changes } = patch;
       if (lookupName != null) changes.name = lookupName;
       Object.assign(matches[0], changes);
+    }
+    for (const patch of fixture.roundtripEdits?.charts || []) {
+      const sheet = imported.worksheets.getItem(patch.sheet);
+      if (!sheet) throw new Error(`roundtripEdits.charts cannot resolve worksheet ${patch.sheet}.`);
+      const matches = sheet.charts.items.filter((chart) => patch.id ? chart.id === patch.id : chart.name === patch.name);
+      if (matches.length !== 1) throw new Error(`roundtripEdits.charts must resolve exactly one chart in ${patch.sheet}; found ${matches.length}.`);
+      const chart = matches[0];
+      const { sheet: _sheet, id: _id, name: _lookupName, series: seriesEdits, categories, ...changes } = patch;
+      Object.assign(chart, changes);
+      if (categories) chart.categories = [...categories];
+      for (const seriesPatch of seriesEdits || []) {
+        const index = Number(seriesPatch.index ?? 0);
+        if (!Number.isInteger(index) || index < 0 || !chart.series.items[index]) throw new Error(`roundtripEdits.charts series index ${seriesPatch.index} is invalid for ${chart.name}.`);
+        const { index: _index, values, ...seriesChanges } = seriesPatch;
+        Object.assign(chart.series.items[index], seriesChanges);
+        if (values) chart.series.items[index].values = [...values];
+      }
     }
     file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
   }
