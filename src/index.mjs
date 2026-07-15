@@ -14,6 +14,7 @@ import { collectDocxNumbering, docxNumberingXml, normalizeDocumentPictureBullet,
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
 import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray, spreadsheetChartSeriesLineXml } from "./spreadsheet/chart-line-style.mjs";
+import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg, spreadsheetChartSeriesMarkerXml } from "./spreadsheet/chart-marker-style.mjs";
 import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
 import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
 import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
@@ -3338,9 +3339,10 @@ class WorksheetChartSeriesCollection {
   getItemAt(index) { return this.items[index]; }
   toJSON() {
     return this.items.map((item) => {
-      const { line: _line, stroke: _stroke, ...rest } = item;
+      const { line: _line, stroke: _stroke, marker: _marker, ...rest } = item;
       const line = normalizeSpreadsheetChartSeriesLine(item);
-      return { ...rest, ...(line == null ? {} : { line }) };
+      const marker = normalizeSpreadsheetChartSeriesMarker(item.marker);
+      return { ...rest, ...(line == null ? {} : { line }), ...(marker == null ? {} : { marker }) };
     });
   }
 }
@@ -3387,6 +3389,7 @@ class WorksheetChart {
       fill: series.fill,
       ...(series.line == null ? {} : { line: series.line }),
       ...(series.stroke == null ? {} : { stroke: series.stroke }),
+      ...(series.marker == null ? {} : { marker: series.marker }),
     }));
     if (sourceOrConfig instanceof Range) this.setData(sourceOrConfig);
     else if (sourceOrConfig && sourceOrConfig.worksheet instanceof Worksheet) this.setData(sourceOrConfig);
@@ -3441,8 +3444,10 @@ class WorksheetChart {
       const h = plot.height * (Number(value) || 0) / max;
       return `<rect x="${plot.left + index * (barW + gap) + gap / 2}" y="${plot.top + plot.height - h}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>`;
     }).join("");
-    const linePoints = values.map((value, index) => `${plot.left + (index + 0.5) * plot.width / Math.max(1, values.length)},${plot.top + plot.height - plot.height * (Number(value) || 0) / max}`).join(" ");
-    const plotMarks = this.type === "line" ? `<polyline points="${linePoints}" fill="none"${strokeAttributes}/>` : bars;
+    const linePointItems = values.map((value, index) => ({ x: plot.left + (index + 0.5) * plot.width / Math.max(1, values.length), y: plot.top + plot.height - plot.height * (Number(value) || 0) / max }));
+    const linePoints = linePointItems.map((point) => `${point.x},${point.y}`).join(" ");
+    const markerMarks = this.type === "line" ? linePointItems.map((point) => spreadsheetChartMarkerSvg(this.series.items[0]?.marker, point.x, point.y, previewStroke)).join("") : "";
+    const plotMarks = this.type === "line" ? `<polyline points="${linePoints}" fill="none"${strokeAttributes}/>${markerMarks}` : bars;
     const xTickSize = Number(this.xAxis?.textStyle?.fontSize);
     const xTicks = Number.isFinite(xTickSize) && xTickSize > 0 && values.length ? this.categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / values.length}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : "";
     const yTickSize = Number(this.yAxis?.textStyle?.fontSize);
@@ -4275,6 +4280,10 @@ export class Workbook {
           if (series.categoryFormula && !workbookRangeValid(this, sheet, series.categoryFormula)) issues.push(verificationIssue("workbook", "chartCategoryFormulaInvalid", `Chart ${chart.name} categories reference an invalid range.`, { sheet: sheet.name, id: chart.id, formula: series.categoryFormula }));
           if (series.fill != null && (typeof series.fill !== "string" || !/^#[0-9a-f]{6}$/i.test(series.fill))) issues.push(verificationIssue("workbook", "invalidChartSeriesFill", `Chart ${chart.name} series ${series.name || "Series"} fill must be a #RRGGBB solid color.`, { sheet: sheet.name, id: chart.id, series: series.name, fill: series.fill }));
           try { normalizeSpreadsheetChartSeriesLine(series); } catch (error) { issues.push(verificationIssue("workbook", "invalidChartSeriesLine", String(error?.message || error), { sheet: sheet.name, id: chart.id, series: series.name, line: series.line, stroke: series.stroke })); }
+          try {
+            const marker = normalizeSpreadsheetChartSeriesMarker(series.marker);
+            if (marker != null && chart.type !== "line") issues.push(verificationIssue("workbook", "invalidChartSeriesMarker", `Chart ${chart.name} series markers require a line chart.`, { sheet: sheet.name, id: chart.id, series: series.name, marker }));
+          } catch (error) { issues.push(verificationIssue("workbook", "invalidChartSeriesMarker", String(error?.message || error), { sheet: sheet.name, id: chart.id, series: series.name, marker: series.marker })); }
         }
       }
       for (const image of sheet.images.items) {
@@ -7580,8 +7589,10 @@ function xlsxChartXml(chart) {
     if (series.fill != null && (typeof series.fill !== "string" || !/^#[0-9a-f]{6}$/i.test(series.fill))) throw new TypeError(`Worksheet chart series ${index + 1} fill must be a #RRGGBB solid color.`);
     const fill = series.fill == null ? "" : `<a:solidFill><a:srgbClr val="${series.fill.slice(1).toUpperCase()}"/></a:solidFill>`;
     const line = spreadsheetChartSeriesLineXml(series);
+    const marker = spreadsheetChartSeriesMarkerXml(series.marker);
     const shapeProperties = fill || line ? `<c:spPr>${fill}${line}</c:spPr>` : "";
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${shapeProperties}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val></c:ser>`;
+    if (marker && chartType !== "line") throw new TypeError("Worksheet chart series markers require a line chart.");
+    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${shapeProperties}${marker}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val></c:ser>`;
   }).join("");
   const textStyle = (value, name) => {
     if (value == null) return undefined;

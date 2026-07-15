@@ -413,6 +413,9 @@ message SpreadsheetChartSeriesArtifact {
   // line { fill, style, width } and accepts stroke { color, style, weight }
   // as an alias. Unknown native line graphs remain source-owned.
   SpreadsheetChartLineStyleArtifact line = 6;
+  // Optional bounded line-series marker. Only the direct symbol and integer
+  // size are modeled; marker fill/stroke and picture graphs stay source-owned.
+  SpreadsheetChartMarkerArtifact marker = 7;
 }
 
 // Bounded primary-axis semantics for category/value worksheet charts. The x
@@ -1489,4 +1492,25 @@ message SpreadsheetChartLineStyleArtifact {
   SpreadsheetColor color = 1;
   SpreadsheetChartLineDashStyle dash_style = 2;
   optional double width_points = 3;
+}
+
+enum SpreadsheetChartMarkerSymbol {
+  SPREADSHEET_CHART_MARKER_SYMBOL_UNSPECIFIED = 0;
+  SPREADSHEET_CHART_MARKER_SYMBOL_NONE = 1;
+  SPREADSHEET_CHART_MARKER_SYMBOL_DOT = 2;
+  SPREADSHEET_CHART_MARKER_SYMBOL_CIRCLE = 3;
+  SPREADSHEET_CHART_MARKER_SYMBOL_SQUARE = 4;
+  SPREADSHEET_CHART_MARKER_SYMBOL_DIAMOND = 5;
+  SPREADSHEET_CHART_MARKER_SYMBOL_TRIANGLE = 6;
+  SPREADSHEET_CHART_MARKER_SYMBOL_X = 7;
+  SPREADSHEET_CHART_MARKER_SYMBOL_STAR = 8;
+  SPREADSHEET_CHART_MARKER_SYMBOL_PLUS = 9;
+  SPREADSHEET_CHART_MARKER_SYMBOL_DASH = 10;
+}
+
+// Bounded direct marker for a worksheet line-chart series. Message and scalar
+// presence distinguish no marker, an explicit marker, and an omitted size.
+message SpreadsheetChartMarkerArtifact {
+  SpreadsheetChartMarkerSymbol symbol = 1;
+  optional uint32 size = 2;
 }

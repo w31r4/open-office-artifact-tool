@@ -256,6 +256,30 @@ function chartSeriesLineStyle(shapeProperties) {
   return output;
 }
 
+function chartSeriesMarker(seriesBody) {
+  const marker = directElement(seriesBody, "marker");
+  if (!marker) return undefined;
+  if (Object.keys(attributes(marker.startTag)).some((name) => !name.startsWith("xmlns"))) return undefined;
+  const children = directChildNames(marker.body);
+  if (children.some((name) => !["symbol", "size"].includes(name)) || children.filter((name) => name === "symbol").length > 1 || children.filter((name) => name === "size").length > 1) return undefined;
+  const output = {};
+  const symbol = directElement(marker.body, "symbol");
+  if (symbol) {
+    const symbolAttributes = attributes(symbol.startTag);
+    const symbols = new Set(["none", "dot", "circle", "square", "diamond", "triangle", "x", "star", "plus", "dash"]);
+    if (symbol.body.trim() || Object.keys(symbolAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !symbols.has(symbolAttributes.val)) return undefined;
+    output.symbol = symbolAttributes.val;
+  }
+  const size = directElement(marker.body, "size");
+  if (size) {
+    const sizeAttributes = attributes(size.startTag);
+    const value = Number(sizeAttributes.val);
+    if (size.body.trim() || Object.keys(sizeAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !Number.isInteger(value) || value < 2 || value > 72) return undefined;
+    output.size = value;
+  }
+  return output;
+}
+
 function chartAxis(xml, name, kind) {
   const body = elementBody(xml, name);
   if (!body) return undefined;
@@ -305,6 +329,7 @@ export function parseSpreadsheetChart(xml = "") {
     const solidFill = directElement(shapeProperties, "solidFill")?.body || "";
     const color = /<(?:[A-Za-z_][\w.-]*:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/.exec(solidFill)?.[1];
     const line = chartSeriesLineStyle(shapeProperties);
+    const marker = chartSeriesMarker(body);
     return {
       name: elementValue(tx, "v") || elementValue(tx, "f") || `Series ${index + 1}`,
       categoryFormula: elementValue(categoryBody, "f") || undefined,
@@ -313,6 +338,7 @@ export function parseSpreadsheetChart(xml = "") {
       values: chartPoints(valueBody, true),
       fill: color ? `#${color.toUpperCase()}` : undefined,
       line,
+      marker,
     };
   });
   return {

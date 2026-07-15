@@ -1,5 +1,6 @@
-import { SpreadsheetChartLineDashStyle, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { SpreadsheetChartLineDashStyle, SpreadsheetChartMarkerSymbol, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
+import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -22,6 +23,19 @@ const LINE_STYLES_TO_WIRE = new Map([
   ["dash-dot-dot", SpreadsheetChartLineDashStyle.DASH_DOT_DOT],
 ]);
 const LINE_STYLES_FROM_WIRE = new Map([...LINE_STYLES_TO_WIRE].map(([name, value]) => [value, name]));
+const MARKER_SYMBOLS_TO_WIRE = new Map([
+  ["none", SpreadsheetChartMarkerSymbol.NONE],
+  ["dot", SpreadsheetChartMarkerSymbol.DOT],
+  ["circle", SpreadsheetChartMarkerSymbol.CIRCLE],
+  ["square", SpreadsheetChartMarkerSymbol.SQUARE],
+  ["diamond", SpreadsheetChartMarkerSymbol.DIAMOND],
+  ["triangle", SpreadsheetChartMarkerSymbol.TRIANGLE],
+  ["x", SpreadsheetChartMarkerSymbol.X],
+  ["star", SpreadsheetChartMarkerSymbol.STAR],
+  ["plus", SpreadsheetChartMarkerSymbol.PLUS],
+  ["dash", SpreadsheetChartMarkerSymbol.DASH],
+]);
+const MARKER_SYMBOLS_FROM_WIRE = new Map([...MARKER_SYMBOLS_TO_WIRE].map(([name, value]) => [value, name]));
 
 function fail(chart, message, code = "invalid_spreadsheet_chart") {
   throw new OpenChestnutCodecError(`Worksheet chart ${chart?.name || chart?.id || "(unnamed)"} ${message}`, [], { code });
@@ -92,6 +106,29 @@ function seriesLineFromWire(value, name, chart) {
   return output;
 }
 
+function seriesMarkerSnapshot(value, chart) {
+  try {
+    return normalizeSpreadsheetChartSeriesMarker(value);
+  } catch (error) {
+    const message = String(error?.message || error).replace(/^Worksheet chart\s+/, "");
+    const unsupported = /supports only/i.test(message);
+    fail(chart, message, unsupported ? "unsupported_spreadsheet_chart" : "invalid_spreadsheet_chart");
+  }
+}
+
+function seriesMarkerFromWire(value, name, chart) {
+  if (value == null) return undefined;
+  const output = {};
+  const symbolValue = value.symbol ?? SpreadsheetChartMarkerSymbol.UNSPECIFIED;
+  if (symbolValue !== SpreadsheetChartMarkerSymbol.UNSPECIFIED) {
+    const symbol = MARKER_SYMBOLS_FROM_WIRE.get(symbolValue);
+    if (!symbol) fail(chart, `${name} has unsupported symbol ${symbolValue}.`, "unsupported_spreadsheet_chart");
+    output.symbol = symbol;
+  }
+  if (value.size != null) output.size = Number(value.size);
+  return seriesMarkerSnapshot(output, chart) || undefined;
+}
+
 function textStyleSnapshot(value, name, chart) {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) fail(chart, `${name} must be an object.`);
@@ -150,6 +187,7 @@ export function spreadsheetChartSnapshot(chart) {
       formula: series?.formula == null ? "" : String(series.formula),
       fill: series?.fill == null ? null : String(series.fill),
       line: seriesLineSnapshot(series, chart),
+      marker: seriesMarkerSnapshot(series?.marker, chart),
     })),
   };
 }
@@ -181,6 +219,7 @@ function validateSnapshot(snapshot, chart) {
     formula(series.categoryFormula, `series ${seriesIndex + 1} categoryFormula`, chart);
     formula(series.formula, `series ${seriesIndex + 1} formula`, chart);
     series.fill = seriesFill(series.fill, `series ${seriesIndex + 1} fill`, chart);
+    if (series.marker != null && snapshot.type !== "line") fail(chart, `series ${seriesIndex + 1} markers require a line chart.`, "unsupported_spreadsheet_chart");
     points += series.values.length;
     if (points > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-value budget.`);
     if (series.values.length !== snapshot.categories.length) fail(chart, `series ${seriesIndex + 1} has ${series.values.length} values for ${snapshot.categories.length} categories.`);
@@ -245,6 +284,10 @@ function wireChart(chart, original) {
         color: series.line.fill == null ? undefined : { source: { case: "rgb", value: series.line.fill.slice(1) } },
         dashStyle: series.line.style == null ? SpreadsheetChartLineDashStyle.UNSPECIFIED : LINE_STYLES_TO_WIRE.get(series.line.style),
         widthPoints: series.line.width == null ? undefined : series.line.width,
+      },
+      marker: series.marker == null ? undefined : {
+        symbol: series.marker.symbol == null ? SpreadsheetChartMarkerSymbol.UNSPECIFIED : MARKER_SYMBOLS_TO_WIRE.get(series.marker.symbol),
+        size: series.marker.size == null ? undefined : series.marker.size,
       },
     })),
     source: original?.source,
@@ -357,6 +400,7 @@ export function spreadsheetChartFromWire(sheet, source) {
   const sourceSeries = source.series || [];
   const importedFills = sourceSeries.map((series, index) => seriesFillFromWire(series.fill, `series ${index + 1} fill`, source));
   const importedLines = sourceSeries.map((series, index) => seriesLineFromWire(series.line, `series ${index + 1} line`, source));
+  const importedMarkers = sourceSeries.map((series, index) => seriesMarkerFromWire(series.marker, `series ${index + 1} marker`, source));
   const titleTextStyle = textStyleFromWire(source.titleTextStyle, "titleTextStyle", source);
   const chart = sheet.charts.add(type, {
     name: source.name,
@@ -373,6 +417,7 @@ export function spreadsheetChartFromWire(sheet, source) {
         values: [...series.values],
         ...(importedFills[index] == null ? {} : { fill: importedFills[index] }),
         ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
+        ...(importedMarkers[index] == null ? {} : { marker: importedMarkers[index] }),
       };
     }),
   });
@@ -382,6 +427,7 @@ export function spreadsheetChartFromWire(sheet, source) {
     formula: series.valueFormula || undefined,
     fill: importedFills[index],
     ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
+    ...(importedMarkers[index] == null ? {} : { marker: importedMarkers[index] }),
   }));
   return chart;
 }
