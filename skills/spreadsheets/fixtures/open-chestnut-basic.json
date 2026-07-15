@@ -17,6 +17,16 @@
       "name": "Summary",
       "showGridLines": false,
       "freezePanes": { "rows": 1, "columns": 1 },
+      "sortState": {
+        "reference": "A1:D3",
+        "caseSensitive": true,
+        "sortMethod": "stroke",
+        "columnSort": true,
+        "conditions": [
+          { "reference": "A3:D3", "descending": true, "customList": "Double,Revenue" },
+          { "reference": "A1:D1", "descending": false }
+        ]
+      },
       "ranges": [
         {
           "range": "A1:B3",

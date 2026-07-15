@@ -63,7 +63,6 @@ internal sealed class XlsxTableCodec
         ["4TrafficLights"] = 4, ["5Arrows"] = 5, ["5ArrowsGray"] = 5, ["5Rating"] = 5,
         ["5Quarters"] = 5,
     };
-    private static readonly HashSet<string> SortMethods = new(StringComparer.Ordinal) { "none", "pinYin", "stroke" };
     private static readonly string[] DateGroupings = ["year", "month", "day", "hour", "minute", "second"];
     private readonly WorksheetPart _worksheetPart;
     private readonly WorkbookPart _workbookPart;
@@ -376,30 +375,7 @@ internal sealed class XlsxTableCodec
     {
         if (!table.ShowFilterButton)
             throw Invalid($"Worksheet table {table.Name} cannot define sort state while filter buttons are hidden.", location);
-        var sort = table.SortState;
-        var bounds = Range(sort.Reference, location);
-        if (bounds.Top < tableBounds.Top || bounds.Left < tableBounds.Left || bounds.Bottom > tableBounds.Bottom || bounds.Right > tableBounds.Right)
-            throw Invalid($"Worksheet table {table.Name} sort range must be contained in the table range.", location);
-        if (sort.Conditions.Count is < 1 or > 64)
-            throw Invalid($"Worksheet table {table.Name} sort state must provide between one and 64 conditions.", location);
-        if (sort.HasSortMethod && !SortMethods.Contains(sort.SortMethod))
-            throw Invalid($"Worksheet table {table.Name} has an invalid locale-specific sort method.", location);
-        var columns = new HashSet<uint>();
-        foreach (var condition in sort.Conditions)
-        {
-            var conditionBounds = Range(condition.Reference, location);
-            if (conditionBounds.Left != conditionBounds.Right || conditionBounds.Top != bounds.Top || conditionBounds.Bottom != bounds.Bottom ||
-                conditionBounds.Left < bounds.Left || conditionBounds.Right > bounds.Right || !columns.Add(conditionBounds.Left))
-                throw Invalid($"Worksheet table {table.Name} has an invalid or duplicate sort condition.", location);
-            if (condition.Icon is not null && !ValidIcon(condition.Icon))
-                throw Invalid($"Worksheet table {table.Name} has an invalid icon-sort condition.", location);
-            if (condition.Icon is not null && condition.Color is not null)
-                throw Invalid($"Worksheet table {table.Name} sort condition cannot combine icon and color selectors.", location);
-            if (condition.HasCustomList && (string.IsNullOrWhiteSpace(condition.CustomList) || condition.CustomList.Length > 32_767 ||
-                condition.CustomList.Any(char.IsControl) || condition.Icon is not null || condition.Color is not null))
-                throw Invalid($"Worksheet table {table.Name} has an invalid custom-list value-sort condition.", location);
-            if (condition.Color is not null) XlsxCellStyleCodec.ValidateTableColor(condition.Color, table.Name);
-        }
+        XlsxSortStateCodec.Validate(table.SortState, tableBounds, location, $"Worksheet table {table.Name}", allowColumnSort: false, errorCode: "invalid_worksheet_table");
     }
 
     private static bool ValidIcon(SpreadsheetTableIconArtifact icon) =>
@@ -676,50 +652,7 @@ internal sealed class XlsxTableCodec
     }
 
     private bool TryReadSortState(XElement element, out SpreadsheetTableSortStateArtifact? artifact)
-    {
-        artifact = null;
-        if (element.Name != Spreadsheet + "sortState" || element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-            (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "caseSensitive" or "sortMethod"))) ||
-            element.Attribute("ref") is not XAttribute reference ||
-            !TryBool(element.Attribute("caseSensitive")?.Value, defaultValue: false, out var caseSensitive)) return false;
-        var sortMethod = element.Attribute("sortMethod")?.Value;
-        if (sortMethod is not null && !SortMethods.Contains(sortMethod)) return false;
-        var conditions = element.Elements().ToArray();
-        if (conditions.Length is < 1 or > 64) return false;
-        var sort = new SpreadsheetTableSortStateArtifact { Reference = reference.Value, CaseSensitive = caseSensitive };
-        if (sortMethod is not null) sort.SortMethod = sortMethod;
-        foreach (var condition in conditions)
-        {
-            if (condition.Name != Spreadsheet + "sortCondition" || condition.Elements().Any() || condition.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
-                (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("ref" or "descending" or "sortBy" or "iconSet" or "iconId" or "dxfId" or "customList"))) ||
-                condition.Attribute("ref") is not XAttribute conditionReference ||
-                !TryBool(condition.Attribute("descending")?.Value, defaultValue: false, out var descending)) return false;
-            var sortBy = condition.Attribute("sortBy")?.Value ?? "value";
-            var iconSet = condition.Attribute("iconSet")?.Value;
-            if (!TryOptionalUInt(condition.Attribute("iconId")?.Value, out var iconId) || !TryOptionalUInt(condition.Attribute("dxfId")?.Value, out var differentialFormatId)) return false;
-            var artifactCondition = new SpreadsheetTableSortConditionArtifact { Reference = conditionReference.Value, Descending = descending };
-            var customList = condition.Attribute("customList")?.Value;
-            if (sortBy == "icon")
-            {
-                if (iconSet is null || customList is not null || !IconSets.ContainsKey(iconSet)) return false;
-                var icon = new SpreadsheetTableIconArtifact { IconSet = iconSet };
-                if (iconId is not null) icon.IconId = iconId.Value;
-                if (!ValidIcon(icon)) return false;
-                artifactCondition.Icon = icon;
-            }
-            else if (sortBy is "cellColor" or "fontColor")
-            {
-                if (iconSet is not null || iconId is not null || differentialFormatId is null || customList is not null ||
-                    !_styles.TryReadTableColor(differentialFormatId.Value, sortBy == "cellColor", out var color)) return false;
-                artifactCondition.Color = color;
-            }
-            else if (sortBy != "value" || iconSet is not null || iconId is not null || differentialFormatId is not null) return false;
-            if (customList is not null) artifactCondition.CustomList = customList;
-            sort.Conditions.Add(artifactCondition);
-        }
-        artifact = sort;
-        return true;
-    }
+        => XlsxSortStateCodec.TryRead(element, _styles, allowExtensions: false, out artifact);
 
     private static void ValidateBinding(SpreadsheetTableSourceBinding? binding, Entry entry)
     {
@@ -783,30 +716,7 @@ internal sealed class XlsxTableCodec
     }
 
     private XElement CreateSortState(SpreadsheetTableSortStateArtifact sort)
-    {
-        var element = new XElement(Spreadsheet + "sortState", new XAttribute("ref", sort.Reference));
-        if (sort.CaseSensitive) element.SetAttributeValue("caseSensitive", 1);
-        if (sort.HasSortMethod) element.SetAttributeValue("sortMethod", sort.SortMethod);
-        element.Add(sort.Conditions.Select(condition =>
-        {
-            var child = new XElement(Spreadsheet + "sortCondition", new XAttribute("ref", condition.Reference));
-            if (condition.Descending) child.SetAttributeValue("descending", 1);
-            if (condition.HasCustomList) child.SetAttributeValue("customList", condition.CustomList);
-            if (condition.Icon is not null)
-            {
-                child.SetAttributeValue("sortBy", "icon");
-                child.SetAttributeValue("iconSet", condition.Icon.IconSet);
-                if (condition.Icon.HasIconId) child.SetAttributeValue("iconId", condition.Icon.IconId);
-            }
-            else if (condition.Color is not null)
-            {
-                child.SetAttributeValue("sortBy", condition.Color.TargetCase == SpreadsheetTableColorArtifact.TargetOneofCase.CellColor ? "cellColor" : "fontColor");
-                child.SetAttributeValue("dxfId", _styles.FindOrCreateTableColor(condition.Color, condition.Reference));
-            }
-            return child;
-        }));
-        return element;
-    }
+        => XlsxSortStateCodec.Create(sort, _styles);
 
     private XElement CreateFilter(SpreadsheetTableFilterArtifact filter)
     {
@@ -962,21 +872,7 @@ internal sealed class XlsxTableCodec
     ]);
 
     private static IEnumerable<string> SortStateSemantics(SpreadsheetTableSortStateArtifact? sort)
-    {
-        if (sort is null) { yield return "no-sort-state"; yield break; }
-        yield return sort.Reference;
-        yield return sort.CaseSensitive.ToString();
-        yield return sort.HasSortMethod ? sort.SortMethod : "no-sort-method";
-        foreach (var condition in sort.Conditions)
-        {
-            yield return condition.Reference;
-            yield return condition.Descending.ToString();
-            yield return condition.Icon?.IconSet ?? "value";
-            yield return condition.Icon is { HasIconId: true } ? condition.Icon.IconId.ToString(CultureInfo.InvariantCulture) : "no-icon-id";
-            foreach (var value in ColorSemantics(condition.Color)) yield return value;
-            yield return condition.HasCustomList ? condition.CustomList : "no-custom-list";
-        }
-    }
+        => XlsxSortStateCodec.Semantics(sort, "no-sort-state");
 
     private static IEnumerable<string> ColorSemantics(SpreadsheetTableColorArtifact? color)
     {

@@ -59,6 +59,7 @@ assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { t
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { connections: [{ connectionId: 7, name: "Warehouse", type: 5, refreshedVersion: 8 }] }))[0], 0x2a, "Spreadsheet workbook connections must use additive workbook field 5.");
 assert.deepEqual([...toBinary(SpreadsheetConnectionArtifactSchema, create(SpreadsheetConnectionArtifactSchema, { keepAlive: false }))], [0x30, 0x00], "Spreadsheet connection booleans must preserve explicit false values.");
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { tables: [{ name: "Sales" }] }))[0], 0x4a, "Spreadsheet worksheet tables must use additive worksheet field 9.");
+assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { sortState: { reference: "A1:B2" } }))[0], 0x52, "Spreadsheet worksheet sort state must use additive worksheet field 10.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { source: { tablePartPath: "xl/tables/table1.xml" } }))[0], 0x6a, "Spreadsheet table source bindings must use additive table field 13.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { columns: [{ name: "Revenue" }] }))[0], 0x72, "Spreadsheet rich table columns must use additive table field 14.");
 assert.equal(toBinary(SpreadsheetTableArtifactSchema, create(SpreadsheetTableArtifactSchema, { filters: [{ columnIndex: 1, criteria: { case: "values", value: { values: ["x"] } } }] }))[0], 0x7a, "Spreadsheet table filters must use additive table field 15.");
@@ -72,6 +73,7 @@ assert.equal(toBinary(SpreadsheetTableQueryRefreshArtifactSchema, create(Spreads
 assert.deepEqual([...toBinary(SpreadsheetTableQueryFieldArtifactSchema, create(SpreadsheetTableQueryFieldArtifactSchema, { dataBound: false }))], [0x18, 0x00], "Spreadsheet QueryTable field booleans must preserve explicit false values.");
 assert.equal(toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { conditions: [{ reference: "B2:B3" }] }))[0], 0x1a, "Spreadsheet sort conditions must use sort-state field 3.");
 assert.equal(toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { sortMethod: "stroke" }))[0], 0x22, "Spreadsheet locale sort methods must use additive sort-state field 4.");
+assert.deepEqual([...toBinary(SpreadsheetTableSortStateArtifactSchema, create(SpreadsheetTableSortStateArtifactSchema, { columnSort: false }))], [0x28, 0x00], "Spreadsheet column-sort direction must use presence-aware sort-state field 5.");
 assert.equal(toBinary(SpreadsheetTableColumnArtifactSchema, create(SpreadsheetTableColumnArtifactSchema, { totalsRowFormulaArray: true }))[0], 0x38, "Spreadsheet table totals-formula array state must use column field 7.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "values", value: { values: ["x"] } } }))[0], 0x12, "Spreadsheet value-filter criteria must use filter field 2.");
 assert.equal(toBinary(SpreadsheetTableFilterArtifactSchema, create(SpreadsheetTableFilterArtifactSchema, { criteria: { case: "dynamic", value: { type: "today" } } }))[0], 0x22, "Spreadsheet dynamic-filter criteria must use additive filter field 4.");
@@ -240,6 +242,13 @@ summary.showGridLines = false;
 summary.columnDimensions.set(0, { width: 18, bestFit: true });
 summary.rowDimensions.set(0, { height: 24 });
 summary.mergeCells("A3:B3");
+summary.sortState = {
+  reference: "A1:B2",
+  caseSensitive: true,
+  sortMethod: "stroke",
+  columnSort: true,
+  conditions: [{ reference: "A2:B2", descending: true, customList: "Actual,Plan" }, { reference: "A1:B1", descending: false }],
+};
 const details = workbook.worksheets.add("Details");
 details.getRange("A1:B3").values = [["Status", "Value"], ["ready", 2], ["pending", 1]];
 const detailsTable = details.tables.add({ range: "A1:B3", name: "StatusTable", hasHeaders: true, style: "TableStyleMedium4" });
@@ -316,6 +325,10 @@ assert.equal(exported.type, "application/vnd.openxmlformats-officedocument.sprea
 assert.equal(exported.metadata.codec, "open-chestnut");
 assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
 const exportedZip = await JSZip.loadAsync(exported.bytes);
+const summaryWorksheetXml = await exportedZip.file("xl/worksheets/sheet1.xml").async("text");
+assert.match(summaryWorksheetXml, /<x:sortState\b[^>]*ref="A1:B2"/);
+assert.match(summaryWorksheetXml, /<x:sortState\b[^>]*columnSort="1"/);
+assert.match(summaryWorksheetXml, /<x:sortCondition\b[^>]*ref="A2:B2"[^>]*customList="Actual,Plan"/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:calculatedColumnFormula>LEN\(\[@Status\]\)<\/x:calculatedColumnFormula>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:filterColumn colId="0"><x:filters blank="1"><x:filter val="ready"\s*\/><\/x:filters><\/x:filterColumn>/);
 assert.match(await exportedZip.file("xl/tables/table1.xml").async("text"), /<x:customFilters and="1"><x:customFilter operator="greaterThanOrEqual" val="1"\s*\/><x:customFilter operator="lessThanOrEqual" val="2"\s*\/><\/x:customFilters>/);
@@ -411,8 +424,11 @@ queryTable.queryTable.refresh.fields[1].clipped = true;
 queryTable.queryTable.refresh.deletedFieldNames[0] = "Legacy State";
 queryTable.queryTable.refresh.sortState.caseSensitive = false;
 queryTable.queryTable.refresh.sortState.sortMethod = "pinYin";
+queryTable.queryTable.refresh.sortState.columnSort = true;
+queryTable.queryTable.refresh.sortState.conditions[0].reference = "A3:B3";
 queryTable.queryTable.refresh.sortState.conditions[0].descending = false;
 queryTable.queryTable.refresh.sortState.conditions[0].customList = "pending,ready";
+queryTable.queryTable.refresh.sortState.conditions[1].reference = "A2:B2";
 queryTable.queryTable.refresh.sortState.conditions[1].iconId = 1;
 Object.assign(queryImported.connections[0], {
   name: "Fixture warehouse curated",
@@ -455,9 +471,9 @@ assert.match(queryOutputXml, /id="2" name="Value" dataBound="1" tableColumnId="2
 assert.match(queryOutputXml, /<x:queryTableFields count="2">/);
 assert.match(queryOutputXml, /<x:deletedField name="Legacy State"/);
 assert.match(queryOutputXml, /<x:deletedField name="Legacy Value"/);
-assert.match(queryOutputXml, /<x:sortState ref="A2:B3" sortMethod="pinYin">/);
-assert.match(queryOutputXml, /<x:sortCondition ref="B2:B3" customList="pending,ready"/);
-assert.match(queryOutputXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="1"/);
+assert.match(queryOutputXml, /<x:sortState ref="A2:B3" sortMethod="pinYin" columnSort="1">/);
+assert.match(queryOutputXml, /<x:sortCondition ref="A3:B3" customList="pending,ready"/);
+assert.match(queryOutputXml, /<x:sortCondition ref="A2:B2" sortBy="icon" iconSet="3Arrows" iconId="1"/);
 assert.match(queryOutputXml, /<fixture:fieldOpaque value="kept"/);
 assert.match(queryOutputXml, /<fixture:sortOpaque value="kept"/);
 assert.match(queryOutputXml, /<fixture:opaque value="kept"/);
@@ -492,9 +508,10 @@ assert.deepEqual(queryReimportedTable.queryTable.refresh.sortState, {
   reference: "A2:B3",
   caseSensitive: false,
   sortMethod: "pinYin",
+  columnSort: true,
   conditions: [
-    { reference: "B2:B3", descending: false, customList: "pending,ready" },
-    { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
+    { reference: "A3:B3", descending: false, customList: "pending,ready" },
+    { reference: "A2:B2", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
   ],
 });
 const queryJavaScriptFallback = await SpreadsheetFile.importXlsx(queryExported);
@@ -627,6 +644,7 @@ assert.deepEqual(imported.worksheets.getItem("Summary").freezePanes.toJSON(), { 
 assert.equal(imported.worksheets.getItem("Summary").showGridLines, false);
 assert.equal(imported.worksheets.getItem("Summary").columnDimensions.get(0).width, 18);
 assert.deepEqual(imported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
+assert.deepEqual(imported.worksheets.getItem("Summary").sortState, summary.sortState);
 assert.equal(imported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "0.000 \"units\"");
 assert.equal(imported.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.00%");
 assert.equal(imported.worksheets.getItem("Summary").getRange("A1").format.font.bold, true);
@@ -659,6 +677,7 @@ assert.deepEqual(javascriptImported.worksheets.getItem("Color Rules").tables.ite
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").values, [["Quarter", 42.5], [true, 85]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").getRange("A1:B2").formulas, [[null, null], [null, "=B1*2"]]);
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").mergedRanges, ["A3:B3"]);
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").sortState, summary.sortState);
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B1").format.numberFormat, "0.000 \"units\"");
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.00%");
 assert.equal(javascriptImported.worksheets.getItem("Summary").getRange("A1").format.font.bold, true);
@@ -907,6 +926,18 @@ invalidSortTableSheet.tables.add({
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidSortTableWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /sort condition/i.test(error.message),
+);
+const invalidColumnSortTableWorkbook = Workbook.create();
+const invalidColumnSortTableSheet = invalidColumnSortTableWorkbook.worksheets.add("Sheet1");
+invalidColumnSortTableSheet.getRange("A1:B3").values = [["Name", "Score"], ["x", 1], ["y", 2]];
+invalidColumnSortTableSheet.tables.add({
+  range: "A1:B3",
+  name: "InvalidColumnSortTable",
+  sortState: { reference: "A2:B3", columnSort: false, conditions: [{ reference: "A2:A3" }] },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidColumnSortTableWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_worksheet_table" && /inside an AutoFilter/i.test(error.message),
 );
 const invalidLocaleSortWorkbook = Workbook.create();
 const invalidLocaleSortSheet = invalidLocaleSortWorkbook.worksheets.add("Sheet1");

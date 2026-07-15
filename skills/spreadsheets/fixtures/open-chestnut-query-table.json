@@ -78,9 +78,10 @@
         "reference": "A2:B3",
         "caseSensitive": false,
         "sortMethod": "pinYin",
+        "columnSort": true,
         "conditions": [
-          { "reference": "B2:B3", "descending": false, "customList": "80,120" },
-          { "reference": "A2:A3", "descending": false, "kind": "icon", "iconSet": "3Arrows", "iconId": 1 }
+          { "reference": "A3:B3", "descending": false, "customList": "80,120" },
+          { "reference": "A2:B2", "descending": false, "kind": "icon", "iconSet": "3Arrows", "iconId": 1 }
         ]
       },
       "fields": [

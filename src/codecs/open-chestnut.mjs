@@ -692,6 +692,7 @@ function wireTableSortState(sort, address) {
     reference: String(sort.reference ?? ""),
     caseSensitive: Boolean(sort.caseSensitive),
     ...(sort.sortMethod == null ? {} : { sortMethod: String(sort.sortMethod) }),
+    ...(sort.columnSort == null ? {} : { columnSort: Boolean(sort.columnSort) }),
     conditions: Array.isArray(sort.conditions)
       ? sort.conditions.map((condition) => ({
           reference: String(condition?.reference ?? ""),
@@ -719,6 +720,7 @@ function publicTableSortState(sort) {
     reference: sort.reference,
     caseSensitive: Boolean(sort.caseSensitive),
     ...(sort.sortMethod == null ? {} : { sortMethod: sort.sortMethod }),
+    ...(sort.columnSort == null ? {} : { columnSort: Boolean(sort.columnSort) }),
     conditions: (sort.conditions || []).map((condition) => ({
       reference: condition.reference,
       descending: Boolean(condition.descending),
@@ -911,6 +913,7 @@ function workbookEnvelope(workbook) {
           columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
           rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
           mergedRanges: [...(sheet.mergedRanges || [])],
+          sortState: wireTableSortState(sheet.sortState, `worksheet ${sheet.name}`),
           tables: wireWorksheetTables(sheet, state?.tablesBySheet?.get(sheet.id)),
           cells: (() => {
             const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
@@ -970,6 +973,7 @@ function workbookFromEnvelope(envelope) {
     for (const dimension of sourceSheet.columnDimensions) sheet.columnDimensions.set(dimension.column, { width: dimension.width || undefined, hidden: dimension.hidden, bestFit: dimension.bestFit });
     for (const dimension of sourceSheet.rowDimensions) sheet.rowDimensions.set(dimension.row, { height: dimension.height || undefined, hidden: dimension.hidden });
     sheet.mergedRanges = [...sourceSheet.mergedRanges];
+    sheet.sortState = publicTableSortState(sourceSheet.sortState);
     for (const sourceCell of sourceSheet.cells) {
       const cell = sheet.store.get(cellAddress(sourceCell.row, sourceCell.column));
       cell.formula = sourceCell.formula || null;

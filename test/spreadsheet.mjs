@@ -1600,6 +1600,22 @@ assert.match(tableXml, /<tableColumns count="4">/);
 assert.match(tableXml, /showFirstColumn="1"/);
 assert.match(tableXml, /showLastColumn="1"/);
 assert.match(tableXml, /showRowStripes="0"/);
+const columnSortWorkbook = Workbook.create();
+const columnSortSheet = columnSortWorkbook.worksheets.add("ColumnSort");
+columnSortSheet.getRange("A1:B2").values = [["Plan", "Actual"], [1, 2]];
+columnSortSheet.sortState = {
+  reference: "A1:B2",
+  caseSensitive: true,
+  sortMethod: "pinYin",
+  columnSort: true,
+  conditions: [{ reference: "A2:B2", descending: true, customList: "Actual,Plan" }, { reference: "A1:B1", descending: false }],
+};
+const columnSortXlsx = await SpreadsheetFile.exportXlsx(columnSortWorkbook);
+const columnSortZip = await JSZip.loadAsync(new Uint8Array(await columnSortXlsx.arrayBuffer()));
+const columnSortXml = await columnSortZip.file("xl/worksheets/sheet1.xml").async("text");
+assert.match(columnSortXml, /<sortState ref="A1:B2" caseSensitive="1" sortMethod="pinYin" columnSort="1">/);
+assert.match(columnSortXml, /<sortCondition ref="A2:B2" descending="1" customList="Actual,Plan"\/>/);
+assert.deepEqual((await SpreadsheetFile.importXlsx(columnSortXlsx)).worksheets.getItem("ColumnSort").sortState, columnSortSheet.sortState);
 const formulaTableWorkbook = Workbook.create();
 const formulaTableSheet = formulaTableWorkbook.worksheets.add("FormulaTable");
 formulaTableSheet.getRange("A1:C4").values = [["Product", "Units", "Revenue"], ["North", 2, 4], ["South", 3, 6], ["Total", 2.5, 10]];
@@ -1652,6 +1668,8 @@ assert.deepEqual(importedFormulaTable.sortState, {
   sortMethod: "stroke",
   conditions: [{ reference: "C2:C3", descending: true, customList: "6,4" }, { reference: "A2:A3", descending: false }],
 });
+importedFormulaTable.sortState.columnSort = false;
+await assert.rejects(SpreadsheetFile.exportXlsx(formulaTableImported), /AutoFilter sortState cannot define columnSort/i);
 const advancedFilterWorkbook = Workbook.create();
 const advancedFilterSheet = advancedFilterWorkbook.worksheets.add("AdvancedFilters");
 advancedFilterSheet.getRange("A1:C3").values = [["Date", "Status", "Score"], [45853, "ready", 95], [45854, "pending", 80]];

@@ -51,7 +51,8 @@ function sourceQuerySortStateXml(sortState) {
   }).join("");
   const caseSensitive = sortState.caseSensitive ? ' caseSensitive="1"' : "";
   const sortMethod = sortState.sortMethod == null ? "" : ` sortMethod="${fixtureXmlEscape(sortState.sortMethod)}"`;
-  return `<x:sortState ref="${fixtureXmlEscape(reference)}"${caseSensitive}${sortMethod}>${conditionXml}<x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState>`;
+  const columnSort = sortState.columnSort == null ? "" : ` columnSort="${sortState.columnSort ? 1 : 0}"`;
+  return `<x:sortState ref="${fixtureXmlEscape(reference)}"${caseSensitive}${sortMethod}${columnSort}>${conditionXml}<x:extLst><x:ext uri="{A1E10EA8-3B88-4BE3-9884-625AB42E9DDC}"><fixture:sortOpaque value="kept"/></x:ext></x:extLst></x:sortState>`;
 }
 
 async function attachSourceQueryTableFixture(file, config = {}) {
@@ -223,6 +224,7 @@ export function createWorkbookFromFixture(fixture = {}) {
     if (sheetFixture.showGridLines != null) sheet.showGridLines = Boolean(sheetFixture.showGridLines);
     if (sheetFixture.freezePanes?.rows != null) sheet.freezePanes.freezeRows(sheetFixture.freezePanes.rows);
     if (sheetFixture.freezePanes?.columns != null) sheet.freezePanes.freezeColumns(sheetFixture.freezePanes.columns);
+    if (sheetFixture.sortState) sheet.sortState = { ...sheetFixture.sortState, conditions: (sheetFixture.sortState.conditions || []).map((condition) => ({ ...condition })) };
     for (const operation of sheetFixture.ranges || []) applyRangeOperation(sheet, operation);
     for (const table of sheetFixture.tables || []) {
       const created = sheet.tables.add({ range: table.range, name: table.name, hasHeaders: table.hasHeaders !== false, columnNames: table.columnNames, columnDefinitions: table.columnDefinitions, filters: table.filters, sortState: table.sortState });

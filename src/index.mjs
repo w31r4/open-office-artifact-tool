@@ -2978,6 +2978,7 @@ function normalizeWorksheetTableSortState(sortState) {
     reference: String(sortState.reference ?? ""),
     caseSensitive: Boolean(sortState.caseSensitive),
     ...(sortState.sortMethod == null ? {} : { sortMethod: String(sortState.sortMethod) }),
+    ...(sortState.columnSort == null ? {} : { columnSort: Boolean(sortState.columnSort) }),
     conditions: Array.isArray(sortState.conditions)
       ? sortState.conditions.map((condition) => ({
           reference: String(condition?.reference ?? ""),
@@ -3902,7 +3903,7 @@ export class Workbook {
     if (kinds.has("theme")) records.push({ kind: "workbookTheme", id: `${this.id}/theme`, name: this.theme.name, colors: this.theme.colors });
     if (kinds.has("connection") || kinds.has("externalConnection")) records.push(...this.connections.map((connection) => ({ kind: "connection", id: `connection/${connection.connectionId}`, ...connection })));
     for (const sheet of this.worksheets) {
-      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
+      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), sortState: sheet.sortState, customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
@@ -4372,6 +4373,7 @@ export class Worksheet {
     this.conditionalFormattings = new WorksheetRuleCollection(this, "conditionalFormat");
     this.freezePanes = new WorksheetFreezePanes(this);
     this.showGridLines = true;
+    this.sortState = undefined;
   }
 
   getRange(address) {
@@ -6716,6 +6718,7 @@ function collectWorkbookStyles(workbook) {
   for (const sheet of workbook.worksheets) {
     for (const [, cell] of sheet.store.entries()) addStyle(cell.style || {});
     for (const rule of sheet.conditionalFormattings.items) addDxf(rule.format || rule.rule?.format || {});
+    for (const condition of sheet.sortState?.conditions || []) if (condition?.kind === "color") addDxf(tableColorDxfStyle(condition));
     for (const table of sheet.tables.items) {
       for (const filter of table.filters || []) if (filter?.kind === "color") addDxf(tableColorDxfStyle(filter));
       for (const condition of table.sortState?.conditions || []) if (condition?.kind === "color") addDxf(tableColorDxfStyle(condition));
@@ -6959,11 +6962,12 @@ function tableSortStateXml(sortState, styleTable) {
   if (!sortState) return "";
   const conditions = (sortState.conditions || []).map((condition) =>
     `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : condition?.kind === "color" ? ` sortBy="${condition.target === "cell" ? "cellColor" : "fontColor"}" dxfId="${tableColorDxfId(condition, styleTable)}"` : condition?.customList == null ? "" : ` customList="${attrEscape(condition.customList)}"`}/>`).join("");
-  return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}${sortState.sortMethod == null ? "" : ` sortMethod="${attrEscape(sortState.sortMethod)}"`}>${conditions}</sortState>`;
+  return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}${sortState.sortMethod == null ? "" : ` sortMethod="${attrEscape(sortState.sortMethod)}"`}${sortState.columnSort == null ? "" : ` columnSort="${sortState.columnSort ? 1 : 0}"`}>${conditions}</sortState>`;
 }
 
 function tableAutoFilterXml(table, reference, styleTable) {
   if (!table.showFilterButton) return "";
+  if (table.sortState?.columnSort != null) throw new Error("Worksheet table AutoFilter sortState cannot define columnSort.");
   const filters = Array.isArray(table.filters) ? table.filters.map((filter) => tableFilterXml(filter, styleTable)).join("") : "";
   const sortState = tableSortStateXml(table.sortState, styleTable);
   return filters || sortState
@@ -7114,7 +7118,7 @@ function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { in
   const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
   const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
   const sparklineXml = sparklineGroupExtXml(sheet);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${worksheetMergeCellsXml(sheet)}${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${tableSortStateXml(sheet.sortState, styleTable)}${worksheetMergeCellsXml(sheet)}${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
 }
 
 function cellFormulaXml(address, cell) {
@@ -7224,6 +7228,7 @@ function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
 function parseWorksheetXml(sheet, xml, options = {}) {
   parseWorksheetViewXml(sheet, xml);
   parseWorksheetDimensionsXml(sheet, xml);
+  sheet.sortState = parseNativeSortState(xml, options.styles);
   const cellMatches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?c\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?c>)/g)].map((match) => {
     const attrs = match[1];
     const body = match[2] || "";
@@ -7376,12 +7381,13 @@ function parseNativeTableFilters(xml, styles) {
   });
 }
 
-function parseNativeSortState(xml, styles) {
+function parseNativeSortState(xml, styles, options = {}) {
   const matches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortState\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sortState\s*>/g)];
   if (matches.length !== 1) return undefined;
   const match = matches[0];
   const attrs = ooxmlXmlAttributes(match[1] || "");
-  if (!attrs.ref || Object.keys(attrs).some((name) => !["ref", "caseSensitive", "sortMethod"].includes(name)) ||
+  if (!attrs.ref || Object.keys(attrs).some((name) => !name.startsWith("xmlns") && !["ref", "caseSensitive", "sortMethod", "columnSort"].includes(name)) ||
+    options.allowColumnSort === false && attrs.columnSort != null ||
     attrs.sortMethod != null && !["none", "pinYin", "stroke"].includes(attrs.sortMethod)) return undefined;
   const body = match[2] || "";
   const extensionPattern = /<(?:[A-Za-z_][\w.-]*:)?extLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst\s*>/g;
@@ -7394,7 +7400,7 @@ function parseNativeSortState(xml, styles) {
   if (residual) return undefined;
   const conditions = conditionMatches.map((conditionMatch) => {
     const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
-    if (!condition.ref || Object.keys(condition).some((name) => !["ref", "descending", "sortBy", "iconSet", "iconId", "dxfId", "customList"].includes(name))) return undefined;
+    if (!condition.ref || Object.keys(condition).some((name) => !name.startsWith("xmlns") && !["ref", "descending", "sortBy", "iconSet", "iconId", "dxfId", "customList"].includes(name))) return undefined;
     const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
     if (condition.sortBy === "icon") {
       const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
@@ -7414,13 +7420,14 @@ function parseNativeSortState(xml, styles) {
     reference: attrs.ref,
     caseSensitive: attrs.caseSensitive != null && !["0", "false", "off"].includes(String(attrs.caseSensitive).toLowerCase()),
     ...(attrs.sortMethod == null ? {} : { sortMethod: attrs.sortMethod }),
+    ...(attrs.columnSort == null ? {} : { columnSort: !["0", "false", "off"].includes(String(attrs.columnSort).toLowerCase()) }),
     conditions,
   };
 }
 
 function parseNativeTableSortState(xml, styles) {
   const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
-  return autoFilter ? parseNativeSortState(autoFilter[1], styles) : undefined;
+  return autoFilter ? parseNativeSortState(autoFilter[1], styles, { allowColumnSort: false }) : undefined;
 }
 
 function parseNativeQueryTableRefresh(xml, styles) {

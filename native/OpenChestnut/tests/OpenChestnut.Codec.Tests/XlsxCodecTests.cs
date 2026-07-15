@@ -680,6 +680,7 @@ public sealed class XlsxCodecTests
         Assert.Equal("A2:B3", refreshSort.Reference);
         Assert.True(refreshSort.CaseSensitive);
         Assert.Equal("stroke", refreshSort.SortMethod);
+        Assert.False(refreshSort.HasColumnSort);
         Assert.Collection(refreshSort.Conditions,
             condition =>
             {
@@ -711,8 +712,11 @@ public sealed class XlsxCodecTests
         refresh.DeletedFieldNames[0] = "Legacy Territory";
         refreshSort.CaseSensitive = false;
         refreshSort.SortMethod = "pinYin";
+        refreshSort.ColumnSort = true;
+        refreshSort.Conditions[0].Reference = "A3:B3";
         refreshSort.Conditions[0].Descending = false;
         refreshSort.Conditions[0].CustomList = "South,North";
+        refreshSort.Conditions[1].Reference = "A2:B2";
         refreshSort.Conditions[1].Icon.IconId = 1;
         connection.Name = "Fixture warehouse curated";
         connection.Description = "Curated without executing the source";
@@ -759,9 +763,9 @@ public sealed class XlsxCodecTests
         Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
         Assert.Contains("<x:deletedField name=\"Legacy Territory\"", queryXml);
         Assert.Contains("<x:deletedField name=\"Legacy Revenue\"", queryXml);
-        Assert.Contains("<x:sortState ref=\"A2:B3\" sortMethod=\"pinYin\">", queryXml);
-        Assert.Contains("<x:sortCondition ref=\"B2:B3\" customList=\"South,North\"", queryXml);
-        Assert.Contains("<x:sortCondition ref=\"A2:A3\" sortBy=\"icon\" iconSet=\"3Arrows\" iconId=\"1\"", queryXml);
+        Assert.Contains("<x:sortState ref=\"A2:B3\" sortMethod=\"pinYin\" columnSort=\"1\">", queryXml);
+        Assert.Contains("<x:sortCondition ref=\"A3:B3\" customList=\"South,North\"", queryXml);
+        Assert.Contains("<x:sortCondition ref=\"A2:B2\" sortBy=\"icon\" iconSet=\"3Arrows\" iconId=\"1\"", queryXml);
         Assert.Contains("<fixture:fieldOpaque value=\"kept\"", queryXml);
         Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
         Assert.Contains("<fixture:opaque value=\"kept\"", queryXml);
@@ -793,8 +797,11 @@ public sealed class XlsxCodecTests
         Assert.Equal(["Legacy Territory", "Legacy Revenue"], edited.QueryTable.Refresh.DeletedFieldNames);
         Assert.False(edited.QueryTable.Refresh.SortState.CaseSensitive);
         Assert.Equal("pinYin", edited.QueryTable.Refresh.SortState.SortMethod);
+        Assert.True(edited.QueryTable.Refresh.SortState.ColumnSort);
+        Assert.Equal("A3:B3", edited.QueryTable.Refresh.SortState.Conditions[0].Reference);
         Assert.False(edited.QueryTable.Refresh.SortState.Conditions[0].Descending);
         Assert.Equal("South,North", edited.QueryTable.Refresh.SortState.Conditions[0].CustomList);
+        Assert.Equal("A2:B2", edited.QueryTable.Refresh.SortState.Conditions[1].Reference);
         Assert.Equal(1U, edited.QueryTable.Refresh.SortState.Conditions[1].Icon.IconId);
         Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
         Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
@@ -952,6 +959,12 @@ public sealed class XlsxCodecTests
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
         Assert.Contains("contained in the source table range", Assert.Single(response.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.ColumnSort = true;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("row sort condition", Assert.Single(response.Diagnostics).Message);
 
         imported = Import(source);
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.SortMethod = "radical";
@@ -1559,6 +1572,89 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndEditsWorksheetColumnSortState()
+    {
+        var request = ExportRequest();
+        var sort = new SpreadsheetTableSortStateArtifact
+        {
+            Reference = "A1:B2", CaseSensitive = true, SortMethod = "stroke", ColumnSort = true,
+        };
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A2:B2", Descending = true, CustomList = "Q2,Q1" });
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A1:B1" });
+        request.Artifact.Workbook.Worksheets[0].SortState = sort;
+
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var xml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/worksheets/sheet1.xml"));
+        Assert.Contains("<x:sortState", xml);
+        Assert.Contains("ref=\"A1:B2\"", xml);
+        Assert.Contains("caseSensitive=\"1\"", xml);
+        Assert.Contains("sortMethod=\"stroke\"", xml);
+        Assert.Contains("columnSort=\"1\"", xml);
+        Assert.Contains("ref=\"A2:B2\"", xml);
+        Assert.Contains("descending=\"1\"", xml);
+        Assert.Contains("customList=\"Q2,Q1\"", xml);
+        Assert.Contains("ref=\"A1:B1\"", xml);
+        AssertOffice2021Valid(exported.File.ToByteArray());
+
+        var imported = Import(exported.File.ToByteArray());
+        var importedSort = Assert.IsType<SpreadsheetTableSortStateArtifact>(imported.Artifact.Workbook.Worksheets[0].SortState);
+        Assert.True(importedSort.HasColumnSort);
+        Assert.True(importedSort.ColumnSort);
+        Assert.Equal("A2:B2", importedSort.Conditions[0].Reference);
+
+        importedSort.ColumnSort = false;
+        importedSort.Conditions[0].Reference = "B1:B2";
+        importedSort.Conditions[1].Reference = "A1:A2";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        xml = System.Text.Encoding.UTF8.GetString(ReadEntry(edited.File.ToByteArray(), "xl/worksheets/sheet1.xml"));
+        Assert.Contains("columnSort=\"0\"", xml);
+        var reimported = Assert.IsType<SpreadsheetTableSortStateArtifact>(Import(edited.File.ToByteArray()).Artifact.Workbook.Worksheets[0].SortState);
+        Assert.True(reimported.HasColumnSort);
+        Assert.False(reimported.ColumnSort);
+        Assert.Equal("B1:B2", reimported.Conditions[0].Reference);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].SortState = new SpreadsheetTableSortStateArtifact
+        {
+            Reference = "A1:B2", ColumnSort = true,
+        };
+        request.Artifact.Workbook.Worksheets[0].SortState.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A1:A2" });
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_worksheet_sort", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Contains("row sort condition", Assert.Single(rejected.Diagnostics).Message);
+    }
+
+    [Fact]
+    public void UnsupportedWorksheetColumnSortGeometryStaysHiddenAndPreserved()
+    {
+        var request = ExportRequest();
+        var sort = new SpreadsheetTableSortStateArtifact { Reference = "A1:B2", ColumnSort = true };
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A2:B2", Descending = true });
+        sort.Conditions.Add(new SpreadsheetTableSortConditionArtifact { Reference = "A1:B1" });
+        request.Artifact.Workbook.Worksheets[0].SortState = sort;
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        var source = SetWorksheetSortConditionReferences(authored.File.ToByteArray(), "A1:A2", "B1:B2");
+        AssertOffice2021Valid(source);
+
+        var imported = Import(source);
+        Assert.Null(imported.Artifact.Workbook.Worksheets[0].SortState);
+        imported.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 0 && cell.Column == 1).NumberValue = 43;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadWorksheetSortXml(source), ReadWorksheetSortXml(preserved.File.ToByteArray()));
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].SortState = sort.Clone();
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_worksheet_sort", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Contains("unsupported native sortState", Assert.Single(rejected.Diagnostics).Message);
+    }
+
+    [Fact]
     public void ProtocolAuthorsAndImportsWorksheetTableValueSortState()
     {
         var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(SortTableExportRequest().ToByteArray()));
@@ -1640,6 +1736,12 @@ public sealed class XlsxCodecTests
         response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.False(response.Ok);
         Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+
+        request = SortTableExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.ColumnSort = false;
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Contains("inside an AutoFilter", Assert.Single(response.Diagnostics).Message);
 
         request = SortTableExportRequest();
         request.Artifact.Workbook.Worksheets[0].Tables[0].SortState.SortMethod = "radical";
@@ -2378,6 +2480,29 @@ public sealed class XlsxCodecTests
             worksheet.Save();
         }
         return stream.ToArray();
+    }
+
+    private static byte[] SetWorksheetSortConditionReferences(byte[] bytes, params string[] references)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            var conditions = worksheet.GetFirstChild<SortState>()!.Elements<SortCondition>().ToArray();
+            Assert.Equal(conditions.Length, references.Length);
+            for (var index = 0; index < conditions.Length; index++) conditions[index].Reference = references[index];
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string ReadWorksheetSortXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.WorksheetParts.Single().Worksheet!.GetFirstChild<SortState>()!.OuterXml;
     }
 
     private static byte[] ReadEntry(byte[] bytes, string path)

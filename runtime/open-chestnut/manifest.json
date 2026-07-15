@@ -27,13 +27,13 @@
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.Framework.wasm",
-      "bytes": 352021,
-      "sha256": "f3647fe5a9ff7462cce7f133c0dd8bd8c81dac302760a3c596c1d13cd2063016"
+      "bytes": 352533,
+      "sha256": "4f1977102cc8baa0de97a15b193458e500fda40a52b9d520f0604aaadeb9768d"
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
       "bytes": 5725977,
-      "sha256": "2496282c2e7a646b05c5040df62fbf40fed42c3b9f7234bc7f5125337887eae5"
+      "sha256": "81f4d33d3693e88fdce0e87656e26cffcdc6982a8d789678fb07e3b47c035439"
     },
     {
       "path": "_framework/Google.Protobuf.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenChestnut.Codec.wasm",
-      "bytes": 883477,
-      "sha256": "df2781f2aca046b4314bcd83abc0248465edf6ef022b2cbeed8f6bb2afdbfd22"
+      "bytes": 882453,
+      "sha256": "2f00bb456af874f6096c6033d96768dc937cb2de796136bf3c5d950c15120d19"
     },
     {
       "path": "_framework/OpenChestnut.Runtime.wasm",
       "bytes": 6421,
-      "sha256": "a885ecaf5fad2b00c20581265458c1a32544afa3a3654e8676888aa1e5961e93"
+      "sha256": "8835511695629c6a6ffdc6ee96051a6bdbfd0ed590dd850c7feb9a5664f79bf2"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -127,8 +127,8 @@
     },
     {
       "path": "_framework/System.Private.Xml.Linq.wasm",
-      "bytes": 50965,
-      "sha256": "8afa9d0ba53c43d864632454fa181d450413ba0613cbcbe569cec85b8f516cb3"
+      "bytes": 51989,
+      "sha256": "4930f0b3f8bbe48edd8b51653fcbae17540e88979f8ade5761e274dde1c6b3a7"
     },
     {
       "path": "_framework/System.Private.Xml.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3140,
-      "sha256": "9f227a6b3361533aec8608b7524eda68a40e3753e9552f92c13f7eb6d5c1b28d"
+      "sha256": "0f923f2ce4c4b3052a388879563b5a15c894d0dee7e89bdb978b720720d52958"
     },
     {
       "path": "_framework/dotnet.js",
@@ -201,5 +201,5 @@
       "sha256": "db0ec1415b0f61bca62217c12aec17824066591f4a9caa43d328bca5322b22f6"
     }
   ],
-  "totalBytes": 13333180
+  "totalBytes": 13333692
 }

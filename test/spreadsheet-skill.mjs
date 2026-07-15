@@ -193,6 +193,13 @@ try {
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C3").sharedRef, "C2:C3");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").formulaType, "array");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("D2").arrayRef, "D2:D3");
+  assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").sortState, {
+    reference: "A1:D3",
+    caseSensitive: true,
+    sortMethod: "stroke",
+    columnSort: true,
+    conditions: [{ reference: "A3:D3", descending: true, customList: "Double,Revenue" }, { reference: "A1:D1", descending: false }],
+  });
   const wasmTable = wasmWorkbook.worksheets.getItem("Details").tables.getItemOrNullObject("CodecTable");
   assert.equal(wasmTable.isNullObject, undefined);
   assert.equal(wasmTable.range, "A1:C4");
@@ -260,6 +267,9 @@ try {
   assert.match(wasmWorksheetXml, /<x:f t="shared" ref="C2:C3" si="7">B2\*2<\/x:f>/);
   assert.match(wasmWorksheetXml, /<x:f t="shared" si="7"\s*\/>/);
   assert.match(wasmWorksheetXml, /<x:f t="array" ref="D2:D3">SUM\(B2:B3\)<\/x:f>/);
+  assert.match(wasmWorksheetXml, /<x:sortState\b[^>]*ref="A1:D3"/);
+  assert.match(wasmWorksheetXml, /<x:sortState\b[^>]*columnSort="1"/);
+  assert.match(wasmWorksheetXml, /<x:sortCondition\b[^>]*ref="A3:D3"[^>]*customList="Double,Revenue"/);
   const wasmTableXml = await wasmZip.file("xl/tables/table1.xml").async("text");
   assert.match(wasmTableXml, /displayName="CodecTable"/);
   assert.match(wasmTableXml, /ref="A1:C4"/);
@@ -314,9 +324,10 @@ try {
     reference: "A2:B3",
     caseSensitive: false,
     sortMethod: "pinYin",
+    columnSort: true,
     conditions: [
-      { reference: "B2:B3", descending: false, customList: "80,120" },
-      { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
+      { reference: "A3:B3", descending: false, customList: "80,120" },
+      { reference: "A2:B2", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
     ],
   });
   assert.deepEqual(queryResult.sourceConnections, [{
@@ -374,9 +385,10 @@ try {
         reference: "A2:B3",
         caseSensitive: false,
         sortMethod: "pinYin",
+        columnSort: true,
         conditions: [
-          { reference: "B2:B3", descending: false, customList: "80,120" },
-          { reference: "A2:A3", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
+          { reference: "A3:B3", descending: false, customList: "80,120" },
+          { reference: "A2:B2", descending: false, kind: "icon", iconSet: "3Arrows", iconId: 1 },
         ],
       },
     },
@@ -405,9 +417,9 @@ try {
   assert.match(runnableQueryXml, /<x:queryTableFields count="2">/);
   assert.match(runnableQueryXml, /<x:deletedField name="Legacy Territory"/);
   assert.match(runnableQueryXml, /<x:deletedField name="Legacy Revenue"/);
-  assert.match(runnableQueryXml, /<x:sortState ref="A2:B3" sortMethod="pinYin">/);
-  assert.match(runnableQueryXml, /<x:sortCondition ref="B2:B3" customList="80,120"/);
-  assert.match(runnableQueryXml, /<x:sortCondition ref="A2:A3" sortBy="icon" iconSet="3Arrows" iconId="1"/);
+  assert.match(runnableQueryXml, /<x:sortState ref="A2:B3" sortMethod="pinYin" columnSort="1">/);
+  assert.match(runnableQueryXml, /<x:sortCondition ref="A3:B3" customList="80,120"/);
+  assert.match(runnableQueryXml, /<x:sortCondition ref="A2:B2" sortBy="icon" iconSet="3Arrows" iconId="1"/);
   assert.match(runnableQueryXml, /<fixture:fieldOpaque value="kept"/);
   assert.match(runnableQueryXml, /<fixture:sortOpaque value="kept"/);
   assert.match(runnableQueryXml, /<fixture:opaque value="kept"/);

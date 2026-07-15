@@ -208,6 +208,7 @@ internal static class XlsxCodec
         PatchColumnDimensions(worksheet, source);
         PatchRowsAndCells(worksheet, source, sharedStrings, styles, formulas);
         PatchMergedRanges(worksheet, source);
+        PatchWorksheetSortState(worksheet, source, styles);
         worksheet.Save();
     }
 
@@ -393,9 +394,56 @@ internal static class XlsxCodec
         if (source.MergedRanges.Count == 0) return;
         var replacement = new MergeCells();
         foreach (var reference in source.MergedRanges) replacement.Append(new MergeCell { Reference = reference });
+        var sortState = worksheet.GetFirstChild<SortState>();
+        if (sortState is not null)
+        {
+            worksheet.InsertAfter(replacement, sortState);
+            return;
+        }
         var sheetData = worksheet.GetFirstChild<SheetData>();
         if (sheetData is null) worksheet.Append(replacement);
         else worksheet.InsertAfter(replacement, sheetData);
+    }
+
+    private static void PatchWorksheetSortState(Worksheet worksheet, WorksheetArtifact source, XlsxCellStyleCodec styles)
+    {
+        if (source.SortState is not null)
+            XlsxSortStateCodec.Validate(source.SortState, null, source.Name, $"Worksheet {source.Name}", allowColumnSort: true);
+        var current = worksheet.Elements<SortState>().ToArray();
+        if (current.Length > 1)
+        {
+            if (source.SortState is null) return;
+            throw new CodecException("invalid_worksheet_sort", $"Worksheet {source.Name} has multiple native sortState elements.", source.Name);
+        }
+        if (current.Length == 1)
+        {
+            var xml = XElement.Parse(current[0].OuterXml, LoadOptions.PreserveWhitespace);
+            var recognized = XlsxSortStateCodec.TryRead(xml, styles, allowExtensions: true, out var currentSort);
+            if (recognized)
+            {
+                try { XlsxSortStateCodec.Validate(currentSort!, null, source.Name, $"Worksheet {source.Name}", allowColumnSort: true); }
+                catch (CodecException) { recognized = false; }
+            }
+            if (!recognized)
+            {
+                if (source.SortState is null) return;
+                throw new CodecException("invalid_worksheet_sort", $"Worksheet {source.Name} has an unsupported native sortState profile.", source.Name);
+            }
+            if (source.SortState is null)
+            {
+                current[0].Remove();
+                return;
+            }
+            XlsxSortStateCodec.Patch(xml, source.SortState, styles);
+            current[0].InsertAfterSelf(new SortState(xml.ToString(SaveOptions.DisableFormatting)));
+            current[0].Remove();
+            return;
+        }
+        if (source.SortState is null) return;
+        var replacement = new SortState(XlsxSortStateCodec.Create(source.SortState, styles).ToString(SaveOptions.DisableFormatting));
+        var before = worksheet.Elements().FirstOrDefault(item => item is DataConsolidate or CustomSheetViews or MergeCells or PhoneticProperties or ConditionalFormatting or DataValidations or Hyperlinks or PrintOptions or PageMargins or PageSetup or HeaderFooter or RowBreaks or ColumnBreaks or CustomProperties or CellWatches or IgnoredErrors or Drawing or LegacyDrawing or LegacyDrawingHeaderFooter or Picture or OleObjects or Controls or WebPublishItems or TableParts or WorksheetExtensionList);
+        if (before is null) worksheet.Append(replacement);
+        else worksheet.InsertBefore(replacement, before);
     }
 
     private static Worksheet BuildWorksheet(WorksheetArtifact source, XlsxCellStyleCodec styles)
@@ -456,6 +504,12 @@ internal static class XlsxCodec
             sheetData.Append(row);
         }
         worksheet.Append(sheetData);
+
+        if (source.SortState is not null)
+        {
+            XlsxSortStateCodec.Validate(source.SortState, null, source.Name, $"Worksheet {source.Name}", allowColumnSort: true);
+            worksheet.Append(new SortState(XlsxSortStateCodec.Create(source.SortState, styles).ToString(SaveOptions.DisableFormatting)));
+        }
 
         if (source.MergedRanges.Count > 0)
         {
@@ -552,6 +606,24 @@ internal static class XlsxCodec
         }
         foreach (var merge in worksheet.Elements<MergeCells>().SelectMany(item => item.Elements<MergeCell>()))
             if (merge.Reference?.Value is { Length: > 0 } reference) target.MergedRanges.Add(reference);
+        var sortStates = worksheet.Elements<SortState>().ToArray();
+        if (sortStates.Length == 1)
+        {
+            var xml = XElement.Parse(sortStates[0].OuterXml, LoadOptions.PreserveWhitespace);
+            if (XlsxSortStateCodec.TryRead(xml, styles, allowExtensions: true, out var sortState))
+            {
+                try
+                {
+                    XlsxSortStateCodec.Validate(sortState!, null, name, $"Worksheet {name}", allowColumnSort: true);
+                    target.SortState = sortState;
+                }
+                catch (CodecException)
+                {
+                    // Unsupported semantic geometry stays in the hash-bound
+                    // source package and remains hidden from the editable wire.
+                }
+            }
+        }
         return target;
     }
 
@@ -592,6 +664,8 @@ internal static class XlsxCodec
             if (string.IsNullOrWhiteSpace(sheet.Name) || sheet.Name.Length > 31 || sheet.Name.IndexOfAny(['[', ']', ':', '*', '?', '/', '\\']) >= 0)
                 throw new CodecException("invalid_sheet_name", $"Worksheet name {sheet.Name} is invalid for XLSX.");
             if (!names.Add(sheet.Name)) throw new CodecException("duplicate_sheet_name", $"Workbook contains duplicate worksheet name {sheet.Name}.");
+            if (sheet.SortState is not null)
+                XlsxSortStateCodec.Validate(sheet.SortState, null, sheet.Name, $"Worksheet {sheet.Name}", allowColumnSort: true);
             XlsxTableCodec.ValidateWorksheet(sheet);
             foreach (var table in sheet.Tables.Where(XlsxTableCodec.HasCompleteSemantics))
                 if (!tableNames.Add(table.Name)) throw new CodecException("invalid_worksheet_table", $"Workbook contains duplicate table name {table.Name}.", sheet.Name);
