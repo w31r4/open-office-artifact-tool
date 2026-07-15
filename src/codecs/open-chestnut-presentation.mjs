@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Presentation } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
@@ -725,19 +726,44 @@ function unsupportedPresentationFeatures(presentation) {
 }
 
 function opaquePresentationSnapshot(object, { includePlacement = true } = {}) {
+  const oleWorkbook = object.oleWorkbook ? {
+    partPath: object.oleWorkbook.partPath,
+    contentType: object.oleWorkbook.contentType,
+    sourceSha256: object.oleWorkbook.sourceSha256,
+    relationshipId: object.oleWorkbook.relationshipId,
+  } : undefined;
   return JSON.stringify({
     id: object.id,
     ...(includePlacement ? { name: object.name, position: object.position } : {}),
     nativeKind: object.nativeKind,
     rawXml: object.rawXml,
-    ...presentationNativeGraphSnapshot(object),
+    oleWorkbook,
+    ...presentationNativeGraphSnapshot(object, { ignoredPartPaths: oleWorkbook ? [oleWorkbook.partPath] : [] }),
   });
 }
 
-function presentationOpaqueElement(object, original) {
+function presentationOpaqueElement(object, original, assetCatalog) {
   const name = String(object.name ?? "");
   if (name.length > 1_024) throw new OpenChestnutCodecError(`Presentation native object ${object.id} name exceeds 1024 characters.`, [], { code: "invalid_presentation_native_object" });
   const position = object.position || {};
+  const sourceOleWorkbook = original.content.value.oleWorkbook;
+  let oleWorkbook = sourceOleWorkbook;
+  if (sourceOleWorkbook) {
+    const metadata = object.oleWorkbook;
+    if (!metadata || metadata.partPath !== sourceOleWorkbook.partPath || metadata.contentType !== sourceOleWorkbook.contentType ||
+        metadata.sourceSha256 !== sourceOleWorkbook.sourceSha256 || metadata.relationshipId !== sourceOleWorkbook.relationshipId) {
+      throw new OpenChestnutCodecError(`Presentation OLE workbook ${object.id} changed its source binding.`, [], { code: "presentation_ole_workbook_binding_mismatch" });
+    }
+    const matches = (object.parts || []).filter((part) => part.path === metadata.partPath);
+    if (matches.length !== 1 || matches[0].contentType !== metadata.contentType) {
+      throw new OpenChestnutCodecError(`Presentation OLE workbook ${object.id} no longer resolves to one source-bound XLSX part.`, [], { code: "presentation_ole_workbook_binding_mismatch" });
+    }
+    const digest = createHash("sha256").update(matches[0].bytes).digest("hex");
+    oleWorkbook = {
+      ...sourceOleWorkbook,
+      replacementAssetId: digest === metadata.sourceSha256 ? "" : assetCatalog.addOleWorkbook(matches[0].bytes),
+    };
+  }
   return {
     id: original.id,
     name,
@@ -746,6 +772,7 @@ function presentationOpaqueElement(object, original) {
       case: "opaque",
       value: {
         ...original.content.value,
+        ...(oleWorkbook ? { oleWorkbook } : {}),
         leftEmu: emuFromPixels(position.left, `${object.id}.position.left`),
         topEmu: emuFromPixels(position.top, `${object.id}.position.top`),
         widthEmu: emuFromPixels(position.width, `${object.id}.position.width`),
@@ -794,7 +821,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
             if (entry.wire.content.case === "shape") return presentationShape(entry.model, entry.wire, assetCatalog);
             const placementEditable = entry.wire.source?.editable === true;
             if (opaquePresentationSnapshot(entry.model, { includePlacement: !placementEditable }) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} changed outside its ${placementEditable ? "name/frame" : "read-only"} native-object boundary.`, [], { code: "unsupported_presentation_edit" });
-            if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire);
+            if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire, assetCatalog);
             return entry.wire;
           })
         : slide.shapes.items.map((shape) => presentationShape(shape, undefined, assetCatalog)),
@@ -1079,6 +1106,12 @@ export async function presentationFromEnvelope(envelope) {
           rawXml: opaque.rawXml,
           sourcePart,
           editable: element.source?.editable === true,
+          ...(opaque.oleWorkbook ? { oleWorkbook: {
+            partPath: opaque.oleWorkbook.partPath,
+            contentType: opaque.oleWorkbook.contentType,
+            sourceSha256: opaque.oleWorkbook.sourceSha256,
+            relationshipId: opaque.oleWorkbook.relationshipId,
+          } } : {}),
           ...nativeGraph(opaque, sourcePart),
         });
       } else {

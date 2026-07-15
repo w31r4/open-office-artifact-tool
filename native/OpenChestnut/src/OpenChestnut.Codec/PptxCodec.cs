@@ -215,6 +215,7 @@ internal static class PptxCodec
         var changedParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var addedRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var addedPartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var replacedOpaquePartHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using (var package = PresentationDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = false }))
         {
             var presentationPart = package.PresentationPart ??
@@ -437,10 +438,14 @@ internal static class PptxCodec
                             "presentation_source_semantics_mismatch",
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} source semantics do not match its binding.",
                             PartPath(slidePart));
+                    PptxOleWorkbookReplacement? oleWorkbookReplacement = null;
                     if (original.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                         requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                         PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
-                        ValidateNativePlacementRequest(original, requested);
+                    {
+                        ValidateNativeObjectRequest(original, requested);
+                        oleWorkbookReplacement = PptxOleWorkbookCodec.PrepareReplacement(original.Opaque, requested.Opaque, assetCatalog, limits);
+                    }
                     if (SemanticHash(requested).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!elementBinding.Editable)
                         throw UnsupportedPresentationEdit(slideIndex, elementIndex, slidePart);
@@ -449,17 +454,27 @@ internal static class PptxCodec
                         IsSimpleShape(sourceShape))
                     {
                         ApplyShape(sourceShape, requested, slideContext);
+                        changed = true;
                     }
                     else if (requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                              PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
                     {
-                        ApplyNativePlacement(sourceElement, requested);
+                        if (oleWorkbookReplacement is not null)
+                        {
+                            PptxOleWorkbookCodec.Apply(slidePart, sourceElement, original.Opaque.OleWorkbook, oleWorkbookReplacement);
+                            changedParts.Add(oleWorkbookReplacement.PartPath);
+                            replacedOpaquePartHashes.Add(oleWorkbookReplacement.PartPath, oleWorkbookReplacement.Sha256);
+                        }
+                        if (NativePlacementChanged(original, requested))
+                        {
+                            ApplyNativePlacement(sourceElement, requested);
+                            changed = true;
+                        }
                     }
                     else
                     {
                         throw UnsupportedPresentationEdit(slideIndex, elementIndex, slidePart);
                     }
-                    changed = true;
                 }
                 if (changed)
                 {
@@ -477,7 +492,7 @@ internal static class PptxCodec
         ValidatePreservedSlideElements(sourceBytes, bytes, envelope.Presentation, limits);
         ValidatePreservedMasterAndLayoutContent(sourceBytes, bytes, envelope.Presentation, limits);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Pptx, includeSourcePackage: false);
-        AssertOpaqueGraphMatchesWithModeledAdditions(envelope.OpaqueOpc, outputOpaque, addedRelationshipIds, addedPartPaths);
+        AssertOpaqueGraphMatchesWithModeledAdditions(envelope.OpaqueOpc, outputOpaque, addedRelationshipIds, addedPartPaths, replacedOpaquePartHashes);
         var diagnostics = new List<Diagnostic>();
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning(
@@ -611,7 +626,7 @@ internal static class PptxCodec
         $"Presentation slide {slideIndex + 1} element {elementIndex + 1} is preserved but not safely editable by this codec slice.",
         PartPath(slidePart));
 
-    private static void ValidateNativePlacementRequest(PresentationElement original, PresentationElement requested)
+    private static void ValidateNativeObjectRequest(PresentationElement original, PresentationElement requested)
     {
         var allowed = original.Clone();
         allowed.Name = requested.Name;
@@ -619,6 +634,8 @@ internal static class PptxCodec
         allowed.Opaque.TopEmu = requested.Opaque.TopEmu;
         allowed.Opaque.WidthEmu = requested.Opaque.WidthEmu;
         allowed.Opaque.HeightEmu = requested.Opaque.HeightEmu;
+        if (allowed.Opaque.OleWorkbook is not null && requested.Opaque.OleWorkbook is not null)
+            allowed.Opaque.OleWorkbook.ReplacementAssetId = requested.Opaque.OleWorkbook.ReplacementAssetId;
         // Source binding equality is checked against the actual source above;
         // reuse the caller's equivalent instance to keep protobuf equality
         // focused on the semantic payload.
@@ -626,8 +643,15 @@ internal static class PptxCodec
         if (!allowed.Equals(requested))
             throw new CodecException(
                 "unsupported_presentation_edit",
-                $"Presentation native object {requested.Id} may edit only its name and outer frame.");
+                $"Presentation native object {requested.Id} may edit only its name, outer frame, and an explicitly recognized OLE workbook payload.");
     }
+
+    private static bool NativePlacementChanged(PresentationElement original, PresentationElement requested) =>
+        original.Name != requested.Name ||
+        original.Opaque.LeftEmu != requested.Opaque.LeftEmu ||
+        original.Opaque.TopEmu != requested.Opaque.TopEmu ||
+        original.Opaque.WidthEmu != requested.Opaque.WidthEmu ||
+        original.Opaque.HeightEmu != requested.Opaque.HeightEmu;
 
     private static void ApplyNativePlacement(OpenXmlElement source, PresentationElement requested)
     {
@@ -1068,7 +1092,8 @@ internal static class PptxCodec
         OpaqueOpcGraph expected,
         OpaqueOpcGraph actual,
         IReadOnlySet<string> allowedAddedRelationshipIds,
-        IReadOnlySet<string> allowedAddedPartPaths)
+        IReadOnlySet<string> allowedAddedPartPaths,
+        IReadOnlyDictionary<string, string> allowedChangedPartHashes)
     {
         var guarded = actual.Clone();
         var removed = new HashSet<string>(StringComparer.Ordinal);
@@ -1102,7 +1127,21 @@ internal static class PptxCodec
         }
         if (!removedParts.SetEquals(allowedAddedPartPaths))
             throw new CodecException("opaque_content_not_preserved", "Modeled PPTX image additions do not match the parts written to the package.");
-        PackageGuards.AssertOpaqueGraphMatches(expected, guarded, "opaque_content_not_preserved");
+        foreach (var (path, requestedHash) in allowedChangedPartHashes)
+        {
+            var before = expected.Parts.SingleOrDefault(part => part.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+            var after = guarded.Parts.SingleOrDefault(part => part.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (before is null || after is null ||
+                !before.ContentType.Equals(after.ContentType, StringComparison.OrdinalIgnoreCase) ||
+                !after.Sha256.Equals(requestedHash, StringComparison.OrdinalIgnoreCase) ||
+                !before.Relationships.SequenceEqual(after.Relationships))
+                throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX OLE workbook replacement did not preserve the package contract for {path}.", path);
+        }
+        PackageGuards.AssertOpaqueGraphMatches(
+            expected,
+            guarded,
+            "opaque_content_not_preserved",
+            ignorePart: part => allowedChangedPartHashes.ContainsKey(part.Path));
     }
 
     private static bool IsNumberedSlidePath(string path)

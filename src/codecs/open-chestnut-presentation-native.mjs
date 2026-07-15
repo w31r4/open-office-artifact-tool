@@ -84,6 +84,7 @@ export async function materializePresentationNativeGraphs(envelope) {
       path: partPath,
       contentType: metadata.contentType || "application/octet-stream",
       bytes,
+      sourceSha256: (metadata.sha256 || sha256(bytes)).toLowerCase(),
       relationships: (metadata.relationships || []).map(modelRelationship),
     });
   }));
@@ -116,12 +117,8 @@ export async function materializePresentationNativeGraphs(envelope) {
   };
 }
 
-export function presentationNativeGraphSnapshot(object) {
-  let byteHash = 0x811c9dc5;
-  for (const part of object.parts || []) for (const byte of part.bytes || []) {
-    byteHash ^= byte;
-    byteHash = Math.imul(byteHash, 0x01000193) >>> 0;
-  }
+export function presentationNativeGraphSnapshot(object, { ignoredPartPaths = [] } = {}) {
+  const ignored = new Set(ignoredPartPaths);
   return {
     relationshipReferences: object.relationshipReferences,
     rootRelationships: object.rootRelationships,
@@ -129,8 +126,8 @@ export function presentationNativeGraphSnapshot(object) {
       path: part.path,
       contentType: part.contentType,
       relationships: part.relationships,
-      bytes: part.bytes?.length || 0,
+      sourceSha256: part.sourceSha256,
+      ...(ignored.has(part.path) ? {} : { bytes: part.bytes?.length || 0, sha256: sha256(part.bytes || []) }),
     })),
-    byteHash,
   };
 }

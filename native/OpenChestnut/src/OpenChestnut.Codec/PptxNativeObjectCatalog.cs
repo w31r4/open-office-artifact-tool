@@ -11,6 +11,7 @@ namespace OpenChestnut.Codec;
 // this catalog records only the relationship roots and reachable part paths.
 internal sealed class PptxNativeObjectCatalog
 {
+    private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static readonly HashSet<string> RelationshipNamespaces = new(StringComparer.Ordinal)
     {
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -126,6 +127,46 @@ internal sealed class PptxNativeObjectCatalog
             foreach (var partPath in Closure(targetPath, sourcePart))
                 if (seenPaths.Add(partPath)) target.PreservedPartPaths.Add(partPath);
         }
+
+        TryPopulateOleWorkbook(target, source, sourcePart);
+    }
+
+    private void TryPopulateOleWorkbook(PresentationOpaqueElement target, OpenXmlElement source, string sourcePart)
+    {
+        if (target.NativeKind != "oleObject" || source is not P.GraphicFrame || !SupportsPlacementEditing(source)) return;
+        var oleObjects = Elements(source)
+            .Where(element => element.LocalName == "oleObj" && PresentationNamespaces.Contains(element.NamespaceUri))
+            .ToArray();
+        if (oleObjects.Length != 1) return;
+        var relationshipAttributes = oleObjects[0].GetAttributes()
+            .Where(attribute => attribute.LocalName == "id" && RelationshipNamespaces.Contains(attribute.NamespaceUri))
+            .ToArray();
+        if (relationshipAttributes.Length != 1 || string.IsNullOrWhiteSpace(relationshipAttributes[0].Value)) return;
+        var relationshipId = relationshipAttributes[0].Value!;
+        if (!_relationships.TryGetValue(RelationshipKey(sourcePart, relationshipId), out var relationship) ||
+            relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) ||
+            !relationship.Type.EndsWith("/package", StringComparison.Ordinal)) return;
+        var targetPath = ResolveTarget(sourcePart, relationship.Target);
+        if (!_parts.TryGetValue(targetPath, out var part) ||
+            !part.ContentType.Equals(SpreadsheetContentType, StringComparison.OrdinalIgnoreCase) ||
+            part.Sha256.Length != 64 || !part.Sha256.All(char.IsAsciiHexDigit) ||
+            !target.PreservedPartPaths.Contains(targetPath, StringComparer.OrdinalIgnoreCase)) return;
+
+        // Replacing a shared embedded package would affect more than the
+        // selected OLE object. Expose the bounded edit only for one owner-local
+        // internal relationship to this exact part.
+        var inboundCount = _relationships.Values.Count(candidate =>
+            !candidate.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+            ResolveTarget(candidate.SourcePath, candidate.Target).Equals(targetPath, StringComparison.OrdinalIgnoreCase));
+        if (inboundCount != 1) return;
+
+        target.OleWorkbook = new PresentationOleWorkbook
+        {
+            PartPath = part.Path,
+            ContentType = SpreadsheetContentType,
+            SourceSha256 = part.Sha256.ToLowerInvariant(),
+            RelationshipId = relationshipId,
+        };
     }
 
     // Placement editing is intentionally narrower than native-object graph

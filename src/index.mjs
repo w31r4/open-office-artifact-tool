@@ -9159,6 +9159,12 @@ class NativePresentationObject {
     this.relationshipReferences = (config.relationshipReferences || []).map((reference) => ({ ...reference }));
     this.rootRelationships = (config.rootRelationships || []).map((relationship) => ({ ...relationship }));
     this.parts = (config.parts || []).map((part) => ({ ...part, bytes: new Uint8Array(part.bytes), relationships: (part.relationships || []).map((relationship) => ({ ...relationship })) }));
+    this.oleWorkbook = config.oleWorkbook ? Object.freeze({
+      partPath: String(config.oleWorkbook.partPath || ""),
+      contentType: String(config.oleWorkbook.contentType || ""),
+      sourceSha256: String(config.oleWorkbook.sourceSha256 || "").toLowerCase(),
+      relationshipId: String(config.oleWorkbook.relationshipId || ""),
+    }) : undefined;
   }
 
   setName(value) {
@@ -9175,8 +9181,34 @@ class NativePresentationObject {
     return this;
   }
 
+  embeddedWorkbookPart() {
+    if (!this.oleWorkbook) throw new Error(`Native ${this.nativeKind} object ${this.id} has no editable embedded XLSX workbook.`);
+    const matches = this.parts.filter((part) => part.path === this.oleWorkbook.partPath && part.contentType === this.oleWorkbook.contentType);
+    if (matches.length !== 1) throw new Error(`Native ${this.nativeKind} object ${this.id} no longer resolves to one embedded XLSX workbook part.`);
+    return matches[0];
+  }
+
+  getEmbeddedWorkbook() {
+    const part = this.embeddedWorkbookPart();
+    return new FileBlob(Uint8Array.from(part.bytes), {
+      type: this.oleWorkbook.contentType,
+      metadata: { artifactKind: "workbook", source: "presentationOleObject", partPath: this.oleWorkbook.partPath, sourceSha256: this.oleWorkbook.sourceSha256 },
+    });
+  }
+
+  replaceEmbeddedWorkbook(input) {
+    const part = this.embeddedWorkbookPart();
+    const source = input instanceof FileBlob ? input.bytes : toUint8Array(input);
+    const bytes = Uint8Array.from(source);
+    if (!bytes.length || bytes.length > 16 * 1024 * 1024) throw new RangeError("Embedded XLSX workbooks must contain 1 through 16777216 bytes.");
+    if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) throw new Error("Embedded workbook replacement must be an XLSX OPC ZIP package.");
+    part.bytes = bytes;
+    return this;
+  }
+
   inspectRecord() {
     const frame = this.parentGroup ? this.parentGroup.absoluteChildFrame(this) : this.position;
+    const editableFields = [...(this.editable ? ["name", "position"] : []), ...(this.oleWorkbook ? ["embeddedWorkbook"] : [])];
     return {
       kind: "nativeObject",
       id: this.id,
@@ -9191,15 +9223,16 @@ class NativePresentationObject {
       relationshipReferences: this.relationshipReferences.map(({ attribute, id, namespaceUri }) => ({ attribute, id, namespaceUri })),
       nativeRelationships: this.rootRelationships.map(({ id, type, target, targetMode }) => ({ id, type, target, targetMode })),
       nativeParts: this.parts.map((part) => ({ path: part.path, contentType: part.contentType, relationships: part.relationships.length })),
+      embeddedWorkbook: this.oleWorkbook ? { partPath: this.oleWorkbook.partPath, contentType: this.oleWorkbook.contentType, bytes: this.embeddedWorkbookPart().bytes.length, sourceSha256: this.oleWorkbook.sourceSha256 } : undefined,
       bbox: [frame.left, frame.top, frame.width, frame.height],
       bboxUnit: "px",
       editable: this.editable,
-      editableFields: this.editable ? ["name", "position"] : [],
+      editableFields,
     };
   }
 
   layoutJson() {
-    return { kind: "nativeObject", id: this.id, name: this.name, nativeKind: this.nativeKind, frame: this.position, relationships: this.rootRelationships.length, preservedParts: this.parts.length, editable: this.editable, editableFields: this.editable ? ["name", "position"] : [] };
+    return { kind: "nativeObject", id: this.id, name: this.name, nativeKind: this.nativeKind, frame: this.position, relationships: this.rootRelationships.length, preservedParts: this.parts.length, embeddedWorkbook: this.oleWorkbook ? { partPath: this.oleWorkbook.partPath, contentType: this.oleWorkbook.contentType, bytes: this.embeddedWorkbookPart().bytes.length } : undefined, editable: this.editable, editableFields: [...(this.editable ? ["name", "position"] : []), ...(this.oleWorkbook ? ["embeddedWorkbook"] : [])] };
   }
 
   toSvg() {

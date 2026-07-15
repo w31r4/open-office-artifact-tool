@@ -3,6 +3,9 @@ import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const MAX_ASSET_BYTES = 16 * 1024 * 1024;
 const MAX_ASSET_COUNT = 1024;
+const PICTURE_ASSET_PREFIX = "asset/presentation/picture-bullet/";
+const OLE_WORKBOOK_ASSET_PREFIX = "asset/presentation/ole-workbook/";
+const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const IMAGE_TYPES = new Map([
   ["image/png", { extension: "png", signature: (bytes) => bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")) }],
   ["image/jpeg", { extension: "jpg", signature: (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff }],
@@ -64,20 +67,32 @@ function parseDataUrl(value) {
 
 function validateAsset(asset) {
   const id = String(asset?.id || "");
-  if (!/^asset\/presentation\/picture-bullet\/[0-9a-f]{64}$/.test(id)) fail(`Presentation asset ID ${id || "(missing)"} is invalid.`);
+  const isPicture = new RegExp(`^${PICTURE_ASSET_PREFIX}[0-9a-f]{64}$`).test(id);
+  const isOleWorkbook = new RegExp(`^${OLE_WORKBOOK_ASSET_PREFIX}[0-9a-f]{64}$`).test(id);
+  if (!isPicture && !isOleWorkbook) fail(`Presentation asset ID ${id || "(missing)"} is invalid.`);
   const contentType = normalizeContentType(asset.contentType);
   const bytes = Buffer.from(asset.data || []);
-  const format = validateImage(contentType, bytes, `Presentation asset ${id}`);
+  const format = isPicture
+    ? validateImage(contentType, bytes, `Presentation asset ${id}`)
+    : validateOleWorkbook(contentType, bytes, `Presentation asset ${id}`);
   const digest = sha256(bytes);
   if (String(asset.sha256 || "").toLowerCase() !== digest) fail(`Presentation asset ${id} does not match its SHA-256 digest.`);
-  if (id !== `asset/presentation/picture-bullet/${digest}`) fail(`Presentation asset ${id} is not content-addressed by its bytes.`);
+  const expectedId = `${isPicture ? PICTURE_ASSET_PREFIX : OLE_WORKBOOK_ASSET_PREFIX}${digest}`;
+  if (id !== expectedId) fail(`Presentation asset ${id} is not content-addressed by its bytes.`);
   return {
     id,
-    fileName: String(asset.fileName || `picture-bullet-${digest.slice(0, 16)}.${format.extension}`),
+    fileName: String(asset.fileName || (isPicture ? `picture-bullet-${digest.slice(0, 16)}.${format.extension}` : `embedded-workbook-${digest.slice(0, 16)}.xlsx`)),
     contentType,
     data: bytes,
     sha256: digest,
   };
+}
+
+function validateOleWorkbook(contentType, bytes, label) {
+  if (contentType !== XLSX_CONTENT_TYPE) fail(`${label} must use the XLSX workbook content type.`);
+  if (!bytes.length || bytes.length > MAX_ASSET_BYTES) fail(`${label} must contain 1 through ${MAX_ASSET_BYTES} bytes.`);
+  if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from("504b0304", "hex"))) fail(`${label} must contain an OPC ZIP package.`);
+  return { extension: "xlsx" };
 }
 
 export function createPresentationAssetCatalog(initialAssets = []) {
@@ -92,7 +107,7 @@ export function createPresentationAssetCatalog(initialAssets = []) {
     addDataUrl(dataUrl) {
       const decoded = parseDataUrl(dataUrl);
       const digest = sha256(decoded.bytes);
-      const id = `asset/presentation/picture-bullet/${digest}`;
+      const id = `${PICTURE_ASSET_PREFIX}${digest}`;
       if (!byId.has(id)) {
         if (byId.size >= MAX_ASSET_COUNT) fail(`Presentation exceeds the ${MAX_ASSET_COUNT}-asset budget.`, "presentation_asset_budget_exceeded");
         byId.set(id, {
@@ -105,9 +120,26 @@ export function createPresentationAssetCatalog(initialAssets = []) {
       }
       return id;
     },
+    addOleWorkbook(input) {
+      const bytes = Buffer.from(input || []);
+      validateOleWorkbook(XLSX_CONTENT_TYPE, bytes, "Presentation OLE workbook");
+      const digest = sha256(bytes);
+      const id = `${OLE_WORKBOOK_ASSET_PREFIX}${digest}`;
+      if (!byId.has(id)) {
+        if (byId.size >= MAX_ASSET_COUNT) fail(`Presentation exceeds the ${MAX_ASSET_COUNT}-asset budget.`, "presentation_asset_budget_exceeded");
+        byId.set(id, {
+          id,
+          fileName: `embedded-workbook-${digest.slice(0, 16)}.xlsx`,
+          contentType: XLSX_CONTENT_TYPE,
+          data: bytes,
+          sha256: digest,
+        });
+      }
+      return id;
+    },
     dataUrl(id) {
       const asset = byId.get(String(id));
-      if (!asset) fail(`Presentation picture bullet references missing asset ${id || "(missing)"}.`);
+      if (!asset || !asset.id.startsWith(PICTURE_ASSET_PREFIX)) fail(`Presentation picture bullet references missing asset ${id || "(missing)"}.`);
       return `data:${asset.contentType};base64,${asset.data.toString("base64")}`;
     },
     assets() {

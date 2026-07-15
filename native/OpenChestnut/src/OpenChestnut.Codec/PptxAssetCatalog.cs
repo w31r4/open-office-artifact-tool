@@ -14,7 +14,9 @@ internal sealed class PptxAssetCatalog
 {
     private const int MaxAssets = 1_024;
     private const int MaxAssetBytes = 16 * 1024 * 1024;
-    private const string AssetPrefix = "asset/presentation/picture-bullet/";
+    private const string PictureAssetPrefix = "asset/presentation/picture-bullet/";
+    private const string OleWorkbookAssetPrefix = "asset/presentation/ole-workbook/";
+    private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private readonly Dictionary<string, Asset> _assets = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ImagePart> _partByAssetId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Asset> _imported = new(StringComparer.Ordinal);
@@ -30,8 +32,15 @@ internal sealed class PptxAssetCatalog
     internal IReadOnlyCollection<Asset> ImportedAssets => _imported.Values;
 
     internal Asset Get(string assetId) => _assets.TryGetValue(assetId, out var asset)
-        ? asset
+        ? asset.Id.StartsWith(PictureAssetPrefix, StringComparison.Ordinal)
+            ? asset
+            : throw new CodecException("invalid_presentation_asset", $"Presentation picture bullet references non-image asset {assetId}.")
         : throw new CodecException("invalid_presentation_asset", $"Presentation picture bullet references missing asset {assetId}.");
+
+    internal Asset GetOleWorkbook(string assetId) => _assets.TryGetValue(assetId, out var asset) &&
+        asset.Id.StartsWith(OleWorkbookAssetPrefix, StringComparison.Ordinal)
+            ? asset
+            : throw new CodecException("invalid_presentation_asset", $"Presentation OLE workbook references missing asset {assetId}.");
 
     internal Asset Import(ImagePart part)
     {
@@ -42,7 +51,7 @@ internal sealed class PptxAssetCatalog
         var contentType = NormalizeContentType(part.ContentType);
         ValidateImage(contentType, data, $"Presentation image part {part.Uri}");
         var digest = Hash(data);
-        var id = AssetPrefix + digest;
+        var id = PictureAssetPrefix + digest;
         if (_assets.TryGetValue(id, out var requested))
         {
             _partByAssetId.TryAdd(id, part);
@@ -81,7 +90,7 @@ internal sealed class PptxAssetCatalog
                 using var memory = new MemoryStream();
                 stream.CopyTo(memory);
                 var data = memory.ToArray();
-                var id = AssetPrefix + Hash(data);
+                var id = PictureAssetPrefix + Hash(data);
                 if (_assets.TryGetValue(id, out var asset) && part.ContentType.Equals(asset.ContentType, StringComparison.OrdinalIgnoreCase))
                     _partByAssetId.TryAdd(id, part);
             }
@@ -108,11 +117,16 @@ internal sealed class PptxAssetCatalog
             throw new CodecException("presentation_asset_budget_exceeded", $"Presentation exceeds the {MaxAssets}-asset budget.");
         var contentType = NormalizeContentType(source.ContentType);
         var data = source.Data.ToByteArray();
-        ValidateImage(contentType, data, $"Presentation asset {source.Id}");
+        var isPicture = source.Id.StartsWith(PictureAssetPrefix, StringComparison.Ordinal);
+        var isOleWorkbook = source.Id.StartsWith(OleWorkbookAssetPrefix, StringComparison.Ordinal);
+        if (isPicture) ValidateImage(contentType, data, $"Presentation asset {source.Id}");
+        else if (isOleWorkbook) ValidateOleWorkbook(contentType, data, $"Presentation asset {source.Id}");
+        else throw new CodecException("invalid_presentation_asset", $"Presentation asset ID {source.Id} has an unsupported purpose prefix.");
         var digest = Hash(data);
         if (!source.Sha256.Equals(digest, StringComparison.OrdinalIgnoreCase))
             throw new CodecException("invalid_presentation_asset", $"Presentation asset {source.Id} does not match its SHA-256 digest.");
-        if (!source.Id.Equals(AssetPrefix + digest, StringComparison.Ordinal))
+        var expectedId = (isPicture ? PictureAssetPrefix : OleWorkbookAssetPrefix) + digest;
+        if (!source.Id.Equals(expectedId, StringComparison.Ordinal))
             throw new CodecException("invalid_presentation_asset", $"Presentation asset {source.Id} is not content-addressed by its bytes.");
         if (!_assets.TryAdd(source.Id, source.Clone()))
             throw new CodecException("invalid_presentation_asset", $"Presentation contains duplicate asset ID {source.Id}.");
@@ -141,6 +155,15 @@ internal sealed class PptxAssetCatalog
             _ => false,
         };
         if (!valid) throw new CodecException("invalid_presentation_asset", $"{label} bytes do not match a supported PNG, JPEG, GIF, or safe SVG content type.");
+    }
+
+    private static void ValidateOleWorkbook(string contentType, byte[] data, string label)
+    {
+        if (!contentType.Equals(SpreadsheetContentType, StringComparison.Ordinal))
+            throw new CodecException("invalid_presentation_asset", $"{label} must use the XLSX workbook content type.");
+        if (data.Length is 0 or > MaxAssetBytes || data.Length < 4 ||
+            data[0] != 0x50 || data[1] != 0x4b || data[2] != 0x03 || data[3] != 0x04)
+            throw new CodecException("invalid_presentation_asset", $"{label} must contain 1 through {MaxAssetBytes} bytes of an OPC ZIP package.");
     }
 
     private static bool IsSafeSvg(byte[] data)
