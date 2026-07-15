@@ -289,6 +289,7 @@ function wireChart(chart, original) {
     lineOptions: snapshot.lineOptions == null ? undefined : {
       grouping: snapshot.lineOptions.grouping == null ? undefined : LINE_GROUPINGS_TO_WIRE.get(snapshot.lineOptions.grouping),
       smooth: snapshot.lineOptions.smooth,
+      varyColors: snapshot.lineOptions.varyColors === true,
     },
     type,
     hasLegend: snapshot.hasLegend,
@@ -433,7 +434,8 @@ export function spreadsheetChartFromWire(sheet, source) {
       lineOptionsInput.grouping = grouping;
     }
     if (source.lineOptions.smooth != null) lineOptionsInput.smooth = source.lineOptions.smooth;
-    if (Object.keys(lineOptionsInput).length === 0) fail(source, "lineOptions must carry explicit grouping or smooth presence.");
+    if (source.lineOptions.varyColors === true) lineOptionsInput.varyColors = true;
+    if (Object.keys(lineOptionsInput).length === 0) fail(source, "lineOptions must carry explicit grouping, smooth, or vary-colors semantics.");
   }
   const lineOptions = lineOptionsSnapshot(lineOptionsInput, source);
   if (type !== "line" && lineOptions != null) fail(source, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");

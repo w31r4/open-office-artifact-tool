@@ -282,13 +282,19 @@ function chartSeriesMarker(seriesBody) {
 
 function chartLineOptions(xml) {
   const children = directChildNames(xml);
-  if (children.filter((name) => name === "grouping").length > 1 || children.filter((name) => name === "smooth").length > 1) return undefined;
+  if (children.filter((name) => name === "grouping").length > 1 || children.filter((name) => name === "varyColors").length > 1 || children.filter((name) => name === "smooth").length > 1) return undefined;
   const output = {};
   const grouping = directElement(xml, "grouping");
   if (grouping) {
     const groupingAttributes = attributes(grouping.startTag);
     if (grouping.body.trim() || Object.keys(groupingAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !["standard", "stacked", "percentStacked"].includes(groupingAttributes.val)) return undefined;
     output.grouping = groupingAttributes.val;
+  }
+  const varyColors = directElement(xml, "varyColors");
+  if (varyColors) {
+    const varyAttributes = attributes(varyColors.startTag);
+    if (varyColors.body.trim() || Object.keys(varyAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !["0", "1", "false", "true"].includes(varyAttributes.val)) return undefined;
+    if (["1", "true"].includes(varyAttributes.val)) output.varyColors = true;
   }
   const smooth = directElement(xml, "smooth");
   if (smooth) {

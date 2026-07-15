@@ -1531,4 +1531,7 @@ enum SpreadsheetChartLineGrouping {
 message SpreadsheetChartLineOptionsArtifact {
   optional bool smooth = 1;
   optional SpreadsheetChartLineGrouping grouping = 2;
+  // Matches the native default: false is omitted from the wire and package;
+  // true authors one direct c:varyColors node.
+  bool vary_colors = 3;
 }

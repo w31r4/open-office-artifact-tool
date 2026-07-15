@@ -8,8 +8,8 @@ const GROUPINGS = new Set(SPREADSHEET_CHART_LINE_GROUPINGS);
 export function normalizeSpreadsheetChartLineOptions(value) {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) lineOptionsError("must be an object.");
-  const unsupported = Object.keys(value).filter((key) => !["grouping", "smooth"].includes(key) && value[key] != null);
-  if (unsupported.length) lineOptionsError(`supports only grouping and smooth; received ${unsupported.join(", ")}.`);
+  const unsupported = Object.keys(value).filter((key) => !["grouping", "smooth", "varyColors"].includes(key) && value[key] != null);
+  if (unsupported.length) lineOptionsError(`supports only grouping, smooth, and varyColors; received ${unsupported.join(", ")}.`);
   const output = {};
   if (value.grouping != null) {
     if (typeof value.grouping !== "string" || !GROUPINGS.has(value.grouping)) lineOptionsError(`grouping must be one of ${SPREADSHEET_CHART_LINE_GROUPINGS.join(", ")}.`);
@@ -18,6 +18,10 @@ export function normalizeSpreadsheetChartLineOptions(value) {
   if (value.smooth != null) {
     if (typeof value.smooth !== "boolean") lineOptionsError("smooth must be a boolean.");
     output.smooth = value.smooth;
+  }
+  if (value.varyColors != null) {
+    if (typeof value.varyColors !== "boolean") lineOptionsError("varyColors must be a boolean.");
+    if (value.varyColors) output.varyColors = true;
   }
   return Object.keys(output).length ? output : null;
 }

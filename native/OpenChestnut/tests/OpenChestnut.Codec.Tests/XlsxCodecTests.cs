@@ -2729,6 +2729,7 @@ public sealed class XlsxCodecTests
         AssertChartSeriesLine(authored.File.ToByteArray(), "0EA5E9", "dash", 2);
         AssertChartSeriesMarker(authored.File.ToByteArray(), "diamond", 8);
         AssertChartLineGrouping(authored.File.ToByteArray(), "stacked");
+        AssertChartLineVaryColors(authored.File.ToByteArray(), true);
         AssertChartLineSmooth(authored.File.ToByteArray(), true);
         using (var stream = new MemoryStream(authored.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
@@ -2763,6 +2764,7 @@ public sealed class XlsxCodecTests
         Assert.Equal(8U, chart.Series[0].Marker.Size);
         Assert.True(chart.LineOptions.HasGrouping);
         Assert.Equal(SpreadsheetChartLineGrouping.Stacked, chart.LineOptions.Grouping);
+        Assert.True(chart.LineOptions.VaryColors);
         Assert.True(chart.LineOptions.HasSmooth);
         Assert.True(chart.LineOptions.Smooth);
         Assert.Equal("'Summary'!$A$1:$A$2", chart.Series[0].CategoryFormula);
@@ -2801,6 +2803,7 @@ public sealed class XlsxCodecTests
         chart.Series[0].Marker.Symbol = SpreadsheetChartMarkerSymbol.Triangle;
         chart.Series[0].Marker.Size = 10;
         chart.LineOptions.Grouping = SpreadsheetChartLineGrouping.PercentStacked;
+        chart.LineOptions.VaryColors = false;
         chart.LineOptions.Smooth = false;
         chart.XAxis.Title = "Fiscal quarter";
         chart.XAxis.NumberFormatCode = "mmm";
@@ -2821,6 +2824,7 @@ public sealed class XlsxCodecTests
         AssertChartSeriesLine(preserved.File.ToByteArray(), "7C3AED", "dashDot", 2.5);
         AssertChartSeriesMarker(preserved.File.ToByteArray(), "triangle", 10);
         AssertChartLineGrouping(preserved.File.ToByteArray(), "percentStacked");
+        AssertChartLineVaryColors(preserved.File.ToByteArray(), null);
         AssertChartLineSmooth(preserved.File.ToByteArray(), false);
         using (var stream = new MemoryStream(preserved.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
@@ -2882,6 +2886,7 @@ public sealed class XlsxCodecTests
         var withoutLineOptions = Export(removedLineOptions.Artifact);
         Assert.True(withoutLineOptions.Ok, string.Join("\n", withoutLineOptions.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertChartLineGrouping(withoutLineOptions.File.ToByteArray(), "standard");
+        AssertChartLineVaryColors(withoutLineOptions.File.ToByteArray(), null);
         AssertChartLineSmooth(withoutLineOptions.File.ToByteArray(), null);
         var addedLineOptions = Import(withoutLineOptions.File.ToByteArray());
         Assert.Equal(SpreadsheetChartLineGrouping.Standard, addedLineOptions.Artifact.Workbook.Worksheets[0].Charts[0].LineOptions.Grouping);
@@ -2890,6 +2895,7 @@ public sealed class XlsxCodecTests
         var withAddedLineOptions = Export(addedLineOptions.Artifact);
         Assert.True(withAddedLineOptions.Ok, string.Join("\n", withAddedLineOptions.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertChartLineGrouping(withAddedLineOptions.File.ToByteArray(), "standard");
+        AssertChartLineVaryColors(withAddedLineOptions.File.ToByteArray(), null);
         AssertChartLineSmooth(withAddedLineOptions.File.ToByteArray(), true);
 
         var addedTextStyle = Import(preserved.File.ToByteArray());
@@ -3016,6 +3022,32 @@ public sealed class XlsxCodecTests
         Assert.Equal(complexGroupingXml, ReadChartXml(complexGroupingRoundTrip.File.ToByteArray()));
         complexGroupingChart.LineOptions.Grouping = SpreadsheetChartLineGrouping.Stacked;
         rejected = Export(complexGrouping.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var falseVaryColorsSource = SetChartVaryColors(authored.File.ToByteArray(), "0");
+        var falseVaryColors = Import(falseVaryColorsSource);
+        Assert.True(falseVaryColors.Ok, string.Join("\n", falseVaryColors.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var falseVaryColorsChart = Assert.Single(falseVaryColors.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.False(falseVaryColorsChart.LineOptions.VaryColors);
+        Assert.True(falseVaryColorsChart.Source.Editable);
+        falseVaryColorsChart.Title = "False vary-colors remains editable";
+        var falseVaryColorsEdited = Export(falseVaryColors.Artifact);
+        Assert.True(falseVaryColorsEdited.Ok, string.Join("\n", falseVaryColorsEdited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartLineVaryColors(falseVaryColorsEdited.File.ToByteArray(), null);
+
+        var complexVaryColorsSource = SetChartVaryColors(authored.File.ToByteArray(), null);
+        var complexVaryColorsXml = ReadChartXml(complexVaryColorsSource);
+        var complexVaryColors = Import(complexVaryColorsSource);
+        Assert.True(complexVaryColors.Ok, string.Join("\n", complexVaryColors.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var complexVaryColorsChart = Assert.Single(complexVaryColors.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.False(complexVaryColorsChart.LineOptions.VaryColors);
+        Assert.False(complexVaryColorsChart.Source.Editable);
+        var complexVaryColorsRoundTrip = Export(complexVaryColors.Artifact);
+        Assert.True(complexVaryColorsRoundTrip.Ok, string.Join("\n", complexVaryColorsRoundTrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(complexVaryColorsXml, ReadChartXml(complexVaryColorsRoundTrip.File.ToByteArray()));
+        complexVaryColorsChart.LineOptions.VaryColors = true;
+        rejected = Export(complexVaryColors.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
 
@@ -3593,7 +3625,7 @@ public sealed class XlsxCodecTests
             AbsoluteAnchor = new SpreadsheetAbsoluteAnchorArtifact { XEmu = 3_619_500, YEmu = 190_500, WidthEmu = 3_429_000, HeightEmu = 2_095_500 },
             XAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter", NumberFormatCode = "@", TickLabelInterval = 2, TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 10 } },
             YAxis = new SpreadsheetChartAxisArtifact { Title = "Revenue", NumberFormatCode = "$#,##0.0", Minimum = 0, Maximum = 100, MajorUnit = 25, TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 9 } },
-            LineOptions = new SpreadsheetChartLineOptionsArtifact { Grouping = SpreadsheetChartLineGrouping.Stacked, Smooth = true },
+            LineOptions = new SpreadsheetChartLineOptionsArtifact { Grouping = SpreadsheetChartLineGrouping.Stacked, Smooth = true, VaryColors = true },
         };
         chart.Categories.Add(["Q1", "Q2"]);
         chart.Series.Add(new SpreadsheetChartSeriesArtifact
@@ -4263,6 +4295,25 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] SetChartVaryColors(byte[] bytes, string? value)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            var varyColors = chart.Descendants(c + "lineChart").Single().Element(c + "varyColors")!;
+            if (value is null) varyColors.Attribute("val")!.Remove();
+            else varyColors.SetAttributeValue("val", value);
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] SetChartAxisComplexTextStyle(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -4351,6 +4402,15 @@ public sealed class XlsxCodecTests
         var grouping = chart.Descendants(c + "lineChart").Single().Element(c + "grouping");
         Assert.NotNull(grouping);
         Assert.Equal(expected, (string?)grouping!.Attribute("val"));
+    }
+
+    private static void AssertChartLineVaryColors(byte[] bytes, bool? expected)
+    {
+        var chart = XDocument.Parse(ReadChartXml(bytes));
+        XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+        var varyColors = chart.Descendants(c + "lineChart").Single().Element(c + "varyColors");
+        if (expected is null) { Assert.Null(varyColors); return; }
+        Assert.Equal(expected.Value ? "1" : "0", (string?)varyColors!.Attribute("val"));
     }
 
     private static void AssertChartLineSmooth(byte[] bytes, bool? expected)
