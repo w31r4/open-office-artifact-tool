@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2017,7 +2017,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2057,7 +2057,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.resolve` | api | Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
 | `workbook.setCalculation` | api | Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
-| `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits. |
+| `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared), legacy arrays, and XLDAPR-marked dynamic-array anchors with explicit formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef metadata; OpenChestnut validates complete topology and preserves formula plus package metadata across safe source-bound edits. |
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
@@ -2084,11 +2084,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy-array formula metadata, worksheet tables/QueryTables, and recognized source-bound database connection-root metadata.
+- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, and recognized source-bound database connection-root metadata.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
@@ -3601,7 +3601,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes, effective cell styles/formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
+Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
@@ -3610,7 +3610,7 @@ Experimentally import XLSX bytes, effective cell styles/formula topology, bounde
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy-array formula metadata, editable worksheet tables/QueryTables, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export.
+- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export.
 
 #### `invokeOpenChestnut`
 
@@ -4263,17 +4263,17 @@ Select the Excel 1900 or 1904 serial-date system for formula calculation and nat
 
 #### `workbook.sharedArrayFormulas`
 
-Import and export native XLSX shared formulas (t=shared) by translating relative A1 references and surface legacy array formulas (t=array) with formulaType/sharedIndex/sharedRef/arrayRef metadata; OpenChestnut validates complete topology and preserves formula XML across cached-value or number-format-only edits.
+Import and export native XLSX shared formulas (t=shared), legacy arrays, and XLDAPR-marked dynamic-array anchors with explicit formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef metadata; OpenChestnut validates complete topology and preserves formula plus package metadata across safe source-bound edits.
 
 **Schema parameters:**
 
-- `xlsx` (FileBlob|Uint8Array) — XLSX bytes containing shared or array formula records.
-- `formula` (string) — Shared/array formula expression.
-- `ref` (string) — Shared or spill A1 range.
+- `xlsx` (FileBlob|Uint8Array) — XLSX bytes containing shared, legacy-array, or XLDAPR dynamic-array formula records.
+- `formula` (string) — Shared, legacy-array, or dynamic-array formula expression.
+- `ref` (string) — Shared group, legacy array, or dynamic spill A1 range.
 
 **Schema returns:**
 
-- `metadata` (object) — formulaType/sharedIndex/sharedRef/arrayRef/spill inspect metadata; writing a formula into one shared member detaches the complete group to ordinary formulas.
+- `metadata` (object) — formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef/spill inspect metadata; writing a formula into a native group detaches stale topology before recalculation and export.
 
 #### `workbook.structuredReferences`
 
