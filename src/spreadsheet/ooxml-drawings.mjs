@@ -17,6 +17,28 @@ function elementBody(xml, name) {
   return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${name}>`).exec(String(xml))?.[1] || "";
 }
 
+function directElementBody(xml, name) {
+  const source = String(xml ?? "");
+  const tags = /<\s*(\/)?(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b[^>]*(\/)?\s*>/g;
+  let depth = 0;
+  let start = -1;
+  let match;
+  while ((match = tags.exec(source))) {
+    if (match[1]) {
+      depth -= 1;
+      if (start >= 0 && depth === 0 && match[2] === name) return source.slice(start, match.index);
+      continue;
+    }
+    const selfClosing = Boolean(match[3]);
+    if (depth === 0 && match[2] === name) {
+      if (selfClosing) return "";
+      start = tags.lastIndex;
+    }
+    if (!selfClosing) depth += 1;
+  }
+  return "";
+}
+
 function elementValue(xml, name) {
   return decodeXml(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${name}>`).exec(String(xml))?.[1] || "");
 }
@@ -194,7 +216,9 @@ export function parseSpreadsheetChart(xml = "") {
     const tx = elementBody(body, "tx");
     const categoryBody = elementBody(body, "cat") || elementBody(body, "xVal");
     const valueBody = elementBody(body, "val") || elementBody(body, "yVal");
-    const color = /<(?:[A-Za-z_][\w.-]*:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/.exec(body)?.[1];
+    const shapeProperties = directElementBody(body, "spPr");
+    const solidFill = elementBody(shapeProperties, "solidFill");
+    const color = /<(?:[A-Za-z_][\w.-]*:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/.exec(solidFill)?.[1];
     return {
       name: elementValue(tx, "v") || elementValue(tx, "f") || `Series ${index + 1}`,
       categoryFormula: elementValue(categoryBody, "f") || undefined,

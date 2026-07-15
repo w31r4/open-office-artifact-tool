@@ -39,6 +39,18 @@ function chartSeries(chart) {
   return Array.isArray(chart?.series?.items) ? chart.series.items : Array.isArray(chart?.series) ? chart.series : [];
 }
 
+function seriesFill(value, name, chart) {
+  if (value == null) return null;
+  if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) fail(chart, `${name} must be a #RRGGBB solid color.`);
+  return value.toUpperCase();
+}
+
+function seriesFillFromWire(value, name, chart) {
+  if (value == null) return undefined;
+  if (value.source?.case !== "rgb") fail(chart, `${name} has an unsupported non-RGB fill source.`, "unsupported_spreadsheet_chart");
+  return seriesFill(`#${String(value.source.value)}`, name, chart);
+}
+
 function axisSnapshot(axis, kind) {
   if (axis == null) return null;
   const title = typeof axis.title === "string" ? axis.title : axis.title?.text;
@@ -76,6 +88,7 @@ export function spreadsheetChartSnapshot(chart) {
       values: [...(series?.values || [])].map(Number),
       categoryFormula: series?.categoryFormula == null ? "" : String(series.categoryFormula),
       formula: series?.formula == null ? "" : String(series.formula),
+      fill: series?.fill == null ? null : String(series.fill),
     })),
   };
 }
@@ -100,7 +113,6 @@ function validateSnapshot(snapshot, chart) {
     }
   }
   if (snapshot.series.length < 1 || snapshot.series.length > MAX_SERIES) fail(chart, `must contain 1 through ${MAX_SERIES} series.`);
-  if (chartSeries(chart).some((series) => series?.fill != null)) fail(chart, "series fill styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
   if (snapshot.categories.length > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-category budget.`);
   snapshot.categories.forEach((value, index) => text(value, `category ${index + 1}`, chart));
   let points = 0;
@@ -108,6 +120,7 @@ function validateSnapshot(snapshot, chart) {
     text(series.name, `series ${seriesIndex + 1} name`, chart, 255);
     formula(series.categoryFormula, `series ${seriesIndex + 1} categoryFormula`, chart);
     formula(series.formula, `series ${seriesIndex + 1} formula`, chart);
+    series.fill = seriesFill(series.fill, `series ${seriesIndex + 1} fill`, chart);
     points += series.values.length;
     if (points > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-value budget.`);
     if (series.values.length !== snapshot.categories.length) fail(chart, `series ${seriesIndex + 1} has ${series.values.length} values for ${snapshot.categories.length} categories.`);
@@ -165,6 +178,7 @@ function wireChart(chart, original) {
       values: series.values,
       categoryFormula: series.categoryFormula,
       valueFormula: series.formula,
+      fill: series.fill == null ? undefined : { source: { case: "rgb", value: series.fill.slice(1) } },
     })),
     source: original?.source,
   };
@@ -272,6 +286,8 @@ function axisFromWire(axis, kind) {
 export function spreadsheetChartFromWire(sheet, source) {
   const type = TYPES_FROM_WIRE.get(source.type);
   if (!type) fail(source, `has unsupported wire type ${source.type}.`, "unsupported_spreadsheet_chart");
+  const sourceSeries = source.series || [];
+  const importedFills = sourceSeries.map((series, index) => seriesFillFromWire(series.fill, `series ${index + 1} fill`, source));
   const chart = sheet.charts.add(type, {
     name: source.name,
     title: source.title,
@@ -280,12 +296,19 @@ export function spreadsheetChartFromWire(sheet, source) {
     xAxis: axisFromWire(source.xAxis, "x"),
     yAxis: axisFromWire(source.yAxis, "y"),
     position: positionFromWire(sheet, source),
-    series: (source.series || []).map((series) => ({ name: series.name, values: [...series.values] })),
+    series: sourceSeries.map((series, index) => {
+      return {
+        name: series.name,
+        values: [...series.values],
+        ...(importedFills[index] == null ? {} : { fill: importedFills[index] }),
+      };
+    }),
   });
   chart.id = source.id || chart.id;
-  (source.series || []).forEach((series, index) => Object.assign(chart.series.items[index], {
+  sourceSeries.forEach((series, index) => Object.assign(chart.series.items[index], {
     categoryFormula: series.categoryFormula || undefined,
     formula: series.valueFormula || undefined,
+    fill: importedFills[index],
   }));
   return chart;
 }

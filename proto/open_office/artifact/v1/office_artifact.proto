@@ -402,6 +402,10 @@ message SpreadsheetChartSeriesArtifact {
   repeated double values = 2;
   string category_formula = 3;
   string value_formula = 4;
+  // Optional explicit series-level solid fill. The bounded worksheet-chart
+  // profile currently accepts only the RGB branch; other color sources stay
+  // reserved for future additive fidelity work.
+  SpreadsheetColor fill = 5;
 }
 
 // Bounded primary-axis semantics for category/value worksheet charts. The x
