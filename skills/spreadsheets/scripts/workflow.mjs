@@ -251,6 +251,7 @@ export function createWorkbookFromFixture(fixture = {}) {
   for (const definedName of fixture.definedNames || []) workbook.definedNames.add(definedName);
   if (fixture.activeWorksheet || fixture.activeSheet) workbook.worksheets.setActiveWorksheet(fixture.activeWorksheet || fixture.activeSheet);
   if (Array.isArray(fixture.selectedWorksheets)) workbook.worksheets.setSelectedWorksheets(fixture.selectedWorksheets);
+  for (const windowFixture of fixture.additionalWindows || []) workbook.windows.add(windowFixture);
   if (fixture.commentSelf) workbook.comments.setSelf(fixture.commentSelf);
   for (const commentFixture of fixture.comments || []) {
     const sheet = workbook.worksheets.getItem(commentFixture.sheet);

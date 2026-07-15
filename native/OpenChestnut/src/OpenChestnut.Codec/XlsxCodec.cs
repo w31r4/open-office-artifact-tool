@@ -64,7 +64,7 @@ internal static class XlsxCodec
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
             }
             var workbookView = new XlsxWorkbookViewCodec(workbookPart, envelope.Workbook.Worksheets);
-            workbookView.Apply(envelope.Workbook.View, sourceBound: false, envelope.Workbook.Worksheets);
+            workbookView.Apply(envelope.Workbook.View, envelope.Workbook.AdditionalViews, sourceBound: false, envelope.Workbook.Worksheets);
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: false, sheetNames);
             theme.Save();
             styles.Save();
@@ -122,7 +122,12 @@ internal static class XlsxCodec
             workbook.Worksheets.Add(target);
         }
         var workbookView = new XlsxWorkbookViewCodec(workbookPart, workbook.Worksheets);
-        if (workbookView.Read() is { } importedView) workbook.View = importedView;
+        var importedViews = workbookView.Read();
+        if (importedViews.Length > 0)
+        {
+            workbook.View = importedViews[0];
+            workbook.AdditionalViews.Add(importedViews.Skip(1));
+        }
 
         var envelope = new ArtifactEnvelope
         {
@@ -164,7 +169,7 @@ internal static class XlsxCodec
             var worksheetMetadata = new XlsxWorksheetMetadataCodec(workbookPart);
             var workbookView = new XlsxWorkbookViewCodec(workbookPart, envelope.Workbook.Worksheets);
             worksheetMetadata.Apply(envelope.Workbook.Worksheets);
-            workbookView.Apply(envelope.Workbook.View, sourceBound: true, envelope.Workbook.Worksheets);
+            workbookView.Apply(envelope.Workbook.View, envelope.Workbook.AdditionalViews, sourceBound: true, envelope.Workbook.Worksheets);
 
             if (workbookRoot.WorkbookProperties is null)
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
@@ -702,7 +707,7 @@ internal static class XlsxCodec
         if ((uint)workbook.Worksheets.Count > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"Workbook has {workbook.Worksheets.Count} sheets and exceeds max_sheets ({limits.MaxSheets}).");
         XlsxWorksheetMetadataCodec.ValidateArtifact(workbook.Worksheets);
-        XlsxWorkbookViewCodec.ValidateArtifact(workbook.View, workbook.Worksheets);
+        XlsxWorkbookViewCodec.ValidateArtifact(workbook.View, workbook.AdditionalViews, workbook.Worksheets);
         XlsxDefinedNameCodec.ValidateArtifact(workbook.DefinedNames, workbook.Worksheets.Select(sheet => sheet.Name).ToArray());
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

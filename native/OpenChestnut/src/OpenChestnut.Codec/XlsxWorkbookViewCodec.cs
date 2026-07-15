@@ -7,11 +7,10 @@ using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
-// Owns activeTab plus the workbookViewId=0 worksheet tabSelected group for one
-// recognized workbook window. Every other workbook/sheet-view attribute and
-// child remains in the source package. Multi-window or incomplete worksheet-
-// view graphs stay readable only as opaque source state and fail closed on a
-// semantic edit.
+// Owns each workbookView activeTab plus the matching worksheet sheetView
+// tabSelected group. The public wire keeps the primary window in the original
+// field and appends later windows separately. Geometry, zoom, panes, first-sheet
+// scrolling, visibility, and extensions remain source-owned.
 internal sealed class XlsxWorkbookViewCodec
 {
     private readonly WorkbookPart _workbookPart;
@@ -19,9 +18,8 @@ internal sealed class XlsxWorkbookViewCodec
     private readonly Sheet[] _sourceSheets;
     private readonly ViewEntry[] _views;
     private readonly HashSet<int> _protectedSelectedOrdinals = [];
-    private readonly ViewEntry? _sourceEntry;
-    private readonly SelectionEntry[] _selectionEntries = [];
-    private readonly SpreadsheetWorkbookViewArtifact? _sourceArtifact;
+    private readonly SelectionEntry[][] _selectionEntriesByView = [];
+    private readonly SpreadsheetWorkbookViewArtifact[] _sourceArtifacts = [];
 
     private sealed record ViewEntry(WorkbookView Element, int ActiveOrdinal, bool ActiveWasVisible);
     private sealed record SelectionEntry(
@@ -41,154 +39,213 @@ internal sealed class XlsxWorkbookViewCodec
             .Select(view => ReadEntry(view, _sourceSheets))
             .ToArray();
         ReadProtectedSelections();
-        if (_views.Length != 1) return;
+        if (_views.Length == 0 || _views.Any(entry => entry.ActiveOrdinal < 0 || entry.ActiveOrdinal >= worksheets.Count || !entry.ActiveWasVisible)) return;
 
-        var entry = _views[0];
-        if (entry.ActiveOrdinal < 0 || entry.ActiveOrdinal >= worksheets.Count || !entry.ActiveWasVisible) return;
-        var activeWorksheetId = worksheets[entry.ActiveOrdinal].Id;
-        var selectionEditable = TryReadSelectionEntries(worksheets, out var selectionEntries, out var selectedWorksheetIds);
-        _selectionEntries = selectionEntries;
-        var semanticSelectedIds = selectionEditable ? selectedWorksheetIds : [];
-        var artifact = new SpreadsheetWorkbookViewArtifact
+        var complete = TryReadCompleteSelectionGraph(worksheets, out var selectionEntries, out var selectedWorksheetIds);
+        if (_views.Length > 1 && !complete) return;
+
+        _selectionEntriesByView = complete ? selectionEntries : [[]];
+        _sourceArtifacts = _views.Select((entry, ordinal) =>
         {
-            ActiveWorksheetId = activeWorksheetId,
-            Source = new SpreadsheetWorkbookViewSourceBinding
+            var activeWorksheetId = worksheets[entry.ActiveOrdinal].Id;
+            var selected = complete ? selectedWorksheetIds[ordinal] : [];
+            var source = new SpreadsheetWorkbookViewSourceBinding
             {
-                Ordinal = 0,
+                Ordinal = checked((uint)ordinal),
                 WorkbookXmlSha256 = PartSha256(workbookPart),
                 ViewXmlSha256 = ElementSha256(entry.Element),
-                SemanticSha256 = SemanticSha256(activeWorksheetId, semanticSelectedIds),
-                Editable = selectionEditable,
-            },
-        };
-        if (selectionEditable)
-        {
-            artifact.SelectedWorksheetIds.Add(selectedWorksheetIds);
-            artifact.Source.WorksheetViews.Add(selectionEntries.Select(SourceBinding));
-        }
-        _sourceEntry = entry;
-        _sourceArtifact = artifact;
+                SemanticSha256 = SemanticSha256(activeWorksheetId, selected),
+                Editable = complete,
+            };
+            if (complete) source.WorksheetViews.Add(selectionEntries[ordinal].Select(SourceBinding));
+            var artifact = new SpreadsheetWorkbookViewArtifact
+            {
+                ActiveWorksheetId = activeWorksheetId,
+                Source = source,
+            };
+            if (complete) artifact.SelectedWorksheetIds.Add(selected);
+            return artifact;
+        }).ToArray();
     }
 
-    internal SpreadsheetWorkbookViewArtifact? Read() => _sourceArtifact?.Clone();
+    internal SpreadsheetWorkbookViewArtifact[] Read() => _sourceArtifacts.Select(view => view.Clone()).ToArray();
 
-    internal void Apply(SpreadsheetWorkbookViewArtifact? desired, bool sourceBound, IReadOnlyList<WorksheetArtifact> worksheets)
+    internal void Apply(
+        SpreadsheetWorkbookViewArtifact? primary,
+        IEnumerable<SpreadsheetWorkbookViewArtifact> additional,
+        bool sourceBound,
+        IReadOnlyList<WorksheetArtifact> worksheets)
     {
+        var desired = DesiredViews(primary, additional);
         if (!sourceBound)
         {
             ConfigureSourceFree(desired, worksheets);
             return;
         }
 
-        if (_sourceArtifact is null || _sourceEntry is null)
+        if (_sourceArtifacts.Length == 0)
         {
-            if (desired is not null)
+            if (desired.Length > 0)
                 throw Invalid(_views.Length == 0
                     ? "Source-preserving XLSX export cannot add a workbook view that was absent from the imported workbook."
-                    : "Source-preserving XLSX export cannot replace an opaque or multi-window workbook-view profile.");
+                    : _views.Length > 1
+                        ? "Source-preserving XLSX export cannot replace an opaque or incomplete multi-window workbook-view profile."
+                        : "Source-preserving XLSX export cannot replace an opaque workbook-view profile.");
             ValidateOpaqueVisibilityTransitions(worksheets);
             return;
         }
-        if (desired is null)
-            throw Invalid("Source-preserving XLSX export cannot remove the imported workbook view.");
+        if (desired.Length == 0) throw Invalid("Source-preserving XLSX export cannot remove the imported workbook views.");
+        if (desired.Length != _sourceArtifacts.Length)
+            throw Invalid("Source-preserving XLSX export cannot change the imported workbook-window count or order.");
 
-        var activeOrdinal = ActiveOrdinal(desired, worksheets);
-        var selectedWorksheetIds = SelectedWorksheetIds(desired, worksheets, _sourceArtifact.ActiveWorksheetId);
-        ValidateBinding(desired.Source, _sourceArtifact.Source);
-        var desiredSemantic = SemanticSha256(desired.ActiveWorksheetId, selectedWorksheetIds);
-        if (!_sourceArtifact.Source.Editable)
+        for (var ordinal = 0; ordinal < desired.Length; ordinal++)
         {
-            if (!desiredSemantic.Equals(_sourceArtifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase))
-                throw Invalid("Source-preserving XLSX export cannot edit an incomplete or opaque worksheet-selection profile.");
-            ValidateOpaqueVisibilityTransitions(worksheets);
-            return;
+            var target = desired[ordinal];
+            var source = _sourceArtifacts[ordinal];
+            var activeOrdinal = ActiveOrdinal(target, worksheets);
+            var selectedWorksheetIds = SelectedWorksheetIds(target, worksheets, source.ActiveWorksheetId);
+            ValidateBinding(target.Source, source.Source);
+            var desiredSemantic = SemanticSha256(target.ActiveWorksheetId, selectedWorksheetIds);
+            if (!source.Source.Editable)
+            {
+                if (!desiredSemantic.Equals(source.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase))
+                    throw Invalid("Source-preserving XLSX export cannot edit an incomplete or opaque worksheet-selection profile.");
+                continue;
+            }
+            if (desiredSemantic.Equals(source.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
+
+            _views[ordinal].Element.ActiveTab = checked((uint)activeOrdinal);
+            PatchSelectionGroup(_selectionEntriesByView[ordinal], selectedWorksheetIds);
         }
-        if (desiredSemantic.Equals(_sourceArtifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return;
-
-        _sourceEntry.Element.ActiveTab = checked((uint)activeOrdinal);
-        PatchSelectionGroup(selectedWorksheetIds);
     }
 
-    internal static void ValidateArtifact(SpreadsheetWorkbookViewArtifact? view, IReadOnlyList<WorksheetArtifact> worksheets)
+    internal static void ValidateArtifact(
+        SpreadsheetWorkbookViewArtifact? primary,
+        IEnumerable<SpreadsheetWorkbookViewArtifact> additional,
+        IReadOnlyList<WorksheetArtifact> worksheets)
     {
-        if (view is null) return;
-        _ = ActiveOrdinal(view, worksheets);
-        var legacyPreviousActive = view.Source is not null && view.SelectedWorksheetIds.Count == 1
-            ? view.SelectedWorksheetIds[0]
-            : null;
-        _ = SelectedWorksheetIds(view, worksheets, legacyPreviousActive);
+        var views = DesiredViews(primary, additional);
+        for (var ordinal = 0; ordinal < views.Length; ordinal++)
+        {
+            _ = ActiveOrdinal(views[ordinal], worksheets);
+            var previousActive = views[ordinal].Source is not null && views[ordinal].SelectedWorksheetIds.Count == 1
+                ? views[ordinal].SelectedWorksheetIds[0]
+                : null;
+            _ = SelectedWorksheetIds(views[ordinal], worksheets, previousActive);
+            if (views[ordinal].Source is not null && views[ordinal].Source.Ordinal != checked((uint)ordinal))
+                throw Invalid($"Workbook view source ordinal {views[ordinal].Source.Ordinal} does not match window position {ordinal}.");
+        }
     }
 
-    private void ConfigureSourceFree(SpreadsheetWorkbookViewArtifact? desired, IReadOnlyList<WorksheetArtifact> worksheets)
+    private static SpreadsheetWorkbookViewArtifact[] DesiredViews(
+        SpreadsheetWorkbookViewArtifact? primary,
+        IEnumerable<SpreadsheetWorkbookViewArtifact> additional)
     {
-        var activeOrdinal = desired is null
-            ? worksheets.Select((sheet, index) => (sheet, index)).First(item => IsVisible(item.sheet)).index
-            : ActiveOrdinal(desired, worksheets);
-        var selectedWorksheetIds = desired is null
-            ? new[] { worksheets[activeOrdinal].Id }
-            : SelectedWorksheetIds(desired, worksheets);
-        var views = new BookViews(new WorkbookView { ActiveTab = checked((uint)activeOrdinal) });
-        if (_workbook.Sheets is { } sheets) _workbook.InsertBefore(views, sheets);
-        else _workbook.Append(views);
+        var tail = additional.ToArray();
+        if (primary is null)
+        {
+            if (tail.Length > 0) throw Invalid("Additional workbook windows require a primary workbook view.");
+            return [];
+        }
+        return [primary, .. tail];
+    }
 
+    private void ConfigureSourceFree(SpreadsheetWorkbookViewArtifact[] requested, IReadOnlyList<WorksheetArtifact> worksheets)
+    {
+        SpreadsheetWorkbookViewArtifact[] desired;
+        if (requested.Length == 0)
+        {
+            var active = worksheets.First(IsVisible);
+            desired = [new SpreadsheetWorkbookViewArtifact { ActiveWorksheetId = active.Id }];
+        }
+        else desired = requested;
+
+        var selectedByView = desired.Select(view => SelectedWorksheetIds(view, worksheets)).ToArray();
+        var bookViews = new BookViews();
+        foreach (var view in desired)
+            bookViews.Append(new WorkbookView { ActiveTab = checked((uint)ActiveOrdinal(view, worksheets)) });
+        if (_workbook.Sheets is { } sheets) _workbook.InsertBefore(bookViews, sheets);
+        else _workbook.Append(bookViews);
+
+        for (var sheetIndex = 0; sheetIndex < _sourceSheets.Length; sheetIndex++)
+        {
+            var part = WorksheetPartAt(sheetIndex) ?? throw Invalid($"Worksheet {worksheets[sheetIndex].Name} has no readable Worksheet part.");
+            var sheetViews = part.Worksheet?.SheetViews ?? throw Invalid($"Worksheet {worksheets[sheetIndex].Name} has no sheetViews collection.");
+            var existing = sheetViews.Elements<SheetView>().ToArray();
+            if (existing.Length != 1 || (existing[0].WorkbookViewId?.Value ?? uint.MaxValue) != 0U)
+                throw Invalid($"Worksheet {worksheets[sheetIndex].Name} must contain exactly one primary sheetView for source-free window authoring.");
+            var template = (SheetView)existing[0].CloneNode(true);
+            sheetViews.RemoveAllChildren<SheetView>();
+            for (var ordinal = 0; ordinal < desired.Length; ordinal++)
+            {
+                var view = (SheetView)template.CloneNode(true);
+                view.WorkbookViewId = checked((uint)ordinal);
+                SetTabSelected(view, selectedByView[ordinal].Contains(worksheets[sheetIndex].Id, StringComparer.Ordinal));
+                sheetViews.Append(view);
+            }
+        }
+    }
+
+    private static void PatchSelectionGroup(IEnumerable<SelectionEntry> entries, IReadOnlyList<string> selectedWorksheetIds)
+    {
         var selected = selectedWorksheetIds.ToHashSet(StringComparer.Ordinal);
-        for (var index = 0; index < _sourceSheets.Length; index++)
-        {
-            var part = WorksheetPartAt(index) ?? throw Invalid($"Worksheet {worksheets[index].Name} has no readable Worksheet part.");
-            var sheetViews = part.Worksheet?.SheetViews?.Elements<SheetView>().ToArray() ?? [];
-            var matches = sheetViews.Select((view, ordinal) => (view, ordinal))
-                .Where(item => (item.view.WorkbookViewId?.Value ?? uint.MaxValue) == 0U)
-                .ToArray();
-            if (matches.Length != 1)
-                throw Invalid($"Worksheet {worksheets[index].Name} must contain exactly one primary sheetView for source-free selection authoring.");
-            matches[0].view.TabSelected = selected.Contains(worksheets[index].Id) ? true : null;
-        }
+        foreach (var entry in entries)
+            SetTabSelected(entry.Element, selected.Contains(entry.WorksheetId));
     }
 
-    private void PatchSelectionGroup(IReadOnlyList<string> selectedWorksheetIds)
+    private static void SetTabSelected(SheetView view, bool selected)
     {
-        var selected = selectedWorksheetIds.ToHashSet(StringComparer.Ordinal);
-        foreach (var entry in _selectionEntries)
+        if (selected) view.TabSelected = true;
+        else
         {
-            var shouldSelect = selected.Contains(entry.WorksheetId);
-            if (shouldSelect && entry.TabSelected != true) entry.Element.TabSelected = true;
-            else if (!shouldSelect && entry.TabSelected == true) entry.Element.RemoveAttribute("tabSelected", string.Empty);
+            view.TabSelected = null;
+            view.RemoveAttribute("tabSelected", string.Empty);
         }
     }
 
-    private bool TryReadSelectionEntries(
+    private bool TryReadCompleteSelectionGraph(
         IReadOnlyList<WorksheetArtifact> worksheets,
-        out SelectionEntry[] entries,
-        out string[] selectedWorksheetIds)
+        out SelectionEntry[][] entriesByView,
+        out string[][] selectedWorksheetIdsByView)
     {
-        entries = [];
-        selectedWorksheetIds = [];
-        if (_sourceSheets.Length != worksheets.Count) return false;
-        var collected = new List<SelectionEntry>();
-        var selected = new HashSet<string>(StringComparer.Ordinal);
-        for (var index = 0; index < worksheets.Count; index++)
+        entriesByView = [];
+        selectedWorksheetIdsByView = [];
+        if (_sourceSheets.Length != worksheets.Count || _views.Length == 0) return false;
+        var collected = Enumerable.Range(0, _views.Length).Select(_ => new List<SelectionEntry>()).ToArray();
+        var selected = Enumerable.Range(0, _views.Length).Select(_ => new HashSet<string>(StringComparer.Ordinal)).ToArray();
+
+        for (var sheetIndex = 0; sheetIndex < worksheets.Count; sheetIndex++)
         {
-            var part = WorksheetPartAt(index);
+            var part = WorksheetPartAt(sheetIndex);
             var views = part?.Worksheet?.SheetViews?.Elements<SheetView>().ToArray() ?? [];
-            if (part is null || views.Length != 1 || (views[0].WorkbookViewId?.Value ?? uint.MaxValue) != 0U ||
-                !TryReadTabSelected(views[0], out var tabSelected)) return false;
-            var entry = new SelectionEntry(part, views[0], worksheets[index].Id, 0, 0, tabSelected);
-            collected.Add(entry);
-            if (tabSelected == true) selected.Add(worksheets[index].Id);
+            if (part is null || views.Length != _views.Length) return false;
+            var seen = new HashSet<uint>();
+            for (var viewOrdinal = 0; viewOrdinal < views.Length; viewOrdinal++)
+            {
+                var workbookViewId = views[viewOrdinal].WorkbookViewId?.Value ?? uint.MaxValue;
+                if (workbookViewId >= _views.Length || !seen.Add(workbookViewId) || !TryReadTabSelected(views[viewOrdinal], out var tabSelected)) return false;
+                var entry = new SelectionEntry(part, views[viewOrdinal], worksheets[sheetIndex].Id, checked((uint)viewOrdinal), workbookViewId, tabSelected);
+                collected[workbookViewId].Add(entry);
+                if (tabSelected == true) selected[workbookViewId].Add(worksheets[sheetIndex].Id);
+            }
         }
 
-        var activeWorksheetId = worksheets[_views[0].ActiveOrdinal].Id;
-        selected.Add(activeWorksheetId);
-        var ordered = worksheets.Where(sheet => selected.Contains(sheet.Id)).Select(sheet => sheet.Id).ToArray();
-        if (worksheets.Select((sheet, index) => (sheet, index))
-            .Where(item => selected.Contains(item.sheet.Id))
-            .Any(item => !IsSourceVisible(_sourceSheets[item.index]))) return false;
-        entries = collected.ToArray();
-        selectedWorksheetIds = ordered;
+        var ordered = new string[_views.Length][];
+        for (var ordinal = 0; ordinal < _views.Length; ordinal++)
+        {
+            if (collected[ordinal].Count != worksheets.Count) return false;
+            selected[ordinal].Add(worksheets[_views[ordinal].ActiveOrdinal].Id);
+            ordered[ordinal] = worksheets.Where(sheet => selected[ordinal].Contains(sheet.Id)).Select(sheet => sheet.Id).ToArray();
+            if (worksheets.Select((sheet, index) => (sheet, index))
+                .Where(item => selected[ordinal].Contains(item.sheet.Id))
+                .Any(item => !IsSourceVisible(_sourceSheets[item.index]))) return false;
+        }
+        entriesByView = collected.Select(entries => entries.ToArray()).ToArray();
+        selectedWorksheetIdsByView = ordered;
         return true;
     }
 
-    private SpreadsheetWorksheetViewSourceBinding SourceBinding(SelectionEntry entry)
+    private static SpreadsheetWorksheetViewSourceBinding SourceBinding(SelectionEntry entry)
     {
         var binding = new SpreadsheetWorksheetViewSourceBinding
         {
@@ -235,7 +292,8 @@ internal sealed class XlsxWorkbookViewCodec
 
     private static ViewEntry ReadEntry(WorkbookView view, IReadOnlyList<Sheet> sheets)
     {
-        var activeOrdinal = checked((int)(view.ActiveTab?.Value ?? 0U));
+        var rawOrdinal = view.ActiveTab?.Value ?? 0U;
+        var activeOrdinal = rawOrdinal <= int.MaxValue ? (int)rawOrdinal : -1;
         var activeWasVisible = activeOrdinal >= 0 && activeOrdinal < sheets.Count && IsSourceVisible(sheets[activeOrdinal]);
         return new ViewEntry(view, activeOrdinal, activeWasVisible);
     }
@@ -265,15 +323,12 @@ internal sealed class XlsxWorkbookViewCodec
 
     private static int ActiveOrdinal(SpreadsheetWorkbookViewArtifact view, IReadOnlyList<WorksheetArtifact> worksheets)
     {
-        if (string.IsNullOrWhiteSpace(view.ActiveWorksheetId))
-            throw Invalid("Workbook view must identify an active worksheet.");
+        if (string.IsNullOrWhiteSpace(view.ActiveWorksheetId)) throw Invalid("Workbook view must identify an active worksheet.");
         var matches = worksheets.Select((sheet, index) => (sheet, index))
             .Where(item => item.sheet.Id.Equals(view.ActiveWorksheetId, StringComparison.Ordinal))
             .ToArray();
-        if (matches.Length != 1)
-            throw Invalid($"Workbook view active worksheet {view.ActiveWorksheetId} does not resolve to exactly one worksheet.");
-        if (!IsVisible(matches[0].sheet))
-            throw Invalid($"Workbook view active worksheet {matches[0].sheet.Name} must be visible.");
+        if (matches.Length != 1) throw Invalid($"Workbook view active worksheet {view.ActiveWorksheetId} does not resolve to exactly one worksheet.");
+        if (!IsVisible(matches[0].sheet)) throw Invalid($"Workbook view active worksheet {matches[0].sheet.Name} must be visible.");
         return matches[0].index;
     }
 
@@ -283,9 +338,6 @@ internal sealed class XlsxWorkbookViewCodec
         string? legacyPreviousActiveWorksheetId = null)
     {
         var requested = view.SelectedWorksheetIds.Count == 0 ? [view.ActiveWorksheetId] : view.SelectedWorksheetIds.ToArray();
-        // The first active-view wire slice exposed only active_worksheet_id.
-        // Preserve that editing contract when an imported single selection is
-        // unchanged on the wire but its active worksheet has moved.
         if (!string.IsNullOrEmpty(legacyPreviousActiveWorksheetId) &&
             !view.ActiveWorksheetId.Equals(legacyPreviousActiveWorksheetId, StringComparison.Ordinal) &&
             requested.Length == 1 && requested[0].Equals(legacyPreviousActiveWorksheetId, StringComparison.Ordinal))
@@ -299,8 +351,7 @@ internal sealed class XlsxWorkbookViewCodec
             if (matches.Length != 1) throw Invalid($"Workbook view selected worksheet {id} does not resolve to exactly one worksheet.");
             if (!IsVisible(matches[0])) throw Invalid($"Workbook view selected worksheet {matches[0].Name} must be visible.");
         }
-        if (!unique.Contains(view.ActiveWorksheetId))
-            throw Invalid("Workbook view selected worksheets must include the active worksheet.");
+        if (!unique.Contains(view.ActiveWorksheetId)) throw Invalid("Workbook view selected worksheets must include the active worksheet.");
         return worksheets.Where(sheet => unique.Contains(sheet.Id)).Select(sheet => sheet.Id).ToArray();
     }
 
@@ -310,7 +361,7 @@ internal sealed class XlsxWorkbookViewCodec
 
     private static void ValidateBinding(SpreadsheetWorkbookViewSourceBinding? desired, SpreadsheetWorkbookViewSourceBinding source)
     {
-        if (desired is null || desired.Ordinal != 0 || desired.Ordinal != source.Ordinal ||
+        if (desired is null || desired.Ordinal != source.Ordinal ||
             !desired.WorkbookXmlSha256.Equals(source.WorkbookXmlSha256, StringComparison.OrdinalIgnoreCase) ||
             !desired.ViewXmlSha256.Equals(source.ViewXmlSha256, StringComparison.OrdinalIgnoreCase) ||
             !desired.SemanticSha256.Equals(source.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
@@ -338,6 +389,7 @@ internal sealed class XlsxWorkbookViewCodec
             .Concat(selected.Select(id => $"selectedWorksheetId:{id}"));
         return Sha256(Encoding.UTF8.GetBytes(string.Join("\0", semantic)));
     }
+
     private static string ElementSha256(OpenXmlElement element) => Sha256(Encoding.UTF8.GetBytes(element.OuterXml));
     private static string PartSha256(OpenXmlPart part)
     {

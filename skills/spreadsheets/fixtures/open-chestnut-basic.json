@@ -5,6 +5,9 @@
   "roundtripCodec": "open-chestnut",
   "activeWorksheet": "Icon Rules",
   "selectedWorksheets": ["Summary", "Icon Rules"],
+  "additionalWindows": [
+    { "activeWorksheet": "Advanced Filters", "selectedWorksheets": ["Summary", "Advanced Filters"] }
+  ],
   "dateSystem": "1904",
   "calculation": {
     "mode": "automaticExceptTables",

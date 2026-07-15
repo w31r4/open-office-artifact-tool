@@ -21,7 +21,7 @@ Use this project skill for standalone `.xlsx`, `.csv`, and `.tsv` artifact work.
 
 1. Create or import the workbook.
 2. Inspect the relevant sheets, ranges, formulas, styles, and drawings.
-3. Apply values, formulas, formatting, tables, validations, comments, and drawings through public facade APIs. Use `workbook.worksheets.setActiveWorksheet(...)` for the sheet opened by default. If multiple visible tabs should remain selected, call `setSelectedWorksheets([...])` afterwards; the group must include the active sheet.
+3. Apply values, formulas, formatting, tables, validations, comments, and drawings through public facade APIs. Use `workbook.worksheets.setActiveWorksheet(...)` for the primary window's sheet opened by default. If multiple visible tabs should remain selected, call `setSelectedWorksheets([...])` afterwards; the group must include the active sheet. Use `workbook.windows.add({ activeWorksheet, selectedWorksheets })` only when the artifact intentionally needs another native workbook window with independent tab state.
 4. Recalculate and spot-check important results and formula traces.
 5. Export XLSX, inspect its bounded native package records, import the exported file again, and run the project verifier.
 6. Inspect the preview at full size. Fix formula errors, clipping, unreadable formatting, and broken objects before delivery.
@@ -186,7 +186,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Run `verifyArtifact(workbook)` and resolve every error-level issue.
 - Trace important result cells when the calculation chain is non-trivial.
 - Export and re-import the XLSX before final verification.
-- Treat worksheet visibility as native document state: use only `visible`, `hidden`, or `veryHidden`, keep at least one visible sheet, and verify the selected delivery sheet remains active. OpenChestnut preserves imported workbook views and fails closed if an edit hides the current active tab; it does not silently select another sheet.
+- Treat worksheet visibility as native document state: use only `visible`, `hidden`, or `veryHidden`, keep at least one visible sheet, and verify the selected delivery sheet remains active in every intended window. OpenChestnut preserves imported workbook views and fails closed if an edit hides any active or selected tab; it does not silently select another sheet. Source-bound multi-window editing requires a complete matching `sheetView` graph and cannot add, remove, or reorder windows.
 - For theme/pattern styling, inspect `xl/theme/theme1.xml` and `xl/styles.xml`, then confirm the imported style retains `theme`/`tint`/`indexed` and `patternType` instead of only a flattened RGB approximation.
 - Save `SpreadsheetFile.inspectXlsx()` evidence so native package shape, content types, `.rels` targets, source XML `r:id`/`r:embed`/`r:link` references, and decompression budgets are part of QA; require zero relationship-reference issues.
 - For threaded comments, require zero package semantic issues, inspect both `xl/persons` and worksheet threaded-comment relationship targets, remove clean-room metadata once in tests, and verify native IDs, people, dates, parent links, resolution state, and distinct same-cell roots survive import and a second export.

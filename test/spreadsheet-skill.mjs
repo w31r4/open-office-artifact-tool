@@ -185,6 +185,9 @@ try {
   assert.deepEqual(wasmWorkbook.worksheets.items.map((item) => item.visibility), ["visible", "hidden", "visible", "visible", "veryHidden"]);
   assert.equal(wasmWorkbook.worksheets.getActiveWorksheet().name, "Icon Rules");
   assert.deepEqual(wasmWorkbook.worksheets.getSelectedWorksheets().map((sheet) => sheet.name), ["Summary", "Icon Rules"]);
+  assert.equal(wasmWorkbook.windows.count, 2);
+  assert.equal(wasmWorkbook.windows.getItemAt(1).getActiveWorksheet().name, "Advanced Filters");
+  assert.deepEqual(wasmWorkbook.windows.getItemAt(1).getSelectedWorksheets().map((sheet) => sheet.name), ["Summary", "Advanced Filters"]);
   assert.deepEqual(wasmWorkbook.definedNames.items.map((item) => ({ name: item.name, refersTo: item.refersTo, scope: item.scope, comment: item.comment, hidden: item.hidden })), [
     { name: "SummaryValues", refersTo: "Summary!$B$2:$B$3", scope: undefined, comment: "Fixture summary values", hidden: false },
     { name: "DetailScores", refersTo: "Details!$C$2:$C$3", scope: "Details", comment: undefined, hidden: true },

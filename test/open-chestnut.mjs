@@ -60,6 +60,7 @@ assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { c
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { definedNames: [{ id: "defined-name/1", name: "Data", refersTo: "Sheet1!A1" }] }))[0], 0x32, "Spreadsheet workbook defined names must use additive workbook field 6.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { calculation: { mode: 1 } }))[0], 0x3a, "Spreadsheet workbook calculation policy must use additive workbook field 7.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { view: { activeWorksheetId: "worksheet/2" } }))[0], 0x42, "Spreadsheet workbook views must use additive workbook field 8.");
+assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { additionalViews: [{ activeWorksheetId: "worksheet/3" }] }))[0], 0x4a, "Spreadsheet additional workbook windows must use additive workbook field 9.");
 assert.equal(toBinary(SpreadsheetWorkbookViewArtifactSchema, create(SpreadsheetWorkbookViewArtifactSchema, { source: { viewXmlSha256: "x" } }))[0], 0x12, "Spreadsheet workbook-view source bindings must use view field 2.");
 assert.equal(toBinary(SpreadsheetWorkbookViewArtifactSchema, create(SpreadsheetWorkbookViewArtifactSchema, { selectedWorksheetIds: ["worksheet/1"] }))[0], 0x1a, "Spreadsheet selected worksheet IDs must use view field 3.");
 assert.equal(toBinary(SpreadsheetWorkbookViewSourceBindingSchema, create(SpreadsheetWorkbookViewSourceBindingSchema, { semanticSha256: "x" }))[0], 0x22, "Spreadsheet workbook-view semantic hashes must use source-binding field 4.");
@@ -338,6 +339,7 @@ colorTable.sortState = {
 };
 workbook.worksheets.setActiveWorksheet(iconRules);
 workbook.worksheets.setSelectedWorksheets([summary, iconRules]);
+workbook.windows.add({ activeWorksheet: colorRules, selectedWorksheets: [summary, colorRules] });
 
 const concurrentWorkbook = Workbook.create();
 concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
@@ -354,8 +356,10 @@ assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
 const exportedZip = await JSZip.loadAsync(exported.bytes);
 const exportedWorkbookXml = await exportedZip.file("xl/workbook.xml").async("text");
 assert.match(exportedWorkbookXml, /<x:workbookView\b[^>]*activeTab="3"/);
+assert.match(exportedWorkbookXml, /<x:workbookView\b[^>]*activeTab="4"/);
 assert.match(await exportedZip.file("xl/worksheets/sheet1.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
 assert.match(await exportedZip.file("xl/worksheets/sheet4.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
+assert.match(await exportedZip.file("xl/worksheets/sheet5.xml").async("text"), /<x:sheetView\b(?=[^>]*workbookViewId="1")(?=[^>]*tabSelected="1")[^>]*>/);
 assert.match(exportedWorkbookXml, /<x:sheet\b[^>]*name="Details"[^>]*state="hidden"/);
 assert.match(exportedWorkbookXml, /<x:sheet\b[^>]*name="Advanced Filters"[^>]*state="veryHidden"/);
 assert.match(exportedWorkbookXml, /<x:definedName name="SummaryData" comment="Summary data body" hidden="0">Summary!\$A\$1:\$B\$2<\/x:definedName>/);
@@ -651,6 +655,9 @@ assert.equal(imported.worksheets.items.length, 5);
 assert.deepEqual(imported.worksheets.items.map((item) => item.visibility), ["visible", "hidden", "veryHidden", "visible", "visible"]);
 assert.equal(imported.worksheets.getActiveWorksheet().name, "Icon Rules");
 assert.deepEqual(imported.worksheets.getSelectedWorksheets().map((sheet) => sheet.name), ["Summary", "Icon Rules"]);
+assert.equal(imported.windows.count, 2);
+assert.equal(imported.windows.getItemAt(1).getActiveWorksheet().name, "Color Rules");
+assert.deepEqual(imported.windows.getItemAt(1).getSelectedWorksheets().map((sheet) => sheet.name), ["Summary", "Color Rules"]);
 assert.throws(() => { imported.worksheets.getActiveWorksheet().visibility = "hidden"; }, /select another active worksheet first/i);
 assert.throws(() => { imported.worksheets.getItem("Summary").visibility = "hidden"; }, /selected worksheet/i);
 imported.worksheets.setSelectedWorksheets(["Summary", "Icon Rules", "Color Rules"]);
@@ -667,6 +674,14 @@ assert.match(await activeEditedZip.file("xl/workbook.xml").async("text"), /<x:wo
 const activeEditedImport = await importXlsxWithOpenChestnut(activeEdited);
 assert.equal(activeEditedImport.worksheets.getActiveWorksheet().name, "Color Rules");
 assert.deepEqual(activeEditedImport.worksheets.getSelectedWorksheets().map((sheet) => sheet.name), ["Color Rules"]);
+assert.equal(activeEditedImport.windows.getItemAt(1).getActiveWorksheet().name, "Color Rules");
+imported.windows.getItemAt(1).setActiveWorksheet("Summary");
+const secondaryEdited = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
+const secondaryEditedZip = await JSZip.loadAsync(secondaryEdited.bytes);
+assert.match(await secondaryEditedZip.file("xl/workbook.xml").async("text"), /<x:workbookView\b[^>]*activeTab="0"/);
+const secondaryEditedImport = await importXlsxWithOpenChestnut(secondaryEdited);
+assert.equal(secondaryEditedImport.windows.getItemAt(1).getActiveWorksheet().name, "Summary");
+assert.deepEqual(secondaryEditedImport.windows.getItemAt(1).getSelectedWorksheets().map((sheet) => sheet.name), ["Summary"]);
 assert.deepEqual(imported.definedNames.toJSON(), [
   { id: "defined-name/1", name: "SummaryData", refersTo: "Summary!$A$1:$B$2", scope: undefined, comment: "Summary data body", hidden: false },
   { id: "defined-name/2", name: "StatusData", refersTo: "Details!$A$2:$B$3", scope: "Details", comment: undefined, hidden: true },

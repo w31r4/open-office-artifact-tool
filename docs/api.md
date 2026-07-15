@@ -2061,10 +2061,16 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
+| `workbook.windows` | api | Access the ordered workbook-window collection; window 0 is the primary view used by legacy worksheet-selection APIs. |
+| `workbook.windows.add` | api | Append an additional workbook window with its own active worksheet and selected tab group. |
 | `workbook.worksheets.add` | api | Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID. |
 | `workbook.worksheets.getSelectedWorksheets` | api | Return the visible worksheet-tab group selected in the primary workbook window, in workbook order. |
 | `workbook.worksheets.setActiveWorksheet` | api | Select the visible worksheet opened by default and used by workbook operations that omit an explicit sheet. |
 | `workbook.worksheets.setSelectedWorksheets` | api | Select one or more visible worksheet tabs in the primary workbook window while retaining exactly one active worksheet. |
+| `workbookWindow.getActiveWorksheet` | api | Return the visible active worksheet for one workbook window. |
+| `workbookWindow.getSelectedWorksheets` | api | Return one window's visible selected worksheet tabs in workbook order. |
+| `workbookWindow.setActiveWorksheet` | api | Set one window's active worksheet and collapse that window's selected tab group to it. |
+| `workbookWindow.setSelectedWorksheets` | api | Set one window's non-empty visible selected tab group, which must include its active worksheet. |
 | `worksheet.freezePanes.freezeColumns` | api | Freeze a leading column count in the worksheet view while preserving any frozen rows. |
 | `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
 | `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
@@ -4324,6 +4330,27 @@ Return bounded QA issues for source-bound connections, sheets, formulas, tables,
 
 - `report` (object) — Workbook formula/structure/drawing/rule QA result.
 
+#### `workbook.windows`
+
+Access the ordered workbook-window collection; window 0 is the primary view used by legacy worksheet-selection APIs.
+
+**Schema returns:**
+
+- `windows` (WorkbookWindowCollection) — Ordered windows. Index 0 is the primary window; additional windows retain independent active and selected worksheet state.
+
+#### `workbook.windows.add`
+
+Append an additional workbook window with its own active worksheet and selected tab group.
+
+**Schema parameters:**
+
+- `activeWorksheet` (string|number|Worksheet) — Visible worksheet name, zero-based worksheet index, or worksheet object. Defaults to the primary window's active worksheet.
+- `selectedWorksheets` (Array<string|number|Worksheet>) — Optional non-empty unique visible selection for the new window.
+
+**Schema returns:**
+
+- `window` (WorkbookWindow) — Appended workbook window. Source-free XLSX export authors a matching workbookView and one sheetView per worksheet.
+
 #### `workbook.worksheets.add`
 
 Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID.
@@ -4368,6 +4395,46 @@ Select one or more visible worksheet tabs in the primary workbook window while r
 **Schema returns:**
 
 - `worksheets` (Worksheet[]) — Selected worksheet tabs in workbook order; native XLSX export writes sheetView tabSelected for workbookViewId 0.
+
+#### `workbookWindow.getActiveWorksheet`
+
+Return the visible active worksheet for one workbook window.
+
+**Schema returns:**
+
+- `worksheet` (Worksheet) — Visible active worksheet for this window.
+
+#### `workbookWindow.getSelectedWorksheets`
+
+Return one window's visible selected worksheet tabs in workbook order.
+
+**Schema returns:**
+
+- `worksheets` (Worksheet[]) — Visible selected worksheet tabs for this window in workbook order, always including its active worksheet.
+
+#### `workbookWindow.setActiveWorksheet`
+
+Set one window's active worksheet and collapse that window's selected tab group to it.
+
+**Schema parameters:**
+
+- `worksheet` (string|number|Worksheet) required — Visible worksheet resolved within the owning workbook.
+
+**Schema returns:**
+
+- `worksheet` (Worksheet) — Selected worksheet; the window's selected group is collapsed to this worksheet.
+
+#### `workbookWindow.setSelectedWorksheets`
+
+Set one window's non-empty visible selected tab group, which must include its active worksheet.
+
+**Schema parameters:**
+
+- `worksheets` (Array<string|number|Worksheet>) required — Non-empty unique visible selection. If the current active worksheet is omitted, the first requested worksheet becomes active.
+
+**Schema returns:**
+
+- `worksheets` (Worksheet[]) — Selected worksheet tabs for this window in workbook order.
 
 #### `worksheet.freezePanes.freezeColumns`
 

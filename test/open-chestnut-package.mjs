@@ -27,6 +27,7 @@ try {
     selectedSheet.getRange("A1").values = [["active"]];
     workbook.worksheets.setActiveWorksheet(selectedSheet);
     workbook.worksheets.setSelectedWorksheets([sheet, selectedSheet]);
+    workbook.windows.add({ activeWorksheet: sheet, selectedWorksheets: [sheet] });
     packagedTable.columnDefinitions = [{ name: "Label" }, { name: "Date" }, { name: "Status" }, { name: "Value", calculatedColumnFormula: "=LEN([@Label])" }, { name: "Fill" }, { name: "Font" }];
     packagedTable.filters = [
       { columnIndex: 0, kind: "icon", iconSet: "3Arrows", iconId: 0 },
@@ -47,6 +48,7 @@ try {
     if (imported.worksheets.getItem("Packaged").getRange("A1:F2").values[1][3] !== 7) process.exit(2);
     if (imported.worksheets.getActiveWorksheet().name !== "Selected") process.exit(17);
     if (imported.worksheets.getSelectedWorksheets().map((item) => item.name).join(",") !== "Packaged,Selected") process.exit(18);
+    if (imported.windows.count !== 2 || imported.windows.getItemAt(1).getActiveWorksheet().name !== "Packaged") process.exit(19);
     const importedTable = imported.worksheets.getItem("Packaged").tables.getItemOrNullObject("PackagedTable");
     if (importedTable.style !== "TableStyleMedium4") process.exit(11);
     if (importedTable.columnDefinitions[3].calculatedColumnFormula !== "=LEN([@Label])") process.exit(12);

@@ -217,6 +217,39 @@ selectedActiveWorksheet.visibility = "hidden";
 assert.equal(activeWorksheetBook.worksheets.getActiveWorksheet(), firstActiveCandidate);
 assert.deepEqual(activeWorksheetBook.worksheets.getSelectedWorksheets(), [firstActiveCandidate]);
 
+const multiWindowBook = Workbook.create();
+const multiWindowSummary = multiWindowBook.worksheets.add("Summary");
+const multiWindowDetail = multiWindowBook.worksheets.add("Detail");
+const multiWindowReview = multiWindowBook.worksheets.add("Review");
+multiWindowBook.worksheets.setActiveWorksheet(multiWindowDetail);
+multiWindowBook.worksheets.setSelectedWorksheets([multiWindowSummary, multiWindowDetail]);
+const reviewWindow = multiWindowBook.windows.add({
+  activeWorksheet: multiWindowReview,
+  selectedWorksheets: [multiWindowDetail, multiWindowReview],
+});
+assert.equal(multiWindowBook.windows.count, 2);
+assert.equal(multiWindowBook.windows.getItemAt(0).getActiveWorksheet(), multiWindowDetail);
+assert.equal(reviewWindow.getActiveWorksheet(), multiWindowReview);
+assert.deepEqual(reviewWindow.getSelectedWorksheets(), [multiWindowDetail, multiWindowReview]);
+assert.match(multiWindowBook.inspect({ kind: "workbookWindow" }).ndjson, /"kind":"workbookWindow","id":"workbook-window\/2","index":1,"activeWorksheet":"Review","selectedWorksheets":\["Detail","Review"\]/);
+assert.match(multiWindowBook.help("workbook.windows.add").ndjson, /matching workbookView and one sheetView per worksheet/i);
+assert.throws(() => { multiWindowReview.visibility = "hidden"; }, /window 1 active worksheet/i);
+assert.throws(() => reviewWindow.setSelectedWorksheets([]), /at least one visible worksheet/i);
+const multiWindowXlsx = await SpreadsheetFile.exportXlsx(multiWindowBook);
+const multiWindowZip = await JSZip.loadAsync(multiWindowXlsx.bytes);
+const multiWindowWorkbookXml = await multiWindowZip.file("xl/workbook.xml").async("text");
+assert.match(multiWindowWorkbookXml, /<bookViews><workbookView activeTab="1"\s*\/><workbookView activeTab="2"\s*\/><\/bookViews>/);
+assert.match(await multiWindowZip.file("xl/worksheets/sheet1.xml").async("text"), /<sheetView workbookViewId="0" tabSelected="1">[\s\S]*<sheetView workbookViewId="1">/);
+assert.match(await multiWindowZip.file("xl/worksheets/sheet2.xml").async("text"), /<sheetView workbookViewId="0" tabSelected="1">[\s\S]*<sheetView workbookViewId="1" tabSelected="1">/);
+assert.match(await multiWindowZip.file("xl/worksheets/sheet3.xml").async("text"), /<sheetView workbookViewId="0">[\s\S]*<sheetView workbookViewId="1" tabSelected="1">/);
+multiWindowZip.remove("customXml/open-office-artifact.json");
+const multiWindowRoundtrip = await SpreadsheetFile.importXlsx(new FileBlob(await multiWindowZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: multiWindowXlsx.type }));
+assert.equal(multiWindowRoundtrip.windows.count, 2);
+assert.deepEqual(multiWindowRoundtrip.windows.toJSON().map((window) => ({ activeWorksheet: window.activeWorksheet, selectedWorksheets: window.selectedWorksheets })), [
+  { activeWorksheet: "Detail", selectedWorksheets: ["Summary", "Detail"] },
+  { activeWorksheet: "Review", selectedWorksheets: ["Detail", "Review"] },
+]);
+
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
 sheet.getRange("A1:C3").values = [["A", "B", "Sum"], [2, 3, null], [5, 7, null]];

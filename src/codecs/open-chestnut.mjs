@@ -107,19 +107,24 @@ function wireWorksheetMetadata(sheet, slot) {
   };
 }
 
-function workbookViewSnapshot(workbook) {
-  return {
-    activeWorksheetId: workbook.worksheets.getActiveWorksheet().id,
-    selectedWorksheetIds: workbook.worksheets.getSelectedWorksheets().map((sheet) => sheet.id),
-  };
+function workbookViewSnapshots(workbook) {
+  return workbook.windows.items.map((window) => ({
+    activeWorksheetId: window.getActiveWorksheet().id,
+    selectedWorksheetIds: window.getSelectedWorksheets().map((sheet) => sheet.id),
+  }));
 }
 
-function wireWorkbookView(workbook, state) {
-  const slot = state?.viewSlot;
-  if (state && !slot && !workbook._activeWorksheetId) return undefined;
-  const snapshot = workbookViewSnapshot(workbook);
-  if (slot && JSON.stringify(snapshot) === JSON.stringify(slot.publicSnapshot)) return slot.wire;
-  return { ...snapshot, source: slot?.wire.source };
+function wireWorkbookViews(workbook, state) {
+  const slots = state?.viewSlots || [];
+  if (state && slots.length === 0 && !workbook._activeWorksheetId && workbook.windows.count === 1)
+    return { view: undefined, additionalViews: [] };
+  const snapshots = workbookViewSnapshots(workbook);
+  const views = snapshots.map((snapshot, index) => {
+    const slot = slots[index];
+    if (slot && JSON.stringify(snapshot) === JSON.stringify(slot.publicSnapshot)) return slot.wire;
+    return { ...snapshot, source: slot?.wire.source };
+  });
+  return { view: views[0], additionalViews: views.slice(1) };
 }
 
 function bytesFrom(value) {
@@ -1044,6 +1049,7 @@ function workbookEnvelope(workbook) {
   const theme = state?.themeWire && sameWorkbookTheme(workbook.theme, state.publicTheme)
     ? state.themeWire
     : wireWorkbookTheme(workbook.theme, state?.themeWire?.source);
+  const views = wireWorkbookViews(workbook, state);
   return {
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     family: ArtifactFamily.WORKBOOK,
@@ -1059,7 +1065,8 @@ function workbookEnvelope(workbook) {
         connections: wireWorkbookConnections(workbook, state),
         definedNames: wireWorkbookDefinedNames(workbook, state),
         calculation: wireWorkbookCalculationForExport(workbook, state),
-        view: wireWorkbookView(workbook, state),
+        view: views.view,
+        additionalViews: views.additionalViews,
         worksheets: workbook.worksheets.items.map((sheet) => {
           const metadata = wireWorksheetMetadata(sheet, state?.worksheetSlots?.get(sheet.id));
           return {
@@ -1196,9 +1203,14 @@ function workbookFromEnvelope(envelope) {
     tablesBySheet.set(sheet.id, { slots });
   }
   for (const sourceDefinedName of source.definedNames || []) workbook.definedNames.add(publicWorkbookDefinedName(sourceDefinedName));
-  if (source.view) {
-    workbook.worksheets.setActiveWorksheet(source.view.activeWorksheetId);
-    if (source.view.selectedWorksheetIds?.length) workbook.worksheets.setSelectedWorksheets(source.view.selectedWorksheetIds);
+  const sourceViews = source.view ? [source.view, ...(source.additionalViews || [])] : [];
+  if (sourceViews.length) {
+    workbook.windows.getItemAt(0).setActiveWorksheet(sourceViews[0].activeWorksheetId);
+    if (sourceViews[0].selectedWorksheetIds?.length) workbook.windows.getItemAt(0).setSelectedWorksheets(sourceViews[0].selectedWorksheetIds);
+    for (const sourceView of sourceViews.slice(1)) {
+      const window = workbook.windows.add({ activeWorksheet: sourceView.activeWorksheetId });
+      if (sourceView.selectedWorksheetIds?.length) window.setSelectedWorksheets(sourceView.selectedWorksheetIds);
+    }
   }
   const definedNameSlots = (source.definedNames || []).map((wire, index) => ({
     wire,
@@ -1206,7 +1218,8 @@ function workbookFromEnvelope(envelope) {
     publicSnapshot: definedNameSnapshot(workbook.definedNames.items[index]),
   }));
   const calculationSlot = source.calculation ? { wire: source.calculation, publicSnapshot: calculationSnapshot(workbook.calculation) } : undefined;
-  const viewSlot = source.view ? { wire: source.view, publicSnapshot: workbookViewSnapshot(workbook) } : undefined;
+  const snapshots = sourceViews.length ? workbookViewSnapshots(workbook) : [];
+  const viewSlots = sourceViews.map((wire, index) => ({ wire, publicSnapshot: snapshots[index] }));
   Object.defineProperty(workbook, WORKBOOK_STATE, {
     configurable: true,
     value: {
@@ -1218,7 +1231,7 @@ function workbookFromEnvelope(envelope) {
       connectionSlots,
       definedNameSlots,
       calculationSlot,
-      viewSlot,
+      viewSlots,
       worksheetSlots,
       tablesBySheet,
     },

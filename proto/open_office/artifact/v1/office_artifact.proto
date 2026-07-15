@@ -168,10 +168,14 @@ message WorkbookArtifact {
   // Application/version identity, R1C1 mode, calculation-completed state,
   // concurrent-calculation controls, and extensions remain source-preserved.
   SpreadsheetCalculationArtifact calculation = 7;
-  // Active worksheet and selected worksheet-tab group for one recognized
-  // primary workbook view. Additional windows, first-sheet scrolling,
-  // geometry, visibility, and extensions remain source-preserved.
+  // Active worksheet and selected worksheet-tab group for the primary
+  // workbook window. Existing consumers can continue reading this field.
   SpreadsheetWorkbookViewArtifact view = 8;
+  // Additional workbook windows in native bookViews order. Together with
+  // view, this forms one ordered window sequence without duplicating primary
+  // state. First-sheet scrolling, geometry, visibility, and extensions remain
+  // source-preserved on every window.
+  repeated SpreadsheetWorkbookViewArtifact additional_views = 9;
 }
 
 message SpreadsheetWorkbookViewArtifact {
@@ -182,9 +186,8 @@ message SpreadsheetWorkbookViewArtifact {
   repeated string selected_worksheet_ids = 3;
 }
 
-// Hash-bound locator for the one workbookView profile OpenChestnut currently
-// projects. The ordinal is reserved for a future multi-window model; today a
-// source-bound editable projection requires exactly one view at ordinal zero.
+// Hash-bound locator for one workbookView. Ordinal is its zero-based position
+// in bookViews and also the workbookViewId used by its worksheet sheetViews.
 message SpreadsheetWorkbookViewSourceBinding {
   uint32 ordinal = 1;
   string workbook_xml_sha256 = 2;
