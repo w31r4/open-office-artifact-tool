@@ -2727,6 +2727,7 @@ public sealed class XlsxCodecTests
         AssertChartTextStyles(authored.File.ToByteArray(), 12, 10, 9);
         AssertChartSeriesFill(authored.File.ToByteArray(), "F472B6");
         AssertChartSeriesLine(authored.File.ToByteArray(), "0EA5E9", "dash", 2);
+        AssertChartSeriesMarker(authored.File.ToByteArray(), "diamond", 8);
         using (var stream = new MemoryStream(authored.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2755,6 +2756,9 @@ public sealed class XlsxCodecTests
         Assert.Equal(SpreadsheetChartLineDashStyle.Dashed, chart.Series[0].Line.DashStyle);
         Assert.True(chart.Series[0].Line.HasWidthPoints);
         Assert.Equal(2, chart.Series[0].Line.WidthPoints);
+        Assert.Equal(SpreadsheetChartMarkerSymbol.Diamond, chart.Series[0].Marker.Symbol);
+        Assert.True(chart.Series[0].Marker.HasSize);
+        Assert.Equal(8U, chart.Series[0].Marker.Size);
         Assert.Equal("'Summary'!$A$1:$A$2", chart.Series[0].CategoryFormula);
         Assert.Equal("'Summary'!$B$1:$B$2", chart.Series[0].ValueFormula);
         Assert.Equal("Quarter", chart.XAxis.Title);
@@ -2788,6 +2792,8 @@ public sealed class XlsxCodecTests
         chart.Series[0].Line.Color.Rgb = "7C3AED";
         chart.Series[0].Line.DashStyle = SpreadsheetChartLineDashStyle.DashDot;
         chart.Series[0].Line.WidthPoints = 2.5;
+        chart.Series[0].Marker.Symbol = SpreadsheetChartMarkerSymbol.Triangle;
+        chart.Series[0].Marker.Size = 10;
         chart.XAxis.Title = "Fiscal quarter";
         chart.XAxis.NumberFormatCode = "mmm";
         chart.XAxis.TickLabelInterval = 1;
@@ -2805,6 +2811,7 @@ public sealed class XlsxCodecTests
         AssertChartTextStyles(preserved.File.ToByteArray(), 15, 11, null);
         AssertChartSeriesFill(preserved.File.ToByteArray(), "2563EB");
         AssertChartSeriesLine(preserved.File.ToByteArray(), "7C3AED", "dashDot", 2.5);
+        AssertChartSeriesMarker(preserved.File.ToByteArray(), "triangle", 10);
         using (var stream = new MemoryStream(preserved.File.ToByteArray()))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
@@ -2848,6 +2855,18 @@ public sealed class XlsxCodecTests
         Assert.True(withAddedLine.Ok, string.Join("\n", withAddedLine.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertChartSeriesLine(withAddedLine.File.ToByteArray(), "22C55E", "dot", 1.25);
 
+        var removedMarker = Import(preserved.File.ToByteArray());
+        removedMarker.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker = null;
+        var withoutMarker = Export(removedMarker.Artifact);
+        Assert.True(withoutMarker.Ok, string.Join("\n", withoutMarker.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartSeriesMarker(withoutMarker.File.ToByteArray(), null, null);
+        var addedMarker = Import(withoutMarker.File.ToByteArray());
+        Assert.Null(addedMarker.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker);
+        addedMarker.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Plus, Size = 12 };
+        var withAddedMarker = Export(addedMarker.Artifact);
+        Assert.True(withAddedMarker.Ok, string.Join("\n", withAddedMarker.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertChartSeriesMarker(withAddedMarker.File.ToByteArray(), "plus", 12);
+
         var addedTextStyle = Import(preserved.File.ToByteArray());
         addedTextStyle.Artifact.Workbook.Worksheets[0].Charts[0].YAxis.TextStyle = new SpreadsheetChartTextStyleArtifact { FontSizePoints = 8.5 };
         var withAddedTextStyle = Export(addedTextStyle.Artifact);
@@ -2862,6 +2881,7 @@ public sealed class XlsxCodecTests
         Assert.Equal("invalid_spreadsheet_chart_topology", Assert.Single(rejected.Diagnostics).Code);
 
         var changedType = Import(source);
+        changedType.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker = null;
         changedType.Artifact.Workbook.Worksheets[0].Charts[0].Type = SpreadsheetChartType.Bar;
         rejected = Export(changedType.Artifact);
         Assert.False(rejected.Ok);
@@ -2923,6 +2943,21 @@ public sealed class XlsxCodecTests
         Assert.Equal(complexLineXml, ReadChartXml(complexLineRoundTrip.File.ToByteArray()));
         complexLineChart.Series[0].Line = new SpreadsheetChartLineStyleArtifact { Color = new SpreadsheetColor { Rgb = "E11D48" } };
         rejected = Export(complexLine.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var complexMarkerSource = SetChartSeriesComplexMarker(authored.File.ToByteArray());
+        var complexMarkerXml = ReadChartXml(complexMarkerSource);
+        var complexMarker = Import(complexMarkerSource);
+        Assert.True(complexMarker.Ok, string.Join("\n", complexMarker.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var complexMarkerChart = Assert.Single(complexMarker.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Null(Assert.Single(complexMarkerChart.Series).Marker);
+        Assert.False(complexMarkerChart.Source.Editable);
+        var complexMarkerRoundTrip = Export(complexMarker.Artifact);
+        Assert.True(complexMarkerRoundTrip.Ok, string.Join("\n", complexMarkerRoundTrip.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(complexMarkerXml, ReadChartXml(complexMarkerRoundTrip.File.ToByteArray()));
+        complexMarkerChart.Series[0].Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Circle };
+        rejected = Export(complexMarker.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
 
@@ -3023,6 +3058,34 @@ public sealed class XlsxCodecTests
         var unknownDash = ChartExportRequest();
         unknownDash.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line.DashStyle = (SpreadsheetChartLineDashStyle)99;
         rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(unknownDash.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolRejectsInvalidWorksheetChartSeriesMarkers()
+    {
+        var bar = ChartExportRequest();
+        bar.Artifact.Workbook.Worksheets[0].Charts[0].Type = SpreadsheetChartType.Bar;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(bar.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var tooSmall = ChartExportRequest();
+        tooSmall.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker.Size = 1;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(tooSmall.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var tooLarge = ChartExportRequest();
+        tooLarge.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker.Size = 73;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(tooLarge.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var unknown = ChartExportRequest();
+        unknown.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker.Symbol = (SpreadsheetChartMarkerSymbol)99;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(unknown.ToByteArray()));
         Assert.False(rejected.Ok);
         Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
     }
@@ -3463,6 +3526,7 @@ public sealed class XlsxCodecTests
                 DashStyle = SpreadsheetChartLineDashStyle.Dashed,
                 WidthPoints = 2,
             },
+            Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Diamond, Size = 8 },
             Values = { 42.5, 85 },
         });
         request.Artifact.Workbook.Worksheets[0].Charts.Add(chart);
@@ -4064,6 +4128,25 @@ public sealed class XlsxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] SetChartSeriesComplexMarker(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+            chart.Descendants(c + "ser").Single().Element(c + "marker")!
+                .Add(new XElement(c + "spPr", new XElement(a + "solidFill", new XElement(a + "schemeClr", new XAttribute("val", "accent1")))));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] SetChartAxisComplexTextStyle(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -4132,6 +4215,17 @@ public sealed class XlsxCodecTests
         Assert.Equal(expectedRgb, (string?)line!.Element(a + "solidFill")?.Element(a + "srgbClr")?.Attribute("val"));
         Assert.Equal(expectedDash, (string?)line.Element(a + "prstDash")?.Attribute("val"));
         Assert.Equal(expectedWidthPoints is null ? null : Math.Round(expectedWidthPoints.Value * 12_700, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture), (string?)line.Attribute("w"));
+    }
+
+    private static void AssertChartSeriesMarker(byte[] bytes, string? expectedSymbol, uint? expectedSize)
+    {
+        var chart = XDocument.Parse(ReadChartXml(bytes));
+        XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+        var marker = chart.Descendants(c + "ser").Single().Element(c + "marker");
+        if (expectedSymbol is null && expectedSize is null) { Assert.Null(marker); return; }
+        Assert.NotNull(marker);
+        Assert.Equal(expectedSymbol, (string?)marker!.Element(c + "symbol")?.Attribute("val"));
+        Assert.Equal(expectedSize?.ToString(CultureInfo.InvariantCulture), (string?)marker.Element(c + "size")?.Attribute("val"));
     }
 
     private static string ReadChartXml(byte[] bytes)

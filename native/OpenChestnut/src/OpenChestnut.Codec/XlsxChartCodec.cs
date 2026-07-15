@@ -110,6 +110,7 @@ internal sealed class XlsxChartCodec
                 if (series.Name.Length > 255 || HasControls(series.Name)) throw InvalidChart(worksheetId, chart.Id, "contains an invalid series name.");
                 XlsxChartSeriesStyleCodec.Validate(series, worksheetId, chart.Id);
                 XlsxChartSeriesLineStyleCodec.Validate(series, worksheetId, chart.Id);
+                XlsxChartSeriesMarkerCodec.Validate(series, chart.Type, worksheetId, chart.Id);
                 if (series.CategoryFormula.Length > 8_192 || series.ValueFormula.Length > 8_192 || HasControls(series.CategoryFormula) || HasControls(series.ValueFormula) || series.CategoryFormula.StartsWith('=') || series.ValueFormula.StartsWith('=')) throw InvalidChart(worksheetId, chart.Id, "contains an invalid category/value formula.");
                 if (series.Values.Count != chart.Categories.Count) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} has {series.Values.Count} values for {chart.Categories.Count} categories.");
                 if (series.Values.Any(value => double.IsNaN(value) || double.IsInfinity(value))) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} contains a non-finite value.");
@@ -314,7 +315,7 @@ internal sealed class XlsxChartCodec
         string[]? commonCategories = null;
         foreach (var seriesElement in seriesElements)
         {
-            if (!TrySeries(seriesElement, out var series, out var categories, out var seriesEditable)) return false;
+            if (!TrySeries(seriesElement, chart.Type, out var series, out var categories, out var seriesEditable)) return false;
             editable &= seriesEditable;
             if (commonCategories is null) commonCategories = categories;
             else if (!commonCategories.SequenceEqual(categories, StringComparer.Ordinal)) return false;
@@ -326,7 +327,7 @@ internal sealed class XlsxChartCodec
         return chart.Title.Length <= 32_767 && !HasControls(chart.Title) && chart.Categories.Count <= MaxPoints;
     }
 
-    private static bool TrySeries(XElement source, out SpreadsheetChartSeriesArtifact series, out string[] categories, out bool editable)
+    private static bool TrySeries(XElement source, SpreadsheetChartType chartType, out SpreadsheetChartSeriesArtifact series, out string[] categories, out bool editable)
     {
         series = new SpreadsheetChartSeriesArtifact(); categories = []; editable = true;
         var tx = source.Element(ChartNs + "tx");
@@ -349,6 +350,7 @@ internal sealed class XlsxChartCodec
         series.Values.Add(values);
         editable &= XlsxChartSeriesStyleCodec.TryRead(source, series);
         editable &= XlsxChartSeriesLineStyleCodec.TryRead(source, series);
+        editable &= XlsxChartSeriesMarkerCodec.TryRead(source, series, chartType);
         return true;
     }
 
@@ -433,6 +435,7 @@ internal sealed class XlsxChartCodec
             new XElement(ChartNs + "order", new XAttribute("val", index)),
             new XElement(ChartNs + "tx", new XElement(ChartNs + "v", series.Name)),
             XlsxChartSeriesStyleCodec.PropertiesElement(series),
+            XlsxChartSeriesMarkerCodec.Element(series.Marker),
             new XElement(ChartNs + "cat", StringData(categories, series.CategoryFormula)),
             new XElement(ChartNs + "val", NumericData(series.Values, series.ValueFormula)));
 
@@ -546,6 +549,7 @@ internal sealed class XlsxChartCodec
         native.Element(ChartNs + "tx")!.Element(ChartNs + "v")!.Value = target.Name;
         XlsxChartSeriesStyleCodec.Patch(native, target);
         XlsxChartSeriesLineStyleCodec.Patch(native, target);
+        XlsxChartSeriesMarkerCodec.Patch(native, target);
         PatchStringData(native.Element(ChartNs + "cat") ?? native.Element(ChartNs + "xVal")!, categories, target.CategoryFormula);
         PatchNumericData(native.Element(ChartNs + "val") ?? native.Element(ChartNs + "yVal")!, target.Values, target.ValueFormula);
     }
@@ -573,7 +577,7 @@ internal sealed class XlsxChartCodec
         for (var index = 0; index < points.Length; index++) points[index].Element(ChartNs + "v")!.Value = format(requested[index]);
     }
 
-    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
+    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
 
     private static string AnchorSemantics(SpreadsheetChartArtifact chart)
     {

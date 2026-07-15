@@ -401,6 +401,7 @@ export function spreadsheetChartFromWire(sheet, source) {
   const importedFills = sourceSeries.map((series, index) => seriesFillFromWire(series.fill, `series ${index + 1} fill`, source));
   const importedLines = sourceSeries.map((series, index) => seriesLineFromWire(series.line, `series ${index + 1} line`, source));
   const importedMarkers = sourceSeries.map((series, index) => seriesMarkerFromWire(series.marker, `series ${index + 1} marker`, source));
+  if (type !== "line" && importedMarkers.some((marker) => marker != null)) fail(source, "series markers require a line chart.", "unsupported_spreadsheet_chart");
   const titleTextStyle = textStyleFromWire(source.titleTextStyle, "titleTextStyle", source);
   const chart = sheet.charts.add(type, {
     name: source.name,

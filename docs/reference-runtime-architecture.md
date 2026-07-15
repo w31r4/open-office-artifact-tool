@@ -245,6 +245,8 @@ The C# `OfficeBridge` remains a separate optional Windows JSON stdin/stdout proc
 
 Hosted Linux run [`29389011985`](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29389011985) passes the dynamic-array milestone with OpenChestnut 121/121, OfficeBridge 5/5, the 150-file no-local-dotnet package, real Chromium/LibreOffice 24.2.7.2/Poppler 24.02.0, generated API/protobuf checks, and two byte-identical 38-file/13,431,998-byte runtime builds.
 
+The additive chart-series-marker increment leaves series fields 1–6 intact and assigns field 7 to independently versioned `SpreadsheetChartMarkerArtifact`. JavaScript exposes `marker: { symbol?, size? }` only on line series. The bounded catalog maps `none`, `dot`, `circle`, `square`, `diamond`, `triangle`, `x`, `star`, `plus`, and `dash` to direct `c:symbol` values and accepts optional integer `c:size` from 2 through 72. `XlsxChartSeriesMarkerCodec` is presence-aware, contributes to semantic source binding, and owns author/import/source-bound add/change/remove for only that direct graph. C#, bundled-WASM, public-wire, malformed-wire, JavaScript fallback, inspect/SVG/verify, runnable-skill, Office 2021, and exact-roundtrip tests cover the projection. Marker shape properties, picture markers, extensions, duplicates, unknown children, and non-line markers are never flattened: imported complex graphs make the entire chart read-only and stay exact-preserved; modeled invalid graphs fail before mutation.
+
 ## Target architecture
 
 ```mermaid

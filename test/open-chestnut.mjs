@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -83,8 +83,11 @@ assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArt
 assert.equal(toBinary(SpreadsheetChartArtifactSchema, create(SpreadsheetChartArtifactSchema, { titleTextStyle: { fontSizePoints: 12 } }))[0], 0x72, "Spreadsheet chart title text styles must use additive chart field 14.");
 assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { fill: { source: { case: "rgb", value: "F472B6" } } }))[0], 0x2a, "Spreadsheet chart series fills must use additive series field 5.");
 assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { line: {} }))[0], 0x32, "Spreadsheet chart series lines must use additive series field 6.");
+assert.equal(toBinary(SpreadsheetChartSeriesArtifactSchema, create(SpreadsheetChartSeriesArtifactSchema, { marker: {} }))[0], 0x3a, "Spreadsheet chart series markers must use additive series field 7.");
 assert.equal(toBinary(SpreadsheetChartLineStyleArtifactSchema, create(SpreadsheetChartLineStyleArtifactSchema, { dashStyle: SpreadsheetChartLineDashStyle.DASHED }))[0], 0x10, "Spreadsheet chart line dash styles must use line field 2.");
 assert.equal(toBinary(SpreadsheetChartLineStyleArtifactSchema, create(SpreadsheetChartLineStyleArtifactSchema, { widthPoints: 0 }))[0], 0x19, "Spreadsheet chart line widths must preserve explicit zero at optional line field 3.");
+assert.equal(toBinary(SpreadsheetChartMarkerArtifactSchema, create(SpreadsheetChartMarkerArtifactSchema, { symbol: SpreadsheetChartMarkerSymbol.DIAMOND }))[0], 0x08, "Spreadsheet chart marker symbols must use marker field 1.");
+assert.deepEqual([...toBinary(SpreadsheetChartMarkerArtifactSchema, create(SpreadsheetChartMarkerArtifactSchema, { size: 2 }))], [0x10, 0x02], "Spreadsheet chart marker sizes must preserve optional integer presence at marker field 2.");
 assert.equal(toBinary(SpreadsheetChartAxisArtifactSchema, create(SpreadsheetChartAxisArtifactSchema, { textStyle: { fontSizePoints: 10 } }))[0], 0x3a, "Spreadsheet chart axis tick-label styles must use additive axis field 7.");
 assert.equal(toBinary(SpreadsheetChartTextStyleArtifactSchema, create(SpreadsheetChartTextStyleArtifactSchema, { fontSizePoints: 10 }))[0], 0x09, "Spreadsheet chart font sizes must preserve optional double presence at text-style field 1.");
 assert.throws(
@@ -108,6 +111,18 @@ assert.throws(
   () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.BAR, series: [{ name: "Wide line", line: { widthPoints: 1_585 } }] }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /0 through 1584/i.test(error.message),
 );
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, series: [{ name: "Unknown marker", marker: { symbol: 99 } }] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /unsupported symbol 99/i.test(error.message),
+);
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, series: [{ name: "Small marker", marker: { size: 1 } }] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /2 through 72/i.test(error.message),
+);
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.BAR, series: [{ name: "Bar marker", marker: { symbol: SpreadsheetChartMarkerSymbol.CIRCLE } }] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /require a line chart/i.test(error.message),
+);
 assert.equal(
   parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:barChart><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Series</c:v></c:tx><c:dPt><c:idx val="0"/><c:spPr><a:solidFill><a:srgbClr val="E11D48"/></a:solidFill></c:spPr></c:dPt><c:cat><c:strLit><c:ptCount val="1"/><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>').series[0].fill,
   undefined,
@@ -115,7 +130,7 @@ assert.equal(
 );
 assert.deepEqual(
   parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:lineChart><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Series</c:v></c:tx><c:spPr><a:ln w="25400"><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill><a:prstDash val="dashDot"/></a:ln></c:spPr><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0],
-  { name: "Series", categoryFormula: undefined, formula: undefined, categories: ["A"], values: [1], fill: undefined, line: { width: 2, fill: "#2563EB", style: "dash-dot" } },
+  { name: "Series", categoryFormula: undefined, formula: undefined, categories: ["A"], values: [1], fill: undefined, line: { width: 2, fill: "#2563EB", style: "dash-dot" }, marker: undefined },
   "JavaScript chart import must keep line fill distinct from the series area fill.",
 );
 assert.deepEqual(
@@ -126,11 +141,21 @@ assert.deepEqual(
     titleTextStyle: { fontSize: 12.5 },
     hasLegend: false,
     categories: ["A"],
-    series: [{ name: "Value", categoryFormula: undefined, formula: undefined, categories: ["A"], values: [1], fill: undefined, line: undefined }],
+    series: [{ name: "Value", categoryFormula: undefined, formula: undefined, categories: ["A"], values: [1], fill: undefined, line: undefined, marker: undefined }],
     xAxis: { axisType: "textAxis", title: { text: "" }, textStyle: { fontSize: 10 } },
     yAxis: { axisType: "valueAxis", title: { text: "" } },
   },
   "JavaScript fallback import must expose bounded title and tick-label font sizes.",
+);
+assert.deepEqual(
+  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Marker</c:v></c:tx><c:marker><c:symbol val="diamond"/><c:size val="8"/></c:marker><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0].marker,
+  { symbol: "diamond", size: 8 },
+  "JavaScript fallback import must expose the bounded direct line-series marker.",
+);
+assert.equal(
+  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Marker</c:v></c:tx><c:marker><c:symbol val="circle"/><c:spPr><a:solidFill/></c:spPr></c:marker><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0].marker,
+  undefined,
+  "JavaScript fallback import must not flatten marker fill/stroke graphs into the bounded marker model.",
 );
 assert.equal(toBinary(SpreadsheetChartAxisArtifactSchema, create(SpreadsheetChartAxisArtifactSchema, { minimum: 0 }))[0], 0x21, "Spreadsheet value-axis minimum must preserve explicit zero at optional field 4.");
 assert.equal(toBinary(SpreadsheetChartSourceBindingSchema, create(SpreadsheetChartSourceBindingSchema, { semanticSha256: "x" }))[0], 0x3a, "Spreadsheet chart semantic hashes must use source-binding field 7.");
@@ -345,7 +370,7 @@ const summaryChart = summary.charts.add("line", {
   title: "Quarter trend",
   hasLegend: true,
   categories: ["Q1", "Q2"],
-  series: [{ name: "Revenue", values: [42.5, 85], fill: "#F472B6", line: { fill: "#0EA5E9", style: "dashed", width: 2 } }],
+  series: [{ name: "Revenue", values: [42.5, 85], fill: "#F472B6", line: { fill: "#0EA5E9", style: "dashed", width: 2 }, marker: { symbol: "diamond", size: 8 } }],
   xAxis: { axisType: "textAxis", title: { text: "Quarter" }, numberFormatCode: "@", tickLabelInterval: 2 },
   yAxis: { axisType: "valueAxis", title: { text: "Revenue" }, numberFormatCode: "$#,##0.0", min: 0, max: 100, majorUnit: 25 },
   position: { left: 420, top: 40, width: 360, height: 220 },
@@ -845,6 +870,7 @@ assert.deepEqual(importedSummaryChart.series.items[0], {
   formula: "'Summary'!$B$1:$B$2",
   fill: "#F472B6",
   line: { fill: "#0EA5E9", style: "dashed", width: 2 },
+  marker: { symbol: "diamond", size: 8 },
 });
 assert.deepEqual(importedSummaryChart.position, { left: 420, top: 40, width: 360, height: 220 });
 assert.deepEqual(importedSummaryChart.xAxis, { axisType: "textAxis", title: { text: "Quarter" }, numberFormatCode: "@", tickLabelInterval: 2 });
@@ -893,6 +919,7 @@ assert.equal(javascriptImported.worksheets.getItem("Summary").charts.items[0].ti
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].categories, ["Q1", "Q2"]);
 assert.equal(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].fill, "#F472B6");
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].line, { width: 2, fill: "#0EA5E9", style: "dashed" });
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].marker, { symbol: "diamond", size: 8 });
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].xAxis, { axisType: "textAxis", title: { text: "Quarter" }, numberFormatCode: "@", tickLabelInterval: 2 });
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].yAxis, { axisType: "valueAxis", title: { text: "Revenue" }, numberFormatCode: "$#,##0.0", min: 0, max: 100, majorUnit: 25 });
 
@@ -948,6 +975,7 @@ importedSummaryChart.series.items[0].name = "Actual revenue";
 importedSummaryChart.series.items[0].values[1] = 90;
 importedSummaryChart.series.items[0].fill = "#2563EB";
 importedSummaryChart.series.items[0].line = { fill: "#7C3AED", style: "dash-dot", width: 2.5 };
+importedSummaryChart.series.items[0].marker = { symbol: "triangle", size: 10 };
 importedSummaryChart.xAxis.title.text = "Fiscal quarter";
 importedSummaryChart.xAxis.numberFormatCode = "mmm";
 importedSummaryChart.xAxis.tickLabelInterval = 1;
@@ -993,6 +1021,7 @@ assert.deepEqual(secondChart.series.items[0].values, [42.5, 90]);
 assert.equal(secondChart.series.items[0].formula, "'Summary'!$B$1:$B$2");
 assert.equal(secondChart.series.items[0].fill, "#2563EB");
 assert.deepEqual(secondChart.series.items[0].line, { width: 2.5, fill: "#7C3AED", style: "dash-dot" });
+assert.deepEqual(secondChart.series.items[0].marker, { symbol: "triangle", size: 10 });
 assert.deepEqual(secondChart.xAxis, { axisType: "textAxis", title: { text: "Fiscal quarter" }, numberFormatCode: "mmm", tickLabelInterval: 1 });
 assert.deepEqual(secondChart.yAxis, { axisType: "valueAxis", title: { text: "Revenue USD" }, numberFormatCode: "$0", min: -10, max: 120, majorUnit: 10 });
 const removedSeriesFill = await importXlsxWithOpenChestnut(secondExport);
@@ -1011,6 +1040,14 @@ assert.equal(withoutSeriesLineRoundTrip.worksheets.getItem("Summary").charts.ite
 withoutSeriesLineRoundTrip.worksheets.getItem("Summary").charts.items[0].series.items[0].stroke = { color: "#22C55E", style: "dotted", weight: 1.25 };
 const readdedSeriesLine = await exportXlsxWithOpenChestnut(withoutSeriesLineRoundTrip, { recalculate: false });
 assert.deepEqual((await importXlsxWithOpenChestnut(readdedSeriesLine)).worksheets.getItem("Summary").charts.items[0].series.items[0].line, { width: 1.25, fill: "#22C55E", style: "dotted" });
+const removedSeriesMarker = await importXlsxWithOpenChestnut(secondExport);
+delete removedSeriesMarker.worksheets.getItem("Summary").charts.items[0].series.items[0].marker;
+const withoutSeriesMarker = await exportXlsxWithOpenChestnut(removedSeriesMarker, { recalculate: false });
+const withoutSeriesMarkerRoundTrip = await importXlsxWithOpenChestnut(withoutSeriesMarker);
+assert.equal(withoutSeriesMarkerRoundTrip.worksheets.getItem("Summary").charts.items[0].series.items[0].marker, undefined);
+withoutSeriesMarkerRoundTrip.worksheets.getItem("Summary").charts.items[0].series.items[0].marker = { symbol: "plus", size: 12 };
+const readdedSeriesMarker = await exportXlsxWithOpenChestnut(withoutSeriesMarkerRoundTrip, { recalculate: false });
+assert.deepEqual((await importXlsxWithOpenChestnut(readdedSeriesMarker)).worksheets.getItem("Summary").charts.items[0].series.items[0].marker, { symbol: "plus", size: 12 });
 const removedDefinedName = await importXlsxWithOpenChestnut(exported);
 removedDefinedName.definedNames.delete("SummaryData");
 await assert.rejects(
@@ -1115,6 +1152,26 @@ await assert.rejects(
   exportXlsxWithOpenChestnut(invalidLineWorkbook),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /aliases must describe the same/i.test(error.message),
 );
+const invalidMarkerWorkbook = Workbook.create();
+const invalidMarkerChart = invalidMarkerWorkbook.worksheets.add("Invalid marker").charts.add("line", { name: "Invalid marker", categories: ["A"], series: [{ name: "Value", values: [1], marker: { symbol: "picture", size: 8 } }] });
+assert.ok(invalidMarkerWorkbook.verify().issues.some((issue) => issue.type === "invalidChartSeriesMarker"));
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidMarkerWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /none, dot, circle/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidMarkerWorkbook), /none, dot, circle/i);
+invalidMarkerChart.series.items[0].marker = { symbol: "circle", size: 1 };
+await assert.rejects(exportXlsxWithOpenChestnut(invalidMarkerWorkbook), /2 through 72/i);
+invalidMarkerChart.series.items[0].marker = { symbol: "circle", size: 8, fill: "#E11D48" };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidMarkerWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /supports only symbol and size/i.test(error.message),
+);
+const barMarkerWorkbook = Workbook.create();
+barMarkerWorkbook.worksheets.add("Bar marker").charts.add("bar", { name: "Bar marker", categories: ["A"], series: [{ name: "Value", values: [1], marker: { symbol: "circle", size: 8 } }] });
+assert.ok(barMarkerWorkbook.verify().issues.some((issue) => issue.type === "invalidChartSeriesMarker"));
+await assert.rejects(exportXlsxWithOpenChestnut(barMarkerWorkbook), /markers require a line chart/i);
+await assert.rejects(SpreadsheetFile.exportXlsx(barMarkerWorkbook), /markers require a line chart/i);
 const reversedAxisWorkbook = Workbook.create();
 reversedAxisWorkbook.worksheets.add("Invalid axis").charts.add("line", { name: "Reversed axis", categories: ["A"], series: [{ name: "Value", values: [1] }], yAxis: { min: 10, max: 0 } });
 await assert.rejects(
@@ -1133,11 +1190,12 @@ const styledAxisChart = styledAxisWorkbook.worksheets.add("Styled axis").charts.
   title: "Styled sizes",
   titleTextStyle: { fontSize: 12.5 },
   categories: ["A", "B"],
-  series: [{ name: "Value", values: [1, 2], line: { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 } }],
+  series: [{ name: "Value", values: [1, 2], line: { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 }, marker: { symbol: "star", size: 10 } }],
   xAxis: { textStyle: { fontSize: 10 } },
   yAxis: { textStyle: { fontSize: 9 } },
 });
 assert.match(styledAxisChart.toSvg(), /stroke="#2563EB" stroke-width="2.25" stroke-dasharray="8 4 2 4 2 4"[\s\S]*font-size="10"/);
+assert.match(styledAxisChart.toSvg(), /<polygon points="[^"]+" fill="#2563EB" stroke="#2563EB" stroke-width="1.5"/);
 const styledAxisNative = await exportXlsxWithOpenChestnut(styledAxisWorkbook);
 const styledAxisNativeZip = await JSZip.loadAsync(styledAxisNative.bytes);
 const styledAxisNativeChartPath = Object.keys(styledAxisNativeZip.files).find((name) => /\/charts\/chart\d+\.xml$/.test(name));
@@ -1147,17 +1205,20 @@ assert.match(styledAxisNativeXml, /<a:rPr sz="1250"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:catAx>[\s\S]*?<a:defRPr sz="1000"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:valAx>[\s\S]*?<a:defRPr sz="900"\s*\/>/);
 assert.match(styledAxisNativeXml, /<a:ln w="28575"><a:solidFill><a:srgbClr val="2563EB"\s*\/><\/a:solidFill><a:prstDash val="lgDashDotDot"\s*\/><\/a:ln>/);
+assert.match(styledAxisNativeXml, /<c:marker><c:symbol val="star"\s*\/><c:size val="10"\s*\/><\/c:marker>/);
 const styledAxisImported = await importXlsxWithOpenChestnut(styledAxisNative);
 const importedStyledAxisChart = styledAxisImported.worksheets.getItem("Styled axis").charts.items[0];
 assert.deepEqual(importedStyledAxisChart.titleTextStyle, { fontSize: 12.5 });
 assert.deepEqual(importedStyledAxisChart.xAxis.textStyle, { fontSize: 10 });
 assert.deepEqual(importedStyledAxisChart.yAxis.textStyle, { fontSize: 9 });
 assert.deepEqual(importedStyledAxisChart.series.items[0].line, { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 });
+assert.deepEqual(importedStyledAxisChart.series.items[0].marker, { symbol: "star", size: 10 });
 importedStyledAxisChart.titleTextStyle.fontSize = 14;
 importedStyledAxisChart.xAxis.textStyle.fontSize = 11;
 delete importedStyledAxisChart.yAxis.textStyle;
 delete importedStyledAxisChart.series.items[0].line;
 importedStyledAxisChart.series.items[0].stroke = { color: "#7C3AED", style: "dotted", weight: 1.5 };
+importedStyledAxisChart.series.items[0].marker = { symbol: "plus", size: 12 };
 const styledAxisEdited = await exportXlsxWithOpenChestnut(styledAxisImported, { recalculate: false });
 const styledAxisEditedRoundTrip = await importXlsxWithOpenChestnut(styledAxisEdited);
 const editedStyledAxisChart = styledAxisEditedRoundTrip.worksheets.getItem("Styled axis").charts.items[0];
@@ -1165,10 +1226,12 @@ assert.deepEqual(editedStyledAxisChart.titleTextStyle, { fontSize: 14 });
 assert.deepEqual(editedStyledAxisChart.xAxis.textStyle, { fontSize: 11 });
 assert.equal(editedStyledAxisChart.yAxis.textStyle, undefined);
 assert.deepEqual(editedStyledAxisChart.series.items[0].line, { fill: "#7C3AED", style: "dotted", width: 1.5 });
+assert.deepEqual(editedStyledAxisChart.series.items[0].marker, { symbol: "plus", size: 12 });
 const styledAxisFallback = await SpreadsheetFile.exportXlsx(styledAxisWorkbook);
 const styledAxisFallbackRoundTrip = await importXlsxWithOpenChestnut(styledAxisFallback);
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].titleTextStyle, { fontSize: 12.5 });
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].line, { width: 2.25, fill: "#2563EB", style: "dash-dot-dot" });
+assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].marker, { symbol: "star", size: 10 });
 
 const invalidTextStyleWorkbook = Workbook.create();
 invalidTextStyleWorkbook.worksheets.add("Invalid text style").charts.add("line", { name: "Invalid style", title: "Invalid", titleTextStyle: { fontSize: 0 }, categories: ["A"], series: [{ name: "Value", values: [1] }] });
