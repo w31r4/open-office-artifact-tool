@@ -190,7 +190,11 @@ internal sealed class XlsxWorkbookViewCodec
     {
         var selected = selectedWorksheetIds.ToHashSet(StringComparer.Ordinal);
         foreach (var entry in entries)
-            SetTabSelected(entry.Element, selected.Contains(entry.WorksheetId));
+        {
+            var shouldSelect = selected.Contains(entry.WorksheetId);
+            if (shouldSelect && entry.TabSelected != true) entry.Element.TabSelected = true;
+            else if (!shouldSelect && entry.TabSelected == true) SetTabSelected(entry.Element, false);
+        }
     }
 
     private static void SetTabSelected(SheetView view, bool selected)

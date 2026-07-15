@@ -418,6 +418,7 @@ public sealed class XlsxCodecTests
             views.Elements<WorkbookView>().ElementAt(1).YWindow = 222;
         });
         profiled = MutateWorksheetViews(profiled, 1, views => views.Elements<SheetView>().ElementAt(1).ZoomScale = 85U);
+        profiled = MutateWorksheetViews(profiled, 0, views => views.Elements<SheetView>().ElementAt(1).TabSelected = false);
         var imported = Import(profiled);
         Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         Assert.Equal("worksheet/2", imported.Artifact.Workbook.View.ActiveWorksheetId);
@@ -429,9 +430,9 @@ public sealed class XlsxCodecTests
         Assert.Equal(1U, importedAdditional.Source.Ordinal);
         Assert.All(importedAdditional.Source.WorksheetViews, binding => Assert.Equal(1U, binding.WorkbookViewId));
 
-        importedAdditional.ActiveWorksheetId = "worksheet/1";
+        importedAdditional.ActiveWorksheetId = "worksheet/2";
         importedAdditional.SelectedWorksheetIds.Clear();
-        importedAdditional.SelectedWorksheetIds.Add(["worksheet/1", "worksheet/2"]);
+        importedAdditional.SelectedWorksheetIds.Add("worksheet/2");
         var edited = Export(imported.Artifact);
         Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertOffice2021Valid(edited.File.ToByteArray());
@@ -443,11 +444,12 @@ public sealed class XlsxCodecTests
             },
             view =>
             {
-                Assert.Equal(0U, view.ActiveTab?.Value);
+                Assert.Equal(1U, view.ActiveTab?.Value);
                 Assert.Equal(222, view.YWindow?.Value);
             });
         var editedSheetViews = ReadWorksheetViewMatrix(edited.File.ToByteArray());
-        Assert.Equal([true, true], editedSheetViews[0].Select(view => view.TabSelected?.Value ?? false));
+        Assert.Equal([true, false], editedSheetViews[0].Select(view => view.TabSelected?.Value ?? false));
+        Assert.NotNull(editedSheetViews[0][1].TabSelected);
         Assert.Equal([true, true], editedSheetViews[1].Select(view => view.TabSelected?.Value ?? false));
         Assert.Equal([false, false], editedSheetViews[2].Select(view => view.TabSelected?.Value ?? false));
         Assert.Equal(85U, editedSheetViews[1][1].ZoomScale?.Value);

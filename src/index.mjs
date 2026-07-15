@@ -4265,6 +4265,8 @@ export class Workbook {
 
   resolve(id) {
     if (id === this.id) return this;
+    const window = this.windows.items.find((item) => item.id === id);
+    if (window) return window;
     const connection = this.connections.find((item) => id === item.connectionId || id === `connection/${item.connectionId}` || id === item.name);
     if (connection) return connection;
     const thread = this.comments.getItem(id);
