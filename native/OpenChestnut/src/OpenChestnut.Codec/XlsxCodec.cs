@@ -41,6 +41,7 @@ internal static class XlsxCodec
             if (envelope.Workbook.DateSystem == WorkbookDateSystem._1904)
                 workbookPart.Workbook.WorkbookProperties = new WorkbookProperties { Date1904 = true };
             var sheets = workbookPart.Workbook.AppendChild(new Sheets());
+            XlsxWorksheetMetadataCodec.ConfigureSourceFreeView(workbookPart.Workbook, envelope.Workbook.Worksheets);
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: false);
             var styles = new XlsxCellStyleCodec(workbookPart);
@@ -61,12 +62,7 @@ internal static class XlsxCodec
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
                 worksheetPart.Worksheet.Save();
-                sheets.Append(new Sheet
-                {
-                    Id = workbookPart.GetIdOfPart(worksheetPart),
-                    SheetId = checked((uint)index + 1),
-                    Name = source.Name,
-                });
+                sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
             }
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: false, sheetNames);
             theme.Save();
@@ -107,6 +103,7 @@ internal static class XlsxCodec
         if ((uint)sheets.Length > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"XLSX workbook has {sheets.Length} sheets and exceeds max_sheets ({limits.MaxSheets}).");
         var definedNames = new XlsxDefinedNameCodec(workbookPart, sheets.Select((sheet, index) => sheet.Name?.Value ?? $"Sheet{index + 1}").ToArray());
+        var worksheetMetadata = new XlsxWorksheetMetadataCodec(workbookPart);
         workbook.DefinedNames.Add(definedNames.Read());
         var calculation = new XlsxCalculationCodec(workbookPart);
         if (calculation.Read() is { } importedCalculation) workbook.Calculation = importedCalculation;
@@ -118,6 +115,7 @@ internal static class XlsxCodec
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
             var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, ref cellCount, limits);
+            worksheetMetadata.ReadInto(target, index);
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
             target.Tables.Add(tables.Read());
             workbook.Worksheets.Add(target);
@@ -160,6 +158,8 @@ internal static class XlsxCodec
             var targetSheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sourceSheetNames);
             var calculation = new XlsxCalculationCodec(workbookPart);
+            var worksheetMetadata = new XlsxWorksheetMetadataCodec(workbookPart);
+            worksheetMetadata.Apply(envelope.Workbook.Worksheets);
 
             if (workbookRoot.WorkbookProperties is null)
                 workbookRoot.WorkbookProperties = new WorkbookProperties();
@@ -177,7 +177,6 @@ internal static class XlsxCodec
                 var source = envelope.Workbook.Worksheets[index];
                 if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
-                sheet.Name = source.Name;
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
@@ -671,6 +670,7 @@ internal static class XlsxCodec
         if (workbook.Worksheets.Count == 0) throw new CodecException("missing_worksheets", "Workbook artifact must contain at least one worksheet.");
         if ((uint)workbook.Worksheets.Count > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"Workbook has {workbook.Worksheets.Count} sheets and exceeds max_sheets ({limits.MaxSheets}).");
+        XlsxWorksheetMetadataCodec.ValidateArtifact(workbook.Worksheets);
         XlsxDefinedNameCodec.ValidateArtifact(workbook.DefinedNames, workbook.Worksheets.Select(sheet => sheet.Name).ToArray());
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

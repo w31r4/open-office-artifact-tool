@@ -907,7 +907,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "Workbook.create", summary: "Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors." },
   { artifactKind: "workbook", kind: "api", name: "workbook.setDateSystem", summary: "Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export." },
   { artifactKind: "workbook", kind: "api", name: "workbook.connections", summary: "Inspect or safely edit the bounded non-secret root metadata of recognized source-bound database connections imported through OpenChestnut." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable worksheet with a stable name and ID." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.worksheets.add", summary: "Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
   { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy-array formula topology, worksheet row/column sort state, tables, QueryTables, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec." },
@@ -2149,7 +2150,11 @@ const WORKBOOK_HELP_SCHEMAS = {
   "workbook.connections": helpSchema({}, "connections", "object[]", "Recognized source-bound database/type-5 connection roots. ID, type, version, count, and order are immutable; provider strings, commands, credentials, source paths, children, extensions, and unsupported types remain hidden and preserved."),
   "workbook.worksheets.add": helpSchema({
     name: { type: "string", description: "Unique worksheet name; defaults to SheetN." },
-  }, "worksheet", "Worksheet", "Appended editable worksheet."),
+    visibility: { type: "string", description: "visible (default), hidden, or veryHidden." },
+  }, "worksheet", "Worksheet", "Appended editable worksheet with bounded native visibility."),
+  "worksheet.visibility": helpSchema({
+    visibility: { type: "string", required: true, description: "visible, hidden, or veryHidden." },
+  }, "visibility", "string", "Normalized worksheet visibility; workbook verification/export rejects an all-hidden workbook."),
   "worksheet.mergeCells": helpSchema({
     address: { type: "string|Range", required: true, description: "A1 range to merge." },
     across: { type: "boolean", description: "Merge each row as a separate region instead of one rectangular region." },
@@ -2758,8 +2763,12 @@ class WorksheetCollection {
     this.items = [];
   }
 
-  add(name = `Sheet${this.items.length + 1}`) {
-    const worksheet = new Worksheet(this.workbook, name);
+  add(name = `Sheet${this.items.length + 1}`, options = {}) {
+    if (name && typeof name === "object") {
+      options = name;
+      name = options.name || `Sheet${this.items.length + 1}`;
+    }
+    const worksheet = new Worksheet(this.workbook, name, options);
     this.items.push(worksheet);
     return worksheet;
   }
@@ -2778,8 +2787,9 @@ class WorksheetCollection {
   }
 
   getActiveWorksheet() {
-    if (!this.items[0]) throw new Error("Workbook has no worksheets. Add one first.");
-    return this.items[0];
+    const worksheet = this.items.find((sheet) => sheet.visibility === "visible");
+    if (!worksheet) throw new Error("Workbook has no visible worksheets. Add or show a worksheet first.");
+    return worksheet;
   }
 
   [Symbol.iterator]() {
@@ -3778,8 +3788,8 @@ function delimitedInputBytes(input) {
 function workbookDelimitedRows(workbook, options = {}) {
   if (!(workbook instanceof Workbook)) throw new Error("Delimited export requires a Workbook.");
   if (options.recalculate !== false) workbook.recalculate();
-  const sheet = options.sheetName ? workbook.worksheets.getItem(options.sheetName) : workbook.worksheets.getItemAt(0);
-  if (!sheet) throw new Error(`Delimited export could not find worksheet ${options.sheetName || "at index 0"}.`);
+  const sheet = options.sheetName ? workbook.worksheets.getItem(options.sheetName) : workbook.worksheets.getActiveWorksheet();
+  if (!sheet) throw new Error(`Delimited export could not find worksheet ${options.sheetName || "active worksheet"}.`);
   const range = sheet.getRange(options.range || rangeToAddress(sheet.usedBounds()));
   const values = range.values;
   if (options.formulas !== true) return { sheet, range, rows: values };
@@ -3800,6 +3810,15 @@ function normalizeExcelDateSystem(value, fallback = "1900") {
   if (value === true || String(value).trim() === "1904") return "1904";
   if (value === false || String(value).trim() === "1900") return "1900";
   throw new Error(`Unsupported Excel date system ${value}; expected 1900 or 1904.`);
+}
+
+function normalizeWorksheetVisibility(value, fallback = "visible") {
+  if (value == null || value === "") return fallback;
+  const normalized = String(value).replace(/[\s_-]/g, "").toLowerCase();
+  if (normalized === "visible") return "visible";
+  if (normalized === "hidden") return "hidden";
+  if (normalized === "veryhidden") return "veryHidden";
+  throw new Error(`Unsupported worksheet visibility ${value}; expected visible, hidden, or veryHidden.`);
 }
 
 const WORKBOOK_CALCULATION_MODES = new Map([
@@ -3976,7 +3995,7 @@ export class Workbook {
     if (kinds.has("theme")) records.push({ kind: "workbookTheme", id: `${this.id}/theme`, name: this.theme.name, colors: this.theme.colors });
     if (kinds.has("connection") || kinds.has("externalConnection")) records.push(...this.connections.map((connection) => ({ kind: "connection", id: `connection/${connection.connectionId}`, ...connection })));
     for (const sheet of this.worksheets) {
-      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), sortState: sheet.sortState, customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
+      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, visibility: sheet.visibility, rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), sortState: sheet.sortState, customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
@@ -4005,6 +4024,7 @@ export class Workbook {
     try { if (this.calculation !== undefined) normalizeWorkbookCalculation(this.calculation); }
     catch (error) { issues.push(verificationIssue("workbook", "invalidCalculation", error.message, { calculation: this.calculation })); }
     if (this.worksheets.items.length === 0) issues.push(verificationIssue("workbook", "noSheets", "Workbook has no worksheets."));
+    if (this.worksheets.items.length > 0 && !this.worksheets.items.some((sheet) => sheet.visibility === "visible")) issues.push(verificationIssue("workbook", "noVisibleSheets", "Workbook must contain at least one visible worksheet."));
     const connectionIds = new Set();
     for (const connection of this.connections) {
       if (!Number.isInteger(connection.connectionId) || connection.connectionId <= 0 || connectionIds.has(connection.connectionId) ||
@@ -4021,6 +4041,8 @@ export class Workbook {
     }
     for (const sheet of this.worksheets) {
       const entries = sheet.store.entries();
+      try { normalizeWorksheetVisibility(sheet.visibility); }
+      catch (error) { issues.push(verificationIssue("workbook", "invalidWorksheetVisibility", error.message, { sheet: sheet.name, visibility: sheet.visibility })); }
       const frozenRows = Number(sheet.freezePanes?.rows ?? 0);
       const frozenColumns = Number(sheet.freezePanes?.columns ?? 0);
       if (!Number.isInteger(frozenRows) || frozenRows < 0 || frozenRows > XLSX_MAX_FREEZE_ROWS) issues.push(verificationIssue("workbook", "invalidFrozenRows", `Worksheet ${sheet.name} has invalid frozen row count ${sheet.freezePanes?.rows}.`, { sheet: sheet.name, rows: sheet.freezePanes?.rows }));
@@ -4212,7 +4234,7 @@ export class Workbook {
     return {
       kind: "workbookLayout",
       id: this.id,
-      activeSheet: this.worksheets.items[0]?.name,
+      activeSheet: this.worksheets.items.find((sheet) => sheet.visibility === "visible")?.name,
       sheetCount: this.worksheets.items.length,
       sheets: sheetLayouts,
       slice: (targets.length || search) ? { targets, search: search || undefined, returnedSheets: sheetLayouts.length } : undefined,
@@ -4428,10 +4450,11 @@ function detachNativeFormulaTopology(sheet, address) {
 }
 
 export class Worksheet {
-  constructor(workbook, name) {
+  constructor(workbook, name, options = {}) {
     this.workbook = workbook;
     this.id = aid("ws");
     this.name = name;
+    this._visibility = normalizeWorksheetVisibility(options.visibility);
     this.store = new CellStore();
     this.columnDimensions = new Map();
     this.rowDimensions = new Map();
@@ -4450,6 +4473,9 @@ export class Worksheet {
     this.showGridLines = true;
     this.sortState = undefined;
   }
+
+  get visibility() { return this._visibility; }
+  set visibility(value) { this._visibility = normalizeWorksheetVisibility(value); }
 
   getRange(address) {
     return new Range(this, parseRangeAddress(address));
@@ -4669,7 +4695,7 @@ export class Worksheet {
       origin: { left: 40, top: 40 },
       cell: { width: cellW, height: cellH },
       dimensions: this.dimensionRecords(new Set(["dimension"])),
-      view: { showGridLines: this.showGridLines, freezePanes: this.freezePanes.toJSON() },
+      view: { visibility: this.visibility, showGridLines: this.showGridLines, freezePanes: this.freezePanes.toJSON() },
       width,
       height,
       cells,
@@ -6431,6 +6457,7 @@ function workbookMetadata(workbook) {
     definedNames: workbook.definedNames.toJSON(),
     sheets: workbook.worksheets.items.map((sheet) => ({
       name: sheet.name,
+      visibility: sheet.visibility,
       dataValidations: sheet.dataValidations.toJSON(),
       conditionalFormattings: sheet.conditionalFormattings.toJSON(),
       tables: sheet.tables.toJSON(),
@@ -6459,6 +6486,7 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
   for (const sheetData of metadata.sheets || []) {
     const sheet = workbook.worksheets.getItem(sheetData.name);
     if (!sheet) continue;
+    if (sheetData.visibility !== undefined) sheet.visibility = sheetData.visibility;
     sheet.dataValidations.items = (sheetData.dataValidations || []).map((item) => ({ ...item }));
     sheet.conditionalFormattings.items = (sheetData.conditionalFormattings || []).map((item) => ({ ...item }));
     sheet.tables.items = [];
@@ -6633,11 +6661,11 @@ export class SpreadsheetFile {
       const attrs = ooxmlXmlAttributes(match[0]);
       const relationshipId = Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
       const relationship = workbookRelationships.get(relationshipId);
-      return { name: attrs.name || `Sheet${position + 1}`, index: position + 1, sheetId: Number(attrs.sheetId || position + 1), relationshipId, partPath: relationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target) : `xl/worksheets/sheet${attrs.sheetId || position + 1}.xml` };
+      return { name: attrs.name || `Sheet${position + 1}`, visibility: normalizeWorksheetVisibility(attrs.state), index: position + 1, sheetId: Number(attrs.sheetId || position + 1), relationshipId, partPath: relationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target) : `xl/worksheets/sheet${attrs.sheetId || position + 1}.xml` };
     });
     const nativePivotCaches = await importNativePivotCaches(zip, workbookText, workbookRelationships, sheetNames);
-    for (const { name, partPath } of sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1, partPath: "xl/worksheets/sheet1.xml" }]) {
-      const sheet = workbook.worksheets.add(name);
+    for (const { name, visibility, partPath } of sheetNames.length ? sheetNames : [{ name: "Sheet1", visibility: "visible", index: 1, partPath: "xl/worksheets/sheet1.xml" }]) {
+      const sheet = workbook.worksheets.add(name, { visibility });
       const xml = await zip.file(partPath)?.async("text");
       if (xml) {
         parseWorksheetXml(sheet, xml, { sharedStrings, styles });
@@ -6646,6 +6674,7 @@ export class SpreadsheetFile {
         await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches, options);
       }
     }
+    if (!workbook.worksheets.items.some((sheet) => sheet.visibility === "visible")) throw new Error("XLSX workbook must contain at least one visible worksheet.");
     hydrateImportedWorksheetCharts(workbook);
     parseWorkbookDefinedNames(workbook, workbookText);
     parseWorkbookCalculation(workbook, workbookText);
@@ -6847,7 +6876,15 @@ function parseRelsXml(xml) {
 function workbookXml(workbook, pivotParts = []) {
   const dateSystem = normalizeExcelDateSystem(workbook.dateSystem);
   const workbookProperties = dateSystem === "1904" ? '<workbookPr date1904="1"/>' : "";
-  const sheets = workbook.worksheets.items.map((sheet, i) => `<sheet name="${attrEscape(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
+  const visibilities = workbook.worksheets.items.map((sheet) => normalizeWorksheetVisibility(sheet.visibility));
+  const activeTab = visibilities.indexOf("visible");
+  if (activeTab < 0) throw new Error("XLSX workbook must contain at least one visible worksheet.");
+  const bookViews = `<bookViews><workbookView activeTab="${activeTab}"/></bookViews>`;
+  const sheets = workbook.worksheets.items.map((sheet, i) => {
+    const visibility = visibilities[i];
+    const state = visibility === "visible" ? "" : ` state="${visibility}"`;
+    return `<sheet name="${attrEscape(sheet.name)}" sheetId="${i + 1}"${state} r:id="rId${i + 1}"/>`;
+  }).join("");
   const definedNames = workbook.definedNames.items.length
     ? `<definedNames>${workbook.definedNames.items.map((item) => {
       const localSheetId = item.scope ? workbook.worksheets.items.findIndex((sheet) => sheet.name === item.scope) : -1;
@@ -6858,7 +6895,7 @@ function workbookXml(workbook, pivotParts = []) {
     : "";
   const calculation = workbookCalculationXml(workbook.calculation);
   const pivotCaches = pivotParts.length ? `<pivotCaches>${pivotParts.map((part) => `<pivotCache cacheId="${part.cacheId}" r:id="${part.cacheRelId}"/>`).join("")}</pivotCaches>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${workbookProperties}<sheets>${sheets}</sheets>${definedNames}${calculation}${pivotCaches}</workbook>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${workbookProperties}${bookViews}<sheets>${sheets}</sheets>${definedNames}${calculation}${pivotCaches}</workbook>`;
 }
 
 function workbookCalculationXml(value) {

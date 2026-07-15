@@ -43,6 +43,13 @@ enum SpreadsheetCalculationMode {
   SPREADSHEET_CALCULATION_MODE_MANUAL = 3;
 }
 
+enum SpreadsheetWorksheetVisibility {
+  SPREADSHEET_WORKSHEET_VISIBILITY_UNSPECIFIED = 0;
+  SPREADSHEET_WORKSHEET_VISIBILITY_VISIBLE = 1;
+  SPREADSHEET_WORKSHEET_VISIBILITY_HIDDEN = 2;
+  SPREADSHEET_WORKSHEET_VISIBILITY_VERY_HIDDEN = 3;
+}
+
 message CodecLimits {
   uint64 max_input_bytes = 1;
   uint64 max_uncompressed_bytes = 2;
@@ -272,6 +279,21 @@ message WorksheetArtifact {
   // Worksheet-level sort state. Unlike a table AutoFilter sort, this may use
   // column_sort to sort columns from left to right.
   SpreadsheetTableSortStateArtifact sort_state = 10;
+  // Native workbook.xml sheet visibility. OpenChestnut treats an omitted
+  // source state as visible and preserves hidden versus veryHidden exactly.
+  SpreadsheetWorksheetVisibility visibility = 11;
+  // Hash-bound workbook.xml sheet identity. Ordinal, relationship ID, and
+  // sheet ID are package locators and remain immutable after import.
+  SpreadsheetWorksheetSourceBinding source = 12;
+}
+
+message SpreadsheetWorksheetSourceBinding {
+  uint32 ordinal = 1;
+  string relationship_id = 2;
+  uint32 sheet_id = 3;
+  string sheet_element_sha256 = 4;
+  string semantic_sha256 = 5;
+  bool editable = 6;
 }
 
 // A bounded projection of one worksheet-owned TableDefinitionPart. Cell data

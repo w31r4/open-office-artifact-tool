@@ -220,7 +220,7 @@ function applyRangeOperation(sheet, operation = {}) {
 export function createWorkbookFromFixture(fixture = {}) {
   const workbook = Workbook.create({ dateSystem: fixture.dateSystem, date1904: fixture.date1904, theme: fixture.theme, calculation: fixture.calculation });
   for (const sheetFixture of fixture.sheets || []) {
-    const sheet = workbook.worksheets.add(sheetFixture.name);
+    const sheet = workbook.worksheets.add(sheetFixture.name, { visibility: sheetFixture.visibility });
     if (sheetFixture.showGridLines != null) sheet.showGridLines = Boolean(sheetFixture.showGridLines);
     if (sheetFixture.freezePanes?.rows != null) sheet.freezePanes.freezeRows(sheetFixture.freezePanes.rows);
     if (sheetFixture.freezePanes?.columns != null) sheet.freezePanes.freezeColumns(sheetFixture.freezePanes.columns);

@@ -44,7 +44,8 @@ The Pivot calculated-field whitelist currently contains 45 scalar functions. Its
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 
 const workbook = Workbook.create({ theme: { name: "Report Theme", colors: { accent1: "#0F766E", accent2: "#7C3AED" } } });
-const sheet = workbook.worksheets.add("Summary");
+const sheet = workbook.worksheets.add("Summary", { visibility: "visible" });
+const staging = workbook.worksheets.add("Staging", { visibility: "veryHidden" });
 sheet.getRange("A1:C3").values = [
   ["Month", "Revenue", "Cost"],
   ["Jan", 100, 60],
@@ -185,6 +186,7 @@ node skills/spreadsheets/scripts/verify-workbook.mjs \
 - Run `verifyArtifact(workbook)` and resolve every error-level issue.
 - Trace important result cells when the calculation chain is non-trivial.
 - Export and re-import the XLSX before final verification.
+- Treat worksheet visibility as native document state: use only `visible`, `hidden`, or `veryHidden`, keep at least one visible sheet, and verify the selected delivery sheet remains active. OpenChestnut preserves imported workbook views and fails closed if an edit hides the current active tab; it does not silently select another sheet.
 - For theme/pattern styling, inspect `xl/theme/theme1.xml` and `xl/styles.xml`, then confirm the imported style retains `theme`/`tint`/`indexed` and `patternType` instead of only a flattened RGB approximation.
 - Save `SpreadsheetFile.inspectXlsx()` evidence so native package shape, content types, `.rels` targets, source XML `r:id`/`r:embed`/`r:link` references, and decompression budgets are part of QA; require zero relationship-reference issues.
 - For threaded comments, require zero package semantic issues, inspect both `xl/persons` and worksheet threaded-comment relationship targets, remove clean-room metadata once in tests, and verify native IDs, people, dates, parent links, resolution state, and distinct same-cell roots survive import and a second export.

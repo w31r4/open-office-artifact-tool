@@ -171,6 +171,118 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesWorksheetVisibility()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Visibility = SpreadsheetWorksheetVisibility.Visible;
+        request.Artifact.Workbook.Worksheets.Add(new WorksheetArtifact
+        {
+            Id = "worksheet/hidden",
+            Name = "Hidden Data",
+            Visibility = SpreadsheetWorksheetVisibility.Hidden,
+            ShowGridLines = true,
+            Cells = { new CellArtifact { Row = 0, Column = 0, StringValue = "hidden" } },
+        });
+        request.Artifact.Workbook.Worksheets.Add(new WorksheetArtifact
+        {
+            Id = "worksheet/very-hidden",
+            Name = "Internal State",
+            Visibility = SpreadsheetWorksheetVisibility.VeryHidden,
+            ShowGridLines = true,
+            Cells = { new CellArtifact { Row = 0, Column = 0, StringValue = "internal" } },
+        });
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var sheets = document.WorkbookPart!.Workbook!.Sheets!.Elements<Sheet>().ToArray();
+            Assert.Null(sheets[0].State);
+            Assert.Equal(SheetStateValues.Hidden, sheets[1].State?.Value);
+            Assert.Equal(SheetStateValues.VeryHidden, sheets[2].State?.Value);
+            Assert.Equal(0U, document.WorkbookPart.Workbook.BookViews!.Elements<WorkbookView>().Single().ActiveTab?.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Collection(imported.Artifact.Workbook.Worksheets,
+            sheet =>
+            {
+                Assert.Equal(SpreadsheetWorksheetVisibility.Visible, sheet.Visibility);
+                Assert.True(sheet.Source.Editable);
+                Assert.Equal(0U, sheet.Source.Ordinal);
+            },
+            sheet =>
+            {
+                Assert.Equal(SpreadsheetWorksheetVisibility.Hidden, sheet.Visibility);
+                Assert.Equal(1U, sheet.Source.Ordinal);
+                Assert.Equal(64, sheet.Source.SheetElementSha256.Length);
+            },
+            sheet => Assert.Equal(SpreadsheetWorksheetVisibility.VeryHidden, sheet.Visibility));
+
+        imported.Artifact.Workbook.Worksheets[1].Name = "Hidden Archive";
+        imported.Artifact.Workbook.Worksheets[1].Visibility = SpreadsheetWorksheetVisibility.VeryHidden;
+        imported.Artifact.Workbook.Worksheets[2].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.Equal("Hidden Archive", reimported.Artifact.Workbook.Worksheets[1].Name);
+        Assert.Equal(SpreadsheetWorksheetVisibility.VeryHidden, reimported.Artifact.Workbook.Worksheets[1].Visibility);
+        Assert.Equal(SpreadsheetWorksheetVisibility.Hidden, reimported.Artifact.Workbook.Worksheets[2].Visibility);
+    }
+
+    [Fact]
+    public void WorksheetVisibilityRejectsAllHiddenActiveOpaqueAndTamperedProfiles()
+    {
+        var allHidden = ExportRequest();
+        allHidden.Artifact.Workbook.Worksheets[0].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(allHidden.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_worksheet_metadata", Assert.Single(response.Diagnostics).Code);
+        Assert.Contains("at least one visible", response.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        var imported = Import(authored.File.ToByteArray());
+        imported.Artifact.Workbook.Worksheets[0].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("at least one visible", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        var twoSheets = ExportRequest();
+        twoSheets.Artifact.Workbook.Worksheets.Add(new WorksheetArtifact
+        {
+            Id = "worksheet/second",
+            Name = "Second",
+            Visibility = SpreadsheetWorksheetVisibility.Visible,
+            Cells = { new CellArtifact { Row = 0, Column = 0, StringValue = "second" } },
+        });
+        var twoSheetSource = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(twoSheets.ToByteArray()));
+        imported = Import(twoSheetSource.File.ToByteArray());
+        imported.Artifact.Workbook.Worksheets[0].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("active worksheet", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        imported = Import(twoSheetSource.File.ToByteArray());
+        imported.Artifact.Workbook.Worksheets[1].Source.SheetElementSha256 = new string('0', 64);
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("source binding", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        var opaqueSource = SetRawSheetState(twoSheetSource.File.ToByteArray(), "Second", "futureHidden");
+        imported = Import(opaqueSource);
+        Assert.Equal(SpreadsheetWorksheetVisibility.Unspecified, imported.Artifact.Workbook.Worksheets[1].Visibility);
+        Assert.False(imported.Artifact.Workbook.Worksheets[1].Source.Editable);
+        imported.Artifact.Workbook.Worksheets[1].Visibility = SpreadsheetWorksheetVisibility.Hidden;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Contains("opaque worksheet metadata", Assert.Single(response.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ProtocolAuthorsImportsAndPreservesWorkbookAndWorksheetDefinedNames()
     {
         var request = DefinedNameExportRequest();
@@ -2819,6 +2931,27 @@ public sealed class XlsxCodecTests
         using var stream = new MemoryStream(bytes);
         using var document = SpreadsheetDocument.Open(stream, false);
         return document.WorkbookPart!.Workbook!.CalculationProperties!.OuterXml;
+    }
+
+    private static byte[] SetRawSheetState(byte[] bytes, string sheetName, string state)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry("xl/workbook.xml") ?? throw new InvalidOperationException("Workbook part is missing.");
+            XDocument workbook;
+            using (var reader = new StreamReader(entry.Open())) workbook = XDocument.Parse(reader.ReadToEnd(), LoadOptions.PreserveWhitespace);
+            XNamespace spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+            var sheet = workbook.Descendants(spreadsheet + "sheet").Single(item => (string?)item.Attribute("name") == sheetName);
+            sheet.SetAttributeValue("state", state);
+            entry.Delete();
+            var replacement = archive.CreateEntry("xl/workbook.xml");
+            using var writer = new StreamWriter(replacement.Open());
+            writer.Write(workbook.ToString(SaveOptions.DisableFormatting));
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddQueryTableGraph(

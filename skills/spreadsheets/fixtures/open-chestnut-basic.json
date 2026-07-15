@@ -27,6 +27,7 @@
   "sheets": [
     {
       "name": "Summary",
+      "visibility": "visible",
       "showGridLines": false,
       "freezePanes": { "rows": 1, "columns": 1 },
       "sortState": {
@@ -102,6 +103,7 @@
     },
     {
       "name": "Details",
+      "visibility": "hidden",
       "ranges": [
         {
           "range": "A1:C4",
@@ -229,6 +231,7 @@
     },
     {
       "name": "Color Rules",
+      "visibility": "veryHidden",
       "ranges": [
         {
           "range": "A1:B3",

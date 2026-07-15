@@ -2061,7 +2061,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
-| `workbook.worksheets.add` | api | Append an editable worksheet with a stable name and ID. |
+| `workbook.worksheets.add` | api | Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID. |
 | `worksheet.freezePanes.freezeColumns` | api | Freeze a leading column count in the worksheet view while preserving any frozen rows. |
 | `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
 | `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
@@ -2069,6 +2069,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `worksheet.mergeCells` | api | Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content. |
 | `worksheet.sortState` | api | Get or set bounded worksheet-level row/column sorting; columnSort=true uses unique single-row conditions across the sort range. |
 | `worksheet.unmergeCells` | api | Remove every merged region intersecting an A1 range without discarding the retained upper-left content. |
+| `worksheet.visibility` | api | Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible. |
 
 ### workbook details
 
@@ -4322,15 +4323,16 @@ Return bounded QA issues for source-bound connections, sheets, formulas, tables,
 
 #### `workbook.worksheets.add`
 
-Append an editable worksheet with a stable name and ID.
+Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID.
 
 **Schema parameters:**
 
 - `name` (string) — Unique worksheet name; defaults to SheetN.
+- `visibility` (string) — visible (default), hidden, or veryHidden.
 
 **Schema returns:**
 
-- `worksheet` (Worksheet) — Appended editable worksheet.
+- `worksheet` (Worksheet) — Appended editable worksheet with bounded native visibility.
 
 #### `worksheet.freezePanes.freezeColumns`
 
@@ -4416,4 +4418,16 @@ Remove every merged region intersecting an A1 range without discarding the retai
 **Schema returns:**
 
 - `worksheet` (Worksheet) — The same worksheet after intersecting merges are removed.
+
+#### `worksheet.visibility`
+
+Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible.
+
+**Schema parameters:**
+
+- `visibility` (string) required — visible, hidden, or veryHidden.
+
+**Schema returns:**
+
+- `visibility` (string) — Normalized worksheet visibility; workbook verification/export rejects an all-hidden workbook.
 

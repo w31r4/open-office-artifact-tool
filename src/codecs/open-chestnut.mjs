@@ -10,6 +10,7 @@ import {
   CodecResponseSchema,
   DocumentTableVerticalMerge,
   SpreadsheetCalculationMode,
+  SpreadsheetWorksheetVisibility,
   WorkbookDateSystem,
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
@@ -78,6 +79,31 @@ function codecLimits(limits = {}) {
     maxSheets: uint32(limits.maxSheets, "maxSheets"),
     maxCells: uint64(limits.maxCells, "maxCells"),
     maxCompressionRatio: uint32(limits.maxCompressionRatio, "maxCompressionRatio"),
+  };
+}
+
+function publicWorksheetVisibility(value) {
+  if (value === SpreadsheetWorksheetVisibility.HIDDEN) return "hidden";
+  if (value === SpreadsheetWorksheetVisibility.VERY_HIDDEN) return "veryHidden";
+  return "visible";
+}
+
+function wireWorksheetVisibility(value) {
+  if (value === "hidden") return SpreadsheetWorksheetVisibility.HIDDEN;
+  if (value === "veryHidden") return SpreadsheetWorksheetVisibility.VERY_HIDDEN;
+  if (value === "visible") return SpreadsheetWorksheetVisibility.VISIBLE;
+  throw new OpenChestnutCodecError(`Unsupported worksheet visibility ${value}; expected visible, hidden, or veryHidden.`, [], { code: "invalid_worksheet_visibility" });
+}
+
+function worksheetMetadataSnapshot(sheet) {
+  return { name: sheet.name, visibility: sheet.visibility };
+}
+
+function wireWorksheetMetadata(sheet, slot) {
+  const unchanged = slot && JSON.stringify(worksheetMetadataSnapshot(sheet)) === JSON.stringify(slot.publicSnapshot);
+  return {
+    visibility: unchanged ? slot.wire.visibility : wireWorksheetVisibility(sheet.visibility),
+    source: slot?.wire.source,
   };
 }
 
@@ -994,6 +1020,7 @@ function wireCell(address, cell) {
 function workbookEnvelope(workbook) {
   if (!(workbook instanceof Workbook)) throw new TypeError("exportXlsxWithOpenChestnut expects a Workbook instance.");
   if (!workbook.worksheets?.items?.length) throw new OpenChestnutCodecError("Workbook must contain at least one worksheet.", [], { code: "missing_worksheets" });
+  if (!workbook.worksheets.items.some((sheet) => sheet.visibility === "visible")) throw new OpenChestnutCodecError("Workbook must contain at least one visible worksheet.", [], { code: "missing_visible_worksheet" });
   const unsupported = unsupportedWorkbookFeatures(workbook);
   if (unsupported.length) {
     throw new OpenChestnutCodecError(`The XLSX WebAssembly vertical slice cannot encode: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. Use SpreadsheetFile.exportXlsx until parity reaches these features.`, [], { code: "unsupported_workbook_features" });
@@ -1017,27 +1044,32 @@ function workbookEnvelope(workbook) {
         connections: wireWorkbookConnections(workbook, state),
         definedNames: wireWorkbookDefinedNames(workbook, state),
         calculation: wireWorkbookCalculationForExport(workbook, state),
-        worksheets: workbook.worksheets.items.map((sheet) => ({
-          id: sheet.id,
-          name: sheet.name,
-          showGridLines: sheet.showGridLines !== false,
-          freezePane: {
-            rows: sheet.freezePanes?.rows || 0,
-            columns: sheet.freezePanes?.columns || 0,
-            topLeftCell: sheet.freezePanes?.topLeftCell || "",
-            activePane: sheet.freezePanes?.activePane || "",
-          },
-          columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
-          rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
-          mergedRanges: [...(sheet.mergedRanges || [])],
-          sortState: wireTableSortState(sheet.sortState, `worksheet ${sheet.name}`),
-          tables: wireWorksheetTables(sheet, state?.tablesBySheet?.get(sheet.id)),
-          cells: (() => {
-            const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
-            validateFormulaTopology(cells, sheet.name);
-            return cells;
-          })(),
-        })),
+        worksheets: workbook.worksheets.items.map((sheet) => {
+          const metadata = wireWorksheetMetadata(sheet, state?.worksheetSlots?.get(sheet.id));
+          return {
+            id: sheet.id,
+            name: sheet.name,
+            visibility: metadata.visibility,
+            source: metadata.source,
+            showGridLines: sheet.showGridLines !== false,
+            freezePane: {
+              rows: sheet.freezePanes?.rows || 0,
+              columns: sheet.freezePanes?.columns || 0,
+              topLeftCell: sheet.freezePanes?.topLeftCell || "",
+              activePane: sheet.freezePanes?.activePane || "",
+            },
+            columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
+            rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
+            mergedRanges: [...(sheet.mergedRanges || [])],
+            sortState: wireTableSortState(sheet.sortState, `worksheet ${sheet.name}`),
+            tables: wireWorksheetTables(sheet, state?.tablesBySheet?.get(sheet.id)),
+            cells: (() => {
+              const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
+              validateFormulaTopology(cells, sheet.name);
+              return cells;
+            })(),
+          };
+        }),
       },
     },
   };
@@ -1076,14 +1108,16 @@ function workbookFromEnvelope(envelope) {
   });
   workbook.id = source.id || workbook.id;
   const tablesBySheet = new Map();
+  const worksheetSlots = new Map();
   const connectionSlots = (source.connections || []).map((wire, index) => ({
     wire,
     connection: workbook.connections[index],
     publicSnapshot: connectionSnapshot(workbook.connections[index]),
   }));
   for (const sourceSheet of source.worksheets) {
-    const sheet = workbook.worksheets.add(sourceSheet.name);
+    const sheet = workbook.worksheets.add(sourceSheet.name, { visibility: publicWorksheetVisibility(sourceSheet.visibility) });
     sheet.id = sourceSheet.id || sheet.id;
+    worksheetSlots.set(sheet.id, { wire: sourceSheet, publicSnapshot: worksheetMetadataSnapshot(sheet) });
     sheet.showGridLines = sourceSheet.showGridLines;
     if (sourceSheet.freezePane) {
       sheet.freezePanes.freezeRows(sourceSheet.freezePane.rows);
@@ -1163,6 +1197,7 @@ function workbookFromEnvelope(envelope) {
       connectionSlots,
       definedNameSlots,
       calculationSlot,
+      worksheetSlots,
       tablesBySheet,
     },
     writable: true,

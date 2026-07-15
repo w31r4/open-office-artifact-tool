@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 240);
+assert.equal(HELP_CATALOG.length, 241);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -20,6 +20,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "workbook.connections")?.
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.visibility"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.sortState"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.mergeCells"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.unmergeCells"));
@@ -215,7 +216,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /bulletFont.*bulletColor.*bulletSizePercent.*FollowText/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*tooltip.*targetFrame/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 141);
+assert.equal(workbookCatalog.length, 142);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -225,6 +226,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.freezePanes.freezeRows")?.schema?.parameters?.rowCount?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.freezePanes.freezeColumns")?.schema?.parameters?.columnCount?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.sortState")?.schema?.parameters?.columnSort?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.visibility")?.schema?.parameters?.visibility?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.mergeCells")?.schema?.parameters?.address?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.merge")?.schema?.parameters?.across?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.fillDown")?.schema?.returns?.range?.type, "Range");

@@ -155,6 +155,34 @@ assert.throws(() => Workbook.create({ calculation: { mode: "automatic", iteratio
 calculationRoundtrip.calculation.iteration.maxChange = 0;
 assert.ok(calculationRoundtrip.verify().issues.some((issue) => issue.type === "invalidCalculation"));
 
+const visibilityBook = Workbook.create();
+const visibleSheet = visibilityBook.worksheets.add({ name: "Visible", visibility: "visible" });
+const hiddenSheet = visibilityBook.worksheets.add("Hidden", { visibility: "hidden" });
+const veryHiddenSheet = visibilityBook.worksheets.add("Internal", { visibility: "very-hidden" });
+visibleSheet.getRange("A1").values = [["shown"]];
+hiddenSheet.getRange("A1").values = [["hidden"]];
+veryHiddenSheet.getRange("A1").values = [["internal"]];
+assert.equal(visibilityBook.worksheets.getActiveWorksheet(), visibleSheet);
+assert.deepEqual(visibilityBook.worksheets.items.map((item) => item.visibility), ["visible", "hidden", "veryHidden"]);
+assert.match(visibilityBook.inspect({ kind: "sheet" }).ndjson, /"name":"Internal"[^\n]*"visibility":"veryHidden"/);
+assert.equal(veryHiddenSheet.layoutJson().view.visibility, "veryHidden");
+assert.match(visibilityBook.help("worksheet.visibility").ndjson, /at least one sheet must remain visible/i);
+assert.throws(() => { hiddenSheet.visibility = "collapsed"; }, /worksheet visibility/i);
+const visibilityXlsx = await SpreadsheetFile.exportXlsx(visibilityBook);
+const visibilityZip = await JSZip.loadAsync(visibilityXlsx.bytes);
+const visibilityWorkbookXml = await visibilityZip.file("xl/workbook.xml").async("text");
+assert.match(visibilityWorkbookXml, /<workbookView activeTab="0"\s*\/>/);
+assert.match(visibilityWorkbookXml, /<sheet name="Hidden" sheetId="2" state="hidden"/);
+assert.match(visibilityWorkbookXml, /<sheet name="Internal" sheetId="3" state="veryHidden"/);
+visibilityZip.remove("customXml/open-office-artifact.json");
+const visibilityRoundtrip = await SpreadsheetFile.importXlsx(new FileBlob(await visibilityZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: visibilityXlsx.type }));
+assert.deepEqual(visibilityRoundtrip.worksheets.items.map((item) => item.visibility), ["visible", "hidden", "veryHidden"]);
+assert.equal(visibilityRoundtrip.worksheets.getActiveWorksheet().name, "Visible");
+visibleSheet.visibility = "hidden";
+assert.ok(visibilityBook.verify().issues.some((issue) => issue.type === "noVisibleSheets"));
+await assert.rejects(() => SpreadsheetFile.exportXlsx(visibilityBook), /at least one visible worksheet/i);
+assert.throws(() => visibilityBook.worksheets.getActiveWorksheet(), /no visible worksheets/i);
+
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
 sheet.getRange("A1:C3").values = [["A", "B", "Sum"], [2, 3, null], [5, 7, null]];
