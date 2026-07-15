@@ -248,6 +248,7 @@ export function createWorkbookFromFixture(fixture = {}) {
     }
     for (const imageFixture of sheetFixture.images || []) sheet.images.add(imageFixture);
   }
+  for (const definedName of fixture.definedNames || []) workbook.definedNames.add(definedName);
   if (fixture.commentSelf) workbook.comments.setSelf(fixture.commentSelf);
   for (const commentFixture of fixture.comments || []) {
     const sheet = workbook.worksheets.getItem(commentFixture.sheet);

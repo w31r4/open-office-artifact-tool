@@ -32,7 +32,8 @@
   },
   "files": [
     "src/**",
-    "docs/**",
+    "docs/api.md",
+    "docs/coverage.md",
     "scripts/**",
     "examples/**",
     "skills/**",

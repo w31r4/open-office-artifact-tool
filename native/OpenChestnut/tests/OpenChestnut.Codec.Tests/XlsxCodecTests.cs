@@ -59,6 +59,132 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndPreservesWorkbookAndWorksheetDefinedNames()
+    {
+        var request = DefinedNameExportRequest();
+        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(exported.File.ToByteArray());
+
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var names = document.WorkbookPart!.Workbook!.DefinedNames!.Elements<DefinedName>().ToArray();
+            Assert.Collection(names,
+                item =>
+                {
+                    Assert.Equal("RevenueData", item.Name?.Value);
+                    Assert.Equal("Summary!$B$1:$B$2", item.Text);
+                    Assert.Equal("Revenue body", item.Comment?.Value);
+                    Assert.Null(item.LocalSheetId);
+                    Assert.NotNull(item.Hidden);
+                    Assert.False(item.Hidden!.Value);
+                },
+                item =>
+                {
+                    Assert.Equal("RevenueData", item.Name?.Value);
+                    Assert.Equal(0U, item.LocalSheetId?.Value);
+                    Assert.Null(item.Comment);
+                    Assert.True(item.Hidden?.Value);
+                });
+        }
+
+        var imported = Import(exported.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Collection(imported.Artifact.Workbook.DefinedNames,
+            item =>
+            {
+                Assert.Equal("RevenueData", item.Name);
+                Assert.Equal("Revenue body", item.Comment);
+                Assert.True(item.HasHidden);
+                Assert.False(item.Hidden);
+                Assert.False(item.HasScopeSheetName);
+                Assert.True(item.Source.Editable);
+                Assert.Equal(0U, item.Source.Ordinal);
+            },
+            item =>
+            {
+                Assert.Equal("Summary", item.ScopeSheetName);
+                Assert.True(item.Hidden);
+                Assert.Equal(1U, item.Source.Ordinal);
+            });
+    }
+
+    [Fact]
+    public void SourcePreservingDefinedNameEditKeepsOpaqueNamesAndRejectsTopologyChanges()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(DefinedNameExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var source = AddOpaqueDefinedName(authored.File.ToByteArray());
+        var opaqueXml = ReadDefinedNameXml(source, "OpaqueConstant");
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(2, imported.Artifact.Workbook.DefinedNames.Count);
+
+        var edited = imported.Artifact.Workbook.DefinedNames[0];
+        edited.Name = "RevenueRange";
+        edited.RefersTo = "Summary!$B$1";
+        edited.Comment = "Updated range";
+        edited.Hidden = true;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(preserved.File.ToByteArray());
+        Assert.Equal(opaqueXml, ReadDefinedNameXml(preserved.File.ToByteArray(), "OpaqueConstant"));
+        var reimported = Import(preserved.File.ToByteArray());
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal("RevenueRange", reimported.Artifact.Workbook.DefinedNames[0].Name);
+        Assert.Equal("Summary!$B$1", reimported.Artifact.Workbook.DefinedNames[0].RefersTo);
+        Assert.True(reimported.Artifact.Workbook.DefinedNames[0].Hidden);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.DefinedNames.RemoveAt(0);
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("add or remove recognized defined names", Assert.Single(rejected.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.DefinedNames[0].Name = "OpaqueConstant";
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("collides with an opaque", Assert.Single(rejected.Diagnostics).Message);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.DefinedNames[0].Source.DefinedNameXmlSha256 = new string('0', 64);
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Contains("source binding", Assert.Single(rejected.Diagnostics).Message);
+    }
+
+    [Fact]
+    public void WorkbookDefinedNamesRejectInvalidNamesReferencesScopesAndDuplicates()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact { Id = "defined-name/1", Name = "A1", RefersTo = "Summary!A1" });
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_defined_name", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact { Id = "defined-name/1", Name = "RangeOne", RefersTo = "SUM(Summary!A1:A2)" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_defined_name", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact { Id = "defined-name/1", Name = "RangeOne", RefersTo = "Summary!A1", ScopeSheetName = "Missing" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_workbook_defined_name", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact { Id = "defined-name/1", Name = "RangeOne", RefersTo = "Summary!A1" });
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact { Id = "defined-name/2", Name = "rangeone", RefersTo = "Summary!B1" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Contains("duplicated", Assert.Single(response.Diagnostics).Message);
+    }
+
+    [Fact]
     public void ProtocolReturnsStructuredBudgetFailure()
     {
         var export = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
@@ -1984,6 +2110,28 @@ public sealed class XlsxCodecTests
         };
     }
 
+    private static CodecRequest DefinedNameExportRequest()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact
+        {
+            Id = "defined-name/global-revenue",
+            Name = "RevenueData",
+            RefersTo = "Summary!$B$1:$B$2",
+            Comment = "Revenue body",
+            Hidden = false,
+        });
+        request.Artifact.Workbook.DefinedNames.Add(new SpreadsheetDefinedNameArtifact
+        {
+            Id = "defined-name/local-revenue",
+            Name = "RevenueData",
+            RefersTo = "Summary!$B$1",
+            ScopeSheetName = "Summary",
+            Hidden = true,
+        });
+        return request;
+    }
+
     private static CodecRequest TableExportRequest()
     {
         var request = ExportRequest();
@@ -2513,6 +2661,29 @@ public sealed class XlsxCodecTests
         using var output = new MemoryStream();
         entry.CopyTo(output);
         return output.ToArray();
+    }
+
+    private static byte[] AddOpaqueDefinedName(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var workbook = document.WorkbookPart!.Workbook!;
+            var names = workbook.DefinedNames ?? workbook.InsertAfter(new DefinedNames(), workbook.Sheets);
+            names.Append(new DefinedName("42") { Name = "OpaqueConstant", Comment = "Preserve exactly" });
+            workbook.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string ReadDefinedNameXml(byte[] bytes, string name)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.Workbook!.DefinedNames!.Elements<DefinedName>()
+            .Single(item => item.Name?.Value == name).OuterXml;
     }
 
     private static byte[] AddQueryTableGraph(

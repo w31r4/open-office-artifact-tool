@@ -36,13 +36,14 @@ internal sealed class XlsxDefinedNameCodec
     {
         _workbook = workbookPart.Workbook ?? throw Invalid("Workbook root is missing.");
         _sourceSheetNames = sourceSheetNames.ToArray();
-        WorkbookXmlSha256 = PartSha256(workbookPart);
         var container = _workbook.DefinedNames;
         if (container is null)
         {
+            WorkbookXmlSha256 = string.Empty;
             IsReadable = true;
             return;
         }
+        WorkbookXmlSha256 = PartSha256(workbookPart);
         if (container.ChildElements.Count > MaxDefinedNames || container.ChildElements.Any(child => child is not DefinedName)) return;
         var ordinal = 0U;
         foreach (var element in container.Elements<DefinedName>())
@@ -189,9 +190,12 @@ internal sealed class XlsxDefinedNameCodec
     {
         element.Name = item.Name;
         element.Text = item.RefersTo;
-        element.LocalSheetId = item.HasScopeSheetName ? checked((uint)ScopeIndex(item, sheetNames)!.Value) : null;
-        element.Comment = item.HasComment ? item.Comment : null;
-        element.Hidden = item.HasHidden ? item.Hidden : null;
+        if (item.HasScopeSheetName) element.LocalSheetId = checked((uint)ScopeIndex(item, sheetNames)!.Value);
+        else element.LocalSheetId = null;
+        if (item.HasComment) element.Comment = item.Comment;
+        else element.Comment = null;
+        if (item.HasHidden) element.Hidden = item.Hidden;
+        else element.Hidden = null;
     }
 
     private static void ValidateBinding(SpreadsheetDefinedNameSourceBinding? desired, SpreadsheetDefinedNameSourceBinding source, uint ordinal)

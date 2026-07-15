@@ -15,6 +15,8 @@ const maxUnpackedBytes = 16_700_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
+  "docs/api.md",
+  "docs/coverage.md",
   "proto/open_office/artifact/v1/office_artifact.proto",
   "src/generated/open_office/artifact/v1/office_artifact_pb.js",
   "src/codecs/open-chestnut.mjs",
@@ -140,6 +142,7 @@ for (const required of [
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
+assert.ok(!files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md"), "npm runtime package must exclude repository-only release history and architecture decision logs");
 assert.ok(report.size < maxPackedBytes, `npm package archive unexpectedly large: ${report.size} (limit ${maxPackedBytes})`);
 assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);
 

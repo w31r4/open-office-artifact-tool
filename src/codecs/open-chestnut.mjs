@@ -421,7 +421,6 @@ function cellStyleFromWire(source) {
 
 function unsupportedWorkbookFeatures(workbook) {
   const unsupported = [];
-  if (workbook.definedNames?.items?.length) unsupported.push("defined names");
   if (workbook.comments?.threads?.length) unsupported.push("threaded comments");
   if (workbook.indexedColors?.length) unsupported.push("custom indexed colors");
   for (const sheet of workbook.worksheets?.items || []) {
@@ -505,6 +504,57 @@ function wireWorkbookConnections(workbook, state) {
       : wireWorkbookConnection(slot.connection, slot.wire.source));
   }
   output.push(...[...remaining].map((connection) => wireWorkbookConnection(connection)));
+  return output;
+}
+
+function publicWorkbookDefinedName(value) {
+  const definedName = {
+    id: String(value?.id ?? ""),
+    name: String(value?.name ?? ""),
+    refersTo: String(value?.refersTo ?? ""),
+  };
+  if (value?.scopeSheetName !== undefined) definedName.scope = String(value.scopeSheetName);
+  if (value?.comment !== undefined) definedName.comment = String(value.comment);
+  if (value?.hidden !== undefined) definedName.hidden = Boolean(value.hidden);
+  return definedName;
+}
+
+function definedNameSnapshot(value) {
+  return {
+    id: String(value?.id ?? ""),
+    name: String(value?.name ?? ""),
+    refersTo: String(value?.refersTo ?? ""),
+    ...(value?.scope !== undefined ? { scope: String(value.scope) } : {}),
+    ...(value?.comment !== undefined ? { comment: String(value.comment) } : {}),
+    ...(value?.hidden !== undefined ? { hidden: Boolean(value.hidden) } : {}),
+  };
+}
+
+function wireWorkbookDefinedName(value, source) {
+  const publicValue = definedNameSnapshot(value);
+  return {
+    id: publicValue.id,
+    name: publicValue.name,
+    refersTo: publicValue.refersTo,
+    ...(publicValue.scope !== undefined ? { scopeSheetName: publicValue.scope } : {}),
+    ...(publicValue.comment !== undefined ? { comment: publicValue.comment } : {}),
+    ...(publicValue.hidden !== undefined ? { hidden: publicValue.hidden } : {}),
+    source,
+  };
+}
+
+function wireWorkbookDefinedNames(workbook, state) {
+  const remaining = new Set(workbook.definedNames?.items || []);
+  const output = [];
+  for (const slot of state?.definedNameSlots || []) {
+    if (!remaining.delete(slot.definedName)) {
+      throw new OpenChestnutCodecError(`Workbook cannot remove imported defined name ${slot.definedName.name} in the bounded OpenChestnut slice.`, [], { code: "invalid_workbook_defined_name" });
+    }
+    output.push(JSON.stringify(definedNameSnapshot(slot.definedName)) === JSON.stringify(slot.publicSnapshot)
+      ? slot.wire
+      : wireWorkbookDefinedName(slot.definedName, slot.wire.source));
+  }
+  output.push(...[...remaining].map((definedName) => wireWorkbookDefinedName(definedName)));
   return output;
 }
 
@@ -900,6 +950,7 @@ function workbookEnvelope(workbook) {
         dateSystem: workbook.dateSystem === "1904" ? WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1904 : WorkbookDateSystem.WORKBOOK_DATE_SYSTEM_1900,
         theme,
         connections: wireWorkbookConnections(workbook, state),
+        definedNames: wireWorkbookDefinedNames(workbook, state),
         worksheets: workbook.worksheets.items.map((sheet) => ({
           id: sheet.id,
           name: sheet.name,
@@ -1026,6 +1077,12 @@ function workbookFromEnvelope(envelope) {
     }
     tablesBySheet.set(sheet.id, { slots });
   }
+  for (const sourceDefinedName of source.definedNames || []) workbook.definedNames.add(publicWorkbookDefinedName(sourceDefinedName));
+  const definedNameSlots = (source.definedNames || []).map((wire, index) => ({
+    wire,
+    definedName: workbook.definedNames.items[index],
+    publicSnapshot: definedNameSnapshot(workbook.definedNames.items[index]),
+  }));
   Object.defineProperty(workbook, WORKBOOK_STATE, {
     configurable: true,
     value: {
@@ -1035,6 +1092,7 @@ function workbookFromEnvelope(envelope) {
       themeWire: source.theme,
       publicTheme: normalizeXlsxThemeConfig(workbook.theme),
       connectionSlots,
+      definedNameSlots,
       tablesBySheet,
     },
     writable: true,

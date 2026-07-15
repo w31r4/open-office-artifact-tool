@@ -174,6 +174,11 @@ try {
   assert.equal(wasmWorkbook.dateSystem, "1904");
   assert.equal(wasmWorkbook.theme.name, "OpenChestnut Fixture");
   assert.equal(wasmWorkbook.theme.colors.accent1, "#0F766E");
+  assert.deepEqual(wasmWorkbook.definedNames.items.map((item) => ({ name: item.name, refersTo: item.refersTo, scope: item.scope, comment: item.comment, hidden: item.hidden })), [
+    { name: "SummaryValues", refersTo: "Summary!$B$2:$B$3", scope: undefined, comment: "Fixture summary values", hidden: false },
+    { name: "DetailScores", refersTo: "Details!$C$2:$C$3", scope: "Details", comment: undefined, hidden: true },
+  ]);
+  assert.match(wasmWorkbook.inspect({ kind: "definedName", target: "SummaryValues" }).ndjson, /"hidden":false/);
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").getRange("B2:D3").values, [[42.5, 85, 127.5], [85, 170, null]]);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B2").format.numberFormat, "0.000 \"units\"");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("B3").format.numberFormat, "0.00%");

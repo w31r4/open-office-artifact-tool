@@ -12,6 +12,10 @@
       "accent5": "#0369A1", "accent6": "#BE123C", "hlink": "#1D4ED8", "folHlink": "#7E22CE"
     }
   },
+  "definedNames": [
+    { "id": "defined-name/summary-values", "name": "SummaryValues", "refersTo": "Summary!$B$2:$B$3", "comment": "Fixture summary values", "hidden": false },
+    { "id": "defined-name/detail-scores", "name": "DetailScores", "refersTo": "Details!$C$2:$C$3", "scope": "Details", "hidden": true }
+  ],
   "sheets": [
     {
       "name": "Summary",

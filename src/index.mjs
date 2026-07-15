@@ -1237,7 +1237,7 @@ const HELP_DETAIL_OVERRIDES = {
   },
   "workbook.definedNames.add": {
     examples: ["workbook.definedNames.add('RevenueData', 'Sheet1!G2:G4')", "sheet.getRange('E3').formulas = [['=SUM(RevenueData)']]"] ,
-    options: ["name", "refersTo", "scope/sheetName", "comment"],
+    options: ["name", "refersTo", "scope/sheetName", "comment", "hidden"],
     returns: "DefinedName facade with id/name/refersTo/scope",
   },
   "range.format": {
@@ -2315,6 +2315,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     refersTo: { type: "string", required: true, description: "Sheet-qualified A1 reference." },
     scope: { type: "string", description: "Optional worksheet scope." },
     comment: { type: "string", description: "Optional description." },
+    hidden: { type: "boolean", description: "Optional native hidden flag; explicit false is preserved." },
   }, "definedName", "DefinedName", "Created or updated defined-name facade."),
   "range.dataValidation": helpSchema({
     type: { type: "string", required: true, description: "Validation type such as list, whole, decimal, date, or custom." },
@@ -2839,9 +2840,10 @@ class DefinedName {
     this.refersTo = config.refersTo || config.reference || config.range || "Sheet1!A1";
     this.scope = config.scope || config.sheetName || undefined;
     this.comment = config.comment;
+    if (config.hidden !== undefined) this.hidden = Boolean(config.hidden);
   }
-  inspectRecord() { return { kind: "definedName", id: this.id, name: this.name, refersTo: this.refersTo, scope: this.scope, comment: this.comment }; }
-  toJSON() { return { id: this.id, name: this.name, refersTo: this.refersTo, scope: this.scope, comment: this.comment }; }
+  inspectRecord() { return { kind: "definedName", id: this.id, name: this.name, refersTo: this.refersTo, scope: this.scope, comment: this.comment, hidden: this.hidden }; }
+  toJSON() { return { id: this.id, name: this.name, refersTo: this.refersTo, scope: this.scope, comment: this.comment, hidden: this.hidden }; }
 }
 
 class DefinedNameCollection {
@@ -6781,7 +6783,9 @@ function workbookXml(workbook, pivotParts = []) {
   const definedNames = workbook.definedNames.items.length
     ? `<definedNames>${workbook.definedNames.items.map((item) => {
       const localSheetId = item.scope ? workbook.worksheets.items.findIndex((sheet) => sheet.name === item.scope) : -1;
-      return `<definedName name="${attrEscape(item.name)}"${localSheetId >= 0 ? ` localSheetId="${localSheetId}"` : ""}>${xmlEscape(item.refersTo)}</definedName>`;
+      const comment = item.comment !== undefined ? ` comment="${attrEscape(item.comment)}"` : "";
+      const hidden = item.hidden !== undefined ? ` hidden="${item.hidden ? 1 : 0}"` : "";
+      return `<definedName name="${attrEscape(item.name)}"${localSheetId >= 0 ? ` localSheetId="${localSheetId}"` : ""}${comment}${hidden}>${xmlEscape(item.refersTo)}</definedName>`;
     }).join("")}</definedNames>`
     : "";
   const pivotCaches = pivotParts.length ? `<pivotCaches>${pivotParts.map((part) => `<pivotCache cacheId="${part.cacheId}" r:id="${part.cacheRelId}"/>`).join("")}</pivotCaches>` : "";
@@ -6790,12 +6794,18 @@ function workbookXml(workbook, pivotParts = []) {
 
 function parseWorkbookDefinedNames(workbook, xml = "") {
   for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?definedName\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?definedName>/g)) {
-    const attrs = match[1] || "";
-    const name = decodeXml(/\bname="([^"]+)"/.exec(attrs)?.[1] || "");
+    const attrs = ooxmlXmlAttributes(match[1] || "");
+    const name = attrs.name || "";
     if (!name) continue;
-    const localSheetIdRaw = /\blocalSheetId="(\d+)"/.exec(attrs)?.[1];
+    const localSheetIdRaw = attrs.localSheetId;
     const scope = localSheetIdRaw != null ? workbook.worksheets.items[Number(localSheetIdRaw)]?.name : undefined;
-    workbook.definedNames.add({ name, refersTo: decodeXml(match[2] || ""), scope });
+    workbook.definedNames.add({
+      name,
+      refersTo: decodeXml(match[2] || ""),
+      scope,
+      ...(attrs.comment !== undefined ? { comment: attrs.comment } : {}),
+      ...(attrs.hidden !== undefined ? { hidden: xlsxBoolean(attrs.hidden) } : {}),
+    });
   }
 }
 

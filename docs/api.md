@@ -4082,6 +4082,7 @@ Create a workbook or sheet-scoped defined name over an A1 range; exported as nat
 - refersTo
 - scope/sheetName
 - comment
+- hidden
 
 **Schema parameters:**
 
@@ -4089,6 +4090,7 @@ Create a workbook or sheet-scoped defined name over an A1 range; exported as nat
 - `refersTo` (string) required — Sheet-qualified A1 reference.
 - `scope` (string) — Optional worksheet scope.
 - `comment` (string) — Optional description.
+- `hidden` (boolean) — Optional native hidden flag; explicit false is preserved.
 
 **Schema returns:**
 
