@@ -86,10 +86,11 @@ export function parsePresentationPlaceholderStyleXml(xml = "") {
 }
 
 function placeholderKey(placeholder) {
-  return `${placeholder.type || "body"}:${Number(placeholder.idx || 1)}`;
+  return `${placeholder.type || "body"}:${Number(placeholder.idx ?? 0)}`;
 }
 
 export function mergePresentationPlaceholders(masterPlaceholders = [], layoutPlaceholders = []) {
+  const cloneFrame = (frame) => frame ? { ...frame } : undefined;
   const cloneParagraphStyles = (styles = {}) => Object.fromEntries(Object.entries(styles).map(([level, style]) => [level, { ...style, style: { ...(style.style || {}) } }]));
   const mergeParagraphStyles = (base = {}, overrides = {}) => {
     const result = cloneParagraphStyles(base);
@@ -109,22 +110,44 @@ export function mergePresentationPlaceholders(masterPlaceholders = [], layoutPla
     }
     return result;
   };
-  const merged = new Map(masterPlaceholders.map((placeholder) => [placeholderKey(placeholder), { ...placeholder, position: placeholder.position && { ...placeholder.position }, style: { ...(placeholder.style || {}) }, paragraphStyles: cloneParagraphStyles(placeholder.paragraphStyles) }]));
+  const merged = new Map(masterPlaceholders.map((placeholder) => {
+    const position = cloneFrame(placeholder.position);
+    const transform = placeholder.transform ? { ...placeholder.transform } : undefined;
+    const effective = {
+      ...placeholder,
+      ...(position ? { position, geometrySource: "master" } : {}),
+      ...(transform ? { transform } : {}),
+      style: { ...(placeholder.style || {}) },
+      paragraphStyles: cloneParagraphStyles(placeholder.paragraphStyles),
+    };
+    if (!position) delete effective.position;
+    if (!transform) delete effective.transform;
+    return [placeholderKey(placeholder), effective];
+  }));
   for (const placeholder of layoutPlaceholders) {
     const key = placeholderKey(placeholder);
     const inherited = merged.get(key) || {};
-    const position = placeholder.position
-      ? { ...(inherited.position || {}), ...placeholder.position }
-      : inherited.position
-        ? { ...inherited.position }
-        : undefined;
-    merged.set(key, {
+    const hasDirectFrame = Boolean(placeholder.position);
+    const position = cloneFrame(hasDirectFrame ? placeholder.position : inherited.position);
+    // a:xfrm is one atomic frame slot. When a layout owns a direct frame, an
+    // omitted rot/flip attribute does not inherit from the master's a:xfrm.
+    const transform = hasDirectFrame
+      ? (placeholder.transform ? { ...placeholder.transform } : undefined)
+      : (inherited.transform ? { ...inherited.transform } : undefined);
+    const effective = {
       ...inherited,
       ...placeholder,
-      ...(position ? { position } : {}),
+      ...(position ? { position, geometrySource: hasDirectFrame ? "layout" : inherited.geometrySource } : {}),
+      ...(transform ? { transform } : {}),
       style: { ...(inherited.style || {}), ...(placeholder.style || {}) },
       paragraphStyles: mergeParagraphStyles(inherited.paragraphStyles, placeholder.paragraphStyles),
-    });
+    };
+    if (!position) {
+      delete effective.position;
+      delete effective.geometrySource;
+    }
+    if (!transform) delete effective.transform;
+    merged.set(key, effective);
   }
   return [...merged.values()];
 }

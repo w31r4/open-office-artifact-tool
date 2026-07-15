@@ -10891,9 +10891,12 @@ function parsePptxConnector(owner, part) {
 async function parsePptxShape(owner, part, context = {}) {
     const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
     const phAttrs = /<(?:[A-Za-z_][\w.-]*:)?ph\b([^>]*)\/?>(?:<\/(?:[A-Za-z_][\w.-]*:)?ph>)?/.exec(part)?.[1];
-    const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "body", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 1), name } : undefined;
-    const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.type === placeholder.type && candidate.idx === placeholder.idx) : undefined;
+    const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "obj", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 0), name } : undefined;
+    // PowerPoint's documented slide-placeholder inheritance key is idx, not
+    // the descriptive placeholder type.
+    const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.idx === placeholder.idx) : undefined;
     const spPr = /<(?:[A-Za-z_][\w.-]*:)?spPr\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?spPr>/.exec(part)?.[1] || "";
+    const hasDirectFrame = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(spPr);
     const fill = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(spPr)?.[1];
     const lineBlock = /<(?:[A-Za-z_][\w.-]*:)?ln\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ln>/.exec(spPr);
     const lineColor = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(lineBlock?.[2] || "")?.[1];
@@ -10905,7 +10908,7 @@ async function parsePptxShape(owner, part, context = {}) {
     const localParagraphStyles = await resolvePresentationPictureBulletStyles(parsePresentationListStyleXml(part), relationshipContext);
     const paragraphStyles = mergePresentationParagraphStyles(inherited?.paragraphStyles || {}, localParagraphStyles);
     const paragraphs = await resolvePresentationPictureBulletParagraphs(parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles, relationshipContext }), relationshipContext);
-    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), text: paragraphs, textBodyProperties: parsePresentationTextBodyPropertiesXml(part), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
+    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), text: paragraphs, textBodyProperties: parsePresentationTextBodyPropertiesXml(part), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id, geometrySource: hasDirectFrame ? "slide" : (inherited?.geometrySource || "unresolved") } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
     applyPresentationElementIdentity(shape, part, "spMk");
     shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
     shape.text.inheritedParagraphStyles = paragraphStyles;

@@ -555,6 +555,8 @@ internal static class PptxCodec
             FillRgb = PptxColor.SolidRgb(properties?.GetFirstChild<A.SolidFill>()),
             LineRgb = PptxColor.SolidRgb(properties?.GetFirstChild<A.Outline>()?.GetFirstChild<A.SolidFill>()),
             LineWidthEmu = properties?.GetFirstChild<A.Outline>()?.Width?.Value ?? 0,
+            Placeholder = PptxPlaceholderCodec.ReadIdentity(shape),
+            DirectFrame = PptxPlaceholderCodec.ReadDirectFrame(shape),
         };
     }
 

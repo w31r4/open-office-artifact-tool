@@ -1107,6 +1107,23 @@ message PresentationShape {
   string line_rgb = 8;
   int64 line_width_emu = 9;
   PresentationTextBody text_body = 10;
+  // Present only when the native p:sp is a slide placeholder. PowerPoint
+  // resolves an omitted direct frame from the linked Slide Layout placeholder
+  // with the same index. This identity is descriptive and remains read-only in
+  // the current source-preserving slice.
+  PresentationPlaceholderIdentity placeholder = 11;
+  // Recognized owner-local a:xfrm only. Absence means either inherited geometry
+  // (when placeholder.inherits_geometry is true) or an unrecognized direct
+  // transform that must remain opaque and fail closed.
+  PresentationPlaceholderFrame direct_frame = 12;
+}
+
+message PresentationPlaceholderIdentity {
+  string type = 1;
+  uint32 index = 2;
+  // True only when the slide placeholder has no owner-local a:xfrm and its
+  // effective geometry should be resolved from its linked layout by index.
+  bool inherits_geometry = 3;
 }
 
 // The public PresentationML text slice models agent-facing paragraph/inlines,

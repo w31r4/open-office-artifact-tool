@@ -865,7 +865,15 @@ export function presentationEnvelope(presentation, protocolVersion) {
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
       elements: sourceState
           ? sourceState.entries.map((entry) => {
-            if (entry.wire.content.case === "shape") return presentationShape(entry.model, entry.wire, assetCatalog);
+            if (entry.wire.content.case === "shape") {
+              if (entry.wire.content.value.placeholder) {
+                if (slidePlaceholderSnapshot(entry.model) !== entry.placeholderSnapshot) {
+                  throw new OpenChestnutCodecError(`Presentation slide placeholder ${entry.model.id} is a read-only inherited projection in this codec slice.`, [], { code: "unsupported_presentation_edit" });
+                }
+                return entry.wire;
+              }
+              return presentationShape(entry.model, entry.wire, assetCatalog);
+            }
             const placementEditable = entry.wire.source?.editable === true;
             if (opaquePresentationSnapshot(entry.model, { includePlacement: !placementEditable }) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} changed outside its ${placementEditable ? "name/frame" : "read-only"} native-object boundary.`, [], { code: "unsupported_presentation_edit" });
             if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire, assetCatalog);
@@ -1051,28 +1059,39 @@ function modelMasterTextStyles(source, assetCatalog) {
 
 function modelPlaceholder(source, assetCatalog) {
   const shape = { textBody: source.textBody };
-  const transform = {};
-  if (source.directFrame?.rotationAngle60000 != null) transform.rotationDegrees = source.directFrame.rotationAngle60000 / ROTATION_UNITS_PER_DEGREE;
-  if (source.directFrame?.flipHorizontal != null) transform.flipHorizontal = Boolean(source.directFrame.flipHorizontal);
-  if (source.directFrame?.flipVertical != null) transform.flipVertical = Boolean(source.directFrame.flipVertical);
+  const transform = modelPlaceholderTransform(source.directFrame);
   return {
     id: source.id,
     name: source.name,
     type: source.type,
     idx: source.index,
-    ...(source.directFrame ? {
-      position: {
-        left: Number(source.directFrame.leftEmu) / EMU_PER_PIXEL,
-        top: Number(source.directFrame.topEmu) / EMU_PER_PIXEL,
-        width: Number(source.directFrame.widthEmu) / EMU_PER_PIXEL,
-        height: Number(source.directFrame.heightEmu) / EMU_PER_PIXEL,
-      },
-    } : {}),
+    ...(source.directFrame ? { position: modelPlaceholderFrame(source.directFrame) } : {}),
     ...(Object.keys(transform).length ? { transform } : {}),
     text: modelText(shape, assetCatalog),
     paragraphStyles: modelListStyles(shape, assetCatalog),
     textBodyProperties: modelTextBodyProperties(shape),
   };
+}
+
+function modelPlaceholderFrame(frame) {
+  return {
+    left: Number(frame.leftEmu) / EMU_PER_PIXEL,
+    top: Number(frame.topEmu) / EMU_PER_PIXEL,
+    width: Number(frame.widthEmu) / EMU_PER_PIXEL,
+    height: Number(frame.heightEmu) / EMU_PER_PIXEL,
+  };
+}
+
+function modelPlaceholderTransform(frame) {
+  const transform = {};
+  if (frame?.rotationAngle60000 != null) transform.rotationDegrees = frame.rotationAngle60000 / ROTATION_UNITS_PER_DEGREE;
+  if (frame?.flipHorizontal != null) transform.flipHorizontal = Boolean(frame.flipHorizontal);
+  if (frame?.flipVertical != null) transform.flipVertical = Boolean(frame.flipVertical);
+  return transform;
+}
+
+function slidePlaceholderSnapshot(shape) {
+  return JSON.stringify(shape.layoutJson());
 }
 
 export async function presentationFromEnvelope(envelope) {
@@ -1148,16 +1167,39 @@ export async function presentationFromEnvelope(envelope) {
       let model;
       if (element.content.case === "shape") {
         const shape = element.content.value;
+        const placeholderIdentity = shape.placeholder;
+        const layout = placeholderIdentity ? presentation.layouts.getItem(slide.layoutId) : undefined;
+        // PowerPoint resolves slide placeholders against their linked layout by
+        // idx. Type remains descriptive and deliberately does not participate
+        // in this lookup.
+        const inheritedPlaceholder = placeholderIdentity?.inheritsGeometry
+          ? layout?.effectivePlaceholders().find((candidate) => candidate.idx === Number(placeholderIdentity.index))
+          : undefined;
+        const directFrame = shape.directFrame ? modelPlaceholderFrame(shape.directFrame) : undefined;
+        const effectiveFrame = directFrame || inheritedPlaceholder?.position || {
+          left: Number(shape.leftEmu) / EMU_PER_PIXEL,
+          top: Number(shape.topEmu) / EMU_PER_PIXEL,
+          width: Number(shape.widthEmu) / EMU_PER_PIXEL,
+          height: Number(shape.heightEmu) / EMU_PER_PIXEL,
+        };
+        const geometrySource = directFrame
+          ? "slide"
+          : placeholderIdentity?.inheritsGeometry
+            ? (inheritedPlaceholder?.geometrySource || "unresolved")
+            : placeholderIdentity
+              ? "slide-unrecognized"
+              : undefined;
         model = slide.shapes.add({
           id: element.id,
-          name: element.name,
+          name: element.name || inheritedPlaceholder?.name,
           geometry: shape.geometry || "rect",
-          position: {
-            left: Number(shape.leftEmu) / EMU_PER_PIXEL,
-            top: Number(shape.topEmu) / EMU_PER_PIXEL,
-            width: Number(shape.widthEmu) / EMU_PER_PIXEL,
-            height: Number(shape.heightEmu) / EMU_PER_PIXEL,
-          },
+          position: { ...effectiveFrame },
+          ...(placeholderIdentity ? { placeholder: {
+            layoutId: slide.layoutId,
+            type: placeholderIdentity.type,
+            idx: Number(placeholderIdentity.index),
+            geometrySource,
+          } } : {}),
           fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
           text: modelText(shape, assetCatalog),
@@ -1194,6 +1236,9 @@ export async function presentationFromEnvelope(envelope) {
       entries.push({
         wire: element,
         model,
+        placeholderSnapshot: element.content.case === "shape" && element.content.value.placeholder
+          ? slidePlaceholderSnapshot(model)
+          : undefined,
         snapshot: element.content.case === "opaque"
           ? opaquePresentationSnapshot(model, { includePlacement: element.source?.editable !== true })
           : undefined,

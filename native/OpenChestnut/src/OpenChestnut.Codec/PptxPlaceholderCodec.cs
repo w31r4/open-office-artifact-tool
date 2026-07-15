@@ -161,7 +161,19 @@ internal static class PptxPlaceholderCodec
         return Hash((shape.TextBody ?? new PresentationTextBody()).ToByteArray());
     }
 
-    private static PresentationPlaceholderFrame? ReadDirectFrame(P.Shape shape)
+    internal static PresentationPlaceholderIdentity? ReadIdentity(P.Shape shape)
+    {
+        var native = NativePlaceholder(shape);
+        if (native is null) return null;
+        return new PresentationPlaceholderIdentity
+        {
+            Type = NativeType(native),
+            Index = native.Index?.Value ?? 0U,
+            InheritsGeometry = shape.ShapeProperties?.Transform2D is null,
+        };
+    }
+
+    internal static PresentationPlaceholderFrame? ReadDirectFrame(P.Shape shape)
     {
         if (!SupportsDirectFrame(shape)) return null;
         var transform = shape.ShapeProperties!.Transform2D!;
