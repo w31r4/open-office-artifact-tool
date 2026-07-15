@@ -158,19 +158,20 @@ internal static class PackageGuards
             var contentTypes = ReadContentTypes(archive, profile);
             foreach (var entry in archive.Entries)
             {
-
-                if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;
+                if (entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
+                    entry.FullName.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase)) continue;
                 using var partStream = entry.Open();
                 using var copy = new MemoryStream();
                 partStream.CopyTo(copy);
                 var data = copy.ToArray();
                 if (entry.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase))
                     CollectOpaqueRelationships(entry.FullName, data, opaque, profile);
+                var contentType = contentTypes.ForPart(entry.FullName, profile);
                 if (profile.OwnsPath(entry.FullName)) continue;
                 opaque.Parts.Add(new OpaqueOpcPart
                 {
                     Path = entry.FullName,
-                    ContentType = contentTypes.ForPart(entry.FullName, profile),
+                    ContentType = contentType,
                     Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
                 });
             }

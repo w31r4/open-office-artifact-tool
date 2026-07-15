@@ -802,7 +802,8 @@ public sealed class XlsxCodecTests
     [InlineData("duplicate-default", "duplicate_content_type_default")]
     [InlineData("duplicate-override", "duplicate_content_type_override")]
     [InlineData("missing", "missing_part_content_type")]
-    public void ImportRejectsMalformedOpaqueContentTypeGraphs(string profile, string expectedCode)
+    [InlineData("missing-owned", "missing_part_content_type")]
+    public void ImportRejectsMalformedContentTypeGraphs(string profile, string expectedCode)
     {
         var firstExport = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
         var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
@@ -813,7 +814,9 @@ public sealed class XlsxCodecTests
             File = ByteString.CopyFrom(AddMalformedContentTypeGraph(firstExport.File.ToByteArray(), profile)),
         }.ToByteArray()));
         Assert.False(response.Ok);
-        Assert.Equal(expectedCode, Assert.Single(response.Diagnostics).Code);
+        var diagnostic = Assert.Single(response.Diagnostics);
+        Assert.Equal(expectedCode, diagnostic.Code);
+        if (profile == "missing-owned") Assert.Equal("xl/workbook.xml", diagnostic.SourcePath);
     }
 
     [Fact]
@@ -5343,6 +5346,7 @@ public sealed class XlsxCodecTests
                 "duplicate-default" => xml.Replace("</Types>", "<Default Extension=\"xml\" ContentType=\"application/duplicate+xml\"/></Types>", StringComparison.Ordinal),
                 "duplicate-override" => xml.Replace("</Types>", "<Override PartName=\"/xl/custom/duplicate.xml\" ContentType=\"application/first+xml\"/><Override PartName=\"/xl/custom/duplicate.xml\" ContentType=\"application/second+xml\"/></Types>", StringComparison.Ordinal),
                 "missing" => xml,
+                "missing-owned" => RemoveContentTypeDefault(xml, "xml"),
                 _ => throw new ArgumentOutOfRangeException(nameof(profile)),
             };
             using (var writer = new StreamWriter(archive.CreateEntry("[Content_Types].xml").Open())) writer.Write(xml);
@@ -5350,6 +5354,15 @@ public sealed class XlsxCodecTests
                 using (var writer = new StreamWriter(archive.CreateEntry("xl/custom/no-content-type.opaque").Open())) writer.Write("opaque");
         }
         return stream.ToArray();
+    }
+
+    private static string RemoveContentTypeDefault(string xml, string extension)
+    {
+        var document = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+        var element = document.Descendants().Single(item => item.Name.LocalName == "Default" &&
+            item.Attribute("Extension")?.Value == extension);
+        element.Remove();
+        return document.ToString(SaveOptions.DisableFormatting);
     }
 
     private static byte[] AddEntry(byte[] bytes, string path)
