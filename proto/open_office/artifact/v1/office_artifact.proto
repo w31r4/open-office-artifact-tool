@@ -168,15 +168,18 @@ message WorkbookArtifact {
   // Application/version identity, R1C1 mode, calculation-completed state,
   // concurrent-calculation controls, and extensions remain source-preserved.
   SpreadsheetCalculationArtifact calculation = 7;
-  // Active worksheet for one recognized primary workbook view. Additional
-  // windows, grouped worksheet selections, first-sheet scrolling, geometry,
-  // visibility, and extensions remain source-preserved.
+  // Active worksheet and selected worksheet-tab group for one recognized
+  // primary workbook view. Additional windows, first-sheet scrolling,
+  // geometry, visibility, and extensions remain source-preserved.
   SpreadsheetWorkbookViewArtifact view = 8;
 }
 
 message SpreadsheetWorkbookViewArtifact {
   string active_worksheet_id = 1;
   SpreadsheetWorkbookViewSourceBinding source = 2;
+  // Stable worksheet IDs selected in the primary window. An empty list means
+  // the active worksheet alone for compatibility with the first view slice.
+  repeated string selected_worksheet_ids = 3;
 }
 
 // Hash-bound locator for the one workbookView profile OpenChestnut currently
@@ -188,6 +191,21 @@ message SpreadsheetWorkbookViewSourceBinding {
   string view_xml_sha256 = 3;
   string semantic_sha256 = 4;
   bool editable = 5;
+  // One hash-bound worksheet sheetView slot per worksheet. A complete list is
+  // required before OpenChestnut edits tabSelected; incomplete/complex graphs
+  // keep the workbook view readable but make its semantics fail-closed.
+  repeated SpreadsheetWorksheetViewSourceBinding worksheet_views = 6;
+}
+
+message SpreadsheetWorksheetViewSourceBinding {
+  string worksheet_id = 1;
+  string part_path = 2;
+  uint32 view_ordinal = 3;
+  uint32 workbook_view_id = 4;
+  string worksheet_xml_sha256 = 5;
+  string view_xml_sha256 = 6;
+  optional bool tab_selected = 7;
+  bool editable = 8;
 }
 
 message SpreadsheetCalculationArtifact {

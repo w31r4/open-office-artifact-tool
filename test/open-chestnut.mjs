@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { CellArtifactSchema, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -61,7 +61,10 @@ assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { d
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { calculation: { mode: 1 } }))[0], 0x3a, "Spreadsheet workbook calculation policy must use additive workbook field 7.");
 assert.equal(toBinary(WorkbookArtifactSchema, create(WorkbookArtifactSchema, { view: { activeWorksheetId: "worksheet/2" } }))[0], 0x42, "Spreadsheet workbook views must use additive workbook field 8.");
 assert.equal(toBinary(SpreadsheetWorkbookViewArtifactSchema, create(SpreadsheetWorkbookViewArtifactSchema, { source: { viewXmlSha256: "x" } }))[0], 0x12, "Spreadsheet workbook-view source bindings must use view field 2.");
+assert.equal(toBinary(SpreadsheetWorkbookViewArtifactSchema, create(SpreadsheetWorkbookViewArtifactSchema, { selectedWorksheetIds: ["worksheet/1"] }))[0], 0x1a, "Spreadsheet selected worksheet IDs must use view field 3.");
 assert.equal(toBinary(SpreadsheetWorkbookViewSourceBindingSchema, create(SpreadsheetWorkbookViewSourceBindingSchema, { semanticSha256: "x" }))[0], 0x22, "Spreadsheet workbook-view semantic hashes must use source-binding field 4.");
+assert.equal(toBinary(SpreadsheetWorkbookViewSourceBindingSchema, create(SpreadsheetWorkbookViewSourceBindingSchema, { worksheetViews: [{ worksheetId: "worksheet/1" }] }))[0], 0x32, "Spreadsheet worksheet-view bindings must use workbook-view source field 6.");
+assert.deepEqual([...toBinary(SpreadsheetWorksheetViewSourceBindingSchema, create(SpreadsheetWorksheetViewSourceBindingSchema, { tabSelected: false }))], [0x38, 0x00], "Spreadsheet worksheet-view selection bindings must preserve explicit false values at field 7.");
 assert.deepEqual([...toBinary(SpreadsheetCalculationArtifactSchema, create(SpreadsheetCalculationArtifactSchema, { calculateOnSave: false }))], [0x10, 0x00], "Spreadsheet calculation booleans must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetDefinedNameArtifactSchema, create(SpreadsheetDefinedNameArtifactSchema, { hidden: false }))], [0x30, 0x00], "Spreadsheet defined-name hidden state must preserve explicit false values.");
 assert.deepEqual([...toBinary(SpreadsheetConnectionArtifactSchema, create(SpreadsheetConnectionArtifactSchema, { keepAlive: false }))], [0x30, 0x00], "Spreadsheet connection booleans must preserve explicit false values.");
@@ -334,6 +337,7 @@ colorTable.sortState = {
   ],
 };
 workbook.worksheets.setActiveWorksheet(iconRules);
+workbook.worksheets.setSelectedWorksheets([summary, iconRules]);
 
 const concurrentWorkbook = Workbook.create();
 concurrentWorkbook.worksheets.add("Concurrent").getRange("A1").values = [["cached runtime"]];
@@ -350,6 +354,8 @@ assert.equal((await SpreadsheetFile.inspectXlsx(exported)).ok, true);
 const exportedZip = await JSZip.loadAsync(exported.bytes);
 const exportedWorkbookXml = await exportedZip.file("xl/workbook.xml").async("text");
 assert.match(exportedWorkbookXml, /<x:workbookView\b[^>]*activeTab="3"/);
+assert.match(await exportedZip.file("xl/worksheets/sheet1.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
+assert.match(await exportedZip.file("xl/worksheets/sheet4.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
 assert.match(exportedWorkbookXml, /<x:sheet\b[^>]*name="Details"[^>]*state="hidden"/);
 assert.match(exportedWorkbookXml, /<x:sheet\b[^>]*name="Advanced Filters"[^>]*state="veryHidden"/);
 assert.match(exportedWorkbookXml, /<x:definedName name="SummaryData" comment="Summary data body" hidden="0">Summary!\$A\$1:\$B\$2<\/x:definedName>/);
@@ -644,12 +650,23 @@ assert.deepEqual(imported.calculation, workbook.calculation);
 assert.equal(imported.worksheets.items.length, 5);
 assert.deepEqual(imported.worksheets.items.map((item) => item.visibility), ["visible", "hidden", "veryHidden", "visible", "visible"]);
 assert.equal(imported.worksheets.getActiveWorksheet().name, "Icon Rules");
+assert.deepEqual(imported.worksheets.getSelectedWorksheets().map((sheet) => sheet.name), ["Summary", "Icon Rules"]);
 assert.throws(() => { imported.worksheets.getActiveWorksheet().visibility = "hidden"; }, /select another active worksheet first/i);
+assert.throws(() => { imported.worksheets.getItem("Summary").visibility = "hidden"; }, /selected worksheet/i);
+imported.worksheets.setSelectedWorksheets(["Summary", "Icon Rules", "Color Rules"]);
+const groupEdited = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
+const groupEditedZip = await JSZip.loadAsync(groupEdited.bytes);
+assert.match(await groupEditedZip.file("xl/worksheets/sheet1.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
+assert.match(await groupEditedZip.file("xl/worksheets/sheet4.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
+assert.match(await groupEditedZip.file("xl/worksheets/sheet5.xml").async("text"), /<x:sheetView\b[^>]*tabSelected="1"/);
+assert.deepEqual((await importXlsxWithOpenChestnut(groupEdited)).worksheets.getSelectedWorksheets().map((sheet) => sheet.name), ["Summary", "Icon Rules", "Color Rules"]);
 imported.worksheets.setActiveWorksheet("Color Rules");
 const activeEdited = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
 const activeEditedZip = await JSZip.loadAsync(activeEdited.bytes);
 assert.match(await activeEditedZip.file("xl/workbook.xml").async("text"), /<x:workbookView\b[^>]*activeTab="4"/);
-assert.equal((await importXlsxWithOpenChestnut(activeEdited)).worksheets.getActiveWorksheet().name, "Color Rules");
+const activeEditedImport = await importXlsxWithOpenChestnut(activeEdited);
+assert.equal(activeEditedImport.worksheets.getActiveWorksheet().name, "Color Rules");
+assert.deepEqual(activeEditedImport.worksheets.getSelectedWorksheets().map((sheet) => sheet.name), ["Color Rules"]);
 assert.deepEqual(imported.definedNames.toJSON(), [
   { id: "defined-name/1", name: "SummaryData", refersTo: "Summary!$A$1:$B$2", scope: undefined, comment: "Summary data body", hidden: false },
   { id: "defined-name/2", name: "StatusData", refersTo: "Details!$A$2:$B$3", scope: "Details", comment: undefined, hidden: true },

@@ -41,8 +41,6 @@ internal static class XlsxCodec
             if (envelope.Workbook.DateSystem == WorkbookDateSystem._1904)
                 workbookPart.Workbook.WorkbookProperties = new WorkbookProperties { Date1904 = true };
             var sheets = workbookPart.Workbook.AppendChild(new Sheets());
-            var workbookView = new XlsxWorkbookViewCodec(workbookPart, envelope.Workbook.Worksheets);
-            workbookView.Apply(envelope.Workbook.View, sourceBound: false, envelope.Workbook.Worksheets);
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: false);
             var styles = new XlsxCellStyleCodec(workbookPart);
@@ -65,6 +63,8 @@ internal static class XlsxCodec
                 worksheetPart.Worksheet.Save();
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
             }
+            var workbookView = new XlsxWorkbookViewCodec(workbookPart, envelope.Workbook.Worksheets);
+            workbookView.Apply(envelope.Workbook.View, sourceBound: false, envelope.Workbook.Worksheets);
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: false, sheetNames);
             theme.Save();
             styles.Save();
@@ -248,8 +248,11 @@ internal static class XlsxCodec
     private static void PatchSheetView(Worksheet worksheet, WorksheetArtifact source)
     {
         var sheetViews = worksheet.SheetViews;
+        var freeze = source.FreezePane;
+        var wantsFreeze = freeze is not null && (freeze.Rows > 0 || freeze.Columns > 0);
         if (sheetViews is null)
         {
+            if (source.ShowGridLines && !wantsFreeze) return;
             sheetViews = new SheetViews();
             var before = worksheet.Elements().FirstOrDefault(item => item is SheetFormatProperties or Columns or SheetData);
             if (before is null) worksheet.Append(sheetViews);
@@ -258,24 +261,47 @@ internal static class XlsxCodec
         var sheetView = sheetViews.Elements<SheetView>().FirstOrDefault();
         if (sheetView is null)
         {
+            if (source.ShowGridLines && !wantsFreeze) return;
             sheetView = new SheetView { WorkbookViewId = 0U };
             sheetViews.Append(sheetView);
         }
-        sheetView.ShowGridLines = source.ShowGridLines;
+        var sourceShowGridLines = sheetView.ShowGridLines?.Value ?? true;
+        if (sourceShowGridLines != source.ShowGridLines) sheetView.ShowGridLines = source.ShowGridLines;
+        var sourcePane = sheetView.Elements<Pane>().FirstOrDefault(item =>
+            item.State?.Value == PaneStateValues.Frozen || item.State?.Value == PaneStateValues.FrozenSplit);
+        if (FreezePaneMatches(sourcePane, freeze)) return;
         foreach (var pane in sheetView.Elements<Pane>().ToArray()) pane.Remove();
-        if (source.FreezePane is { } freeze && (freeze.Rows > 0 || freeze.Columns > 0))
+        if (wantsFreeze)
         {
+            var desiredFreeze = freeze!;
             sheetView.InsertAt(new Pane
             {
                 State = PaneStateValues.Frozen,
-                HorizontalSplit = freeze.Columns,
-                VerticalSplit = freeze.Rows,
-                TopLeftCell = string.IsNullOrWhiteSpace(freeze.TopLeftCell) ? CellReference(freeze.Rows, freeze.Columns) : freeze.TopLeftCell,
-                ActivePane = freeze.Rows > 0 && freeze.Columns > 0
+                HorizontalSplit = desiredFreeze.Columns,
+                VerticalSplit = desiredFreeze.Rows,
+                TopLeftCell = string.IsNullOrWhiteSpace(desiredFreeze.TopLeftCell) ? CellReference(desiredFreeze.Rows, desiredFreeze.Columns) : desiredFreeze.TopLeftCell,
+                ActivePane = desiredFreeze.Rows > 0 && desiredFreeze.Columns > 0
                     ? PaneValues.BottomRight
-                    : freeze.Rows > 0 ? PaneValues.BottomLeft : PaneValues.TopRight,
+                    : desiredFreeze.Rows > 0 ? PaneValues.BottomLeft : PaneValues.TopRight,
             }, 0);
         }
+    }
+
+    private static bool FreezePaneMatches(Pane? current, FreezePane? desired)
+    {
+        var wantsFreeze = desired is not null && (desired.Rows > 0 || desired.Columns > 0);
+        if (!wantsFreeze) return current is null;
+        if (current is null) return false;
+        var expectedTopLeft = string.IsNullOrWhiteSpace(desired!.TopLeftCell)
+            ? CellReference(desired.Rows, desired.Columns)
+            : desired.TopLeftCell;
+        var expectedPane = desired.Rows > 0 && desired.Columns > 0
+            ? PaneValues.BottomRight
+            : desired.Rows > 0 ? PaneValues.BottomLeft : PaneValues.TopRight;
+        return Math.Max(0, current.VerticalSplit?.Value ?? 0) == desired.Rows &&
+            Math.Max(0, current.HorizontalSplit?.Value ?? 0) == desired.Columns &&
+            string.Equals(current.TopLeftCell?.Value ?? string.Empty, expectedTopLeft, StringComparison.OrdinalIgnoreCase) &&
+            current.ActivePane?.Value == expectedPane;
     }
 
     private static void PatchColumnDimensions(Worksheet worksheet, WorksheetArtifact source)

@@ -4,6 +4,7 @@
   "codec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
   "activeWorksheet": "Icon Rules",
+  "selectedWorksheets": ["Summary", "Icon Rules"],
   "dateSystem": "1904",
   "calculation": {
     "mode": "automaticExceptTables",

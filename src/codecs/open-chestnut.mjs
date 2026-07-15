@@ -108,7 +108,10 @@ function wireWorksheetMetadata(sheet, slot) {
 }
 
 function workbookViewSnapshot(workbook) {
-  return { activeWorksheetId: workbook.worksheets.getActiveWorksheet().id };
+  return {
+    activeWorksheetId: workbook.worksheets.getActiveWorksheet().id,
+    selectedWorksheetIds: workbook.worksheets.getSelectedWorksheets().map((sheet) => sheet.id),
+  };
 }
 
 function wireWorkbookView(workbook, state) {
@@ -1193,7 +1196,10 @@ function workbookFromEnvelope(envelope) {
     tablesBySheet.set(sheet.id, { slots });
   }
   for (const sourceDefinedName of source.definedNames || []) workbook.definedNames.add(publicWorkbookDefinedName(sourceDefinedName));
-  if (source.view) workbook.worksheets.setActiveWorksheet(source.view.activeWorksheetId);
+  if (source.view) {
+    workbook.worksheets.setActiveWorksheet(source.view.activeWorksheetId);
+    if (source.view.selectedWorksheetIds?.length) workbook.worksheets.setSelectedWorksheets(source.view.selectedWorksheetIds);
+  }
   const definedNameSlots = (source.definedNames || []).map((wire, index) => ({
     wire,
     definedName: workbook.definedNames.items[index],
