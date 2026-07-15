@@ -359,6 +359,8 @@ message SpreadsheetImageArtifact {
   SpreadsheetAbsoluteAnchorArtifact absolute_anchor = 8;
   // Optional source rectangle applied before the image is stretched.
   SpreadsheetImageCropArtifact crop = 9;
+  // Optional bounded effects applied by the picture blip.
+  SpreadsheetImageEffectsArtifact effects = 10;
 }
 
 // SpreadsheetDrawingML stores one-cell geometry in English Metric Units.
@@ -416,6 +418,20 @@ message SpreadsheetImageCropArtifact {
   sint32 top_thousandth_percent = 2;
   sint32 right_thousandth_percent = 3;
   sint32 bottom_thousandth_percent = 4;
+}
+
+// Bounded DrawingML blip effects. Message/optional-scalar presence preserves
+// native element presence independently from zero-valued attributes.
+message SpreadsheetImageEffectsArtifact {
+  bool grayscale = 1;
+  SpreadsheetImageLuminanceEffectArtifact luminance = 2;
+  optional uint32 opacity_thousandth_percent = 3;
+}
+
+// DrawingML a:lum uses signed thousandths of one percent.
+message SpreadsheetImageLuminanceEffectArtifact {
+  sint32 brightness_thousandth_percent = 1;
+  sint32 contrast_thousandth_percent = 2;
 }
 
 // Hash-bound locator for one recognized picture anchor in a worksheet-owned

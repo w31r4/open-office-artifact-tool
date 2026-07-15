@@ -59,6 +59,35 @@ function pictureCrop(pictureXml) {
   };
 }
 
+function pictureEffects(pictureXml) {
+  const body = /<(?:[A-Za-z_][\w.-]*:)?blip\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?blip>/.exec(pictureXml)?.[1];
+  if (body == null) return undefined;
+  const supported = /<(?:[A-Za-z_][\w.-]*:)?(?:alphaModFix|grayscl|lum)\b[^>]*\/?\s*>/g;
+  const tags = [...body.matchAll(supported)].map((match) => match[0]);
+  if (body.replace(supported, "").trim() || tags.length === 0) return undefined;
+  const hasLocalName = (tag, name) => new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b`).test(tag);
+  const alpha = tags.filter((tag) => hasLocalName(tag, "alphaModFix"));
+  const grayscale = tags.filter((tag) => hasLocalName(tag, "grayscl"));
+  const luminance = tags.filter((tag) => hasLocalName(tag, "lum"));
+  if (alpha.length > 1 || grayscale.length > 1 || luminance.length > 1) return undefined;
+  const output = {};
+  if (grayscale.length === 1) output.grayscale = true;
+  if (luminance.length === 1) {
+    const attrs = attributes(luminance[0]);
+    const brightness = Number(attrs.bright || 0);
+    const contrast = Number(attrs.contrast || 0);
+    if (![brightness, contrast].every((value) => Number.isInteger(value) && value >= -100_000 && value <= 100_000)) return undefined;
+    output.brightnessPercent = brightness / 1000;
+    output.contrastPercent = contrast / 1000;
+  }
+  if (alpha.length === 1) {
+    const amount = Number(attributes(alpha[0]).amt);
+    if (!Number.isInteger(amount) || amount < 0 || amount > 100_000) return undefined;
+    output.opacityPercent = amount / 1000;
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
 export function parseSpreadsheetDrawing(xml = "") {
   const records = [];
   const anchorPattern = /<(?:[A-Za-z_][\w.-]*:)?(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1>/g;
@@ -87,6 +116,7 @@ export function parseSpreadsheetDrawing(xml = "") {
       position: absolutePosition(body),
       extent: drawingExtent(body),
       crop: picture ? pictureCrop(picture) : undefined,
+      effects: picture ? pictureEffects(picture) : undefined,
     });
   }
   return records;

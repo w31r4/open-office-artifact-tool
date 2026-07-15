@@ -2893,6 +2893,75 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsEditsRemovesAndBoundsWorksheetPictureEffects()
+    {
+        var request = EffectsPictureExportRequest();
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        AssertPictureEffects(authored.File.ToByteArray(), 65_000, true, 15_000, -10_000, locked: false);
+
+        var source = AddPictureLocksResidual(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var image = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Images);
+        Assert.True(image.Effects.Grayscale);
+        Assert.Equal(15_000, image.Effects.Luminance.BrightnessThousandthPercent);
+        Assert.Equal(-10_000, image.Effects.Luminance.ContrastThousandthPercent);
+        Assert.True(image.Effects.HasOpacityThousandthPercent);
+        Assert.Equal(65_000U, image.Effects.OpacityThousandthPercent);
+
+        image.Effects.Grayscale = false;
+        image.Effects.Luminance.BrightnessThousandthPercent = -20_000;
+        image.Effects.Luminance.ContrastThousandthPercent = 25_000;
+        image.Effects.OpacityThousandthPercent = 0;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        AssertPictureEffects(edited.File.ToByteArray(), 0, false, -20_000, 25_000, locked: true);
+
+        var removed = Import(edited.File.ToByteArray());
+        removed.Artifact.Workbook.Worksheets[0].Images[0].Effects = null;
+        var withoutEffects = Export(removed.Artifact);
+        Assert.True(withoutEffects.Ok, string.Join("\n", withoutEffects.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(withoutEffects.File.ToByteArray());
+        AssertPictureEffects(withoutEffects.File.ToByteArray(), null, false, null, null, locked: true);
+        Assert.Null(Assert.Single(Import(withoutEffects.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Images).Effects);
+
+        var invalidLuminance = EffectsPictureExportRequest();
+        invalidLuminance.Artifact.Workbook.Worksheets[0].Images[0].Effects.Luminance.BrightnessThousandthPercent = 100_001;
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidLuminance.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalidOpacity = EffectsPictureExportRequest();
+        invalidOpacity.Artifact.Workbook.Worksheets[0].Images[0].Effects.OpacityThousandthPercent = 100_001;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidOpacity.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var empty = PictureExportRequest();
+        empty.Artifact.Workbook.Worksheets[0].Images[0].Effects = new SpreadsheetImageEffectsArtifact();
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(empty.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var opaque = Import(AddDuplicatePictureEffect(authored.File.ToByteArray()));
+        Assert.True(opaque.Ok, string.Join("\n", opaque.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var opaqueImage = Assert.Single(opaque.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Null(opaqueImage.Effects);
+        opaqueImage.Name = "Opaque effect retained";
+        var metadataOnly = Export(opaque.Artifact);
+        Assert.True(metadataOnly.Ok, string.Join("\n", metadataOnly.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertPictureGrayscaleCount(metadataOnly.File.ToByteArray(), 2);
+        var opaqueEdit = Import(metadataOnly.File.ToByteArray());
+        opaqueEdit.Artifact.Workbook.Worksheets[0].Images[0].Effects = new SpreadsheetImageEffectsArtifact { Grayscale = true };
+        rejected = Export(opaqueEdit.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceBoundWorksheetPicturesRejectSharedOrCrossFormatReplacement()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PictureExportRequest().ToByteArray()));
@@ -3030,6 +3099,22 @@ public sealed class XlsxCodecTests
             TopThousandthPercent = -5_000,
             RightThousandthPercent = 15_000,
             BottomThousandthPercent = 20_000,
+        };
+        return request;
+    }
+
+    private static CodecRequest EffectsPictureExportRequest()
+    {
+        var request = PictureExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Images[0].Effects = new SpreadsheetImageEffectsArtifact
+        {
+            Grayscale = true,
+            Luminance = new SpreadsheetImageLuminanceEffectArtifact
+            {
+                BrightnessThousandthPercent = 15_000,
+                ContrastThousandthPercent = -10_000,
+            },
+            OpacityThousandthPercent = 65_000,
         };
         return request;
     }
@@ -3491,6 +3576,9 @@ public sealed class XlsxCodecTests
             var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
             var picture = drawing.Descendants<Xdr.Picture>().Single();
             picture.NonVisualPictureProperties!.NonVisualPictureDrawingProperties!.Append(new A.PictureLocks { NoChangeAspect = true });
+            var extension = new A.BlipExtension { Uri = "{E8D2B7F2-4A0E-4F79-9E08-9BFC0B4C25C6}" };
+            extension.Append(document.WorkbookPart.WorksheetParts.Single().DrawingsPart!.CreateUnknownElement("<fixture:probe xmlns:fixture=\"urn:openchestnut:picture-effect\">preserve-me</fixture:probe>"));
+            picture.BlipFill!.Blip!.Append(new A.BlipExtensionList(extension));
             drawing.Save();
         }
         return stream.ToArray();
@@ -3510,6 +3598,20 @@ public sealed class XlsxCodecTests
             crop.Top = top;
             crop.Right = right;
             crop.Bottom = bottom;
+            drawing.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddDuplicatePictureEffect(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
+            drawing.Descendants<A.Blip>().Single().Append(new A.Grayscale());
             drawing.Save();
         }
         return stream.ToArray();
@@ -3647,6 +3749,7 @@ public sealed class XlsxCodecTests
         using var stream = new MemoryStream(bytes, writable: false);
         using var document = SpreadsheetDocument.Open(stream, false);
         var picture = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!.Descendants<Xdr.Picture>().Single();
+        var blip = picture.BlipFill!.Blip!;
         var crop = picture.BlipFill!.GetFirstChild<A.SourceRectangle>();
         if (left.HasValue)
         {
@@ -3664,8 +3767,60 @@ public sealed class XlsxCodecTests
             Assert.Null(crop);
         }
         var locks = picture.NonVisualPictureProperties!.NonVisualPictureDrawingProperties!.GetFirstChild<A.PictureLocks>();
-        if (locked) Assert.True(locks!.NoChangeAspect!.Value);
-        else Assert.Null(locks);
+        if (locked)
+        {
+            Assert.True(locks!.NoChangeAspect!.Value);
+            Assert.Contains("preserve-me", blip.GetFirstChild<A.BlipExtensionList>()!.OuterXml);
+        }
+        else
+        {
+            Assert.Null(locks);
+            Assert.Null(blip.GetFirstChild<A.BlipExtensionList>());
+        }
+    }
+
+    private static void AssertPictureEffects(byte[] bytes, int? opacity, bool grayscale, int? brightness, int? contrast, bool locked)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var picture = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!.Descendants<Xdr.Picture>().Single();
+        var blip = picture.BlipFill!.Blip!;
+        var alpha = blip.GetFirstChild<A.AlphaModulationFixed>();
+        var gray = blip.GetFirstChild<A.Grayscale>();
+        var luminance = blip.GetFirstChild<A.LuminanceEffect>();
+        if (opacity.HasValue) Assert.Equal(opacity.Value, alpha!.Amount!.Value);
+        else Assert.Null(alpha);
+        if (grayscale) Assert.NotNull(gray);
+        else Assert.Null(gray);
+        if (brightness.HasValue)
+        {
+            Assert.Equal(brightness.Value, luminance!.Brightness!.Value);
+            Assert.Equal(contrast!.Value, luminance.Contrast!.Value);
+        }
+        else Assert.Null(luminance);
+        var children = blip.ChildElements.ToList();
+        if (alpha is not null && gray is not null) Assert.True(children.IndexOf(alpha) < children.IndexOf(gray));
+        if (gray is not null && luminance is not null) Assert.True(children.IndexOf(gray) < children.IndexOf(luminance));
+        if (alpha is not null && luminance is not null) Assert.True(children.IndexOf(alpha) < children.IndexOf(luminance));
+        var locks = picture.NonVisualPictureProperties!.NonVisualPictureDrawingProperties!.GetFirstChild<A.PictureLocks>();
+        if (locked)
+        {
+            Assert.True(locks!.NoChangeAspect!.Value);
+            Assert.Contains("preserve-me", blip.GetFirstChild<A.BlipExtensionList>()!.OuterXml);
+        }
+        else
+        {
+            Assert.Null(locks);
+            Assert.Null(blip.GetFirstChild<A.BlipExtensionList>());
+        }
+    }
+
+    private static void AssertPictureGrayscaleCount(byte[] bytes, int expected)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var blip = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!.Descendants<A.Blip>().Single();
+        Assert.Equal(expected, blip.Elements<A.Grayscale>().Count());
     }
 
     private static CodecResponse Import(byte[] bytes) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest

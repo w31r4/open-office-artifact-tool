@@ -76,6 +76,29 @@ function wireCrop(image) {
   };
 }
 
+function effectPercent(value, name, image, { unsigned = false } = {}) {
+  const number = Number(value);
+  const minimum = unsigned ? 0 : -100;
+  if (!Number.isFinite(number) || number < minimum || number > 100) fail(image, `${name} must be finite and between ${minimum} and 100 percent.`);
+  return number;
+}
+
+function wireEffects(image) {
+  if (image.effects == null) return undefined;
+  if (typeof image.effects !== "object" || Array.isArray(image.effects)) fail(image, "effects must be an object.");
+  const has = (name) => Object.hasOwn(image.effects, name) && image.effects[name] != null;
+  if (has("grayscale") && typeof image.effects.grayscale !== "boolean") fail(image, "effects.grayscale must be a boolean.");
+  const output = { grayscale: image.effects.grayscale === true };
+  if (has("brightnessPercent") || has("contrastPercent")) {
+    output.luminance = {
+      brightnessThousandthPercent: Math.round(effectPercent(image.effects.brightnessPercent ?? 0, "effects.brightnessPercent", image) * THOUSANDTHS_PER_PERCENT),
+      contrastThousandthPercent: Math.round(effectPercent(image.effects.contrastPercent ?? 0, "effects.contrastPercent", image) * THOUSANDTHS_PER_PERCENT),
+    };
+  }
+  if (has("opacityPercent")) output.opacityThousandthPercent = Math.round(effectPercent(image.effects.opacityPercent, "effects.opacityPercent", image, { unsigned: true }) * THOUSANDTHS_PER_PERCENT);
+  return output.grayscale || output.luminance || output.opacityThousandthPercent != null ? output : undefined;
+}
+
 export function spreadsheetImageSnapshot(image) {
   const anchor = image.anchor || {};
   const from = anchor.from || {};
@@ -107,6 +130,14 @@ export function spreadsheetImageSnapshot(image) {
     cropTopPercent: image.crop == null ? undefined : Number(image.crop.topPercent ?? 0),
     cropRightPercent: image.crop == null ? undefined : Number(image.crop.rightPercent ?? 0),
     cropBottomPercent: image.crop == null ? undefined : Number(image.crop.bottomPercent ?? 0),
+    effectsPresent: image.effects != null,
+    effectGrayscale: image.effects == null ? undefined : image.effects.grayscale === true,
+    effectBrightnessPresent: image.effects == null ? undefined : Object.hasOwn(image.effects, "brightnessPercent"),
+    effectBrightnessPercent: image.effects == null ? undefined : Number(image.effects.brightnessPercent ?? 0),
+    effectContrastPresent: image.effects == null ? undefined : Object.hasOwn(image.effects, "contrastPercent"),
+    effectContrastPercent: image.effects == null ? undefined : Number(image.effects.contrastPercent ?? 0),
+    effectOpacityPresent: image.effects == null ? undefined : Object.hasOwn(image.effects, "opacityPercent"),
+    effectOpacityPercent: image.effects == null ? undefined : Number(image.effects.opacityPercent ?? 0),
   };
 }
 
@@ -146,6 +177,8 @@ function wireImage(image, assets, source) {
   };
   const crop = wireCrop(image);
   if (crop) output.crop = crop;
+  const effects = wireEffects(image);
+  if (effects) output.effects = effects;
   if (snapshot.anchorType === "absolute") {
     if (!image.anchor?.position || !image.anchor?.extent) fail(image, "absolute anchor requires anchor.position and anchor.extent.");
     if (image.anchor?.from || image.anchor?.to || snapshot.editAs != null || image.anchor?.widthPx != null || image.anchor?.heightPx != null) fail(image, "absolute anchor cannot carry cell markers, editAs, or legacy extent fields.");
@@ -243,6 +276,24 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
       bottomPercent: values[3] / THOUSANDTHS_PER_PERCENT,
     };
   })();
+  const publicEffects = (() => {
+    if (!source.effects) return undefined;
+    const output = {};
+    if (source.effects.grayscale) output.grayscale = true;
+    if (source.effects.luminance) {
+      const brightness = Number(source.effects.luminance.brightnessThousandthPercent);
+      const contrast = Number(source.effects.luminance.contrastThousandthPercent);
+      if (![brightness, contrast].every((value) => Number.isSafeInteger(value) && value >= -100_000 && value <= 100_000)) fail(source, "has invalid luminance effects.");
+      output.brightnessPercent = brightness / THOUSANDTHS_PER_PERCENT;
+      output.contrastPercent = contrast / THOUSANDTHS_PER_PERCENT;
+    }
+    if (source.effects.opacityThousandthPercent != null) {
+      const opacity = Number(source.effects.opacityThousandthPercent);
+      if (!Number.isSafeInteger(opacity) || opacity < 0 || opacity > 100_000) fail(source, "has invalid opacity effect.");
+      output.opacityPercent = opacity / THOUSANDTHS_PER_PERCENT;
+    }
+    return Object.keys(output).length > 0 ? output : undefined;
+  })();
   const publicMarker = (value, name) => {
     if (!value) fail(source, `has no ${name} marker.`);
     const row = Number(value.row);
@@ -294,6 +345,7 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
     fit: "contain",
     anchor: publicAnchor,
     ...(publicCrop ? { crop: publicCrop } : {}),
+    ...(publicEffects ? { effects: publicEffects } : {}),
   });
   image.id = source.id || image.id;
   return image;

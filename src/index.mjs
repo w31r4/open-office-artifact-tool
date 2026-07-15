@@ -924,8 +924,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX cells, styles, tables, drawings, and worksheet-backed pivot/cache definitions into an editable Workbook facade." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to an XLSX FileBlob." },
-  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded source-rectangle crop and safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec." },
-  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded source-rectangle crop, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec." },
+  { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded crop/effects and safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec." },
+  { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded crop/effects, and recognized source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
   { artifactKind: "workbook", kind: "api", name: "invokeOpenChestnut", summary: "Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectXlsx", summary: "Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
@@ -969,7 +969,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "sheet.tables.add", summary: "Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles." },
   { artifactKind: "workbook", kind: "api", name: "sheet.pivotTables.add", summary: "Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip." },
   { artifactKind: "workbook", kind: "api", name: "sheet.charts.add", summary: "Create an inspectable worksheet chart from a range or config; setData(range) infers categories and series formulas." },
-  { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry and optional percentage source-rectangle crop." },
+  { artifactKind: "workbook", kind: "api", name: "sheet.images.add", summary: "Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop and bounded grayscale/luminance/opacity effects." },
   { artifactKind: "workbook", kind: "api", name: "sheet.sparklineGroups.add", summary: "Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand." },
   { artifactKind: "workbook", kind: "formula", name: "fx.SUM", category: "math-trig", summary: "Sum numeric values across arguments and ranges.", examples: ["=SUM(A1:A10)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AVERAGE", category: "statistical", summary: "Average numeric values across arguments and ranges in the clean-room formula engine.", examples: ["=AVERAGE(A1:A10)"] },
@@ -2216,7 +2216,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
-    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded source-rectangle crop and unique-reference same-format source-bound byte replacement, and recognized source-bound database connection-root metadata." },
+    workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded source-rectangle crop, grayscale/luminance/opacity effects, unique-reference same-format source-bound byte replacement, and recognized source-bound database connection-root metadata." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -2224,7 +2224,7 @@ const WORKBOOK_HELP_SCHEMAS = {
   "importXlsxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "XLSX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded source-rectangle crop, recognized database connection-root metadata, and source/opaque package evidence for fail-closed metadata, geometry, crop, and safe same-format image-byte edits."),
+  }, "workbook", "Workbook", "Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG one-cell, two-cell, or absolute-anchor pictures with bounded crop/effects, recognized database connection-root metadata, and source/opaque package evidence for fail-closed metadata, geometry, crop, effects, and safe same-format image-byte edits."),
   "openChestnutStatus": helpSchema({}, "status", "object", "Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest."),
   "invokeOpenChestnut": helpSchema({
     request: { type: "object", required: true, description: "Generated public CodecRequest wire-message initializer. Prefer the typed XLSX helpers unless implementing codec infrastructure." },
@@ -2433,6 +2433,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     alt: { type: "string", description: "Alternative text." },
     anchor: { type: "object", description: "One-cell { from, extent }, two-cell { type:'twoCell', from, to, editAs? }, or page-relative { type:'absolute', position:{leftPx,topPx}, extent } geometry. Cell markers use 0-based row/col plus optional rowOffsetPx/colOffsetPx; editAs is twoCell, oneCell, or absolute." },
     crop: { type: "object", description: "Optional { leftPercent, topPercent, rightPercent, bottomPercent } source rectangle. Each signed offset is -100 through 100; opposing sums must remain below 100. Positive values inset and negative values outset." },
+    effects: { type: "object", description: "Optional { grayscale, brightnessPercent, contrastPercent, opacityPercent } profile. Brightness/contrast are -100 through 100; opacity is 0 through 100. OpenChestnut maps it to bounded DrawingML blip effects." },
     fit: { type: "string", description: "contain or cover intent." },
   }, "image", "WorksheetImage", "Editable worksheet image facade."),
   "sheet.sparklineGroups.add": helpSchema({
@@ -3441,13 +3442,14 @@ class WorksheetImage {
     this.anchor = config.anchor || { from: { row: 0, col: 0 }, extent: { widthPx: 160, heightPx: 120 } };
     this.fit = config.fit || "contain";
     this.crop = config.crop;
+    this.effects = config.effects;
   }
 
   get position() { return worksheetAnchorFrame(this.worksheet, this.anchor); }
-  inspectRecord() { const p = this.position; return { kind: "drawing", drawingType: "image", id: this.id, sheet: this.worksheet.name, name: this.name, alt: this.alt, prompt: this.prompt, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", crop: this.crop }; }
+  inspectRecord() { const p = this.position; return { kind: "drawing", drawingType: "image", id: this.id, sheet: this.worksheet.name, name: this.name, alt: this.alt, prompt: this.prompt, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", crop: this.crop, effects: this.effects }; }
   replace(config = {}) { Object.assign(this, config); return this; }
-  toSvg() { const p = this.position; const image = this.dataUrl ? `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#fef3c7" stroke="#f59e0b"/>`; return `${image}<text x="${p.left + 8}" y="${p.top + 20}" font-family="Arial" font-size="12" fill="#92400e">${xmlEscape(this.alt || this.prompt || this.name)}</text>`; }
-  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, anchor: this.anchor, fit: this.fit, crop: this.crop }; }
+  toSvg() { const p = this.position; const filters = []; if (this.effects?.grayscale === true) filters.push("grayscale(1)"); const brightness = Number(this.effects?.brightnessPercent); const contrast = Number(this.effects?.contrastPercent); const opacity = Number(this.effects?.opacityPercent); if (Number.isFinite(brightness) && brightness >= -100 && brightness <= 100) filters.push(`brightness(${1 + brightness / 100})`); if (Number.isFinite(contrast) && contrast >= -100 && contrast <= 100) filters.push(`contrast(${1 + contrast / 100})`); const visual = `${filters.length ? ` style="filter:${attrEscape(filters.join(" "))}"` : ""}${Number.isFinite(opacity) && opacity >= 0 && opacity <= 100 ? ` opacity="${opacity / 100}"` : ""}`; const image = this.dataUrl ? `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"${visual}/>` : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#fef3c7" stroke="#f59e0b"${visual}/>`; return `${image}<text x="${p.left + 8}" y="${p.top + 20}" font-family="Arial" font-size="12" fill="#92400e">${xmlEscape(this.alt || this.prompt || this.name)}</text>`; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, anchor: this.anchor, fit: this.fit, crop: this.crop, effects: this.effects }; }
 }
 
 class WorksheetImageCollection {
@@ -7294,12 +7296,30 @@ function drawingXml(imageParts, chartParts = []) {
     }
     return `<a:srcRect l="${Math.round(values[0] * 1000)}" t="${Math.round(values[1] * 1000)}" r="${Math.round(values[2] * 1000)}" b="${Math.round(values[3] * 1000)}"/>`;
   };
+  const effectsXml = (image) => {
+    if (image.effects == null) return "";
+    if (typeof image.effects !== "object" || Array.isArray(image.effects)) throw new Error(`Worksheet image ${image.name || "(unnamed)"} effects must be an object.`);
+    const has = (name) => Object.hasOwn(image.effects, name) && image.effects[name] != null;
+    if (has("grayscale") && typeof image.effects.grayscale !== "boolean") throw new Error(`Worksheet image ${image.name || "(unnamed)"} effects.grayscale must be a boolean.`);
+    const percent = (name, minimum) => {
+      const value = Number(image.effects[name]);
+      if (!Number.isFinite(value) || value < minimum || value > 100) throw new Error(`Worksheet image ${image.name || "(unnamed)"} effects.${name} must be between ${minimum} and 100 percent.`);
+      return Math.round(value * 1000);
+    };
+    const output = [];
+    if (has("opacityPercent")) output.push(`<a:alphaModFix amt="${percent("opacityPercent", 0)}"/>`);
+    if (image.effects.grayscale === true) output.push("<a:grayscl/>");
+    if (has("brightnessPercent") || has("contrastPercent")) output.push(`<a:lum bright="${has("brightnessPercent") ? percent("brightnessPercent", -100) : 0}" contrast="${has("contrastPercent") ? percent("contrastPercent", -100) : 0}"/>`);
+    return output.join("");
+  };
   const imageAnchors = imageParts.map((part, index) => {
     const anchorType = part.image.anchor?.type;
     if (anchorType != null && !["oneCell", "twoCell", "absolute"].includes(anchorType)) throw new Error(`Worksheet image ${part.image.name || index + 1} has unsupported anchor.type ${anchorType}.`);
     if (anchorType === "oneCell" && part.image.anchor?.to) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine anchor.type oneCell with anchor.to.`);
     const from = part.image.anchor?.from || { row: 0, col: 0 };
-    const picture = `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${part.drawingRelId}"/>${cropXml(part.image)}<a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>`;
+    const effects = effectsXml(part.image);
+    const blip = effects ? `<a:blip r:embed="${part.drawingRelId}">${effects}</a:blip>` : `<a:blip r:embed="${part.drawingRelId}"/>`;
+    const picture = `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill>${blip}${cropXml(part.image)}<a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>`;
     if (anchorType === "absolute") {
       if (!part.image.anchor?.position || !part.image.anchor?.extent) throw new Error(`Worksheet image ${part.image.name || index + 1} absolute anchor requires anchor.position and anchor.extent.`);
       if (part.image.anchor?.from || part.image.anchor?.to || part.image.anchor?.editAs != null || part.image.anchor?.widthPx != null || part.image.anchor?.heightPx != null) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine absolute geometry with cell markers, editAs, or legacy extent fields.`);
@@ -8236,6 +8256,7 @@ async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
           uri: bytes ? undefined : targetPath,
           anchor,
           ...(record.crop ? { crop: record.crop } : {}),
+          ...(record.effects ? { effects: record.effects } : {}),
         });
       } else if (record.kind === "chart" && relationship.type.endsWith("/chart")) {
         const chartXml = await zip.file(targetPath)?.async("text");

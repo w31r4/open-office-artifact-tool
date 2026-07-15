@@ -78,6 +78,7 @@ assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArt
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { twoCellAnchor: { from: {}, to: {} } }))[0], 0x3a, "Spreadsheet two-cell anchors must use additive image field 7.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { absoluteAnchor: { widthEmu: 1n, heightEmu: 1n } }))[0], 0x42, "Spreadsheet absolute anchors must use additive image field 8.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { crop: { leftThousandthPercent: 1 } }))[0], 0x4a, "Spreadsheet image crops must use additive image field 9.");
+assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { effects: { grayscale: true } }))[0], 0x52, "Spreadsheet image effects must use additive image field 10.");
 assert.deepEqual([...toBinary(SpreadsheetOneCellAnchorArtifactSchema, create(SpreadsheetOneCellAnchorArtifactSchema, { widthEmu: 1n }))], [0x28, 0x01], "Spreadsheet image widths must use signed EMU field 5.");
 assert.equal(toBinary(SpreadsheetImageSourceBindingSchema, create(SpreadsheetImageSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet image semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetWorksheetSourceBindingSchema, create(SpreadsheetWorksheetSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet worksheet semantic hashes must use source-binding field 5.");
@@ -1109,6 +1110,72 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /between -100 and 100/i.test(error.message),
 );
 await assert.rejects(SpreadsheetFile.exportXlsx(invalidCropBoundWorkbook), /-100 through 100/i);
+const effectsImageWorkbook = Workbook.create();
+const effectsImageSheet = effectsImageWorkbook.worksheets.add("Picture effects");
+effectsImageSheet.images.add({
+  name: "Effect mark",
+  alt: "Bounded grayscale luminance and opacity",
+  dataUrl: twoCellImageDataUrl,
+  effects: { grayscale: true, brightnessPercent: 15, contrastPercent: -10, opacityPercent: 65 },
+  anchor: { from: { row: 1, col: 2 }, extent: { widthPx: 120, heightPx: 80 } },
+});
+const effectsImageExport = await exportXlsxWithOpenChestnut(effectsImageWorkbook);
+const effectsImageZip = await JSZip.loadAsync(effectsImageExport.bytes);
+const effectsDrawingXml = await effectsImageZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(effectsDrawingXml, /<a:alphaModFix amt="65000"[^>]*\/>/);
+assert.match(effectsDrawingXml, /<a:grayscl[^>]*\/>/);
+assert.match(effectsDrawingXml, /<a:lum bright="15000" contrast="-10000"[^>]*\/>/);
+assert.ok(effectsDrawingXml.indexOf("alphaModFix") < effectsDrawingXml.indexOf("grayscl"));
+assert.ok(effectsDrawingXml.indexOf("grayscl") < effectsDrawingXml.indexOf("<a:lum"));
+const effectsImageImported = await importXlsxWithOpenChestnut(effectsImageExport);
+const importedEffectsImage = effectsImageImported.worksheets.getItem("Picture effects").images.items[0];
+assert.deepEqual(importedEffectsImage.effects, { grayscale: true, brightnessPercent: 15, contrastPercent: -10, opacityPercent: 65 });
+assert.match(importedEffectsImage.toSvg(), /filter:grayscale\(1\) brightness\(1\.15\) contrast\(0\.9\)/);
+assert.match(importedEffectsImage.toSvg(), /opacity="0\.65"/);
+importedEffectsImage.effects = { brightnessPercent: -20, contrastPercent: 25, opacityPercent: 0 };
+const editedEffectsExport = await exportXlsxWithOpenChestnut(effectsImageImported, { recalculate: false });
+assert.deepEqual((await importXlsxWithOpenChestnut(editedEffectsExport)).worksheets.getItem("Picture effects").images.items[0].effects, importedEffectsImage.effects);
+const removedEffectsWorkbook = await importXlsxWithOpenChestnut(editedEffectsExport);
+removedEffectsWorkbook.worksheets.getItem("Picture effects").images.items[0].effects = undefined;
+const removedEffectsExport = await exportXlsxWithOpenChestnut(removedEffectsWorkbook, { recalculate: false });
+const removedEffectsZip = await JSZip.loadAsync(removedEffectsExport.bytes);
+assert.doesNotMatch(await removedEffectsZip.file("xl/drawings/drawing1.xml").async("text"), /alphaModFix|grayscl|<a:lum\b/);
+assert.equal((await importXlsxWithOpenChestnut(removedEffectsExport)).worksheets.getItem("Picture effects").images.items[0].effects, undefined);
+const javascriptEffectsExport = await SpreadsheetFile.exportXlsx(effectsImageWorkbook);
+const javascriptEffectsZip = await JSZip.loadAsync(new Uint8Array(await javascriptEffectsExport.arrayBuffer()));
+const javascriptEffectsXml = await javascriptEffectsZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(javascriptEffectsXml, /<a:blip[^>]*><a:alphaModFix amt="65000"\/><a:grayscl\/><a:lum bright="15000" contrast="-10000"\/><\/a:blip>/);
+assert.deepEqual((await SpreadsheetFile.importXlsx(javascriptEffectsExport)).worksheets.getItem("Picture effects").images.items[0].effects, {
+  grayscale: true,
+  brightnessPercent: 15,
+  contrastPercent: -10,
+  opacityPercent: 65,
+});
+javascriptEffectsZip.file("xl/drawings/drawing1.xml", javascriptEffectsXml.replace("</a:blip>", "<a:grayscl/></a:blip>"));
+javascriptEffectsZip.remove("customXml/open-office-artifact.json");
+assert.equal((await SpreadsheetFile.importXlsx(await javascriptEffectsZip.generateAsync({ type: "uint8array" }))).worksheets.getItem("Picture effects").images.items[0].effects, undefined);
+const invalidEffectWorkbook = Workbook.create();
+invalidEffectWorkbook.worksheets.add("Invalid effect").images.add({
+  name: "Invalid effect",
+  dataUrl: twoCellImageDataUrl,
+  effects: { brightnessPercent: 100.001 },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidEffectWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /between -100 and 100/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidEffectWorkbook), /between -100 and 100/i);
+const invalidOpacityWorkbook = Workbook.create();
+invalidOpacityWorkbook.worksheets.add("Invalid opacity").images.add({
+  name: "Invalid opacity",
+  dataUrl: twoCellImageDataUrl,
+  effects: { opacityPercent: -0.001 },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidOpacityWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /between 0 and 100/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidOpacityWorkbook), /between 0 and 100/i);
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },

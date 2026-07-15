@@ -30,8 +30,10 @@ internal sealed class XlsxDrawingCodec
         Xdr.Extent? Extent,
         Xdr.NonVisualDrawingProperties NonVisual,
         Xdr.BlipFill BlipFill,
+        A.Blip Blip,
         A.SourceRectangle? SourceRectangle,
         bool CropEditable,
+        bool EffectsEditable,
         ImagePart ImagePart,
         string RelationshipId,
         int Ordinal);
@@ -103,6 +105,7 @@ internal sealed class XlsxDrawingCodec
             else if (image.TwoCellAnchor is not null) ValidateAnchor(image.TwoCellAnchor, worksheetId, image.Id);
             else ValidateAnchor(image.AbsoluteAnchor!, worksheetId, image.Id);
             if (image.Crop is not null) ValidateCrop(image.Crop, worksheetId, image.Id);
+            if (image.Effects is not null) ValidateEffects(image.Effects, worksheetId, image.Id);
         }
     }
 
@@ -181,6 +184,7 @@ internal sealed class XlsxDrawingCodec
             A.SourceRectangle? sourceRectangle = sourceRectangles.FirstOrDefault();
             SpreadsheetImageCropArtifact? crop = null;
             if (sourceRectangle is not null && !TryCrop(sourceRectangle, out crop)) cropEditable = false;
+            var effectsEditable = TryEffects(blip, out var effects);
             ImagePart imagePart;
             try
             {
@@ -211,6 +215,7 @@ internal sealed class XlsxDrawingCodec
             else if (twoCellAnchor is not null) artifact.TwoCellAnchor = twoCellAnchor;
             else artifact.AbsoluteAnchor = absoluteAnchor;
             if (cropEditable && crop is not null) artifact.Crop = crop;
+            if (effectsEditable && effects is not null) artifact.Effects = effects;
             if (string.IsNullOrWhiteSpace(artifact.Name) || artifact.Name.Length > 255 || HasControls(artifact.Name) ||
                 artifact.AltText.Length > 32_767 || HasControls(artifact.AltText)) continue;
             artifact.Source = new SpreadsheetImageSourceBinding
@@ -224,7 +229,7 @@ internal sealed class XlsxDrawingCodec
                 NonVisualId = nonVisual.Id!.Value,
                 Editable = true,
             };
-            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, blipFill, sourceRectangle, cropEditable, imagePart, imageRelationshipId, ordinal));
+            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, blipFill, blip, sourceRectangle, cropEditable, effectsEditable, imagePart, imageRelationshipId, ordinal));
         }
         return records;
     }
@@ -264,7 +269,9 @@ internal sealed class XlsxDrawingCodec
 
     private static Xdr.BlipFill BuildBlipFill(SpreadsheetImageArtifact source, string relationshipId)
     {
-        var output = new Xdr.BlipFill(new A.Blip { Embed = relationshipId });
+        var blip = new A.Blip { Embed = relationshipId };
+        AppendEffects(blip, source.Effects);
+        var output = new Xdr.BlipFill(blip);
         if (source.Crop is { } crop) output.Append(BuildCrop(crop));
         output.Append(new A.Stretch(new A.FillRectangle()));
         return output;
@@ -292,12 +299,14 @@ internal sealed class XlsxDrawingCodec
         return source.Name.Equals(target.Name, StringComparison.Ordinal) &&
             source.AltText.Equals(target.AltText, StringComparison.Ordinal) &&
             AnchorSemantics(source).Equals(AnchorSemantics(target), StringComparison.Ordinal) &&
-            CropSemantics(source.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal);
+            CropSemantics(source.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal) &&
+            EffectsSemantics(source.Effects).Equals(EffectsSemantics(target.Effects), StringComparison.Ordinal);
     }
 
     private static void PatchDrawing(PictureRecord record, SpreadsheetImageArtifact target)
     {
         if (!CropSemantics(record.Artifact.Crop).Equals(CropSemantics(target.Crop), StringComparison.Ordinal)) PatchCrop(record, target);
+        if (!EffectsSemantics(record.Artifact.Effects).Equals(EffectsSemantics(target.Effects), StringComparison.Ordinal)) PatchEffects(record, target);
         record.NonVisual.Name = target.Name;
         record.NonVisual.Description = target.AltText;
         if (target.Anchor is { } oneCell)
@@ -339,6 +348,16 @@ internal sealed class XlsxDrawingCodec
             return;
         }
         record.BlipFill.InsertAfter(BuildCrop(target.Crop), record.BlipFill.GetFirstChild<A.Blip>()!);
+    }
+
+    private static void PatchEffects(PictureRecord record, SpreadsheetImageArtifact target)
+    {
+        if (!record.EffectsEditable)
+            throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} cannot replace an unrecognized source picture-effect graph.", Path(record.Part));
+        foreach (var child in record.Blip.ChildElements
+                     .Where(item => item is A.AlphaModulationFixed or A.Grayscale or A.LuminanceEffect)
+                     .ToArray()) child.Remove();
+        AppendEffects(record.Blip, target.Effects);
     }
 
     private static void ValidateBinding(SpreadsheetImageArtifact target, PictureRecord record)
@@ -415,6 +434,34 @@ internal sealed class XlsxDrawingCodec
         return CropValuesValid(crop);
     }
 
+    private static bool TryEffects(A.Blip source, out SpreadsheetImageEffectsArtifact? effects)
+    {
+        effects = null;
+        var alpha = source.Elements<A.AlphaModulationFixed>().ToArray();
+        var grayscale = source.Elements<A.Grayscale>().ToArray();
+        var luminance = source.Elements<A.LuminanceEffect>().ToArray();
+        var extensions = source.Elements<A.BlipExtensionList>().ToArray();
+        if (alpha.Length > 1 || grayscale.Length > 1 || luminance.Length > 1 || extensions.Length > 1 ||
+            source.ChildElements.Any(item => item is not A.AlphaModulationFixed and not A.Grayscale and not A.LuminanceEffect and not A.BlipExtensionList)) return false;
+        if (alpha.FirstOrDefault()?.Amount?.Value is { } opacity && opacity is < 0 or > 100_000) return false;
+        if (alpha.Length == 1 && alpha[0].Amount?.HasValue != true) return false;
+        var brightness = luminance.FirstOrDefault()?.Brightness?.Value ?? 0;
+        var contrast = luminance.FirstOrDefault()?.Contrast?.Value ?? 0;
+        if (brightness is < -100_000 or > 100_000 || contrast is < -100_000 or > 100_000) return false;
+        if (alpha.Length == 0 && grayscale.Length == 0 && luminance.Length == 0) return true;
+        effects = new SpreadsheetImageEffectsArtifact { Grayscale = grayscale.Length == 1 };
+        if (luminance.Length == 1)
+        {
+            effects.Luminance = new SpreadsheetImageLuminanceEffectArtifact
+            {
+                BrightnessThousandthPercent = brightness,
+                ContrastThousandthPercent = contrast,
+            };
+        }
+        if (alpha.Length == 1) effects.OpacityThousandthPercent = checked((uint)alpha[0].Amount!.Value);
+        return true;
+    }
+
     private static bool TryMarker(OpenXmlCompositeElement marker, out SpreadsheetCellMarkerArtifact output)
     {
         output = new SpreadsheetCellMarkerArtifact();
@@ -467,6 +514,18 @@ internal sealed class XlsxDrawingCodec
             throw InvalidImage(worksheetId, imageId, "has crop offsets outside -100% through 100% or opposing offsets that leave no positive source rectangle.");
     }
 
+    private static void ValidateEffects(SpreadsheetImageEffectsArtifact effects, string worksheetId, string imageId)
+    {
+        if (!effects.Grayscale && effects.Luminance is null && !effects.HasOpacityThousandthPercent)
+            throw InvalidImage(worksheetId, imageId, "has an empty picture-effects profile.");
+        if (effects.Luminance is { } luminance &&
+            (luminance.BrightnessThousandthPercent is < -100_000 or > 100_000 ||
+             luminance.ContrastThousandthPercent is < -100_000 or > 100_000))
+            throw InvalidImage(worksheetId, imageId, "has brightness or contrast outside -100% through 100%.");
+        if (effects.HasOpacityThousandthPercent && effects.OpacityThousandthPercent > 100_000)
+            throw InvalidImage(worksheetId, imageId, "has opacity outside 0% through 100%.");
+    }
+
     private static bool CropValuesValid(SpreadsheetImageCropArtifact crop) =>
         crop.LeftThousandthPercent is >= -100_000 and <= 100_000 &&
         crop.TopThousandthPercent is >= -100_000 and <= 100_000 &&
@@ -482,6 +541,25 @@ internal sealed class XlsxDrawingCodec
         Right = crop.RightThousandthPercent,
         Bottom = crop.BottomThousandthPercent,
     };
+
+    private static void AppendEffects(A.Blip blip, SpreadsheetImageEffectsArtifact? effects)
+    {
+        if (effects is null) return;
+        var before = blip.GetFirstChild<A.BlipExtensionList>();
+        void Add(OpenXmlElement child)
+        {
+            if (before is null) blip.Append(child);
+            else blip.InsertBefore(child, before);
+        }
+        if (effects.HasOpacityThousandthPercent) Add(new A.AlphaModulationFixed { Amount = checked((int)effects.OpacityThousandthPercent) });
+        if (effects.Grayscale) Add(new A.Grayscale());
+        if (effects.Luminance is { } luminance)
+            Add(new A.LuminanceEffect
+            {
+                Brightness = luminance.BrightnessThousandthPercent,
+                Contrast = luminance.ContrastThousandthPercent,
+            });
+    }
 
     private static void ValidateMarker(SpreadsheetCellMarkerArtifact marker, string worksheetId, string imageId, string name)
     {
@@ -536,7 +614,7 @@ internal sealed class XlsxDrawingCodec
 
     private static string SemanticHash(SpreadsheetImageArtifact image)
     {
-        return Hash(string.Join('\0', image.Id, image.Name, image.AltText, image.AssetId, AnchorSemantics(image), CropSemantics(image.Crop)));
+        return Hash(string.Join('\0', image.Id, image.Name, image.AltText, image.AssetId, AnchorSemantics(image), CropSemantics(image.Crop), EffectsSemantics(image.Effects)));
     }
 
     private static string AnchorSemantics(SpreadsheetImageArtifact image)
@@ -564,6 +642,16 @@ internal sealed class XlsxDrawingCodec
         : string.Join('\0', "present",
             crop.LeftThousandthPercent.ToString(CultureInfo.InvariantCulture), crop.TopThousandthPercent.ToString(CultureInfo.InvariantCulture),
             crop.RightThousandthPercent.ToString(CultureInfo.InvariantCulture), crop.BottomThousandthPercent.ToString(CultureInfo.InvariantCulture));
+
+    private static string EffectsSemantics(SpreadsheetImageEffectsArtifact? effects) => effects is null
+        ? "absent"
+        : string.Join('\0', "present", effects.Grayscale ? "grayscale" : string.Empty,
+            effects.Luminance is null ? "luminance-absent" : string.Join(':', "luminance",
+                effects.Luminance.BrightnessThousandthPercent.ToString(CultureInfo.InvariantCulture),
+                effects.Luminance.ContrastThousandthPercent.ToString(CultureInfo.InvariantCulture)),
+            effects.HasOpacityThousandthPercent
+                ? $"opacity:{effects.OpacityThousandthPercent.ToString(CultureInfo.InvariantCulture)}"
+                : "opacity-absent");
 
     private static string MarkerSemantics(SpreadsheetCellMarkerArtifact marker) => string.Join('\0',
         marker.Row.ToString(CultureInfo.InvariantCulture), marker.Column.ToString(CultureInfo.InvariantCulture),
