@@ -2029,7 +2029,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.format.autofitRows` | api | Measure explicit/wrapped range text deterministically and set native custom heights on each selected row. |
 | `range.merge` | api | Merge the target range as one region or as separate row-wise regions when across=true. |
 | `range.unmerge` | api | Remove merged regions intersecting the target range. |
-| `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets a direct symbol/size, lineOptions.smooth controls chart-level line interpolation, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds. |
+| `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets a direct symbol/size, lineOptions controls standard/stacked/percent-stacked grouping and smooth interpolation, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds. |
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
 | `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip. |
 | `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
@@ -3752,7 +3752,7 @@ Remove merged regions intersecting the target range.
 
 #### `sheet.charts.add`
 
-Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets a direct symbol/size, lineOptions.smooth controls chart-level line interpolation, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds.
+Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets a direct symbol/size, lineOptions controls standard/stacked/percent-stacked grouping and smooth interpolation, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds.
 
 **Schema parameters:**
 
@@ -3760,7 +3760,7 @@ Create an inspectable worksheet chart from a range or config; setData(range) inf
 - `source` (Range|object) — Source range or explicit chart config.
 - `title` (string) — Chart title.
 - `titleTextStyle` (object) — Optional chart-title style with fontSize from 1 through 4000 points.
-- `lineOptions` (object) — Line-chart-only options. The bounded worksheet-chart profile accepts exactly { smooth: boolean }; explicit false is preserved as native c:smooth val=0.
+- `lineOptions` (object) — Line-chart-only { grouping?, smooth? }. grouping is standard, stacked, or percentStacked; omission authors the standard default. smooth preserves explicit false as native c:smooth val=0.
 - `categories` (string[]) — Explicit categories.
 - `series` (object[]) — Explicit series definitions with name, numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size }. line.fill is #RRGGBB; style is solid, dashed, dotted, dash-dot, or dash-dot-dot; width is 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a compatibility alias and must not conflict with line.
 - `xAxis` (object) — Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval.
