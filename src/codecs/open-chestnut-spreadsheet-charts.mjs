@@ -319,6 +319,7 @@ function wireChart(chart, original) {
       showValue: snapshot.dataLabels.showValue,
       showCategoryName: snapshot.dataLabels.showCategoryName,
       position: snapshot.dataLabels.position == null ? undefined : DATA_LABEL_POSITIONS_TO_WIRE.get(snapshot.dataLabels.position),
+      showSeriesName: snapshot.dataLabels.showSeriesName,
     },
     type,
     hasLegend: snapshot.hasLegend,
@@ -480,6 +481,7 @@ export function spreadsheetChartFromWire(sheet, source) {
       showValue: source.dataLabels.showValue === true,
       showCategoryName: source.dataLabels.showCategoryName === true,
     };
+    if (source.dataLabels.showSeriesName != null) dataLabelsInput.showSeriesName = source.dataLabels.showSeriesName;
     if (source.dataLabels.position != null) {
       const position = DATA_LABEL_POSITIONS_FROM_WIRE.get(source.dataLabels.position);
       if (!position) fail(source, `dataLabels has unsupported position ${source.dataLabels.position}.`, "unsupported_spreadsheet_chart");

@@ -4,8 +4,9 @@ using OpenOffice.Artifact.Wire.V1;
 namespace OpenChestnut.Codec;
 
 // Owns one plot-level c:dLbls container with optional c:dLblPos plus direct
-// c:showVal and c:showCatName booleans. Standard unsupported show flags are
-// accepted only when false and retained during another bounded edit.
+// c:showVal/c:showCatName booleans plus presence-aware c:showSerName.
+// Standard unsupported show flags are accepted only when false and retained
+// during another bounded edit.
 internal static class XlsxChartDataLabelsCodec
 {
     private static readonly XNamespace ChartNs = "http://schemas.openxmlformats.org/drawingml/2006/chart";
@@ -38,12 +39,18 @@ internal static class XlsxChartDataLabelsCodec
         var showValue = children.SingleOrDefault(child => child.Name == ChartNs + "showVal");
         var showCategoryName = children.SingleOrDefault(child => child.Name == ChartNs + "showCatName");
         if (!TryBoolean(showValue, out var value) || !TryBoolean(showCategoryName, out var categoryName)) return false;
-        foreach (var name in OrderedFlags.Where(name => name is not "showVal" and not "showCatName"))
+        foreach (var name in OrderedFlags.Where(name => name is not "showVal" and not "showCatName" and not "showSerName"))
         {
             var element = children.SingleOrDefault(child => child.Name == ChartNs + name);
             if (element is not null && (!TryBoolean(element, out var enabled) || enabled)) return false;
         }
         var dataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = value, ShowCategoryName = categoryName };
+        var showSeriesName = children.SingleOrDefault(child => child.Name == ChartNs + "showSerName");
+        if (showSeriesName is not null)
+        {
+            if (!TryBoolean(showSeriesName, out var seriesName)) return false;
+            dataLabels.ShowSeriesName = seriesName;
+        }
         var nativePosition = children.SingleOrDefault(child => child.Name == ChartNs + "dLblPos");
         if (nativePosition is not null)
         {
@@ -58,7 +65,8 @@ internal static class XlsxChartDataLabelsCodec
         new XElement(ChartNs + "dLbls",
             PositionElement(labels),
             BooleanElement("showVal", labels.ShowValue),
-            BooleanElement("showCatName", labels.ShowCategoryName));
+            BooleanElement("showCatName", labels.ShowCategoryName),
+            labels.HasShowSeriesName ? BooleanElement("showSerName", labels.ShowSeriesName) : null);
 
     internal static void Patch(XElement plot, SpreadsheetChartDataLabelsArtifact? labels)
     {
@@ -89,14 +97,27 @@ internal static class XlsxChartDataLabelsCodec
         }
         existing.Element(ChartNs + "showVal")!.SetAttributeValue("val", labels.ShowValue ? "1" : "0");
         existing.Element(ChartNs + "showCatName")!.SetAttributeValue("val", labels.ShowCategoryName ? "1" : "0");
+        PatchOptionalBoolean(existing, "showSerName", labels.HasShowSeriesName ? labels.ShowSeriesName : null);
     }
 
     internal static string Semantics(SpreadsheetChartDataLabelsArtifact? labels) => labels is null
         ? "-"
-        : $"value:{(labels.ShowValue ? 1 : 0)};category:{(labels.ShowCategoryName ? 1 : 0)};position:{(labels.HasPosition ? PositionValue(labels.Position) : "-")}";
+        : $"value:{(labels.ShowValue ? 1 : 0)};category:{(labels.ShowCategoryName ? 1 : 0)};series:{(labels.HasShowSeriesName ? labels.ShowSeriesName ? "1" : "0" : "-")};position:{(labels.HasPosition ? PositionValue(labels.Position) : "-")}";
 
     private static XElement BooleanElement(string name, bool value) =>
         new(ChartNs + name, new XAttribute("val", value ? "1" : "0"));
+
+    private static void PatchOptionalBoolean(XElement labels, string name, bool? value)
+    {
+        var existing = labels.Element(ChartNs + name);
+        if (value is null) { existing?.Remove(); return; }
+        if (existing is not null) { existing.SetAttributeValue("val", value.Value ? "1" : "0"); return; }
+        var targetIndex = Array.IndexOf(OrderedFlags, name);
+        var next = labels.Elements().FirstOrDefault(element => Array.IndexOf(OrderedFlags, element.Name.LocalName) > targetIndex);
+        var created = BooleanElement(name, value.Value);
+        if (next is null) labels.Add(created);
+        else next.AddBeforeSelf(created);
+    }
 
     private static XElement? PositionElement(SpreadsheetChartDataLabelsArtifact labels) => labels.HasPosition
         ? new XElement(ChartNs + "dLblPos", new XAttribute("val", PositionValue(labels.Position)))

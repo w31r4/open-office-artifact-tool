@@ -1597,10 +1597,13 @@ enum SpreadsheetChartDataLabelPosition {
 
 // Bounded plot-level worksheet-chart data labels. Message presence owns one
 // canonical c:dLbls container while the booleans map to c:showVal and
-// c:showCatName and optional position maps to c:dLblPos. A present all-false
-// message and explicit best-fit position remain distinct from omission.
+// c:showCatName, optional series-name visibility maps to c:showSerName, and
+// optional position maps to c:dLblPos. A present all-false message, explicit
+// series-name false, and explicit best-fit position remain distinct from
+// omission.
 message SpreadsheetChartDataLabelsArtifact {
   bool show_value = 1;
   bool show_category_name = 2;
   optional SpreadsheetChartDataLabelPosition position = 3;
+  optional bool show_series_name = 4;
 }

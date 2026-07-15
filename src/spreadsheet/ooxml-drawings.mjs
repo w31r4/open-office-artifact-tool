@@ -346,7 +346,9 @@ function chartDataLabels(xml) {
   const showValue = scalar("showVal");
   const showCategoryName = scalar("showCatName");
   if (showValue == null || showCategoryName == null) return undefined;
-  for (const name of ["showLegendKey", "showSerName", "showPercent", "showBubbleSize"]) if (children.includes(name) && scalar(name) !== false) return undefined;
+  for (const name of ["showLegendKey", "showPercent", "showBubbleSize"]) if (children.includes(name) && scalar(name) !== false) return undefined;
+  const showSeriesName = children.includes("showSerName") ? scalar("showSerName") : undefined;
+  if (children.includes("showSerName") && showSeriesName == null) return undefined;
   const positionElement = directElement(labels.body, "dLblPos");
   let position;
   if (positionElement) {
@@ -355,7 +357,7 @@ function chartDataLabels(xml) {
     if (positionElement.body.trim() || Object.keys(attrs).some((key) => key !== "val" && !key.startsWith("xmlns")) || !positions.has(attrs.val)) return undefined;
     position = positions.get(attrs.val);
   }
-  return { showValue, showCategoryName, ...(position == null ? {} : { position }) };
+  return { showValue, showCategoryName, ...(showSeriesName == null ? {} : { showSeriesName }), ...(position == null ? {} : { position }) };
 }
 
 function chartAxis(xml, name, kind) {
