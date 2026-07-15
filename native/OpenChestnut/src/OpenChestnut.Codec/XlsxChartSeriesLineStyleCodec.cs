@@ -18,25 +18,37 @@ internal static class XlsxChartSeriesLineStyleCodec
 
     internal static void Validate(SpreadsheetChartSeriesArtifact series, string worksheetId, string chartId)
     {
-        var line = series.Line;
+        ValidateLine(series.Line, worksheetId, chartId, series.Name, "line");
+    }
+
+    internal static void ValidateLine(SpreadsheetChartLineStyleArtifact? line, string worksheetId, string chartId, string seriesName, string subject)
+    {
         if (line is null) return;
         if (line.Color is not null &&
             (line.Color.SourceCase != SpreadsheetColor.SourceOneofCase.Rgb || line.Color.HasTint ||
              line.Color.Rgb.Length != 6 || !line.Color.Rgb.All(Uri.IsHexDigit)))
-            throw Invalid(worksheetId, chartId, series.Name, "color must be an untinted six-digit RGB value");
+            throw Invalid(worksheetId, chartId, seriesName, subject, "color must be an untinted six-digit RGB value");
         if (line.DashStyle is not (SpreadsheetChartLineDashStyle.Unspecified or SpreadsheetChartLineDashStyle.Solid or
             SpreadsheetChartLineDashStyle.Dashed or SpreadsheetChartLineDashStyle.Dotted or
             SpreadsheetChartLineDashStyle.DashDot or SpreadsheetChartLineDashStyle.DashDotDot))
-            throw Invalid(worksheetId, chartId, series.Name, "dash style is outside the bounded preset catalog");
+            throw Invalid(worksheetId, chartId, seriesName, subject, "dash style is outside the bounded preset catalog");
         if (line.HasWidthPoints &&
             (double.IsNaN(line.WidthPoints) || double.IsInfinity(line.WidthPoints) ||
              line.WidthPoints < 0 || line.WidthPoints > MaxWidthPoints || WidthEmu(line.WidthPoints) > MaxWidthEmu))
-            throw Invalid(worksheetId, chartId, series.Name, $"width must be from 0 through {MaxWidthPoints} points");
+            throw Invalid(worksheetId, chartId, seriesName, subject, $"width must be from 0 through {MaxWidthPoints} points");
     }
 
     internal static bool TryRead(XElement nativeSeries, SpreadsheetChartSeriesArtifact series)
     {
         var shapeProperties = nativeSeries.Element(ChartNs + "spPr");
+        if (!TryReadLine(shapeProperties, out var line)) return false;
+        if (line is not null) series.Line = line;
+        return true;
+    }
+
+    internal static bool TryReadLine(XElement? shapeProperties, out SpreadsheetChartLineStyleArtifact? line)
+    {
+        line = null;
         if (shapeProperties is null) return true;
         var lines = shapeProperties.Elements(DrawingNs + "ln").ToArray();
         if (lines.Length == 0) return true;
@@ -73,7 +85,7 @@ internal static class XlsxChartSeriesLineStyleCodec
             if (dash.HasElements || dash.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && attribute.Name != "val") || !TryDash((string?)dash.Attribute("val"), out var style)) return false;
             output.DashStyle = style;
         }
-        series.Line = output;
+        line = output;
         return true;
     }
 
@@ -156,6 +168,6 @@ internal static class XlsxChartSeriesLineStyleCodec
         if (shapeProperties is not null && !shapeProperties.Elements().Any() && !shapeProperties.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration)) shapeProperties.Remove();
     }
 
-    private static CodecException Invalid(string worksheetId, string chartId, string seriesName, string message) =>
-        new("invalid_spreadsheet_chart", $"Worksheet {worksheetId} chart {chartId} series {seriesName} line {message}.");
+    private static CodecException Invalid(string worksheetId, string chartId, string seriesName, string subject, string message) =>
+        new("invalid_spreadsheet_chart", $"Worksheet {worksheetId} chart {chartId} series {seriesName} {subject} {message}.");
 }

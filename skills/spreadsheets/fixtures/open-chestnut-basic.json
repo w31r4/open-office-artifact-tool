@@ -15,7 +15,7 @@
         "categories": ["Revenue", "Double actual"],
         "xAxis": { "axisType": "textAxis", "title": { "text": "Edited metric" }, "textStyle": { "fontSize": 11 }, "numberFormatCode": "@", "tickLabelInterval": 1 },
         "yAxis": { "axisType": "valueAxis", "title": { "text": "Edited value" }, "textStyle": { "fontSize": 8.5 }, "numberFormatCode": "0.0", "min": 0, "max": 100, "majorUnit": 20 },
-        "series": [{ "index": 0, "name": "Edited value", "values": [42.5, 90], "fill": "#2563EB", "line": { "fill": "#7C3AED", "style": "dash-dot", "width": 2.5 }, "marker": { "symbol": "triangle", "size": 10 } }]
+        "series": [{ "index": 0, "name": "Edited value", "values": [42.5, 90], "fill": "#2563EB", "line": { "fill": "#7C3AED", "style": "dash-dot", "width": 2.5 }, "marker": { "symbol": "triangle", "size": 10, "fill": "#DCFCE7", "line": { "fill": "#166534", "style": "dashed", "width": 2 } } }]
       }
     ],
     "images": [
@@ -154,7 +154,7 @@
               "values": [42.5, 85],
               "fill": "#F472B6",
               "line": { "fill": "#0EA5E9", "style": "dashed", "width": 2 },
-              "marker": { "symbol": "diamond", "size": 8 },
+              "marker": { "symbol": "diamond", "size": 8, "fill": "#FDE68A", "line": { "fill": "#BE123C", "style": "dotted", "width": 1.5 } },
               "categoryFormula": "'Summary'!$A$2:$A$3",
               "formula": "'Summary'!$B$2:$B$3"
             }

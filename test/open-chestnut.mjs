@@ -93,6 +93,8 @@ assert.equal(toBinary(SpreadsheetChartLineStyleArtifactSchema, create(Spreadshee
 assert.equal(toBinary(SpreadsheetChartLineStyleArtifactSchema, create(SpreadsheetChartLineStyleArtifactSchema, { widthPoints: 0 }))[0], 0x19, "Spreadsheet chart line widths must preserve explicit zero at optional line field 3.");
 assert.equal(toBinary(SpreadsheetChartMarkerArtifactSchema, create(SpreadsheetChartMarkerArtifactSchema, { symbol: SpreadsheetChartMarkerSymbol.DIAMOND }))[0], 0x08, "Spreadsheet chart marker symbols must use marker field 1.");
 assert.deepEqual([...toBinary(SpreadsheetChartMarkerArtifactSchema, create(SpreadsheetChartMarkerArtifactSchema, { size: 2 }))], [0x10, 0x02], "Spreadsheet chart marker sizes must preserve optional integer presence at marker field 2.");
+assert.equal(toBinary(SpreadsheetChartMarkerArtifactSchema, create(SpreadsheetChartMarkerArtifactSchema, { fill: { source: { case: "rgb", value: "E11D48" } } }))[0], 0x1a, "Spreadsheet chart marker fills must use additive marker field 3.");
+assert.equal(toBinary(SpreadsheetChartMarkerArtifactSchema, create(SpreadsheetChartMarkerArtifactSchema, { line: {} }))[0], 0x22, "Spreadsheet chart marker outlines must use additive marker field 4.");
 assert.equal(toBinary(SpreadsheetChartAxisArtifactSchema, create(SpreadsheetChartAxisArtifactSchema, { textStyle: { fontSizePoints: 10 } }))[0], 0x3a, "Spreadsheet chart axis tick-label styles must use additive axis field 7.");
 assert.equal(toBinary(SpreadsheetChartTextStyleArtifactSchema, create(SpreadsheetChartTextStyleArtifactSchema, { fontSizePoints: 10 }))[0], 0x09, "Spreadsheet chart font sizes must preserve optional double presence at text-style field 1.");
 assert.throws(
@@ -123,6 +125,14 @@ assert.throws(
 assert.throws(
   () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, series: [{ name: "Small marker", marker: { size: 1 } }] }),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /2 through 72/i.test(error.message),
+);
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, series: [{ name: "Theme marker", marker: { fill: { source: { case: "theme", value: 4 } } } }] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /non-RGB fill source/i.test(error.message),
+);
+assert.throws(
+  () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.LINE, series: [{ name: "Wide marker", marker: { line: { widthPoints: 1_585 } } }] }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /0 through 1584/i.test(error.message),
 );
 assert.throws(
   () => spreadsheetChartFromWire(null, { type: SpreadsheetChartType.BAR, series: [{ name: "Bar marker", marker: { symbol: SpreadsheetChartMarkerSymbol.CIRCLE } }] }),
@@ -163,14 +173,14 @@ assert.deepEqual(
   "JavaScript fallback import must expose bounded title and tick-label font sizes.",
 );
 assert.deepEqual(
-  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Marker</c:v></c:tx><c:marker><c:symbol val="diamond"/><c:size val="8"/></c:marker><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0].marker,
-  { symbol: "diamond", size: 8 },
-  "JavaScript fallback import must expose the bounded direct line-series marker.",
+  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Marker</c:v></c:tx><c:marker><c:symbol val="diamond"/><c:size val="8"/><c:spPr><a:solidFill><a:srgbClr val="E11D48"/></a:solidFill><a:ln w="19050"><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill><a:prstDash val="dot"/></a:ln></c:spPr></c:marker><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0].marker,
+  { symbol: "diamond", size: 8, fill: "#E11D48", line: { width: 1.5, fill: "#2563EB", style: "dotted" } },
+  "JavaScript fallback import must expose the bounded direct line-series marker fill and outline.",
 );
 assert.equal(
-  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Marker</c:v></c:tx><c:marker><c:symbol val="circle"/><c:spPr><a:solidFill/></c:spPr></c:marker><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0].marker,
+  parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:lineChart><c:ser><c:tx><c:v>Marker</c:v></c:tx><c:marker><c:symbol val="circle"/><c:spPr><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></c:spPr></c:marker><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>').series[0].marker,
   undefined,
-  "JavaScript fallback import must not flatten marker fill/stroke graphs into the bounded marker model.",
+  "JavaScript fallback import must not flatten theme marker graphs into the bounded marker model.",
 );
 assert.deepEqual(
   parseSpreadsheetChart('<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:lineChart><c:grouping val="stacked"/><c:varyColors val="1"/><c:ser><c:tx><c:v>Smooth</c:v></c:tx><c:cat><c:strLit><c:pt idx="0"><c:v>A</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser><c:smooth val="0"/></c:lineChart></c:plotArea></c:chart></c:chartSpace>').lineOptions,
@@ -406,7 +416,7 @@ const summaryChart = summary.charts.add("line", {
   lineOptions: { grouping: "stacked", smooth: true, varyColors: true },
   hasLegend: true,
   categories: ["Q1", "Q2"],
-  series: [{ name: "Revenue", values: [42.5, 85], fill: "#F472B6", line: { fill: "#0EA5E9", style: "dashed", width: 2 }, marker: { symbol: "diamond", size: 8 } }],
+  series: [{ name: "Revenue", values: [42.5, 85], fill: "#F472B6", line: { fill: "#0EA5E9", style: "dashed", width: 2 }, marker: { symbol: "diamond", size: 8, fill: "#FDE68A", line: { fill: "#BE123C", style: "dotted", width: 1.5 } } }],
   xAxis: { axisType: "textAxis", title: { text: "Quarter" }, numberFormatCode: "@", tickLabelInterval: 2 },
   yAxis: { axisType: "valueAxis", title: { text: "Revenue" }, numberFormatCode: "$#,##0.0", min: 0, max: 100, majorUnit: 25 },
   position: { left: 420, top: 40, width: 360, height: 220 },
@@ -907,7 +917,7 @@ assert.deepEqual(importedSummaryChart.series.items[0], {
   formula: "'Summary'!$B$1:$B$2",
   fill: "#F472B6",
   line: { fill: "#0EA5E9", style: "dashed", width: 2 },
-  marker: { symbol: "diamond", size: 8 },
+  marker: { symbol: "diamond", size: 8, fill: "#FDE68A", line: { fill: "#BE123C", style: "dotted", width: 1.5 } },
 });
 assert.deepEqual(importedSummaryChart.position, { left: 420, top: 40, width: 360, height: 220 });
 assert.deepEqual(importedSummaryChart.xAxis, { axisType: "textAxis", title: { text: "Quarter" }, numberFormatCode: "@", tickLabelInterval: 2 });
@@ -956,7 +966,7 @@ assert.equal(javascriptImported.worksheets.getItem("Summary").charts.items[0].ti
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].categories, ["Q1", "Q2"]);
 assert.equal(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].fill, "#F472B6");
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].line, { width: 2, fill: "#0EA5E9", style: "dashed" });
-assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].marker, { symbol: "diamond", size: 8 });
+assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].series.items[0].marker, { symbol: "diamond", size: 8, fill: "#FDE68A", line: { width: 1.5, fill: "#BE123C", style: "dotted" } });
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].xAxis, { axisType: "textAxis", title: { text: "Quarter" }, numberFormatCode: "@", tickLabelInterval: 2 });
 assert.deepEqual(javascriptImported.worksheets.getItem("Summary").charts.items[0].yAxis, { axisType: "valueAxis", title: { text: "Revenue" }, numberFormatCode: "$#,##0.0", min: 0, max: 100, majorUnit: 25 });
 
@@ -1013,7 +1023,7 @@ importedSummaryChart.series.items[0].name = "Actual revenue";
 importedSummaryChart.series.items[0].values[1] = 90;
 importedSummaryChart.series.items[0].fill = "#2563EB";
 importedSummaryChart.series.items[0].line = { fill: "#7C3AED", style: "dash-dot", width: 2.5 };
-importedSummaryChart.series.items[0].marker = { symbol: "triangle", size: 10 };
+importedSummaryChart.series.items[0].marker = { symbol: "triangle", size: 10, fill: "#DCFCE7", line: { fill: "#166534", style: "dashed", width: 2 } };
 importedSummaryChart.xAxis.title.text = "Fiscal quarter";
 importedSummaryChart.xAxis.numberFormatCode = "mmm";
 importedSummaryChart.xAxis.tickLabelInterval = 1;
@@ -1060,7 +1070,7 @@ assert.deepEqual(secondChart.series.items[0].values, [42.5, 90]);
 assert.equal(secondChart.series.items[0].formula, "'Summary'!$B$1:$B$2");
 assert.equal(secondChart.series.items[0].fill, "#2563EB");
 assert.deepEqual(secondChart.series.items[0].line, { width: 2.5, fill: "#7C3AED", style: "dash-dot" });
-assert.deepEqual(secondChart.series.items[0].marker, { symbol: "triangle", size: 10 });
+assert.deepEqual(secondChart.series.items[0].marker, { symbol: "triangle", size: 10, fill: "#DCFCE7", line: { width: 2, fill: "#166534", style: "dashed" } });
 assert.deepEqual(secondChart.xAxis, { axisType: "textAxis", title: { text: "Fiscal quarter" }, numberFormatCode: "mmm", tickLabelInterval: 1 });
 assert.deepEqual(secondChart.yAxis, { axisType: "valueAxis", title: { text: "Revenue USD" }, numberFormatCode: "$0", min: -10, max: 120, majorUnit: 10 });
 const removedSeriesFill = await importXlsxWithOpenChestnut(secondExport);
@@ -1084,9 +1094,9 @@ delete removedSeriesMarker.worksheets.getItem("Summary").charts.items[0].series.
 const withoutSeriesMarker = await exportXlsxWithOpenChestnut(removedSeriesMarker, { recalculate: false });
 const withoutSeriesMarkerRoundTrip = await importXlsxWithOpenChestnut(withoutSeriesMarker);
 assert.equal(withoutSeriesMarkerRoundTrip.worksheets.getItem("Summary").charts.items[0].series.items[0].marker, undefined);
-withoutSeriesMarkerRoundTrip.worksheets.getItem("Summary").charts.items[0].series.items[0].marker = { symbol: "plus", size: 12 };
+withoutSeriesMarkerRoundTrip.worksheets.getItem("Summary").charts.items[0].series.items[0].marker = { symbol: "plus", size: 12, fill: "#FEF3C7", line: { fill: "#92400E", style: "solid", width: 1 } };
 const readdedSeriesMarker = await exportXlsxWithOpenChestnut(withoutSeriesMarkerRoundTrip, { recalculate: false });
-assert.deepEqual((await importXlsxWithOpenChestnut(readdedSeriesMarker)).worksheets.getItem("Summary").charts.items[0].series.items[0].marker, { symbol: "plus", size: 12 });
+assert.deepEqual((await importXlsxWithOpenChestnut(readdedSeriesMarker)).worksheets.getItem("Summary").charts.items[0].series.items[0].marker, { symbol: "plus", size: 12, fill: "#FEF3C7", line: { width: 1, fill: "#92400E", style: "solid" } });
 const removedDefinedName = await importXlsxWithOpenChestnut(exported);
 removedDefinedName.definedNames.delete("SummaryData");
 await assert.rejects(
@@ -1201,11 +1211,15 @@ await assert.rejects(
 await assert.rejects(SpreadsheetFile.exportXlsx(invalidMarkerWorkbook), /none, dot, circle/i);
 invalidMarkerChart.series.items[0].marker = { symbol: "circle", size: 1 };
 await assert.rejects(exportXlsxWithOpenChestnut(invalidMarkerWorkbook), /2 through 72/i);
-invalidMarkerChart.series.items[0].marker = { symbol: "circle", size: 8, fill: "#E11D48" };
+invalidMarkerChart.series.items[0].marker = { symbol: "circle", size: 8, fill: "red" };
 await assert.rejects(
   exportXlsxWithOpenChestnut(invalidMarkerWorkbook),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /supports only symbol and size/i.test(error.message),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /fill must be a #RRGGBB color/i.test(error.message),
 );
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidMarkerWorkbook), /fill must be a #RRGGBB color/i);
+invalidMarkerChart.series.items[0].marker = { symbol: "circle", size: 8, line: { fill: "#E11D48", style: "double" } };
+await assert.rejects(exportXlsxWithOpenChestnut(invalidMarkerWorkbook), /solid, dashed, dotted, dash-dot, dash-dot-dot/i);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidMarkerWorkbook), /solid, dashed, dotted, dash-dot, dash-dot-dot/i);
 const barMarkerWorkbook = Workbook.create();
 barMarkerWorkbook.worksheets.add("Bar marker").charts.add("bar", { name: "Bar marker", categories: ["A"], series: [{ name: "Value", values: [1], marker: { symbol: "circle", size: 8 } }] });
 assert.ok(barMarkerWorkbook.verify().issues.some((issue) => issue.type === "invalidChartSeriesMarker"));
@@ -1248,12 +1262,12 @@ const styledAxisChart = styledAxisWorkbook.worksheets.add("Styled axis").charts.
   titleTextStyle: { fontSize: 12.5 },
   lineOptions: { grouping: "stacked", smooth: true, varyColors: true },
   categories: ["A", "B"],
-  series: [{ name: "Value", values: [1, 2], line: { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 }, marker: { symbol: "star", size: 10 } }],
+  series: [{ name: "Value", values: [1, 2], line: { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 }, marker: { symbol: "star", size: 10, fill: "#FACC15", line: { fill: "#7C2D12", style: "dotted", width: 1.25 } } }],
   xAxis: { textStyle: { fontSize: 10 } },
   yAxis: { textStyle: { fontSize: 9 } },
 });
 assert.match(styledAxisChart.toSvg(), /stroke="#2563EB" stroke-width="2.25" stroke-dasharray="8 4 2 4 2 4"[\s\S]*font-size="10"/);
-assert.match(styledAxisChart.toSvg(), /<polygon points="[^"]+" fill="#2563EB" stroke="#2563EB" stroke-width="1.5"/);
+assert.match(styledAxisChart.toSvg(), /<polygon points="[^"]+" fill="#FACC15" stroke="#7C2D12" stroke-width="1.25" stroke-dasharray="2 4"/);
 assert.match(styledAxisChart.toSvg(), /<path d="M [^"]+ C [^"]+" fill="none"/);
 const groupedPreviewChart = styledAxisWorkbook.worksheets.getItem("Styled axis").charts.add("line", {
   name: "Grouped preview",
@@ -1279,7 +1293,7 @@ assert.match(styledAxisNativeXml, /<a:rPr sz="1250"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:catAx>[\s\S]*?<a:defRPr sz="1000"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:valAx>[\s\S]*?<a:defRPr sz="900"\s*\/>/);
 assert.match(styledAxisNativeXml, /<a:ln w="28575"><a:solidFill><a:srgbClr val="2563EB"\s*\/><\/a:solidFill><a:prstDash val="lgDashDotDot"\s*\/><\/a:ln>/);
-assert.match(styledAxisNativeXml, /<c:marker><c:symbol val="star"\s*\/><c:size val="10"\s*\/><\/c:marker>/);
+assert.match(styledAxisNativeXml, /<c:marker><c:symbol val="star"\s*\/><c:size val="10"\s*\/><c:spPr><a:solidFill><a:srgbClr val="FACC15"\s*\/><\/a:solidFill><a:ln w="15875"><a:solidFill><a:srgbClr val="7C2D12"\s*\/><\/a:solidFill><a:prstDash val="dot"\s*\/><\/a:ln><\/c:spPr><\/c:marker>/);
 assert.match(styledAxisNativeXml, /<c:grouping val="stacked"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:varyColors val="1"\s*\/>/);
 assert.match(styledAxisNativeXml, /<c:smooth val="1"\s*\/>/);
@@ -1289,14 +1303,14 @@ assert.deepEqual(importedStyledAxisChart.titleTextStyle, { fontSize: 12.5 });
 assert.deepEqual(importedStyledAxisChart.xAxis.textStyle, { fontSize: 10 });
 assert.deepEqual(importedStyledAxisChart.yAxis.textStyle, { fontSize: 9 });
 assert.deepEqual(importedStyledAxisChart.series.items[0].line, { fill: "#2563EB", style: "dash-dot-dot", width: 2.25 });
-assert.deepEqual(importedStyledAxisChart.series.items[0].marker, { symbol: "star", size: 10 });
+assert.deepEqual(importedStyledAxisChart.series.items[0].marker, { symbol: "star", size: 10, fill: "#FACC15", line: { width: 1.25, fill: "#7C2D12", style: "dotted" } });
 assert.deepEqual(importedStyledAxisChart.lineOptions, { grouping: "stacked", smooth: true, varyColors: true });
 importedStyledAxisChart.titleTextStyle.fontSize = 14;
 importedStyledAxisChart.xAxis.textStyle.fontSize = 11;
 delete importedStyledAxisChart.yAxis.textStyle;
 delete importedStyledAxisChart.series.items[0].line;
 importedStyledAxisChart.series.items[0].stroke = { color: "#7C3AED", style: "dotted", weight: 1.5 };
-importedStyledAxisChart.series.items[0].marker = { symbol: "plus", size: 12 };
+importedStyledAxisChart.series.items[0].marker = { symbol: "plus", size: 12, fill: "#E0E7FF", line: { fill: "#4338CA", style: "dashed", width: 2 } };
 const styledAxisEdited = await exportXlsxWithOpenChestnut(styledAxisImported, { recalculate: false });
 const styledAxisEditedRoundTrip = await importXlsxWithOpenChestnut(styledAxisEdited);
 const editedStyledAxisChart = styledAxisEditedRoundTrip.worksheets.getItem("Styled axis").charts.items[0];
@@ -1304,12 +1318,12 @@ assert.deepEqual(editedStyledAxisChart.titleTextStyle, { fontSize: 14 });
 assert.deepEqual(editedStyledAxisChart.xAxis.textStyle, { fontSize: 11 });
 assert.equal(editedStyledAxisChart.yAxis.textStyle, undefined);
 assert.deepEqual(editedStyledAxisChart.series.items[0].line, { fill: "#7C3AED", style: "dotted", width: 1.5 });
-assert.deepEqual(editedStyledAxisChart.series.items[0].marker, { symbol: "plus", size: 12 });
+assert.deepEqual(editedStyledAxisChart.series.items[0].marker, { symbol: "plus", size: 12, fill: "#E0E7FF", line: { width: 2, fill: "#4338CA", style: "dashed" } });
 const styledAxisFallback = await SpreadsheetFile.exportXlsx(styledAxisWorkbook);
 const styledAxisFallbackRoundTrip = await importXlsxWithOpenChestnut(styledAxisFallback);
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].titleTextStyle, { fontSize: 12.5 });
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].line, { width: 2.25, fill: "#2563EB", style: "dash-dot-dot" });
-assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].marker, { symbol: "star", size: 10 });
+assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].series.items[0].marker, { symbol: "star", size: 10, fill: "#FACC15", line: { width: 1.25, fill: "#7C2D12", style: "dotted" } });
 assert.deepEqual(styledAxisFallbackRoundTrip.worksheets.getItem("Styled axis").charts.items[0].lineOptions, { grouping: "stacked", smooth: true, varyColors: true });
 
 const invalidTextStyleWorkbook = Workbook.create();

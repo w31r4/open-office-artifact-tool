@@ -2727,7 +2727,7 @@ public sealed class XlsxCodecTests
         AssertChartTextStyles(authored.File.ToByteArray(), 12, 10, 9);
         AssertChartSeriesFill(authored.File.ToByteArray(), "F472B6");
         AssertChartSeriesLine(authored.File.ToByteArray(), "0EA5E9", "dash", 2);
-        AssertChartSeriesMarker(authored.File.ToByteArray(), "diamond", 8);
+        AssertChartSeriesMarker(authored.File.ToByteArray(), "diamond", 8, "FDE68A", "BE123C", "dot", 1.5);
         AssertChartLineGrouping(authored.File.ToByteArray(), "stacked");
         AssertChartLineVaryColors(authored.File.ToByteArray(), true);
         AssertChartLineSmooth(authored.File.ToByteArray(), true);
@@ -2762,6 +2762,10 @@ public sealed class XlsxCodecTests
         Assert.Equal(SpreadsheetChartMarkerSymbol.Diamond, chart.Series[0].Marker.Symbol);
         Assert.True(chart.Series[0].Marker.HasSize);
         Assert.Equal(8U, chart.Series[0].Marker.Size);
+        Assert.Equal("FDE68A", chart.Series[0].Marker.Fill.Rgb);
+        Assert.Equal("BE123C", chart.Series[0].Marker.Line.Color.Rgb);
+        Assert.Equal(SpreadsheetChartLineDashStyle.Dotted, chart.Series[0].Marker.Line.DashStyle);
+        Assert.Equal(1.5, chart.Series[0].Marker.Line.WidthPoints);
         Assert.True(chart.LineOptions.HasGrouping);
         Assert.Equal(SpreadsheetChartLineGrouping.Stacked, chart.LineOptions.Grouping);
         Assert.True(chart.LineOptions.VaryColors);
@@ -2802,6 +2806,10 @@ public sealed class XlsxCodecTests
         chart.Series[0].Line.WidthPoints = 2.5;
         chart.Series[0].Marker.Symbol = SpreadsheetChartMarkerSymbol.Triangle;
         chart.Series[0].Marker.Size = 10;
+        chart.Series[0].Marker.Fill.Rgb = "DCFCE7";
+        chart.Series[0].Marker.Line.Color.Rgb = "166534";
+        chart.Series[0].Marker.Line.DashStyle = SpreadsheetChartLineDashStyle.Dashed;
+        chart.Series[0].Marker.Line.WidthPoints = 2;
         chart.LineOptions.Grouping = SpreadsheetChartLineGrouping.PercentStacked;
         chart.LineOptions.VaryColors = false;
         chart.LineOptions.Smooth = false;
@@ -2822,7 +2830,7 @@ public sealed class XlsxCodecTests
         AssertChartTextStyles(preserved.File.ToByteArray(), 15, 11, null);
         AssertChartSeriesFill(preserved.File.ToByteArray(), "2563EB");
         AssertChartSeriesLine(preserved.File.ToByteArray(), "7C3AED", "dashDot", 2.5);
-        AssertChartSeriesMarker(preserved.File.ToByteArray(), "triangle", 10);
+        AssertChartSeriesMarker(preserved.File.ToByteArray(), "triangle", 10, "DCFCE7", "166534", "dash", 2);
         AssertChartLineGrouping(preserved.File.ToByteArray(), "percentStacked");
         AssertChartLineVaryColors(preserved.File.ToByteArray(), null);
         AssertChartLineSmooth(preserved.File.ToByteArray(), false);
@@ -2876,10 +2884,21 @@ public sealed class XlsxCodecTests
         AssertChartSeriesMarker(withoutMarker.File.ToByteArray(), null, null);
         var addedMarker = Import(withoutMarker.File.ToByteArray());
         Assert.Null(addedMarker.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker);
-        addedMarker.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Plus, Size = 12 };
+        addedMarker.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker = new SpreadsheetChartMarkerArtifact
+        {
+            Symbol = SpreadsheetChartMarkerSymbol.Plus,
+            Size = 12,
+            Fill = new SpreadsheetColor { Rgb = "FEF3C7" },
+            Line = new SpreadsheetChartLineStyleArtifact
+            {
+                Color = new SpreadsheetColor { Rgb = "92400E" },
+                DashStyle = SpreadsheetChartLineDashStyle.Solid,
+                WidthPoints = 1,
+            },
+        };
         var withAddedMarker = Export(addedMarker.Artifact);
         Assert.True(withAddedMarker.Ok, string.Join("\n", withAddedMarker.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        AssertChartSeriesMarker(withAddedMarker.File.ToByteArray(), "plus", 12);
+        AssertChartSeriesMarker(withAddedMarker.File.ToByteArray(), "plus", 12, "FEF3C7", "92400E", "solid", 1);
 
         var removedLineOptions = Import(preserved.File.ToByteArray());
         removedLineOptions.Artifact.Workbook.Worksheets[0].Charts[0].LineOptions = null;
@@ -3176,6 +3195,18 @@ public sealed class XlsxCodecTests
         var unknown = ChartExportRequest();
         unknown.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker.Symbol = (SpreadsheetChartMarkerSymbol)99;
         rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(unknown.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var tintedFill = ChartExportRequest();
+        tintedFill.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker.Fill.Tint = 0;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(tintedFill.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var oversizedLine = ChartExportRequest();
+        oversizedLine.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Marker.Line.WidthPoints = 1_584.1;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(oversizedLine.ToByteArray()));
         Assert.False(rejected.Ok);
         Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
     }
@@ -3640,7 +3671,18 @@ public sealed class XlsxCodecTests
                 DashStyle = SpreadsheetChartLineDashStyle.Dashed,
                 WidthPoints = 2,
             },
-            Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Diamond, Size = 8 },
+            Marker = new SpreadsheetChartMarkerArtifact
+            {
+                Symbol = SpreadsheetChartMarkerSymbol.Diamond,
+                Size = 8,
+                Fill = new SpreadsheetColor { Rgb = "FDE68A" },
+                Line = new SpreadsheetChartLineStyleArtifact
+                {
+                    Color = new SpreadsheetColor { Rgb = "BE123C" },
+                    DashStyle = SpreadsheetChartLineDashStyle.Dotted,
+                    WidthPoints = 1.5,
+                },
+            },
             Values = { 42.5, 85 },
         });
         request.Artifact.Workbook.Worksheets[0].Charts.Add(chart);
@@ -4253,8 +4295,8 @@ public sealed class XlsxCodecTests
             var chart = XDocument.Parse(ReadPartText(chartPart));
             XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
             XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
-            chart.Descendants(c + "ser").Single().Element(c + "marker")!
-                .Add(new XElement(c + "spPr", new XElement(a + "solidFill", new XElement(a + "schemeClr", new XAttribute("val", "accent1")))));
+            chart.Descendants(c + "ser").Single().Element(c + "marker")!.Element(c + "spPr")!.Element(a + "solidFill")!
+                .ReplaceNodes(new XElement(a + "schemeClr", new XAttribute("val", "accent1")));
             using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
             chart.Save(output, SaveOptions.DisableFormatting);
         }
@@ -4384,15 +4426,22 @@ public sealed class XlsxCodecTests
         Assert.Equal(expectedWidthPoints is null ? null : Math.Round(expectedWidthPoints.Value * 12_700, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture), (string?)line.Attribute("w"));
     }
 
-    private static void AssertChartSeriesMarker(byte[] bytes, string? expectedSymbol, uint? expectedSize)
+    private static void AssertChartSeriesMarker(byte[] bytes, string? expectedSymbol, uint? expectedSize, string? expectedFill = null, string? expectedLine = null, string? expectedDash = null, double? expectedWidthPoints = null)
     {
         var chart = XDocument.Parse(ReadChartXml(bytes));
         XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+        XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
         var marker = chart.Descendants(c + "ser").Single().Element(c + "marker");
         if (expectedSymbol is null && expectedSize is null) { Assert.Null(marker); return; }
         Assert.NotNull(marker);
         Assert.Equal(expectedSymbol, (string?)marker!.Element(c + "symbol")?.Attribute("val"));
         Assert.Equal(expectedSize?.ToString(CultureInfo.InvariantCulture), (string?)marker.Element(c + "size")?.Attribute("val"));
+        var shapeProperties = marker.Element(c + "spPr");
+        Assert.Equal(expectedFill, (string?)shapeProperties?.Element(a + "solidFill")?.Element(a + "srgbClr")?.Attribute("val"));
+        var line = shapeProperties?.Element(a + "ln");
+        Assert.Equal(expectedLine, (string?)line?.Element(a + "solidFill")?.Element(a + "srgbClr")?.Attribute("val"));
+        Assert.Equal(expectedDash, (string?)line?.Element(a + "prstDash")?.Attribute("val"));
+        Assert.Equal(expectedWidthPoints is null ? null : Math.Round(expectedWidthPoints.Value * 12_700, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture), (string?)line?.Attribute("w"));
     }
 
     private static void AssertChartLineGrouping(byte[] bytes, string expected)

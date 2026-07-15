@@ -256,12 +256,22 @@ function chartSeriesLineStyle(shapeProperties) {
   return output;
 }
 
+function chartDirectRgbFill(shapeProperties) {
+  const solidFill = directElement(shapeProperties, "solidFill");
+  if (!solidFill) return { present: false };
+  if (Object.keys(attributes(solidFill.startTag)).some((name) => !name.startsWith("xmlns")) || directChildNames(solidFill.body).join("\0") !== "srgbClr") return { present: true };
+  const color = directElement(solidFill.body, "srgbClr");
+  const colorAttributes = attributes(color?.startTag);
+  if (!color || color.body.trim() || Object.keys(colorAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !/^[0-9a-f]{6}$/i.test(colorAttributes.val || "")) return { present: true };
+  return { present: true, value: `#${colorAttributes.val.toUpperCase()}` };
+}
+
 function chartSeriesMarker(seriesBody) {
   const marker = directElement(seriesBody, "marker");
   if (!marker) return undefined;
   if (Object.keys(attributes(marker.startTag)).some((name) => !name.startsWith("xmlns"))) return undefined;
   const children = directChildNames(marker.body);
-  if (children.some((name) => !["symbol", "size"].includes(name)) || children.filter((name) => name === "symbol").length > 1 || children.filter((name) => name === "size").length > 1) return undefined;
+  if (children.some((name) => !["symbol", "size", "spPr"].includes(name)) || children.filter((name) => name === "symbol").length > 1 || children.filter((name) => name === "size").length > 1 || children.filter((name) => name === "spPr").length > 1) return undefined;
   const output = {};
   const symbol = directElement(marker.body, "symbol");
   if (symbol) {
@@ -276,6 +286,19 @@ function chartSeriesMarker(seriesBody) {
     const value = Number(sizeAttributes.val);
     if (size.body.trim() || Object.keys(sizeAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !Number.isInteger(value) || value < 2 || value > 72) return undefined;
     output.size = value;
+  }
+  const shapeProperties = directElement(marker.body, "spPr");
+  if (shapeProperties) {
+    if (Object.keys(attributes(shapeProperties.startTag)).some((name) => !name.startsWith("xmlns"))) return undefined;
+    const shapeChildren = directChildNames(shapeProperties.body);
+    if (shapeChildren.some((name) => !["solidFill", "ln"].includes(name)) || shapeChildren.filter((name) => name === "solidFill").length > 1 || shapeChildren.filter((name) => name === "ln").length > 1) return undefined;
+    const fill = chartDirectRgbFill(shapeProperties.body);
+    if (fill.present && fill.value == null) return undefined;
+    if (fill.value != null) output.fill = fill.value;
+    const nativeLine = directElement(shapeProperties.body, "ln");
+    const line = chartSeriesLineStyle(shapeProperties.body);
+    if (nativeLine && line == null) return undefined;
+    if (line != null) output.line = line;
   }
   return output;
 }

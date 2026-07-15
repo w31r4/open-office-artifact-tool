@@ -24,21 +24,34 @@ internal static class XlsxChartSeriesStyleCodec
 
     internal static void Validate(SpreadsheetChartSeriesArtifact series, string worksheetId, string chartId)
     {
-        if (series.Fill is null) return;
-        if (series.Fill.SourceCase != SpreadsheetColor.SourceOneofCase.Rgb ||
-            series.Fill.HasTint ||
-            series.Fill.Rgb.Length != 6 ||
-            !series.Fill.Rgb.All(Uri.IsHexDigit))
+        ValidateFill(series.Fill, worksheetId, chartId, series.Name, "fill");
+    }
+
+    internal static void ValidateFill(SpreadsheetColor? fill, string worksheetId, string chartId, string seriesName, string subject)
+    {
+        if (fill is null) return;
+        if (fill.SourceCase != SpreadsheetColor.SourceOneofCase.Rgb ||
+            fill.HasTint ||
+            fill.Rgb.Length != 6 ||
+            !fill.Rgb.All(Uri.IsHexDigit))
         {
             throw new CodecException(
                 "invalid_spreadsheet_chart",
-                $"Worksheet {worksheetId} chart {chartId} series {series.Name} fill must be an untinted six-digit RGB solid color.");
+                $"Worksheet {worksheetId} chart {chartId} series {seriesName} {subject} must be an untinted six-digit RGB solid color.");
         }
     }
 
     internal static bool TryRead(XElement nativeSeries, SpreadsheetChartSeriesArtifact series)
     {
         var shapeProperties = nativeSeries.Element(ChartNs + "spPr");
+        if (!TryReadSolidFill(shapeProperties, out var fill)) return false;
+        if (fill is not null) series.Fill = fill;
+        return true;
+    }
+
+    internal static bool TryReadSolidFill(XElement? shapeProperties, out SpreadsheetColor? fill)
+    {
+        fill = null;
         if (shapeProperties is null) return true;
         var fills = shapeProperties.Elements().Where(item => FillNames.Contains(item.Name)).ToArray();
         if (fills.Length == 0) return true;
@@ -52,7 +65,7 @@ internal static class XlsxChartSeriesStyleCodec
         if (color.HasElements || color.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && attribute.Name != "val")) return false;
         var value = (string?)color.Attribute("val");
         if (value is null || value.Length != 6 || !value.All(Uri.IsHexDigit)) return false;
-        series.Fill = new SpreadsheetColor { Rgb = value.ToUpperInvariant() };
+        fill = new SpreadsheetColor { Rgb = value.ToUpperInvariant() };
         return true;
     }
 
@@ -94,7 +107,7 @@ internal static class XlsxChartSeriesStyleCodec
     internal static string Semantics(SpreadsheetChartSeriesArtifact series) =>
         series.Fill is null ? "no-fill" : string.Join(':', "rgb", series.Fill.Rgb.ToUpperInvariant(), series.Fill.HasTint ? series.Fill.Tint.ToString("R", CultureInfo.InvariantCulture) : "no-tint");
 
-    private static XElement SolidFillElement(string rgb) =>
+    internal static XElement SolidFillElement(string rgb) =>
         new(DrawingNs + "solidFill", new XElement(DrawingNs + "srgbClr", new XAttribute("val", rgb.ToUpperInvariant())));
 
     private static bool IsShapePropertyTail(XName name) =>

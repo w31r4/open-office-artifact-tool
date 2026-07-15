@@ -43,20 +43,29 @@ function normalizedLine(value, name, aliases) {
   return output;
 }
 
+export function normalizeSpreadsheetChartLineStyle(value, name = "series.line") {
+  return normalizedLine(value, name, { fill: "fill", style: "style", width: "width" });
+}
+
 export function normalizeSpreadsheetChartSeriesLine(series) {
-  const line = normalizedLine(series?.line, "series.line", { fill: "fill", style: "style", width: "width" });
+  const line = normalizeSpreadsheetChartLineStyle(series?.line, "series.line");
   const stroke = normalizedLine(series?.stroke, "series.stroke", { fill: "color", style: "style", width: "weight" });
   if (line != null && stroke != null && JSON.stringify(line) !== JSON.stringify(stroke)) lineError("series", "line and stroke aliases must describe the same style when both are present.");
   return line ?? stroke;
 }
 
-export function spreadsheetChartSeriesLineXml(series) {
-  const line = normalizeSpreadsheetChartSeriesLine(series);
+export function spreadsheetChartLineStyleXml(value, name = "series.line") {
+  const line = normalizeSpreadsheetChartLineStyle(value, name);
   if (line == null) return "";
   const width = line.width == null ? "" : ` w="${Math.round(line.width * 12_700)}"`;
   const fill = line.fill == null ? "" : `<a:solidFill><a:srgbClr val="${line.fill.slice(1)}"/></a:solidFill>`;
   const dash = line.style == null ? "" : `<a:prstDash val="${STYLE_TO_DRAWINGML.get(line.style)}"/>`;
   return `<a:ln${width}>${fill}${dash}</a:ln>`;
+}
+
+export function spreadsheetChartSeriesLineXml(series) {
+  const line = normalizeSpreadsheetChartSeriesLine(series);
+  return line == null ? "" : spreadsheetChartLineStyleXml(line);
 }
 
 export function spreadsheetChartLineDashArray(style) {

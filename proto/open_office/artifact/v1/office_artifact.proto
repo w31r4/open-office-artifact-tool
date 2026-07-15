@@ -416,8 +416,9 @@ message SpreadsheetChartSeriesArtifact {
   // line { fill, style, width } and accepts stroke { color, style, weight }
   // as an alias. Unknown native line graphs remain source-owned.
   SpreadsheetChartLineStyleArtifact line = 6;
-  // Optional bounded line-series marker. Only the direct symbol and integer
-  // size are modeled; marker fill/stroke and picture graphs stay source-owned.
+  // Optional bounded line-series marker. Direct symbol/size, untinted RGB
+  // fill, and a bounded direct outline are modeled; picture and other complex
+  // marker graphs stay source-owned.
   SpreadsheetChartMarkerArtifact marker = 7;
 }
 
@@ -1516,6 +1517,10 @@ enum SpreadsheetChartMarkerSymbol {
 message SpreadsheetChartMarkerArtifact {
   SpreadsheetChartMarkerSymbol symbol = 1;
   optional uint32 size = 2;
+  // Optional untinted six-digit RGB marker shape fill.
+  SpreadsheetColor fill = 3;
+  // Optional bounded direct marker outline; reuses the series-line profile.
+  SpreadsheetChartLineStyleArtifact line = 4;
 }
 
 enum SpreadsheetChartLineGrouping {

@@ -133,6 +133,8 @@ function seriesMarkerFromWire(value, name, chart) {
     output.symbol = symbol;
   }
   if (value.size != null) output.size = Number(value.size);
+  if (value.fill != null) output.fill = seriesFillFromWire(value.fill, `${name}.fill`, chart);
+  if (value.line != null) output.line = seriesLineFromWire(value.line, `${name}.line`, chart);
   return seriesMarkerSnapshot(output, chart) || undefined;
 }
 
@@ -310,6 +312,12 @@ function wireChart(chart, original) {
       marker: series.marker == null ? undefined : {
         symbol: series.marker.symbol == null ? SpreadsheetChartMarkerSymbol.UNSPECIFIED : MARKER_SYMBOLS_TO_WIRE.get(series.marker.symbol),
         size: series.marker.size == null ? undefined : series.marker.size,
+        fill: series.marker.fill == null ? undefined : { source: { case: "rgb", value: series.marker.fill.slice(1) } },
+        line: series.marker.line == null ? undefined : {
+          color: series.marker.line.fill == null ? undefined : { source: { case: "rgb", value: series.marker.line.fill.slice(1) } },
+          dashStyle: series.marker.line.style == null ? SpreadsheetChartLineDashStyle.UNSPECIFIED : LINE_STYLES_TO_WIRE.get(series.marker.line.style),
+          widthPoints: series.marker.line.width == null ? undefined : series.marker.line.width,
+        },
       },
     })),
     source: original?.source,
