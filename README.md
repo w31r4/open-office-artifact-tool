@@ -13,6 +13,8 @@ This package is implemented independently using open implementation code:
 
 The long-term Office I/O architecture is documented in [docs/reference-runtime-architecture.md](docs/reference-runtime-architecture.md). The agent-facing model remains JavaScript. **OpenChestnut** is this project's independent, source-built C# Open XML SDK codec and bundled .NET WebAssembly runtime for bounded XLSX, DOCX, and PPTX slices; advanced authoring semantics still use the existing JavaScript codecs as the default migration fallback. The Windows Microsoft Office bridge is optional render/compatibility QA, not the core file codec.
 
+The GitHub repository is the authoritative OpenChestnut source distribution and contains the C# projects, locked dependencies, build scripts, tests, and reproducibility gates. The npm tarball is the consumer runtime distribution: it ships the public proto and generated JavaScript binding, adapters, runtime integrity/SBOM/license evidence, and bundled WebAssembly, but does not duplicate repository-only OpenChestnut C# source or development build scripts. Contributor commands in this README require a source checkout; normal installed-package use does not require `dotnet`.
+
 ## Current status
 
 Spreadsheet formulas support relationship-driven native table import plus a shared structured-reference parser for evaluation, dependency graphs, and trace output. This includes `#This Row`/`@`, unqualified calculated-column references, space intersections over the common cells of two or more table references, and apostrophe escaping for special-character headers such as `Sales['#Items]` and `Sales[Bracket'[Value']]`; metadata-free XLSX roundtrips retain table column names and exact effective precedents.
