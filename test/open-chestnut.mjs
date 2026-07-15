@@ -468,6 +468,9 @@ assert.equal(toBinary(PresentationLayoutSchema, create(PresentationLayoutSchema,
 assert.equal(toBinary(PresentationPlaceholderSchema, create(PresentationPlaceholderSchema, { textBody: { paragraphs: [] } }))[0], 0x2a, "Presentation placeholder text bodies must use field 5.");
 assert.equal(toBinary(PresentationPlaceholderSchema, create(PresentationPlaceholderSchema, { directFrame: { widthEmu: 1n } }))[0], 0x3a, "Presentation placeholder direct frames must use additive field 7.");
 assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(PresentationPlaceholderFrameSchema, { leftEmu: 1n, topEmu: 2n, widthEmu: 3n, heightEmu: 4n }))], [0x08, 0x01, 0x10, 0x02, 0x18, 0x03, 0x20, 0x04], "Presentation placeholder frames must retain their atomic four-coordinate field contract.");
+assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(PresentationPlaceholderFrameSchema, { rotationAngle60000: 1 }))], [0x28, 0x02], "Presentation placeholder rotation must use additive optional sint32 field 5.");
+assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(PresentationPlaceholderFrameSchema, { flipHorizontal: false }))], [0x30, 0x00], "Presentation placeholder horizontal flips must preserve explicit false on field 6.");
+assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(PresentationPlaceholderFrameSchema, { flipVertical: true }))], [0x38, 0x01], "Presentation placeholder vertical flips must use additive optional field 7.");
 assert.equal(toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x3a, "Presentation master background hashes must use additive field 7.");
 assert.deepEqual([...toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundEditable: true }))], [0x40, 0x01], "Presentation master background editability must use additive field 8.");
 assert.equal(toBinary(PresentationLayoutSourceBindingSchema, create(PresentationLayoutSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x2a, "Presentation layout background hashes must use additive field 5.");
@@ -2792,7 +2795,7 @@ const masterStyleAuthoredXml = await masterStyleSourceZip.file(masterPartPath).a
 assert.match(masterStyleAuthoredXml, /<p:bg><p:bgRef idx="1001"><a:schemeClr\b[^>]*val="accent1"[^>]*\/><\/p:bgRef><\/p:bg>/);
 assert.match(masterStyleAuthoredXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="ctr"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3000"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent1"\s*\/>[\s\S]*?<a:latin typeface="Aptos Display"\s*\/>/);
 assert.match(masterStyleAuthoredXml, /<p:bodyStyle>[\s\S]*?<a:lvl2pPr[^>]*marL="685800"[^>]*indent="-228600"[^>]*>[\s\S]*?<a:buChar char="•"\s*\/>/);
-const masterPlaceholderXml = '<p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:nvSpPr><p:cNvPr id="2" name="Master Prompt"/><p:cNvSpPr/><p:nvPr><p:ph type="title" idx="0" hasCustomPrompt="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm rot="60000"><a:off x="762000" y="571500"/><a:ext cx="6858000" cy="1143000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>Master prompt</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>';
+const masterPlaceholderXml = '<p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:nvSpPr><p:cNvPr id="2" name="Master Prompt"/><p:cNvSpPr/><p:nvPr><p:ph type="title" idx="0" hasCustomPrompt="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm rot="60000" flipH="1" flipV="0"><a:off x="762000" y="571500"/><a:ext cx="6858000" cy="1143000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>Master prompt</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>';
 masterStyleSourceZip.file(masterPartPath, masterStyleAuthoredXml
   .replace(/<a:lvl1pPr\b/, '<a:lvl1pPr marR="123456"')
   .replace("</p:spTree>", `${masterPlaceholderXml}</p:spTree>`));
@@ -2823,15 +2826,19 @@ assert.equal(importedMasterPlaceholder.idx, 0);
 assert.equal(importedMasterPlaceholder.text[0].runs[0].text, "Master prompt");
 assert.equal(importedMasterPlaceholder.textBodyProperties.anchor, "center");
 assert.deepEqual(importedMasterPlaceholder.position, { left: 80, top: 60, width: 720, height: 120 });
+assert.deepEqual(importedMasterPlaceholder.transform, { rotationDegrees: 1, flipHorizontal: true, flipVertical: false });
 assert.equal(importedLayoutPlaceholder.type, "body");
 assert.equal(importedLayoutPlaceholder.idx, 2);
 assert.equal(importedLayoutPlaceholder.text[0].runs[0].text, "Layout prompt");
 assert.deepEqual(importedLayoutPlaceholder.position, { left: 80, top: 200, width: 720, height: 120 });
+assert.equal(importedLayoutPlaceholder.transform, undefined);
 importedMasterPlaceholder.text[0].runs[0].text = "Edited master prompt";
 importedMasterPlaceholder.position = { left: 96, top: 70, width: 700, height: 110 };
+importedMasterPlaceholder.transform = { flipHorizontal: false };
 importedLayoutPlaceholder.text[0].runs[0] = { text: "Edited layout prompt", style: {}, link: { uri: "https://example.com/layout-help", tooltip: "Layout help" } };
 importedLayoutPlaceholder.textBodyProperties.anchor = "bottom";
 importedLayoutPlaceholder.position = { left: 88, top: 220, width: 680, height: 100 };
+importedLayoutPlaceholder.transform = { rotationDegrees: -45, flipHorizontal: false, flipVertical: true };
 masterStyleImported.master.textParagraphStyles.title[0].alignment = "right";
 delete masterStyleImported.master.textParagraphStyles.body[1];
 masterStyleImported.master.textParagraphStyles.other[2] = {
@@ -2853,13 +2860,14 @@ const masterRelationships = await masterStyleEditedZip.file("ppt/slideMasters/_r
 assert.match(masterRelationships, /Type="[^"]+\/image" Target="https:\/\/example\.com\/master-marker\.png" TargetMode="External"/);
 const masterPlaceholderEditedXml = await masterStyleEditedZip.file(masterPartPath).async("text");
 assert.match(masterPlaceholderEditedXml, /<p:ph\b[^>]*type="title"[^>]*idx="0"[^>]*hasCustomPrompt="1"/);
-assert.match(masterPlaceholderEditedXml, /<a:xfrm\b[^>]*rot="60000"/);
-assert.match(masterPlaceholderEditedXml, /<a:xfrm\b[^>]*rot="60000"[^>]*><a:off x="914400" y="666750"\s*\/><a:ext cx="6667500" cy="1047750"\s*\/><\/a:xfrm>/);
+assert.match(masterPlaceholderEditedXml, /<a:xfrm\b[^>]*flipH="0"[^>]*><a:off x="914400" y="666750"\s*\/><a:ext cx="6667500" cy="1047750"\s*\/><\/a:xfrm>/);
+assert.doesNotMatch(masterPlaceholderEditedXml, /<a:xfrm\b[^>]*\brot=/);
+assert.doesNotMatch(masterPlaceholderEditedXml, /<a:xfrm\b[^>]*\bflipV=/);
 assert.match(masterPlaceholderEditedXml, /<a:t>Edited master prompt<\/a:t>/);
 const layoutEditedXml = await masterStyleEditedZip.file(layoutPartPath).async("text");
 assert.match(layoutEditedXml, /<p:bg><p:bgRef idx="1002"><a:schemeClr\b[^>]*val="accent2"[^>]*\/><\/p:bgRef><\/p:bg>/);
 assert.match(layoutEditedXml, /<a:bodyPr\b[^>]*anchor="b"/);
-assert.match(layoutEditedXml, /<a:xfrm><a:off x="838200" y="2095500"\s*\/><a:ext cx="6477000" cy="952500"\s*\/><\/a:xfrm>/);
+assert.match(layoutEditedXml, /<a:xfrm\b[^>]*rot="-2700000"[^>]*flipH="0"[^>]*flipV="1"[^>]*><a:off x="838200" y="2095500"\s*\/><a:ext cx="6477000" cy="952500"\s*\/><\/a:xfrm>/);
 assert.match(layoutEditedXml, /<a:t>Edited layout prompt<\/a:t>/);
 assert.match(await masterStyleEditedZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /Type="[^"]+\/hyperlink" Target="https:\/\/example\.com\/layout-help" TargetMode="External"/);
 const masterStyleRoundTrip = await importPptxWithOpenChestnut(masterStyleEdited);
@@ -2870,25 +2878,47 @@ assert.deepEqual(masterStyleRoundTrip.master.background, { fill: "#112233", mode
 assert.deepEqual(masterStyleRoundTrip.layouts.items[0].background, { fill: "accent2", mode: "reference", index: 1002 });
 assert.equal(masterStyleRoundTrip.master.placeholders[0].text[0].runs[0].text, "Edited master prompt");
 assert.deepEqual(masterStyleRoundTrip.master.placeholders[0].position, { left: 96, top: 70, width: 700, height: 110 });
+assert.deepEqual(masterStyleRoundTrip.master.placeholders[0].transform, { flipHorizontal: false });
 assert.equal(masterStyleRoundTrip.layouts.items[0].placeholders[0].text[0].runs[0].link.uri, "https://example.com/layout-help");
 assert.equal(masterStyleRoundTrip.layouts.items[0].placeholders[0].textBodyProperties.anchor, "bottom");
 assert.deepEqual(masterStyleRoundTrip.layouts.items[0].placeholders[0].position, { left: 88, top: 220, width: 680, height: 100 });
+assert.deepEqual(masterStyleRoundTrip.layouts.items[0].placeholders[0].transform, { rotationDegrees: -45, flipHorizontal: false, flipVertical: true });
 const invalidPlaceholderFrame = await importPptxWithOpenChestnut(masterStyleSource);
 invalidPlaceholderFrame.layouts.items[0].placeholders[0].position.width = 0;
 await assert.rejects(
   exportPptxWithOpenChestnut(invalidPlaceholderFrame),
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_presentation_frame",
 );
+const invalidPlaceholderTransform = await importPptxWithOpenChestnut(masterStyleSource);
+invalidPlaceholderTransform.layouts.items[0].placeholders[0].transform = { rotationDegrees: 360.001 };
+await assert.rejects(
+  exportPptxWithOpenChestnut(invalidPlaceholderTransform),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_presentation_transform",
+);
+const emptyPlaceholderTransform = await importPptxWithOpenChestnut(masterStyleSource);
+emptyPlaceholderTransform.layouts.items[0].placeholders[0].transform = {};
+await assert.rejects(
+  exportPptxWithOpenChestnut(emptyPlaceholderTransform),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_presentation_transform",
+);
+const clearedPlaceholderTransform = await importPptxWithOpenChestnut(masterStyleSource);
+clearedPlaceholderTransform.master.placeholders[0].transform = undefined;
+const clearedPlaceholderTransformFile = await exportPptxWithOpenChestnut(clearedPlaceholderTransform);
+const clearedPlaceholderTransformXml = await (await JSZip.loadAsync(clearedPlaceholderTransformFile.bytes)).file(masterPartPath).async("text");
+assert.match(clearedPlaceholderTransformXml, /<a:xfrm><a:off x="762000" y="571500"\s*\/><a:ext cx="6858000" cy="1143000"\s*\/><\/a:xfrm>/);
+assert.equal((await importPptxWithOpenChestnut(clearedPlaceholderTransformFile)).master.placeholders[0].transform, undefined);
 const inheritedPlaceholderZip = await JSZip.loadAsync(masterStyleSource);
-inheritedPlaceholderZip.file(masterPartPath, (await inheritedPlaceholderZip.file(masterPartPath).async("text")).replace(/<a:xfrm rot="60000"><a:off x="762000" y="571500"\/><a:ext cx="6858000" cy="1143000"\/><\/a:xfrm>/, ""));
+inheritedPlaceholderZip.file(masterPartPath, (await inheritedPlaceholderZip.file(masterPartPath).async("text")).replace(/<a:xfrm rot="60000" flipH="1" flipV="0"><a:off x="762000" y="571500"\/><a:ext cx="6858000" cy="1143000"\/><\/a:xfrm>/, ""));
 const inheritedPlaceholderPresentation = await importPptxWithOpenChestnut(await inheritedPlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
 assert.equal(inheritedPlaceholderPresentation.master.placeholders[0].position, undefined, "Missing direct placeholder geometry must remain inherited rather than gaining a synthetic frame.");
+assert.equal(inheritedPlaceholderPresentation.master.placeholders[0].transform, undefined);
 inheritedPlaceholderPresentation.master.placeholders[0].text[0].runs[0].text = "Inherited frame text edit";
 const inheritedPlaceholderTextEdit = await exportPptxWithOpenChestnut(inheritedPlaceholderPresentation);
 const inheritedPlaceholderTextEditZip = await JSZip.loadAsync(inheritedPlaceholderTextEdit.bytes);
 assert.match(await inheritedPlaceholderTextEditZip.file(masterPartPath).async("text"), /<a:t>Inherited frame text edit<\/a:t>/);
 const inheritedPlaceholderFrameEdit = await importPptxWithOpenChestnut(await inheritedPlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
 inheritedPlaceholderFrameEdit.master.placeholders[0].position = { left: 80, top: 60, width: 720, height: 120 };
+inheritedPlaceholderFrameEdit.master.placeholders[0].transform = { rotationDegrees: 15 };
 await assert.rejects(
   exportPptxWithOpenChestnut(inheritedPlaceholderFrameEdit),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
@@ -2901,8 +2931,22 @@ complexPlaceholderFrameZip.file(layoutPartPath, (await complexPlaceholderFrameZi
 const complexPlaceholderFramePresentation = await importPptxWithOpenChestnut(await complexPlaceholderFrameZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
 assert.equal(complexPlaceholderFramePresentation.layouts.items[0].placeholders[0].position, undefined);
 complexPlaceholderFramePresentation.layouts.items[0].placeholders[0].position = { left: 80, top: 200, width: 720, height: 120 };
+complexPlaceholderFramePresentation.layouts.items[0].placeholders[0].transform = { flipVertical: true };
 await assert.rejects(
   exportPptxWithOpenChestnut(complexPlaceholderFramePresentation),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
+);
+const unboundedPlaceholderTransformZip = await JSZip.loadAsync(masterStyleSource);
+unboundedPlaceholderTransformZip.file(layoutPartPath, (await unboundedPlaceholderTransformZip.file(layoutPartPath).async("text")).replace(
+  "<a:xfrm><a:off x=\"762000\" y=\"1905000\"/>",
+  "<a:xfrm rot=\"21600001\"><a:off x=\"762000\" y=\"1905000\"/>",
+));
+const unboundedPlaceholderTransformPresentation = await importPptxWithOpenChestnut(await unboundedPlaceholderTransformZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+assert.equal(unboundedPlaceholderTransformPresentation.layouts.items[0].placeholders[0].position, undefined);
+assert.equal(unboundedPlaceholderTransformPresentation.layouts.items[0].placeholders[0].transform, undefined);
+unboundedPlaceholderTransformPresentation.layouts.items[0].placeholders[0].transform = { rotationDegrees: 0 };
+await assert.rejects(
+  exportPptxWithOpenChestnut(unboundedPlaceholderTransformPresentation),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
 );
 const retainedPlaceholderName = importedLayoutPlaceholder.name;

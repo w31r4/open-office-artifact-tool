@@ -294,11 +294,20 @@ public sealed class PptxCodecTests
         Assert.Equal(571_500L, masterPlaceholder.DirectFrame.TopEmu);
         Assert.Equal(6_858_000L, masterPlaceholder.DirectFrame.WidthEmu);
         Assert.Equal(1_143_000L, masterPlaceholder.DirectFrame.HeightEmu);
+        Assert.True(masterPlaceholder.DirectFrame.HasRotationAngle60000);
+        Assert.Equal(60_000, masterPlaceholder.DirectFrame.RotationAngle60000);
+        Assert.True(masterPlaceholder.DirectFrame.HasFlipHorizontal);
+        Assert.True(masterPlaceholder.DirectFrame.FlipHorizontal);
+        Assert.True(masterPlaceholder.DirectFrame.HasFlipVertical);
+        Assert.False(masterPlaceholder.DirectFrame.FlipVertical);
         Assert.True(masterPlaceholder.Source.Editable);
         Assert.Equal("body", layoutPlaceholder.Type);
         Assert.Equal(2U, layoutPlaceholder.Index);
         Assert.Equal("Layout prompt", PptxTextCodec.Flatten(layoutPlaceholder.TextBody));
         Assert.Equal(762_000L, layoutPlaceholder.DirectFrame.LeftEmu);
+        Assert.False(layoutPlaceholder.DirectFrame.HasRotationAngle60000);
+        Assert.False(layoutPlaceholder.DirectFrame.HasFlipHorizontal);
+        Assert.False(layoutPlaceholder.DirectFrame.HasFlipVertical);
         Assert.True(layoutPlaceholder.Source.Editable);
         Assert.NotEqual(uint.MaxValue, masterPlaceholder.Source.ShapeTreeIndex);
 
@@ -307,11 +316,17 @@ public sealed class PptxCodecTests
         masterPlaceholder.DirectFrame.TopEmu = 666_750L;
         masterPlaceholder.DirectFrame.WidthEmu = 6_667_500L;
         masterPlaceholder.DirectFrame.HeightEmu = 1_047_750L;
+        masterPlaceholder.DirectFrame.ClearRotationAngle60000();
+        masterPlaceholder.DirectFrame.FlipHorizontal = false;
+        masterPlaceholder.DirectFrame.ClearFlipVertical();
         layoutPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited layout prompt";
         layoutPlaceholder.DirectFrame.LeftEmu = 838_200L;
         layoutPlaceholder.DirectFrame.TopEmu = 2_095_500L;
         layoutPlaceholder.DirectFrame.WidthEmu = 6_477_000L;
         layoutPlaceholder.DirectFrame.HeightEmu = 952_500L;
+        layoutPlaceholder.DirectFrame.RotationAngle60000 = -2_700_000;
+        layoutPlaceholder.DirectFrame.FlipHorizontal = false;
+        layoutPlaceholder.DirectFrame.FlipVertical = true;
         layoutPlaceholder.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink
         {
             Uri = "https://example.com/layout-help",
@@ -326,7 +341,9 @@ public sealed class PptxCodecTests
             var nativeMaster = masterPart.SlideMaster!.CommonSlideData!.ShapeTree!.Elements<P.Shape>().Single();
             Assert.Equal("Edited master prompt", nativeMaster.Descendants<A.Text>().Single().Text);
             Assert.True(nativeMaster.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.HasCustomPrompt!.Value);
-            Assert.Equal(60_000, nativeMaster.ShapeProperties!.Transform2D!.Rotation!.Value);
+            Assert.Null(nativeMaster.ShapeProperties!.Transform2D!.Rotation);
+            Assert.False(nativeMaster.ShapeProperties.Transform2D.HorizontalFlip!.Value);
+            Assert.Null(nativeMaster.ShapeProperties.Transform2D.VerticalFlip);
             Assert.Equal(914_400L, nativeMaster.ShapeProperties.Transform2D.Offset!.X!.Value);
             Assert.Equal(666_750L, nativeMaster.ShapeProperties.Transform2D.Offset.Y!.Value);
             Assert.Equal(6_667_500L, nativeMaster.ShapeProperties.Transform2D.Extents!.Cx!.Value);
@@ -338,17 +355,30 @@ public sealed class PptxCodecTests
             Assert.Equal(2_095_500L, nativeLayout.ShapeProperties.Transform2D.Offset.Y!.Value);
             Assert.Equal(6_477_000L, nativeLayout.ShapeProperties.Transform2D.Extents!.Cx!.Value);
             Assert.Equal(952_500L, nativeLayout.ShapeProperties.Transform2D.Extents.Cy!.Value);
+            Assert.Equal(-2_700_000, nativeLayout.ShapeProperties.Transform2D.Rotation!.Value);
+            Assert.False(nativeLayout.ShapeProperties.Transform2D.HorizontalFlip!.Value);
+            Assert.True(nativeLayout.ShapeProperties.Transform2D.VerticalFlip!.Value);
             Assert.Contains(layoutPart.HyperlinkRelationships, relationship =>
                 relationship.Uri.OriginalString == "https://example.com/layout-help");
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
         var roundTrip = Import(edited.File.ToByteArray());
         Assert.Equal("Edited master prompt", PptxTextCodec.Flatten(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders).TextBody));
-        Assert.Equal(914_400L, Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders).DirectFrame.LeftEmu);
+        var roundTripMasterFrame = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Masters).Placeholders).DirectFrame;
+        Assert.Equal(914_400L, roundTripMasterFrame.LeftEmu);
+        Assert.False(roundTripMasterFrame.HasRotationAngle60000);
+        Assert.True(roundTripMasterFrame.HasFlipHorizontal);
+        Assert.False(roundTripMasterFrame.FlipHorizontal);
+        Assert.False(roundTripMasterFrame.HasFlipVertical);
         var roundTripLayoutRun = Assert.Single(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders).TextBody.Paragraphs).Runs.Single();
         Assert.Equal("Edited layout prompt", roundTripLayoutRun.Text);
         Assert.Equal("https://example.com/layout-help", roundTripLayoutRun.RunHyperlink.Uri);
-        Assert.Equal(2_095_500L, Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders).DirectFrame.TopEmu);
+        var roundTripLayoutFrame = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Layouts).Placeholders).DirectFrame;
+        Assert.Equal(2_095_500L, roundTripLayoutFrame.TopEmu);
+        Assert.Equal(-2_700_000, roundTripLayoutFrame.RotationAngle60000);
+        Assert.True(roundTripLayoutFrame.HasFlipHorizontal);
+        Assert.False(roundTripLayoutFrame.FlipHorizontal);
+        Assert.True(roundTripLayoutFrame.FlipVertical);
 
         var topology = Import(source);
         Assert.Single(topology.Artifact.Presentation.Layouts).Placeholders.Clear();
@@ -369,6 +399,12 @@ public sealed class PptxCodecTests
         var invalidFrameRejected = Export(invalidFrame.Artifact);
         Assert.False(invalidFrameRejected.Ok);
         Assert.Equal("invalid_presentation_frame", Assert.Single(invalidFrameRejected.Diagnostics).Code);
+
+        var invalidTransform = Import(source);
+        Assert.Single(Assert.Single(invalidTransform.Artifact.Presentation.Layouts).Placeholders).DirectFrame.RotationAngle60000 = 21_600_001;
+        var invalidTransformRejected = Export(invalidTransform.Artifact);
+        Assert.False(invalidTransformRejected.Ok);
+        Assert.Equal("invalid_presentation_transform", Assert.Single(invalidTransformRejected.Diagnostics).Code);
 
         var unsupportedFrame = Import(AddUnsupportedPlaceholderTransform(source));
         var unsupportedFramePlaceholder = Assert.Single(Assert.Single(unsupportedFrame.Artifact.Presentation.Layouts).Placeholders);
@@ -2199,7 +2235,9 @@ public sealed class PptxCodecTests
                 0U,
                 "Master prompt",
                 hasCustomPrompt: true,
-                rotation: 60_000));
+                rotation: 60_000,
+                flipHorizontal: true,
+                flipVertical: false));
             var layoutPart = masterPart.SlideLayoutParts.Single();
             layoutPart.SlideLayout!.CommonSlideData!.ShapeTree!.Append(TemplatePlaceholder(
                 2U,
@@ -2372,24 +2410,33 @@ public sealed class PptxCodecTests
         uint index,
         string text,
         bool hasCustomPrompt = false,
-        int? rotation = null) => new(
-        new P.NonVisualShapeProperties(
-            new P.NonVisualDrawingProperties { Id = id, Name = name },
-            new P.NonVisualShapeDrawingProperties(new A.ShapeLocks { NoGrouping = true }),
-            new P.ApplicationNonVisualDrawingProperties(
-                new P.PlaceholderShape { Type = type, Index = index, HasCustomPrompt = hasCustomPrompt })),
-        new P.ShapeProperties(
-            new A.Transform2D(
-                new A.Offset { X = 762_000L, Y = 571_500L },
-                new A.Extents { Cx = 6_858_000L, Cy = 1_143_000L }) { Rotation = rotation },
-            new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle },
-            new A.NoFill()),
-        new P.TextBody(
-            new A.BodyProperties(),
-            new A.ListStyle(),
-            new A.Paragraph(
-                new A.Run(new A.RunProperties { Language = "en-US" }, new A.Text(text)),
-                new A.EndParagraphRunProperties { Language = "en-US" })));
+        int? rotation = null,
+        bool? flipHorizontal = null,
+        bool? flipVertical = null)
+    {
+        var transform = new A.Transform2D(
+            new A.Offset { X = 762_000L, Y = 571_500L },
+            new A.Extents { Cx = 6_858_000L, Cy = 1_143_000L });
+        if (rotation.HasValue) transform.Rotation = rotation.Value;
+        if (flipHorizontal.HasValue) transform.HorizontalFlip = flipHorizontal.Value;
+        if (flipVertical.HasValue) transform.VerticalFlip = flipVertical.Value;
+        return new P.Shape(
+            new P.NonVisualShapeProperties(
+                new P.NonVisualDrawingProperties { Id = id, Name = name },
+                new P.NonVisualShapeDrawingProperties(new A.ShapeLocks { NoGrouping = true }),
+                new P.ApplicationNonVisualDrawingProperties(
+                    new P.PlaceholderShape { Type = type, Index = index, HasCustomPrompt = hasCustomPrompt })),
+            new P.ShapeProperties(
+                transform,
+                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle },
+                new A.NoFill()),
+            new P.TextBody(
+                new A.BodyProperties(),
+                new A.ListStyle(),
+                new A.Paragraph(
+                    new A.Run(new A.RunProperties { Language = "en-US" }, new A.Text(text)),
+                    new A.EndParagraphRunProperties { Language = "en-US" })));
+    }
 
     private static byte[] AddPicture(byte[] bytes)
     {

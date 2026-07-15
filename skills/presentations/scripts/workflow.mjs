@@ -360,6 +360,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         assert.ok(placeholder, `Missing OpenChestnut master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);
         if (Object.hasOwn(edit.masterPlaceholder, "text")) placeholder.text = edit.masterPlaceholder.text;
         if (edit.masterPlaceholder.position) placeholder.position = { ...edit.masterPlaceholder.position };
+        if (Object.hasOwn(edit.masterPlaceholder, "transform")) placeholder.transform = edit.masterPlaceholder.transform == null ? undefined : { ...edit.masterPlaceholder.transform };
         if (edit.masterPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.masterPlaceholder.textBodyProperties;
       }
       if (edit.layoutPlaceholder) {
@@ -367,6 +368,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         assert.ok(placeholder, `Missing OpenChestnut layout placeholder ${edit.layoutPlaceholder.type}:${edit.layoutPlaceholder.idx}`);
         if (Object.hasOwn(edit.layoutPlaceholder, "text")) placeholder.text = edit.layoutPlaceholder.text;
         if (edit.layoutPlaceholder.position) placeholder.position = { ...edit.layoutPlaceholder.position };
+        if (Object.hasOwn(edit.layoutPlaceholder, "transform")) placeholder.transform = edit.layoutPlaceholder.transform == null ? undefined : { ...edit.layoutPlaceholder.transform };
         if (edit.layoutPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.layoutPlaceholder.textBodyProperties;
       }
       if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;

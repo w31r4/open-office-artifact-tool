@@ -633,7 +633,7 @@ function sourcePlaceholders(placeholders, entries, ownerId, assetCatalog) {
   }
   return entries.map((entry) => {
     if (placeholderReadOnlySnapshot(entry.model, { directFrameEditable: entry.directFrameEditable }) !== entry.snapshot) {
-      throw new OpenChestnutCodecError(`Presentation placeholder ${entry.model.id} can edit only local text/paragraph/body properties and an already-present recognized direct frame in this codec slice.`, [], { code: "unsupported_presentation_edit" });
+      throw new OpenChestnutCodecError(`Presentation placeholder ${entry.model.id} can edit only local text/paragraph/body properties and an already-present recognized direct frame with bounded rotation/flips in this codec slice.`, [], { code: "unsupported_presentation_edit" });
     }
     return wirePlaceholder(entry.model, entry.wire, assetCatalog);
   });

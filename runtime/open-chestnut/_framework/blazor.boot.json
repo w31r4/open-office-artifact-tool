@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenChestnut.Runtime.dll",
   "resources": {
-    "hash": "sha256-WsFy9u1upHftcmOcoDqxPFU88bvXK8Ov91vGDMmNHes=",
+    "hash": "sha256-E7gjPn6ZxkQYqkSglqgYVCLo4VGpMCSSktFjQu23xwY=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -16,8 +16,8 @@
       "DocumentFormat.OpenXml.wasm": "sha256-P50bx7IYxAPxhq8IpkoCcjhA/E9R3e0fuUzzo3rVQ+I=",
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-rGkm/CvLzwPyEiUCBh+4YqxjgbxAYkLsRIDJkB7Pcno=",
       "Google.Protobuf.wasm": "sha256-8o5mvJAbIRCJMXZv/Y4pzw6f76GVFRfEACSoU1+EhH0=",
-      "OpenChestnut.Codec.wasm": "sha256-2n/VboecnNXpZB7tzKAG+SUjNDqUvgqTkeKkYf2EfS8=",
-      "OpenChestnut.Runtime.wasm": "sha256-H4lc06hhX6tskS66IhNSRAKspMvVtGLQPh2CwEsj8As=",
+      "OpenChestnut.Codec.wasm": "sha256-nw2L+6uGwTA2sqXQNCsQQ/Xx+W1+dRhC6/2CXjEMeQ4=",
+      "OpenChestnut.Runtime.wasm": "sha256-YUnLfce/7yuudQLnXFaJJ+72vu7w+L8oxNNOSK69VR8=",
       "System.Collections.Concurrent.wasm": "sha256-PjS0IHC3cqACW1NWl9PL//B936Cs32qXpBxz+YgUeGk=",
       "System.Collections.wasm": "sha256-zWQh+9awRirAjopZmiOPwQi9SGIi5TXMbJ/bsxjcCiA=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",

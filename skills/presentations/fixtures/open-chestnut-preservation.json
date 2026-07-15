@@ -13,6 +13,7 @@
         "idx": 0,
         "name": "Master WASM Prompt",
         "position": { "left": 48, "top": 20, "width": 1184, "height": 80 },
+        "transform": { "rotationDegrees": 1, "flipHorizontal": true, "flipVertical": false },
         "text": "Before master placeholder",
         "textBodyProperties": { "anchor": "center" }
       }
@@ -39,6 +40,7 @@
           "idx": 2,
           "name": "Layout WASM Prompt",
           "position": { "left": 48, "top": 560, "width": 1184, "height": 44 },
+          "transform": { "rotationDegrees": -2, "flipHorizontal": false },
           "text": "Before layout placeholder",
           "textBodyProperties": { "anchor": "top" }
         }
@@ -128,11 +130,12 @@
       ],
       "clearMasterBackground": true,
       "clearLayoutBackground": true,
-      "masterPlaceholder": { "type": "title", "idx": 0, "position": { "left": 64, "top": 28, "width": 1152, "height": 72 }, "text": "After master placeholder" },
+      "masterPlaceholder": { "type": "title", "idx": 0, "position": { "left": 64, "top": 28, "width": 1152, "height": 72 }, "transform": { "rotationDegrees": 12.5, "flipHorizontal": false, "flipVertical": true }, "text": "After master placeholder" },
       "layoutPlaceholder": {
         "type": "body",
         "idx": 2,
         "position": { "left": 64, "top": 548, "width": 1152, "height": 52 },
+        "transform": { "flipHorizontal": true, "flipVertical": false },
         "textBodyProperties": { "anchor": "bottom" },
         "text": [
           { "runs": [{ "text": "After layout placeholder", "link": { "uri": "https://example.com/layout-placeholder", "tooltip": "Layout-owned link" } }] }
