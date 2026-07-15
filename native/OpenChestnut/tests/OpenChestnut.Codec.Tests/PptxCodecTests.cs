@@ -37,6 +37,22 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourceFreeSlidePlaceholderAuthoringFailsClosed()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.Placeholder = new PresentationPlaceholderIdentity
+        {
+            Type = "title",
+            Index = 0U,
+            InheritsGeometry = true,
+        };
+
+        var response = Invoke(request);
+        Assert.False(response.Ok);
+        Assert.Equal("unsupported_presentation_features", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
     public void MasterGraphAndTextStylesAuthorImportEditDeleteAndPreserveResidualContent()
     {
         var request = ExportRequest();
@@ -517,6 +533,53 @@ public sealed class PptxCodecTests
         var attributedRejected = Export(attributed.Artifact);
         Assert.False(attributedRejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(attributedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SlidePlaceholderIdentityDistinguishesInheritedAndDirectGeometry()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var template = AddTemplatePlaceholders(authored.File.ToByteArray());
+
+        var inheritedSource = AddSlidePlaceholder(template, removeTransform: true);
+        var inherited = Import(inheritedSource);
+        Assert.True(inherited.Ok, Diagnostics(inherited));
+        var inheritedElement = Assert.Single(Assert.Single(inherited.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null);
+        Assert.False(inheritedElement.Source.Editable);
+        Assert.Equal("body", inheritedElement.Shape.Placeholder.Type);
+        Assert.Equal(2U, inheritedElement.Shape.Placeholder.Index);
+        Assert.True(inheritedElement.Shape.Placeholder.InheritsGeometry);
+        Assert.Null(inheritedElement.Shape.DirectFrame);
+
+        var unchanged = Export(inherited.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        using (var stream = new MemoryStream(unchanged.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var placeholder = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>()
+                .Single(shape => shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties?.GetFirstChild<P.PlaceholderShape>() is not null);
+            Assert.Null(placeholder.ShapeProperties!.Transform2D);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var roundTrip = Import(unchanged.File.ToByteArray());
+        var roundTripPlaceholder = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null).Shape;
+        Assert.True(roundTripPlaceholder.Placeholder.InheritsGeometry);
+        Assert.Null(roundTripPlaceholder.DirectFrame);
+
+        var tampered = Import(inheritedSource);
+        Assert.Single(Assert.Single(tampered.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null).Shape.Placeholder.Index = 3U;
+        var rejected = Export(tampered.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var direct = Import(AddSlidePlaceholder(template, removeTransform: false));
+        Assert.True(direct.Ok, Diagnostics(direct));
+        var directShape = Assert.Single(Assert.Single(direct.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null).Shape;
+        Assert.False(directShape.Placeholder.InheritsGeometry);
+        Assert.NotNull(directShape.DirectFrame);
+        Assert.Equal(762_000L, directShape.DirectFrame.LeftEmu);
+        Assert.Equal(6_858_000L, directShape.DirectFrame.WidthEmu);
     }
 
     [Fact]
@@ -2343,6 +2406,25 @@ public sealed class PptxCodecTests
                 P.PlaceholderValues.Body,
                 2U,
                 "Layout prompt"));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSlidePlaceholder(byte[] bytes, bool removeTransform)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var placeholder = TemplatePlaceholder(
+                10U,
+                "Slide inherited body",
+                P.PlaceholderValues.Body,
+                2U,
+                "Slide placeholder text");
+            if (removeTransform) placeholder.ShapeProperties!.Transform2D!.Remove();
+            package.PresentationPart!.SlideParts.Single().Slide!.CommonSlideData!.ShapeTree!.Append(placeholder);
         }
         return stream.ToArray();
     }

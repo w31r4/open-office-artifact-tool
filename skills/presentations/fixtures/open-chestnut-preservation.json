@@ -43,6 +43,13 @@
           "transform": { "rotationDegrees": -2, "flipHorizontal": false },
           "text": "Before layout placeholder",
           "textBodyProperties": { "anchor": "top" }
+        },
+        {
+          "type": "body",
+          "idx": 3,
+          "name": "Inherited Slide Geometry",
+          "position": { "left": 920, "top": 670, "width": 300, "height": 48 },
+          "text": "Inherited slide frame"
         }
       ]
     }
@@ -53,6 +60,14 @@
       "layoutId": "layout/open-chestnut",
       "notes": "The chart, image, notes, master, theme, parts, and relationships must survive the C# Open XML SDK WebAssembly roundtrip.",
       "shapes": [
+        {
+          "name": "inherited-slide-geometry",
+          "position": { "left": 920, "top": 670, "width": 300, "height": 48 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "placeholder": { "layoutId": "layout/open-chestnut", "type": "body", "idx": 3, "name": "Inherited Slide Geometry" },
+          "text": "Inherited slide frame"
+        },
         {
           "name": "wasm-title",
           "position": { "left": 48, "top": 20, "width": 1184, "height": 200 },
@@ -114,7 +129,8 @@
   ],
   "openChestnut": {
     "nativeGraphFixture": true,
-    "sourcePlaceholderFrames": { "master": "absent", "layout": "direct" },
+    "sourcePlaceholderFrames": { "master": "absent", "layout": "direct", "slideIndex": 3 },
+    "inheritedSlidePlaceholder": { "slideIndex": 0, "idx": 3, "geometrySource": "layout", "position": { "left": 920, "top": 670, "width": 300, "height": 48 } },
     "embeddedWorkbook": { "sourceValue": "OpenChestnut source workbook" },
     "nativeObjects": [
       { "nativeKind": "oleObject", "relationships": 2, "parts": 2, "editable": true },

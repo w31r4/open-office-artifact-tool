@@ -768,6 +768,7 @@ function unsupportedPresentationFeatures(presentation) {
     if (slide.connectors?.items?.length) unsupported.push(`${prefix} connectors`);
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
+    if (slide.shapes?.items?.some((shape) => shape.placeholder)) unsupported.push(`${prefix} source-free placeholder authoring`);
   }
   return unsupported;
 }

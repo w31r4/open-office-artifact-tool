@@ -222,7 +222,7 @@ internal static class PptxPlaceholderCodec
             string.IsNullOrEmpty(attribute.NamespaceUri) && allowed.Contains(attribute.LocalName));
     }
 
-    private static void ValidateDirectFrame(PresentationPlaceholderFrame? frame, string placeholderId)
+    internal static void ValidateDirectFrame(PresentationPlaceholderFrame? frame, string placeholderId)
     {
         if (frame is null) return;
         if (frame.LeftEmu < 0 || frame.TopEmu < 0 || frame.WidthEmu <= 0 || frame.HeightEmu <= 0)

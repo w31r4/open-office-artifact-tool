@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationElementSourceBindingSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationOpaqueElementSchema, PresentationPlaceholderFrameSchema, PresentationPlaceholderSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartDataLabelPosition, SpreadsheetChartDataLabelsArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationElementSourceBindingSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationOpaqueElementSchema, PresentationPlaceholderFrameSchema, PresentationPlaceholderIdentitySchema, PresentationPlaceholderSchema, PresentationShapeSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartDataLabelPosition, SpreadsheetChartDataLabelsArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -472,6 +472,8 @@ assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(Present
 assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(PresentationPlaceholderFrameSchema, { flipHorizontal: false }))], [0x30, 0x00], "Presentation placeholder horizontal flips must preserve explicit false on field 6.");
 assert.deepEqual([...toBinary(PresentationPlaceholderFrameSchema, create(PresentationPlaceholderFrameSchema, { flipVertical: true }))], [0x38, 0x01], "Presentation placeholder vertical flips must use additive optional field 7.");
 assert.deepEqual([...toBinary(PresentationElementSourceBindingSchema, create(PresentationElementSourceBindingSchema, { directFramePresenceEditable: true }))], [0x28, 0x01], "Presentation placeholder frame-presence editability must use additive source-evidence field 5.");
+assert.deepEqual([...toBinary(PresentationPlaceholderIdentitySchema, create(PresentationPlaceholderIdentitySchema, { type: "body", index: 7, inheritsGeometry: true }))], [0x0a, 0x04, 0x62, 0x6f, 0x64, 0x79, 0x10, 0x07, 0x18, 0x01], "Slide placeholder identity must carry public type/index/inheritance facts on fields 1-3.");
+assert.deepEqual([...toBinary(PresentationShapeSchema, create(PresentationShapeSchema, { placeholder: { type: "body", index: 7, inheritsGeometry: true } }))], [0x5a, 0x0a, 0x0a, 0x04, 0x62, 0x6f, 0x64, 0x79, 0x10, 0x07, 0x18, 0x01], "PresentationShape.placeholder must use additive public wire field 11.");
 assert.equal(toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x3a, "Presentation master background hashes must use additive field 7.");
 assert.deepEqual([...toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundEditable: true }))], [0x40, 0x01], "Presentation master background editability must use additive field 8.");
 assert.equal(toBinary(PresentationLayoutSourceBindingSchema, create(PresentationLayoutSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x2a, "Presentation layout background hashes must use additive field 5.");
@@ -2807,6 +2809,49 @@ masterStyleSourceZip.file(layoutPartPath, masterStyleLayoutXml
   .replace(/(<p:cSld\b[^>]*>)/, '$1<p:bg><p:bgPr><a:solidFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:srgbClr val="FFF7ED"/></a:solidFill><a:effectLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/></p:bgPr></p:bg>')
   .replace("</p:spTree>", `${layoutPlaceholderXml}</p:spTree>`));
 const masterStyleSource = await masterStyleSourceZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const inheritedSlidePlaceholderZip = await JSZip.loadAsync(masterStyleSource);
+const slidePlaceholderPartPath = "ppt/slides/slide1.xml";
+const slidePlaceholderSourceXml = await inheritedSlidePlaceholderZip.file(slidePlaceholderPartPath).async("text");
+const slidePlaceholderSourceShape = /<p:sp\b[\s\S]*?<\/p:sp>/.exec(slidePlaceholderSourceXml)?.[0] || "";
+const inheritedSlidePlaceholderShape = slidePlaceholderSourceShape
+  .replace(/<p:nvPr\s*\/>/, '<p:nvPr><p:ph type="title" idx="2"/></p:nvPr>')
+  .replace(/<a:xfrm\b[^>]*><a:off\b[^>]*\/><a:ext\b[^>]*\/><\/a:xfrm>/, "");
+assert.notEqual(inheritedSlidePlaceholderShape, slidePlaceholderSourceShape);
+assert.doesNotMatch(inheritedSlidePlaceholderShape, /<a:xfrm\b/);
+inheritedSlidePlaceholderZip.file(slidePlaceholderPartPath, slidePlaceholderSourceXml.replace(slidePlaceholderSourceShape, inheritedSlidePlaceholderShape));
+const inheritedSlidePlaceholderSource = await inheritedSlidePlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const inheritedSlidePlaceholderImported = await importPptxWithOpenChestnut(inheritedSlidePlaceholderSource);
+const inheritedSlidePlaceholderModel = inheritedSlidePlaceholderImported.slides.items[0].shapes.items[0];
+assert.deepEqual(inheritedSlidePlaceholderModel.position, { left: 80, top: 200, width: 720, height: 120 });
+assert.deepEqual(inheritedSlidePlaceholderModel.placeholder, {
+  layoutId: inheritedSlidePlaceholderImported.layouts.items[0].id,
+  type: "title",
+  idx: 2,
+  geometrySource: "layout",
+});
+assert.match(inheritedSlidePlaceholderImported.slides.items[0].toSvg(), /<rect x="80" y="200" width="720" height="120"/);
+const inheritedSlidePlaceholderRoundTripFile = await exportPptxWithOpenChestnut(inheritedSlidePlaceholderImported);
+const inheritedSlidePlaceholderRoundTripZip = await JSZip.loadAsync(inheritedSlidePlaceholderRoundTripFile.bytes);
+const inheritedSlidePlaceholderRoundTripXml = await inheritedSlidePlaceholderRoundTripZip.file(slidePlaceholderPartPath).async("text");
+const inheritedSlidePlaceholderRoundTripShape = [...inheritedSlidePlaceholderRoundTripXml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)].find((match) => /<p:ph\b/.test(match[0]))?.[0] || "";
+assert.doesNotMatch(inheritedSlidePlaceholderRoundTripShape, /<a:xfrm\b/, "Unchanged effective geometry must not be flattened into the slide placeholder.");
+const inheritedSlidePlaceholderSecondImport = await importPptxWithOpenChestnut(inheritedSlidePlaceholderRoundTripFile);
+assert.deepEqual(inheritedSlidePlaceholderSecondImport.slides.items[0].shapes.items[0].position, { left: 80, top: 200, width: 720, height: 120 });
+const masterInheritedSlidePlaceholderZip = await JSZip.loadAsync(masterStyleSource);
+const masterInheritedSlidePlaceholderXml = await masterInheritedSlidePlaceholderZip.file(slidePlaceholderPartPath).async("text");
+const masterInheritedSlidePlaceholderShape = (/<p:sp\b[\s\S]*?<\/p:sp>/.exec(masterInheritedSlidePlaceholderXml)?.[0] || "")
+  .replace(/<p:nvPr\s*\/>/, '<p:nvPr><p:ph type="body" idx="0"/></p:nvPr>')
+  .replace(/<a:xfrm\b[^>]*><a:off\b[^>]*\/><a:ext\b[^>]*\/><\/a:xfrm>/, "");
+masterInheritedSlidePlaceholderZip.file(slidePlaceholderPartPath, masterInheritedSlidePlaceholderXml.replace(/<p:sp\b[\s\S]*?<\/p:sp>/, masterInheritedSlidePlaceholderShape));
+const masterInheritedSlidePlaceholder = await importPptxWithOpenChestnut(await masterInheritedSlidePlaceholderZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+const masterInheritedSlidePlaceholderModel = masterInheritedSlidePlaceholder.slides.items[0].shapes.items[0];
+assert.deepEqual(masterInheritedSlidePlaceholderModel.position, { left: 80, top: 60, width: 720, height: 120 });
+assert.equal(masterInheritedSlidePlaceholderModel.placeholder.geometrySource, "master");
+inheritedSlidePlaceholderImported.slides.items[0].shapes.items[0].position.left = 81;
+await assert.rejects(
+  exportPptxWithOpenChestnut(inheritedSlidePlaceholderImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit" && /read-only inherited projection/.test(error.message),
+);
 const masterStyleImported = await importPptxWithOpenChestnut(masterStyleSource);
 assert.equal(masterStyleImported.masters.count, 1);
 assert.equal(masterStyleImported.layouts.items.length, 1);
@@ -3417,6 +3462,16 @@ unsupportedHyperlinkPresentation.slides.add().shapes.add({ text: [{ runs: [{ tex
 await assert.rejects(
   exportPptxWithOpenChestnut(unsupportedHyperlinkPresentation),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_features" && /custom-show hyperlink/.test(error.message),
+);
+
+const unsupportedSourceFreePlaceholderPresentation = Presentation.create();
+unsupportedSourceFreePlaceholderPresentation.slides.add().shapes.add({
+  placeholder: { type: "title", idx: 0 },
+  text: "Template title",
+});
+await assert.rejects(
+  exportPptxWithOpenChestnut(unsupportedSourceFreePlaceholderPresentation),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_features" && /source-free placeholder authoring/.test(error.message),
 );
 
 richImportedShape.text.paragraphs = [

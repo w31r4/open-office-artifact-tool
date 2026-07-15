@@ -337,9 +337,17 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       const embeddedWorkbookFile = await SpreadsheetFile.exportXlsx(embeddedWorkbook);
       pptx = new FileBlob(await addOpenChestnutNativeGraphFixture(new Uint8Array(await pptx.arrayBuffer()), embeddedWorkbookFile.bytes, {
         removeMasterPlaceholderFrame: openChestnut.sourcePlaceholderFrames?.master === "absent",
+        removeSlidePlaceholderFrameIndex: openChestnut.sourcePlaceholderFrames?.slideIndex,
       }), { type: PPTX_MIME });
     }
     const imported = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
+    if (openChestnut?.inheritedSlidePlaceholder) {
+      const expected = openChestnut.inheritedSlidePlaceholder;
+      const placeholder = imported.slides.getItem(Number(expected.slideIndex || 0))?.shapes.items.find((item) => item.placeholder?.idx === Number(expected.idx));
+      assert.ok(placeholder, `Missing inherited OpenChestnut slide placeholder idx ${expected.idx}`);
+      assert.deepEqual(placeholder.position, expected.position, `Inherited OpenChestnut slide placeholder idx ${expected.idx} effective position`);
+      assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
+    }
     for (const expected of openChestnut?.nativeObjects || []) {
       const object = imported.slides.items.flatMap((slide) => slide.nativeObjects.items).find((item) => item.nativeKind === expected.nativeKind);
       assert.ok(object, `Missing OpenChestnut native object ${expected.nativeKind}`);
@@ -393,6 +401,14 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;
     }
     pptx = await PresentationFile.exportPptx(imported, { codec: "open-chestnut" });
+    if (openChestnut?.inheritedSlidePlaceholder) {
+      const expected = openChestnut.inheritedSlidePlaceholder;
+      const roundTrip = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
+      const placeholder = roundTrip.slides.getItem(Number(expected.slideIndex || 0))?.shapes.items.find((item) => item.placeholder?.idx === Number(expected.idx));
+      assert.ok(placeholder, `Missing roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx}`);
+      assert.deepEqual(placeholder.position, expected.position, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} effective position`);
+      assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
+    }
     if (openChestnut?.edit?.nativeObjects?.length) {
       const edited = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
       for (const expected of openChestnut.edit.nativeObjects) {

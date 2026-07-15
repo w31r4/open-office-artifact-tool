@@ -543,6 +543,7 @@ internal static class PptxCodec
         var frame = ReadFrame(shape);
         var properties = shape.ShapeProperties;
         var textBody = PptxTextCodec.Read(shape.TextBody, slideContext);
+        var placeholder = PptxPlaceholderCodec.ReadIdentity(shape);
         return new PresentationShape
         {
             Geometry = Geometry(properties),
@@ -555,8 +556,8 @@ internal static class PptxCodec
             FillRgb = PptxColor.SolidRgb(properties?.GetFirstChild<A.SolidFill>()),
             LineRgb = PptxColor.SolidRgb(properties?.GetFirstChild<A.Outline>()?.GetFirstChild<A.SolidFill>()),
             LineWidthEmu = properties?.GetFirstChild<A.Outline>()?.Width?.Value ?? 0,
-            Placeholder = PptxPlaceholderCodec.ReadIdentity(shape),
-            DirectFrame = PptxPlaceholderCodec.ReadDirectFrame(shape),
+            Placeholder = placeholder,
+            DirectFrame = placeholder is null ? null : PptxPlaceholderCodec.ReadDirectFrame(shape),
         };
     }
 
@@ -965,6 +966,7 @@ internal static class PptxCodec
         if (envelope.Presentation.SlideWidthEmu < 0 || envelope.Presentation.SlideHeightEmu < 0 || envelope.Presentation.SlideWidthEmu > int.MaxValue || envelope.Presentation.SlideHeightEmu > int.MaxValue)
             throw new CodecException("invalid_slide_size", "Presentation slide dimensions must fit the PresentationML signed 32-bit EMU range.");
         var assetCatalog = new PptxAssetCatalog(envelope.Assets, limits);
+        var hasSourcePackage = envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false };
 
         if (envelope.Presentation.Masters.Count > 64)
             throw new CodecException("presentation_master_budget_exceeded", "Presentation cannot contain more than 64 slide masters.");
@@ -1010,8 +1012,19 @@ internal static class PptxCodec
                     throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
                 if (element.ContentCase == PresentationElement.ContentOneofCase.Shape)
                 {
-                    if (element.Shape.LeftEmu < 0 || element.Shape.TopEmu < 0 || element.Shape.WidthEmu <= 0 || element.Shape.HeightEmu <= 0 || element.Shape.LineWidthEmu < 0 || element.Shape.LineWidthEmu > int.MaxValue)
+                    if (element.Shape.Placeholder is not null && !hasSourcePackage)
+                        throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} uses source-free slide placeholder authoring, which is not supported by this codec slice.");
+                    var inheritedPlaceholderGeometry = element.Shape.Placeholder?.InheritsGeometry == true &&
+                        element.Shape.DirectFrame is null && element.Source?.Editable == false;
+                    if ((!inheritedPlaceholderGeometry && (element.Shape.LeftEmu < 0 || element.Shape.TopEmu < 0 || element.Shape.WidthEmu <= 0 || element.Shape.HeightEmu <= 0)) ||
+                        element.Shape.LineWidthEmu < 0 || element.Shape.LineWidthEmu > int.MaxValue)
                         throw new CodecException("invalid_presentation_frame", $"Presentation shape {element.Id} has an invalid frame.");
+                    if (element.Shape.DirectFrame is not null)
+                    {
+                        if (element.Shape.Placeholder is null || element.Shape.Placeholder.InheritsGeometry)
+                            throw new CodecException("invalid_presentation_placeholder", $"Presentation shape {element.Id} has inconsistent direct placeholder geometry.");
+                        PptxPlaceholderCodec.ValidateDirectFrame(element.Shape.DirectFrame, element.Id);
+                    }
                     if (element.Shape.Geometry is not ("rect" or "ellipse"))
                         throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
                     if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);

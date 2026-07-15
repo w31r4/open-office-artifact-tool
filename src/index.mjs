@@ -1107,9 +1107,9 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective geometry from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame." },
   { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes and text semantics, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots with loss-aware frame-presence and presence-aware rotation/flip evidence, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective geometry/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -2120,7 +2120,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     type: { type: "string", description: "Layout type." },
     masterId: { type: "string", description: "Master identity." },
     background: { type: "string|object", description: "Optional layout background overriding the linked master background." },
-    placeholders: { type: "object[]", description: "Placeholder type/unsigned idx/name/direct-frame/optional rotation-and-flip transform/text/required/style/paragraphStyles/textBodyProperties definitions merged over matching master defaults. On a recognized OpenChestnut source slot, position may be added or set to undefined for direct-frame removal; picture bullets and links own layout-part relationships." },
+    placeholders: { type: "object[]", description: "Placeholder type/unsigned idx/name/direct-frame/optional rotation-and-flip transform/text/required/style/paragraphStyles/textBodyProperties definitions merged over matching master defaults. effectivePlaceholders() treats a direct frame atomically, preserves idx 0, and reports geometrySource as layout or master. On a recognized OpenChestnut source slot, position may be added or set to undefined for direct-frame removal; picture bullets and links own layout-part relationships." },
   }, "layout", "SlideLayoutTemplate", "Appended reusable layout facade."),
   "presentation.layout.setBackground": helpSchema({
     background: { type: "string|object", required: true, description: "Direct solid RGB/scheme background or native style reference with index." },
@@ -2185,16 +2185,16 @@ const PRESENTATION_HELP_SCHEMAS = {
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
     codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
     limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported editable presentation facade."),
+  }, "presentation", "Presentation", "Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire."),
   "exportPptxWithOpenChestnut": helpSchema({
-    presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change name/outer frame and whose uniquely bound OLE XLSX payload may be replaced." },
+    presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change name/outer frame, whose uniquely bound OLE XLSX payload may be replaced, and whose read-only slide-placeholder effective projections must remain unchanged." },
     allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
   "importPptxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable bounded shape text, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable bounded shape text, read-only source-bound slide-placeholder effective position/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export."),
 };
 
 const WORKBOOK_HELP_SCHEMAS = {

@@ -49,6 +49,38 @@ const placeholderFramePresenceRoundTrip = await PresentationFile.importPptx(plac
 assert.deepEqual(placeholderFramePresenceRoundTrip.master.placeholders[0].position, { left: 60, top: 50, width: 680, height: 90 });
 assert.deepEqual(placeholderFramePresenceRoundTrip.master.placeholders[0].transform, { rotationDegrees: 10, flipVertical: true });
 assert.equal(placeholderFramePresenceRoundTrip.layouts.items[0].placeholders[0].position, undefined);
+const effectivePlaceholderGeometryPresentation = Presentation.create({
+  master: {
+    placeholders: [{ type: "title", idx: 0, name: "Master zero-index title", position: { left: 44, top: 32, width: 720, height: 84 }, transform: { rotationDegrees: 5, flipHorizontal: true } }],
+  },
+  layouts: [
+    { id: "layout/inherited-geometry", name: "Inherited Geometry", placeholders: [{ type: "title", idx: 0, name: "Inherited zero-index title" }] },
+    { id: "layout/direct-geometry", name: "Direct Geometry", placeholders: [{ type: "title", idx: 0, name: "Direct zero-index title", position: { left: 88, top: 64, width: 680, height: 96 } }] },
+  ],
+});
+const inheritedGeometry = effectivePlaceholderGeometryPresentation.layouts.getItem("layout/inherited-geometry").effectivePlaceholders()[0];
+assert.deepEqual(inheritedGeometry.position, { left: 44, top: 32, width: 720, height: 84 });
+assert.deepEqual(inheritedGeometry.transform, { rotationDegrees: 5, flipHorizontal: true });
+assert.equal(inheritedGeometry.geometrySource, "master");
+const directGeometry = effectivePlaceholderGeometryPresentation.layouts.getItem("layout/direct-geometry").effectivePlaceholders()[0];
+assert.deepEqual(directGeometry.position, { left: 88, top: 64, width: 680, height: 96 });
+assert.equal(directGeometry.transform, undefined, "A direct layout a:xfrm must atomically replace, not partially inherit, the master transform.");
+assert.equal(directGeometry.geometrySource, "layout");
+const slidePlaceholderInheritancePresentation = Presentation.create({
+  layouts: [{ id: "layout/idx-inheritance", name: "Index Inheritance", placeholders: [{ type: "title", idx: 7, name: "Layout by index", position: { left: 96, top: 54, width: 700, height: 88 } }] }],
+});
+const slidePlaceholderLayout = slidePlaceholderInheritancePresentation.layouts.getItem("layout/idx-inheritance");
+slidePlaceholderInheritancePresentation.slides.add().applyLayout(slidePlaceholderLayout);
+const slidePlaceholderInheritanceSource = await PresentationFile.exportPptx(slidePlaceholderInheritancePresentation);
+const slidePlaceholderInheritanceZip = await JSZip.loadAsync(new Uint8Array(await slidePlaceholderInheritanceSource.arrayBuffer()));
+const slidePlaceholderInheritanceXml = await slidePlaceholderInheritanceZip.file("ppt/slides/slide1.xml").async("text");
+slidePlaceholderInheritanceZip.file("ppt/slides/slide1.xml", slidePlaceholderInheritanceXml
+  .replace(/<a:xfrm\b[^>]*><a:off\b[^>]*\/><a:ext\b[^>]*\/><\/a:xfrm>/, "")
+  .replace(/(<p:ph\b[^>]*type=")title("[^>]*idx="7")/, "$1body$2"));
+const slidePlaceholderInheritanceLoaded = await PresentationFile.importPptx(new FileBlob(await slidePlaceholderInheritanceZip.generateAsync({ type: "uint8array", compression: "DEFLATE" })));
+const inheritedSlidePlaceholder = slidePlaceholderInheritanceLoaded.slides.items[0].shapes.items[0];
+assert.deepEqual(inheritedSlidePlaceholder.position, { left: 96, top: 54, width: 700, height: 88 });
+assert.deepEqual(inheritedSlidePlaceholder.placeholder, { type: "body", idx: 7, name: "Layout by index", required: false, layoutId: slidePlaceholderInheritanceLoaded.layouts.items[0].id, geometrySource: "layout" });
 const backgroundInheritancePresentation = Presentation.create({
   theme: { colors: { bg1: "#fefefe" } },
   master: { background: "#123456" },

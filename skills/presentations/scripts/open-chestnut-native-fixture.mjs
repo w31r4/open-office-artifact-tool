@@ -3,10 +3,12 @@ import JSZip from "jszip";
 // Builds a standards-valid, source-bound native-object graph for the runnable
 // OpenChestnut fixture. The graph deliberately crosses an embedded package,
 // a SmartArt four-part root, and a recursive contentPart/customXmlProps edge.
-function removeFirstPlaceholderTransform(xml, partPath) {
+function removeFirstPlaceholderTransform(xml, partPath, index) {
   let removed = false;
   const output = String(xml || "").replace(/<p:sp\b[\s\S]*?<\/p:sp>/g, (shape) => {
-    if (removed || !/<p:ph\b/.test(shape)) return shape;
+    const placeholder = /<p:ph\b[^>]*\/?\s*>/.exec(shape)?.[0];
+    if (removed || !placeholder) return shape;
+    if (index != null && Number(/\bidx="(\d+)"/.exec(placeholder)?.[1] || 0) !== Number(index)) return shape;
     const next = shape.replace(/<a:xfrm\b[^>]*>[\s\S]*?<\/a:xfrm>/, "");
     removed = next !== shape;
     return next;
@@ -29,6 +31,9 @@ export async function addOpenChestnutNativeGraphFixture(bytes, embeddedWorkbookB
   if (options.removeMasterPlaceholderFrame) {
     const masterPath = "ppt/slideMasters/slideMaster1.xml";
     zip.file(masterPath, removeFirstPlaceholderTransform(await zip.file(masterPath)?.async("text"), masterPath));
+  }
+  if (options.removeSlidePlaceholderFrameIndex != null) {
+    zip.file(slidePath, removeFirstPlaceholderTransform(await zip.file(slidePath)?.async("text"), slidePath, options.removeSlidePlaceholderFrameIndex));
   }
 
   const relationshipsPath = "ppt/slides/_rels/slide1.xml.rels";

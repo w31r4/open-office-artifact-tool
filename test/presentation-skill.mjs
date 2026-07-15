@@ -262,6 +262,10 @@ try {
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].textBodyProperties.anchor, "bottom");
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].position, undefined);
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].transform, undefined);
+  const inheritedSlideGeometry = wasmSlide.shapes.items.find((item) => item.placeholder?.idx === 3);
+  assert.ok(inheritedSlideGeometry);
+  assert.deepEqual(inheritedSlideGeometry.position, { left: 920, top: 670, width: 300, height: 48 });
+  assert.equal(inheritedSlideGeometry.placeholder.geometrySource, "layout");
   assert.deepEqual(Object.keys(wasmTitle?.text.inheritedParagraphStyles), ["0", "8"]);
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletCharacter, "→");
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[0].bulletColor, "accent6");
@@ -288,6 +292,9 @@ try {
   assert.doesNotMatch(wasmLayoutXml, /<p:bg\b/);
   assert.match(wasmMasterXml, /<p:ph\b[^>]*type="title"[^>]*idx="0"[^>]*\/>[\s\S]*?<a:t>After master placeholder<\/a:t>/);
   assert.match(wasmLayoutXml, /<p:ph\b[^>]*type="body"[^>]*idx="2"[^>]*\/>[\s\S]*?<a:bodyPr\b[^>]*anchor="b"[\s\S]*?<a:t>After layout placeholder<\/a:t>/);
+  const inheritedSlideGeometryXml = [...wasmSlideXml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)].find((match) => /<p:ph\b[^>]*idx="3"/.test(match[0]))?.[0] || "";
+  assert.match(inheritedSlideGeometryXml, /<p:ph\b[^>]*idx="3"/);
+  assert.doesNotMatch(inheritedSlideGeometryXml, /<a:xfrm\b/, "Inherited slide geometry must remain unflattened after the OpenChestnut roundtrip.");
   assert.match(wasmMasterXml, /<a:xfrm\b[^>]*rot="750000"[^>]*flipH="0"[^>]*flipV="1"[^>]*><a:off x="609600" y="266700"\s*\/><a:ext cx="10972800" cy="685800"\s*\/><\/a:xfrm>/);
   const wasmLayoutPlaceholderXml = /<p:sp\b[\s\S]*?<\/p:sp>/.exec(wasmLayoutXml)?.[0] || "";
   assert.doesNotMatch(wasmLayoutPlaceholderXml, /<a:xfrm\b/);
@@ -302,7 +309,8 @@ try {
   assert.match(wasmMasterRelationships, /relationships\/image[^>]*Target="https:\/\/example\.com\/master-marker\.png"[^>]*TargetMode="External"/);
   const wasmLayoutRelationships = await wasmZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text");
   assert.match(wasmLayoutRelationships, /relationships\/hyperlink[^>]*Target="https:\/\/example\.com\/layout-placeholder"[^>]*TargetMode="External"/);
-  const wasmTitleBodyPropertiesXml = /<a:bodyPr\b[^>]*(?:\/>|>[\s\S]*?<\/a:bodyPr>)/.exec(wasmSlideXml)?.[0] || "";
+  const wasmTitleShapeXml = [...wasmSlideXml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)].find((match) => /<p:cNvPr\b[^>]*name="wasm-title"/.test(match[0]))?.[0] || "";
+  const wasmTitleBodyPropertiesXml = /<a:bodyPr\b[^>]*(?:\/>|>[\s\S]*?<\/a:bodyPr>)/.exec(wasmTitleShapeXml)?.[0] || "";
   assert.match(wasmTitleBodyPropertiesXml, /<a:bodyPr[^>]*rot="0"[^>]*vertOverflow="clip"[^>]*horzOverflow="overflow"[^>]*vert="horz"[^>]*wrap="square"[^>]*lIns="152400"[^>]*tIns="95250"[^>]*bIns="66675"[^>]*numCol="2"[^>]*spcCol="228600"[^>]*rtlCol="0"[^>]*anchor="b"[^>]*upright="0"[^>]*>\s*<a:spAutoFit\s*\/>\s*<\/a:bodyPr>/);
   assert.doesNotMatch(wasmTitleBodyPropertiesXml, /\brIns=/);
   assert.match(wasmSlideXml, /<a:tabLst><a:tab pos="7429500" algn="r"\s*\/><\/a:tabLst>/);
