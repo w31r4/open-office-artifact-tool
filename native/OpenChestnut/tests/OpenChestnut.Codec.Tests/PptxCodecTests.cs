@@ -2,6 +2,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
+using System.IO.Compression;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
@@ -347,6 +348,70 @@ public sealed class PptxCodecTests
         var rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void NativeObjectGraphClassifiesAndPreservesOleDiagramAndContentPart()
+    {
+        var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var slide = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.Equal(4, slide.Elements.Count);
+
+        var ole = slide.Elements[1].Opaque;
+        Assert.Equal("oleObject", ole.NativeKind);
+        Assert.Equal(["rIdNativeOle", "rIdNativePreview"], ole.RelationshipReferences.Select(item => item.RelationshipId));
+        Assert.Equal(["ppt/embeddings/native-workbook.xlsx", "ppt/media/native-preview.png"], ole.PreservedPartPaths);
+
+        var diagram = slide.Elements[2].Opaque;
+        Assert.Equal("diagram", diagram.NativeKind);
+        Assert.Equal(["rIdNativeDm", "rIdNativeLo", "rIdNativeQs", "rIdNativeCs"], diagram.RelationshipReferences.Select(item => item.RelationshipId));
+        Assert.Equal(4, diagram.PreservedPartPaths.Count);
+        Assert.All(diagram.RelationshipReferences, item => Assert.Contains("relationships", item.NamespaceUri));
+
+        var content = slide.Elements[3].Opaque;
+        Assert.Equal("contentPart", content.NativeKind);
+        Assert.Equal("rIdNativeContent", Assert.Single(content.RelationshipReferences).RelationshipId);
+        Assert.Equal(["ppt/customXml/native-content.xml", "ppt/customXml/itemProps1.xml"], content.PreservedPartPaths);
+        Assert.Equal(2, content.PreservedPartPaths.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        slide.Elements[0].Shape.Text = "Edited beside native objects";
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.Equal("opaque_content_preserved", Assert.Single(preserved.Diagnostics).Code);
+        Assert.Equal(ZipBytes(source, "ppt/embeddings/native-workbook.xlsx"), ZipBytes(preserved.File.ToByteArray(), "ppt/embeddings/native-workbook.xlsx"));
+        Assert.Equal(ZipBytes(source, "ppt/customXml/itemProps1.xml"), ZipBytes(preserved.File.ToByteArray(), "ppt/customXml/itemProps1.xml"));
+
+        var reimported = Import(preserved.File.ToByteArray());
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        Assert.Equal(["oleObject", "diagram", "contentPart"], reimported.Artifact.Presentation.Slides[0].Elements.Skip(1).Select(item => item.Opaque.NativeKind));
+    }
+
+    [Fact]
+    public void NativeObjectGraphRejectsMissingRelationshipsPartsAndExcessiveTraversal()
+    {
+        var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var missingRelationship = ReplaceZipText(source, "ppt/slides/slide1.xml", xml => xml.Replace("rIdNativeOle", "rIdMissingOle", StringComparison.Ordinal));
+        var relationshipRejected = Import(missingRelationship);
+        Assert.False(relationshipRejected.Ok);
+        Assert.Equal("missing_presentation_native_relationship", Assert.Single(relationshipRejected.Diagnostics).Code);
+
+        var missingPart = RemoveZipEntry(source, "ppt/customXml/itemProps1.xml");
+        var partRejected = Import(missingPart);
+        Assert.False(partRejected.Ok);
+        Assert.Equal("missing_presentation_native_part", Assert.Single(partRejected.Diagnostics).Code);
+
+        var budgetRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportPptx,
+            Family = ArtifactFamily.Presentation,
+            File = ByteString.CopyFrom(source),
+            Limits = new CodecLimits { MaxCells = 4 },
+        });
+        Assert.False(budgetRejected.Ok);
+        Assert.Equal("presentation_native_graph_budget_exceeded", Assert.Single(budgetRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -1954,6 +2019,93 @@ public sealed class PptxCodecTests
             textBody.PrependChild(new A.BodyProperties());
         }
         return stream.ToArray();
+    }
+
+    private static byte[] AddNativeObjectGraph(byte[] bytes)
+    {
+        const string ole = "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"10\" name=\"Embedded workbook\"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"914400\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/presentationml/2006/ole\"><p:oleObj showAsIcon=\"1\" r:id=\"rIdNativeOle\" imgW=\"965200\" imgH=\"609600\" progId=\"Excel.Sheet.12\"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id=\"0\" name=\"\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rIdNativePreview\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x=\"914400\" y=\"914400\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>";
+        const string diagram = "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"11\" name=\"Preserved diagram\"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"457200\" y=\"3657600\"/><a:ext cx=\"5486400\" cy=\"1828800\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\"><dgm:relIds xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" r:dm=\"rIdNativeDm\" r:lo=\"rIdNativeLo\" r:qs=\"rIdNativeQs\" r:cs=\"rIdNativeCs\"/></a:graphicData></a:graphic></p:graphicFrame>";
+        const string content = "<p:grpSp><p:nvGrpSpPr><p:cNvPr id=\"12\" name=\"Native content group\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"7000000\" y=\"5000000\"/><a:ext cx=\"952500\" cy=\"952500\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"952500\" cy=\"952500\"/></a:xfrm></p:grpSpPr><p:contentPart r:id=\"rIdNativeContent\"/></p:grpSp>";
+        const string relationships = "<Relationship Id=\"rIdNativeOle\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/native-workbook.xlsx\"/><Relationship Id=\"rIdNativePreview\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/native-preview.png\"/><Relationship Id=\"rIdNativeDm\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData\" Target=\"../diagrams/native-data.xml\"/><Relationship Id=\"rIdNativeLo\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout\" Target=\"../diagrams/native-layout.xml\"/><Relationship Id=\"rIdNativeQs\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle\" Target=\"../diagrams/native-style.xml\"/><Relationship Id=\"rIdNativeCs\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors\" Target=\"../diagrams/native-colors.xml\"/><Relationship Id=\"rIdNativeContent\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml\" Target=\"../customXml/native-content.xml\"/>";
+        const string contentTypes = "<Override PartName=\"/ppt/embeddings/native-workbook.xlsx\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"/><Override PartName=\"/ppt/media/native-preview.png\" ContentType=\"image/png\"/><Override PartName=\"/ppt/diagrams/native-data.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml\"/><Override PartName=\"/ppt/diagrams/native-layout.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml\"/><Override PartName=\"/ppt/diagrams/native-style.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml\"/><Override PartName=\"/ppt/diagrams/native-colors.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml\"/><Override PartName=\"/ppt/customXml/native-content.xml\" ContentType=\"application/xml\"/><Override PartName=\"/ppt/customXml/assets/payload.svg\" ContentType=\"image/svg+xml\"/>";
+        const string drawingNamespaces = " xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"";
+        var selfContainedOle = ole.Replace("<p:graphicFrame>", $"<p:graphicFrame{drawingNamespaces}>", StringComparison.Ordinal);
+        var selfContainedDiagram = diagram.Replace("<p:graphicFrame>", $"<p:graphicFrame{drawingNamespaces}>", StringComparison.Ordinal);
+        var selfContainedContent = content.Replace("<p:grpSp>", $"<p:grpSp{drawingNamespaces}>", StringComparison.Ordinal);
+        var validContentTypes = contentTypes.Replace(
+            "<Override PartName=\"/ppt/customXml/assets/payload.svg\" ContentType=\"image/svg+xml\"/>",
+            "<Override PartName=\"/ppt/customXml/itemProps1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.customXmlProperties+xml\"/>",
+            StringComparison.Ordinal);
+
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{selfContainedOle}{selfContainedDiagram}{selfContainedContent}</p:spTree>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationships}</Relationships>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{validContentTypes}</Types>", StringComparison.Ordinal));
+            AddZipBytes(archive, "ppt/embeddings/native-workbook.xlsx", [0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+            AddZipBytes(archive, "ppt/media/native-preview.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+            AddZipText(archive, "ppt/diagrams/native-data.xml", "<dgm:dataModel xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>");
+            AddZipText(archive, "ppt/diagrams/native-layout.xml", "<dgm:layoutDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:native-layout\"><dgm:title val=\"Native\"/><dgm:desc val=\"Native layout\"/><dgm:catLst/><dgm:layoutNode name=\"root\"/></dgm:layoutDef>");
+            AddZipText(archive, "ppt/diagrams/native-style.xml", "<dgm:styleDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:native-style\"><dgm:title val=\"Native\"/><dgm:desc val=\"Native style\"/><dgm:catLst/><dgm:styleLbl name=\"node0\"/></dgm:styleDef>");
+            AddZipText(archive, "ppt/diagrams/native-colors.xml", "<dgm:colorsDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:native-colors\"><dgm:title val=\"Native\"/><dgm:desc val=\"Native colors\"/><dgm:catLst/></dgm:colorsDef>");
+            AddZipText(archive, "ppt/customXml/native-content.xml", "<native xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:link=\"rIdPayload\">preserve me</native>");
+            AddZipText(archive, "ppt/customXml/_rels/native-content.xml.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdPayload\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps\" Target=\"itemProps1.xml\"/></Relationships>");
+            AddZipText(archive, "ppt/customXml/itemProps1.xml", "<ds:datastoreItem ds:itemID=\"{00112233-4455-6677-8899-AABBCCDDEEFF}\" xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\"><ds:schemaRefs/></ds:datastoreItem>");
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] ReplaceZipText(byte[] bytes, string path, Func<string, string> transform)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true)) ReplaceZipText(archive, path, transform);
+        return stream.ToArray();
+    }
+
+    private static void ReplaceZipText(ZipArchive archive, string path, Func<string, string> transform)
+    {
+        var entry = archive.GetEntry(path) ?? throw new InvalidOperationException($"Missing fixture entry {path}.");
+        string text;
+        using (var reader = new StreamReader(entry.Open())) text = reader.ReadToEnd();
+        entry.Delete();
+        AddZipText(archive, path, transform(text));
+    }
+
+    private static byte[] RemoveZipEntry(byte[] bytes, string path)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+            (archive.GetEntry(path) ?? throw new InvalidOperationException($"Missing fixture entry {path}.")).Delete();
+        return stream.ToArray();
+    }
+
+    private static byte[] ZipBytes(byte[] bytes, string path)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        using var entry = (archive.GetEntry(path) ?? throw new InvalidOperationException($"Missing fixture entry {path}.")).Open();
+        using var copy = new MemoryStream();
+        entry.CopyTo(copy);
+        return copy.ToArray();
+    }
+
+    private static void AddZipText(ZipArchive archive, string path, string text)
+    {
+        using var writer = new StreamWriter(archive.CreateEntry(path).Open());
+        writer.Write(text);
+    }
+
+    private static void AddZipBytes(ZipArchive archive, string path, byte[] bytes)
+    {
+        using var target = archive.CreateEntry(path).Open();
+        target.Write(bytes);
     }
 
     private static P.Shape TemplatePlaceholder(

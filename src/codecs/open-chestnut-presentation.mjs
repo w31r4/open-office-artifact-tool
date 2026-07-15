@@ -5,6 +5,7 @@ import { normalizePresentationTextBodyProperties } from "../presentation/text-bo
 import { isPresentationAutoNumberType, normalizePresentationParagraphs, normalizePresentationParagraphStyles } from "../presentation/text-paragraphs.mjs";
 import { createPresentationAssetCatalog, validatePictureBulletUri } from "./open-chestnut-assets.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
+import { materializePresentationNativeGraphs, presentationNativeGraphSnapshot } from "./open-chestnut-presentation-native.mjs";
 
 const EMU_PER_PIXEL = 9525;
 const EMU_PER_POINT = 12700;
@@ -724,7 +725,14 @@ function unsupportedPresentationFeatures(presentation) {
 }
 
 function opaquePresentationSnapshot(object) {
-  return JSON.stringify({ id: object.id, name: object.name, nativeKind: object.nativeKind, position: object.position, rawXml: object.rawXml });
+  return JSON.stringify({
+    id: object.id,
+    name: object.name,
+    nativeKind: object.nativeKind,
+    position: object.position,
+    rawXml: object.rawXml,
+    ...presentationNativeGraphSnapshot(object),
+  });
 }
 
 export function presentationEnvelope(presentation, protocolVersion) {
@@ -958,11 +966,12 @@ function modelPlaceholder(source, assetCatalog) {
   };
 }
 
-export function presentationFromEnvelope(envelope) {
+export async function presentationFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.PRESENTATION || envelope.payload.case !== "presentation") {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
   }
   const source = envelope.payload.value;
+  const nativeGraph = await materializePresentationNativeGraphs(envelope);
   const assetCatalog = createPresentationAssetCatalog(envelope.assets || []);
   const presentation = Presentation.create({
     slideSize: { width: Number(source.slideWidthEmu) / EMU_PER_PIXEL, height: Number(source.slideHeightEmu) / EMU_PER_PIXEL },
@@ -1034,10 +1043,11 @@ export function presentationFromEnvelope(envelope) {
         model.text.inheritedParagraphStyles = modelListStyles(shape, assetCatalog);
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
+        const sourcePart = sourceSlide.source?.partPath;
         model = slide.nativeObjects.add({
           id: element.id,
           name: element.name,
-          nativeKind: presentationNativeKind(opaque.elementName),
+          nativeKind: opaque.nativeKind || presentationNativeKind(opaque.elementName),
           position: {
             left: Number(opaque.leftEmu) / EMU_PER_PIXEL,
             top: Number(opaque.topEmu) / EMU_PER_PIXEL,
@@ -1045,7 +1055,8 @@ export function presentationFromEnvelope(envelope) {
             height: Number(opaque.heightEmu) / EMU_PER_PIXEL,
           },
           rawXml: opaque.rawXml,
-          sourcePart: sourceSlide.source?.partPath,
+          sourcePart,
+          ...nativeGraph(opaque, sourcePart),
         });
       } else {
         throw new OpenChestnutCodecError(`Presentation element ${element.id} has no supported wire content.`, [], { code: "invalid_presentation_artifact" });

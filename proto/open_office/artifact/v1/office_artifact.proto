@@ -1325,6 +1325,25 @@ message PresentationOpaqueElement {
   int64 top_emu = 5;
   int64 width_emu = 6;
   int64 height_emu = 7;
+  // Agent-facing classification of the preserved native object. This is an
+  // open, forward-compatible token rather than an exhaustive enum: known
+  // values currently include picture, group, connector, graphicFrame,
+  // contentPart, oleObject, and diagram.
+  string native_kind = 8;
+  // Relationship-valued XML attributes found on this element or its
+  // descendants. IDs are owner-local to the source slide; relationship
+  // metadata remains canonical in ArtifactEnvelope.opaque_opc.
+  repeated PresentationNativeRelationshipReference relationship_references = 9;
+  // Bounded transitive closure of internal OPC parts reached from the root
+  // relationship references. Paths refer to OpaqueOpcGraph.parts, so package
+  // bytes and relationship metadata are not duplicated in this message.
+  repeated string preserved_part_paths = 10;
+}
+
+message PresentationNativeRelationshipReference {
+  string attribute = 1;
+  string relationship_id = 2;
+  string namespace_uri = 3;
 }
 
 message DocumentArtifact {

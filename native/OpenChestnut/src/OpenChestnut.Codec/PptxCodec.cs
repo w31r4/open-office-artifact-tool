@@ -24,6 +24,7 @@ internal static class PptxCodec
     internal static PptxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
     {
         var opaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Pptx);
+        var nativeObjects = new PptxNativeObjectCatalog(opaque, bytes, limits);
         var diagnostics = new List<Diagnostic>();
         var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
         if (opaqueCount > 0)
@@ -154,7 +155,7 @@ internal static class PptxCodec
                 semanticItems++;
                 if (semanticItems > limits.MaxCells)
                     throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", PartPath(slidePart));
-                target.Elements.Add(ReadElement(elements[elementIndex], slideIndex, elementIndex, slideContext));
+                target.Elements.Add(ReadElement(elements[elementIndex], slideIndex, elementIndex, slideContext, nativeObjects));
             }
             artifact.Slides.Add(target);
         }
@@ -207,6 +208,7 @@ internal static class PptxCodec
     private static PptxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount, PptxAssetCatalog assetCatalog)
     {
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Pptx);
+        var nativeObjects = new PptxNativeObjectCatalog(envelope.OpaqueOpc, sourceBytes, limits);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -424,7 +426,7 @@ internal static class PptxCodec
                             "presentation_element_binding_mismatch",
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} does not match its source element.",
                             PartPath(slidePart));
-                    var original = ReadElement(sourceElement, slideIndex, elementIndex, slideContext);
+                    var original = ReadElement(sourceElement, slideIndex, elementIndex, slideContext, nativeObjects);
                     if (!SemanticHash(original).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                         throw new CodecException(
                             "presentation_source_semantics_mismatch",
@@ -464,7 +466,12 @@ internal static class PptxCodec
         return new PptxExportResult(bytes, diagnostics);
     }
 
-    private static PresentationElement ReadElement(OpenXmlElement source, int slideIndex, int elementIndex, PptxPartContext slideContext)
+    private static PresentationElement ReadElement(
+        OpenXmlElement source,
+        int slideIndex,
+        int elementIndex,
+        PptxPartContext slideContext,
+        PptxNativeObjectCatalog? nativeObjects = null)
     {
         var element = new PresentationElement
         {
@@ -487,6 +494,7 @@ internal static class PptxCodec
                 WidthEmu = frame.Width,
                 HeightEmu = frame.Height,
             };
+            nativeObjects?.Populate(element.Opaque, source, PartPath(slideContext.Owner));
         }
         element.Source = new PresentationElementSourceBinding
         {

@@ -9154,7 +9154,24 @@ class NativePresentationObject {
 
   inspectRecord() {
     const frame = this.parentGroup ? this.parentGroup.absoluteChildFrame(this) : this.position;
-    return { kind: "nativeObject", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeKind: this.nativeKind, nativeId: this.nativeId, creationId: this.creationId, sourcePart: this.sourcePart, relationships: this.rootRelationships.length, preservedParts: this.parts.length, bbox: [frame.left, frame.top, frame.width, frame.height], bboxUnit: "px", editable: false };
+    return {
+      kind: "nativeObject",
+      id: this.id,
+      slide: this.slide.index + 1,
+      name: this.name || undefined,
+      nativeKind: this.nativeKind,
+      nativeId: this.nativeId,
+      creationId: this.creationId,
+      sourcePart: this.sourcePart,
+      relationships: this.rootRelationships.length,
+      preservedParts: this.parts.length,
+      relationshipReferences: this.relationshipReferences.map(({ attribute, id, namespaceUri }) => ({ attribute, id, namespaceUri })),
+      nativeRelationships: this.rootRelationships.map(({ id, type, target, targetMode }) => ({ id, type, target, targetMode })),
+      nativeParts: this.parts.map((part) => ({ path: part.path, contentType: part.contentType, relationships: part.relationships.length })),
+      bbox: [frame.left, frame.top, frame.width, frame.height],
+      bboxUnit: "px",
+      editable: false,
+    };
   }
 
   layoutJson() {
