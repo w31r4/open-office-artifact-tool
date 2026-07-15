@@ -280,6 +280,15 @@ function chartSeriesMarker(seriesBody) {
   return output;
 }
 
+function chartLineOptions(xml) {
+  if (directChildNames(xml).filter((name) => name === "smooth").length !== 1) return undefined;
+  const smooth = directElement(xml, "smooth");
+  if (!smooth) return undefined;
+  const smoothAttributes = attributes(smooth.startTag);
+  if (smooth.body.trim() || Object.keys(smoothAttributes).some((name) => name !== "val" && !name.startsWith("xmlns")) || !["0", "1", "false", "true"].includes(smoothAttributes.val)) return undefined;
+  return { smooth: smoothAttributes.val === "1" || smoothAttributes.val === "true" };
+}
+
 function chartAxis(xml, name, kind) {
   const body = elementBody(xml, name);
   if (!body) return undefined;
@@ -320,6 +329,7 @@ export function parseSpreadsheetChart(xml = "") {
   const titleBody = elementBody(text, "title");
   const title = [...titleBody.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => decodeXml(match[1])).join("") || elementValue(titleBody, "v");
   const titleFontSize = drawingFontSize(titleBody, "rPr");
+  const lineOptions = type === "line" ? chartLineOptions(elementBody(text, "lineChart")) : undefined;
   const series = [...text.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ser\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ser>/g)].map((match, index) => {
     const body = match[1];
     const tx = elementBody(body, "tx");
@@ -345,6 +355,7 @@ export function parseSpreadsheetChart(xml = "") {
     type,
     title,
     ...(titleFontSize == null ? {} : { titleTextStyle: { fontSize: titleFontSize } }),
+    ...(lineOptions == null ? {} : { lineOptions }),
     hasLegend: /<(?:[A-Za-z_][\w.-]*:)?legend\b/.test(text),
     categories: series[0]?.categories || [],
     series,

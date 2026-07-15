@@ -1,4 +1,5 @@
 import { SpreadsheetChartLineDashStyle, SpreadsheetChartMarkerSymbol, SpreadsheetChartType } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
@@ -129,6 +130,14 @@ function seriesMarkerFromWire(value, name, chart) {
   return seriesMarkerSnapshot(output, chart) || undefined;
 }
 
+function lineOptionsSnapshot(value, chart) {
+  try { return normalizeSpreadsheetChartLineOptions(value); }
+  catch (error) {
+    const message = String(error?.message || error).replace(/^Worksheet chart\s+/, "");
+    fail(chart, message, /supports only/i.test(message) ? "unsupported_spreadsheet_chart" : "invalid_spreadsheet_chart");
+  }
+}
+
 function textStyleSnapshot(value, name, chart) {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) fail(chart, `${name} must be an object.`);
@@ -169,6 +178,7 @@ export function spreadsheetChartSnapshot(chart) {
     name: String(chart?.name || ""),
     title: String(chart?.title || ""),
     titleTextStyle: textStyleSnapshot(chart?.titleTextStyle, "titleTextStyle", chart),
+    lineOptions: lineOptionsSnapshot(chart?.lineOptions, chart),
     type: String(chart?.type || chart?.chartType || "bar").toLowerCase(),
     hasLegend: chart?.hasLegend !== false,
     categories: [...(chart?.categories || [])].map((value) => String(value)),
@@ -199,6 +209,7 @@ function validateSnapshot(snapshot, chart) {
   if (snapshot.titleTextStyle != null && snapshot.title.length === 0) fail(chart, "titleTextStyle requires a non-empty title.");
   const type = TYPES_TO_WIRE.get(snapshot.type);
   if (type == null) fail(chart, `type must be bar, line, or pie; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
+  if (snapshot.lineOptions != null && snapshot.type !== "line") fail(chart, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
   if (snapshot.type === "pie") {
     if (snapshot.xAxis != null || snapshot.yAxis != null) fail(chart, "pie charts cannot carry category/value axes in the bounded native profile.", "unsupported_spreadsheet_chart");
   } else {
@@ -269,6 +280,7 @@ function wireChart(chart, original) {
     name: snapshot.name,
     title: snapshot.title,
     titleTextStyle: snapshot.titleTextStyle == null ? undefined : { fontSizePoints: snapshot.titleTextStyle.fontSize },
+    lineOptions: snapshot.lineOptions == null ? undefined : { smooth: snapshot.lineOptions.smooth },
     type,
     hasLegend: snapshot.hasLegend,
     categories: snapshot.categories,
@@ -403,10 +415,14 @@ export function spreadsheetChartFromWire(sheet, source) {
   const importedMarkers = sourceSeries.map((series, index) => seriesMarkerFromWire(series.marker, `series ${index + 1} marker`, source));
   if (type !== "line" && importedMarkers.some((marker) => marker != null)) fail(source, "series markers require a line chart.", "unsupported_spreadsheet_chart");
   const titleTextStyle = textStyleFromWire(source.titleTextStyle, "titleTextStyle", source);
+  if (source.lineOptions != null && source.lineOptions.smooth == null) fail(source, "lineOptions must carry explicit smooth presence.");
+  const lineOptions = lineOptionsSnapshot(source.lineOptions == null ? null : { smooth: source.lineOptions.smooth }, source);
+  if (type !== "line" && lineOptions != null) fail(source, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
   const chart = sheet.charts.add(type, {
     name: source.name,
     title: source.title,
     ...(titleTextStyle == null ? {} : { titleTextStyle }),
+    ...(lineOptions == null ? {} : { lineOptions }),
     hasLegend: source.hasLegend,
     categories: [...(source.categories || [])],
     xAxis: axisFromWire(source.xAxis, "x"),
