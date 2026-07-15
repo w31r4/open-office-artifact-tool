@@ -1928,7 +1928,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures with safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2084,11 +2084,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
+Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG one-cell pictures with safe same-format source-bound replacement, and source-bound connection-root metadata, through the bundled C# Open XML SDK WebAssembly codec.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG one-cell pictures, and recognized source-bound database connection-root metadata.
+- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG one-cell pictures with unique-reference same-format source-bound byte replacement, and recognized source-bound database connection-root metadata.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
@@ -3610,7 +3610,7 @@ Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynami
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG one-cell pictures, recognized database connection-root metadata, and source/opaque package evidence for fail-closed second export.
+- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG one-cell pictures, recognized database connection-root metadata, and source/opaque package evidence for fail-closed metadata, geometry, and safe same-format image-byte edits.
 
 #### `invokeOpenChestnut`
 

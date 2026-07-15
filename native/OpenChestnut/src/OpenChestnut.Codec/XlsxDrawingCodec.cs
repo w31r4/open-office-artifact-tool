@@ -12,7 +12,8 @@ namespace OpenChestnut.Codec;
 
 // Owns the worksheet -> DrawingPart -> ImagePart package graph for the bounded
 // embedded-picture slice. Unknown drawing children remain in the source part;
-// this codec patches only hash-bound picture metadata and one-cell geometry.
+// this codec patches only hash-bound picture metadata, one-cell geometry, and
+// uniquely referenced same-content-type ImagePart bytes.
 internal sealed class XlsxDrawingCodec
 {
     private const long MaxEmu = 95_250_000_000L;
@@ -26,6 +27,7 @@ internal sealed class XlsxDrawingCodec
         Xdr.FromMarker From,
         Xdr.Extent Extent,
         Xdr.NonVisualDrawingProperties NonVisual,
+        ImagePart ImagePart,
         string RelationshipId,
         int Ordinal);
 
@@ -51,7 +53,7 @@ internal sealed class XlsxDrawingCodec
         var records = ReadRecords(worksheetPart, worksheetId);
         if (records.Count != images.Count)
             throw new CodecException("invalid_spreadsheet_image_topology", $"Worksheet {worksheetId} source-bound image count cannot change from {records.Count} to {images.Count}.");
-        var dirty = false;
+        var drawingDirty = false;
         for (var index = 0; index < records.Count; index++)
         {
             var record = records[index];
@@ -60,12 +62,12 @@ internal sealed class XlsxDrawingCodec
             if (!target.Id.Equals(record.Artifact.Id, StringComparison.Ordinal))
                 throw new CodecException("invalid_spreadsheet_image_topology", $"Worksheet {worksheetId} image identity/order cannot change during source-bound export.");
             if (!target.AssetId.Equals(record.Artifact.AssetId, StringComparison.Ordinal))
-                throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} cannot replace embedded bytes in the first source-bound drawing slice.");
-            if (SemanticHash(target).Equals(record.Artifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
-            Patch(record, target);
-            dirty = true;
+                ReplaceAsset(record, target);
+            if (DrawingSemanticsEqual(record.Artifact, target)) continue;
+            PatchDrawing(record, target);
+            drawingDirty = true;
         }
-        if (!dirty) return;
+        if (!drawingDirty) return;
         var part = records.Select(item => item.Part).Distinct().Single();
         part.WorksheetDrawing!.Save();
         _dirtyPartPaths.Add(Path(part));
@@ -183,7 +185,7 @@ internal sealed class XlsxDrawingCodec
                 NonVisualId = nonVisual.Id!.Value,
                 Editable = true,
             };
-            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, extent, nonVisual, imageRelationshipId, ordinal));
+            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, extent, nonVisual, imagePart, imageRelationshipId, ordinal));
         }
         return records;
     }
@@ -210,7 +212,35 @@ internal sealed class XlsxDrawingCodec
             new Xdr.ClientData());
     }
 
-    private static void Patch(PictureRecord record, SpreadsheetImageArtifact target)
+    private void ReplaceAsset(PictureRecord record, SpreadsheetImageArtifact target)
+    {
+        var replacement = _assets.Get(target.AssetId);
+        if (!XlsxImageAssetCatalog.HasSameContentType(record.ImagePart, replacement))
+            throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} replacement must retain the source ImagePart content type {record.ImagePart.ContentType}.", Path(record.ImagePart));
+        var relationshipIds = record.Part.Parts
+            .Where(item => ReferenceEquals(item.OpenXmlPart, record.ImagePart))
+            .Select(item => item.RelationshipId)
+            .ToHashSet(StringComparer.Ordinal);
+        var referenceCount = record.Part.WorksheetDrawing!.Descendants<A.Blip>()
+            .Count(item => item.Embed?.Value is { } id && relationshipIds.Contains(id));
+        if (referenceCount != 1)
+            throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} cannot replace bytes because relationship {record.RelationshipId} is referenced by {referenceCount} picture blips.", Path(record.Part));
+        using (var stream = new MemoryStream(replacement.Data.ToByteArray(), writable: false)) record.ImagePart.FeedData(stream);
+        _dirtyPartPaths.Add(Path(record.ImagePart));
+    }
+
+    private static bool DrawingSemanticsEqual(SpreadsheetImageArtifact source, SpreadsheetImageArtifact target)
+    {
+        var left = source.Anchor!;
+        var right = target.Anchor!;
+        return source.Name.Equals(target.Name, StringComparison.Ordinal) &&
+            source.AltText.Equals(target.AltText, StringComparison.Ordinal) &&
+            left.Row == right.Row && left.Column == right.Column &&
+            left.RowOffsetEmu == right.RowOffsetEmu && left.ColumnOffsetEmu == right.ColumnOffsetEmu &&
+            left.WidthEmu == right.WidthEmu && left.HeightEmu == right.HeightEmu;
+    }
+
+    private static void PatchDrawing(PictureRecord record, SpreadsheetImageArtifact target)
     {
         var anchor = target.Anchor!;
         record.NonVisual.Name = target.Name;

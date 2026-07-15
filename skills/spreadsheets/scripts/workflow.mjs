@@ -494,8 +494,18 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   }
   const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
+  if (fixture.roundtripEdits && roundtripCodec !== "open-chestnut") throw new Error("roundtripEdits requires roundtripCodec=open-chestnut.");
   if (roundtripCodec === "open-chestnut") {
     const imported = await importXlsxWithOpenChestnut(file);
+    for (const patch of fixture.roundtripEdits?.images || []) {
+      const sheet = imported.worksheets.getItem(patch.sheet);
+      if (!sheet) throw new Error(`roundtripEdits.images cannot resolve worksheet ${patch.sheet}.`);
+      const matches = sheet.images.items.filter((image) => patch.id ? image.id === patch.id : image.name === patch.name);
+      if (matches.length !== 1) throw new Error(`roundtripEdits.images must resolve exactly one image in ${patch.sheet}; found ${matches.length}.`);
+      const { sheet: _sheet, id: _id, name: lookupName, ...changes } = patch;
+      if (lookupName != null) changes.name = lookupName;
+      Object.assign(matches[0], changes);
+    }
     file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
   }
   await file.save(workbookPath);

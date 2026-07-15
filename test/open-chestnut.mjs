@@ -891,10 +891,16 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image_topology" && /cannot add image/i.test(error.message),
 );
 const replacedImage = await importXlsxWithOpenChestnut(exported);
-replacedImage.worksheets.getItem("Summary").images.items[0].dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC";
+const replacementImageDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC";
+replacedImage.worksheets.getItem("Summary").images.items[0].dataUrl = replacementImageDataUrl;
+const replacedImageExport = await exportXlsxWithOpenChestnut(replacedImage, { recalculate: false });
+const replacedImageRoundTrip = await importXlsxWithOpenChestnut(replacedImageExport);
+assert.equal(replacedImageRoundTrip.worksheets.getItem("Summary").images.items[0].dataUrl, replacementImageDataUrl);
+const crossFormatImage = await importXlsxWithOpenChestnut(exported);
+crossFormatImage.worksheets.getItem("Summary").images.items[0].dataUrl = "data:image/jpeg;base64,/9j/2Q==";
 await assert.rejects(
-  exportXlsxWithOpenChestnut(replacedImage, { recalculate: false }),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image_edit" && /cannot replace embedded bytes/i.test(error.message),
+  exportXlsxWithOpenChestnut(crossFormatImage, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image_edit" && /content type/i.test(error.message),
 );
 const externalImageWorkbook = Workbook.create();
 externalImageWorkbook.worksheets.add("External").images.add({ name: "External image", uri: "https://example.test/image.png" });

@@ -210,7 +210,7 @@ try {
   const wasmImage = wasmWorkbook.worksheets.getItem("Summary").images.items[0];
   assert.equal(wasmImage.name, "OpenChestnut mark");
   assert.equal(wasmImage.alt, "OpenChestnut worksheet image");
-  assert.match(wasmImage.dataUrl, /^data:image\/png;base64,/);
+  assert.equal(wasmImage.dataUrl, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC");
   assert.deepEqual(wasmImage.anchor, { from: { row: 4, col: 0, rowOffsetPx: 6, colOffsetPx: 4 }, extent: { widthPx: 96, heightPx: 64 } });
   assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"OpenChestnut worksheet image"/);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");

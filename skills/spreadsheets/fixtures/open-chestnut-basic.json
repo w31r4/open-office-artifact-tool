@@ -3,6 +3,15 @@
   "outputName": "open-chestnut-basic.xlsx",
   "codec": "open-chestnut",
   "roundtripCodec": "open-chestnut",
+  "roundtripEdits": {
+    "images": [
+      {
+        "sheet": "Summary",
+        "name": "OpenChestnut mark",
+        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC"
+      }
+    ]
+  },
   "activeWorksheet": "Icon Rules",
   "selectedWorksheets": ["Summary", "Icon Rules"],
   "additionalWindows": [

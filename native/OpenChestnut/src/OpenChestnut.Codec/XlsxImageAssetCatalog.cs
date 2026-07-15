@@ -101,6 +101,9 @@ internal sealed class XlsxImageAssetCatalog
         if (!valid) throw InvalidAsset($"{label} bytes do not match a supported PNG or JPEG content type.");
     }
 
+    internal static bool HasSameContentType(ImagePart part, Asset asset) =>
+        NormalizeContentType(part.ContentType).Equals(NormalizeContentType(asset.ContentType), StringComparison.Ordinal);
+
     private static string NormalizeContentType(string value) => value.Equals("image/jpg", StringComparison.OrdinalIgnoreCase)
         ? "image/jpeg"
         : value.ToLowerInvariant();

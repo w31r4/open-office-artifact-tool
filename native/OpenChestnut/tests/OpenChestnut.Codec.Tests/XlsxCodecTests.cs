@@ -2696,25 +2696,51 @@ public sealed class XlsxCodecTests
         var rebound = Import(source);
         var replacementBytes = rebound.Artifact.Assets[0].Data.ToByteArray();
         replacementBytes[^1] ^= 1;
-        var replacementDigest = Convert.ToHexString(SHA256.HashData(replacementBytes)).ToLowerInvariant();
-        rebound.Artifact.Assets.Add(new Asset
-        {
-            Id = $"asset/workbook/image/{replacementDigest}",
-            FileName = "replacement.png",
-            ContentType = "image/png",
-            Data = ByteString.CopyFrom(replacementBytes),
-            Sha256 = replacementDigest,
-        });
-        rebound.Artifact.Workbook.Worksheets[0].Images[0].AssetId = $"asset/workbook/image/{replacementDigest}";
-        rejected = Export(rebound.Artifact);
-        Assert.False(rejected.Ok);
-        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+        var replacement = WorksheetImageAsset(replacementBytes, "image/png", "replacement.png");
+        rebound.Artifact.Assets.Add(replacement);
+        rebound.Artifact.Workbook.Worksheets[0].Images[0].AssetId = replacement.Id;
+        var replaced = Export(rebound.Artifact);
+        Assert.True(replaced.Ok, string.Join("\n", replaced.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(replaced.File.ToByteArray());
+        Assert.Equal(ReadPicturePartPath(source), ReadPicturePartPath(replaced.File.ToByteArray()));
+        Assert.Equal(replacementBytes, ReadPictureBytes(replaced.File.ToByteArray()));
+        var replacedImport = Import(replaced.File.ToByteArray());
+        Assert.True(replacedImport.Ok, string.Join("\n", replacedImport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(replacement.Data, Assert.Single(replacedImport.Artifact.Assets).Data);
 
         var tampered = Import(source);
         tampered.Artifact.Workbook.Worksheets[0].Images[0].Source.AnchorXmlSha256 = new string('0', 64);
         rejected = Export(tampered.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("spreadsheet_image_source_binding_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourceBoundWorksheetPicturesRejectSharedOrCrossFormatReplacement()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PictureExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+
+        var crossFormat = Import(authored.File.ToByteArray());
+        Assert.True(crossFormat.Ok, string.Join("\n", crossFormat.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var jpeg = WorksheetImageAsset([0xff, 0xd8, 0xff, 0xd9], "image/jpeg", "replacement.jpg");
+        crossFormat.Artifact.Assets.Add(jpeg);
+        crossFormat.Artifact.Workbook.Worksheets[0].Images[0].AssetId = jpeg.Id;
+        var rejected = Export(crossFormat.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Contains("content type", Assert.Single(rejected.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
+
+        var shared = Import(AddSharedPictureReference(authored.File.ToByteArray()));
+        Assert.True(shared.Ok, string.Join("\n", shared.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(2, shared.Artifact.Workbook.Worksheets[0].Images.Count);
+        var png = WorksheetImageAsset(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC"), "image/png", "replacement.png");
+        shared.Artifact.Assets.Add(png);
+        shared.Artifact.Workbook.Worksheets[0].Images[0].AssetId = png.Id;
+        rejected = Export(shared.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Contains("referenced by 2 picture blips", Assert.Single(rejected.Diagnostics).Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -2768,15 +2794,7 @@ public sealed class XlsxCodecTests
     {
         var request = ExportRequest();
         var bytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
-        var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        var asset = new Asset
-        {
-            Id = $"asset/workbook/image/{digest}",
-            FileName = "quarter-mark.png",
-            ContentType = "image/png",
-            Data = ByteString.CopyFrom(bytes),
-            Sha256 = digest,
-        };
+        var asset = WorksheetImageAsset(bytes, "image/png", "quarter-mark.png");
         request.Artifact.Assets.Add(asset);
         request.Artifact.Workbook.Worksheets[0].Images.Add(new SpreadsheetImageArtifact
         {
@@ -2795,6 +2813,19 @@ public sealed class XlsxCodecTests
             },
         });
         return request;
+    }
+
+    private static Asset WorksheetImageAsset(byte[] bytes, string contentType, string fileName)
+    {
+        var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return new Asset
+        {
+            Id = $"asset/workbook/image/{digest}",
+            FileName = fileName,
+            ContentType = contentType,
+            Data = ByteString.CopyFrom(bytes),
+            Sha256 = digest,
+        };
     }
 
     private static CodecRequest FormulaExportRequest()
@@ -3229,6 +3260,41 @@ public sealed class XlsxCodecTests
             drawing.Save();
         }
         return stream.ToArray();
+    }
+
+    private static byte[] AddSharedPictureReference(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var drawing = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.WorksheetDrawing!;
+            var clone = (Xdr.OneCellAnchor)drawing.Elements<Xdr.OneCellAnchor>().Single().CloneNode(true);
+            var nonVisual = clone.Descendants<Xdr.NonVisualDrawingProperties>().Single();
+            nonVisual.Id = 99U;
+            nonVisual.Name = "Shared quarter mark";
+            drawing.Append(clone);
+            drawing.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] ReadPictureBytes(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        using var image = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ImageParts.Single().GetStream(FileMode.Open, FileAccess.Read);
+        using var copy = new MemoryStream();
+        image.CopyTo(copy);
+        return copy.ToArray();
+    }
+
+    private static string ReadPicturePartPath(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ImageParts.Single().Uri.OriginalString;
     }
 
     private static void AssertPicture(byte[] bytes, string name, string description, uint row, uint column, long width, long height, bool residual)
