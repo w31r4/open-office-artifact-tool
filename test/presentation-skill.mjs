@@ -248,8 +248,10 @@ try {
   assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.body[1], undefined);
   assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.other[2].bulletImage.uri, "https://example.com/master-marker.png");
   assert.equal(wasmPreservation.qa.presentation.master.textParagraphStyles.other[2].bulletColor, "accent3");
-  assert.deepEqual(wasmPreservation.qa.presentation.master.background, { fill: "accent4", mode: "reference", index: 1003 });
-  assert.deepEqual(wasmPreservation.qa.presentation.layouts.items[0].background, { fill: "#f0fdf4", mode: "solid" });
+  assert.equal(wasmPreservation.qa.presentation.master.background, undefined);
+  assert.equal(wasmPreservation.qa.presentation.layouts.items[0].background, undefined);
+  assert.deepEqual(wasmPreservation.qa.presentation.master.effectiveBackground(), { fill: "#ffffff", mode: "solid" });
+  assert.deepEqual(wasmPreservation.qa.presentation.layouts.items[0].effectiveBackground(), { fill: "#ffffff", mode: "solid" });
   assert.equal(wasmPreservation.qa.presentation.master.placeholders[0].idx, 0);
   assert.equal(wasmPreservation.qa.presentation.master.placeholders[0].text, "After master placeholder");
   assert.equal(wasmPreservation.qa.presentation.layouts.items[0].placeholders[0].idx, 2);
@@ -278,8 +280,8 @@ try {
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
   const wasmMasterXml = await wasmZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
   const wasmLayoutXml = await wasmZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
-  assert.match(wasmMasterXml, /<p:bg><p:bgRef idx="1003"><a:schemeClr\b[^>]*val="accent4"[^>]*\/><\/p:bgRef><\/p:bg>/);
-  assert.match(wasmLayoutXml, /<p:bg><p:bgPr><a:solidFill><a:srgbClr\b[^>]*val="F0FDF4"[^>]*\/><\/a:solidFill><a:effectLst\s*\/><\/p:bgPr><\/p:bg>/);
+  assert.doesNotMatch(wasmMasterXml, /<p:bg\b/);
+  assert.doesNotMatch(wasmLayoutXml, /<p:bg\b/);
   assert.match(wasmMasterXml, /<p:ph\b[^>]*type="title"[^>]*idx="0"[^>]*\/>[\s\S]*?<a:t>After master placeholder<\/a:t>/);
   assert.match(wasmLayoutXml, /<p:ph\b[^>]*type="body"[^>]*idx="2"[^>]*\/>[\s\S]*?<a:bodyPr\b[^>]*anchor="b"[\s\S]*?<a:t>After layout placeholder<\/a:t>/);
   assert.match(wasmMasterXml, /<p:titleStyle>[\s\S]*?<a:lvl1pPr[^>]*algn="r"[^>]*>[\s\S]*?<a:defRPr[^>]*sz="3150"[^>]*b="1">[\s\S]*?<a:schemeClr val="accent2"\s*\/>[\s\S]*?<a:latin typeface="Georgia"\s*\/>/);

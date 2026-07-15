@@ -1041,8 +1041,12 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.layout.clearBackground` | api | Remove the direct layout background so slides inherit from the linked master; recognized OpenChestnut source bindings delete only p:bg. |
+| `presentation.layout.setBackground` | api | Set a direct layout RGB/scheme background or native style reference without flattening its linked master. |
 | `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts. |
 | `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles including relationship-backed picture bullets. |
+| `presentation.master.clearBackground` | api | Remove the direct Slide Master background so slides inherit the effective theme background; recognized OpenChestnut source bindings delete only p:bg. |
+| `presentation.master.setBackground` | api | Set a direct Slide Master RGB/scheme background or native style reference without flattening theme inheritance. |
 | `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
 | `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts. |
 | `presentation.masters.getItem` | api | Resolve a Slide Master by stable ID or name. |
@@ -1269,6 +1273,26 @@ Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, t
 
 { ndjson, truncated } bounded NDJSON records
 
+#### `presentation.layout.clearBackground`
+
+Remove the direct layout background so slides inherit from the linked master; recognized OpenChestnut source bindings delete only p:bg.
+
+**Schema returns:**
+
+- `layout` (SlideLayoutTemplate) — The same layout after removing its direct background; effectiveBackground() resolves the linked-master fallback.
+
+#### `presentation.layout.setBackground`
+
+Set a direct layout RGB/scheme background or native style reference without flattening its linked master.
+
+**Schema parameters:**
+
+- `background` (string|object) required — Direct solid RGB/scheme background or native style reference with index.
+
+**Schema returns:**
+
+- `layout` (SlideLayoutTemplate) — The same layout after setting its direct background.
+
 #### `presentation.layouts.add`
 
 Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; export writes native slideLayout and slideMaster inheritance parts.
@@ -1301,6 +1325,26 @@ Backward-compatible alias for the first Slide Master; configure identity, backgr
 **Schema returns:**
 
 - `master` (PresentationSlideMaster) — Mutable first Slide Master facade.
+
+#### `presentation.master.clearBackground`
+
+Remove the direct Slide Master background so slides inherit the effective theme background; recognized OpenChestnut source bindings delete only p:bg.
+
+**Schema returns:**
+
+- `master` (PresentationSlideMaster) — The same Slide Master after removing its direct background; effectiveBackground() resolves the theme fallback.
+
+#### `presentation.master.setBackground`
+
+Set a direct Slide Master RGB/scheme background or native style reference without flattening theme inheritance.
+
+**Schema parameters:**
+
+- `background` (string|object) required — Direct solid RGB/scheme background or native style reference with index.
+
+**Schema returns:**
+
+- `master` (PresentationSlideMaster) — The same Slide Master after setting its direct background.
 
 #### `presentation.master.setTheme`
 

@@ -150,7 +150,7 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void MasterAndLayoutBackgroundsAuthorImportEditAndRejectUnsupportedFill()
+    public void MasterAndLayoutBackgroundsAuthorImportEditRemoveAndRejectUnsupportedFill()
     {
         var request = ExportRequest();
         request.Artifact.Presentation.Masters.Add(new PresentationMaster
@@ -207,8 +207,38 @@ public sealed class PptxCodecTests
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
         var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
         Assert.Equal("112233", Assert.Single(roundTrip.Artifact.Presentation.Masters).Background.ColorRgb);
         Assert.Equal("accent2", Assert.Single(roundTrip.Artifact.Presentation.Layouts).Background.ColorScheme);
+
+        Assert.Single(roundTrip.Artifact.Presentation.Masters).Background = null;
+        Assert.Single(roundTrip.Artifact.Presentation.Layouts).Background = null;
+        var removed = Export(roundTrip.Artifact);
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using (var stream = new MemoryStream(removed.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Null(package.PresentationPart!.SlideMasterParts.Single().SlideMaster!.CommonSlideData!.Background);
+            Assert.Null(package.PresentationPart.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!.CommonSlideData!.Background);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var removedRoundTrip = Import(removed.File.ToByteArray());
+        Assert.True(removedRoundTrip.Ok, Diagnostics(removedRoundTrip));
+        Assert.Null(Assert.Single(removedRoundTrip.Artifact.Presentation.Masters).Background);
+        Assert.Null(Assert.Single(removedRoundTrip.Artifact.Presentation.Layouts).Background);
+
+        Assert.Single(removedRoundTrip.Artifact.Presentation.Layouts).Background = new PresentationBackground { ColorScheme = "accent3", StyleReferenceIndex = 1003 };
+        var readded = Export(removedRoundTrip.Artifact);
+        Assert.True(readded.Ok, Diagnostics(readded));
+        using (var stream = new MemoryStream(readded.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Null(package.PresentationPart!.SlideMasterParts.Single().SlideMaster!.CommonSlideData!.Background);
+            var reference = package.PresentationPart.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!.CommonSlideData!.Background!.GetFirstChild<P.BackgroundStyleReference>()!;
+            Assert.Equal(1003U, reference.Index!.Value);
+            Assert.Equal(A.SchemeColorValues.Accent3, reference.GetFirstChild<A.SchemeColor>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
 
         byte[] unsupportedSource;
         using (var stream = new MemoryStream())

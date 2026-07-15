@@ -2877,12 +2877,20 @@ await assert.rejects(
 );
 masterStyleImported.layouts.items[0].placeholders.push(importedLayoutPlaceholder);
 const retainedMasterBackground = masterStyleImported.master.background;
-masterStyleImported.master.background = undefined;
-await assert.rejects(
-  exportPptxWithOpenChestnut(masterStyleImported),
-  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit" && /remove master/.test(error.message),
-);
-masterStyleImported.master.background = retainedMasterBackground;
+const retainedLayoutBackground = masterStyleImported.layouts.items[0].background;
+masterStyleImported.master.clearBackground();
+masterStyleImported.layouts.items[0].clearBackground();
+const removedBackgrounds = await exportPptxWithOpenChestnut(masterStyleImported);
+const removedBackgroundsZip = await JSZip.loadAsync(removedBackgrounds.bytes);
+assert.doesNotMatch(await removedBackgroundsZip.file(masterPartPath).async("text"), /<p:bg>/);
+assert.doesNotMatch(await removedBackgroundsZip.file(layoutPartPath).async("text"), /<p:bg>/);
+const removedBackgroundsRoundTrip = await importPptxWithOpenChestnut(removedBackgrounds);
+assert.equal(removedBackgroundsRoundTrip.master.background, undefined);
+assert.equal(removedBackgroundsRoundTrip.layouts.items[0].background, undefined);
+assert.deepEqual(removedBackgroundsRoundTrip.master.effectiveBackground(), { fill: "#ffffff", mode: "solid" });
+assert.deepEqual(removedBackgroundsRoundTrip.layouts.items[0].effectiveBackground(), { fill: "#ffffff", mode: "solid" });
+masterStyleImported.master.setBackground(retainedMasterBackground);
+masterStyleImported.layouts.items[0].setBackground(retainedLayoutBackground);
 masterStyleImported.slides.getItem(0).layoutId = "presentation/master/1/layout/missing";
 await assert.rejects(
   exportPptxWithOpenChestnut(masterStyleImported),
@@ -2904,6 +2912,11 @@ unsupportedBackgroundImported.layouts.items[0].background = { fill: "#ffffff", m
 await assert.rejects(
   exportPptxWithOpenChestnut(unsupportedBackgroundImported),
   (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit" && /background is preserved/.test(error.message),
+);
+unsupportedBackgroundImported.layouts.items[0].clearBackground();
+await assert.rejects(
+  exportPptxWithOpenChestnut(unsupportedBackgroundImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit" && /not safely removable/.test(error.message),
 );
 
 const unsupportedPlaceholderZip = await JSZip.loadAsync(masterStyleSource);

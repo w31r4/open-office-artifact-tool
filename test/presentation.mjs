@@ -16,6 +16,21 @@ const masterOnlyLoaded = await PresentationFile.importPptx(await PresentationFil
 assert.equal(masterOnlyLoaded.layouts.items.length, 1);
 assert.equal(masterOnlyLoaded.master.name, "Master Only");
 assert.deepEqual(masterOnlyLoaded.slides.items[0].effectiveBackground(), { fill: "#123456", mode: "solid" });
+const backgroundInheritancePresentation = Presentation.create({
+  theme: { colors: { bg1: "#fefefe" } },
+  master: { background: "#123456" },
+  layouts: [{ id: "layout/background-inheritance", name: "Background inheritance", background: "#abcdef" }],
+});
+const backgroundInheritanceLayout = backgroundInheritancePresentation.layouts.items[0];
+assert.equal(backgroundInheritanceLayout.clearBackground(), backgroundInheritanceLayout);
+assert.deepEqual(backgroundInheritanceLayout.effectiveBackground(), { fill: "#123456", mode: "solid" });
+assert.equal(backgroundInheritancePresentation.master.clearBackground(), backgroundInheritancePresentation.master);
+assert.equal(backgroundInheritancePresentation.master.background, undefined);
+assert.deepEqual(backgroundInheritancePresentation.master.effectiveBackground(), { fill: "#fefefe", mode: "solid" });
+assert.deepEqual(backgroundInheritanceLayout.effectiveBackground(), { fill: "#fefefe", mode: "solid" });
+assert.equal(backgroundInheritancePresentation.master.setBackground("#654321"), backgroundInheritancePresentation.master);
+assert.equal(backgroundInheritanceLayout.setBackground("#fedcba"), backgroundInheritanceLayout);
+assert.deepEqual(backgroundInheritanceLayout.effectiveBackground(), { fill: "#fedcba", mode: "solid" });
 const textBodyLayoutPresentation = Presentation.create();
 const textBodyLayoutShape = textBodyLayoutPresentation.slides.add().shapes.add({
   name: "Body layout",
@@ -175,7 +190,9 @@ assert.equal(presentation.resolve("layout/title-content").name, "Title and Conte
 assert.match(presentation.help("presentation.theme").ndjson, /theme colors/);
 assert.match(presentation.help("presentation.masters.add").ndjson, /Slide Master/);
 assert.match(presentation.help("presentation.masters.getItem").ndjson, /master ID/);
+assert.match(presentation.help("presentation.master.clearBackground").ndjson, /removing its direct background/);
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
+assert.match(presentation.help("presentation.layout.clearBackground").ndjson, /linked-master fallback/);
 assert.match(presentation.help("slide.applyLayout").ndjson, /placeholder/);
 const shape = slide.shapes.add({
   geometry: "roundRect",

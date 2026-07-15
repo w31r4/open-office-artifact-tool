@@ -967,8 +967,9 @@ message PresentationMaster {
   string name = 2;
   PresentationMasterSourceBinding source = 3;
   PresentationMasterTextStyles text_styles = 4;
-  // Direct p:bg only. Absence preserves source state and does not flatten
-  // theme or layout inheritance into a computed color.
+  // Direct p:bg only. On a source-bound artifact the semantic hash
+  // distinguishes unchanged absence from explicit removal; effective theme or
+  // layout inheritance is never flattened into this field.
   PresentationBackground background = 5;
   // Direct p:sp/p:nvSpPr/p:nvPr/p:ph entries in master shape-tree order.
   // Position, geometry, fill, and effective inherited style remain source XML.
@@ -992,7 +993,9 @@ message PresentationLayout {
   string master_id = 3;
   string type = 4;
   PresentationLayoutSourceBinding source = 5;
-  // Direct layout p:bg only; absence inherits from the linked master.
+  // Direct layout p:bg only. On a source-bound artifact the semantic hash
+  // distinguishes unchanged absence from explicit removal; absence inherits
+  // from the linked master.
   PresentationBackground background = 6;
   // Direct layout placeholders only; inherited master placeholders are not
   // duplicated into this owner-local list.

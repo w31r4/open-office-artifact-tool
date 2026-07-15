@@ -53,10 +53,15 @@ internal static class PptxBackgroundCodec
         target.AddChild(BuildElement(source), true);
     }
 
-    internal static void Apply(P.CommonSlideData target, PresentationBackground source)
+    internal static void Apply(P.CommonSlideData target, PresentationBackground? source)
     {
         Validate(source);
         var current = target.GetFirstChild<P.Background>();
+        if (source is null)
+        {
+            current?.Remove();
+            return;
+        }
         var replacement = BuildElement(source);
         if (current is null)
         {

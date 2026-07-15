@@ -301,8 +301,6 @@ internal static class PptxCodec
                         PartPath(graph.Part));
                 if (!BackgroundSemanticHash(target.Background).Equals(originalBackgroundHash, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (target.Background is null)
-                        throw new CodecException("unsupported_presentation_edit", $"Source-preserving PPTX export cannot yet remove master {masterIndex + 1}'s direct background.", PartPath(graph.Part));
                     if (!binding.BackgroundEditable || !PptxBackgroundCodec.Supports(masterCommon))
                         throw new CodecException("unsupported_presentation_edit", $"Presentation master {masterIndex + 1} background is preserved but not safely editable by this codec slice.", PartPath(graph.Part));
                     PptxBackgroundCodec.Apply(masterCommon, target.Background);
@@ -351,8 +349,6 @@ internal static class PptxCodec
                         PartPath(graph.Part));
                 if (!BackgroundSemanticHash(target.Background).Equals(originalBackgroundHash, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (target.Background is null)
-                        throw new CodecException("unsupported_presentation_edit", $"Source-preserving PPTX export cannot yet remove layout {layoutIndex + 1}'s direct background.", PartPath(graph.Part));
                     if (!binding.BackgroundEditable || !PptxBackgroundCodec.Supports(layoutCommon))
                         throw new CodecException("unsupported_presentation_edit", $"Presentation layout {layoutIndex + 1} background is preserved but not safely editable by this codec slice.", PartPath(graph.Part));
                     PptxBackgroundCodec.Apply(layoutCommon, target.Background);

@@ -351,8 +351,10 @@ export async function runPresentationFixture(fixturePath, options = {}) {
     }
     const edit = openChestnut?.edit;
     if (edit) {
-      if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
-      if (edit.layoutBackground) imported.layouts.items[0].background = edit.layoutBackground;
+      if (edit.clearMasterBackground) imported.master.clearBackground();
+      else if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
+      if (edit.clearLayoutBackground) imported.layouts.items[0].clearBackground();
+      else if (edit.layoutBackground) imported.layouts.items[0].setBackground(edit.layoutBackground);
       if (edit.masterPlaceholder) {
         const placeholder = imported.master.placeholders.find((item) => item.type === edit.masterPlaceholder.type && item.idx === Number(edit.masterPlaceholder.idx));
         assert.ok(placeholder, `Missing OpenChestnut master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);

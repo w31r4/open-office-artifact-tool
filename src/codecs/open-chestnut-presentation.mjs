@@ -552,7 +552,9 @@ function modelBackground(background) {
 function sourceBackground(model, entry, ownerId) {
   const current = model.background;
   if (!current) {
-    if (entry.wire.background) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot yet remove ${ownerId}'s direct background.`, [], { code: "unsupported_presentation_edit" });
+    if (model._backgroundClearRequested && !entry.wire.background && entry.wire.source?.backgroundEditable === false) {
+      throw new OpenChestnutCodecError(`Presentation ${ownerId} background is preserved but not safely removable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
+    }
     return undefined;
   }
   if (!entry.wire.background && JSON.stringify(current) === entry.backgroundSnapshot) return undefined;
@@ -1037,6 +1039,7 @@ export async function presentationFromEnvelope(envelope) {
         placeholders: (sourceMaster.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
         textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
       });
+      if (!sourceMaster.background) model.background = undefined;
       masterStates.push({
         wire: sourceMaster,
         model,

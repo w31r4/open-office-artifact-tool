@@ -32,6 +32,7 @@
       "name": "OpenChestnut Layout",
       "type": "blank",
       "masterId": "master/open-chestnut",
+      "background": "#F0FDF4",
       "placeholders": [
         {
           "type": "body",
@@ -125,8 +126,8 @@
         { "nativeKind": "diagram", "name": "Edited SmartArt", "position": { "left": 1180, "top": 340, "width": 74, "height": 66 } },
         { "nativeKind": "contentPart", "name": "Edited content part", "position": { "left": 1178, "top": 445, "width": 76, "height": 68 } }
       ],
-      "masterBackground": { "fill": "accent4", "mode": "reference", "index": 1003 },
-      "layoutBackground": { "fill": "#F0FDF4", "mode": "solid" },
+      "clearMasterBackground": true,
+      "clearLayoutBackground": true,
       "masterPlaceholder": { "type": "title", "idx": 0, "text": "After master placeholder" },
       "layoutPlaceholder": {
         "type": "body",
