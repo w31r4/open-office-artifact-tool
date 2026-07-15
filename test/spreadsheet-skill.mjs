@@ -207,7 +207,7 @@ try {
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("C2").format.fill, "#DCFCE7");
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").getRange("C2").format.font.bold, true);
   assert.deepEqual(wasmWorkbook.worksheets.getItem("Summary").mergedRanges, ["A4:B4"]);
-  assert.equal(wasmWorkbook.worksheets.getItem("Summary").images.items.length, 2);
+  assert.equal(wasmWorkbook.worksheets.getItem("Summary").images.items.length, 3);
   const wasmImage = wasmWorkbook.worksheets.getItem("Summary").images.items[0];
   assert.equal(wasmImage.name, "OpenChestnut mark");
   assert.equal(wasmImage.alt, "OpenChestnut worksheet image");
@@ -221,6 +221,14 @@ try {
     from: { row: 4, col: 2, rowOffsetPx: 5, colOffsetPx: 3 },
     to: { row: 7, col: 5, rowOffsetPx: 9, colOffsetPx: 7 },
     editAs: "oneCell",
+  });
+  const wasmAbsoluteImage = wasmWorkbook.worksheets.getItem("Summary").images.items[2];
+  assert.equal(wasmAbsoluteImage.name, "OpenChestnut absolute mark");
+  assert.equal(wasmAbsoluteImage.alt, "OpenChestnut page-relative image");
+  assert.deepEqual(wasmAbsoluteImage.anchor, {
+    type: "absolute",
+    position: { leftPx: 350, topPx: 100 },
+    extent: { widthPx: 80, heightPx: 60 },
   });
   assert.match(await fs.readFile(wasmResult.qa.summary.files.inspect, "utf8"), /"drawingType":"image"[\s\S]*"alt":"OpenChestnut worksheet image"/);
   assert.equal(wasmWorkbook.worksheets.getItem("Summary").store.get("C2").formulaType, "shared");

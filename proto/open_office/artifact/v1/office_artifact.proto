@@ -355,6 +355,8 @@ message SpreadsheetImageArtifact {
   SpreadsheetImageSourceBinding source = 6;
   // Additive alternative to anchor. Exactly one anchor message must be set.
   SpreadsheetTwoCellAnchorArtifact two_cell_anchor = 7;
+  // Additive page-relative alternative. Exactly one anchor message must be set.
+  SpreadsheetAbsoluteAnchorArtifact absolute_anchor = 8;
 }
 
 // SpreadsheetDrawingML stores one-cell geometry in English Metric Units.
@@ -392,6 +394,16 @@ message SpreadsheetTwoCellAnchorArtifact {
   SpreadsheetCellMarkerArtifact from = 1;
   SpreadsheetCellMarkerArtifact to = 2;
   optional SpreadsheetTwoCellEditAs edit_as = 3;
+}
+
+// SpreadsheetDrawingML absolute geometry. Position coordinates are signed
+// because ISO 29500 permits objects to begin outside the worksheet canvas;
+// extents remain strictly positive.
+message SpreadsheetAbsoluteAnchorArtifact {
+  int64 x_emu = 1;
+  int64 y_emu = 2;
+  int64 width_emu = 3;
+  int64 height_emu = 4;
 }
 
 // Hash-bound locator for one recognized picture anchor in a worksheet-owned

@@ -143,6 +143,16 @@
             "to": { "row": 7, "col": 5, "rowOffsetPx": 9, "colOffsetPx": 7 },
             "editAs": "oneCell"
           }
+        },
+        {
+          "name": "OpenChestnut absolute mark",
+          "alt": "OpenChestnut page-relative image",
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          "anchor": {
+            "type": "absolute",
+            "position": { "leftPx": 350, "topPx": 100 },
+            "extent": { "widthPx": 80, "heightPx": 60 }
+          }
         }
       ]
     },

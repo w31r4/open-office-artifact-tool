@@ -2774,6 +2774,62 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesAbsoluteWorksheetPictures()
+    {
+        var request = AbsolutePictureExportRequest();
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        AssertAbsolutePicture(authored.File.ToByteArray(), "Quarter mark", "Quarterly performance", -190_500, 285_750, 1_143_000, 762_000, residual: false);
+
+        var source = AddPictureResidual(authored.File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var image = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Images);
+        Assert.Null(image.Anchor);
+        Assert.Null(image.TwoCellAnchor);
+        Assert.NotNull(image.AbsoluteAnchor);
+        Assert.Equal(-190_500, image.AbsoluteAnchor.XEmu);
+        Assert.Equal(285_750, image.AbsoluteAnchor.YEmu);
+        Assert.Equal(1_143_000, image.AbsoluteAnchor.WidthEmu);
+        Assert.Equal(762_000, image.AbsoluteAnchor.HeightEmu);
+
+        image.Name = "Updated absolute mark";
+        image.AltText = "Updated absolute performance";
+        image.AbsoluteAnchor.XEmu = 381_000;
+        image.AbsoluteAnchor.YEmu = -95_250;
+        image.AbsoluteAnchor.WidthEmu = 1_524_000;
+        image.AbsoluteAnchor.HeightEmu = 952_500;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(preserved.File.ToByteArray());
+        AssertAbsolutePicture(preserved.File.ToByteArray(), "Updated absolute mark", "Updated absolute performance", 381_000, -95_250, 1_524_000, 952_500, residual: true);
+        var reimported = Import(preserved.File.ToByteArray());
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(381_000, Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Images).AbsoluteAnchor.XEmu);
+
+        var changedKind = Import(source);
+        var changedImage = changedKind.Artifact.Workbook.Worksheets[0].Images[0];
+        changedImage.Anchor = new SpreadsheetOneCellAnchorArtifact { Row = 3, Column = 2, WidthEmu = 1_143_000, HeightEmu = 762_000 };
+        changedImage.AbsoluteAnchor = null;
+        var rejected = Export(changedKind.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_image_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalidExtent = AbsolutePictureExportRequest();
+        invalidExtent.Artifact.Workbook.Worksheets[0].Images[0].AbsoluteAnchor.WidthEmu = 0;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidExtent.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalidPosition = AbsolutePictureExportRequest();
+        invalidPosition.Artifact.Workbook.Worksheets[0].Images[0].AbsoluteAnchor.XEmu = 95_250_000_001;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidPosition.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_image", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceBoundWorksheetPicturesRejectSharedOrCrossFormatReplacement()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PictureExportRequest().ToByteArray()));
@@ -2883,6 +2939,21 @@ public sealed class XlsxCodecTests
             From = new SpreadsheetCellMarkerArtifact { Row = 3, Column = 2, RowOffsetEmu = 95_250, ColumnOffsetEmu = 47_625 },
             To = new SpreadsheetCellMarkerArtifact { Row = 7, Column = 6, RowOffsetEmu = 190_500, ColumnOffsetEmu = 142_875 },
             EditAs = SpreadsheetTwoCellEditAs.OneCell,
+        };
+        return request;
+    }
+
+    private static CodecRequest AbsolutePictureExportRequest()
+    {
+        var request = PictureExportRequest();
+        var image = request.Artifact.Workbook.Worksheets[0].Images[0];
+        image.Anchor = null;
+        image.AbsoluteAnchor = new SpreadsheetAbsoluteAnchorArtifact
+        {
+            XEmu = -190_500,
+            YEmu = 285_750,
+            WidthEmu = 1_143_000,
+            HeightEmu = 762_000,
         };
         return request;
     }
@@ -3412,6 +3483,36 @@ public sealed class XlsxCodecTests
         Assert.Equal(toRow.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.ToMarker!.RowId!.Text);
         Assert.Equal(toColumn.ToString(System.Globalization.CultureInfo.InvariantCulture), anchor.ToMarker.ColumnId!.Text);
         Assert.Equal(editAs, anchor.EditAs?.Value);
+        var picture = anchor.GetFirstChild<Xdr.Picture>()!;
+        Assert.Equal(name, picture.NonVisualPictureProperties!.NonVisualDrawingProperties!.Name!.Value);
+        Assert.Equal(description, picture.NonVisualPictureProperties.NonVisualDrawingProperties.Description!.Value);
+        Assert.Single(worksheetPart.DrawingsPart.ImageParts);
+        var locks = picture.NonVisualPictureProperties.NonVisualPictureDrawingProperties!.GetFirstChild<A.PictureLocks>();
+        var crop = picture.BlipFill!.GetFirstChild<A.SourceRectangle>();
+        if (residual)
+        {
+            Assert.True(locks!.NoChangeAspect!.Value);
+            Assert.Equal(1_000, crop!.Left!.Value);
+            Assert.Equal(2_000, crop.Top!.Value);
+        }
+        else
+        {
+            Assert.Null(locks);
+            Assert.Null(crop);
+        }
+    }
+
+    private static void AssertAbsolutePicture(byte[] bytes, string name, string description, long x, long y, long width, long height, bool residual)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var worksheetPart = document.WorkbookPart!.WorksheetParts.Single();
+        Assert.NotNull(worksheetPart.Worksheet!.GetFirstChild<Drawing>());
+        var anchor = Assert.Single(worksheetPart.DrawingsPart!.WorksheetDrawing!.Elements<Xdr.AbsoluteAnchor>());
+        Assert.Equal(x, anchor.Position!.X!.Value);
+        Assert.Equal(y, anchor.Position.Y!.Value);
+        Assert.Equal(width, anchor.Extent!.Cx!.Value);
+        Assert.Equal(height, anchor.Extent.Cy!.Value);
         var picture = anchor.GetFirstChild<Xdr.Picture>()!;
         Assert.Equal(name, picture.NonVisualPictureProperties!.NonVisualDrawingProperties!.Name!.Value);
         Assert.Equal(description, picture.NonVisualPictureProperties.NonVisualDrawingProperties.Description!.Value);

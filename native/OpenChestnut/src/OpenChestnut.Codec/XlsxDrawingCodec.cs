@@ -24,8 +24,9 @@ internal sealed class XlsxDrawingCodec
         SpreadsheetImageArtifact Artifact,
         DrawingsPart Part,
         OpenXmlCompositeElement Anchor,
-        Xdr.FromMarker From,
+        Xdr.FromMarker? From,
         Xdr.ToMarker? To,
+        Xdr.Position? Position,
         Xdr.Extent? Extent,
         Xdr.NonVisualDrawingProperties NonVisual,
         ImagePart ImagePart,
@@ -62,7 +63,7 @@ internal sealed class XlsxDrawingCodec
             ValidateBinding(target, record);
             if (!target.Id.Equals(record.Artifact.Id, StringComparison.Ordinal))
                 throw new CodecException("invalid_spreadsheet_image_topology", $"Worksheet {worksheetId} image identity/order cannot change during source-bound export.");
-            if ((target.Anchor is null) != (record.Artifact.Anchor is null))
+            if (AnchorKind(target) != AnchorKind(record.Artifact))
                 throw new CodecException("unsupported_spreadsheet_image_edit", $"Worksheet image {target.Id} cannot change its source anchor kind.", Path(record.Part));
             if (!target.AssetId.Equals(record.Artifact.AssetId, StringComparison.Ordinal))
                 ReplaceAsset(record, target);
@@ -93,10 +94,11 @@ internal sealed class XlsxDrawingCodec
                 throw InvalidImage(worksheetId, image.Id, "alt text must contain at most 32767 characters without controls.");
             if (string.IsNullOrWhiteSpace(image.AssetId) || image.AssetId.Length > 512 || HasControls(image.AssetId))
                 throw InvalidImage(worksheetId, image.Id, "asset ID must contain 1 through 512 characters without controls.");
-            if ((image.Anchor is null) == (image.TwoCellAnchor is null))
-                throw InvalidImage(worksheetId, image.Id, "must carry exactly one one-cell or two-cell anchor.");
+            if ((image.Anchor is null ? 0 : 1) + (image.TwoCellAnchor is null ? 0 : 1) + (image.AbsoluteAnchor is null ? 0 : 1) != 1)
+                throw InvalidImage(worksheetId, image.Id, "must carry exactly one one-cell, two-cell, or absolute anchor.");
             if (image.Anchor is not null) ValidateAnchor(image.Anchor, worksheetId, image.Id);
-            else ValidateAnchor(image.TwoCellAnchor!, worksheetId, image.Id);
+            else if (image.TwoCellAnchor is not null) ValidateAnchor(image.TwoCellAnchor, worksheetId, image.Id);
+            else ValidateAnchor(image.AbsoluteAnchor!, worksheetId, image.Id);
         }
     }
 
@@ -143,12 +145,14 @@ internal sealed class XlsxDrawingCodec
         for (var ordinal = 0; ordinal < drawingPart.WorksheetDrawing.ChildElements.Count; ordinal++)
         {
             var anchor = drawingPart.WorksheetDrawing.ChildElements[ordinal] as OpenXmlCompositeElement;
-            if (anchor is not Xdr.OneCellAnchor and not Xdr.TwoCellAnchor) continue;
+            if (anchor is not Xdr.OneCellAnchor and not Xdr.TwoCellAnchor and not Xdr.AbsoluteAnchor) continue;
             var from = anchor.GetFirstChild<Xdr.FromMarker>();
             var to = anchor.GetFirstChild<Xdr.ToMarker>();
+            var position = anchor.GetFirstChild<Xdr.Position>();
             var extent = anchor.GetFirstChild<Xdr.Extent>();
             SpreadsheetOneCellAnchorArtifact? oneCellAnchor = null;
             SpreadsheetTwoCellAnchorArtifact? twoCellAnchor = null;
+            SpreadsheetAbsoluteAnchorArtifact? absoluteAnchor = null;
             if (anchor is Xdr.OneCellAnchor)
             {
                 if (from is null || extent is null || extent.Cx?.HasValue != true || extent.Cy?.HasValue != true) continue;
@@ -157,6 +161,10 @@ internal sealed class XlsxDrawingCodec
             else if (anchor is Xdr.TwoCellAnchor nativeTwoCell)
             {
                 if (from is null || to is null || !TryAnchor(from, to, nativeTwoCell, out twoCellAnchor)) continue;
+            }
+            else if (anchor is Xdr.AbsoluteAnchor)
+            {
+                if (position is null || extent is null || !TryAnchor(position, extent, out absoluteAnchor)) continue;
             }
             if (anchor.Elements<Xdr.Picture>().SingleOrDefault() is not { } picture ||
                 picture.GetFirstChild<Xdr.NonVisualPictureProperties>()?.GetFirstChild<Xdr.NonVisualDrawingProperties>() is not { Id.HasValue: true } nonVisual ||
@@ -190,7 +198,8 @@ internal sealed class XlsxDrawingCodec
                 AssetId = asset.Id,
             };
             if (oneCellAnchor is not null) artifact.Anchor = oneCellAnchor;
-            else artifact.TwoCellAnchor = twoCellAnchor;
+            else if (twoCellAnchor is not null) artifact.TwoCellAnchor = twoCellAnchor;
+            else artifact.AbsoluteAnchor = absoluteAnchor;
             if (string.IsNullOrWhiteSpace(artifact.Name) || artifact.Name.Length > 255 || HasControls(artifact.Name) ||
                 artifact.AltText.Length > 32_767 || HasControls(artifact.AltText)) continue;
             artifact.Source = new SpreadsheetImageSourceBinding
@@ -204,7 +213,7 @@ internal sealed class XlsxDrawingCodec
                 NonVisualId = nonVisual.Id!.Value,
                 Editable = true,
             };
-            records.Add(new PictureRecord(artifact, drawingPart, anchor, from!, to, extent, nonVisual, imagePart, imageRelationshipId, ordinal));
+            records.Add(new PictureRecord(artifact, drawingPart, anchor, from, to, position, extent, nonVisual, imagePart, imageRelationshipId, ordinal));
         }
         return records;
     }
@@ -226,14 +235,22 @@ internal sealed class XlsxDrawingCodec
                 new Xdr.Extent { Cx = oneCell.WidthEmu, Cy = oneCell.HeightEmu },
                 picture,
                 new Xdr.ClientData());
-        var twoCell = source.TwoCellAnchor!;
-        var output = new Xdr.TwoCellAnchor(
-            BuildFrom(twoCell.From),
-            BuildTo(twoCell.To),
+        if (source.TwoCellAnchor is { } twoCell)
+        {
+            var output = new Xdr.TwoCellAnchor(
+                BuildFrom(twoCell.From),
+                BuildTo(twoCell.To),
+                picture,
+                new Xdr.ClientData());
+            if (twoCell.HasEditAs) output.EditAs = NativeEditAs(twoCell.EditAs);
+            return output;
+        }
+        var absolute = source.AbsoluteAnchor!;
+        return new Xdr.AbsoluteAnchor(
+            new Xdr.Position { X = absolute.XEmu, Y = absolute.YEmu },
+            new Xdr.Extent { Cx = absolute.WidthEmu, Cy = absolute.HeightEmu },
             picture,
             new Xdr.ClientData());
-        if (twoCell.HasEditAs) output.EditAs = NativeEditAs(twoCell.EditAs);
-        return output;
     }
 
     private void ReplaceAsset(PictureRecord record, SpreadsheetImageArtifact target)
@@ -266,15 +283,23 @@ internal sealed class XlsxDrawingCodec
         record.NonVisual.Description = target.AltText;
         if (target.Anchor is { } oneCell)
         {
-            PatchMarker(record.From, oneCell.Row, oneCell.Column, oneCell.RowOffsetEmu, oneCell.ColumnOffsetEmu);
+            PatchMarker(record.From!, oneCell.Row, oneCell.Column, oneCell.RowOffsetEmu, oneCell.ColumnOffsetEmu);
             record.Extent!.Cx = oneCell.WidthEmu;
             record.Extent.Cy = oneCell.HeightEmu;
             return;
         }
-        var twoCell = target.TwoCellAnchor!;
-        PatchMarker(record.From, twoCell.From);
-        PatchMarker(record.To!, twoCell.To);
-        ((Xdr.TwoCellAnchor)record.Anchor).EditAs = twoCell.HasEditAs ? NativeEditAs(twoCell.EditAs) : null;
+        if (target.TwoCellAnchor is { } twoCell)
+        {
+            PatchMarker(record.From!, twoCell.From);
+            PatchMarker(record.To!, twoCell.To);
+            ((Xdr.TwoCellAnchor)record.Anchor).EditAs = twoCell.HasEditAs ? NativeEditAs(twoCell.EditAs) : null;
+            return;
+        }
+        var absolute = target.AbsoluteAnchor!;
+        record.Position!.X = absolute.XEmu;
+        record.Position.Y = absolute.YEmu;
+        record.Extent!.Cx = absolute.WidthEmu;
+        record.Extent.Cy = absolute.HeightEmu;
     }
 
     private static void ValidateBinding(SpreadsheetImageArtifact target, PictureRecord record)
@@ -325,6 +350,20 @@ internal sealed class XlsxDrawingCodec
         return true;
     }
 
+    private static bool TryAnchor(Xdr.Position position, Xdr.Extent extent, out SpreadsheetAbsoluteAnchorArtifact anchor)
+    {
+        anchor = new SpreadsheetAbsoluteAnchorArtifact();
+        if (position.X?.HasValue != true || position.Y?.HasValue != true ||
+            position.X.Value < -MaxEmu || position.X.Value > MaxEmu ||
+            position.Y.Value < -MaxEmu || position.Y.Value > MaxEmu ||
+            extent.Cx?.Value is not > 0 or > MaxEmu || extent.Cy?.Value is not > 0 or > MaxEmu) return false;
+        anchor.XEmu = position.X.Value;
+        anchor.YEmu = position.Y.Value;
+        anchor.WidthEmu = extent.Cx!.Value;
+        anchor.HeightEmu = extent.Cy!.Value;
+        return true;
+    }
+
     private static bool TryMarker(OpenXmlCompositeElement marker, out SpreadsheetCellMarkerArtifact output)
     {
         output = new SpreadsheetCellMarkerArtifact();
@@ -360,6 +399,15 @@ internal sealed class XlsxDrawingCodec
             throw InvalidImage(worksheetId, imageId, "requires its two-cell to marker to be strictly after from on both worksheet axes.");
         if (anchor.HasEditAs && anchor.EditAs is not (SpreadsheetTwoCellEditAs.TwoCell or SpreadsheetTwoCellEditAs.OneCell or SpreadsheetTwoCellEditAs.Absolute))
             throw InvalidImage(worksheetId, imageId, "has an unsupported two-cell editAs value.");
+    }
+
+    private static void ValidateAnchor(SpreadsheetAbsoluteAnchorArtifact anchor, string worksheetId, string imageId)
+    {
+        if (anchor.XEmu < -MaxEmu || anchor.XEmu > MaxEmu ||
+            anchor.YEmu < -MaxEmu || anchor.YEmu > MaxEmu ||
+            anchor.WidthEmu <= 0 || anchor.WidthEmu > MaxEmu ||
+            anchor.HeightEmu <= 0 || anchor.HeightEmu > MaxEmu)
+            throw InvalidImage(worksheetId, imageId, "has absolute geometry outside bounded signed-position/positive-extent EMU limits.");
     }
 
     private static void ValidateMarker(SpreadsheetCellMarkerArtifact marker, string worksheetId, string imageId, string name)
@@ -425,11 +473,18 @@ internal sealed class XlsxDrawingCodec
                 oneCell.Row.ToString(CultureInfo.InvariantCulture), oneCell.Column.ToString(CultureInfo.InvariantCulture),
                 oneCell.RowOffsetEmu.ToString(CultureInfo.InvariantCulture), oneCell.ColumnOffsetEmu.ToString(CultureInfo.InvariantCulture),
                 oneCell.WidthEmu.ToString(CultureInfo.InvariantCulture), oneCell.HeightEmu.ToString(CultureInfo.InvariantCulture));
-        var twoCell = image.TwoCellAnchor!;
-        return string.Join('\0', "twoCell", MarkerSemantics(twoCell.From), MarkerSemantics(twoCell.To),
-            twoCell.HasEditAs ? "present" : "absent",
-            twoCell.HasEditAs ? ((int)twoCell.EditAs).ToString(CultureInfo.InvariantCulture) : string.Empty);
+        if (image.TwoCellAnchor is { } twoCell)
+            return string.Join('\0', "twoCell", MarkerSemantics(twoCell.From), MarkerSemantics(twoCell.To),
+                twoCell.HasEditAs ? "present" : "absent",
+                twoCell.HasEditAs ? ((int)twoCell.EditAs).ToString(CultureInfo.InvariantCulture) : string.Empty);
+        var absolute = image.AbsoluteAnchor!;
+        return string.Join('\0', "absolute",
+            absolute.XEmu.ToString(CultureInfo.InvariantCulture), absolute.YEmu.ToString(CultureInfo.InvariantCulture),
+            absolute.WidthEmu.ToString(CultureInfo.InvariantCulture), absolute.HeightEmu.ToString(CultureInfo.InvariantCulture));
     }
+
+    private static int AnchorKind(SpreadsheetImageArtifact image) =>
+        image.Anchor is not null ? 1 : image.TwoCellAnchor is not null ? 2 : image.AbsoluteAnchor is not null ? 3 : 0;
 
     private static string MarkerSemantics(SpreadsheetCellMarkerArtifact marker) => string.Join('\0',
         marker.Row.ToString(CultureInfo.InvariantCulture), marker.Column.ToString(CultureInfo.InvariantCulture),

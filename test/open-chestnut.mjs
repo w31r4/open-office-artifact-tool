@@ -76,6 +76,7 @@ assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, {
 assert.equal(toBinary(WorksheetArtifactSchema, create(WorksheetArtifactSchema, { images: [{ id: "image/1" }] }))[0], 0x6a, "Spreadsheet worksheet images must use additive worksheet field 13.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { assetId: "asset/1" }))[0], 0x22, "Spreadsheet image assets must use image field 4.");
 assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { twoCellAnchor: { from: {}, to: {} } }))[0], 0x3a, "Spreadsheet two-cell anchors must use additive image field 7.");
+assert.equal(toBinary(SpreadsheetImageArtifactSchema, create(SpreadsheetImageArtifactSchema, { absoluteAnchor: { widthEmu: 1n, heightEmu: 1n } }))[0], 0x42, "Spreadsheet absolute anchors must use additive image field 8.");
 assert.deepEqual([...toBinary(SpreadsheetOneCellAnchorArtifactSchema, create(SpreadsheetOneCellAnchorArtifactSchema, { widthEmu: 1n }))], [0x28, 0x01], "Spreadsheet image widths must use signed EMU field 5.");
 assert.equal(toBinary(SpreadsheetImageSourceBindingSchema, create(SpreadsheetImageSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet image semantic hashes must use source-binding field 5.");
 assert.equal(toBinary(SpreadsheetWorksheetSourceBindingSchema, create(SpreadsheetWorksheetSourceBindingSchema, { semanticSha256: "x" }))[0], 0x2a, "Spreadsheet worksheet semantic hashes must use source-binding field 5.");
@@ -985,6 +986,67 @@ await assert.rejects(
   (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /strictly after/i.test(error.message),
 );
 await assert.rejects(SpreadsheetFile.exportXlsx(invalidTwoCellWorkbook), /strictly after/i);
+const absoluteImageWorkbook = Workbook.create();
+const absoluteImageSheet = absoluteImageWorkbook.worksheets.add("Absolute image");
+absoluteImageSheet.images.add({
+  name: "Absolute mark",
+  alt: "Page-relative worksheet image",
+  dataUrl: twoCellImageDataUrl,
+  anchor: {
+    type: "absolute",
+    position: { leftPx: -20, topPx: 30 },
+    extent: { widthPx: 120, heightPx: 80 },
+  },
+});
+const absoluteImageExport = await exportXlsxWithOpenChestnut(absoluteImageWorkbook);
+const absoluteImageZip = await JSZip.loadAsync(absoluteImageExport.bytes);
+const absoluteDrawingXml = await absoluteImageZip.file("xl/drawings/drawing1.xml").async("text");
+assert.match(absoluteDrawingXml, /<xdr:absoluteAnchor>/);
+assert.match(absoluteDrawingXml, /<xdr:pos x="-190500" y="285750"\s*\/>/);
+assert.match(absoluteDrawingXml, /<xdr:ext cx="1143000" cy="762000"\s*\/>/);
+const absoluteImageImported = await importXlsxWithOpenChestnut(absoluteImageExport);
+const importedAbsoluteImage = absoluteImageImported.worksheets.getItem("Absolute image").images.items[0];
+assert.deepEqual(importedAbsoluteImage.anchor, {
+  type: "absolute",
+  position: { leftPx: -20, topPx: 30 },
+  extent: { widthPx: 120, heightPx: 80 },
+});
+importedAbsoluteImage.name = "Edited absolute mark";
+importedAbsoluteImage.anchor = {
+  type: "absolute",
+  position: { leftPx: 40, topPx: -10 },
+  extent: { widthPx: 160, heightPx: 100 },
+};
+const editedAbsoluteExport = await exportXlsxWithOpenChestnut(absoluteImageImported, { recalculate: false });
+const editedAbsoluteRoundTrip = await importXlsxWithOpenChestnut(editedAbsoluteExport);
+assert.equal(editedAbsoluteRoundTrip.worksheets.getItem("Absolute image").images.items[0].name, "Edited absolute mark");
+assert.deepEqual(editedAbsoluteRoundTrip.worksheets.getItem("Absolute image").images.items[0].anchor, importedAbsoluteImage.anchor);
+const javascriptAbsoluteExport = await SpreadsheetFile.exportXlsx(absoluteImageWorkbook);
+const javascriptAbsoluteZip = await JSZip.loadAsync(new Uint8Array(await javascriptAbsoluteExport.arrayBuffer()));
+assert.match(await javascriptAbsoluteZip.file("xl/drawings/drawing1.xml").async("text"), /<xdr:absoluteAnchor><xdr:pos x="-190500" y="285750"\/>/);
+const javascriptAbsoluteImport = await SpreadsheetFile.importXlsx(javascriptAbsoluteExport);
+assert.deepEqual(javascriptAbsoluteImport.worksheets.getItem("Absolute image").images.items[0].anchor, {
+  type: "absolute",
+  position: { leftPx: -20, topPx: 30 },
+  extent: { widthPx: 120, heightPx: 80 },
+});
+const changedAbsoluteKind = await importXlsxWithOpenChestnut(absoluteImageExport);
+changedAbsoluteKind.worksheets.getItem("Absolute image").images.items[0].anchor = { from: { row: 1, col: 1 }, extent: { widthPx: 120, heightPx: 80 } };
+await assert.rejects(
+  exportXlsxWithOpenChestnut(changedAbsoluteKind, { recalculate: false }),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_image_edit" && /anchor kind/i.test(error.message),
+);
+const invalidAbsoluteWorkbook = Workbook.create();
+invalidAbsoluteWorkbook.worksheets.add("Invalid absolute").images.add({
+  name: "Invalid absolute mark",
+  dataUrl: twoCellImageDataUrl,
+  anchor: { type: "absolute", position: { leftPx: 0, topPx: 0 }, extent: { widthPx: 0, heightPx: 80 } },
+});
+await assert.rejects(
+  exportXlsxWithOpenChestnut(invalidAbsoluteWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_image" && /positive/i.test(error.message),
+);
+await assert.rejects(SpreadsheetFile.exportXlsx(invalidAbsoluteWorkbook), /positive extent geometry/i);
 const activeVisibilityEdit = await importXlsxWithOpenChestnut(exported);
 assert.throws(
   () => { activeVisibilityEdit.worksheets.getItem("Icon Rules").visibility = "hidden"; },

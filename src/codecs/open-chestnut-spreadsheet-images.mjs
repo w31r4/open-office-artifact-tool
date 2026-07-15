@@ -3,7 +3,7 @@ import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const ASSET_PREFIX = "asset/workbook/image/";
 const EMU_PER_PIXEL = 9525;
-const ANCHOR_TYPES = new Set(["oneCell", "twoCell"]);
+const ANCHOR_TYPES = new Set(["oneCell", "twoCell", "absolute"]);
 const EDIT_AS_TO_WIRE = new Map([["twoCell", 1], ["oneCell", 2], ["absolute", 3]]);
 const EDIT_AS_FROM_WIRE = new Map([...EDIT_AS_TO_WIRE].map(([name, value]) => [value, name]));
 const CONTENT_TYPES = new Map([
@@ -47,10 +47,17 @@ function pixels(value, name, image, { positive = false } = {}) {
   return number;
 }
 
+function signedPixels(value, name, image) {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number) || Math.abs(number) > 10_000_000) fail(image, `${name} must be finite and between -10000000 and 10000000 pixels.`);
+  return number;
+}
+
 export function spreadsheetImageSnapshot(image) {
   const anchor = image.anchor || {};
   const from = anchor.from || {};
   const to = anchor.to || {};
+  const position = anchor.position || {};
   const extent = anchor.extent || {};
   return {
     id: String(image.id || ""),
@@ -70,6 +77,8 @@ export function spreadsheetImageSnapshot(image) {
     toRowOffsetPx: anchor.to ? Number(to.rowOffsetPx ?? 0) : undefined,
     toColumnOffsetPx: anchor.to ? Number(to.colOffsetPx ?? 0) : undefined,
     editAs: anchor.editAs == null ? undefined : String(anchor.editAs),
+    leftPx: anchor.position ? Number(position.leftPx ?? 0) : undefined,
+    topPx: anchor.position ? Number(position.topPx ?? 0) : undefined,
   };
 }
 
@@ -96,8 +105,7 @@ function wireImage(image, assets, source) {
   const snapshot = spreadsheetImageSnapshot(image);
   const asset = assetFromImage(image);
   if (!assets.has(asset.id)) assets.set(asset.id, asset);
-  if (!ANCHOR_TYPES.has(snapshot.anchorType)) fail(image, `anchor.type must be oneCell or twoCell; received ${snapshot.anchorType}.`);
-  const from = marker(snapshot, "from", image);
+  if (!ANCHOR_TYPES.has(snapshot.anchorType)) fail(image, `anchor.type must be oneCell, twoCell, or absolute; received ${snapshot.anchorType}.`);
   if (!snapshot.id || snapshot.id.length > 512 || /\p{Cc}/u.test(snapshot.id)) fail(image, "id must contain 1 through 512 characters without controls.");
   if (!snapshot.name || snapshot.name.length > 255 || /\p{Cc}/u.test(snapshot.name)) fail(image, "name must contain 1 through 255 characters without controls.");
   if (snapshot.alt.length > 32_767 || /\p{Cc}/u.test(snapshot.alt)) fail(image, "alt text must contain at most 32767 characters without controls.");
@@ -108,7 +116,21 @@ function wireImage(image, assets, source) {
     assetId: asset.id,
     source,
   };
-  if (snapshot.anchorType === "twoCell") {
+  if (snapshot.anchorType === "absolute") {
+    if (!image.anchor?.position || !image.anchor?.extent) fail(image, "absolute anchor requires anchor.position and anchor.extent.");
+    if (image.anchor?.from || image.anchor?.to || snapshot.editAs != null || image.anchor?.widthPx != null || image.anchor?.heightPx != null) fail(image, "absolute anchor cannot carry cell markers, editAs, or legacy extent fields.");
+    const leftPx = signedPixels(snapshot.leftPx, "anchor.position.leftPx", image);
+    const topPx = signedPixels(snapshot.topPx, "anchor.position.topPx", image);
+    const widthPx = pixels(snapshot.widthPx, "anchor.extent.widthPx", image, { positive: true });
+    const heightPx = pixels(snapshot.heightPx, "anchor.extent.heightPx", image, { positive: true });
+    output.absoluteAnchor = {
+      xEmu: BigInt(Math.round(leftPx * EMU_PER_PIXEL)),
+      yEmu: BigInt(Math.round(topPx * EMU_PER_PIXEL)),
+      widthEmu: BigInt(Math.round(widthPx * EMU_PER_PIXEL)),
+      heightEmu: BigInt(Math.round(heightPx * EMU_PER_PIXEL)),
+    };
+  } else if (snapshot.anchorType === "twoCell") {
+    const from = marker(snapshot, "from", image);
     if (!image.anchor?.to) fail(image, "two-cell anchor requires anchor.to.");
     if (image.anchor?.extent || image.anchor?.widthPx != null || image.anchor?.heightPx != null) fail(image, "two-cell anchor cannot also carry one-cell extent geometry.");
     const to = marker(snapshot, "to", image);
@@ -116,6 +138,7 @@ function wireImage(image, assets, source) {
     if (snapshot.editAs != null && !EDIT_AS_TO_WIRE.has(snapshot.editAs)) fail(image, `anchor.editAs must be twoCell, oneCell, or absolute; received ${snapshot.editAs}.`);
     output.twoCellAnchor = { from, to, ...(snapshot.editAs == null ? {} : { editAs: EDIT_AS_TO_WIRE.get(snapshot.editAs) }) };
   } else {
+    const from = marker(snapshot, "from", image);
     if (image.anchor?.to) fail(image, "one-cell anchor cannot carry anchor.to.");
     if (snapshot.editAs != null) fail(image, "anchor.editAs is valid only for a two-cell anchor.");
     const widthPx = pixels(snapshot.widthPx, "anchor.extent.widthPx", image, { positive: true });
@@ -167,10 +190,16 @@ function dataUrl(asset, image) {
 export function spreadsheetImageFromWire(sheet, source, assets) {
   const anchor = source.anchor;
   const twoCellAnchor = source.twoCellAnchor;
-  if (Boolean(anchor) === Boolean(twoCellAnchor)) fail(source, "must carry exactly one one-cell or two-cell anchor.");
-  const numberFromWire = (value, name) => {
+  const absoluteAnchor = source.absoluteAnchor;
+  if ([anchor, twoCellAnchor, absoluteAnchor].filter(Boolean).length !== 1) fail(source, "must carry exactly one one-cell, two-cell, or absolute anchor.");
+  const numberFromWire = (value, name, { positive = false } = {}) => {
     const number = Number(value);
-    if (!Number.isSafeInteger(number) || number < 0) fail(source, `has invalid ${name}.`);
+    if (!Number.isSafeInteger(number) || number < 0 || number > 95_250_000_000 || (positive && number === 0)) fail(source, `has invalid ${name}.`);
+    return number;
+  };
+  const signedNumberFromWire = (value, name) => {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || Math.abs(number) > 95_250_000_000) fail(source, `has invalid ${name}.`);
     return number;
   };
   const publicMarker = (value, name) => {
@@ -186,7 +215,19 @@ export function spreadsheetImageFromWire(sheet, source, assets) {
     };
   };
   let publicAnchor;
-  if (twoCellAnchor) {
+  if (absoluteAnchor) {
+    publicAnchor = {
+      type: "absolute",
+      position: {
+        leftPx: signedNumberFromWire(absoluteAnchor.xEmu, "x position") / EMU_PER_PIXEL,
+        topPx: signedNumberFromWire(absoluteAnchor.yEmu, "y position") / EMU_PER_PIXEL,
+      },
+      extent: {
+        widthPx: numberFromWire(absoluteAnchor.widthEmu, "width", { positive: true }) / EMU_PER_PIXEL,
+        heightPx: numberFromWire(absoluteAnchor.heightEmu, "height", { positive: true }) / EMU_PER_PIXEL,
+      },
+    };
+  } else if (twoCellAnchor) {
     const editAs = twoCellAnchor.editAs == null ? undefined : EDIT_AS_FROM_WIRE.get(twoCellAnchor.editAs);
     if (twoCellAnchor.editAs != null && !editAs) fail(source, `has invalid two-cell editAs value ${twoCellAnchor.editAs}.`);
     publicAnchor = {
