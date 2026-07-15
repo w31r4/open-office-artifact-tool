@@ -968,6 +968,25 @@ const chartTypesRoundTrip = await importXlsxWithOpenChestnut(chartTypesExport);
 assert.deepEqual(chartTypesRoundTrip.worksheets.getItem("Chart types").charts.items.map((chart) => chart.type), ["bar", "line", "pie"]);
 assert.deepEqual(chartTypesRoundTrip.worksheets.getItem("Chart types").charts.items.map((chart) => chart.hasLegend), [true, true, false]);
 assert.deepEqual((await SpreadsheetFile.importXlsx(chartTypesExport)).worksheets.getItem("Chart types").charts.items.map((chart) => chart.type), ["bar", "line", "pie"]);
+const mismatchedChartWorkbook = Workbook.create();
+mismatchedChartWorkbook.worksheets.add("Invalid chart").charts.add("bar", { name: "Mismatch", categories: ["A", "B"], series: [{ name: "Value", values: [1] }] });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(mismatchedChartWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "invalid_spreadsheet_chart" && /1 values for 2 categories/i.test(error.message),
+);
+const unsupportedChartWorkbook = Workbook.create();
+unsupportedChartWorkbook.worksheets.add("Unsupported chart").charts.add("combo", { name: "Combo", categories: ["A"], series: [{ name: "Value", values: [1] }] });
+await assert.rejects(
+  exportXlsxWithOpenChestnut(unsupportedChartWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /bar, line, or pie/i.test(error.message),
+);
+const styledChartWorkbook = Workbook.create();
+const styledChart = styledChartWorkbook.worksheets.add("Styled chart").charts.add("bar", { name: "Styled", categories: ["A"], series: [{ name: "Value", values: [1] }] });
+styledChart.series.items[0].fill = "#2563EB";
+await assert.rejects(
+  exportXlsxWithOpenChestnut(styledChartWorkbook),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_spreadsheet_chart" && /fill styling/i.test(error.message),
+);
 const addedImage = await importXlsxWithOpenChestnut(exported);
 addedImage.worksheets.getItem("Summary").images.add({ name: "Unexpected image", dataUrl: summaryImage.dataUrl });
 await assert.rejects(

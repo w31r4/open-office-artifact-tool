@@ -70,6 +70,7 @@ function validateSnapshot(snapshot, chart) {
   const type = TYPES_TO_WIRE.get(snapshot.type);
   if (type == null) fail(chart, `type must be bar, line, or pie; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
   if (snapshot.series.length < 1 || snapshot.series.length > MAX_SERIES) fail(chart, `must contain 1 through ${MAX_SERIES} series.`);
+  if (chartSeries(chart).some((series) => series?.fill != null)) fail(chart, "series fill styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
   if (snapshot.categories.length > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-category budget.`);
   snapshot.categories.forEach((value, index) => text(value, `category ${index + 1}`, chart));
   let points = 0;
