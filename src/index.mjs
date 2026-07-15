@@ -8668,21 +8668,47 @@ function presentationThemeSemantics(theme) {
   return JSON.stringify({ name: normalized.name, colors: normalized.colors, fonts: normalized.fonts, textStyles: normalized.textStyles, colorMap: normalized.colorMap });
 }
 
+function normalizePresentationPlaceholderTransform(value, name = "Presentation placeholder transform") {
+  if (value == null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${name} must be an object.`);
+  const output = {};
+  if (Object.hasOwn(value, "rotationDegrees") && value.rotationDegrees != null) {
+    const degrees = Number(value.rotationDegrees);
+    if (!Number.isFinite(degrees) || degrees < -360 || degrees > 360) throw new RangeError(`${name}.rotationDegrees must be between -360 and 360 degrees.`);
+    output.rotationDegrees = degrees;
+  }
+  for (const key of ["flipHorizontal", "flipVertical"]) {
+    if (!Object.hasOwn(value, key) || value[key] == null) continue;
+    if (typeof value[key] !== "boolean") throw new TypeError(`${name}.${key} must be a boolean.`);
+    output[key] = value[key];
+  }
+  if (Object.keys(output).length === 0) throw new TypeError(`${name} must define rotationDegrees, flipHorizontal, or flipVertical.`);
+  return output;
+}
+
 function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder", options = {}) {
   if (!Array.isArray(value)) throw new TypeError("Presentation placeholders must be an array.");
   if (value.length > 128) throw new RangeError("Presentation placeholders exceed 128 entries.");
-  const placeholders = value.map((placeholder, index) => ({
-    id: placeholder.id || `${idPrefix}/${index + 1}`,
-    type: placeholder.type || "body",
-    idx: Number(placeholder.idx ?? index + 1),
-    name: placeholder.name || `${placeholder.type || "body"} placeholder`,
-    position: options.allowMissingPosition && !placeholder.position && !placeholder.frame && !["left", "top", "width", "height"].some((key) => placeholder[key] != null) ? undefined : normalizeFrame(placeholder, { left: 80, top: 80 + index * 80, width: 640, height: 64 }),
-    text: placeholder.text ?? "",
-    required: Boolean(placeholder.required),
-    style: { ...(placeholder.style || {}) },
-    paragraphStyles: normalizePresentationParagraphStyles(placeholder.paragraphStyles || placeholder.listStyles || {}),
-    textBodyProperties: normalizePresentationTextBodyProperties(placeholder.textBodyProperties || placeholder.bodyProperties || {}),
-  }));
+  const placeholders = value.map((placeholder, index) => {
+    const position = options.allowMissingPosition && !placeholder.position && !placeholder.frame && !["left", "top", "width", "height"].some((key) => placeholder[key] != null)
+      ? undefined
+      : normalizeFrame(placeholder, { left: 80, top: 80 + index * 80, width: 640, height: 64 });
+    const transform = normalizePresentationPlaceholderTransform(placeholder.transform, `Presentation placeholder ${placeholder.name || index + 1} transform`);
+    if (transform && !position) throw new TypeError(`Presentation placeholder ${placeholder.name || index + 1} cannot define a transform without a direct position.`);
+    return {
+      id: placeholder.id || `${idPrefix}/${index + 1}`,
+      type: placeholder.type || "body",
+      idx: Number(placeholder.idx ?? index + 1),
+      name: placeholder.name || `${placeholder.type || "body"} placeholder`,
+      position,
+      transform,
+      text: placeholder.text ?? "",
+      required: Boolean(placeholder.required),
+      style: { ...(placeholder.style || {}) },
+      paragraphStyles: normalizePresentationParagraphStyles(placeholder.paragraphStyles || placeholder.listStyles || {}),
+      textBodyProperties: normalizePresentationTextBodyProperties(placeholder.textBodyProperties || placeholder.bodyProperties || {}),
+    };
+  });
   if (placeholders.some((placeholder) => !Number.isInteger(placeholder.idx) || placeholder.idx < 0 || placeholder.idx > 4_294_967_295)) throw new RangeError("Presentation placeholder idx must be an unsigned 32-bit integer.");
   if (new Set(placeholders.map((placeholder) => `${placeholder.type}:${placeholder.idx}`)).size !== placeholders.length) throw new Error("Presentation placeholder type/idx pairs must be unique.");
   return placeholders;
@@ -10065,7 +10091,7 @@ export class PresentationFile {
       const masterPictureBulletPlan = pictureBulletPlan.byOwner.get(`master:${masterPart.masterPartId}`);
       const masterHyperlinkPlan = hyperlinkPlan.byOwner.get(`master:${masterPart.masterPartId}`);
       const masterPictureBulletRelIds = masterPictureBulletPlan.relationshipIds;
-      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkCustomShowIds: masterHyperlinkPlan.customShowIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
+      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, transform: placeholder.transform, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkCustomShowIds: masterHyperlinkPlan.customShowIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
       zip.file(`ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`, presentationSlideMasterXml(masterPart.layoutParts, masterPart.master.effectiveTheme(), { name: masterPart.master.name, backgroundXml: presentationBackgroundXml(masterPart.master.background), placeholdersXml: masterPlaceholders, textParagraphStyles: masterPart.master.textParagraphStyles, pictureBulletRelationshipId: (bulletImage) => masterPictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) }));
       zip.file(`ppt/slideMasters/_rels/slideMaster${masterPart.masterPartId}.xml.rels`, pptxSlideMasterRelsXml(masterPart.layoutParts, masterPart.themePartId, masterPictureBulletPlan.relationships, masterHyperlinkPlan.relationships));
       for (const part of masterPart.layoutParts) {
@@ -10441,7 +10467,7 @@ function pptxSlideLayoutRelsXml(masterPartId, pictureBulletRelationships = [], h
 }
 
 function pptxSlideLayoutXml(layout, pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkCustomShowIds = new Map(), hyperlinkSlideParts = new Map()) {
-  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts })).join("");
+  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, transform: placeholder.transform, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts })).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" type="${attrEscape(layout.type)}" preserve="1"><p:cSld name="${attrEscape(layout.name)}">${presentationBackgroundXml(layout.background)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${placeholders}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
 }
 
@@ -10550,7 +10576,13 @@ function pptxNonVisualPropertiesXml(index, name, extraAttributes = "", identity 
 
 function pptxTextShapeXml(index, name, geometry, position, text = "", placeholder, options = {}) {
   const p = position;
-  const transform = p ? `<a:xfrm><a:off x="${Math.round(p.left * 9525)}" y="${Math.round(p.top * 9525)}"/><a:ext cx="${Math.round(p.width * 9525)}" cy="${Math.round(p.height * 9525)}"/></a:xfrm>` : "";
+  const normalizedTransform = normalizePresentationPlaceholderTransform(options.transform, `Presentation shape ${name} transform`);
+  const transformAttributes = normalizedTransform ? [
+    ...(Object.hasOwn(normalizedTransform, "rotationDegrees") ? [`rot="${Math.round(normalizedTransform.rotationDegrees * 60_000)}"`] : []),
+    ...(Object.hasOwn(normalizedTransform, "flipHorizontal") ? [`flipH="${normalizedTransform.flipHorizontal ? 1 : 0}"`] : []),
+    ...(Object.hasOwn(normalizedTransform, "flipVertical") ? [`flipV="${normalizedTransform.flipVertical ? 1 : 0}"`] : []),
+  ].join(" ") : "";
+  const transform = p ? `<a:xfrm${transformAttributes ? ` ${transformAttributes}` : ""}><a:off x="${Math.round(p.left * 9525)}" y="${Math.round(p.top * 9525)}"/><a:ext cx="${Math.round(p.width * 9525)}" cy="${Math.round(p.height * 9525)}"/></a:xfrm>` : "";
   const textStyle = options.textStyle || {};
   const paragraphModels = options.paragraphs || normalizePresentationParagraphs(text);
   const pictureBulletRelIds = options.pictureBulletRelIds || new Map();
@@ -10707,6 +10739,25 @@ function pptxFrameFromXml(part, fallback = { left: 0, top: 0, width: 160, height
   return { left: off ? Number(off[1]) / 9525 : fallback.left, top: off ? Number(off[2]) / 9525 : fallback.top, width: ext ? Number(ext[1]) / 9525 : fallback.width, height: ext ? Number(ext[2]) / 9525 : fallback.height };
 }
 
+function parsePresentationPlaceholderTransformXml(part) {
+  const tag = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b[^>]*>/.exec(String(part || ""))?.[0];
+  if (!tag) return undefined;
+  const attributes = ooxmlXmlAttributes(tag);
+  const transform = {};
+  if (Object.hasOwn(attributes, "rot")) {
+    const rotation = Number(attributes.rot);
+    if (!Number.isInteger(rotation) || Math.abs(rotation) > 360 * 60_000) return undefined;
+    transform.rotationDegrees = rotation / 60_000;
+  }
+  for (const [attribute, key] of [["flipH", "flipHorizontal"], ["flipV", "flipVertical"]]) {
+    if (!Object.hasOwn(attributes, attribute)) continue;
+    const token = String(attributes[attribute]).toLowerCase();
+    if (!["0", "1", "false", "true"].includes(token)) return undefined;
+    transform[key] = token === "1" || token === "true";
+  }
+  return Object.keys(transform).length ? transform : undefined;
+}
+
 async function parsePptxPlaceholderShapes(xml = "", options = {}) {
   const placeholders = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sp\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?sp>/g)].flatMap((match, index) => {
     const part = match[0];
@@ -10717,7 +10768,7 @@ async function parsePptxPlaceholderShapes(xml = "", options = {}) {
     const idx = Number(ph.idx ?? 0);
     const name = decodeXml(ooxmlXmlAttributes(/<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*\/?\s*>/.exec(part)?.[0]).name || `${type} placeholder`);
     const hasPosition = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(part);
-    return [{ type, idx, name, part, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, style: parsePresentationPlaceholderStyleXml(part), textBodyProperties: parsePresentationTextBodyPropertiesXml(part) }];
+    return [{ type, idx, name, part, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, transform: parsePresentationPlaceholderTransformXml(part), style: parsePresentationPlaceholderStyleXml(part), textBodyProperties: parsePresentationTextBodyPropertiesXml(part) }];
   });
   const relationshipContext = presentationPictureBulletImportContext(options.relationshipContext || {});
   return Promise.all(placeholders.map(async ({ part, ...placeholder }) => {

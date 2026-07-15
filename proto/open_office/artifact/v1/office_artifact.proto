@@ -1027,9 +1027,9 @@ message PresentationBackground {
 
 // Bounded owner-local placeholder semantics. Type/index/name are identity and
 // remain read-only for a source-bound package. text_body and a recognized,
-// already-present direct_frame participate in the edit slice; rotation, fill,
-// shape style, inherited geometry, and unmodeled p:ph attributes stay behind
-// the element and residual hashes.
+// already-present direct_frame participate in the edit slice; fill, shape
+// style, inherited geometry, and unmodeled p:ph attributes stay behind the
+// element and residual hashes.
 message PresentationPlaceholder {
   string id = 1;
   string name = 2;
@@ -1040,14 +1040,19 @@ message PresentationPlaceholder {
   PresentationPlaceholderFrame direct_frame = 7;
 }
 
-// Atomic direct a:xfrm placement for a Master/Layout placeholder. Message
-// presence distinguishes an editable direct transform from inherited or
-// unrecognized native geometry; partial coordinate presence is impossible.
+// Atomic direct a:xfrm for a Master/Layout placeholder. Message presence
+// distinguishes an editable direct transform from inherited or unrecognized
+// native geometry; partial coordinate presence is impossible. Optional visual
+// transform fields preserve native attribute absence independently from an
+// explicit zero/false value.
 message PresentationPlaceholderFrame {
   int64 left_emu = 1;
   int64 top_emu = 2;
   int64 width_emu = 3;
   int64 height_emu = 4;
+  optional sint32 rotation_angle_60000 = 5;
+  optional bool flip_horizontal = 6;
+  optional bool flip_vertical = 7;
 }
 
 message PresentationMasterTextStyles {

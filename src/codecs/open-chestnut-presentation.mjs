@@ -573,6 +573,32 @@ function placeholderShape(placeholder) {
   };
 }
 
+function wirePlaceholderTransform(transform, placeholderId) {
+  if (transform == null) return {};
+  if (typeof transform !== "object" || Array.isArray(transform)) {
+    throw new OpenChestnutCodecError(`Presentation placeholder ${placeholderId} transform must be an object.`, [], { code: "invalid_presentation_transform" });
+  }
+  const output = {};
+  if (Object.hasOwn(transform, "rotationDegrees") && transform.rotationDegrees != null) {
+    const degrees = Number(transform.rotationDegrees);
+    if (!Number.isFinite(degrees) || degrees < -360 || degrees > 360) {
+      throw new OpenChestnutCodecError(`Presentation placeholder ${placeholderId} rotation must be between -360 and 360 degrees.`, [], { code: "invalid_presentation_transform" });
+    }
+    output.rotationAngle60000 = Math.round(degrees * ROTATION_UNITS_PER_DEGREE);
+  }
+  for (const key of ["flipHorizontal", "flipVertical"]) {
+    if (!Object.hasOwn(transform, key) || transform[key] == null) continue;
+    if (typeof transform[key] !== "boolean") {
+      throw new OpenChestnutCodecError(`Presentation placeholder ${placeholderId} ${key} must be a boolean.`, [], { code: "invalid_presentation_transform" });
+    }
+    output[key] = transform[key];
+  }
+  if (Object.keys(output).length === 0) {
+    throw new OpenChestnutCodecError(`Presentation placeholder ${placeholderId} transform must define rotationDegrees, flipHorizontal, or flipVertical.`, [], { code: "invalid_presentation_transform" });
+  }
+  return output;
+}
+
 function wirePlaceholder(placeholder, original, assetCatalog) {
   const shape = placeholderShape(placeholder);
   return {
@@ -588,6 +614,7 @@ function wirePlaceholder(placeholder, original, assetCatalog) {
         topEmu: emuFromPixels(placeholder.position?.top, `${placeholder.id}.position.top`),
         widthEmu: emuFromPixels(placeholder.position?.width, `${placeholder.id}.position.width`),
         heightEmu: emuFromPixels(placeholder.position?.height, `${placeholder.id}.position.height`),
+        ...wirePlaceholderTransform(placeholder.transform, placeholder.id),
       },
     } : {}),
   };
@@ -595,8 +622,8 @@ function wirePlaceholder(placeholder, original, assetCatalog) {
 
 function placeholderReadOnlySnapshot(placeholder, { directFrameEditable = false } = {}) {
   const { text: _text, paragraphStyles: _paragraphStyles, textBodyProperties: _textBodyProperties, ...rest } = placeholder;
-  const { position: _position, ...withoutPosition } = rest;
-  const readOnly = directFrameEditable ? withoutPosition : rest;
+  const { position: _position, transform: _transform, ...withoutDirectTransform } = rest;
+  const readOnly = directFrameEditable ? withoutDirectTransform : rest;
   return JSON.stringify(readOnly);
 }
 
@@ -1016,6 +1043,10 @@ function modelMasterTextStyles(source, assetCatalog) {
 
 function modelPlaceholder(source, assetCatalog) {
   const shape = { textBody: source.textBody };
+  const transform = {};
+  if (source.directFrame?.rotationAngle60000 != null) transform.rotationDegrees = source.directFrame.rotationAngle60000 / ROTATION_UNITS_PER_DEGREE;
+  if (source.directFrame?.flipHorizontal != null) transform.flipHorizontal = Boolean(source.directFrame.flipHorizontal);
+  if (source.directFrame?.flipVertical != null) transform.flipVertical = Boolean(source.directFrame.flipVertical);
   return {
     id: source.id,
     name: source.name,
@@ -1029,6 +1060,7 @@ function modelPlaceholder(source, assetCatalog) {
         height: Number(source.directFrame.heightEmu) / EMU_PER_PIXEL,
       },
     } : {}),
+    ...(Object.keys(transform).length ? { transform } : {}),
     text: modelText(shape, assetCatalog),
     paragraphStyles: modelListStyles(shape, assetCatalog),
     textBodyProperties: modelTextBodyProperties(shape),

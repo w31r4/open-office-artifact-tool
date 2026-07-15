@@ -8,11 +8,12 @@ using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
 
-// Owns direct p:ph identity, its local a:txBody, and the four coordinates of
-// an already-present, recognized direct a:xfrm. Rotation, fills, shape style,
-// and inherited/effective formatting remain in the source element.
+// Owns direct p:ph identity, its local a:txBody, and the bounded coordinates,
+// rotation, and flips of an already-present, recognized direct a:xfrm. Fills,
+// shape style, and inherited/effective formatting remain in the source element.
 internal static class PptxPlaceholderCodec
 {
+    private const int MaxRotationAngle60000 = 360 * 60_000;
     private static readonly HashSet<string> PlaceholderTypes = new(StringComparer.Ordinal)
     {
         "title", "body", "ctrTitle", "subTitle", "dt", "sldNum", "ftr", "hdr",
@@ -145,13 +146,17 @@ internal static class PptxPlaceholderCodec
     {
         if (!SupportsDirectFrame(shape)) return null;
         var transform = shape.ShapeProperties!.Transform2D!;
-        return new PresentationPlaceholderFrame
+        var frame = new PresentationPlaceholderFrame
         {
             LeftEmu = transform.Offset!.X!.Value,
             TopEmu = transform.Offset.Y!.Value,
             WidthEmu = transform.Extents!.Cx!.Value,
             HeightEmu = transform.Extents.Cy!.Value,
         };
+        if (transform.Rotation?.Value is { } rotation) frame.RotationAngle60000 = rotation;
+        if (transform.HorizontalFlip?.Value is { } flipHorizontal) frame.FlipHorizontal = flipHorizontal;
+        if (transform.VerticalFlip?.Value is { } flipVertical) frame.FlipVertical = flipVertical;
+        return frame;
     }
 
     private static bool SupportsDirectFrame(P.Shape shape)
@@ -162,7 +167,8 @@ internal static class PptxPlaceholderCodec
             transform.ChildElements[1] is not A.Extents extents ||
             offset.X is null || offset.Y is null || extents.Cx is null || extents.Cy is null)
             return false;
-        return offset.X.Value >= 0 && offset.Y.Value >= 0 && extents.Cx.Value > 0 && extents.Cy.Value > 0;
+        if (offset.X.Value < 0 || offset.Y.Value < 0 || extents.Cx.Value <= 0 || extents.Cy.Value <= 0) return false;
+        return transform.Rotation?.Value is not { } rotation || Math.Abs((long)rotation) <= MaxRotationAngle60000;
     }
 
     private static void ValidateDirectFrame(PresentationPlaceholderFrame? frame, string placeholderId)
@@ -170,6 +176,8 @@ internal static class PptxPlaceholderCodec
         if (frame is null) return;
         if (frame.LeftEmu < 0 || frame.TopEmu < 0 || frame.WidthEmu <= 0 || frame.HeightEmu <= 0)
             throw new CodecException("invalid_presentation_frame", $"Presentation placeholder {placeholderId} has an invalid direct frame.");
+        if (frame.HasRotationAngle60000 && Math.Abs((long)frame.RotationAngle60000) > MaxRotationAngle60000)
+            throw new CodecException("invalid_presentation_transform", $"Presentation placeholder {placeholderId} rotation must be between -360 and 360 degrees.");
     }
 
     private static bool FrameEquals(PresentationPlaceholderFrame? left, PresentationPlaceholderFrame? right) =>
@@ -182,6 +190,9 @@ internal static class PptxPlaceholderCodec
         transform.Offset.Y = frame.TopEmu;
         transform.Extents!.Cx = frame.WidthEmu;
         transform.Extents.Cy = frame.HeightEmu;
+        transform.Rotation = frame.HasRotationAngle60000 ? frame.RotationAngle60000 : null;
+        transform.HorizontalFlip = frame.HasFlipHorizontal ? frame.FlipHorizontal : null;
+        transform.VerticalFlip = frame.HasFlipVertical ? frame.FlipVertical : null;
     }
 
     private static void ScrubDirectFrame(P.Shape shape)
@@ -191,6 +202,9 @@ internal static class PptxPlaceholderCodec
         transform.Offset.Y = 0L;
         transform.Extents!.Cx = 1L;
         transform.Extents.Cy = 1L;
+        transform.Rotation = null;
+        transform.HorizontalFlip = null;
+        transform.VerticalFlip = null;
     }
 
     private static P.PlaceholderShape? NativePlaceholder(P.Shape shape) =>
