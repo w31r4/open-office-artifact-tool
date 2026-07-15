@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 250);
+assert.equal(HELP_CATALOG.length, 251);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -179,7 +179,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS.INTL")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
 const sharedCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "shared");
-assert.equal(sharedCatalog.length, 10);
+assert.equal(sharedCatalog.length, 11);
 assert.ok(sharedCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "createPopplerRenderer")?.schema?.parameters?.dpi?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRenderer")?.schema?.parameters?.args?.type, "string[]");
@@ -250,6 +250,7 @@ for (const name of [
 ]) {
   assert.equal(HELP_CATALOG.find((item) => item.name === name)?.schema?.parameters?.codec?.type, "string");
 }
+assert.equal(HELP_CATALOG.find((item) => item.name === "OFFICE_CODEC_IDS")?.schema?.returns?.codecIds?.type, "readonly string[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");

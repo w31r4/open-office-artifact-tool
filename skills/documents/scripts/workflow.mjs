@@ -14,7 +14,6 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportDocxWithOpenChestnut, importDocxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 import { documentOpenChestnutEdits, normalizeOpenChestnutCodecName } from "../../shared/open-chestnut-compat.mjs";
 import {
   loadVisualBaseline,
@@ -324,7 +323,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   const initialCodec = normalizeOpenChestnutCodecName(options.initialCodec || fixture.initialCodec || "js");
   if (!new Set(["js", "open-chestnut"]).has(initialCodec)) throw new Error(`Unsupported document initial codec ${initialCodec}; expected js or open-chestnut.`);
   let docx = initialCodec === "open-chestnut"
-    ? await exportDocxWithOpenChestnut(document)
+    ? await DocumentFile.exportDocx(document, { codec: "open-chestnut" })
     : await DocumentFile.exportDocx(document);
   const packagePatches = [];
   if (fixture.packageComments?.length) {
@@ -381,7 +380,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   if (roundtripCodec === "open-chestnut") {
     docx = await inheritFixtureListNumberingFromStyle(docx, fixture.openChestnutStyleInheritedLists || []);
     docx = await mergeFixtureTableCells(docx, fixture.openChestnutMergedTables || []);
-    const imported = await importDocxWithOpenChestnut(docx);
+    const imported = await DocumentFile.importDocx(docx, { codec: "open-chestnut" });
     for (const edit of documentOpenChestnutEdits(fixture)) {
       if (edit.kind === "hyperlink") {
         const hyperlink = imported.blocks.find((block) => block.kind === "hyperlink" && (!edit.matchText || block.text === edit.matchText));
@@ -445,7 +444,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
       }
       throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);
     }
-    docx = await exportDocxWithOpenChestnut(imported);
+    docx = await DocumentFile.exportDocx(imported, { codec: "open-chestnut" });
   }
   await docx.save(docxPath);
   const qa = await verifyDocumentFile(docxPath, {

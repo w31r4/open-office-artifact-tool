@@ -1659,6 +1659,7 @@ Add an inspectable native-style table facade with rows, columns, values, cells, 
 | `createPlaywrightRenderer` | api | Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default. |
 | `createPopplerRenderer` | api | Create a Poppler CLI renderer adapter from open-office-artifact-tool/renderers/poppler for application/pdf FileBlob page rasterization to PNG, PPM, or TIFF. |
 | `createSharpRenderer` | api | Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG. |
+| `OFFICE_CODEC_IDS` | api | Frozen public codec IDs accepted by the DOCX, PPTX, and XLSX main file facades: javascript and open-chestnut. |
 | `renderArtifact` | api | Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output. |
 | `renderFileWithNativeOffice` | api | Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
@@ -1806,6 +1807,22 @@ Create an optional sharp renderer adapter from open-office-artifact-tool/rendere
 **Schema returns:**
 
 - `renderer` (function) — SVG/PNG/JPEG/WebP raster renderer adapter.
+
+#### `OFFICE_CODEC_IDS`
+
+Frozen public codec IDs accepted by the DOCX, PPTX, and XLSX main file facades: javascript and open-chestnut.
+
+**Examples:**
+
+- OFFICE_CODEC_IDS.includes('open-chestnut')
+
+**Schema returns:**
+
+- `codecIds` (readonly string[]) — Frozen exact codec identifiers accepted by all six Office file-facade import/export methods.
+
+**Returns:**
+
+readonly ['javascript', 'open-chestnut']
 
 #### `renderArtifact`
 

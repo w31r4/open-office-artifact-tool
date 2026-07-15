@@ -14,7 +14,6 @@ import {
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportXlsxWithOpenChestnut, importXlsxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 import { normalizeOpenChestnutCodecName } from "../../shared/open-chestnut-compat.mjs";
 import {
   loadVisualBaseline,
@@ -461,15 +460,13 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   const workbookPath = path.join(outputDir, fixture.outputName || `${fixture.name || "workbook"}.xlsx`);
   const codec = normalizeOpenChestnutCodecName(options.codec || fixture.codec || "javascript");
   if (!new Set(["javascript", "open-chestnut"]).has(codec)) throw new Error(`Unsupported spreadsheet fixture codec ${codec}; expected javascript or open-chestnut.`);
-  let file = codec === "open-chestnut"
-    ? await exportXlsxWithOpenChestnut(workbook)
-    : await SpreadsheetFile.exportXlsx(workbook);
+  let file = await SpreadsheetFile.exportXlsx(workbook, { codec });
   let sourceQueryTable;
   let sourceConnections;
   if (fixture.sourceQueryTableFixture) {
     if (codec !== "open-chestnut") throw new Error("sourceQueryTableFixture requires codec=open-chestnut.");
     file = await attachSourceQueryTableFixture(file, fixture.sourceQueryTableFixture);
-    const imported = await importXlsxWithOpenChestnut(file);
+    const imported = await SpreadsheetFile.importXlsx(file, { codec: "open-chestnut" });
     const sourceQuery = fixture.sourceQueryTableFixture;
     const sheet = imported.worksheets.getItem(sourceQuery.sheet);
     const table = sheet?.tables.getItemOrNullObject(sourceQuery.table);
@@ -497,7 +494,7 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
         Object.assign(field, changes);
       }
     }
-    file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
+    file = await SpreadsheetFile.exportXlsx(imported, { codec: "open-chestnut", recalculate: false });
     sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: structuredClone(table.queryTable) };
     sourceConnections = structuredClone(imported.connections);
   }
@@ -505,7 +502,7 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
   if (fixture.roundtripEdits && roundtripCodec !== "open-chestnut") throw new Error("roundtripEdits requires roundtripCodec=open-chestnut.");
   if (roundtripCodec === "open-chestnut") {
-    const imported = await importXlsxWithOpenChestnut(file);
+    const imported = await SpreadsheetFile.importXlsx(file, { codec: "open-chestnut" });
     for (const patch of fixture.roundtripEdits?.images || []) {
       const sheet = imported.worksheets.getItem(patch.sheet);
       if (!sheet) throw new Error(`roundtripEdits.images cannot resolve worksheet ${patch.sheet}.`);
@@ -532,7 +529,7 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
         if (values) chart.series.items[index].values = [...values];
       }
     }
-    file = await exportXlsxWithOpenChestnut(imported, { recalculate: false });
+    file = await SpreadsheetFile.exportXlsx(imported, { codec: "open-chestnut", recalculate: false });
   }
   await file.save(workbookPath);
   const qa = await verifyWorkbookFile(workbookPath, {

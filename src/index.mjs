@@ -1158,6 +1158,7 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
+  { artifactKind: "shared", kind: "api", name: "OFFICE_CODEC_IDS", summary: "Frozen public codec IDs accepted by the DOCX, PPTX, and XLSX main file facades: javascript and open-chestnut." },
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
   { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
@@ -1204,6 +1205,16 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["pdf.inspect({ kind: 'image,table', target: image.id, include: 'alt,bbox' })"],
     options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
+  },
+  OFFICE_CODEC_IDS: {
+    examples: ["OFFICE_CODEC_IDS.includes('open-chestnut')"],
+    returns: "readonly ['javascript', 'open-chestnut']",
+    schema: {
+      parameters: {},
+      returns: {
+        codecIds: { type: "readonly string[]", description: "Frozen exact codec identifiers accepted by all six Office file-facade import/export methods." },
+      },
+    },
   },
   renderArtifact: {
     examples: ["await renderArtifact(document, { format: 'png', renderer: createPlaywrightRenderer() })"],

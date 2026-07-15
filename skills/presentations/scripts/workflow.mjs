@@ -16,7 +16,6 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { exportPptxWithOpenChestnut, importPptxWithOpenChestnut } from "open-office-artifact-tool/codecs/open-chestnut";
 import { normalizeOpenChestnutCodecName, presentationOpenChestnutConfig } from "../../shared/open-chestnut-compat.mjs";
 import {
   prepareNumberedVisualBaselines,
@@ -330,7 +329,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
   if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported presentation roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
   if (roundtripCodec === "open-chestnut") {
-    const imported = await importPptxWithOpenChestnut(pptx);
+    const imported = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
     const edit = presentationOpenChestnutConfig(fixture)?.edit;
     if (edit) {
       if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
@@ -355,7 +354,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       if (edit.textBodyProperties) shape.text.bodyProperties = edit.textBodyProperties;
       if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;
     }
-    pptx = await exportPptxWithOpenChestnut(imported);
+    pptx = await PresentationFile.exportPptx(imported, { codec: "open-chestnut" });
   }
   await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {
