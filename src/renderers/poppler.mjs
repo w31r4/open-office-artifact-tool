@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { FileBlob } from "../index.mjs";
+import { FileBlob } from "../shared/file-blob.mjs";
 
 const MIME_BY_FORMAT = {
   png: "image/png",

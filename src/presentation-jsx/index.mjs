@@ -12,7 +12,7 @@ import {
   run,
   shape,
   table,
-} from "../index.mjs";
+} from "../presentation/compose.mjs";
 
 export const Fragment = "fragment";
 

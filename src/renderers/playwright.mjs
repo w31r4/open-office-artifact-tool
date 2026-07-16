@@ -1,4 +1,4 @@
-import { FileBlob } from "../index.mjs";
+import { FileBlob } from "../shared/file-blob.mjs";
 
 const MIME_BY_FORMAT = {
   png: "image/png",
