@@ -395,6 +395,15 @@ export async function runPresentationFixture(fixturePath, options = {}) {
         }
       }
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
+      if (edit.image) {
+        const image = slide?.images.items.find((item) => item.name === edit.image.sourceName || item.id === edit.image.id);
+        assert.ok(image, `Missing OpenChestnut editable image ${edit.image.sourceName || edit.image.id}`);
+        if (Object.hasOwn(edit.image, "name")) image.name = edit.image.name;
+        if (Object.hasOwn(edit.image, "alt")) image.alt = edit.image.alt;
+        if (edit.image.position) image.position = { ...edit.image.position };
+        if (Object.hasOwn(edit.image, "transform")) image.transform = edit.image.transform == null ? undefined : { ...edit.image.transform };
+        if (edit.image.dataUrl) image.dataUrl = edit.image.dataUrl;
+      }
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
       assert.ok(shape, `Missing OpenChestnut editable shape ${edit.shapeName || edit.shapeId}`);
       if (Object.hasOwn(edit, "shapeTransform")) shape.transform = edit.shapeTransform == null ? undefined : { ...edit.shapeTransform };
@@ -412,9 +421,9 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       assert.deepEqual(placeholder.transform, expected.transform, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} effective transform`);
       assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
     }
-    if (openChestnut?.edit?.nativeObjects?.length) {
+    if (openChestnut?.edit?.nativeObjects?.length || openChestnut?.edit?.image) {
       const edited = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
-      for (const expected of openChestnut.edit.nativeObjects) {
+      for (const expected of openChestnut.edit.nativeObjects || []) {
         const object = edited.slides.items.flatMap((slide) => slide.nativeObjects.items).find((item) => item.nativeKind === expected.nativeKind);
         assert.ok(object, `Missing edited OpenChestnut native object ${expected.nativeKind}`);
         assert.equal(object.name, expected.name, `${expected.nativeKind} edited name`);
@@ -424,6 +433,15 @@ export async function runPresentationFixture(fixturePath, options = {}) {
           const workbook = await SpreadsheetFile.importXlsx(object.getEmbeddedWorkbook());
           assert.equal(workbook.worksheets.getItem(0).getRange("A1").values[0][0], expected.embeddedWorkbookValue, `${expected.nativeKind} embedded workbook replacement`);
         }
+      }
+      if (openChestnut.edit.image) {
+        const expected = openChestnut.edit.image;
+        const image = edited.slides.getItem(Number(openChestnut.edit.slideIndex || 0))?.images.items.find((item) => item.name === expected.name);
+        assert.ok(image, `Missing edited OpenChestnut image ${expected.name}`);
+        assert.equal(image.alt, expected.alt, `${expected.name} edited alternative text`);
+        assert.deepEqual(image.position, expected.position, `${expected.name} edited position`);
+        assert.deepEqual(image.transform, expected.transform, `${expected.name} edited transform`);
+        if (expected.dataUrl) assert.equal(image.dataUrl, expected.dataUrl, `${expected.name} edited bytes`);
       }
     }
   }

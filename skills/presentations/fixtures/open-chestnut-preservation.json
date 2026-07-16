@@ -143,6 +143,14 @@
       "slideIndex": 0,
       "shapeName": "wasm-title",
       "shapeTransform": { "rotationDegrees": -6, "flipHorizontal": true, "flipVertical": false },
+      "image": {
+        "sourceName": "preserved-status",
+        "name": "edited-status",
+        "alt": "Edited preservation status",
+        "position": { "left": 82, "top": 242, "width": 196, "height": 196 },
+        "transform": { "rotationDegrees": 8, "flipHorizontal": false, "flipVertical": true },
+        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII="
+      },
       "nativeObjects": [
         { "nativeKind": "oleObject", "name": "Edited embedded workbook", "position": { "left": 1182, "top": 235, "width": 72, "height": 64 }, "embeddedWorkbookValue": "OpenChestnut replacement workbook" },
         { "nativeKind": "diagram", "name": "Edited SmartArt", "position": { "left": 1180, "top": 340, "width": 74, "height": 66 } },

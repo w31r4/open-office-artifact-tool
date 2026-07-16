@@ -280,7 +280,11 @@ try {
   assert.deepEqual(wasmTitle?.text.inheritedParagraphStyles[8].autoNumber, { type: "arabicPeriod", startAt: 9 });
   assert.equal(wasmTitle?.text.inheritedParagraphStyles[8].lineSpacing, 16);
   assert.deepEqual(wasmTitle?.text.bodyProperties, { insets: { left: 16, top: 10, bottom: 7 }, anchor: "bottom", wrap: "square", autoFit: "resizeShape", rotation: 0, verticalText: "horizontal", verticalOverflow: "clip", horizontalOverflow: "overflow", columns: { count: 2, spacing: 24, rightToLeft: false }, upright: false });
-  assert.equal(wasmSlide.images.items.find((item) => item.name === "preserved-status")?.alt, "Green preservation status");
+  const wasmImage = wasmSlide.images.items.find((item) => item.name === "edited-status");
+  assert.equal(wasmImage?.alt, "Edited preservation status");
+  assert.deepEqual(wasmImage?.position, { left: 82, top: 242, width: 196, height: 196 });
+  assert.deepEqual(wasmImage?.transform, { rotationDegrees: 8, flipHorizontal: false, flipVertical: true });
+  assert.match(wasmImage?.toSvg(), /rotate\(8\) scale\(1 -1\)/);
   assert.equal(wasmSlide.charts.items.find((item) => item.name === "preserved-chart")?.series[0].values[2], 4);
   assert.match(wasmSlide.speakerNotes.text, /parts, and relationships must survive/);
   const wasmZip = await JSZip.loadAsync(await fs.readFile(wasmPreservation.pptxPath));
@@ -288,7 +292,7 @@ try {
   assert.ok(wasmZip.file("ppt/media/image1.png"));
   assert.ok(wasmZip.file("ppt/notesSlides/notesSlide1.xml"));
   assert.ok(wasmZip.file("ppt/slideMasters/slideMaster1.xml"));
-  assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 3);
+  assert.equal(Object.keys(wasmZip.files).filter((name) => /^ppt\/media\/image\d+\.png$/.test(name)).length, 4);
   const wasmSlideXml = await wasmZip.file("ppt/slides/slide1.xml").async("text");
   const wasmMasterXml = await wasmZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
   const wasmLayoutXml = await wasmZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");

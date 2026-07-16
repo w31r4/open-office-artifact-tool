@@ -67,11 +67,13 @@ try {
     const presentation = Presentation.create();
     const packagedSlide = presentation.slides.add({ name: "Packaged" });
     packagedSlide.shapes.add({ name: "Title", text: [{ bulletCharacter: "•", bulletFont: "Georgia", bulletColor: "#2563EB", bulletSizePercent: 1.25, runs: [{ text: "clean install PPTX", link: { uri: "https://example.com/packaged", tooltip: "Packaged link" } }] }], position: { left: 40, top: 40, width: 640, height: 80 }, transform: { rotationDegrees: 4, flipHorizontal: false, flipVertical: true } });
+    packagedSlide.images.add({ name: "Packaged image", alt: "clean install image", position: { left: 40, top: 160, width: 64, height: 64 }, fit: "stretch", transform: { rotationDegrees: -2, flipHorizontal: false }, dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" });
     const pptx = await PresentationFile.exportPptx(presentation, { codec: "open-chestnut" });
     const importedPresentation = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
     if (pptx.bytes[0] !== 0x50 || pptx.bytes[1] !== 0x4b) process.exit(5);
     if (importedPresentation.slides.getItem(0).shapes.items[0].text.value !== "clean install PPTX") process.exit(6);
     if (importedPresentation.slides.getItem(0).shapes.items[0].transform?.rotationDegrees !== 4 || importedPresentation.slides.getItem(0).shapes.items[0].transform?.flipHorizontal !== false || importedPresentation.slides.getItem(0).shapes.items[0].transform?.flipVertical !== true) process.exit(25);
+    if (importedPresentation.slides.getItem(0).images.items[0]?.alt !== "clean install image" || importedPresentation.slides.getItem(0).images.items[0]?.transform?.rotationDegrees !== -2 || importedPresentation.slides.getItem(0).images.items[0]?.transform?.flipHorizontal !== false) process.exit(26);
     const marker = importedPresentation.slides.getItem(0).shapes.items[0].text.paragraphs[0];
     if (marker.bulletCharacter !== "•" || marker.bulletFont !== "Georgia" || marker.bulletColor.toLowerCase() !== "#2563eb" || marker.bulletSizePercent !== 1.25) process.exit(7);
     if (marker.runs[0].link?.uri !== "https://example.com/packaged" || marker.runs[0].link?.tooltip !== "Packaged link") process.exit(8);

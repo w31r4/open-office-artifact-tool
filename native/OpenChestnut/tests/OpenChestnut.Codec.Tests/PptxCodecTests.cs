@@ -675,8 +675,42 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void SourcePreservingExportEditsSimpleShapeAndKeepsPictureGraph()
+    public void TopLevelPicturesAuthorImportEditReplaceAndPreserveResidualGraph()
     {
+        var authoredRequest = ExportRequest();
+        var authoredBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        var authoredAssetId = AddPictureAsset(authoredRequest.Artifact, authoredBytes, "image/png");
+        authoredRequest.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/image/1",
+            Name = "Authored picture",
+            Image = new PresentationImage
+            {
+                AssetId = authoredAssetId,
+                AltText = "Authored image evidence",
+                LeftEmu = 500_000,
+                TopEmu = 1_250_000,
+                WidthEmu = 1_500_000,
+                HeightEmu = 1_000_000,
+                Transform = new PresentationImageTransform
+                {
+                    RotationAngle60000 = 180_000,
+                    FlipHorizontal = false,
+                    FlipVertical = true,
+                },
+            },
+        });
+        var authored = Invoke(authoredRequest);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var authoredRoundTrip = Import(authored.File.ToByteArray());
+        Assert.True(authoredRoundTrip.Ok, Diagnostics(authoredRoundTrip));
+        var authoredImage = Assert.Single(Assert.Single(authoredRoundTrip.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Image);
+        Assert.Equal("Authored image evidence", authoredImage.Image.AltText);
+        Assert.Equal(180_000, authoredImage.Image.Transform.RotationAngle60000);
+        Assert.True(authoredImage.Image.Transform.HasFlipHorizontal);
+        Assert.False(authoredImage.Image.Transform.FlipHorizontal);
+        Assert.True(authoredImage.Image.Transform.FlipVertical);
+
         var first = Invoke(ExportRequest());
         var source = AddPicture(first.File.ToByteArray());
         var imported = Import(source);
@@ -684,8 +718,9 @@ public sealed class PptxCodecTests
         var slide = Assert.Single(imported.Artifact.Presentation.Slides);
         Assert.Equal(2, slide.Elements.Count);
         Assert.True(slide.Elements[0].Source.Editable);
-        Assert.False(slide.Elements[1].Source.Editable);
-        Assert.Equal("pic", slide.Elements[1].Opaque.ElementName);
+        Assert.True(slide.Elements[1].Source.Editable);
+        Assert.Equal(PresentationElement.ContentOneofCase.Image, slide.Elements[1].ContentCase);
+        Assert.Equal("Opaque package evidence", slide.Elements[1].Image.AltText);
         Assert.All(imported.Artifact.OpaqueOpc.Parts, part => Assert.False(string.IsNullOrWhiteSpace(part.ContentType)));
         var imagePart = Assert.Single(imported.Artifact.OpaqueOpc.Parts,
             part => part.Path.EndsWith("/image.png", StringComparison.OrdinalIgnoreCase) || part.Path.EndsWith("/image1.png", StringComparison.OrdinalIgnoreCase));
@@ -694,6 +729,19 @@ public sealed class PptxCodecTests
             relationship => relationship.SourcePath == "ppt/slides/slide1.xml" && relationship.Id == "rIdImage1");
 
         slide.Elements[0].Shape.Text = "Edited safely";
+        var replacement = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII=");
+        var replacementId = AddPictureAsset(imported.Artifact, replacement, "image/png");
+        slide.Elements[1].Name = "Edited picture";
+        slide.Elements[1].Image.AltText = "Edited alternative text";
+        slide.Elements[1].Image.LeftEmu = 750_000;
+        slide.Elements[1].Image.WidthEmu = 2_000_000;
+        slide.Elements[1].Image.Transform = new PresentationImageTransform
+        {
+            RotationAngle60000 = -360_000,
+            FlipHorizontal = true,
+            FlipVertical = false,
+        };
+        slide.Elements[1].Image.AssetId = replacementId;
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, Diagnostics(preserved));
         Assert.Equal("opaque_content_preserved", Assert.Single(preserved.Diagnostics).Code);
@@ -702,22 +750,45 @@ public sealed class PptxCodecTests
         {
             var slidePart = presentation.PresentationPart!.SlideParts.Single();
             Assert.Equal("Edited safely", string.Concat(slidePart.Slide!.Descendants<A.Text>().Take(1).Select(text => text.Text)));
-            Assert.Single(slidePart.ImageParts);
-            Assert.NotNull(slidePart.Slide.Descendants<P.Picture>().SingleOrDefault());
+            Assert.Equal(2, slidePart.ImageParts.Count());
+            var picture = Assert.Single(slidePart.Slide!.Descendants<P.Picture>());
+            Assert.Equal("Edited picture", picture.NonVisualPictureProperties!.NonVisualDrawingProperties!.Name!.Value);
+            Assert.Equal("Edited alternative text", picture.NonVisualPictureProperties.NonVisualDrawingProperties.Description!.Value);
+            Assert.Equal(-360_000, picture.ShapeProperties!.Transform2D!.Rotation!.Value);
+            Assert.True(picture.ShapeProperties.Transform2D.HorizontalFlip!.Value);
+            Assert.False(picture.ShapeProperties.Transform2D.VerticalFlip!.Value);
+            var selected = Assert.IsType<ImagePart>(slidePart.GetPartById(picture.BlipFill!.Blip!.Embed!.Value!));
+            using var selectedStream = selected.GetStream(FileMode.Open, FileAccess.Read);
+            using var selectedBytes = new MemoryStream();
+            selectedStream.CopyTo(selectedBytes);
+            Assert.Equal(replacement, selectedBytes.ToArray());
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(presentation));
         }
 
-        slide.Elements[1].Opaque.Text = "Unsafe picture edit";
-        var rejected = Export(imported.Artifact);
-        Assert.False(rejected.Ok);
-        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+        var roundTrip = Import(preserved.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripImage = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Image);
+        Assert.Equal("Edited picture", roundTripImage.Name);
+        Assert.Equal("Edited alternative text", roundTripImage.Image.AltText);
+        Assert.Equal(750_000L, roundTripImage.Image.LeftEmu);
+        Assert.Equal(2_000_000L, roundTripImage.Image.WidthEmu);
+        Assert.Equal(replacementId, roundTripImage.Image.AssetId);
 
-        imported = Import(source);
-        imported.Artifact.Presentation.Slides[0].Elements[1].Source.Editable = true;
-        imported.Artifact.Presentation.Slides[0].Elements[1].Name = "Escalated picture";
-        var escalated = Export(imported.Artifact);
-        Assert.False(escalated.Ok);
-        Assert.Equal("presentation_element_binding_mismatch", Assert.Single(escalated.Diagnostics).Code);
+        var jpegId = AddPictureAsset(roundTrip.Artifact, [0xff, 0xd8, 0xff, 0xd9], "image/jpeg");
+        roundTripImage.Image.AssetId = jpegId;
+        var rejected = Export(roundTrip.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_image", Assert.Single(rejected.Diagnostics).Code);
+
+        var complexSource = ReplaceZipText(source, "ppt/slides/slide1.xml", xml =>
+            xml.Replace("<a:blip r:embed=\"rIdImage1\"", "<a:blip r:embed=\"rIdImage1\" cstate=\"print\"", StringComparison.Ordinal));
+        var complexImported = Import(complexSource);
+        var complexPicture = Assert.Single(Assert.Single(complexImported.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Opaque);
+        Assert.False(complexPicture.Source.Editable);
+        complexPicture.Name = "Escalated picture";
+        var complexRejected = Export(complexImported.Artifact);
+        Assert.False(complexRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(complexRejected.Diagnostics).Code);
     }
 
     [Fact]

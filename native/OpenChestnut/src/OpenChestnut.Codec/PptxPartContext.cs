@@ -143,7 +143,22 @@ internal sealed class PptxPartContext
         }
     }
 
-    private string AddEmbeddedPicture(string assetId)
+    internal Asset ReadEmbeddedPicture(string relationshipId)
+    {
+        if (Assets is null) throw InvalidPicture("Presentation image import requires an asset catalog.");
+        try
+        {
+            if (Owner.GetPartById(relationshipId) is not ImagePart imagePart)
+                throw InvalidPicture($"Presentation image relationship {relationshipId} does not resolve to an image part.");
+            return Assets.Import(imagePart);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw InvalidPicture($"Presentation image relationship {relationshipId} is missing.");
+        }
+    }
+
+    internal string AddEmbeddedPicture(string assetId)
     {
         if (Assets is null) throw InvalidPicture("Presentation picture authoring requires an asset catalog.");
         var asset = Assets.Get(assetId);

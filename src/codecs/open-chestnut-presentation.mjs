@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Presentation } from "../index.mjs";
+import { ImageElement, Presentation, Shape } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
@@ -740,6 +740,43 @@ function presentationShape(shape, original, assetCatalog) {
   };
 }
 
+function presentationImage(image, original, assetCatalog) {
+  const position = image.position || {};
+  if (!image.dataUrl) {
+    throw new OpenChestnutCodecError(`Presentation image ${image.id} requires an embedded dataUrl.`, [], { code: "invalid_presentation_image" });
+  }
+  if (image.uri || image.geometry !== "rect" || image.borderRadius != null || !new Set(["contain", "stretch"]).has(image.fit)) {
+    throw new OpenChestnutCodecError(`Presentation image ${image.id} uses crop, external, geometry, or fit semantics outside the bounded PPTX image slice.`, [], { code: "unsupported_presentation_features" });
+  }
+  return {
+    id: original?.id || image.id,
+    name: image.name || original?.name || "",
+    source: original?.source,
+    content: {
+      case: "image",
+      value: {
+        assetId: assetCatalog.addDataUrl(image.dataUrl),
+        altText: image.alt || image.prompt || "",
+        leftEmu: emuFromPixels(position.left, `${image.id}.position.left`),
+        topEmu: emuFromPixels(position.top, `${image.id}.position.top`),
+        widthEmu: emuFromPixels(position.width, `${image.id}.position.width`),
+        heightEmu: emuFromPixels(position.height, `${image.id}.position.height`),
+        ...(image.transform == null ? {} : { transform: wirePresentationTransform(image.transform, `image ${image.id}`) }),
+      },
+    },
+  };
+}
+
+function presentationImageReadOnlySnapshot(image) {
+  return JSON.stringify({
+    uri: image.uri,
+    contentType: image.contentType,
+    fit: image.fit,
+    geometry: image.geometry,
+    borderRadius: image.borderRadius,
+  });
+}
+
 function directSlideElements(slide) {
   return [
     ...slide.shapes.items,
@@ -769,7 +806,6 @@ function unsupportedPresentationFeatures(presentation) {
     if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
     if (slide.tables?.items?.length) unsupported.push(`${prefix} tables`);
     if (slide.charts?.items?.length) unsupported.push(`${prefix} charts`);
-    if (slide.images?.items?.length) unsupported.push(`${prefix} images`);
     if (slide.connectors?.items?.length) unsupported.push(`${prefix} connectors`);
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
@@ -880,12 +916,22 @@ export function presentationEnvelope(presentation, protocolVersion) {
               }
               return presentationShape(entry.model, entry.wire, assetCatalog);
             }
+            if (entry.wire.content.case === "image") {
+              if (presentationImageReadOnlySnapshot(entry.model) !== entry.snapshot) {
+                throw new OpenChestnutCodecError(`Presentation image ${entry.model.id} changed outside its embedded rectangular image boundary.`, [], { code: "unsupported_presentation_edit" });
+              }
+              return presentationImage(entry.model, entry.wire, assetCatalog);
+            }
             const placementEditable = entry.wire.source?.editable === true;
             if (opaquePresentationSnapshot(entry.model, { includePlacement: !placementEditable }) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} changed outside its ${placementEditable ? "name/frame" : "read-only"} native-object boundary.`, [], { code: "unsupported_presentation_edit" });
             if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire, assetCatalog);
             return entry.wire;
           })
-        : slide.shapes.items.map((shape) => presentationShape(shape, undefined, assetCatalog)),
+        : directSlideElements(slide)
+          .filter((element) => element instanceof Shape || element instanceof ImageElement)
+          .map((element) => element instanceof ImageElement
+            ? presentationImage(element, undefined, assetCatalog)
+            : presentationShape(element, undefined, assetCatalog)),
     };
   });
   return {
@@ -1223,6 +1269,23 @@ export async function presentationFromEnvelope(envelope) {
           textBodyProperties: modelTextBodyProperties(shape),
         });
         model.text.inheritedParagraphStyles = modelListStyles(shape, assetCatalog);
+      } else if (element.content.case === "image") {
+        const image = element.content.value;
+        model = slide.images.add({
+          id: element.id,
+          name: element.name,
+          position: {
+            left: Number(image.leftEmu) / EMU_PER_PIXEL,
+            top: Number(image.topEmu) / EMU_PER_PIXEL,
+            width: Number(image.widthEmu) / EMU_PER_PIXEL,
+            height: Number(image.heightEmu) / EMU_PER_PIXEL,
+          },
+          alt: image.altText,
+          dataUrl: assetCatalog.dataUrl(image.assetId),
+          fit: "stretch",
+          geometry: "rect",
+          ...(image.transform ? { transform: modelPresentationTransform(image.transform) } : {}),
+        });
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
         const sourcePart = sourceSlide.source?.partPath;
@@ -1258,7 +1321,9 @@ export async function presentationFromEnvelope(envelope) {
           : undefined,
         snapshot: element.content.case === "opaque"
           ? opaquePresentationSnapshot(model, { includePlacement: element.source?.editable !== true })
-          : undefined,
+          : element.content.case === "image"
+            ? presentationImageReadOnlySnapshot(model)
+            : undefined,
       });
     }
     slideStates.push({ wire: sourceSlide, name: slide.name, entries });

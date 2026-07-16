@@ -1089,7 +1089,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output." },
   { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, six standard native and model-previewed trendline types, error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
-  { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output." },
+  { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
   { artifactKind: "presentation", kind: "api", name: "presentation.master", summary: "Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles. OpenChestnut source-bound placeholders may add/remove/move/resize/rotate/flip only a source-evidenced recognized direct transform slot." },
   { artifactKind: "presentation", kind: "api", name: "presentation.masters.add", summary: "Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts." },
@@ -2080,9 +2080,10 @@ const PRESENTATION_HELP_SCHEMAS = {
     uri: { type: "string", description: "External image URI metadata." },
     prompt: { type: "string", description: "Generation/source prompt metadata." },
     alt: { type: "string", description: "Alternative text." },
-    fit: { type: "string", description: "contain or cover intent." },
+    fit: { type: "string", description: "contain, cover, or stretch rendering intent. The bounded OpenChestnut p:pic profile accepts contain/stretch and imports native stretch as stretch; crop/cover remains outside that codec slice." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
-  }, "image", "ImageElement", "Appended editable image facade."),
+    transform: { type: "object", description: "Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. OpenChestnut preserves explicit false and safely edits recognized top-level embedded pictures." },
+  }, "image", "ImageElement", "Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular stretch pictures and permits same-format byte, name/alt, frame, and direct-transform edits; crop, effects, external sources, complex blips, and non-rectangular geometry remain opaque."),
   "presentation.theme": helpSchema({
     name: { type: "string", description: "Theme name." },
     colors: { type: "object", description: "Complete tx1/bg1/tx2/bg2, accent1-accent6, hlink, and folHlink color scheme; dk1/lt1/dk2/lt2 aliases are accepted." },
@@ -10015,6 +10016,7 @@ export class ImageElement {
     this.fit = config.fit || "contain";
     this.geometry = config.geometry || "rect";
     this.borderRadius = config.borderRadius;
+    this.transform = config.transform == null ? undefined : normalizePresentationPlaceholderTransform(config.transform, `Presentation image ${this.name || this.id} transform`);
   }
 
   get frame() { return this.position; }
@@ -10023,19 +10025,26 @@ export class ImageElement {
 
   inspectRecord() {
     const p = this.position;
-    return { kind: "image", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, alt: this.alt || undefined, prompt: this.prompt || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", fit: this.fit };
+    return { kind: "image", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, alt: this.alt || undefined, prompt: this.prompt || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", fit: this.fit, transform: this.transform };
   }
 
-  layoutJson() { return { kind: "image", id: this.id, name: this.name, frame: this.position, alt: this.alt, prompt: this.prompt, uri: this.uri, dataUrl: this.dataUrl, fit: this.fit, geometry: this.geometry, borderRadius: this.borderRadius }; }
+  layoutJson() { return { kind: "image", id: this.id, name: this.name, frame: this.position, alt: this.alt, prompt: this.prompt, uri: this.uri, dataUrl: this.dataUrl, fit: this.fit, geometry: this.geometry, borderRadius: this.borderRadius, transform: this.transform }; }
 
   toSvg() {
     const p = this.position;
     const label = this.alt || this.prompt || this.uri || "image";
-    if (this.dataUrl) return `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="xMidYMid meet"/>`;
+    const cx = p.left + p.width / 2;
+    const cy = p.top + p.height / 2;
+    const rotation = Number(this.transform?.rotationDegrees || 0);
+    const flipHorizontal = this.transform?.flipHorizontal === true ? -1 : 1;
+    const flipVertical = this.transform?.flipVertical === true ? -1 : 1;
+    const transform = this.transform ? ` transform="translate(${cx} ${cy}) rotate(${rotation}) scale(${flipHorizontal} ${flipVertical}) translate(${-cx} ${-cy})"` : "";
+    if (this.dataUrl) return `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="${this.fit === "stretch" ? "none" : "xMidYMid meet"}"${transform}/>`;
     const rect = this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="#e0f2fe" stroke="#0284c7"/>`
       : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="#e0f2fe" stroke="#0284c7"/>`;
-    return `${rect}<text x="${p.left + 12}" y="${p.top + 28}" font-family="Arial" font-size="14" fill="#075985">${xmlEscape(label)}</text>`;
+    const fallback = `${rect}<text x="${p.left + 12}" y="${p.top + 28}" font-family="Arial" font-size="14" fill="#075985">${xmlEscape(label)}</text>`;
+    return transform ? `<g${transform}>${fallback}</g>` : fallback;
   }
 
   toPptxShape(index, relId) {
@@ -10619,7 +10628,13 @@ function pptxTextShapeXml(index, name, geometry, position, text = "", placeholde
 function pptxPictureXml(index, name, alt, position, relId, identity = {}) {
   const p = position;
   const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
-  return `<p:pic><p:nvPicPr>${pptxNonVisualPropertiesXml(index, name, ` descr="${attrEscape(alt)}"`, identity)}<p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+  const normalizedTransform = normalizePresentationPlaceholderTransform(identity.transform, `Presentation image ${name} transform`);
+  const transformAttributes = normalizedTransform ? [
+    ...(Object.hasOwn(normalizedTransform, "rotationDegrees") ? [`rot="${Math.round(normalizedTransform.rotationDegrees * 60_000)}"`] : []),
+    ...(Object.hasOwn(normalizedTransform, "flipHorizontal") ? [`flipH="${normalizedTransform.flipHorizontal ? 1 : 0}"`] : []),
+    ...(Object.hasOwn(normalizedTransform, "flipVertical") ? [`flipV="${normalizedTransform.flipVertical ? 1 : 0}"`] : []),
+  ].join(" ") : "";
+  return `<p:pic><p:nvPicPr>${pptxNonVisualPropertiesXml(index, name, ` descr="${attrEscape(alt)}"`, identity)}<p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm${transformAttributes ? ` ${transformAttributes}` : ""}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
 }
 
 function pptxConnectorXml(index, connector) {
@@ -10861,7 +10876,7 @@ async function parsePptxPicture(owner, part, context) {
   const target = pptxRelationshipTarget(context.rels, relId);
   const bytes = target ? await context.zip.file(target)?.async("uint8array") : undefined;
   const extension = /\.([A-Za-z0-9+]+)$/.exec(target || "")?.[1] || "png";
-  return applyPresentationElementIdentity(owner.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target }), part, "picMk");
+  return applyPresentationElementIdentity(owner.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), transform: parsePresentationPlaceholderTransformXml(part), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target }), part, "picMk");
 }
 
 async function parsePptxGraphicFrame(owner, part, context) {

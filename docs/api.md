@@ -1069,7 +1069,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers. |
-| `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output. |
+| `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile. |
 | `slide.shapes.add` | api | Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
 
@@ -1692,7 +1692,7 @@ Add an editable grouped-shape tree with local child coordinates, nested shapes/c
 
 #### `slide.images.add`
 
-Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, layout JSON, SVG preview, and PPTX placeholder output.
+Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile.
 
 **Schema parameters:**
 
@@ -1700,12 +1700,13 @@ Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit
 - `uri` (string) — External image URI metadata.
 - `prompt` (string) — Generation/source prompt metadata.
 - `alt` (string) — Alternative text.
-- `fit` (string) — contain or cover intent.
+- `fit` (string) — contain, cover, or stretch rendering intent. The bounded OpenChestnut p:pic profile accepts contain/stretch and imports native stretch as stretch; crop/cover remains outside that codec slice.
 - `position` (object) — Pixel left/top/width/height frame.
+- `transform` (object) — Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. OpenChestnut preserves explicit false and safely edits recognized top-level embedded pictures.
 
 **Schema returns:**
 
-- `image` (ImageElement) — Appended editable image facade.
+- `image` (ImageElement) — Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular stretch pictures and permits same-format byte, name/alt, frame, and direct-transform edits; crop, effects, external sources, complex blips, and non-rectangular geometry remain opaque.
 
 #### `slide.shapes.add`
 

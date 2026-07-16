@@ -452,6 +452,13 @@ internal static class PptxCodec
                         ApplyShape(sourceShape, requested, slideContext);
                         changed = true;
                     }
+                    else if (sourceElement is P.Picture sourcePicture &&
+                             requested.ContentCase == PresentationElement.ContentOneofCase.Image &&
+                             PptxPictureCodec.TryRead(sourcePicture, slideContext, out _))
+                    {
+                        PptxPictureCodec.Apply(sourcePicture, requested, slideContext);
+                        changed = true;
+                    }
                     else if (requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                              PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
                     {
@@ -509,9 +516,16 @@ internal static class PptxCodec
             Id = $"presentation/slide/{slideIndex + 1}/element/{elementIndex + 1}",
             Name = ElementName(source, elementIndex),
         };
-        var editable = source is P.Shape shape && IsSimpleShape(shape);
+        var editable = source switch
+        {
+            P.Shape shape => IsSimpleShape(shape),
+            P.Picture picture => PptxPictureCodec.TryRead(picture, slideContext, out _),
+            _ => false,
+        };
         if (source is P.Shape sourceShape)
             element.Shape = ReadShape(sourceShape, slideContext);
+        else if (source is P.Picture sourcePicture && PptxPictureCodec.TryRead(sourcePicture, slideContext, out var image))
+            element.Image = image;
         else
         {
             var frame = ReadFrame(source);
@@ -788,11 +802,12 @@ internal static class PptxCodec
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, slidePartById, assetCatalog);
             uint nativeId = 2;
             foreach (var element in source.Elements)
-            {
-                if (element.ContentCase != PresentationElement.ContentOneofCase.Shape)
-                    throw new CodecException("unsupported_presentation_element", $"Opaque presentation element {element.Id} requires its validated source package and cannot be authored from scratch.");
-                shapeTree.Append(BuildShape(element, nativeId++, slideContext));
-            }
+                shapeTree.Append(element.ContentCase switch
+                {
+                    PresentationElement.ContentOneofCase.Shape => BuildShape(element, nativeId++, slideContext),
+                    PresentationElement.ContentOneofCase.Image => PptxPictureCodec.Build(element, nativeId++, slideContext),
+                    _ => throw new CodecException("unsupported_presentation_element", $"Opaque presentation element {element.Id} requires its validated source package and cannot be authored from scratch."),
+                });
             slidePart.Slide.Save();
         }
         presentationPart.Presentation = new P.Presentation(
@@ -1045,6 +1060,12 @@ internal static class PptxCodec
                             paragraph.PictureBullet.SourceCase == PresentationPictureBullet.SourceOneofCase.AssetId)
                             _ = assetCatalog.Get(paragraph.PictureBullet.AssetId);
                 }
+                else if (element.ContentCase == PresentationElement.ContentOneofCase.Image)
+                {
+                    if (element.Name.Length > 1_024)
+                        throw new CodecException("invalid_presentation_image", $"Presentation image {element.Id} name exceeds 1024 characters.");
+                    PptxPictureCodec.Validate(element.Image, element.Id, assetCatalog);
+                }
                 else if (element.ContentCase != PresentationElement.ContentOneofCase.Opaque)
                     throw new CodecException("missing_presentation_element_content", $"Presentation element {element.Id} has no content.");
                 else
@@ -1251,6 +1272,23 @@ internal static class PptxCodec
                         throw new CodecException(
                             "presentation_postwrite_semantics_mismatch",
                             $"PPTX slide {slideIndex + 1} edited native object {elementIndex + 1} does not match the requested name/frame.",
+                            PartPath(outputSlides[slideIndex]));
+                    continue;
+                }
+                if (request.ContentCase == PresentationElement.ContentOneofCase.Image)
+                {
+                    if (before[elementIndex] is not P.Picture beforePicture || after[elementIndex] is not P.Picture afterPicture)
+                        throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} edited image {elementIndex + 1} changed native element type.", PartPath(outputSlides[slideIndex]));
+                    if (!PictureResidualHash(beforePicture).Equals(PictureResidualHash(afterPicture), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "presentation_unmodeled_picture_content_changed",
+                            $"PPTX slide {slideIndex + 1} edited image {elementIndex + 1} changed unmodeled native content.",
+                            PartPath(outputSlides[slideIndex]));
+                    var outputPictureSemantic = ReadElement(afterPicture, slideIndex, elementIndex, outputContext);
+                    if (!SemanticHash(outputPictureSemantic).Equals(SemanticHash(request), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "presentation_postwrite_semantics_mismatch",
+                            $"PPTX slide {slideIndex + 1} edited image {elementIndex + 1} does not match requested semantics after export.",
                             PartPath(outputSlides[slideIndex]));
                     continue;
                 }
@@ -1549,6 +1587,13 @@ internal static class PptxCodec
         }
         PptxTextCodec.ScrubModeledContent(shape.TextBody, slideContext);
         return HashElement(shape);
+    }
+
+    private static string PictureResidualHash(P.Picture source)
+    {
+        var picture = (P.Picture)source.CloneNode(true);
+        PptxPictureCodec.ScrubModeledContent(picture);
+        return HashElement(picture);
     }
 
     private static string NativeObjectResidualHash(OpenXmlElement source)
