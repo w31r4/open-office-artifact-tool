@@ -155,7 +155,14 @@ internal static class PptxCodec
                 semanticItems++;
                 if (semanticItems > limits.MaxCells)
                     throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", PartPath(slidePart));
-                target.Elements.Add(ReadElement(elements[elementIndex], slideIndex, elementIndex, slideContext, nativeObjects));
+                var importedElement = ReadElement(elements[elementIndex], slideIndex, elementIndex, slideContext, nativeObjects);
+                if (importedElement.ContentCase == PresentationElement.ContentOneofCase.Table)
+                {
+                    semanticItems += checked((ulong)importedElement.Table.Rows.Sum(row => row.Cells.Count));
+                    if (semanticItems > limits.MaxCells)
+                        throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", PartPath(slidePart));
+                }
+                target.Elements.Add(importedElement);
             }
             artifact.Slides.Add(target);
         }
@@ -424,6 +431,12 @@ internal static class PptxCodec
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} does not match its source element.",
                             PartPath(slidePart));
                     var original = ReadElement(sourceElement, slideIndex, elementIndex, slideContext, nativeObjects);
+                    if (original.ContentCase == PresentationElement.ContentOneofCase.Table)
+                    {
+                        semanticItems += checked((ulong)original.Table.Rows.Sum(row => row.Cells.Count));
+                        if (semanticItems > limits.MaxCells)
+                            throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", PartPath(slidePart));
+                    }
                     if (elementBinding.Editable != original.Source.Editable)
                         throw new CodecException(
                             "presentation_element_binding_mismatch",
@@ -457,6 +470,13 @@ internal static class PptxCodec
                              PptxPictureCodec.TryRead(sourcePicture, slideContext, out _))
                     {
                         PptxPictureCodec.Apply(sourcePicture, requested, slideContext);
+                        changed = true;
+                    }
+                    else if (sourceElement is P.GraphicFrame sourceTable &&
+                             requested.ContentCase == PresentationElement.ContentOneofCase.Table &&
+                             PptxTableCodec.TryRead(sourceTable, out _))
+                    {
+                        PptxTableCodec.Apply(sourceTable, requested);
                         changed = true;
                     }
                     else if (requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
@@ -520,12 +540,15 @@ internal static class PptxCodec
         {
             P.Shape shape => IsSimpleShape(shape),
             P.Picture picture => PptxPictureCodec.TryRead(picture, slideContext, out _),
+            P.GraphicFrame graphicFrame => PptxTableCodec.TryRead(graphicFrame, out _),
             _ => false,
         };
         if (source is P.Shape sourceShape)
             element.Shape = ReadShape(sourceShape, slideContext);
         else if (source is P.Picture sourcePicture && PptxPictureCodec.TryRead(sourcePicture, slideContext, out var image))
             element.Image = image;
+        else if (source is P.GraphicFrame sourceTable && PptxTableCodec.TryRead(sourceTable, out var table))
+            element.Table = table;
         else
         {
             var frame = ReadFrame(source);
@@ -806,6 +829,7 @@ internal static class PptxCodec
                 {
                     PresentationElement.ContentOneofCase.Shape => BuildShape(element, nativeId++, slideContext),
                     PresentationElement.ContentOneofCase.Image => PptxPictureCodec.Build(element, nativeId++, slideContext),
+                    PresentationElement.ContentOneofCase.Table => PptxTableCodec.Build(element, nativeId++),
                     _ => throw new CodecException("unsupported_presentation_element", $"Opaque presentation element {element.Id} requires its validated source package and cannot be authored from scratch."),
                 });
             slidePart.Slide.Save();
@@ -1066,6 +1090,15 @@ internal static class PptxCodec
                         throw new CodecException("invalid_presentation_image", $"Presentation image {element.Id} name exceeds 1024 characters.");
                     PptxPictureCodec.Validate(element.Image, element.Id, assetCatalog);
                 }
+                else if (element.ContentCase == PresentationElement.ContentOneofCase.Table)
+                {
+                    if (element.Name.Length > 1_024)
+                        throw new CodecException("invalid_presentation_table", $"Presentation table {element.Id} name exceeds 1024 characters.");
+                    PptxTableCodec.Validate(element.Table, element.Id);
+                    items += checked((ulong)element.Table.Rows.Sum(row => row.Cells.Count));
+                    if (items > limits.MaxCells)
+                        throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
+                }
                 else if (element.ContentCase != PresentationElement.ContentOneofCase.Opaque)
                     throw new CodecException("missing_presentation_element_content", $"Presentation element {element.Id} has no content.");
                 else
@@ -1289,6 +1322,23 @@ internal static class PptxCodec
                         throw new CodecException(
                             "presentation_postwrite_semantics_mismatch",
                             $"PPTX slide {slideIndex + 1} edited image {elementIndex + 1} does not match requested semantics after export.",
+                            PartPath(outputSlides[slideIndex]));
+                    continue;
+                }
+                if (request.ContentCase == PresentationElement.ContentOneofCase.Table)
+                {
+                    if (before[elementIndex] is not P.GraphicFrame beforeTable || after[elementIndex] is not P.GraphicFrame afterTable)
+                        throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} edited table {elementIndex + 1} changed native element type.", PartPath(outputSlides[slideIndex]));
+                    if (!TableResidualHash(beforeTable).Equals(TableResidualHash(afterTable), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "presentation_unmodeled_table_content_changed",
+                            $"PPTX slide {slideIndex + 1} edited table {elementIndex + 1} changed unmodeled native content.",
+                            PartPath(outputSlides[slideIndex]));
+                    var outputTableSemantic = ReadElement(afterTable, slideIndex, elementIndex, outputContext);
+                    if (!SemanticHash(outputTableSemantic).Equals(SemanticHash(request), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "presentation_postwrite_semantics_mismatch",
+                            $"PPTX slide {slideIndex + 1} edited table {elementIndex + 1} does not match requested semantics after export.",
                             PartPath(outputSlides[slideIndex]));
                     continue;
                 }
@@ -1594,6 +1644,13 @@ internal static class PptxCodec
         var picture = (P.Picture)source.CloneNode(true);
         PptxPictureCodec.ScrubModeledContent(picture);
         return HashElement(picture);
+    }
+
+    private static string TableResidualHash(P.GraphicFrame source)
+    {
+        var table = (P.GraphicFrame)source.CloneNode(true);
+        PptxTableCodec.ScrubModeledContent(table);
+        return HashElement(table);
     }
 
     private static string NativeObjectResidualHash(OpenXmlElement source)

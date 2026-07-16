@@ -1077,6 +1077,7 @@ message PresentationElement {
     PresentationShape shape = 10;
     PresentationOpaqueElement opaque = 11;
     PresentationImage image = 12;
+    PresentationTable table = 13;
   }
 }
 
@@ -1150,6 +1151,32 @@ message PresentationImageTransform {
   optional sint32 rotation_angle_60000 = 1;
   optional bool flip_horizontal = 2;
   optional bool flip_vertical = 3;
+}
+
+// Bounded top-level DrawingML table projection. Column widths and row heights
+// make the fixed grid explicit instead of deriving native geometry from cell
+// text. The first codec slice owns one rectangular p:graphicFrame, a complete
+// non-merged grid, and exactly one plain-text run per cell. Rich cell text,
+// merges, table styles, transformed frames, and topology changes remain
+// source-bound opaque content.
+message PresentationTable {
+  int64 left_emu = 1;
+  int64 top_emu = 2;
+  int64 width_emu = 3;
+  int64 height_emu = 4;
+  repeated int64 column_widths_emu = 5;
+  repeated PresentationTableRow rows = 6;
+  optional bool first_row = 7;
+  optional bool banded_rows = 8;
+}
+
+message PresentationTableRow {
+  int64 height_emu = 1;
+  repeated PresentationTableCell cells = 2;
+}
+
+message PresentationTableCell {
+  string text = 1;
 }
 
 message PresentationPlaceholderIdentity {
