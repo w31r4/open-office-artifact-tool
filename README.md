@@ -110,13 +110,16 @@ npm run proto:generate
 npm run build:open-chestnut
 npm run test:open-chestnut-dotnet
 npm test
+npm run test:agent-evals
 npm run test:pack
 npm run docs:api
 ```
 
 `npm run verify:open-chestnut-build` performs the deterministic WASM build check. `npm run release:check` validates release metadata and packaged artifacts. C# source and build tooling live in the repository; the npm package contains the bundled runtime, public proto/generated JavaScript, integrity manifest, SBOM, and licenses.
 
-See [coverage](docs/coverage.md), [reference Skill compatibility](docs/reference-skills.md), [runtime architecture](docs/reference-runtime-architecture.md), and [release gates](docs/release.md).
+`npm run eval:agents -- validate` checks the repository-only Agent PromptBench. Its isolated trials compare the candidate and reference Skills against the same packed npm candidate; the benchmark and its locked corpus are intentionally excluded from the consumer tarball. See [Agent black-box evaluations](docs/agent-evals.md).
+
+See [coverage](docs/coverage.md), [reference Skill compatibility](docs/reference-skills.md), [Agent black-box evaluations](docs/agent-evals.md), [runtime architecture](docs/reference-runtime-architecture.md), and [release gates](docs/release.md).
 
 ## License
 

@@ -168,6 +168,7 @@ assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("t
 assert.ok(files.every((file) => !file.includes(".DS_Store") && !file.includes("__pycache__") && !file.endsWith(".pyc")), "npm package must exclude local metadata and Python bytecode");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
 assert.ok(files.every((file) => !file.startsWith("native/OpenChestnut/") && !file.startsWith("scripts/")), "npm runtime package must not duplicate repository-only OpenChestnut source or build tooling");
+assert.ok(files.every((file) => !file.startsWith("evals/") && file !== "docs/agent-evals.md"), "npm runtime package must exclude the evaluator-side PromptBench and its oracle documentation");
 assert.ok(!files.includes("docs/coverage.md") && !files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md") && !files.includes("native/OpenChestnut/README.md"), "npm runtime package must exclude repository-only coverage, release history, and subsystem implementation notes");
 assert.ok(report.size < maxPackedBytes, `npm package archive unexpectedly large: ${report.size} (limit ${maxPackedBytes})`);
 assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);
