@@ -147,10 +147,16 @@ function overflowTraceChecks(audit, commands) {
 function activeContentTraceChecks(audit, commands) {
   const commandText = commands.join("\n");
   const operation = auditOperation(audit);
-  const probeIndex = commandText.search(/pymupdf_edit\.py\s+probe\b/i);
-  const planIndex = commandText.search(/pdf_provider\.py\s+plan\b/i);
-  const editIndex = commandText.search(/pymupdf_edit\.py\s+edit\b/i);
-  const afterEdit = editIndex >= 0 ? commandText.slice(editIndex) : "";
+  const invocationIndex = (pattern) => commands.findIndex((command) => {
+    const match = String(command).match(pattern);
+    if (!match) return false;
+    const tail = String(command).slice((match.index || 0) + match[0].length);
+    return !/^\s+(?:--help|-h)\b/i.test(tail);
+  });
+  const probeIndex = invocationIndex(/pymupdf_edit\.py\s+probe\b/i);
+  const planIndex = invocationIndex(/pdf_provider\.py\s+plan\b/i);
+  const editIndex = invocationIndex(/pymupdf_edit\.py\s+edit\b/i);
+  const afterEdit = editIndex >= 0 ? commands.slice(editIndex).join("\n") : "";
   const residueAfterEdit = /residue_scan\.py\b/i.test(afterEdit);
   const renderAfterEdit = /\bpdftoppm\b/i.test(afterEdit);
   const auditAfterEdit = /pdf_audit\.py\s+validate\b/i.test(afterEdit);
@@ -165,7 +171,16 @@ function activeContentTraceChecks(audit, commands) {
     check("pdf-trace:save-policy", "trace", /^sanitize$/i.test(String(auditSaveStrategy(audit))), { expected: "sanitize", actual: auditSaveStrategy(audit) }),
     gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
     check("pdf-trace:preflight-audit", "trace", audit?.preflight?.probeCompleted === true && audit?.preflight?.planCompleted === true, { actual: audit?.preflight || "unreported" }),
-    check("pdf-trace:probe-plan-before-mutation", "trace", probeIndex >= 0 && planIndex > probeIndex && editIndex > planIndex, { actual: { probeObserved: probeIndex >= 0, planObserved: planIndex >= 0, editObserved: editIndex >= 0 } }),
+    check("pdf-trace:probe-plan-before-mutation", "trace", probeIndex >= 0 && planIndex >= 0 && editIndex > probeIndex && editIndex > planIndex, {
+      actual: {
+        probeObserved: probeIndex >= 0,
+        planObserved: planIndex >= 0,
+        editObserved: editIndex >= 0,
+        probeCommandIndex: probeIndex,
+        planCommandIndex: planIndex,
+        editCommandIndex: editIndex,
+      },
+    }),
     check("pdf-trace:typed-scrub-primitive", "trace", /pymupdf_edit\.py\s+edit\b/i.test(commandText) && /scrub|active[_ -]?content/i.test(operation), { actual: operation || "unreported" }),
     check("pdf-trace:post-mutation-residue-scan", "trace", residueAfterEdit, { actual: { editObserved: editIndex >= 0, postMutationResidueScanObserved: residueAfterEdit } }),
     check("pdf-trace:post-mutation-poppler-render", "trace", renderAfterEdit, { actual: { editObserved: editIndex >= 0, postMutationRenderObserved: renderAfterEdit } }),

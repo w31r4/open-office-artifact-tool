@@ -249,6 +249,24 @@ const activeCommands = [
 const activeChecks = gradeActiveContentSanitizeEvidence({ evidence: activeEvidence, audit: activeAudit, commands: activeCommands, item: activeItem });
 assert.equal(activeChecks.every((entry) => entry.passed), true);
 assert.equal(summarizeCaseScore(activeChecks, activeItem.grade).rawScorePercent, 100);
+const helpBeforeMutationChecks = gradeActiveContentSanitizeEvidence({
+  evidence: activeEvidence,
+  audit: activeAudit,
+  commands: [
+    "python pymupdf_edit.py probe --help && python pymupdf_edit.py inspect --help && python pymupdf_edit.py edit --help",
+    "python pdf_provider.py plan --help",
+    ...activeCommands,
+  ],
+  item: activeItem,
+});
+assert.equal(helpBeforeMutationChecks.find((entry) => entry.id === "pdf-trace:probe-plan-before-mutation")?.passed, true);
+const editBeforePlanChecks = gradeActiveContentSanitizeEvidence({
+  evidence: activeEvidence,
+  audit: activeAudit,
+  commands: [activeCommands[2], activeCommands[0], activeCommands[1], ...activeCommands.slice(3)],
+  item: activeItem,
+});
+assert.equal(editBeforePlanChecks.find((entry) => entry.id === "pdf-trace:probe-plan-before-mutation")?.passed, false);
 const residualActionEvidence = structuredClone(activeEvidence);
 residualActionEvidence.outputStructure.actionTypeCounts["/SubmitForm"] = 1;
 const residualActionChecks = gradeActiveContentSanitizeEvidence({ evidence: residualActionEvidence, audit: activeAudit, commands: activeCommands, item: activeItem });
