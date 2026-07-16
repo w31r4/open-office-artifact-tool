@@ -74,16 +74,22 @@ internal static class DocxCodec
 
     internal static DocxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
+        var requiresSourcePreservation =
+            envelope.ProtocolVersion == CodecProtocol.ProtocolVersion &&
+            envelope.Family == ArtifactFamily.Document &&
+            envelope.PayloadCase == ArtifactEnvelope.PayloadOneofCase.Document &&
+            RequiresSourcePreservation(envelope);
+        if (requiresSourcePreservation && envelope.OpaqueOpc?.SourcePackage is not { Data.IsEmpty: false })
+            throw new CodecException(
+                "missing_source_package",
+                "Source-bound DOCX export requires its validated source package snapshot.");
+
         var imageAssets = new DocxImageAssetCatalog(envelope.Assets, limits);
         ValidateEnvelope(envelope, limits, imageAssets);
         var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) +
                           (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
-        if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
+        if (requiresSourcePreservation)
             return ExportPreservingSource(envelope, limits, opaqueCount);
-        if (opaqueCount > 0)
-            throw new CodecException(
-                "opaque_content_requires_preservation",
-                "Document contains opaque OPC parts or relationships but its validated source package snapshot is unavailable.");
 
         var diagnostics = new List<Diagnostic>();
 
@@ -122,6 +128,18 @@ internal static class DocxCodec
         ValidateOutputBudget(bytes, limits);
         ValidateOffice2021(bytes);
         return new DocxExportResult(bytes, diagnostics);
+    }
+
+    private static bool RequiresSourcePreservation(ArtifactEnvelope envelope)
+    {
+        if (envelope.Source is not null) return true;
+        if (envelope.OpaqueOpc is { } opaque &&
+            (opaque.SourcePackage is not null || opaque.Parts.Count > 0 || opaque.PackageRelationships.Count > 0))
+            return true;
+
+        return envelope.Document.Blocks.Any(block =>
+                   block.Source is not null || block.ContentCase == DocumentBlock.ContentOneofCase.Opaque) ||
+               envelope.Document.Comments.Any(comment => comment.Source is not null);
     }
 
     private static DocxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)

@@ -21,13 +21,16 @@ internal static class XlsxCodec
             throw new CodecException("unsupported_artifact_version", $"Artifact protocol version {envelope.ProtocolVersion} is unsupported.");
         if (envelope.Family != ArtifactFamily.Workbook || envelope.PayloadCase != ArtifactEnvelope.PayloadOneofCase.Workbook)
             throw new CodecException("invalid_workbook_artifact", "Artifact envelope does not contain a workbook payload.");
+        var requiresSourcePreservation = RequiresSourcePreservation(envelope);
+        if (requiresSourcePreservation && envelope.OpaqueOpc?.SourcePackage is not { Data.IsEmpty: false })
+            throw new CodecException(
+                "missing_source_package",
+                "Source-bound XLSX export requires its validated source package snapshot.");
         ValidateWorkbookBudget(envelope.Workbook, limits);
 
         var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) + (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
-        if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
+        if (requiresSourcePreservation)
             return ExportPreservingSource(envelope, limits, opaqueCount);
-        if (opaqueCount > 0)
-            throw new CodecException("opaque_content_requires_preservation", "Workbook contains opaque OPC parts or relationships but its validated source package snapshot is unavailable.");
 
         var diagnostics = new List<Diagnostic>();
 
@@ -85,6 +88,29 @@ internal static class XlsxCodec
             throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
         ValidateOffice2021(bytes);
         return new XlsxExportResult(bytes, diagnostics);
+    }
+
+    private static bool RequiresSourcePreservation(ArtifactEnvelope envelope)
+    {
+        if (envelope.Source is not null) return true;
+        if (envelope.OpaqueOpc is { } opaque &&
+            (opaque.SourcePackage is not null || opaque.Parts.Count > 0 || opaque.PackageRelationships.Count > 0))
+            return true;
+
+        var workbook = envelope.Workbook;
+        if (workbook.Theme?.Source is not null ||
+            workbook.Calculation?.Source is not null ||
+            workbook.View?.Source is not null ||
+            workbook.AdditionalViews.Any(view => view.Source is not null) ||
+            workbook.Connections.Any(connection => connection.Source is not null) ||
+            workbook.DefinedNames.Any(name => name.Source is not null))
+            return true;
+
+        return workbook.Worksheets.Any(worksheet =>
+            worksheet.Source is not null ||
+            worksheet.Images.Any(image => image.Source is not null) ||
+            worksheet.Charts.Any(chart => chart.Source is not null) ||
+            worksheet.Tables.Any(table => table.Source is not null || table.QueryTable?.Source is not null));
     }
 
     internal static XlsxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)

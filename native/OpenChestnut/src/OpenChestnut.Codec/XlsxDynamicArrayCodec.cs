@@ -1,16 +1,14 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using OpenOffice.Artifact.Wire.V1;
-using DynamicArrayProperties = DocumentFormat.OpenXml.Office2019.Excel.DynamicArray.DynamicArrayProperties;
 using SpreadsheetExtension = DocumentFormat.OpenXml.Spreadsheet.Extension;
 
 namespace OpenChestnut.Codec;
 
 // Dynamic arrays use the same worksheet <f t="array"> shape as legacy array
-// formulas. Their distinguishing state belongs to the workbook-level
-// CellMetadataPart and the anchor cell's one-based cm index. Keeping that
-// package graph here prevents formula text handling from guessing at metadata
-// indexes or manufacturing a private marker.
+// formulas, with distinguishing state in the workbook CellMetadataPart.
+// OpenChestnut recognizes this graph for import and byte-preserving export but
+// deliberately does not author, detach, or edit it.
 internal sealed class XlsxDynamicArrayCodec
 {
     private const string MetadataName = "XLDAPR";
@@ -19,8 +17,6 @@ internal sealed class XlsxDynamicArrayCodec
 
     private readonly WorkbookPart _workbookPart;
     private readonly HashSet<uint> _dynamicIndexes = [];
-    private readonly HashSet<uint> _exclusiveDynamicIndexes = [];
-    private uint? _authoredIndex;
 
     internal XlsxDynamicArrayCodec(WorkbookPart workbookPart)
     {
@@ -37,89 +33,36 @@ internal sealed class XlsxDynamicArrayCodec
     internal void ConfigureNewCell(Cell cell, CellArtifact source, bool sourceBound)
     {
         if (source.FormulaMetadata?.Kind != CellFormulaKind.DynamicArray) return;
-        cell.CellMetaIndex = EnsureDynamicIndex(sourceBound);
+        throw Unsupported(
+            source,
+            sourceBound
+                ? "cannot add a dynamic array to a source-bound workbook because imported dynamic arrays are read-only"
+                : "cannot author a source-free dynamic array because the XLDAPR metadata graph is read-only");
     }
 
     internal void ApplyFormulaMetadata(Cell cell, CellArtifact desired, bool sourceBound)
     {
         var desiredDynamic = desired.FormulaMetadata?.Kind == CellFormulaKind.DynamicArray;
         var currentIndex = cell.CellMetaIndex?.Value;
-        if (desiredDynamic)
+        if (currentIndex is not null && !_dynamicIndexes.Contains(currentIndex.Value))
+            throw Unsupported(desired, "formula is linked to opaque cell metadata and cannot be edited");
+
+        var currentDynamic = currentIndex is not null;
+        if (!currentDynamic)
         {
-            if (currentIndex is not null)
-            {
-                if (_dynamicIndexes.Contains(currentIndex.Value)) return;
-                throw Unsupported(desired, "anchor has non-dynamic cell metadata and cannot be converted losslessly");
-            }
-            cell.CellMetaIndex = EnsureDynamicIndex(sourceBound);
+            if (desiredDynamic)
+                throw Unsupported(
+                    desired,
+                    sourceBound
+                        ? "cannot add a dynamic array because imported dynamic-array metadata is read-only"
+                        : "cannot author a source-free dynamic array because the XLDAPR metadata graph is read-only");
             return;
         }
 
-        if (currentIndex is null) return;
-        if (!_dynamicIndexes.Contains(currentIndex.Value))
-            throw Unsupported(desired, "formula is linked to opaque cell metadata and cannot be edited losslessly");
-        if (!_exclusiveDynamicIndexes.Contains(currentIndex.Value))
-            throw Unsupported(desired, "dynamic-array marker shares its cell metadata block with unmodeled records and cannot be removed losslessly");
-        cell.CellMetaIndex = null;
-    }
-
-    private uint EnsureDynamicIndex(bool sourceBound)
-    {
-        if (_authoredIndex is not null) return _authoredIndex.Value;
-        if (_dynamicIndexes.Count > 0) return _dynamicIndexes.Min();
-        if (sourceBound)
-            throw new CodecException(
-                "unsupported_dynamic_array_edit",
-                "Source-bound workbook has no recognized XLDAPR cell-metadata record; adding a dynamic-array formula would require changing an opaque metadata graph.",
-                _workbookPart.Uri.ToString());
-        if (_workbookPart.CellMetadataPart is not null)
-            throw new CodecException(
-                "unsupported_dynamic_array_edit",
-                "Workbook already has a non-dynamic CellMetadataPart; OpenChestnut will not replace it while authoring a dynamic array.",
-                _workbookPart.CellMetadataPart.Uri.ToString());
-
-        var part = _workbookPart.AddNewPart<CellMetadataPart>();
-        var metadataType = new MetadataType
-        {
-            Name = MetadataName,
-            MinSupportedVersion = 120_000U,
-            Copy = true,
-            PasteAll = true,
-            PasteValues = true,
-            Merge = true,
-            SplitFirst = true,
-            RowColumnShift = true,
-            ClearFormats = true,
-            ClearComments = true,
-            Assign = true,
-            Coerce = true,
-            CellMeta = true,
-        };
-        var extension = new SpreadsheetExtension(
-            new DynamicArrayProperties { FDynamic = true, FCollapsed = false })
-        {
-            Uri = ExtensionUri,
-        };
-        part.Metadata = new Metadata(
-            new MetadataTypes(metadataType) { Count = 1U },
-            new FutureMetadata(
-                new FutureMetadataBlock(
-                    new ExtensionList(extension)))
-            {
-                Name = MetadataName,
-                Count = 1U,
-            },
-            new CellMetadata(
-                new MetadataBlock(
-                    new MetadataRecord { TypeIndex = 1U, Val = 0U }))
-            {
-                Count = 1U,
-            });
-        part.Metadata.Save();
-        _authoredIndex = 1U;
-        _dynamicIndexes.Add(1U);
-        _exclusiveDynamicIndexes.Add(1U);
-        return 1U;
+        if (!desiredDynamic)
+            throw Unsupported(desired, "cannot detach an imported dynamic array because it is read-only");
+        if (!FormulaMatches(cell.CellFormula, desired))
+            throw Unsupported(desired, "cannot edit an imported dynamic-array formula because it is read-only");
     }
 
     private void ReadIndexes()
@@ -160,9 +103,18 @@ internal sealed class XlsxDynamicArrayCodec
             if (dynamicRecords.Length == 0) continue;
             var cellIndex = checked((uint)index + 1);
             _dynamicIndexes.Add(cellIndex);
-            if (records.Length == 1 && dynamicRecords.Length == 1)
-                _exclusiveDynamicIndexes.Add(cellIndex);
         }
+    }
+
+    private static bool FormulaMatches(CellFormula? current, CellArtifact desired)
+    {
+        if (current is null || current.FormulaType?.Value != CellFormulaValues.Array ||
+            desired.FormulaMetadata is not { Kind: CellFormulaKind.DynamicArray } metadata)
+            return false;
+        var desiredBody = desired.Formula.Trim();
+        if (desiredBody.StartsWith('=') ) desiredBody = desiredBody[1..];
+        return string.Equals(current.Text ?? string.Empty, desiredBody, StringComparison.Ordinal) &&
+               string.Equals(current.Reference?.Value ?? string.Empty, metadata.Reference, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsDynamicBlock(FutureMetadataBlock block)

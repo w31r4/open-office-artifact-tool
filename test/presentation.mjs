@@ -318,4 +318,12 @@ assert.equal(roundTripBar.title, "Updated readiness");
 assert.deepEqual(roundTripBar.series[0].values, [80, 94, 88]);
 assert.equal(roundTrip.verify().ok, true);
 
+const importedWithoutSourceSnapshot = await PresentationFile.importPptx(firstExport);
+const presentationState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state")];
+presentationState.opaqueOpc.sourcePackage = undefined;
+await assert.rejects(
+  () => PresentationFile.exportPptx(importedWithoutSourceSnapshot),
+  (error) => error?.code === "missing_source_package",
+);
+
 console.log("presentation smoke ok");

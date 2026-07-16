@@ -69,7 +69,7 @@ On 2026-07-16, the 0.2.0 convergence worktree passed the complete local gate on 
 - OpenChestnut passed `159/159` C# tests; the optional OfficeBridge passed `5/5` protocol tests.
 - Buf lint passed, protobuf generation was byte-idempotent, and `npm run docs:api` regenerated the public API reference.
 - `npm run test:pack` passed the no-local-dotnet clean-install probe for DOCX/XLSX/PPTX and the independent PDF path.
-- The dry-run npm tarball contains 151 files, is 4,842,502 bytes compressed and 16,195,807 bytes unpacked, and contains no removed Office codec path.
+- The dry-run npm tarball contains 151 files, is 4,843,127 bytes compressed and 16,197,997 bytes unpacked, and contains no removed Office codec path.
 - `npm run verify:open-chestnut-build` compared 39 audited files; both builds produced the same 38-file, 14,004,412-byte runtime.
 - Render-backed gates ran with LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, and the installed Playwright Chromium runtime.
 

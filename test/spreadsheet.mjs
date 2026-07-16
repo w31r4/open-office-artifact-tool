@@ -230,4 +230,42 @@ const secondPackageInspect = await SpreadsheetFile.inspectXlsx(secondXlsx, { max
 assert.equal(secondPackageInspect.ok, true, secondPackageInspect.ndjson);
 assert.equal(secondPackageInspect.records[0].semanticIssues, 0);
 
+const connectionWorkbook = Workbook.create({
+  connections: [{ connectionId: 1, name: "Source-free connection", type: 1, refreshedVersion: 1 }],
+});
+connectionWorkbook.worksheets.add("Main").getRange("A1").values = [["No connection authoring"]];
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(connectionWorkbook),
+  (error) => error?.code === "unsupported_workbook_features" && /source-free workbook connections/i.test(error.message),
+);
+
+const queryWorkbook = Workbook.create();
+const querySheet = queryWorkbook.worksheets.add("Main");
+querySheet.getRange("A1:B2").values = [["Key", "Value"], ["A", 1]];
+const queryTable = querySheet.tables.add("A1:B2", true, "QueryTable");
+queryTable.queryTable = { name: "Source-free query", connectionId: 1 };
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(queryWorkbook),
+  (error) => error?.code === "unsupported_query_table_edit",
+);
+
+const dynamicWorkbook = Workbook.create();
+const dynamicSheet = dynamicWorkbook.worksheets.add("Main");
+const dynamicCell = dynamicSheet.store.get("A1");
+dynamicCell.formula = "=SEQUENCE(2)";
+dynamicCell.formulaType = "dynamicArray";
+dynamicCell.dynamicArrayRef = "A1:A2";
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(dynamicWorkbook),
+  (error) => error?.code === "unsupported_workbook_features" && /source-free dynamic array/i.test(error.message),
+);
+
+const importedWithoutSourceSnapshot = await SpreadsheetFile.importXlsx(firstXlsx);
+const workbookState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-state")];
+workbookState.opaqueOpc.sourcePackage = undefined;
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(importedWithoutSourceSnapshot),
+  (error) => error?.code === "missing_source_package",
+);
+
 console.log("spreadsheet tests passed");

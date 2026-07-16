@@ -13,6 +13,35 @@ namespace OpenChestnut.Codec.Tests;
 public sealed class DocxCodecTests
 {
     [Fact]
+    public void ImportedBlockBindingRequiresValidatedSourcePackageSnapshot()
+    {
+        var authored = Invoke(OfficeSkillProfileExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Contains(imported.Artifact.Document.Blocks, block => block.Source is not null);
+
+        imported.Artifact.Source = null;
+        imported.Artifact.OpaqueOpc.SourcePackage = new SourcePackageSnapshot();
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+
+        Assert.False(rejected.Ok);
+        Assert.Equal("missing_source_package", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceFreeParagraphReimportsTwoIndependentlyFormattedRuns()
     {
         var document = new DocumentArtifact { Id = "document/two-runs", Name = "Two formatted runs" };

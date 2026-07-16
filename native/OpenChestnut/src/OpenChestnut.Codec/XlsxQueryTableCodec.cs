@@ -9,12 +9,9 @@ using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
-// Owns the narrow, source-bound QueryTablePart decision for one worksheet
-// table. The public model sees root query policy, a stable connection ID, and
-// one bounded refresh/field profile. The source package continues to own
-// connection child graphs, extensions, and all other XML. Workbook-level
-// connection metadata is owned once by XlsxConnectionCodec. This module never
-// authors a new external-data graph or changes field identity/topology.
+// Reads the narrow QueryTablePart profile for one worksheet table. Imported
+// external-data graphs are source-bound and read-only: the public projection is
+// inspectable, but only the validated source package may supply its XML.
 internal sealed class XlsxQueryTableCodec
 {
     private enum RefreshProfile { Absent, Recognized, Opaque }
@@ -69,7 +66,7 @@ internal sealed class XlsxQueryTableCodec
             SemanticSha256 = SemanticSha256(artifact),
             ConnectionPartPath = connections.Path,
             ConnectionXmlSha256 = connections.PartXmlSha256,
-            Editable = true,
+            Editable = false,
         };
         _sourceArtifact = artifact.Clone();
         Artifact = artifact;
@@ -116,28 +113,19 @@ internal sealed class XlsxQueryTableCodec
     internal static void Validate(SpreadsheetTableQueryArtifact? query, string location)
     {
         if (query is null) return;
-        if (string.IsNullOrWhiteSpace(query.Name) || query.Name.Length > 255 || query.Name.Any(char.IsControl))
-            throw Invalid("Worksheet query table has an invalid name.", location);
-        if (query.ConnectionId == 0)
-            throw Invalid("Worksheet query table connection_id must be positive.", location);
-        if (query.HasGrowShrinkType && !GrowShrinkTypes.Contains(query.GrowShrinkType))
-            throw Invalid($"Worksheet query table grow/shrink type {query.GrowShrinkType} is invalid.", location);
-        if (query.Refresh is not null) ValidateRefresh(query.Refresh, location);
+        if (query.Source is null)
+            throw Unsupported("Source-free XLSX authoring cannot fabricate a QueryTable/external-connection graph.", location);
     }
 
     internal void Apply(SpreadsheetTableQueryArtifact? desired, bool sourceBound)
     {
         if (!sourceBound)
-            throw Invalid("Source-free XLSX authoring cannot fabricate a QueryTable/external-connection graph.", Path);
+            throw Unsupported("Source-free XLSX authoring cannot fabricate a QueryTable/external-connection graph.", Path);
         if (desired is null)
-            throw Invalid("Source-preserving XLSX export cannot remove an imported QueryTable graph in this bounded slice.", Path);
-        Validate(desired, Path);
+            throw Unsupported("Imported worksheet QueryTables are read-only and cannot be removed.", Path);
         ValidateBinding(desired.Source);
-        ValidateRefreshShape(desired.Refresh);
-        if (!_connections.Contains(desired.ConnectionId))
-            throw Invalid($"Worksheet query table connection_id {desired.ConnectionId} does not identify a connection in the validated source ConnectionsPart.", Path);
         if (SemanticSha256(desired).Equals(_sourceArtifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return;
-        Patch(desired);
+        throw Unsupported("Imported worksheet QueryTables are read-only and cannot be edited.", Path);
     }
 
     internal void Save()
@@ -163,7 +151,7 @@ internal sealed class XlsxQueryTableCodec
             !binding.ConnectionPartPath.Equals(source.ConnectionPartPath, StringComparison.OrdinalIgnoreCase) ||
             !binding.ConnectionXmlSha256.Equals(source.ConnectionXmlSha256, StringComparison.OrdinalIgnoreCase) ||
             binding.Editable != source.Editable)
-            throw Invalid("Worksheet query table source binding does not match the validated source package.", Path);
+            throw Unsupported("Worksheet QueryTable source binding does not match the validated source package.", Path);
     }
 
     private void ValidateRefreshShape(SpreadsheetTableQueryRefreshArtifact? desired)
@@ -616,4 +604,5 @@ internal sealed class XlsxQueryTableCodec
     private static string Optional(bool hasValue, uint value) => hasValue ? value.ToString(CultureInfo.InvariantCulture) : "<absent>";
     private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static CodecException Invalid(string message, string? location = null) => new("invalid_worksheet_table", message, location);
+    private static CodecException Unsupported(string message, string? location = null) => new("unsupported_query_table_edit", message, location);
 }

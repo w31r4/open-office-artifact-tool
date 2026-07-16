@@ -188,15 +188,21 @@ internal static class PptxCodec
 
     internal static PptxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
+        var requiresSourcePreservation =
+            envelope.ProtocolVersion == CodecProtocol.ProtocolVersion &&
+            envelope.Family == ArtifactFamily.Presentation &&
+            envelope.PayloadCase == ArtifactEnvelope.PayloadOneofCase.Presentation &&
+            RequiresSourcePreservation(envelope);
+        if (requiresSourcePreservation && envelope.OpaqueOpc?.SourcePackage is not { Data.IsEmpty: false })
+            throw new CodecException(
+                "missing_source_package",
+                "Source-bound PPTX export requires its validated source package snapshot.");
+
         var assetCatalog = ValidateEnvelope(envelope, limits);
         var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) +
                           (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
-        if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
+        if (requiresSourcePreservation)
             return ExportPreservingSource(envelope, limits, opaqueCount, assetCatalog);
-        if (opaqueCount > 0)
-            throw new CodecException(
-                "opaque_content_requires_preservation",
-                "Presentation contains opaque OPC parts or relationships but its validated source package snapshot is unavailable.");
 
         var diagnostics = new List<Diagnostic>();
 
@@ -207,6 +213,23 @@ internal static class PptxCodec
         ValidateOutputBudget(bytes, limits);
         ValidateOffice2021(bytes);
         return new PptxExportResult(bytes, diagnostics);
+    }
+
+    private static bool RequiresSourcePreservation(ArtifactEnvelope envelope)
+    {
+        if (envelope.Source is not null) return true;
+        if (envelope.OpaqueOpc is { } opaque &&
+            (opaque.SourcePackage is not null || opaque.Parts.Count > 0 || opaque.PackageRelationships.Count > 0))
+            return true;
+
+        var presentation = envelope.Presentation;
+        return presentation.Masters.Any(master =>
+                   master.Source is not null || master.Placeholders.Any(placeholder => placeholder.Source is not null)) ||
+               presentation.Layouts.Any(layout =>
+                   layout.Source is not null || layout.Placeholders.Any(placeholder => placeholder.Source is not null)) ||
+               presentation.Slides.Any(slide =>
+                   slide.Source is not null || slide.Elements.Any(element =>
+                       element.Source is not null || element.ContentCase == PresentationElement.ContentOneofCase.Opaque));
     }
 
     private static PptxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount, PptxAssetCatalog assetCatalog)

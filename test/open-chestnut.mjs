@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import JSZip from "jszip";
 import {
+  DocumentFile,
   DocumentModel,
   Presentation,
+  PresentationFile,
+  SpreadsheetFile,
   Workbook,
 } from "../src/index.mjs";
 import {
@@ -170,5 +173,23 @@ assert.equal(editedPresentation.slides.items[0].connectors.items[0].line.endArro
 assert.equal(editedPresentation.slides.items[0].charts.items[0].title, "Updated revenue");
 assert.deepEqual(editedPresentation.slides.items[0].charts.items[0].series[0].values, [8, 12]);
 await assert.rejects(exportPptxWithOpenChestnut(presentation, { allowLossy: true }), /does not accept option/i);
+
+for (const options of [
+  { codec: "open-chestnut" },
+  { codec: "javascript" },
+  { allowLossy: true },
+  { preferNative: true },
+  { relativeDateAsOf: "2026-07-16" },
+]) {
+  await assert.rejects(
+    SpreadsheetFile.exportXlsx(workbook, options),
+    /does not accept option|only Office codec|lossy fallback/i,
+  );
+}
+await assert.rejects(PresentationFile.importPptx(new Uint8Array(), "open-chestnut"), /options must be an object/i);
+await assert.rejects(DocumentFile.exportDocx(document, { allowLossy: true }), /does not accept option|lossy fallback/i);
+await assert.rejects(DocumentFile.importDocx(docx, { preferNative: true }), /does not accept option|only Office codec/i);
+await assert.rejects(PresentationFile.exportPptx(presentation, { codec: "javascript" }), /does not accept option|only Office codec/i);
+await assert.rejects(PresentationFile.importPptx(pptx, { allowLossy: true }), /does not accept option|lossy fallback/i);
 
 console.log("OpenChestnut protocol 2 canonical core smoke ok");

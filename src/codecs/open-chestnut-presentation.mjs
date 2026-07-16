@@ -79,6 +79,16 @@ const PRESENTATION_CHART_MARKERS_TO_WIRE = new Map([
 ]);
 const PRESENTATION_CHART_MARKERS_FROM_WIRE = new Map([...PRESENTATION_CHART_MARKERS_TO_WIRE].map(([name, value]) => [value, name]));
 
+function assertTrustedPresentationState(state) {
+  if (!state) return;
+  const sourceHash = String(state.source?.packageSha256 || "").toLowerCase();
+  const snapshot = state.opaqueOpc?.sourcePackage;
+  const snapshotHash = String(snapshot?.sha256 || "").toLowerCase();
+  if (!sourceHash || !snapshotHash || sourceHash !== snapshotHash || !snapshot?.data?.length) {
+    throw new OpenChestnutCodecError("PPTX source-bound export requires its validated source package snapshot.", [], { code: "missing_source_package" });
+  }
+}
+
 function emuFromPixels(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) throw new OpenChestnutCodecError(`${name} must be a non-negative finite number.`, [], { code: "invalid_presentation_frame" });
@@ -1125,6 +1135,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
   if (!(presentation instanceof Presentation)) throw new TypeError("exportPptxWithOpenChestnut expects a Presentation instance.");
   if (!presentation.slides?.items?.length) throw new OpenChestnutCodecError("Presentation must contain at least one slide.", [], { code: "missing_slides" });
   const state = presentation[PRESENTATION_STATE];
+  assertTrustedPresentationState(state);
   if (!state) {
     const unsupported = unsupportedPresentationFeatures(presentation);
     if (unsupported.length) {

@@ -34,6 +34,16 @@ const MANIFEST_URL = new URL("../../runtime/open-chestnut/manifest.json", import
 const WORKBOOK_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-state");
 const TABLE_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-table-state");
 const DOCUMENT_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-document-state");
+
+function assertTrustedImportedState(state, family) {
+  if (!state) return;
+  const sourceHash = String(state.source?.packageSha256 || "").toLowerCase();
+  const snapshot = state.opaqueOpc?.sourcePackage;
+  const snapshotHash = String(snapshot?.sha256 || "").toLowerCase();
+  if (!sourceHash || !snapshotHash || sourceHash !== snapshotHash || !snapshot?.data?.length) {
+    throw new OpenChestnutCodecError(`${family} source-bound export requires its validated source package snapshot.`, [], { code: "missing_source_package" });
+  }
+}
 const MAX_XLSX_NUMBER_FORMAT_CODE_LENGTH = 4096;
 const MAX_XLSX_FORMULA_LENGTH = 8192;
 const MAX_XLSX_FORMULA_TOPOLOGY_CELLS = 1_048_576;
@@ -498,15 +508,35 @@ function cellStyleFromWire(source) {
   return Object.keys(style).length ? style : undefined;
 }
 
-function unsupportedWorkbookFeatures(workbook) {
+function dynamicArrayCellSnapshot(cell) {
+  return {
+    formula: cell.formula == null ? null : String(cell.formula),
+    formulaType: cell.formulaType == null ? null : String(cell.formulaType),
+    dynamicArrayRef: cell.dynamicArrayRef == null ? null : String(cell.dynamicArrayRef),
+    spillRange: cell.spillRange == null ? null : String(cell.spillRange),
+    spillParent: cell.spillParent == null ? null : String(cell.spillParent),
+    spillAnchor: cell.spillAnchor == null ? null : String(cell.spillAnchor),
+    spillError: cell.spillError == null ? null : String(cell.spillError),
+  };
+}
+
+function isDynamicArrayCell(cell) {
+  return cell?.formulaType === "dynamicArray" || cell?.dynamicArrayRef != null ||
+    (Boolean(cell?.formula) && cell?.spillRange != null && !cell?.spillError);
+}
+
+function unsupportedWorkbookFeatures(workbook, state) {
   const unsupported = [];
   if (workbook.indexedColors?.length) unsupported.push("custom indexed colors");
+  if (workbook.connections?.length && !state) unsupported.push("source-free workbook connections");
   for (const sheet of workbook.worksheets?.items || []) {
     const prefix = `worksheet ${sheet.name}`;
     if (itemCount(sheet.pivotTables)) unsupported.push(`${prefix} pivot tables`);
     if (itemCount(sheet.sparklineGroups)) unsupported.push(`${prefix} sparklines`);
     if (sheet.shapes?.length) unsupported.push(`${prefix} shapes`);
     for (const [address, cell] of sheet.store?.entries?.() || []) {
+      const dynamicSlot = state?.dynamicArraySlotsBySheet?.get(sheet.id)?.get(address);
+      if (isDynamicArrayCell(cell) && !dynamicSlot) unsupported.push(`${prefix} source-free dynamic array at ${address}`);
       if (cell.style && Object.keys(cell.style).some((key) => cell.style[key] != null)) wireCellStyle(cell.style, `${sheet.name}!${address}`);
       const metadata = Object.keys(cell).filter((key) => !["value", "formula", "style"].includes(key) && !XLSX_FORMULA_METADATA_KEYS.has(key));
       if (metadata.length) unsupported.push(`${prefix} advanced formula metadata at ${address}`);
@@ -657,10 +687,6 @@ function connectionSnapshot(value) {
   return publicWorkbookConnection(value);
 }
 
-function wireWorkbookConnection(value, source) {
-  return { ...publicWorkbookConnection(value), source };
-}
-
 function wireWorkbookConnections(workbook, state) {
   const remaining = new Set(workbook.connections || []);
   const output = [];
@@ -668,11 +694,14 @@ function wireWorkbookConnections(workbook, state) {
     if (!remaining.delete(slot.connection)) {
       throw new OpenChestnutCodecError(`Workbook cannot remove imported connection ${slot.connection.connectionId} in the bounded OpenChestnut slice.`, [], { code: "invalid_workbook_connection" });
     }
-    output.push(JSON.stringify(connectionSnapshot(slot.connection)) === JSON.stringify(slot.publicSnapshot)
-      ? slot.wire
-      : wireWorkbookConnection(slot.connection, slot.wire.source));
+    if (JSON.stringify(connectionSnapshot(slot.connection)) !== JSON.stringify(slot.publicSnapshot)) {
+      throw new OpenChestnutCodecError(`Imported workbook connection ${slot.connection.connectionId} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_workbook_connection_edit" });
+    }
+    output.push(slot.wire);
   }
-  output.push(...[...remaining].map((connection) => wireWorkbookConnection(connection)));
+  if (remaining.size) {
+    throw new OpenChestnutCodecError("OpenChestnut 0.2 cannot author workbook connections; imported connections are source-bound and read-only.", [], { code: "unsupported_workbook_connection_edit" });
+  }
   return output;
 }
 
@@ -1077,14 +1106,18 @@ function publicTableQuery(value) {
 }
 
 function wireTableQuery(table) {
+  const state = table[TABLE_STATE];
   const query = publicTableQuery(table.queryTable);
-  if (!query) return undefined;
-  if (table.queryTable?.refresh) {
-    query.refresh = publicTableQueryRefresh(table.queryTable.refresh);
-    if (table.queryTable.refresh.sortState)
-      query.refresh.sortState = wireTableSortState(table.queryTable.refresh.sortState, `table ${table.name} query refresh`);
+  if (state) {
+    if (JSON.stringify(query) !== JSON.stringify(state.querySnapshot)) {
+      throw new OpenChestnutCodecError(`Imported query table ${table.name} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_query_table_edit" });
+    }
+    return state.wire?.queryTable;
   }
-  return { ...query, source: table[TABLE_STATE]?.wire?.queryTable?.source };
+  if (query) {
+    throw new OpenChestnutCodecError(`OpenChestnut 0.2 cannot author query table ${table.name}; imported query tables are source-bound and read-only.`, [], { code: "unsupported_query_table_edit" });
+  }
+  return undefined;
 }
 
 function tableSnapshot(table) {
@@ -1175,11 +1208,12 @@ function workbookEnvelope(workbook) {
   if (!(workbook instanceof Workbook)) throw new TypeError("exportXlsxWithOpenChestnut expects a Workbook instance.");
   if (!workbook.worksheets?.items?.length) throw new OpenChestnutCodecError("Workbook must contain at least one worksheet.", [], { code: "missing_worksheets" });
   if (!workbook.worksheets.items.some((sheet) => sheet.visibility === "visible")) throw new OpenChestnutCodecError("Workbook must contain at least one visible worksheet.", [], { code: "missing_visible_worksheet" });
-  const unsupported = unsupportedWorkbookFeatures(workbook);
+  const state = workbook[WORKBOOK_STATE];
+  assertTrustedImportedState(state, "XLSX");
+  const unsupported = unsupportedWorkbookFeatures(workbook, state);
   if (unsupported.length) {
     throw new OpenChestnutCodecError(`OpenChestnut cannot encode these XLSX features: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. This operation fails closed; preserve them only through a validated source-bound package.`, [], { code: "unsupported_workbook_features" });
   }
-  const state = workbook[WORKBOOK_STATE];
   const theme = state?.themeWire && sameWorkbookTheme(workbook.theme, state.publicTheme)
     ? state.themeWire
     : wireWorkbookTheme(workbook.theme, state?.themeWire?.source);
@@ -1210,7 +1244,17 @@ function workbookEnvelope(workbook) {
       conditionalFormats: (sheet.conditionalFormattings?.items || []).map((item, index) => wireConditionalFormat(item, sheet.name, index)),
       threadedComments: wireThreadedComments(workbook, sheet),
       cells: (() => {
-        const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell, workbook.dateSystem));
+        const dynamicSlots = state?.dynamicArraySlotsBySheet?.get(sheet.id) || new Map();
+        const entries = sheet.store?.entries?.() || [];
+        const byAddress = new Map(entries);
+        for (const [address, slot] of dynamicSlots) {
+          if (byAddress.get(address) !== slot.cell || JSON.stringify(dynamicArrayCellSnapshot(slot.cell)) !== JSON.stringify(slot.publicSnapshot)) {
+            throw new OpenChestnutCodecError(`Imported dynamic array ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_dynamic_array_edit" });
+          }
+        }
+        const cells = entries
+          .filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null))
+          .map(([address, cell]) => dynamicSlots.get(address)?.wire || wireCell(address, cell, workbook.dateSystem));
         validateFormulaTopology(cells, sheet.name);
         return cells;
       })(),
@@ -1275,6 +1319,7 @@ function workbookFromEnvelope(envelope) {
   const tablesBySheet = new Map();
   const imagesBySheet = new Map();
   const chartsBySheet = new Map();
+  const dynamicArraySlotsBySheet = new Map();
   const worksheetSlots = new Map();
   const assets = new Map((envelope.assets || []).map((asset) => [asset.id, asset]));
   const connectionSlots = (source.connections || []).map((wire, index) => ({
@@ -1320,8 +1365,10 @@ function workbookFromEnvelope(envelope) {
       );
       if (sourceComment.id) thread.id = sourceComment.id;
     }
+    const dynamicArraySlots = new Map();
     for (const sourceCell of sourceSheet.cells) {
-      const cell = sheet.store.get(cellAddress(sourceCell.row, sourceCell.column));
+      const address = cellAddress(sourceCell.row, sourceCell.column);
+      const cell = sheet.store.get(address);
       cell.formula = sourceCell.formula || null;
       if (sourceCell.formulaMetadata?.kind === CellFormulaKind.SHARED) {
         cell.formulaType = "shared";
@@ -1343,7 +1390,11 @@ function workbookFromEnvelope(envelope) {
         case "errorValue": cell.value = sourceCell.value.value; break;
         default: cell.value = null;
       }
+      if (sourceCell.formulaMetadata?.kind === CellFormulaKind.DYNAMIC_ARRAY) {
+        dynamicArraySlots.set(address, { wire: sourceCell, cell, publicSnapshot: dynamicArrayCellSnapshot(cell) });
+      }
     }
+    dynamicArraySlotsBySheet.set(sheet.id, dynamicArraySlots);
     const slots = [];
     for (const sourceTable of sourceSheet.tables || []) {
       if (!sourceTable.name || !sourceTable.reference || !sourceTable.columnNames?.length) {
@@ -1370,7 +1421,7 @@ function workbookFromEnvelope(envelope) {
       table.showLastColumn = sourceTable.showLastColumn;
       table.showRowStripes = sourceTable.showRowStripes;
       const publicSnapshot = tableSnapshot(table);
-      Object.defineProperty(table, TABLE_STATE, { configurable: true, value: { wire: sourceTable }, writable: true });
+      Object.defineProperty(table, TABLE_STATE, { configurable: true, value: { wire: sourceTable, querySnapshot: publicTableQuery(table.queryTable) }, writable: true });
       slots.push({ wire: sourceTable, table, publicSnapshot });
     }
     tablesBySheet.set(sheet.id, { slots });
@@ -1418,6 +1469,7 @@ function workbookFromEnvelope(envelope) {
       calculationSlot,
       viewSlots,
       worksheetSlots,
+      dynamicArraySlotsBySheet,
       tablesBySheet,
       imagesBySheet,
       chartsBySheet,
@@ -2127,6 +2179,21 @@ function unchangedSourceBlock(block, original) {
   }
 }
 
+function documentBlockSnapshot(block) {
+  return JSON.stringify({
+    proto: typeof block?.toProto === "function" ? block.toProto() : {
+      id: block?.id,
+      name: block?.name,
+      kind: block?.kind,
+      styleId: block?.styleId,
+      text: block?.text,
+    },
+    runs: Array.isArray(block?.runs)
+      ? block.runs.map((run) => ({ text: String(run?.text ?? ""), style: { ...(run?.style || {}) } }))
+      : undefined,
+  });
+}
+
 function documentBlock(block, original, directNumbering, assets) {
   if (original && unchangedSourceBlock(block, original)) return original;
   const common = {
@@ -2256,17 +2323,20 @@ function unsupportedDocumentCollections(document) {
     if (value?.length) unsupported.push(label);
   }
   if (document.bibliography && Object.values(document.bibliography).some(Boolean)) unsupported.push("bibliography settings");
+  if (document.settings?.trackRevisions) unsupported.push("revision tracking");
+  if (document.settings?.updateFields) unsupported.push("automatic field refresh");
+  if (document.settings?.mirrorMargins) unsupported.push("mirrored margins");
+  if (document.settings?.documentProtection != null) unsupported.push("document protection");
   return unsupported;
 }
 
 function documentEnvelope(document) {
   if (!(document instanceof DocumentModel)) throw new TypeError("exportDocxWithOpenChestnut expects a DocumentModel instance.");
   const state = document[DOCUMENT_STATE];
-  if (!state) {
-    const unsupported = unsupportedDocumentCollections(document);
-    if (unsupported.length) {
-      throw new OpenChestnutCodecError(`OpenChestnut cannot author these DOCX features: ${unsupported.join(", ")}. This operation fails closed; preserve them only through a validated source-bound package.`, [], { code: "unsupported_document_features" });
-    }
+  assertTrustedImportedState(state, "DOCX");
+  const unsupported = unsupportedDocumentCollections(document);
+  if (unsupported.length) {
+    throw new OpenChestnutCodecError(`OpenChestnut cannot author or edit these DOCX features: ${unsupported.join(", ")}. This operation fails closed; preserve imported instances only through their validated source-bound package.`, [], { code: "unsupported_document_features" });
   }
   if (state && state.blocks.length !== document.blocks.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.blocks.length}-block topology; the document contains ${document.blocks.length} blocks.`, [], { code: "document_topology_changed" });
@@ -2276,6 +2346,11 @@ function documentEnvelope(document) {
   }
   if (state && (state.headers.length !== document.headers.length || state.footers.length !== document.footers.length)) {
     throw new OpenChestnutCodecError("Source-preserving DOCX export requires the original header/footer topology.", [], { code: "document_header_footer_topology_changed" });
+  }
+  for (const slot of state?.readOnlyBlockSlots || []) {
+    if (document.blocks[slot.index] !== slot.block || documentBlockSnapshot(slot.block) !== slot.publicSnapshot) {
+      throw new OpenChestnutCodecError(`Imported document block ${slot.wire.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_document_edit" });
+    }
   }
   const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
   const assets = new Map((state?.assets || []).map((asset) => [asset.id, asset]));
@@ -2477,9 +2552,14 @@ function documentFromEnvelope(envelope) {
     wire,
     publicSnapshot: documentCommentSnapshot(document.comments[index]),
   }));
+  const readOnlyBlockSlots = source.blocks.flatMap((wire, index) => {
+    if (wire.content.case !== "opaque" && wire.source?.editable !== false) return [];
+    const block = document.blocks[index];
+    return [{ wire, index, block, publicSnapshot: documentBlockSnapshot(block) }];
+  });
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, comments: commentSlots, headers: source.headers || [], footers: source.footers || [] },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;

@@ -119,7 +119,7 @@ internal sealed class XlsxTableCodec
             foreach (var table in desired)
             {
                 if (table.QueryTable is not null)
-                    throw Invalid("Source-free XLSX authoring cannot fabricate a QueryTable/external-connection graph.", _worksheetPath);
+                    throw new CodecException("unsupported_query_table_edit", "Source-free XLSX authoring cannot fabricate a QueryTable/external-connection graph.", _worksheetPath);
                 Add(table, ref nextTableId);
             }
             return;
@@ -146,7 +146,7 @@ internal sealed class XlsxTableCodec
             }
             if (!HasCompleteSemantics(table)) throw Invalid("An editable source table is missing its bounded semantic fields.", entry.Path);
             if (entry.Query is null && table.QueryTable is not null || entry.Query is not null && table.QueryTable is null)
-                throw Invalid("Source-preserving XLSX export cannot add or remove a worksheet QueryTable graph in this bounded slice.", entry.Path);
+                throw new CodecException("unsupported_query_table_edit", "Imported worksheet QueryTables are read-only and cannot be added or removed.", entry.Path);
             entry.Query?.Apply(table.QueryTable, sourceBound: true);
             if (!SemanticSha256(table).Equals(table.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) Patch(entry, table);
         }

@@ -263,7 +263,37 @@ const unsupported = DocumentModel.create({
 unsupported.addCitation("Unsupported citation", { tag: "AdvancedSource", title: "Advanced source" });
 await assert.rejects(
   () => DocumentFile.exportDocx(unsupported),
-  /cannot author these DOCX features:/i,
+  /cannot author or edit these DOCX features:/i,
+);
+
+const unsupportedSettings = DocumentModel.create({
+  name: "Unsupported document settings",
+  settings: { trackRevisions: true },
+  blocks: [{ kind: "paragraph", text: "Tracked authoring must fail." }],
+});
+await assert.rejects(
+  () => DocumentFile.exportDocx(unsupportedSettings),
+  (error) => error?.code === "unsupported_document_features" && /revision tracking/i.test(error.message),
+);
+
+const importedWithAddedBookmark = await DocumentFile.importDocx(firstDocx);
+importedWithAddedBookmark.addBookmark(importedWithAddedBookmark.blocks[0], "AddedBookmark");
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithAddedBookmark),
+  (error) => error?.code === "unsupported_document_features" && /bookmarks/i.test(error.message),
+);
+
+const importedWithoutSourceSnapshot = await DocumentFile.importDocx(firstDocx);
+const documentState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-document-state")];
+documentState.opaqueOpc.sourcePackage = undefined;
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithoutSourceSnapshot),
+  (error) => error?.code === "missing_source_package",
+);
+
+assert.throws(
+  () => DocumentModel.create({ blocks: [{ kind: "unknown-office-block", text: "Do not coerce me." }] }),
+  /Unsupported document block kind unknown-office-block/,
 );
 
 assert.equal(bullet.kind, "listItem");

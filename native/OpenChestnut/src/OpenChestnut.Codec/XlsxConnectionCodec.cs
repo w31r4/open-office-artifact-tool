@@ -8,40 +8,34 @@ using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
-// Owns the workbook-level ConnectionsPart exactly once. The bounded public
-// projection contains only non-secret root metadata and refresh policy for the
-// first bounded database/type-5 profile;
-// provider strings, commands, credentials, paths, child graphs, extensions,
-// and unrecognized root attributes remain in the source XML.
+// Reads the workbook-level ConnectionsPart into a bounded public projection.
+// Imported connection graphs are source-bound and read-only: the validated
+// source package remains the sole owner of their XML and relationships.
 internal sealed class XlsxConnectionCodec
 {
     private const uint MaxConnections = 4_096;
     private const uint MaxIntervalMinutes = 32_767;
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-    private readonly ConnectionsPart? _part;
-    private readonly XDocument? _document;
     private readonly List<Entry> _entries = [];
     private readonly HashSet<uint> _connectionIds = [];
 
     private sealed class Entry
     {
-        internal required XElement Element { get; init; }
         internal required uint ConnectionId { get; init; }
         internal SpreadsheetConnectionArtifact? SourceArtifact { get; init; }
     }
 
     internal XlsxConnectionCodec(WorkbookPart workbookPart)
     {
-        _part = workbookPart.ConnectionsPart;
-        if (_part is null)
+        var part = workbookPart.ConnectionsPart;
+        if (part is null)
         {
             IsReadable = true;
             return;
         }
 
-        Path = _part.Uri.OriginalString.TrimStart('/');
-        if (!TryReadPart(_part, out var bytes, out var document) || document!.Root?.Name != Spreadsheet + "connections") return;
-        _document = document;
+        Path = part.Uri.OriginalString.TrimStart('/');
+        if (!TryReadPart(part, out var bytes, out var document) || document!.Root?.Name != Spreadsheet + "connections") return;
         PartXmlSha256 = Sha256(bytes!);
         var children = document.Root.Elements().ToArray();
         if (children.Length > MaxConnections || children.Any(child => child.Name != Spreadsheet + "connection")) return;
@@ -64,11 +58,11 @@ internal sealed class XlsxConnectionCodec
                     PartXmlSha256 = PartXmlSha256,
                     ConnectionXmlSha256 = ElementSha256(element),
                     SemanticSha256 = SemanticSha256(recognized),
-                    Editable = true,
+                    Editable = false,
                 };
                 artifact = recognized;
             }
-            _entries.Add(new Entry { Element = element, ConnectionId = id, SourceArtifact = artifact });
+            _entries.Add(new Entry { ConnectionId = id, SourceArtifact = artifact });
         }
         IsReadable = true;
     }
@@ -76,7 +70,7 @@ internal sealed class XlsxConnectionCodec
     internal bool IsReadable { get; }
     internal string Path { get; } = string.Empty;
     internal string PartXmlSha256 { get; } = string.Empty;
-    internal bool Dirty { get; private set; }
+    internal bool Dirty => false;
     internal bool Contains(uint connectionId) => IsReadable && _connectionIds.Contains(connectionId);
     internal IReadOnlyList<SpreadsheetConnectionArtifact> Read() => _entries
         .Where(entry => entry.SourceArtifact is not null)
@@ -88,47 +82,31 @@ internal sealed class XlsxConnectionCodec
         if (!sourceBound)
         {
             if (desired.Count > 0)
-                throw Invalid("Source-free XLSX authoring cannot fabricate workbook connection definitions.");
+                throw Unsupported("Source-free XLSX authoring cannot fabricate workbook connection definitions.");
             return;
         }
         if (!IsReadable)
         {
             if (desired.Count > 0)
-                throw Invalid("Source-preserving XLSX export cannot replace an opaque ConnectionsPart.", Path);
+                throw Unsupported("Source-bound XLSX export cannot replace an opaque ConnectionsPart.", Path);
             return;
         }
 
         var recognized = _entries.Where(entry => entry.SourceArtifact is not null).ToArray();
         if (desired.Count != recognized.Length)
-            throw Invalid("Source-preserving XLSX export cannot add or remove recognized workbook connections.", Path);
+            throw Unsupported("Imported workbook connections are read-only and cannot be added or removed.", Path);
         for (var index = 0; index < recognized.Length; index++)
         {
             var entry = recognized[index];
             var source = entry.SourceArtifact!;
             var target = desired[index];
-            Validate(target, Path);
             ValidateBinding(target.Source, source.Source, entry.ConnectionId);
-            if (target.ConnectionId != source.ConnectionId || target.Type != source.Type ||
-                target.RefreshedVersion != source.RefreshedVersion)
-                throw Invalid("Source-preserving XLSX export cannot reorder or change connection id/type/version identity.", Path);
             if (SemanticSha256(target).Equals(source.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
-            Patch(entry.Element, target);
-            Dirty = true;
+            throw Unsupported($"Imported workbook connection {entry.ConnectionId} is read-only and cannot be edited.", Path);
         }
     }
 
-    internal void Save()
-    {
-        if (!Dirty || _part is null || _document is null) return;
-        using var stream = _part.GetStream(FileMode.Create, FileAccess.Write);
-        using var writer = XmlWriter.Create(stream, new XmlWriterSettings
-        {
-            Encoding = new UTF8Encoding(false),
-            Indent = false,
-            OmitXmlDeclaration = false,
-        });
-        _document.Save(writer);
-    }
+    internal void Save() { }
 
     private static bool TryReadConnection(XElement element, out SpreadsheetConnectionArtifact? artifact)
     {
@@ -185,18 +163,7 @@ internal sealed class XlsxConnectionCodec
             !desired.ConnectionXmlSha256.Equals(source.ConnectionXmlSha256, StringComparison.OrdinalIgnoreCase) ||
             !desired.SemanticSha256.Equals(source.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
             desired.Editable != source.Editable)
-            throw Invalid($"Workbook connection {connectionId} source binding does not match the validated source package.", source.PartPath);
-    }
-
-    private static void Patch(XElement element, SpreadsheetConnectionArtifact connection)
-    {
-        element.SetAttributeValue("name", connection.Name);
-        element.SetAttributeValue("description", connection.HasDescription ? connection.Description : null);
-        SetOptional(element, "keepAlive", connection.HasKeepAlive, connection.KeepAlive);
-        SetOptional(element, "interval", connection.HasIntervalMinutes, connection.IntervalMinutes);
-        SetOptional(element, "background", connection.HasBackground, connection.Background);
-        SetOptional(element, "refreshOnLoad", connection.HasRefreshOnLoad, connection.RefreshOnLoad);
-        SetOptional(element, "saveData", connection.HasSaveData, connection.SaveData);
+            throw Unsupported($"Workbook connection {connectionId} source binding does not match the validated source package.", source.PartPath);
     }
 
     private static bool TryReadPart(OpenXmlPart part, out byte[]? bytes, out XDocument? document)
@@ -247,12 +214,6 @@ internal sealed class XlsxConnectionCodec
         return false;
     }
 
-    private static void SetOptional(XElement root, string name, bool hasValue, bool value) =>
-        root.SetAttributeValue(name, hasValue ? value ? "1" : "0" : null);
-
-    private static void SetOptional(XElement root, string name, bool hasValue, uint value) =>
-        root.SetAttributeValue(name, hasValue ? value.ToString(CultureInfo.InvariantCulture) : null);
-
     private static string SemanticSha256(SpreadsheetConnectionArtifact connection)
     {
         var values = new[]
@@ -278,4 +239,5 @@ internal sealed class XlsxConnectionCodec
     private static string Optional(bool hasValue, uint value) => hasValue ? value.ToString(CultureInfo.InvariantCulture) : "<absent>";
     private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static CodecException Invalid(string message, string? location = null) => new("invalid_workbook_connection", message, location);
+    private static CodecException Unsupported(string message, string? location = null) => new("unsupported_workbook_connection_edit", message, location);
 }

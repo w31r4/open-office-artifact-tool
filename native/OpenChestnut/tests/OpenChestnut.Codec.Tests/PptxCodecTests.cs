@@ -15,6 +15,29 @@ namespace OpenChestnut.Codec.Tests;
 public sealed class PptxCodecTests
 {
     [Fact]
+    public void ImportedSlideBindingRequiresValidatedSourcePackageSnapshot()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.NotNull(Assert.Single(imported.Artifact.Presentation.Slides).Source);
+
+        imported.Artifact.Source = null;
+        imported.Artifact.OpaqueOpc.SourcePackage = new SourcePackageSnapshot();
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportPptx,
+            Family = ArtifactFamily.Presentation,
+            Artifact = imported.Artifact,
+        });
+
+        Assert.False(rejected.Ok);
+        Assert.Equal("missing_source_package", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRoundTripsMinimalPresentation()
     {
         var exported = Invoke(ExportRequest());

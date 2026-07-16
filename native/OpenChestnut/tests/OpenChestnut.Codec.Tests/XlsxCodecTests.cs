@@ -18,6 +18,29 @@ namespace OpenChestnut.Codec.Tests;
 public sealed class XlsxCodecTests
 {
     [Fact]
+    public void ImportedWorksheetBindingRequiresValidatedSourcePackageSnapshot()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(ExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.NotNull(Assert.Single(imported.Artifact.Workbook.Worksheets).Source);
+
+        imported.Artifact.Source = null;
+        imported.Artifact.OpaqueOpc.SourcePackage = new SourcePackageSnapshot();
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = imported.Artifact,
+        }.ToByteArray()));
+
+        Assert.False(rejected.Ok);
+        Assert.Equal("missing_source_package", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRoundTripsMinimalWorkbook()
     {
         var request = ExportRequest();
@@ -1056,7 +1079,7 @@ public sealed class XlsxCodecTests
             Artifact = imported.Artifact,
         }.ToByteArray()));
         Assert.False(rejected.Ok);
-        Assert.Equal("opaque_content_requires_preservation", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Equal("missing_source_package", Assert.Single(rejected.Diagnostics).Code);
 
     }
 
@@ -1493,7 +1516,7 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void ImportsAndEditsSourceBoundWorksheetQueryTableGraph()
+    public void ImportsAndPreservesSourceBoundWorksheetQueryTableGraphReadOnly()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var source = AddQueryTableGraph(authored.File.ToByteArray());
@@ -1515,7 +1538,7 @@ public sealed class XlsxCodecTests
         Assert.False(connection.RefreshOnLoad);
         Assert.True(connection.SaveData);
         Assert.Equal("xl/connections.xml", connection.Source.PartPath);
-        Assert.True(connection.Source.Editable);
+        Assert.False(connection.Source.Editable);
         Assert.True(table.Source.Editable);
         var query = Assert.IsType<SpreadsheetTableQueryArtifact>(table.QueryTable);
         Assert.Equal("Warehouse sales", query.Name);
@@ -1529,7 +1552,7 @@ public sealed class XlsxCodecTests
         Assert.Equal("xl/queryTables/queryTable1.xml", query.Source.QueryPartPath);
         Assert.Equal("rIdQueryTable", query.Source.RelationshipId);
         Assert.Equal("xl/connections.xml", query.Source.ConnectionPartPath);
-        Assert.True(query.Source.Editable);
+        Assert.False(query.Source.Editable);
         var refresh = Assert.IsType<SpreadsheetTableQueryRefreshArtifact>(query.Refresh);
         Assert.True(refresh.PreserveSortFilterLayout);
         Assert.False(refresh.FieldIdWrapped);
@@ -1577,114 +1600,31 @@ public sealed class XlsxCodecTests
             });
 
         table.Name = "WarehouseTable";
-        query.Name = "Warehouse sales refreshed";
-        query.BackgroundRefresh = false;
-        query.RefreshOnLoad = true;
-        query.AutoFormatId = 3;
-        query.ApplyFontFormats = true;
-        refresh.PreserveSortFilterLayout = false;
-        refresh.HeadersInLastRefresh = false;
-        refresh.MinimumVersion = 1;
-        refresh.Fields[0].Name = "Territory";
-        refresh.Fields[0].DataBound = false;
-        refresh.Fields[0].FillFormulas = true;
-        refresh.Fields[1].Clipped = true;
-        refresh.DeletedFieldNames[0] = "Legacy Territory";
-        refreshSort.CaseSensitive = false;
-        refreshSort.SortMethod = "pinYin";
-        refreshSort.ColumnSort = true;
-        refreshSort.Conditions[0].Reference = "A3:B3";
-        refreshSort.Conditions[0].Descending = false;
-        refreshSort.Conditions[0].CustomList = "South,North";
-        refreshSort.Conditions[1].Reference = "A2:B2";
-        refreshSort.Conditions[1].Icon.IconId = 1;
-        connection.Name = "Fixture warehouse curated";
-        connection.Description = "Curated without executing the source";
-        connection.KeepAlive = true;
-        connection.IntervalMinutes = 45;
-        connection.Background = false;
-        connection.RefreshOnLoad = true;
-        connection.SaveData = false;
-        var exported = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
-        {
-            ProtocolVersion = CodecProtocol.ProtocolVersion,
-            Operation = CodecOperation.ExportXlsx,
-            Family = ArtifactFamily.Workbook,
-            Artifact = imported.Artifact,
-        }.ToByteArray()));
-        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        var output = exported.File.ToByteArray();
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var output = preserved.File.ToByteArray();
         AssertOffice2021Valid(output);
         Assert.Equal(relationshipXml, ReadEntry(output, "xl/tables/_rels/table1.xml.rels"));
-        var editedConnectionXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, "xl/connections.xml"));
-        Assert.Contains("name=\"Fixture warehouse curated\"", editedConnectionXml);
-        Assert.Contains("description=\"Curated without executing the source\"", editedConnectionXml);
-        Assert.Contains("keepAlive=\"1\"", editedConnectionXml);
-        Assert.Contains("interval=\"45\"", editedConnectionXml);
-        Assert.Contains("background=\"0\"", editedConnectionXml);
-        Assert.Contains("refreshOnLoad=\"1\"", editedConnectionXml);
-        Assert.Contains("saveData=\"0\"", editedConnectionXml);
-        Assert.Contains("Provider=Fixture.Provider;Data Source=fixture.invalid", editedConnectionXml);
-        Assert.Contains("SELECT Region, Revenue FROM Sales", editedConnectionXml);
-        Assert.Contains("savePassword=\"0\"", editedConnectionXml);
-        Assert.Contains("credentials=\"integrated\"", editedConnectionXml);
-        Assert.Contains("<fixture:connectionOpaque value=\"kept\"", editedConnectionXml);
-        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, "xl/queryTables/queryTable1.xml"));
-        Assert.Contains("name=\"Warehouse sales refreshed\"", queryXml);
-        Assert.Contains("backgroundRefresh=\"0\"", queryXml);
-        Assert.Contains("refreshOnLoad=\"1\"", queryXml);
-        Assert.Contains("autoFormatId=\"3\"", queryXml);
-        Assert.Contains("applyFontFormats=\"1\"", queryXml);
-        Assert.Contains("preserveSortFilterLayout=\"0\"", queryXml);
-        Assert.Contains("headersInLastRefresh=\"0\"", queryXml);
-        Assert.Contains("minimumVersion=\"1\"", queryXml);
-        Assert.Contains("id=\"1\" name=\"Territory\" dataBound=\"0\" tableColumnId=\"1\" fillFormulas=\"1\" clipped=\"0\"", queryXml);
-        Assert.Contains("id=\"2\" name=\"Revenue\" dataBound=\"1\" tableColumnId=\"2\" clipped=\"1\"", queryXml);
-        Assert.Contains("<x:queryTableFields count=\"2\">", queryXml);
-        Assert.Contains("<x:deletedField name=\"Legacy Territory\"", queryXml);
-        Assert.Contains("<x:deletedField name=\"Legacy Revenue\"", queryXml);
-        Assert.Contains("<x:sortState ref=\"A2:B3\" sortMethod=\"pinYin\" columnSort=\"1\">", queryXml);
-        Assert.Contains("<x:sortCondition ref=\"A3:B3\" customList=\"South,North\"", queryXml);
-        Assert.Contains("<x:sortCondition ref=\"A2:B2\" sortBy=\"icon\" iconSet=\"3Arrows\" iconId=\"1\"", queryXml);
-        Assert.Contains("<fixture:fieldOpaque value=\"kept\"", queryXml);
-        Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
-        Assert.Contains("<fixture:opaque value=\"kept\"", queryXml);
+        Assert.Equal(ReadEntry(source, "xl/connections.xml"), ReadEntry(output, "xl/connections.xml"));
+        Assert.Equal(ReadEntry(source, "xl/queryTables/queryTable1.xml"), ReadEntry(output, "xl/queryTables/queryTable1.xml"));
 
-        var reimported = Import(output);
-        var edited = Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Tables);
-        var editedConnection = Assert.Single(reimported.Artifact.Workbook.Connections);
-        Assert.Equal("Fixture warehouse curated", editedConnection.Name);
-        Assert.Equal("Curated without executing the source", editedConnection.Description);
-        Assert.True(editedConnection.KeepAlive);
-        Assert.Equal(45U, editedConnection.IntervalMinutes);
-        Assert.False(editedConnection.Background);
-        Assert.True(editedConnection.RefreshOnLoad);
-        Assert.False(editedConnection.SaveData);
-        Assert.Equal("WarehouseTable", edited.Name);
-        Assert.Equal("Warehouse sales refreshed", edited.QueryTable.Name);
-        Assert.False(edited.QueryTable.BackgroundRefresh);
-        Assert.True(edited.QueryTable.RefreshOnLoad);
-        Assert.Equal(3U, edited.QueryTable.AutoFormatId);
-        Assert.True(edited.QueryTable.ApplyFontFormats);
-        Assert.False(edited.QueryTable.Refresh.PreserveSortFilterLayout);
-        Assert.False(edited.QueryTable.Refresh.HeadersInLastRefresh);
-        Assert.Equal(1U, edited.QueryTable.Refresh.MinimumVersion);
-        Assert.Equal("Territory", edited.QueryTable.Refresh.Fields[0].Name);
-        Assert.False(edited.QueryTable.Refresh.Fields[0].DataBound);
-        Assert.True(edited.QueryTable.Refresh.Fields[0].FillFormulas);
-        Assert.True(edited.QueryTable.Refresh.Fields[1].DataBound);
-        Assert.True(edited.QueryTable.Refresh.Fields[1].Clipped);
-        Assert.Equal(["Legacy Territory", "Legacy Revenue"], edited.QueryTable.Refresh.DeletedFieldNames);
-        Assert.False(edited.QueryTable.Refresh.SortState.CaseSensitive);
-        Assert.Equal("pinYin", edited.QueryTable.Refresh.SortState.SortMethod);
-        Assert.True(edited.QueryTable.Refresh.SortState.ColumnSort);
-        Assert.Equal("A3:B3", edited.QueryTable.Refresh.SortState.Conditions[0].Reference);
-        Assert.False(edited.QueryTable.Refresh.SortState.Conditions[0].Descending);
-        Assert.Equal("South,North", edited.QueryTable.Refresh.SortState.Conditions[0].CustomList);
-        Assert.Equal("A2:B2", edited.QueryTable.Refresh.SortState.Conditions[1].Reference);
-        Assert.Equal(1U, edited.QueryTable.Refresh.SortState.Conditions[1].Icon.IconId);
-        Assert.Equal(query.Source.QueryPartPath, edited.QueryTable.Source.QueryPartPath);
-        Assert.Equal(query.Source.RelationshipId, edited.QueryTable.Source.RelationshipId);
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].Name = "Edited connection";
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Name = "Edited query";
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].Name = "Edited field";
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -1700,7 +1640,7 @@ public sealed class XlsxCodecTests
         });
         var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(sourceFree.ToByteArray()));
         Assert.False(response.Ok);
-        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
 
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var source = AddQueryTableGraph(authored.File.ToByteArray());
@@ -1709,41 +1649,41 @@ public sealed class XlsxCodecTests
         imported.Artifact.Workbook.Connections[0].ConnectionId = 8;
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Contains("id/type/version identity", Assert.Single(response.Diagnostics).Message);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Connections[0].Type = 6;
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Connections[0].RefreshedVersion = 256;
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Connections.Clear();
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Contains("add or remove recognized workbook connections", Assert.Single(response.Diagnostics).Message);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Connections[0].IntervalMinutes = 32_768;
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Contains("bounded source-editable profile", Assert.Single(response.Diagnostics).Message);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Connections[0].Source.ConnectionXmlSha256 = new string('0', 64);
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Contains("source binding", Assert.Single(response.Diagnostics).Message);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
-    public void OpaqueWorkbookConnectionStaysHiddenAndByteExactDuringQueryEdit()
+    public void OpaqueWorkbookConnectionStaysHiddenAndByteExact()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var source = AddQueryTableGraph(authored.File.ToByteArray(), opaqueConnection: true);
@@ -1751,9 +1691,7 @@ public sealed class XlsxCodecTests
         var connectionXml = ReadEntry(source, "xl/connections.xml");
         var imported = Import(source);
         Assert.Empty(imported.Artifact.Workbook.Connections);
-        var query = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).QueryTable;
-        Assert.NotNull(query);
-        query.Name = "Opaque connection retained";
+        Assert.NotNull(Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).QueryTable);
 
         var response = Export(imported.Artifact);
         Assert.True(response.Ok, string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
@@ -1770,11 +1708,11 @@ public sealed class XlsxCodecTests
         });
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_workbook_connection", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
-    public void WorksheetQueryRefreshRejectsIdentityTopologyAndInvalidMetadata()
+    public void WorksheetQueryRefreshRejectsAllSemanticEdits()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var source = AddQueryTableGraph(authored.File.ToByteArray());
@@ -1783,80 +1721,19 @@ public sealed class XlsxCodecTests
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].Id = 99;
         var response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields.RemoveAt(0);
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.NextId = 2;
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Conditions[0].Reference = "A3:B3";
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.MinimumVersion = 256;
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].FillFormulas = true;
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("explicitly unbound", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].DataBound = false;
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.Fields[0].Clipped = true;
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("explicitly bound", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.DeletedFieldNames.RemoveAt(0);
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("add or remove query refresh deleted fields", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.DeletedFieldNames[1] = "Legacy Region";
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("duplicate deleted-field name", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Conditions.RemoveAt(0);
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("add or remove query refresh sort conditions", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Reference = "A2:C3";
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("contained in the source table range", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.ColumnSort = true;
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("row sort condition", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.SortMethod = "radical";
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("locale-specific sort method", Assert.Single(response.Diagnostics).Message);
-
-        imported = Import(source);
-        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Conditions[1].CustomList = "up,flat,down";
-        response = Export(imported.Artifact);
-        Assert.False(response.Ok);
-        Assert.Contains("custom-list value-sort", Assert.Single(response.Diagnostics).Message);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -1871,24 +1748,17 @@ public sealed class XlsxCodecTests
         Assert.Empty(query.Refresh.DeletedFieldNames);
         Assert.Null(query.Refresh.SortState);
         Assert.Equal("Region", query.Refresh.Fields[0].Name);
-        query.Name = "Opaque history retained";
-        query.Refresh.Fields[0].Name = "Territory";
 
         var exported = Export(imported.Artifact);
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertOffice2021Valid(exported.File.ToByteArray());
-        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(exported.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
-        Assert.Contains("name=\"Opaque history retained\"", queryXml);
-        Assert.Contains("name=\"Territory\"", queryXml);
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(queryXml, "<x:deletedField name=\"Legacy Region\"").Count);
-        Assert.Contains("columnSort=\"1\"", queryXml);
-        Assert.Contains("<fixture:sortOpaque value=\"kept\"", queryXml);
+        Assert.Equal(ReadEntry(source, "xl/queryTables/queryTable1.xml"), ReadEntry(exported.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
 
         imported = Import(source);
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.DeletedFieldNames.Add("Fabricated");
         var rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
-        Assert.Contains("absent/opaque query refresh deleted fields", Assert.Single(rejected.Diagnostics).Message);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(rejected.Diagnostics).Code);
 
         imported = Import(source);
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState = new SpreadsheetTableSortStateArtifact
@@ -1897,29 +1767,27 @@ public sealed class XlsxCodecTests
         };
         rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
-        Assert.Contains("absent/opaque query refresh sort state", Assert.Single(rejected.Diagnostics).Message);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
-    public void OpaqueWorksheetQueryRefreshStaysHiddenDuringRootEdit()
+    public void OpaqueWorksheetQueryRefreshStaysHiddenAndReadOnly()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
-        var imported = Import(AddQueryTableGraph(authored.File.ToByteArray(), opaqueRefresh: true));
+        var source = AddQueryTableGraph(authored.File.ToByteArray(), opaqueRefresh: true);
+        var imported = Import(source);
         var table = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables);
         Assert.NotNull(table.QueryTable);
         Assert.Null(table.QueryTable.Refresh);
-        table.QueryTable.Name = "Opaque refresh retained";
         var response = Export(imported.Artifact);
         Assert.True(response.Ok, string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(response.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
-        Assert.Contains("name=\"Opaque refresh retained\"", queryXml);
-        Assert.Contains("tableColumnId=\"999\"", queryXml);
+        Assert.Equal(ReadEntry(source, "xl/queryTables/queryTable1.xml"), ReadEntry(response.File.ToByteArray(), "xl/queryTables/queryTable1.xml"));
 
-        imported = Import(AddQueryTableGraph(authored.File.ToByteArray(), opaqueRefresh: true));
+        imported = Import(source);
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh = new SpreadsheetTableQueryRefreshArtifact();
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -1933,7 +1801,7 @@ public sealed class XlsxCodecTests
         };
         var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(sourceFree.ToByteArray()));
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
 
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var imported = Import(AddQueryTableGraph(authored.File.ToByteArray()));
@@ -1946,7 +1814,7 @@ public sealed class XlsxCodecTests
             Artifact = imported.Artifact,
         }.ToByteArray()));
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
 
         imported = Import(AddQueryTableGraph(authored.File.ToByteArray()));
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Source.ConnectionXmlSha256 = new string('0', 64);
@@ -1958,7 +1826,7 @@ public sealed class XlsxCodecTests
             Artifact = imported.Artifact,
         }.ToByteArray()));
         Assert.False(response.Ok);
-        Assert.Equal("invalid_worksheet_table", Assert.Single(response.Diagnostics).Code);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -2695,7 +2563,7 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void ProtocolAuthorsImportsAndSourcePreservesDynamicArrayMetadata()
+    public void ProtocolRejectsSourceFreeAndPreservesImportedDynamicArrayMetadataReadOnly()
     {
         var request = FormulaExportRequest();
         request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact
@@ -2710,11 +2578,16 @@ public sealed class XlsxCodecTests
         request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 1, Column = 6, NumberValue = 3 });
         request.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact { Row = 1, Column = 7, NumberValue = 4 });
 
-        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        var rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_dynamic_array_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
         Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        AssertOffice2021Valid(authored.File.ToByteArray());
+        var source = AddDynamicArrayMetadata(authored.File.ToByteArray(), "E1");
+        AssertOffice2021Valid(source);
         string metadataPartPath;
-        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var stream = new MemoryStream(source))
         using (var document = SpreadsheetDocument.Open(stream, false))
         {
             var workbookPart = document.WorkbookPart!;
@@ -2725,41 +2598,33 @@ public sealed class XlsxCodecTests
             Assert.Contains("fDynamic=\"1\"", metadata.OuterXml);
             Assert.Contains("fCollapsed=\"0\"", metadata.OuterXml);
             var cells = workbookPart.WorksheetParts.Single().Worksheet!.Descendants<Cell>().ToDictionary(item => item.CellReference!.Value!);
-            Assert.Equal(1U, cells["G1"].CellMetaIndex!.Value);
-            Assert.Equal(CellFormulaValues.Array, cells["G1"].CellFormula!.FormulaType!.Value);
-            Assert.Equal("G1:H2", cells["G1"].CellFormula!.Reference!.Value);
-            Assert.Null(cells["E1"].CellMetaIndex);
+            Assert.Equal(1U, cells["E1"].CellMetaIndex!.Value);
+            Assert.Equal(CellFormulaValues.Array, cells["E1"].CellFormula!.FormulaType!.Value);
+            Assert.Equal("E1:E2", cells["E1"].CellFormula!.Reference!.Value);
         }
 
-        var imported = Import(authored.File.ToByteArray());
+        var imported = Import(source);
         Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        var dynamic = imported.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 0 && cell.Column == 6);
+        var dynamic = imported.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 0 && cell.Column == 4);
         Assert.Equal(CellFormulaKind.DynamicArray, dynamic.FormulaMetadata.Kind);
-        Assert.Equal("G1:H2", dynamic.FormulaMetadata.Reference);
+        Assert.Equal("E1:E2", dynamic.FormulaMetadata.Reference);
 
-        var metadataBefore = ReadEntry(authored.File.ToByteArray(), metadataPartPath);
-        dynamic.Formula = "=SEQUENCE(2,2,10,1)";
-        dynamic.NumberValue = 10;
-        var edited = Export(imported.Artifact);
-        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        Assert.Equal(metadataBefore, ReadEntry(edited.File.ToByteArray(), metadataPartPath));
-        using (var stream = new MemoryStream(edited.File.ToByteArray()))
-        using (var document = SpreadsheetDocument.Open(stream, false))
-        {
-            var anchor = document.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(cell => cell.CellReference?.Value == "G1");
-            Assert.Equal(1U, anchor.CellMetaIndex!.Value);
-            Assert.Equal("SEQUENCE(2,2,10,1)", anchor.CellFormula!.Text);
-        }
+        var metadataBefore = ReadEntry(source, metadataPartPath);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(metadataBefore, ReadEntry(preserved.File.ToByteArray(), metadataPartPath));
 
+        dynamic.Formula = "=SEQUENCE(2)";
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_dynamic_array_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        imported = Import(source);
+        dynamic = imported.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 0 && cell.Column == 4);
         dynamic.FormulaMetadata = null;
-        var detached = Export(imported.Artifact);
-        Assert.True(detached.Ok, string.Join("\n", detached.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
-        using var detachedStream = new MemoryStream(detached.File.ToByteArray());
-        using var detachedDocument = SpreadsheetDocument.Open(detachedStream, false);
-        var detachedAnchor = detachedDocument.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>().Single(cell => cell.CellReference?.Value == "G1");
-        Assert.Null(detachedAnchor.CellMetaIndex);
-        Assert.Null(detachedAnchor.CellFormula!.FormulaType);
-        Assert.Equal(metadataBefore, ReadEntry(detached.File.ToByteArray(), metadataPartPath));
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_dynamic_array_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -2779,17 +2644,8 @@ public sealed class XlsxCodecTests
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_dynamic_array_edit", Assert.Single(rejected.Diagnostics).Code);
 
-        var dynamicRequest = FormulaExportRequest();
-        dynamicRequest.Artifact.Workbook.Worksheets[0].Cells.Add(new CellArtifact
-        {
-            Row = 0,
-            Column = 6,
-            Formula = "=SEQUENCE(2)",
-            NumberValue = 1,
-            FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.DynamicArray, Reference = "G1:G2" },
-        });
-        var dynamicFile = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(dynamicRequest.ToByteArray()));
-        var malformed = SetCellMetadataIndex(dynamicFile.File.ToByteArray(), "C1", 1U);
+        var dynamicFile = AddDynamicArrayMetadata(first.File.ToByteArray(), "E1");
+        var malformed = SetCellMetadataIndex(dynamicFile, "C1", 1U);
         var malformedImport = Import(malformed);
         Assert.False(malformedImport.Ok);
         Assert.Equal("invalid_cell_formula", Assert.Single(malformedImport.Diagnostics).Code);
@@ -5440,6 +5296,61 @@ public sealed class XlsxCodecTests
             var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
             var cell = worksheet.Descendants<Cell>().Single(item => item.CellReference?.Value == reference);
             cell.CellMetaIndex = index;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddDynamicArrayMetadata(byte[] bytes, string reference)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var workbookPart = document.WorkbookPart!;
+            var part = workbookPart.AddNewPart<CellMetadataPart>();
+            var metadataType = new MetadataType
+            {
+                Name = "XLDAPR",
+                MinSupportedVersion = 120_000U,
+                Copy = true,
+                PasteAll = true,
+                PasteValues = true,
+                Merge = true,
+                SplitFirst = true,
+                RowColumnShift = true,
+                ClearFormats = true,
+                ClearComments = true,
+                Assign = true,
+                Coerce = true,
+                CellMeta = true,
+            };
+            var extension = new DocumentFormat.OpenXml.Spreadsheet.Extension(
+                new DocumentFormat.OpenXml.Office2019.Excel.DynamicArray.DynamicArrayProperties
+                {
+                    FDynamic = true,
+                    FCollapsed = false,
+                })
+            {
+                Uri = "{BDBB8CDC-FA1E-496E-A857-3C3F30C029C3}",
+            };
+            part.Metadata = new Metadata(
+                new MetadataTypes(metadataType) { Count = 1U },
+                new FutureMetadata(
+                    new FutureMetadataBlock(new ExtensionList(extension)))
+                {
+                    Name = "XLDAPR",
+                    Count = 1U,
+                },
+                new CellMetadata(
+                    new MetadataBlock(new MetadataRecord { TypeIndex = 1U, Val = 0U }))
+                {
+                    Count = 1U,
+                });
+            part.Metadata.Save();
+            var worksheet = workbookPart.WorksheetParts.Single().Worksheet!;
+            worksheet.Descendants<Cell>().Single(cell => cell.CellReference?.Value == reference).CellMetaIndex = 1U;
             worksheet.Save();
         }
         return stream.ToArray();
