@@ -168,6 +168,9 @@ try {
   assert.match(skillText, /OpenChestnut/);
   assert.match(skillText, /artifact_tool\/API_QUICK_START\.md/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
+  const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
+  assert.match(commentsGuide, /document\.addComment/);
+  assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

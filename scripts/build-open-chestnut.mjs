@@ -14,6 +14,11 @@ const destination = process.env.OPEN_CHESTNUT_OUTPUT
   ? path.resolve(process.env.OPEN_CHESTNUT_OUTPUT)
   : path.join(repoRoot, "runtime", "open-chestnut");
 
+// A publish after `dotnet test` can otherwise reuse a mixed incremental graph
+// whose WASM linker inputs differ from a subsequent publish. Release builds
+// must start from the same state regardless of which local gate ran first.
+const cleaned = spawnSync("dotnet", ["clean", project, "--configuration", "Release", "--verbosity", "quiet"], { cwd: repoRoot, encoding: "utf8", stdio: "inherit", shell: false });
+if (cleaned.status !== 0) process.exit(cleaned.status || 1);
 const restored = spawnSync("dotnet", ["restore", project, "--locked-mode"], { cwd: repoRoot, encoding: "utf8", stdio: "inherit", shell: false });
 if (restored.status !== 0) process.exit(restored.status || 1);
 const published = spawnSync("dotnet", ["publish", project, "--configuration", "Release", "--no-restore"], { cwd: repoRoot, encoding: "utf8", stdio: "inherit", shell: false });

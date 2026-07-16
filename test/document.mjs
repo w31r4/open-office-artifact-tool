@@ -276,6 +276,17 @@ await assert.rejects(
   (error) => error?.code === "unsupported_document_features" && /revision tracking/i.test(error.message),
 );
 
+const unsupportedTableStyle = DocumentModel.create({ name: "Unsupported table style", blocks: [] });
+unsupportedTableStyle.styles.add("ComparisonTable", { name: "Comparison Table", type: "table" });
+unsupportedTableStyle.addTable({
+  styleId: "ComparisonTable",
+  values: [["Option", "Status"], ["Pilot", "Ready"]],
+});
+await assert.rejects(
+  () => DocumentFile.exportDocx(unsupportedTableStyle),
+  (error) => error?.code === "unsupported_document_features" && /cannot materialize custom table style ComparisonTable/i.test(error.message),
+);
+
 const importedWithAddedBookmark = await DocumentFile.importDocx(firstDocx);
 importedWithAddedBookmark.addBookmark(importedWithAddedBookmark.blocks[0], "AddedBookmark");
 await assert.rejects(

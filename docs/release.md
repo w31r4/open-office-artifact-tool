@@ -65,13 +65,14 @@ The Office bridge does not participate in normal import/export and must never be
 
 On 2026-07-16, the native reference-plugin/OpenChestnut compatibility worktree passed the complete local gate on macOS arm64 with Node 26.5.0, npm 11.17.0, and .NET SDK 8.0.128:
 
-- `npm test` passed the OpenChestnut protocol/facade tests, explicit OOXML inspect/patch tests, four native plugin bundles/five published Skills, the 26-slide reference Presentation vertical slice, PDF, render/visual QA, Playwright, examples, release metadata, package contents, and Help catalog.
+- `npm test` passed the OpenChestnut protocol/facade tests, explicit OOXML inspect/patch tests, four native plugin bundles/five published Skills, the runnable Documents create/import/edit/export vertical slice, the 26-slide reference Presentation vertical slice, PDF, render/visual QA, Playwright, examples, release metadata, package contents, and Help catalog.
 - OpenChestnut passed `163/163` C# tests, including literal DrawingML custom-geometry author/import/edit/failure coverage; the optional OfficeBridge passed `5/5` protocol tests.
 - Buf lint passed, protobuf generation was byte-idempotent, and `npm run docs:api` regenerated the public API reference.
 - `npm run test:pack` passed the no-local-dotnet clean-install probe for DOCX/XLSX/PPTX and the independent PDF path.
-- The dry-run npm tarball contains 358 files, is 9,007,771 bytes compressed and 22,134,939 bytes unpacked. The increase is the intentional native plugin workflow/asset surface; development harnesses, private reference material, and removed Office codec paths remain excluded.
-- `npm run verify:open-chestnut-build` compared 39 audited files; both builds produced the same 38-file, 14,018,748-byte runtime payload.
+- The dry-run npm tarball contains 359 files, is 9,011,581 bytes compressed and 22,152,335 bytes unpacked. The additional file is the runnable Documents OpenChestnut example; development harnesses, private reference material, and removed Office codec paths remain excluded.
+- `npm run verify:open-chestnut-build` compared 39 audited files; both clean builds produced the same 38-file, 14,018,748-byte runtime payload. The build entry point now clears the Release incremental graph before restore/publish so a preceding `dotnet test` cannot make the first WASM publish differ from the second.
 - Render-backed gates ran with LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, and the installed Playwright Chromium runtime.
+- The shipped Documents example and an independent Skill forward test each completed two OpenChestnut round trips, semantic assertions, and a one-page LibreOffice render with every page inspected. The audit narrowed custom source-free table styles to `TableGrid` plus direct formatting, documented non-persistent model locators across imports, aligned header/footer distance to the codec's 720-twip default, and routed ordinary classic comments through `DocumentModel.addComment`.
 - LibreOffice opened the shipped 26-slide reference template and produced a 26-page PDF; bounded custom-geometry icons rendered visibly. This local LibreOffice build substituted `Helvetica Neue`, so pixel parity with the checked-in preview images is not claimed and remains a visual-fidelity gap.
 
 ## Hosted evidence

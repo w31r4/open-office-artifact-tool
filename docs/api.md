@@ -37,7 +37,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Advanced bookmarks, bibliography, revisions, modern comments, settings, and unsupported content remain source-bound and read-only. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with styles, formatted paragraphs/runs, sections, headers/footers, lists, fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain model-only or import-preserved read-only. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
 | `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut. |
 | `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with source-bound block and exact-profile classic-comment bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed. |
 
@@ -569,7 +569,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with styles, formatted paragraphs/runs, sections, headers/footers, lists, fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain model-only or import-preserved read-only.
+Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
 
 **Schema parameters:**
 
@@ -577,7 +577,7 @@ Create a document with styles, formatted paragraphs/runs, sections, headers/foot
 - `designPreset` (string) — Initial design preset name.
 - `theme` (object) — Word theme name, 12 scheme colors, and major/minor Latin, East-Asian, and complex-script fonts.
 - `defaultRunStyle` (object) — Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles.
-- `styles` (object) — Named paragraph, character, table, or numbering style definitions with optional basedOn inheritance and numberingId/numberingLevel native list linkage.
+- `styles` (object) — Named paragraph/character styles plus imported table/numbering style records with optional basedOn inheritance and numberingId/numberingLevel linkage. Source-free table blocks may select TableGrid; arbitrary custom table-style graphs are not materialized.
 - `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
 - `blocks` (object[]) — Ordered paragraph/list/table/link/field/image/section block models. Citation/change kinds are model-only and rejected by canonical DOCX export.
 - `bibliography` (object) — Model-only Word bibliography metadata; OpenChestnut 0.2 cannot author or edit it.

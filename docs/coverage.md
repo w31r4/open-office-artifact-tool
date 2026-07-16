@@ -45,7 +45,7 @@ Status meanings:
 | Sections and pages | done | Page size, orientation, margins, section breaks, and section-level first/even behavior. |
 | Headers and footers | done | Default/first/even references, section scoping, text, and PAGE/simple field content within the supported topology. |
 | Lists | partial | Numbered and character-bulleted lists in the bounded numbering profile. Picture bullets and complex inherited numbering graphs remain source-bound. |
-| Tables | done | Fixed geometry, rectangular cell topology, text, merges, widths, and basic formatting. Topology-changing edits to imported complex tables fail. |
+| Tables | done | Fixed geometry, rectangular cell topology, text, merges, widths, `TableGrid`, and bounded direct formatting. Arbitrary source-free custom table-style graphs are not materialized; topology-changing edits to imported complex tables fail. |
 | Links and simple fields | done | External/internal links and bounded simple field instructions including PAGE. |
 | Images | done | Embedded PNG/JPEG inline images with bounded geometry and alternative text. |
 | Comments | partial | Classic comments and bounded anchors; modern reply/presence graphs are preserved unchanged but not newly authored. |

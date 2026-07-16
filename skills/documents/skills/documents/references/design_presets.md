@@ -31,7 +31,7 @@ All presets inherit these values unless they override them.
 |---|---|
 | Page size | US Letter, 8.5 x 11 in, portrait |
 | Margins | 1.0 in top/right/bottom/left |
-| Header/footer distance | 0.492 in |
+| Header/footer distance | 0.5 in |
 | Usable width | 6.5 in / 9360 DXA |
 | Base body style | `Normal` |
 | Default base font | Calibri |
@@ -83,8 +83,8 @@ document_style_preset:
     size: Letter
     orientation: portrait
     margins: {top: 1.0in, right: 1.0in, bottom: 1.0in, left: 1.0in}
-    header: 0.492in
-    footer: 0.492in
+    header: 0.5in
+    footer: 0.5in
     content_width: {in: 6.5, dxa: 9360}
   typography:
     base_font: "<font>"

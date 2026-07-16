@@ -8,13 +8,32 @@ Common situations:
 - **Final mode**: remove comments (and optionally accept tracked changes) and deliver a clean `.docx`.
 - **Triage mode**: extract comments into a machine-readable report (JSON/Markdown) for summarization.
 
-> Word "resolved" state is not reliably round-trippable with `python-docx` alone. This skill focuses on **reliable** operations.
+> Ordinary classic comment creation and text edits use `DocumentModel`. Modern reply/presence graphs and resolved-state package metadata remain source-bound or explicit low-level operations.
 
-## Adding comments (true Word comments)
-If the task is to *insert* new comments (not just extract/strip), use the OOXML-level guide: `ooxml/comments.md` (via `scripts/docx_ooxml_patch.py`).
+## Add an ordinary classic Word comment
+
+```js
+import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+
+const document = await DocumentFile.importDocx(await FileBlob.load("input.docx"));
+const target = document.blocks.find(
+  (block) => block.kind === "paragraph" && block.text.includes("Payment Terms"),
+);
+if (!target) throw new Error("Comment target was not found.");
+
+document.addComment(target, "Please confirm Net 45 is acceptable.", {
+  author: "Reviewer",
+  initials: "RV",
+});
+await (await DocumentFile.exportDocx(document)).save("reviewed.docx");
+```
+
+Re-import and assert the comment text, author, and target before rendering. Use
+the OOXML guide only for an explicitly requested advanced anchor/reply graph
+outside the public classic-comment boundary.
 
 ## Add comments at scale (review mode)
-For programmatic review injection (multiple comments across the document), use:
+For an explicit package-level batch over imported tracked/deleted text, use:
 ```bash
 python scripts/comments_add.py input.docx --out reviewed.docx --author "Reviewer"   --add "Payment Terms=Please confirm Net 45 is acceptable."   --add "Governing Law=Prefer Delaware; any constraints?"   --ignore_case
 ```
@@ -23,7 +42,9 @@ Notes:
 - The script warns on patterns with no matches; add `--require_all` to fail fast.
 
 ## Patch / resolve existing comments
-For updating or marking comments as resolved:
+For ordinary imported classic comment text, edit `document.comments[index].text`
+and export through OpenChestnut. For explicitly marking package-level resolved
+state or manipulating unsupported modern metadata:
 ```bash
 python scripts/comments_extract.py reviewed.docx --out comments.json
 

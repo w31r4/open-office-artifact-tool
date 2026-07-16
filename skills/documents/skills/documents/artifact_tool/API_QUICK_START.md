@@ -96,6 +96,8 @@ await output.save("edited.docx");
 
 Imported unsupported package graphs are source-bound. Keep edits within recognized editable blocks; if OpenChestnut rejects an edit, narrow the edit or report the unsupported boundary instead of flattening or silently rebuilding the document.
 
+Model IDs and `name` values are locators for the current object graph, not a persistent identity protocol across independent DOCX imports. After a file round-trip, resolve targets again by bounded semantic text, style, block kind, or table position before editing.
+
 ## Inspect, resolve, verify, and render
 
 ```js
@@ -117,7 +119,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 ## Supported ordinary authoring boundary
 
 - Paragraphs and formatted runs
-- Named paragraph/character/table styles with `basedOn`
+- Named paragraph and character styles with `basedOn`; source-free tables may use the bounded `TableGrid` style plus explicit direct geometry/formatting
 - Numbered and character-bulleted lists
 - Fixed-geometry tables
 - Sections, headers, footers, and PAGE/simple fields
@@ -128,3 +130,5 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 Bookmarks, bibliography-backed citations, tracked revisions, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are not source-free authoring features. Imported versions are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
+
+OpenChestnut preserves imported table-style catalogs, but direct source-free table authoring cannot materialize an arbitrary custom table style graph. Use `styleId: "TableGrid"` with explicit `widthDxa`, columns, margins, borders, and header fill; an unsupported custom table style fails closed.

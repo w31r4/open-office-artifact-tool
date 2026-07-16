@@ -205,7 +205,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
   { artifactKind: "presentation", kind: "api", name: "compose.text", summary: "Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper." },
 
-  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with styles, formatted paragraphs/runs, sections, headers/footers, lists, fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain model-only or import-preserved read-only." },
+  { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
@@ -793,7 +793,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     designPreset: { type: "string", description: "Initial design preset name." },
     theme: { type: "object", description: "Word theme name, 12 scheme colors, and major/minor Latin, East-Asian, and complex-script fonts." },
     defaultRunStyle: { type: "object", description: "Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles." },
-    styles: { type: "object", description: "Named paragraph, character, table, or numbering style definitions with optional basedOn inheritance and numberingId/numberingLevel native list linkage." },
+    styles: { type: "object", description: "Named paragraph/character styles plus imported table/numbering style records with optional basedOn inheritance and numberingId/numberingLevel linkage. Source-free table blocks may select TableGrid; arbitrary custom table-style graphs are not materialized." },
     paragraphs: { type: "string[]", description: "Convenience paragraph list; the first paragraph uses Title style." },
     blocks: { type: "object[]", description: "Ordered paragraph/list/table/link/field/image/section block models. Citation/change kinds are model-only and rejected by canonical DOCX export." },
     bibliography: { type: "object", description: "Model-only Word bibliography metadata; OpenChestnut 0.2 cannot author or edit it." },
