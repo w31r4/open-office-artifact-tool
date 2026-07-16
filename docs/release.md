@@ -76,7 +76,7 @@ On 2026-07-16, the native reference-plugin/OpenChestnut compatibility worktree p
 
 ## Hosted evidence
 
-The immediately preceding stable baseline commit `4b324f7ea00dbe3c479fe19a93f64cdad03fbf29` passed the hosted Linux `ci` workflow in [GitHub Actions run 29477427322](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29477427322) on 2026-07-16. The run completed with conclusion `success`; this evidence is tied to that exact SHA and does not substitute for hosted validation of later Skill/OpenChestnut changes.
+The code-bearing native reference-plugin/OpenChestnut compatibility commit `c526ce1534552c4e2deaf732513ddb270b873aab` passed the hosted Linux `ci` workflow in [GitHub Actions run 29480511630](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29480511630) on 2026-07-16. The run completed with conclusion `success` and covered protocol/runtime reproducibility, Chromium/native render tools, `npm test`, generated API-doc diff, offline release metadata, the clean-install tarball, OfficeBridge, and OpenChestnut.
 
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
