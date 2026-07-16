@@ -301,12 +301,12 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "importDocxWithOpenChestn
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportPptxWithOpenChestnut")?.schema?.parameters?.allowLossy, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "importPptxWithOpenChestnut")?.schema?.returns?.presentation?.type, "Presentation");
 assert.equal(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenChestnut")?.schema?.parameters?.limits?.type, "object");
-assert.match(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenChestnut")?.schema?.returns?.workbook?.description || "", /connections, QueryTables, dynamic-array topology, pivots, sparklines.*inspection.*preserved unchanged/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenChestnut")?.schema?.returns?.workbook?.description || "", /canonical Office 2010 sparkline groups.*non-reversible sparkline graphs.*preserved unchanged/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.sharedArrayFormulas")?.summary || "", /dynamic-array anchors.*source-bound and read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.comments.addThread")?.schema?.returns?.thread?.description || "", /single-root.*replies.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.tables.add")?.schema?.returns?.table?.description || "", /QueryTable.*import-only and read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /does not author pivots.*read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.add")?.schema?.returns?.sparkline?.description || "", /does not author sparklines.*read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.add")?.schema?.returns?.sparkline?.description || "", /Editable standard Office 2010 x14 sparkline group.*without topology changes.*opaque and unchanged/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenChestnut")?.schema?.parameters?.request?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");

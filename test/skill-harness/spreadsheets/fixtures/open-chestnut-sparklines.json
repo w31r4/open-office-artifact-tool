@@ -1,0 +1,81 @@
+{
+  "name": "open-chestnut-sparklines",
+  "outputName": "open-chestnut-sparklines.xlsx",
+  "roundtripEdits": {
+    "sparklines": [
+      {
+        "sheet": "Trends",
+        "targetRange": "G2:G4",
+        "seriesColor": "#F97316",
+        "axis": { "manualMax": 120, "maxMode": 2 }
+      }
+    ]
+  },
+  "sheets": [
+    {
+      "name": "Trends",
+      "showGridLines": false,
+      "freezePanes": { "rows": 1 },
+      "ranges": [
+        {
+          "range": "A1:I4",
+          "values": [
+            ["Metric", 1, 2, 3, 4, 5, "Trend", "Columns", "Win/Loss"],
+            ["Revenue", 72, 81, 75, 96, 110, null, null, null],
+            ["Margin", 40, 44, 38, 51, 58, null, null, null],
+            ["Variance", -12, 8, -4, 15, 21, null, null, null]
+          ]
+        },
+        {
+          "range": "A1:I1",
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" }, "alignment": { "horizontal": "center" } }
+        },
+        { "range": "A2:A4", "format": { "font": { "bold": true } } },
+        { "range": "B2:F4", "format": { "numberFormat": "0.0", "columnWidthPx": 62 } },
+        { "range": "G2:I4", "format": { "columnWidthPx": 108, "rowHeightPx": 32 } }
+      ],
+      "sparklines": [
+        {
+          "type": "line",
+          "targetRange": "G2:G4",
+          "sourceData": "B2:F4",
+          "dateAxisRange": "B1:F1",
+          "seriesColor": "#0EA5E9",
+          "negativeColor": "#DC2626",
+          "axisColor": "#64748B",
+          "markersColor": "#334155",
+          "highMarkerColor": "#22C55E",
+          "lowMarkerColor": "#EF4444",
+          "markers": { "show": true, "high": true, "low": true, "negative": true },
+          "axis": { "showAxis": true, "manualMin": -20, "manualMax": 115, "minMode": 2, "maxMode": 2 },
+          "lineWeight": 2
+        },
+        {
+          "type": "column",
+          "targetRange": "H2:H4",
+          "sourceData": "B2:F4",
+          "seriesColor": { "theme": 4, "tint": 0.1 },
+          "negativeColor": "#B91C1C"
+        },
+        {
+          "type": "stacked",
+          "targetRange": "I2:I4",
+          "sourceData": "B2:F4",
+          "seriesColor": "#16A34A",
+          "negativeColor": "#DC2626"
+        }
+      ]
+    }
+  ],
+  "activeWorksheet": "Trends",
+  "expectations": [
+    { "sheet": "Trends", "range": "B2:F2", "values": [[72, 81, 75, 96, 110]] }
+  ],
+  "qa": {
+    "sheetName": "Trends",
+    "range": "A1:I4",
+    "renderFormat": "png",
+    "inspectKind": "workbook,sheet,style,drawing,sparkline",
+    "maxChars": 16000
+  }
+}

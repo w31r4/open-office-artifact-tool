@@ -278,6 +278,17 @@ try {
   assert.equal(spreadsheetRoundTrip.worksheets.getItem("Forecast").getRange("D3").format.numberFormat, "0.00%");
   assert.equal(spreadsheetRoundTrip.worksheets.getItem("Forecast").getRange("B3").formulasR1C1[0][0], "=R[-1]C*(1+'Assumptions'!R2C2)");
 
+  const { createSparklineWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs"
+  );
+  const sparklinePath = path.join(tempRoot, "openchestnut-sparkline-workflow.xlsx");
+  const authoredSparklines = await createSparklineWorkbook(sparklinePath);
+  assert.equal(authoredSparklines.verification.ok, true);
+  assert.match(authoredSparklines.inspection.ndjson, /"kind":"sparkline"/);
+  const sparklineRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(sparklinePath));
+  assert.deepEqual(sparklineRoundTrip.worksheets.getItem("Operating Trends").sparklineGroups.items.map((group) => group.type), ["line", "column"]);
+  assert.equal(sparklineRoundTrip.worksheets.getItem("Operating Trends").sparklineGroups.items[0].seriesColor, "#F97316");
+
   const { createPdf } = await import(
     "../skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs"
   );

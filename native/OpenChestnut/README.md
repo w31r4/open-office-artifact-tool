@@ -14,7 +14,7 @@ Protocol version 2 removes `allow_lossy`; the removed field name and number are 
 
 ## Supported 0.2 slices
 
-- XLSX: cells/formulas/styles, merges/dimensions/freeze panes, tables, PNG/JPEG images, bar/line/pie charts, basic data validation and conditional formatting, and one-level threaded comments.
+- XLSX: cells/formulas/styles, merges/dimensions/freeze panes, tables, PNG/JPEG images, bar/line/pie charts, standard Office 2010 line/column/stacked sparklines with reversible range mappings, basic data validation and conditional formatting, and one-level threaded comments.
 - DOCX: styles, paragraph/run formatting, pages/sections, headers/footers, PAGE/simple fields, PNG/JPEG images, lists, links, classic comments, and fixed-geometry tables.
 - PPTX: text boxes/round rectangles, basic fill/line/shadow, straight/polyline connectors and arrows, source-free bar/line/pie charts, images, fixed tables, rich text/lists/links, and source-bound Master/Layout preservation.
 

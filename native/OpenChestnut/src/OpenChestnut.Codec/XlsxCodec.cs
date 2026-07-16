@@ -56,6 +56,7 @@ internal static class XlsxCodec
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sheetNames);
             var drawings = new XlsxDrawingCodec(imageAssets);
             var charts = new XlsxChartCodec();
+            var sparklines = new XlsxSparklineCodec();
             var nextTableId = 1U;
             var worksheetBindings = new List<(WorksheetPart Part, WorksheetArtifact Artifact)>();
 
@@ -70,6 +71,7 @@ internal static class XlsxCodec
                 tables.Save();
                 drawings.Apply(worksheetPart, source.Id, source.Images, sourceBound: false);
                 charts.Apply(worksheetPart, source.Id, source.Charts, sourceBound: false);
+                sparklines.Apply(worksheetPart, source.Id, source.SparklineGroups, sourceBound: false);
                 worksheetPart.Worksheet.Save();
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
                 worksheetBindings.Add((worksheetPart, source));
@@ -110,7 +112,8 @@ internal static class XlsxCodec
             worksheet.Source is not null ||
             worksheet.Images.Any(image => image.Source is not null) ||
             worksheet.Charts.Any(chart => chart.Source is not null) ||
-            worksheet.Tables.Any(table => table.Source is not null || table.QueryTable?.Source is not null));
+            worksheet.Tables.Any(table => table.Source is not null || table.QueryTable?.Source is not null) ||
+            worksheet.SparklineGroups.Any(group => group.Source is not null));
     }
 
     internal static XlsxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
@@ -162,6 +165,7 @@ internal static class XlsxCodec
             target.Tables.Add(tables.Read());
             target.Images.Add(drawings.Read(worksheetPart, target.Id));
             target.Charts.Add(new XlsxChartCodec().Read(worksheetPart, target.Id));
+            target.SparklineGroups.Add(new XlsxSparklineCodec().Read(worksheetPart, target.Id));
             workbook.Worksheets.Add(target);
             worksheetBindings.Add((worksheetPart, target));
         }
@@ -232,6 +236,7 @@ internal static class XlsxCodec
             connections.Apply(envelope.Workbook.Connections, sourceBound: true);
             var drawings = new XlsxDrawingCodec(imageAssets);
             var charts = new XlsxChartCodec();
+            var sparklines = new XlsxSparklineCodec();
             var nextTableId = 1U;
             var worksheetBindings = new List<(WorksheetPart Part, WorksheetArtifact Artifact)>();
             for (var index = 0; index < sheets.Length; index++)
@@ -240,6 +245,7 @@ internal static class XlsxCodec
                 var source = envelope.Workbook.Worksheets[index];
                 if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
+                var originalWorksheetXmlSha256 = XlsxSparklineCodec.WorksheetXmlSha256(worksheetPart);
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles, dynamicArrays);
                 worksheetFeatures.ApplyRules(worksheetPart.Worksheet!, source, sourceBound: true);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
@@ -251,6 +257,8 @@ internal static class XlsxCodec
                 dirtyModeledPartPaths.UnionWith(drawings.DirtyPartPaths);
                 charts.Apply(worksheetPart, source.Id, source.Charts, sourceBound: true, originalDrawingXmlSha256);
                 dirtyModeledPartPaths.UnionWith(charts.DirtyPartPaths);
+                sparklines.Apply(worksheetPart, source.Id, source.SparklineGroups, sourceBound: true, originalWorksheetXmlSha256);
+                dirtyModeledPartPaths.UnionWith(sparklines.DirtyPartPaths);
                 worksheetPart.Worksheet!.Save();
                 worksheetBindings.Add((worksheetPart, source));
             }

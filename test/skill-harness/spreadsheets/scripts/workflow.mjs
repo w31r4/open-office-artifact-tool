@@ -254,6 +254,7 @@ export function createWorkbookFromFixture(fixture = {}) {
       });
     }
     for (const imageFixture of sheetFixture.images || []) sheet.images.add(imageFixture);
+    for (const sparklineFixture of sheetFixture.sparklines || sheetFixture.sparklineGroups || []) sheet.sparklineGroups.add(sparklineFixture);
   }
   for (const definedName of fixture.definedNames || []) workbook.definedNames.add(definedName);
   if (fixture.activeWorksheet || fixture.activeSheet) workbook.worksheets.setActiveWorksheet(fixture.activeWorksheet || fixture.activeSheet);
@@ -498,6 +499,17 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
         Object.assign(chart.series.items[index], seriesChanges);
         if (values) chart.series.items[index].values = [...values];
       }
+    }
+    for (const patch of fixture.roundtripEdits?.sparklines || []) {
+      const sheet = imported.worksheets.getItem(patch.sheet);
+      if (!sheet) throw new Error(`roundtripEdits.sparklines cannot resolve worksheet ${patch.sheet}.`);
+      const matches = sheet.sparklineGroups.items.filter((group) => patch.id ? group.id === patch.id : group.targetRange.address === patch.targetRange);
+      if (matches.length !== 1) throw new Error(`roundtripEdits.sparklines must resolve exactly one group in ${patch.sheet}; found ${matches.length}.`);
+      const group = matches[0];
+      const { sheet: _sheet, id: _id, targetRange: _targetRange, markers, axis, ...changes } = patch;
+      Object.assign(group, changes);
+      if (markers) Object.assign(group.markers, markers);
+      if (axis) Object.assign(group.axis, axis);
     }
     file = await SpreadsheetFile.exportXlsx(imported, { ...exportOptions, recalculate: false });
   }

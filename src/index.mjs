@@ -43,6 +43,7 @@ import {
   normalizeRangeWrite,
   writtenRangeBounds,
 } from "./spreadsheet/range-operations.mjs";
+import { createSpreadsheetSparklineClasses } from "./spreadsheet/sparklines.mjs";
 import { normalizePresentationThemeConfig } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
 import { createPresentationGroupShapeClass } from "./presentation/group-shapes.mjs";
@@ -1388,43 +1389,7 @@ class WorksheetImageCollection {
   toJSON() { return this.items.map((image) => image.toJSON()); }
 }
 
-class SparklineGroup {
-  constructor(worksheet, config = {}) {
-    this.worksheet = worksheet;
-    this.id = config.id || aid("sp");
-    this.type = config.type || "line";
-    this.targetRange = workbookRangeRef(config.targetRange || "A1");
-    this.sourceData = workbookRangeRef(config.sourceData || "A1");
-    this.dateAxisRange = config.dateAxisRange ? workbookRangeRef(config.dateAxisRange) : undefined;
-    this.seriesColor = config.seriesColor || "#0ea5e9";
-    this.negativeColor = config.negativeColor;
-    this.markers = config.markers || {};
-    this.axis = config.axis || {};
-    this.lineWeight = config.lineWeight ?? 1.5;
-    this.displayHidden = Boolean(config.displayHidden);
-    this.displayEmptyCellsAs = config.displayEmptyCellsAs;
-  }
-
-  delete() { this.worksheet.sparklineGroups.items = this.worksheet.sparklineGroups.items.filter((group) => group !== this); }
-  inspectRecord() { return { kind: "sparkline", id: this.id, sheet: this.worksheet.name, type: this.type, targetRange: this.targetRange.address, sourceData: this.sourceData.address, dateAxisRange: this.dateAxisRange?.address, seriesColor: this.seriesColor }; }
-  values() { const sourceSheet = this.sourceData.sheetName ? this.worksheet.workbook.worksheets.getItem(this.sourceData.sheetName) : this.worksheet; if (!sourceSheet) return []; return sourceSheet.getRange(this.sourceData.address).values.flat().map((value) => Number(value)).filter((value) => Number.isFinite(value)); }
-  targetFrame(bounds) { const target = parseRangeAddress(this.targetRange.address); return worksheetRangeFrame(this.worksheet, target, bounds); }
-  toSvg(bounds) { const p = this.targetFrame(bounds); const values = this.values(); if (!values.length) return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="none" stroke="#38bdf8" stroke-dasharray="3 2"/>`; const min = Math.min(...values); const max = Math.max(...values); const span = Math.max(1, max - min); const points = values.map((value, index) => `${p.left + (values.length === 1 ? p.width / 2 : index * p.width / (values.length - 1))},${p.top + p.height - ((value - min) / span) * p.height}`).join(" "); if (this.type === "column") { const barW = p.width / values.length * 0.7; return values.map((value, index) => { const h = ((value - Math.min(0, min)) / Math.max(1, max - Math.min(0, min))) * p.height; return `<rect x="${p.left + index * (p.width / values.length) + barW * 0.15}" y="${p.top + p.height - h}" width="${barW}" height="${h}" fill="${xmlEscape(this.seriesColor)}"/>`; }).join(""); } return `<polyline points="${points}" fill="none" stroke="${xmlEscape(this.seriesColor)}" stroke-width="${this.lineWeight}"/>`; }
-  toJSON() { return { id: this.id, type: this.type, targetRange: this.targetRange, sourceData: this.sourceData, dateAxisRange: this.dateAxisRange, seriesColor: this.seriesColor, negativeColor: this.negativeColor, markers: this.markers, axis: this.axis, lineWeight: this.lineWeight, displayHidden: this.displayHidden, displayEmptyCellsAs: this.displayEmptyCellsAs }; }
-}
-
-class SparklineGroupCollection {
-  constructor(worksheet) { this.worksheet = worksheet; this.items = []; }
-  add(config = {}) { const group = new SparklineGroup(this.worksheet, config); this.items.push(group); return group; }
-  deleteAll() { this.items = []; }
-  inspectRecords() { return this.items.map((group) => group.inspectRecord()); }
-  toJSON() { return this.items.map((group) => group.toJSON()); }
-}
-
-class RangeSparklineFacade {
-  constructor(range) { this.range = range; }
-  add(type, sourceData, config = {}) { return this.range.worksheet.sparklineGroups.add({ ...config, type, targetRange: this.range, sourceData }); }
-}
+const { RangeSparklineFacade, SparklineGroupCollection } = createSpreadsheetSparklineClasses({ workbookRangeRef, worksheetRangeFrame });
 
 class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }

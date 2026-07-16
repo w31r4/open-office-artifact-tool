@@ -390,7 +390,8 @@ const group = sheet.sparklineGroups.add({
   displayHidden,
 });
 ```
-- Sparkline type is a string. Empty-cell display mode and axis min/max modes are proto enum numbers on the current facade; inspect nearby tests before setting them directly.
+- Sparkline type is a string. Prefer `"span"`/`"connect"`, `"gap"`, or `"zero"` for empty-cell display; reference-compatible numeric values `1`, `2`, and `3` are also accepted. Prefer `"individual"`, `"group"`, or `"custom"` for axis modes; reference-compatible numeric values `0`, `1`, and `2` are also accepted.
+- OpenChestnut authors these as standard Office 2010 `x14:sparklineGroups`. A target must be one row or one column. Vertical targets map to source rows; horizontal targets map to source columns; a single target maps to one-dimensional source data. Imported canonical groups are editable with fixed count/order, while non-contiguous or otherwise unsupported native groups remain source-preserved and fail closed.
 - Sparkline Inline Type:
 ```
 type SparklineConfig = {
@@ -426,6 +427,8 @@ type SparklineAxisOptions = {
   manualMin?: number;
   manualMax?: number;
   rightToLeft?: boolean;
+  minMode?: "individual" | "group" | "custom" | 0 | 1 | 2;
+  maxMode?: "individual" | "group" | "custom" | 0 | 1 | 2;
 };
 ```
 - Range Alias: `const group = targetRange.sparklines.add(type, sourceRange, sparklineConfig);`

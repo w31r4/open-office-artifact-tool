@@ -88,6 +88,18 @@ try {
   const basicZip = await JSZip.loadAsync(await fs.readFile(basicResult.workbookPath));
   assert.equal(Object.keys(basicZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).length, 3);
 
+  const sparklineResult = await runFixture("open-chestnut-sparklines");
+  const sparklineWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(sparklineResult.workbookPath));
+  const trends = sparklineWorkbook.worksheets.getItem("Trends");
+  assert.deepEqual(trends.sparklineGroups.items.map((group) => group.type), ["line", "column", "stacked"]);
+  assert.equal(trends.sparklineGroups.items[0].sparklineCount, 3);
+  assert.equal(trends.sparklineGroups.items[0].seriesColor, "#F97316");
+  assert.equal(trends.sparklineGroups.items[0].axis.manualMax, 120);
+  const sparklineZip = await JSZip.loadAsync(await fs.readFile(sparklineResult.workbookPath));
+  const sparklineXml = await sparklineZip.file("xl/worksheets/sheet1.xml").async("text");
+  assert.equal((sparklineXml.match(/<x14:sparklineGroup\b/g) || []).length, 3);
+  assert.equal((sparklineXml.match(/<x14:sparkline\b/g) || []).length, 9);
+
   const queryResult = await runFixture("open-chestnut-query-table");
   assert.equal(queryResult.sourceQueryTable.sheet, "External Data");
   assert.equal(queryResult.sourceQueryTable.table, "ExternalSales");

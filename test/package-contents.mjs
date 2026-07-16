@@ -105,6 +105,7 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/agents/openai.yaml",
   "skills/spreadsheets/skills/spreadsheets/API_QUICK_START.md",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-range-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs",
   "skills/spreadsheets/skills/excel-live-control/SKILL.md",
   "skills/spreadsheets/skills/excel-live-control/agents/openai.yaml",
   "skills/spreadsheets/skills/excel-live-control/assets/file-spreadsheet.png",

@@ -352,6 +352,10 @@ message WorksheetArtifact {
   // One root threaded comment per entry. Replies and mentions are outside the
   // editable profile and remain source-preserved.
   repeated SpreadsheetThreadedCommentArtifact threaded_comments = 17;
+  // Bounded Office 2010 x14 sparkline groups. One-dimensional target ranges
+  // map to row- or column-oriented source slices; arbitrary/non-contiguous
+  // native groups remain source-preserved and hidden from editable semantics.
+  repeated SpreadsheetSparklineGroupArtifact sparkline_groups = 18;
 }
 
 message SpreadsheetDataValidationArtifact {
@@ -387,6 +391,84 @@ message SpreadsheetThreadedCommentArtifact {
   string provider_id = 8;
   string date_time = 9;
   bool resolved = 10;
+}
+
+enum SpreadsheetSparklineType {
+  SPREADSHEET_SPARKLINE_TYPE_UNSPECIFIED = 0;
+  SPREADSHEET_SPARKLINE_TYPE_LINE = 1;
+  SPREADSHEET_SPARKLINE_TYPE_COLUMN = 2;
+  SPREADSHEET_SPARKLINE_TYPE_STACKED = 3;
+}
+
+enum SpreadsheetSparklineEmptyCells {
+  SPREADSHEET_SPARKLINE_EMPTY_CELLS_UNSPECIFIED = 0;
+  SPREADSHEET_SPARKLINE_EMPTY_CELLS_SPAN = 1;
+  SPREADSHEET_SPARKLINE_EMPTY_CELLS_GAP = 2;
+  SPREADSHEET_SPARKLINE_EMPTY_CELLS_ZERO = 3;
+}
+
+enum SpreadsheetSparklineAxisMode {
+  SPREADSHEET_SPARKLINE_AXIS_MODE_UNSPECIFIED = 0;
+  SPREADSHEET_SPARKLINE_AXIS_MODE_INDIVIDUAL = 1;
+  SPREADSHEET_SPARKLINE_AXIS_MODE_GROUP = 2;
+  SPREADSHEET_SPARKLINE_AXIS_MODE_CUSTOM = 3;
+}
+
+message SpreadsheetSparklineMarkersArtifact {
+  optional bool show = 1;
+  optional bool high = 2;
+  optional bool low = 3;
+  optional bool first = 4;
+  optional bool last = 5;
+  optional bool negative = 6;
+}
+
+message SpreadsheetSparklineAxisArtifact {
+  optional double manual_min = 1;
+  optional double manual_max = 2;
+  optional SpreadsheetSparklineAxisMode min_mode = 3;
+  optional SpreadsheetSparklineAxisMode max_mode = 4;
+  optional bool show_axis = 5;
+  optional bool right_to_left = 6;
+}
+
+// One public sparkline group. target_range belongs to the containing
+// worksheet; source_data_range and date_axis_range may be worksheet-qualified
+// A1 ranges. The C# codec expands the rectangular source into the native list
+// of individual x14:sparkline formula/reference pairs.
+message SpreadsheetSparklineGroupArtifact {
+  string id = 1;
+  SpreadsheetSparklineType type = 2;
+  string target_range = 3;
+  string source_data_range = 4;
+  string date_axis_range = 5;
+  SpreadsheetColor series_color = 6;
+  SpreadsheetColor negative_color = 7;
+  SpreadsheetColor axis_color = 8;
+  SpreadsheetColor markers_color = 9;
+  SpreadsheetColor first_marker_color = 10;
+  SpreadsheetColor last_marker_color = 11;
+  SpreadsheetColor high_marker_color = 12;
+  SpreadsheetColor low_marker_color = 13;
+  optional double line_weight = 14;
+  optional bool display_hidden = 15;
+  optional SpreadsheetSparklineEmptyCells display_empty_cells_as = 16;
+  SpreadsheetSparklineMarkersArtifact markers = 17;
+  SpreadsheetSparklineAxisArtifact axis = 18;
+  SpreadsheetSparklineSourceBinding source = 19;
+}
+
+// Hash-bound locator for one recognized x14:sparklineGroup inside a worksheet
+// extension. Ordinals include opaque siblings so modeled groups cannot replace
+// unknown extension content during a source-preserving edit.
+message SpreadsheetSparklineSourceBinding {
+  string part_path = 1;
+  string worksheet_xml_sha256 = 2;
+  uint32 extension_ordinal = 3;
+  uint32 group_ordinal = 4;
+  string group_xml_sha256 = 5;
+  string semantic_sha256 = 6;
+  bool editable = 7;
 }
 
 message SpreadsheetWorksheetSourceBinding {

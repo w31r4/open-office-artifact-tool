@@ -2039,7 +2039,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Imported connections, QueryTables, dynamic-array topology, pivots, and sparklines are preservation-only; authoring or editing them fails closed. |
+| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2128,7 +2128,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package content remain source-bound and read-only. |
+| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
@@ -2159,7 +2159,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category/series-name visibility and bounded position, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds. |
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
 | `sheet.pivotTables.add` | api | Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed. |
-| `sheet.sparklineGroups.add` | api | Build line/column/stacked sparklines for model inspection and preview. OpenChestnut 0.2 does not author them; imported sparkline groups are preservation-only and edits fail closed. |
+| `sheet.sparklineGroups.add` | api | Create standard Office 2010 line/column/stacked sparkline groups for inspect, SVG preview, and OpenChestnut XLSX export. Source-free groups use reversible one-dimensional target/source mappings; recognized imported groups support fixed-topology semantic edits while unsupported native graphs remain source-bound. |
 | `sheet.tables.add` | api | Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings are import-only and read-only; adding or editing one makes XLSX export fail closed. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
@@ -2212,11 +2212,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Imported connections, QueryTables, dynamic-array topology, pivots, and sparklines are preservation-only; authoring or editing them fails closed.
+Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/single-layer-comment/bar-line-pie chart boundary. Imported connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package graphs must remain unchanged; source-free authoring or editing them fails closed.
+- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/single-layer-comment/bar-line-pie-chart/standard-sparkline boundary. Imported connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package graphs must remain unchanged; source-free authoring or editing them fails closed.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -3728,7 +3728,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package content remain source-bound and read-only.
+Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -3737,7 +3737,7 @@ Import XLSX bytes through OpenChestnut with editable core cells, formulas, style
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with editable core objects and source/opaque package evidence. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and unsupported package graphs are exposed only for inspection or preserved unchanged.
+- `workbook` (Workbook) — Imported bounded workbook facade with editable core objects, canonical Office 2010 sparkline groups, and source/opaque package evidence. Connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and unsupported package graphs are exposed only for inspection or preserved unchanged.
 
 #### `invokeOpenChestnut`
 
@@ -4132,21 +4132,31 @@ Build a model-level pivot facade for calculation, inspect, layout, and preview. 
 
 #### `sheet.sparklineGroups.add`
 
-Build line/column/stacked sparklines for model inspection and preview. OpenChestnut 0.2 does not author them; imported sparkline groups are preservation-only and edits fail closed.
+Create standard Office 2010 line/column/stacked sparkline groups for inspect, SVG preview, and OpenChestnut XLSX export. Source-free groups use reversible one-dimensional target/source mappings; recognized imported groups support fixed-topology semantic edits while unsupported native graphs remain source-bound.
 
 **Schema parameters:**
 
 - `type` (string) — line, column, or stacked.
-- `targetRange` (string|Range) required — Destination range.
-- `sourceData` (string|Range) required — Source data range.
-- `dateAxisRange` (string|Range) — Optional date-axis range.
-- `seriesColor` (string) — Series color.
-- `markers` (object) — Marker visibility/style metadata.
-- `axis` (object) — Axis metadata.
+- `targetRange` (string|Range) required — One-dimensional destination range. Each target cell receives one native sparkline.
+- `sourceData` (string|Range) required — One-dimensional source for one target, or a reversible rectangle whose rows/columns map exactly to the target cells.
+- `dateAxisRange` (string|Range) — Optional one-dimensional date axis with one entry per sparkline point.
+- `seriesColor` (string|object) — RGB or native theme/indexed/automatic series color.
+- `negativeColor` (string|object) — Optional negative-value color.
+- `axisColor` (string|object) — Optional horizontal-axis color.
+- `markersColor` (string|object) — Optional ordinary-marker color.
+- `firstMarkerColor` (string|object) — Optional first-point marker color.
+- `lastMarkerColor` (string|object) — Optional last-point marker color.
+- `highMarkerColor` (string|object) — Optional high-point marker color.
+- `lowMarkerColor` (string|object) — Optional low-point marker color.
+- `lineWeight` (number) — Positive line weight in points; defaults to 1.
+- `displayHidden` (boolean) — Whether hidden source cells contribute to the native sparkline.
+- `displayEmptyCellsAs` (string|number) — span/connect, gap, zero, or compatible numeric value 1, 2, or 3.
+- `markers` (object) — Optional show/high/low/first/last/negative marker booleans.
+- `axis` (object) — Optional manualMin/manualMax, minMode/maxMode (individual/group/custom or 0/1/2), showAxis, and rightToLeft settings.
 
 **Schema returns:**
 
-- `sparkline` (SparklineGroup) — Model-level sparkline facade for inspect/layout/preview. OpenChestnut 0.2 does not author sparklines; imported groups are preservation-only and read-only.
+- `sparkline` (SparklineGroup) — Editable standard Office 2010 x14 sparkline group for inspect/layout/SVG preview and OpenChestnut XLSX I/O. Source-free groups use the documented reversible mapping; imported canonical groups are source-bound and permit property edits without topology changes. Unsupported native sparkline graphs remain opaque and unchanged.
 
 #### `sheet.tables.add`
 
@@ -4306,7 +4316,7 @@ Load XLSX through the single bundled OpenChestnut codec into an editable Workboo
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, and single-layer threaded comments; connections, QueryTables, dynamic arrays, pivots, sparklines, and unsupported package graphs remain read-only.
+- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, single-layer threaded comments, and canonical Office 2010 sparkline groups; connections, QueryTables, dynamic arrays, pivots, non-reversible sparkline graphs, and unsupported package graphs remain read-only.
 
 #### `SpreadsheetFile.inspectDelimited`
 
