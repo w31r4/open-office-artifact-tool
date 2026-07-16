@@ -8,6 +8,7 @@ import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
   gradeActiveContentSanitizeEvidence,
+  gradeAttachmentQuarantineEvidence,
   gradeBoundedReplaceEvidence,
   gradeOverflowRefusalEvidence,
   summarizeCaseScore,
@@ -263,6 +264,101 @@ const formBypassChecks = gradeAcroFormEvidence({
   item: formItem,
 });
 assert.equal(formBypassChecks.find((entry) => entry.id === "pdf-trace:no-ad-hoc-pypdf-writer")?.passed, false);
+
+const attachmentItem = cases.find((item) => item.id === "pdf-attachment-quarantine-inventory");
+const attachmentPayloads = [
+  ["../escape.exe", "document", null, null, "application/vnd.microsoft.portable-executable", 17, "hash-escape", "escape.exe"],
+  ["archive.zip", "document", null, null, "application/zip", 13, "hash-archive", "archive.zip"],
+  ["report.txt", "document", null, null, "text/plain", 5, "hash-first", "report.txt"],
+  ["report.txt", "document", null, null, "text/plain", 6, "hash-second", "report__2.txt"],
+  ["unicode-测试.txt", "document", null, null, "text/plain", 7, "hash-unicode", "unicode-测试.txt"],
+  ["report.txt", "page", 1, 0, "text/plain", 17, "hash-page", "report__3.txt"],
+];
+const expectedAttachments = attachmentPayloads.map(([displayName, scope, page, annotationIndex, mime, bytes, sha256], index) => ({
+  scope,
+  page,
+  annotationIndex,
+  internalKey: displayName,
+  displayName,
+  mime,
+  bytes,
+  sha256,
+  ordinal: index + 1,
+}));
+const manifestAttachments = attachmentPayloads.map(([displayName, scope, page, annotationIndex, mime, bytes, sha256, savedName], index) => ({
+  index: index + 1,
+  scope,
+  page,
+  annotationIndex,
+  internalKey: displayName,
+  displayName,
+  mime,
+  bytes,
+  sha256,
+  savedName,
+  savedPath: `quarantine/${savedName}`,
+  nameSanitized: savedName !== displayName,
+}));
+const attachmentEvidence = {
+  source: { sha256: "attachment-source-sha", pageCount: 1 },
+  expectedAttachments,
+  unsafeRawPaths: [{ displayName: "../escape.exe", resolved: "/workspace/outputs/escape.exe" }],
+  manifest: {
+    schema: "open-office-artifact-tool.pdf-attachments.v1",
+    source: { sha256: "attachment-source-sha" },
+    attachments: manifestAttachments,
+    validation: { sourceUnchanged: true, attachmentsOpenedOrExecuted: false },
+  },
+  manifestFile: { sha256: "attachment-manifest-sha", bytes: 2000 },
+  quarantine: {
+    invalid: [],
+    files: manifestAttachments.map((entry) => ({ path: entry.savedName, bytes: entry.bytes, sha256: entry.sha256, flat: true })),
+  },
+};
+const attachmentAudit = {
+  status: "succeeded",
+  source: { sha256: "attachment-source-sha" },
+  output: { sha256: "attachment-manifest-sha" },
+  provider: { actual: "pypdf", version: "6.10.0", silentFallback: false },
+  savePolicy: { strategy: "read-only" },
+  preflight: { probeCompleted: true, planCompleted: true },
+  operation: { type: "extract-attachments" },
+  validation: {
+    sourceUnchanged: true,
+    allHashesVerified: true,
+    allPathsContained: true,
+    duplicateNamesSeparated: true,
+    attachmentsOpenedOrExecuted: false,
+  },
+};
+const attachmentCommands = [
+  "python pypdf_edit.py inspect inputs/source.pdf --output tmp/inspect.json",
+  "python pdf_provider.py check --provider pypdf --require",
+  "python pdf_provider.py plan --task extract-attachments --provider pypdf --strategy read-only",
+  "python pypdf_edit.py extract-attachments inputs/source.pdf outputs/quarantine --manifest outputs/attachments.json",
+  "python pdf_audit.py validate outputs/audit.json --source inputs/source.pdf --artifact outputs/attachments.json --require-operation extract-attachments",
+];
+const attachmentChecks = gradeAttachmentQuarantineEvidence({ evidence: attachmentEvidence, audit: attachmentAudit, commands: attachmentCommands, item: attachmentItem });
+assert.equal(attachmentChecks.every((entry) => entry.passed), true);
+assert.equal(summarizeCaseScore(attachmentChecks, attachmentItem.grade).rawScorePercent, 100);
+const escapedAttachmentEvidence = structuredClone(attachmentEvidence);
+escapedAttachmentEvidence.manifest.attachments[0].savedPath = "../escape.exe";
+const escapedAttachmentChecks = gradeAttachmentQuarantineEvidence({ evidence: escapedAttachmentEvidence, audit: attachmentAudit, commands: attachmentCommands, item: attachmentItem });
+assert.equal(escapedAttachmentChecks.find((entry) => entry.id === "pdf-security:path-traversal-contained")?.passed, false);
+const manualAttachmentChecks = gradeAttachmentQuarantineEvidence({
+  evidence: attachmentEvidence,
+  audit: attachmentAudit,
+  commands: [...attachmentCommands, "reader = PdfReader('inputs/source.pdf'); list(reader.attachment_list)"],
+  item: attachmentItem,
+});
+assert.equal(manualAttachmentChecks.find((entry) => entry.id === "pdf-trace:no-ad-hoc-pypdf-extraction")?.passed, false);
+const executedAttachmentChecks = gradeAttachmentQuarantineEvidence({
+  evidence: attachmentEvidence,
+  audit: attachmentAudit,
+  commands: [...attachmentCommands, "unzip outputs/quarantine/archive.zip"],
+  item: attachmentItem,
+});
+assert.equal(executedAttachmentChecks.find((entry) => entry.id === "pdf-trace:no-payload-open-or-execution")?.passed, false);
 
 const activeItem = cases.find((item) => item.id === "pdf-active-content-public-sanitize");
 const activeTerms = activeItem.grade.machine.residueTerms;

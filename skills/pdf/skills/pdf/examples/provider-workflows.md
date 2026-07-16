@@ -8,6 +8,10 @@ Run these from the PDF Skill directory. Always substitute task-local source/outp
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 "$PYTHON_BIN" scripts/pypdf_edit.py inspect input.pdf \
   --output tmp/pdfs/pypdf-inspect.json
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pypdf --require
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task extract-attachments --provider pypdf --strategy read-only \
+  --input input.pdf --require-provider
 "$PYTHON_BIN" scripts/pypdf_edit.py extract-attachments input.pdf outputs/quarantine \
   --manifest outputs/attachments.json
 ```

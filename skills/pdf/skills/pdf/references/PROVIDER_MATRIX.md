@@ -21,7 +21,7 @@ This Skill is a capability router, not a single PDF backend. Select one provider
 ## Mandatory routing rules
 
 1. For an existing PDF, preserve the original bytes and pass them directly to the selected provider. Do not import through PDF.js or `PdfArtifact`, export a reconstructed model, and call that a faithful edit.
-2. Declare `rewrite`, `incremental`, or `sanitize` before mutation. Read [save policies](SAVE_POLICIES.md).
+2. Declare `read-only`, `rewrite`, `incremental`, or `sanitize` before the operation. Read [save policies](SAVE_POLICIES.md).
 3. Probe the exact provider and capability before editing. Missing provider, unsupported operation, encrypted input, signature restriction, or unsafe save mode is an error.
 4. Keep input and output paths distinct. Never overwrite the source until the output passes semantic/file checks and final rendering review.
 5. Inspect signatures and DocMDP constraints before any mutation. `incremental` describes byte layout, not authorization under a signature policy.

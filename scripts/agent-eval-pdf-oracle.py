@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import mimetypes
 import pathlib
 import re
 import shutil
@@ -200,6 +201,115 @@ def active_structure_evidence(file_path: pathlib.Path, terms: list[str]) -> dict
         "populatedWidgets": populated_widgets,
         "metadata": metadata,
         "personalMetadata": personal_metadata,
+    }
+
+
+def pdf_name_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    raw = str(resolve_pdf_value(value))
+    if raw.startswith("/"):
+        raw = raw[1:]
+    return re.sub(r"#([0-9A-Fa-f]{2})", lambda match: chr(int(match.group(1), 16)), raw) or None
+
+
+def expected_attachment_evidence(file_path: pathlib.Path) -> list[dict[str, Any]]:
+    reader = pypdf.PdfReader(str(file_path), strict=True)
+    records: list[dict[str, Any]] = []
+    for ordinal, attachment in enumerate(reader.attachment_list, 1):
+        payload = bytes(attachment.content)
+        display_name = str(attachment.alternative_name or attachment.name or "attachment")
+        declared_mime = pdf_name_text(attachment.subtype)
+        records.append({
+            "scope": "document",
+            "page": None,
+            "annotationIndex": None,
+            "internalKey": str(attachment.name),
+            "displayName": display_name,
+            "mime": declared_mime or mimetypes.guess_type(display_name, strict=False)[0] or "application/octet-stream",
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "ordinal": ordinal,
+        })
+    for page_number, page in enumerate(reader.pages, 1):
+        for annotation_index, reference in enumerate(page.get("/Annots", []) or []):
+            annotation = resolve_pdf_value(reference)
+            if not isinstance(annotation, dict) or str(annotation.get("/Subtype", "")) != "/FileAttachment":
+                continue
+            filespec = resolve_pdf_value(annotation.get("/FS"))
+            if not isinstance(filespec, dict):
+                raise ValueError("page FileAttachment has no FileSpec dictionary")
+            display_name = str(resolve_pdf_value(filespec.get("/UF") or filespec.get("/F") or "attachment"))
+            internal_key = str(resolve_pdf_value(filespec.get("/F") or filespec.get("/UF") or display_name))
+            embedded = resolve_pdf_value(filespec.get("/EF"))
+            if not isinstance(embedded, dict):
+                raise ValueError(f"page attachment {display_name!r} has no /EF dictionary")
+            stream = resolve_pdf_value(embedded.get("/UF") or embedded.get("/F"))
+            if stream is None or not callable(getattr(stream, "get_data", None)):
+                raise ValueError(f"page attachment {display_name!r} has no readable stream")
+            payload = bytes(stream.get_data())
+            declared_mime = pdf_name_text(stream.get("/Subtype"))
+            records.append({
+                "scope": "page",
+                "page": page_number,
+                "annotationIndex": annotation_index,
+                "internalKey": internal_key,
+                "displayName": display_name,
+                "mime": declared_mime or mimetypes.guess_type(display_name, strict=False)[0] or "application/octet-stream",
+                "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "ordinal": len(records) + 1,
+            })
+    return records
+
+
+def quarantine_directory_evidence(directory: pathlib.Path) -> dict[str, Any]:
+    if not directory.is_dir():
+        raise ValueError(f"quarantine directory is missing: {directory}")
+    files: list[dict[str, Any]] = []
+    invalid: list[dict[str, str]] = []
+    for candidate in sorted(directory.rglob("*")):
+        relative = candidate.relative_to(directory).as_posix()
+        if candidate.is_symlink():
+            invalid.append({"path": relative, "type": "symlink"})
+        elif candidate.is_file():
+            payload = candidate.read_bytes()
+            files.append({
+                "path": relative,
+                "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "flat": candidate.parent == directory,
+            })
+        elif not candidate.is_dir():
+            invalid.append({"path": relative, "type": "non-regular"})
+    return {"path": str(directory), "files": files, "invalid": invalid}
+
+
+def attachment_quarantine(payload: dict[str, Any]) -> dict[str, Any]:
+    source = pathlib.Path(payload["source"])
+    manifest_path = pathlib.Path(payload["manifest"])
+    quarantine = pathlib.Path(payload["quarantine"])
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes)
+    expected = expected_attachment_evidence(source)
+    quarantine_resolved = quarantine.resolve()
+    unsafe_raw_paths = []
+    for record in expected:
+        raw_target = (quarantine / record["displayName"]).resolve()
+        if quarantine_resolved not in raw_target.parents:
+            unsafe_raw_paths.append({"displayName": record["displayName"], "resolved": str(raw_target)})
+    return {
+        "kind": "attachment-quarantine",
+        "source": inspect_pdf(source, []),
+        "expectedAttachments": expected,
+        "unsafeRawPaths": unsafe_raw_paths,
+        "manifest": manifest,
+        "manifestFile": {
+            "path": str(manifest_path),
+            "bytes": len(manifest_bytes),
+            "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        },
+        "quarantine": quarantine_directory_evidence(quarantine),
     }
 
 
@@ -657,6 +767,8 @@ def main() -> None:
         evidence = active_content_sanitize(payload)
     elif kind == "acroform-visible":
         evidence = acroform_visible(payload)
+    elif kind == "attachment-quarantine":
+        evidence = attachment_quarantine(payload)
     else:
         raise ValueError(f"unsupported PDF oracle kind: {kind}")
     evidence["toolchain"] = {

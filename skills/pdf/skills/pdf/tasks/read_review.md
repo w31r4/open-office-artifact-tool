@@ -33,6 +33,10 @@ Never write an embedded filename directly to disk. A FileSpec may contain `../`,
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 "$PYTHON_BIN" scripts/pypdf_edit.py inspect input.pdf \
   --output tmp/pdfs/pypdf-inspect.json
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pypdf --require
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task extract-attachments --provider pypdf --strategy read-only \
+  --input input.pdf --require-provider
 "$PYTHON_BIN" scripts/pypdf_edit.py extract-attachments input.pdf outputs/quarantine \
   --manifest outputs/attachments.json \
   --max-attachments 1000 \
@@ -41,6 +45,8 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 ```
 
 The manifest records provider/version, immutable source hash, scope (`document` or `page`), page/annotation identity, display name, internal key, MIME and its evidence source, decoded byte size, SHA-256, sanitized saved name/path, and transaction validation. Duplicate or colliding names receive deterministic suffixes and remain separate. A malformed FileSpec, unreadable stream, exceeded budget, pre-existing destination, hash mismatch, or source change fails closed and removes partial quarantine output. The primitive never opens, executes, imports, or recursively extracts an attachment.
+
+Create the canonical operation audit with `savePolicy.strategy: "read-only"`, `operation.type: "extract-attachments"`, and `output` bound to the exact `attachments.json` bytes. Validate it with `pdf_audit.py validate --source input.pdf --artifact outputs/attachments.json --require-operation extract-attachments`.
 
 ## Review output
 

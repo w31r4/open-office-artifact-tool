@@ -24,7 +24,7 @@
       "type": "object",
       "required": ["strategy"],
       "properties": {
-        "strategy": { "enum": ["rewrite", "incremental", "sanitize"] }
+        "strategy": { "enum": ["read-only", "rewrite", "incremental", "sanitize"] }
       },
       "additionalProperties": true
     },

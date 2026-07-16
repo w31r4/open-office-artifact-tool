@@ -172,6 +172,25 @@ try {
   }), "utf8");
   const refusalValidation = parseResult(run(python, [path.join(scriptsRoot, "pdf_audit.py"), "validate", refusalAuditPath, "--source", dummyInput, "--require-operation", "replace_text"], { status: 0 }));
   assert.equal(refusalValidation.status, "failed_closed");
+  const readOnlyManifest = path.join(tempRoot, "read-only-manifest.json");
+  await fs.writeFile(readOnlyManifest, JSON.stringify({ attachments: [] }), "utf8");
+  const readOnlyAuditPath = path.join(tempRoot, "read-only-audit.json");
+  await fs.writeFile(readOnlyAuditPath, JSON.stringify({
+    schema: "open-office-artifact-tool.pdf-audit.v1",
+    status: "succeeded",
+    source: await evidence(dummyInput),
+    output: await evidence(readOnlyManifest),
+    provider: { actual: "pypdf", version: "test", silentFallback: false },
+    savePolicy: { strategy: "read-only" },
+    preflight: { probeCompleted: true, planCompleted: true },
+    operation: { type: "extract-attachments" },
+    validation: { sourceUnchanged: true, attachmentsOpenedOrExecuted: false },
+  }), "utf8");
+  const readOnlyAuditValidation = parseResult(run(python, [
+    path.join(scriptsRoot, "pdf_audit.py"), "validate", readOnlyAuditPath,
+    "--source", dummyInput, "--artifact", readOnlyManifest, "--require-operation", "extract-attachments",
+  ], { status: 0 }));
+  assert.equal(readOnlyAuditValidation.savePolicy, "read-only");
 
   const check = parseResult(run(python, [path.join(scriptsRoot, "pdf_provider.py"), "check", "--provider", "all"], { status: 0 }));
   assert.ok(check.providers.length >= 12);
@@ -195,6 +214,15 @@ try {
   assert.equal(plan.strategy, "rewrite");
   assert.equal(plan.silentFallback, false);
   assert.equal(plan.input.sha256.length, 64);
+  const attachmentPlan = parseResult(run(python, [
+    path.join(scriptsRoot, "pdf_provider.py"), "plan",
+    "--task", "extract-attachments", "--provider", "pypdf", "--strategy", "read-only",
+    "--input", dummyInput,
+  ], { status: 0 }));
+  assert.equal(attachmentPlan.task, "extract-attachments");
+  assert.equal(attachmentPlan.provider, "pypdf");
+  assert.equal(attachmentPlan.strategy, "read-only");
+  assert.equal(attachmentPlan.mutation, false);
 
   const samePath = run(python, [
     path.join(scriptsRoot, "pdf_provider.py"), "plan",

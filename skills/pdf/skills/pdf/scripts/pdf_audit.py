@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the canonical PDF mutation audit envelope against delivered bytes."""
+"""Validate the canonical PDF operation audit envelope against delivered bytes."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import sys
 
 SCHEMA = "open-office-artifact-tool.pdf-audit.v1"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-SAVE_POLICIES = {"rewrite", "incremental", "sanitize"}
+SAVE_POLICIES = {"read-only", "rewrite", "incremental", "sanitize"}
 
 
 class AuditError(RuntimeError):
@@ -67,7 +67,7 @@ def validate_record(record: dict, source: Path, artifact: Path | None, required_
 
     policy = require_object(record.get("savePolicy"), "savePolicy")
     if policy.get("strategy") not in SAVE_POLICIES:
-        raise AuditError("savePolicy.strategy must be rewrite, incremental, or sanitize")
+        raise AuditError("savePolicy.strategy must be read-only, rewrite, incremental, or sanitize")
     preflight = require_object(record.get("preflight"), "preflight")
     if not isinstance(preflight.get("probeCompleted"), bool) or not isinstance(preflight.get("planCompleted"), bool):
         raise AuditError("preflight.probeCompleted and preflight.planCompleted must be booleans")

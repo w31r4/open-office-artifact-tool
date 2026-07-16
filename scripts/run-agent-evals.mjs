@@ -597,10 +597,35 @@ async function scorePrepared(item, prepared, options = {}) {
     const diagnosticTerms = item.grade?.machine?.diagnosticTerms || [];
     if (diagnosticTerms.length) checks.push({ id: "safe-refusal-diagnostic", gate: false, passed: diagnosticTerms.some((term) => finalMessage.toLowerCase().includes(String(term).toLowerCase())), expectedAny: diagnosticTerms });
   } else {
-    const declaredOutputs = new Set((item.deliverables || []).map((deliverable) => path.relative("outputs", safeRelative(deliverable.path, "deliverable.path")).split(path.sep).join("/")));
-    checks.push({ id: "no-undeclared-deliverables", gate: true, passed: outputEntries.every((entry) => declaredOutputs.has(entry)), expected: [...declaredOutputs].sort(), actual: outputEntries });
+    const declaredFiles = new Set((item.deliverables || [])
+      .filter((deliverable) => deliverable.mime !== "inode/directory")
+      .map((deliverable) => path.relative("outputs", safeRelative(deliverable.path, "deliverable.path")).split(path.sep).join("/")));
+    const declaredDirectories = (item.deliverables || [])
+      .filter((deliverable) => deliverable.mime === "inode/directory")
+      .map((deliverable) => path.relative("outputs", safeRelative(deliverable.path, "deliverable.path")).split(path.sep).join("/"));
+    const declaredOutputs = [...declaredFiles, ...declaredDirectories].sort();
+    checks.push({
+      id: "no-undeclared-deliverables",
+      gate: true,
+      passed: outputEntries.every((entry) => declaredFiles.has(entry) || declaredDirectories.some((directory) => entry.startsWith(`${directory}/`))),
+      expected: declaredOutputs,
+      actual: outputEntries,
+    });
     for (const deliverable of item.deliverables || []) {
       const target = path.join(prepared.workspace, safeRelative(deliverable.path, "deliverable.path"));
+      if (deliverable.mime === "inode/directory") {
+        let directoryInventory = null;
+        try {
+          if ((await fs.stat(target)).isDirectory()) directoryInventory = await inventoryRelativeFiles(target);
+        } catch {}
+        checks.push({
+          id: `deliverable:${deliverable.path}`,
+          gate: true,
+          passed: Boolean(directoryInventory && directoryInventory.files.length && directoryInventory.invalid.length === 0),
+          actual: directoryInventory,
+        });
+        continue;
+      }
       let bytes;
       try { bytes = await fs.readFile(target); } catch { bytes = null; }
       checks.push({ id: `deliverable:${deliverable.path}`, gate: true, passed: Boolean(bytes?.length), actualBytes: bytes?.length || 0 });
@@ -652,7 +677,7 @@ async function scorePrepared(item, prepared, options = {}) {
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement, overflow-refusal, AcroForm appearance-preservation, and active-content sanitize PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement, overflow-refusal, AcroForm appearance-preservation, attachment-quarantine, and active-content sanitize PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {

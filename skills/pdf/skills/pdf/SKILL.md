@@ -58,13 +58,13 @@ For every imported PDF:
 
 1. Keep the source immutable and record absolute path, bytes, and SHA-256.
 2. Inspect encryption, signatures, ByteRange, `/Perms`, DocMDP/FieldMDP, forms, annotations, attachments, metadata/XMP, images, OCR layers, active content, page boxes, and page count.
-3. Select one provider and one save strategy: `rewrite`, `incremental`, or `sanitize`.
+3. Select one provider and one save strategy: `read-only`, `rewrite`, `incremental`, or `sanitize`.
 4. Write to a distinct transactional output path. Never overwrite the source during work.
 5. Reopen the output independently, verify the intended delta, render every page with Poppler, and retain an audit record.
 
 An incremental update preserves the exact old byte prefix by design. It does not prove that DocMDP permits the change or that the earlier signer endorses the new revision.
 
-Every mutation audit uses the canonical `open-office-artifact-tool.pdf-audit.v1` envelope. Keep the exact camelCase fields `source`, `output`, `provider.actual`, `provider.version`, `provider.silentFallback`, `savePolicy.strategy`, `preflight`, `operation.type`, and `validation`; do not invent naming aliases. Before delivery, run `scripts/pdf_audit.py validate` against the source and output bytes. See the [audit schema](references/AUDIT_SCHEMA.md).
+Every mutation audit and security-sensitive read-only extraction audit uses the canonical `open-office-artifact-tool.pdf-audit.v1` envelope. Keep the exact camelCase fields `source`, `output`, `provider.actual`, `provider.version`, `provider.silentFallback`, `savePolicy.strategy`, `preflight`, `operation.type`, and `validation`; do not invent naming aliases. Before delivery, run `scripts/pdf_audit.py validate` against the source and output bytes. See the [audit schema](references/AUDIT_SCHEMA.md).
 
 ## Greenfield Creation
 
@@ -110,12 +110,18 @@ For untrusted embedded files, use the typed read-only quarantine primitive. It i
 ```bash
 "${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pypdf_edit.py inspect input.pdf \
   --output tmp/pdfs/pypdf-inspect.json
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pdf_provider.py check \
+  --provider pypdf --require
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pdf_provider.py plan \
+  --task extract-attachments --provider pypdf --strategy read-only \
+  --input input.pdf --require-provider
 "${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pypdf_edit.py extract-attachments input.pdf outputs/quarantine \
   --manifest outputs/attachments.json \
   --max-attachments 1000 --max-total-bytes 1073741824
 ```
 
 Treat `attachments.json` as the authoritative mapping from raw display name/internal key/scope to the sanitized saved path. Do not derive output paths yourself, and do not inspect archive or executable contents unless a later explicitly sandboxed workflow requests it.
+Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strategy` to `read-only` and `operation.type` to `extract-attachments`, then run `pdf_audit.py validate --source input.pdf --artifact outputs/attachments.json --require-operation extract-attachments`.
 
 ## Edit An Existing PDF
 
