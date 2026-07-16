@@ -31,6 +31,8 @@ python3 scripts/pypdf_edit.py fill-form input.pdf tmp/pdfs/filled.pdf \
 
 The script sets `auto_regenerate=False` so the output carries explicit field state rather than asking the viewer to regenerate it. Use `--flatten` only with `rewrite`, after confirming that interactivity should be removed.
 
+The adapter resolves each field type before mutation. Text and choice values remain strings; radio buttons and checkboxes are matched against their real `/AP /N` appearance-state names and written as PDF Names. Unknown button states, read-only fields, signature fields, push buttons, unsupported field types, missing appearances, or a post-write `/V`/`/AS` mismatch fail closed and remove the transactional output. This prevents a radio value from looking filled in field metadata while every widget still renders `/Off`.
+
 ## Add annotation with pypdf
 
 ```bash

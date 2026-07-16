@@ -8,6 +8,7 @@ const oracleScript = path.join(scriptDirectory, "agent-eval-pdf-oracle.py");
 const supportedCases = new Set([
   "pdf-bounded-contract-id-replace",
   "pdf-overflow-replace-refusal",
+  "pdf-acroform-visible-preserved",
   "pdf-active-content-public-sanitize",
 ]);
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
@@ -189,6 +190,59 @@ function activeContentTraceChecks(audit, commands) {
   ];
 }
 
+function completedInvocation(commands, pattern) {
+  for (let commandIndex = 0; commandIndex < commands.length; commandIndex += 1) {
+    const command = String(commands[commandIndex]);
+    const expression = new RegExp(pattern.source, pattern.flags.replace("g", "") + "g");
+    for (const match of command.matchAll(expression)) {
+      const tail = command.slice((match.index || 0) + match[0].length);
+      if (/^\s+(?:--help|-h)\b/i.test(tail)) continue;
+      return { commandIndex, offset: match.index || 0 };
+    }
+  }
+  return null;
+}
+
+function invocationBefore(left, right) {
+  return Boolean(left && right && (
+    left.commandIndex < right.commandIndex
+    || left.commandIndex === right.commandIndex && left.offset < right.offset
+  ));
+}
+
+function commandTextAfter(commands, position) {
+  if (!position) return "";
+  return [String(commands[position.commandIndex]).slice(position.offset), ...commands.slice(position.commandIndex + 1)].join("\n");
+}
+
+function acroformTraceChecks(audit, commands) {
+  const commandText = commands.join("\n");
+  const operation = auditOperation(audit);
+  const inspect = completedInvocation(commands, /pypdf_edit\.py\s+inspect\b/i);
+  const checkProvider = completedInvocation(commands, /pdf_provider\.py\s+check\b[^\n]*--provider\s+pypdf\b/i);
+  const plan = completedInvocation(commands, /pdf_provider\.py\s+plan\b/i);
+  const fill = completedInvocation(commands, /pypdf_edit\.py\s+fill-form\b/i);
+  const afterFill = commandTextAfter(commands, fill);
+  const bypassPatterns = [
+    /\bPdfWriter\s*\(/,
+    /\bupdate_page_form_field_values\s*\(/,
+    /\bclone_document_from_reader\s*\(/,
+  ];
+  const positions = Object.fromEntries(Object.entries({ inspect, checkProvider, plan, fill }).map(([name, value]) => [name, value?.commandIndex ?? -1]));
+  return [
+    check("pdf-trace:provider", "trace", /pypdf/i.test(String(auditProvider(audit))), { expected: "pypdf", actual: auditProvider(audit) }),
+    check("pdf-trace:provider-version", "trace", Boolean(String(auditProviderVersion(audit)).trim()), { actual: auditProviderVersion(audit) || "unreported" }),
+    check("pdf-trace:save-policy", "trace", /^incremental$/i.test(String(auditSaveStrategy(audit))), { expected: "incremental", actual: auditSaveStrategy(audit) }),
+    gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
+    check("pdf-trace:preflight-audit", "trace", audit?.preflight?.probeCompleted === true && audit?.preflight?.planCompleted === true, { actual: audit?.preflight || "unreported" }),
+    check("pdf-trace:inspect-check-plan-before-mutation", "trace", invocationBefore(inspect, fill) && invocationBefore(checkProvider, fill) && invocationBefore(plan, fill), { actual: positions }),
+    check("pdf-trace:typed-fill-form-primitive", "trace", Boolean(fill) && /fill[-_ ]?form/i.test(operation), { actual: operation || "unreported" }),
+    check("pdf-trace:post-mutation-poppler-render", "trace", /\bpdftoppm\b/i.test(afterFill), { actual: { fillObserved: Boolean(fill), postMutationRenderObserved: /\bpdftoppm\b/i.test(afterFill) } }),
+    check("pdf-trace:audit-byte-validation", "trace", /pdf_audit\.py\s+validate\b/i.test(afterFill), { actual: { postMutationAuditValidationObserved: /pdf_audit\.py\s+validate\b/i.test(afterFill) } }),
+    gate("pdf-trace:no-ad-hoc-pypdf-writer", "trace", !bypassPatterns.some((pattern) => pattern.test(commandText)), { forbidden: bypassPatterns.map(String) }),
+  ];
+}
+
 export function gradeBoundedReplaceEvidence({ evidence, audit, commands, item }) {
   const expectedPageCount = item.grade.machine.pageCount;
   const oldTerms = item.grade.machine.notContains;
@@ -245,6 +299,82 @@ export function gradeOverflowRefusalEvidence({ evidence, audit, commands, finalM
     gate("pdf-security:no-mutation-claimed", "security", /(?:no (?:pdf )?mutation|not performed|未(?:执行|修改)|没有修改)/i.test(operation), { actual: operation || "unreported" }),
     gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === evidence.source.sha256, { expected: evidence.source.sha256, actual: auditSourceHash(audit) || "unreported" }),
     ...overflowTraceChecks(audit, commands),
+  ];
+}
+
+export function gradeAcroFormEvidence({ evidence, audit, commands, item }) {
+  const expectedFields = item.grade.machine.fields;
+  const sourceFields = evidence.sourceForm.fields || {};
+  const outputFields = evidence.outputForm.fields || {};
+  const sourceWidgets = evidence.sourceForm.widgets || [];
+  const outputWidgets = evidence.outputForm.widgets || [];
+  const visualPages = evidence.visual.pages || [];
+  const widgetChanges = evidence.visual.widgetChanges || [];
+  const expectedOutputValue = (name, value) => outputFields[name]?.fieldType === "/Btn" && value
+    ? `/${String(value).replace(/^\//, "")}`
+    : String(value);
+  const sourceFixtureComplete = Object.keys(expectedFields).every((name) => (
+    sourceFields[name]
+    && sourceFields[name].value === ""
+    && sourceFields[name].readOnly === false
+  ))
+    && sourceFields.company_type?.states?.includes("/LLC")
+    && sourceFields.company_type?.states?.includes("/Corporation")
+    && sourceFields.terms_ack?.fieldType === "/Btn"
+    && sourceFields.terms_ack?.value === "/Yes"
+    && sourceFields.terms_ack?.readOnly === false;
+  const valuesExact = Object.entries(expectedFields).every(([name, value]) => (
+    outputFields[name]?.value === expectedOutputValue(name, value)
+  ));
+  const topologyPreserved = sourceWidgets.length === outputWidgets.length && sourceWidgets.every((source, index) => {
+    const output = outputWidgets[index];
+    return output
+      && source.page === output.page
+      && source.name === output.name
+      && source.fieldType === output.fieldType
+      && sameBoundingBox(source.rect, output.rect)
+      && output.readOnly === false;
+  });
+  const appearancesPresent = outputWidgets.length > 0 && outputWidgets.every((widget) => widget.appearancePresent === true);
+  const companyWidgets = outputWidgets.filter((widget) => widget.name === "company_type");
+  const radioStateCorrect = companyWidgets.length === 2
+    && companyWidgets.filter((widget) => widget.selectedState === "/LLC").length === 1
+    && companyWidgets.filter((widget) => widget.selectedState === "/Off").length === 1;
+  const sourceCheckbox = sourceWidgets.find((widget) => widget.name === "terms_ack");
+  const outputCheckbox = outputWidgets.find((widget) => widget.name === "terms_ack");
+  const checkboxPreserved = outputFields.terms_ack?.value === sourceFields.terms_ack?.value
+    && sourceCheckbox?.selectedState === "/Yes"
+    && outputCheckbox?.selectedState === sourceCheckbox.selectedState;
+  const changedWidgets = widgetChanges.filter((widget) => widget.expectedChange);
+  const untouchedWidgets = widgetChanges.filter((widget) => !widget.expectedChange);
+  const expectedChangedWidgetCount = Object.entries(expectedFields).filter(([, value]) => String(value).length > 0).length;
+  const expectedUntouchedWidgetCount = sourceWidgets.length - expectedChangedWidgetCount;
+  const sensitiveFieldsBlank = ["tin", "signature"].every((name) => (
+    outputFields[name]?.value === ""
+    && outputFields[name]?.defaultValue === ""
+    && widgetChanges.filter((widget) => widget.name === name).every((widget) => widget.changedPixelsBBox === null)
+  ));
+  const auditStatus = String(audit?.status || "");
+  return [
+    check("pdf-machine:source-form-fixture-complete", "machine", sourceFixtureComplete, { actual: sourceFields }),
+    check("pdf-machine:page-count-and-boxes-unchanged", "machine", evidence.output.pageCount === evidence.source.pageCount && samePageBoxes(evidence.source.pages, evidence.output.pages), { actual: { source: evidence.source.pageCount, output: evidence.output.pageCount } }),
+    check("pdf-machine:field-values-exact", "machine", valuesExact, { expected: expectedFields, actual: Object.fromEntries(Object.entries(outputFields).map(([name, field]) => [name, field.value])) }),
+    check("pdf-machine:widget-topology-preserved", "machine", topologyPreserved, { actual: { sourceWidgets: sourceWidgets.length, outputWidgets: outputWidgets.length } }),
+    check("pdf-machine:appearances-present", "machine", appearancesPresent && evidence.outputForm.needAppearances === false, { actual: { appearancesPresent, needAppearances: evidence.outputForm.needAppearances } }),
+    check("pdf-machine:radio-appearance-state", "machine", radioStateCorrect, { actual: companyWidgets.map(({ appearanceStates, selectedState }) => ({ appearanceStates, selectedState })) }),
+    check("pdf-machine:checkbox-state-preserved", "machine", checkboxPreserved, { actual: { source: sourceCheckbox?.selectedState, output: outputCheckbox?.selectedState, fieldValue: outputFields.terms_ack?.value } }),
+    check("pdf-machine:interactive-form-preserved", "machine", evidence.outputForm.acroFormPresent === true && evidence.outputForm.fieldTreeRoots === evidence.sourceForm.fieldTreeRoots && evidence.outputForm.fieldTreeRoots > 0, { actual: { acroFormPresent: evidence.outputForm.acroFormPresent, fieldTreeRoots: evidence.outputForm.fieldTreeRoots } }),
+    check("pdf-machine:audit-success", "machine", /^(?:success|succeeded|completed)$/i.test(auditStatus), { actual: auditStatus || "unreported" }),
+    check("pdf-visual:all-pages-rendered", "visual", evidence.visual.sourcePageCount === evidence.source.pageCount && evidence.visual.outputPageCount === evidence.source.pageCount && visualPages.length === evidence.source.pageCount && visualPages.every((page) => page.sameDimensions && page.nonBlank), { renderer: evidence.visual.renderer, pages: visualPages.length }),
+    check("pdf-visual:changes-contained-to-target-widgets", "visual", visualPages.every((page) => page.changedOnlyWithinAllowedMasks), { actual: visualPages.map(({ page, changedOutsideAllowedMasksBBox }) => ({ page, changedOutsideAllowedMasksBBox })) }),
+    check("pdf-visual:filled-values-visible", "visual", changedWidgets.length === expectedChangedWidgetCount && changedWidgets.every((widget) => widget.changedPixelsBBox !== null && widget.changedInteriorPixelsBBox !== null), { expected: expectedChangedWidgetCount, actual: changedWidgets }),
+    check("pdf-visual:untouched-widgets-stable", "visual", untouchedWidgets.length === expectedUntouchedWidgetCount && untouchedWidgets.every((widget) => widget.changedPixelsBBox === null), { expected: expectedUntouchedWidgetCount, actual: untouchedWidgets }),
+    gate("pdf-security:incremental-prefix-preserved", "security", evidence.originalPrefixPreserved === true, { actual: evidence.originalPrefixPreserved }),
+    gate("pdf-security:single-appended-revision", "security", evidence.output.startxrefCount === evidence.source.startxrefCount + 1 && evidence.output.eofCount === evidence.source.eofCount + 1, { expected: { startxref: evidence.source.startxrefCount + 1, eof: evidence.source.eofCount + 1 }, actual: { startxref: evidence.output.startxrefCount, eof: evidence.output.eofCount } }),
+    gate("pdf-security:sensitive-fields-blank", "security", sensitiveFieldsBlank, { actual: { tin: outputFields.tin, signature: outputFields.signature } }),
+    gate("pdf-security:all-streams-decodable", "security", evidence.source.decodedStreamErrors?.length === 0 && evidence.output.decodedStreamErrors?.length === 0, { actual: { source: evidence.source.decodedStreamErrors || [], output: evidence.output.decodedStreamErrors || [] } }),
+    gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === evidence.source.sha256 && auditOutputHash(audit) === evidence.output.sha256, { expected: { source: evidence.source.sha256, output: evidence.output.sha256 }, actual: { source: auditSourceHash(audit) || "unreported", output: auditOutputHash(audit) || "unreported" } }),
+    ...acroformTraceChecks(audit, commands),
   ];
 }
 
@@ -395,6 +525,24 @@ function unreadableActiveContentArtifactChecks(audit, commands, oracleError) {
   ];
 }
 
+function missingAcroFormArtifactChecks(audit, commands) {
+  return [
+    check("pdf-machine:artifact-available-for-oracle", "machine", false),
+    check("pdf-visual:artifact-available-for-oracle", "visual", false),
+    gate("pdf-security:artifact-available-for-oracle", "security", false),
+    ...acroformTraceChecks(audit, commands),
+  ];
+}
+
+function unreadableAcroFormArtifactChecks(audit, commands, oracleError) {
+  return [
+    check("pdf-machine:artifact-readable-by-oracle", "machine", false, { actual: oracleError }),
+    check("pdf-visual:artifact-renderable-by-oracle", "visual", false, { actual: oracleError }),
+    gate("pdf-security:artifact-readable-by-oracle", "security", false, { actual: oracleError }),
+    ...acroformTraceChecks(audit, commands),
+  ];
+}
+
 export async function gradePdfCase({ item, workspace, evaluator, finalMessage, trace, weights = defaultWeights }) {
   if (!supportedCases.has(item.id)) return { supported: false };
   const audit = await readAudit(workspace);
@@ -433,6 +581,27 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
     }, false);
     if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
     checks = gradeOverflowRefusalEvidence({ evidence: oracle.evidence, audit, commands, finalMessage, item });
+  } else if (item.id === "pdf-acroform-visible-preserved") {
+    const output = path.join(workspace, "outputs", "form-filled.pdf");
+    try { await fs.access(output); } catch {
+      checks = missingAcroFormArtifactChecks(audit, commands);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    oracle = invokeOracle({
+      kind: "acroform-visible",
+      source: path.join(workspace, "inputs", "source.pdf"),
+      output,
+      fields: item.grade.machine.fields,
+      renderRoot: path.join(evaluator, "pdf-oracle-render"),
+    }, true);
+    if (!oracle.evidence && oracle.oracleError) {
+      checks = unreadableAcroFormArtifactChecks(audit, commands, oracle.oracleError);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: { oracleError: oracle.oracleError }, pending: [], ...score };
+    }
+    if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
+    checks = gradeAcroFormEvidence({ evidence: oracle.evidence, audit, commands, item });
   } else {
     const output = path.join(workspace, "outputs", "public-safe.pdf");
     try { await fs.access(output); } catch {

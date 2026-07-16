@@ -22,9 +22,10 @@ def require_pypdf():
         import pypdf
         from pypdf import PdfReader, PdfWriter
         from pypdf.annotations import Text
+        from pypdf.generic import NameObject
     except ImportError as exc:
         raise ProviderError("pypdf is required in the selected Python environment") from exc
-    return pypdf, PdfReader, PdfWriter, Text
+    return pypdf, PdfReader, PdfWriter, Text, NameObject
 
 
 def file_record(path: Path) -> dict[str, Any]:
@@ -178,6 +179,132 @@ def parse_field(values: list[str]) -> dict[str, str]:
     return fields
 
 
+def resolve(value: Any) -> Any:
+    try:
+        return value.get_object()
+    except Exception:
+        return value
+
+
+def button_appearance_states(field: Any, reader=None, name: str | None = None) -> set[str]:
+    states: set[str] = set()
+    widgets = list(field.get("/Kids", []) or []) or [field]
+    if reader is not None and name is not None and not field.get("/Kids"):
+        widgets = field_widgets(reader, name)
+    for widget_reference in widgets:
+        widget = resolve(widget_reference)
+        appearance = resolve(widget.get("/AP")) if isinstance(widget, dict) else None
+        normal = resolve(appearance.get("/N")) if isinstance(appearance, dict) else None
+        if isinstance(normal, dict):
+            states.update(str(state) for state in normal.keys())
+    return states
+
+
+def qualified_widget_name(widget: Any) -> str:
+    parts: list[str] = []
+    current = resolve(widget)
+    visited: set[tuple[int, int] | int] = set()
+    while isinstance(current, dict):
+        reference = getattr(current, "indirect_reference", None)
+        identity: tuple[int, int] | int = (
+            (int(reference.idnum), int(reference.generation)) if reference is not None else id(current)
+        )
+        if identity in visited:
+            raise ProviderError("cyclic AcroForm parent chain")
+        visited.add(identity)
+        partial_name = current.get("/T")
+        if partial_name is not None:
+            parts.append(str(resolve(partial_name)))
+        parent = current.get("/Parent")
+        if parent is None:
+            break
+        current = resolve(parent)
+    return ".".join(reversed(parts))
+
+
+def field_widgets(reader, name: str) -> list[Any]:
+    widgets: list[Any] = []
+    for page in reader.pages:
+        for reference in page.get("/Annots", []) or []:
+            widget = resolve(reference)
+            if isinstance(widget, dict) and str(widget.get("/Subtype", "")) == "/Widget":
+                if qualified_widget_name(widget) == name:
+                    widgets.append(widget)
+    return widgets
+
+
+def prepare_field_values(reader, requested: dict[str, str], NameObject) -> tuple[dict[str, Any], dict[str, Any]]:
+    known_fields = reader.get_fields() or {}
+    missing = sorted(set(requested) - set(known_fields))
+    if missing:
+        raise ProviderError(f"form field(s) not found: {', '.join(missing)}")
+
+    prepared: dict[str, Any] = {}
+    evidence: dict[str, Any] = {}
+    for name, value in requested.items():
+        field = known_fields[name]
+        field_type = str(field.get("/FT", ""))
+        flags = int(field.get("/Ff", 0) or 0)
+        if flags & 1:
+            raise ProviderError(f"form field {name!r} is read-only")
+        if field_type == "/Sig":
+            raise ProviderError(f"signature field {name!r} cannot be filled by the basic form adapter")
+        if field_type == "/Btn":
+            if flags & (1 << 16):
+                raise ProviderError(f"push button {name!r} has no fillable value")
+            available = sorted(button_appearance_states(field, reader, name))
+            target = "/Off" if value.strip().casefold() in {"", "off", "/off"} else f"/{value.lstrip('/')}"
+            if target != "/Off" and target not in available:
+                choices = ", ".join(state.lstrip("/") for state in available if state != "/Off") or "<none>"
+                raise ProviderError(f"button field {name!r} has no appearance state {value!r}; available: {choices}")
+            prepared[name] = NameObject(target)
+            evidence[name] = {"fieldType": field_type, "appearanceState": target, "availableStates": available}
+        elif field_type in {"/Tx", "/Ch"}:
+            prepared[name] = value
+            evidence[name] = {"fieldType": field_type}
+        else:
+            raise ProviderError(f"form field {name!r} has unsupported type {field_type or '<missing>'}")
+    return prepared, evidence
+
+
+def validate_filled_fields(reader, expected: dict[str, Any], evidence: dict[str, Any]) -> None:
+    fields = reader.get_fields() or {}
+    for name, expected_value in expected.items():
+        field = fields.get(name)
+        if field is None:
+            raise ProviderError(f"filled field {name!r} is missing from provider output")
+        field_type = evidence[name]["fieldType"]
+        actual_value = str(resolve(field.get("/V", "")))
+        widgets = field_widgets(reader, name)
+        if not widgets:
+            raise ProviderError(f"filled field {name!r} has no output widget")
+        for widget in widgets:
+            appearance = resolve(widget.get("/AP"))
+            normal = resolve(appearance.get("/N")) if isinstance(appearance, dict) else None
+            if normal is None:
+                raise ProviderError(f"filled field {name!r} output widget has no normal appearance")
+        if field_type == "/Btn":
+            target = str(expected_value)
+            if actual_value != target:
+                raise ProviderError(f"button field {name!r} value is {actual_value!r}, expected {target!r}")
+            selected = []
+            for widget in widgets:
+                appearance = resolve(widget.get("/AP")) if isinstance(widget, dict) else None
+                normal = resolve(appearance.get("/N")) if isinstance(appearance, dict) else None
+                if not isinstance(normal, dict) or "/Off" not in {str(state) for state in normal.keys()}:
+                    raise ProviderError(f"button field {name!r} output widget has no normal appearance states")
+                state = str(resolve(widget.get("/AS", "/Off")))
+                if state != "/Off":
+                    selected.append(state)
+            expected_selected = [] if target == "/Off" else [target]
+            if selected != expected_selected:
+                raise ProviderError(
+                    f"button field {name!r} appearance state is {selected!r}, expected {expected_selected!r}"
+                )
+        elif actual_value != str(expected_value):
+            raise ProviderError(f"form field {name!r} value is {actual_value!r}, expected {str(expected_value)!r}")
+
+
 def parse_rect(value: str) -> tuple[float, float, float, float]:
     try:
         values = tuple(float(item.strip()) for item in value.split(","))
@@ -188,7 +315,7 @@ def parse_rect(value: str) -> tuple[float, float, float, float]:
     return values
 
 
-def write_mutation(args: argparse.Namespace, reader, PdfWriter, Text, version: str) -> dict[str, Any]:
+def write_mutation(args: argparse.Namespace, reader, PdfWriter, Text, NameObject, version: str) -> dict[str, Any]:
     source = args.input.expanduser().resolve()
     output = args.output.expanduser().resolve()
     if source == output:
@@ -210,17 +337,19 @@ def write_mutation(args: argparse.Namespace, reader, PdfWriter, Text, version: s
     operation: dict[str, Any]
     if args.command == "fill-form":
         fields = parse_field(args.field)
-        known_fields = set((reader.get_fields() or {}).keys())
-        missing = sorted(set(fields) - known_fields)
-        if missing:
-            raise ProviderError(f"form field(s) not found: {', '.join(missing)}")
+        prepared_fields, field_evidence = prepare_field_values(reader, fields, NameObject)
         writer.update_page_form_field_values(
             None,
-            fields,
+            prepared_fields,
             auto_regenerate=False,
             flatten=args.flatten,
         )
-        operation = {"type": "fill-form", "fields": sorted(fields), "flatten": bool(args.flatten)}
+        operation = {
+            "type": "fill-form",
+            "fields": sorted(fields),
+            "fieldEvidence": field_evidence,
+            "flatten": bool(args.flatten),
+        }
     else:
         if args.page < 1 or args.page > len(writer.pages):
             raise ProviderError(f"--page must be between 1 and {len(writer.pages)}")
@@ -239,6 +368,9 @@ def write_mutation(args: argparse.Namespace, reader, PdfWriter, Text, version: s
             raise ProviderError("provider output is not a PDF")
         if args.strategy == "incremental" and not result_bytes.startswith(source_bytes):
             raise ProviderError("incremental output does not preserve the exact original byte prefix")
+        result_reader = type(reader)(str(temporary_name), strict=False)
+        if args.command == "fill-form":
+            validate_filled_fields(result_reader, prepared_fields, field_evidence)
         temporary_name.replace(output)
         temporary_name = None
     finally:
@@ -302,7 +434,7 @@ def main() -> int:
     args = parser().parse_args()
     output_on_failure = getattr(args, "output", None) if args.command != "inspect" else None
     try:
-        pypdf, PdfReader, PdfWriter, Text = require_pypdf()
+        pypdf, PdfReader, PdfWriter, Text, NameObject = require_pypdf()
         source = args.input.expanduser().resolve()
         if not source.is_file():
             raise ProviderError("input must be an existing PDF")
@@ -325,7 +457,7 @@ def main() -> int:
             else:
                 print(rendered)
         else:
-            result = write_mutation(args, reader, PdfWriter, Text, pypdf.__version__)
+            result = write_mutation(args, reader, PdfWriter, Text, NameObject, pypdf.__version__)
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except Exception as exc:

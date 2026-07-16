@@ -203,6 +203,92 @@ def active_structure_evidence(file_path: pathlib.Path, terms: list[str]) -> dict
     }
 
 
+def pdf_boolean(value: Any) -> bool:
+    value = resolve_pdf_value(value)
+    return bool(getattr(value, "value", value))
+
+
+def qualified_widget_name(widget: Any) -> str:
+    parts: list[str] = []
+    current = resolve_pdf_value(widget)
+    visited: set[tuple[int, int] | int] = set()
+    while isinstance(current, dict):
+        reference = getattr(current, "indirect_reference", None)
+        identity: tuple[int, int] | int = (
+            (int(reference.idnum), int(reference.generation)) if reference is not None else id(current)
+        )
+        if identity in visited:
+            raise ValueError("cyclic AcroForm parent chain")
+        visited.add(identity)
+        partial_name = current.get("/T")
+        if partial_name is not None:
+            parts.append(str(resolve_pdf_value(partial_name)))
+        parent = current.get("/Parent")
+        if parent is None:
+            break
+        current = resolve_pdf_value(parent)
+    return ".".join(reversed(parts))
+
+
+def form_structure_evidence(file_path: pathlib.Path) -> dict[str, Any]:
+    reader = pypdf.PdfReader(str(file_path), strict=True)
+    root = resolve_pdf_value(reader.trailer["/Root"])
+    acro_form = resolve_pdf_value(root.get("/AcroForm")) if isinstance(root, dict) else None
+    fields = reader.get_fields() or {}
+    field_records: dict[str, Any] = {}
+    for name, field in fields.items():
+        value = resolve_pdf_value(field.get("/V", ""))
+        default_value = resolve_pdf_value(field.get("/DV", ""))
+        states = [str(state) for state in list(field.get("/_States_", []) or [])]
+        flags = int(field.get("/Ff", 0) or 0)
+        field_records[str(name)] = {
+            "fieldType": str(field.get("/FT", "")),
+            "value": "" if isinstance(value, NullObject) else str(value or ""),
+            "defaultValue": "" if isinstance(default_value, NullObject) else str(default_value or ""),
+            "flags": flags,
+            "readOnly": bool(flags & 1),
+            "states": states,
+            "kids": len(list(field.get("/Kids", []) or [])),
+        }
+
+    widgets: list[dict[str, Any]] = []
+    for page_number, page in enumerate(reader.pages, 1):
+        page_height = float(page.mediabox.height)
+        for reference in page.get("/Annots", []) or []:
+            widget = resolve_pdf_value(reference)
+            if not isinstance(widget, dict) or str(widget.get("/Subtype", "")) != "/Widget":
+                continue
+            name = qualified_widget_name(widget)
+            parent = resolve_pdf_value(widget.get("/Parent")) if widget.get("/Parent") is not None else widget
+            field_type = str(widget.get("/FT") or parent.get("/FT") or "")
+            flags = int(widget.get("/Ff", parent.get("/Ff", 0)) or 0)
+            rectangle = [float(value) for value in widget.get("/Rect", [])]
+            if len(rectangle) != 4:
+                raise ValueError(f"widget {name!r} has invalid /Rect")
+            appearance = resolve_pdf_value(widget.get("/AP")) if widget.get("/AP") is not None else None
+            normal = resolve_pdf_value(appearance.get("/N")) if isinstance(appearance, dict) and appearance.get("/N") is not None else None
+            normal_is_stream = callable(getattr(normal, "get_data", None))
+            appearance_states = sorted(str(state) for state in normal.keys()) if isinstance(normal, dict) and not normal_is_stream else []
+            widgets.append({
+                "page": page_number,
+                "name": name,
+                "fieldType": field_type,
+                "rect": [rectangle[0], page_height - rectangle[3], rectangle[2], page_height - rectangle[1]],
+                "appearancePresent": normal is not None,
+                "appearanceStreamBytes": len(normal.get_data()) if normal_is_stream else None,
+                "appearanceStates": appearance_states,
+                "selectedState": str(resolve_pdf_value(widget.get("/AS", "")) or ""),
+                "readOnly": bool(flags & 1),
+            })
+    return {
+        "acroFormPresent": isinstance(acro_form, dict),
+        "needAppearances": pdf_boolean(acro_form.get("/NeedAppearances", False)) if isinstance(acro_form, dict) else None,
+        "fieldTreeRoots": len(list(acro_form.get("/Fields", []) or [])) if isinstance(acro_form, dict) else 0,
+        "fields": field_records,
+        "widgets": widgets,
+    }
+
+
 def literal_style(file_path: pathlib.Path, page_number: int, term: str) -> dict[str, Any]:
     with pdfplumber.open(str(file_path)) as document:
         page = document.pages[page_number - 1]
@@ -366,6 +452,73 @@ def compare_rendered_pages_with_masks(
     }
 
 
+def compare_form_render(
+    source: pathlib.Path,
+    output: pathlib.Path,
+    render_root: pathlib.Path,
+    poppler: str,
+    source_structure: dict[str, Any],
+    expected_fields: dict[str, str],
+    dpi: int = 144,
+) -> dict[str, Any]:
+    expected_widgets: list[dict[str, Any]] = []
+    for widget in source_structure["widgets"]:
+        expected_value = str(expected_fields.get(widget["name"], ""))
+        if not expected_value:
+            expected_change = False
+        elif widget["fieldType"] == "/Btn":
+            target_state = f"/{expected_value.lstrip('/')}"
+            expected_change = target_state in widget["appearanceStates"]
+        else:
+            expected_change = True
+        expected_widgets.append({**widget, "expectedChange": expected_change})
+
+    allowed_masks = [
+        {"page": widget["page"], "bbox": widget["rect"]}
+        for widget in expected_widgets
+        if widget["expectedChange"]
+    ]
+    visual = compare_rendered_pages_with_masks(source, output, render_root, poppler, allowed_masks, dpi=dpi)
+    scale = dpi / 72.0
+    source_pages = run_poppler(poppler, source, render_root / "detail-source" / "page", dpi)
+    output_pages = run_poppler(poppler, output, render_root / "detail-output" / "page", dpi)
+    widget_changes = []
+    for widget in expected_widgets:
+        page_index = int(widget["page"]) - 1
+        if page_index >= len(source_pages) or page_index >= len(output_pages):
+            widget_changes.append({"name": widget["name"], "page": widget["page"], "missing": True})
+            continue
+        with Image.open(source_pages[page_index]) as source_raw, Image.open(output_pages[page_index]) as output_raw:
+            source_image = source_raw.convert("RGB")
+            output_image = output_raw.convert("RGB")
+            x0, top, x1, bottom = widget["rect"]
+            pixel_box = (
+                max(0, math.floor(x0 * scale)),
+                max(0, math.floor(top * scale)),
+                min(output_image.width, math.ceil(x1 * scale)),
+                min(output_image.height, math.ceil(bottom * scale)),
+            )
+            source_crop = source_image.crop(pixel_box)
+            output_crop = output_image.crop(pixel_box)
+            difference = ImageChops.difference(source_crop, output_crop)
+            difference_bbox = difference.getbbox()
+            inset = min(6, max(1, min(output_crop.size) // 4))
+            interior_box = (inset, inset, max(inset, output_crop.width - inset), max(inset, output_crop.height - inset))
+            interior_difference = difference.crop(interior_box)
+            interior_bbox = interior_difference.getbbox()
+            widget_changes.append({
+                "name": widget["name"],
+                "page": widget["page"],
+                "fieldType": widget["fieldType"],
+                "appearanceStates": widget["appearanceStates"],
+                "expectedChange": widget["expectedChange"],
+                "pixelBox": list(pixel_box),
+                "changedPixelsBBox": list(difference_bbox) if difference_bbox else None,
+                "changedInteriorPixelsBBox": list(interior_bbox) if interior_bbox else None,
+            })
+    return {**visual, "widgetChanges": widget_changes}
+
+
 def bounded_replace(payload: dict[str, Any]) -> dict[str, Any]:
     source = pathlib.Path(payload["source"])
     output = pathlib.Path(payload["output"])
@@ -467,6 +620,32 @@ def active_content_sanitize(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def acroform_visible(payload: dict[str, Any]) -> dict[str, Any]:
+    source = pathlib.Path(payload["source"])
+    output = pathlib.Path(payload["output"])
+    expected_fields = {str(name): str(value) for name, value in dict(payload.get("fields") or {}).items()}
+    source_structure = form_structure_evidence(source)
+    output_structure = form_structure_evidence(output)
+    source_bytes = source.read_bytes()
+    output_bytes = output.read_bytes()
+    return {
+        "kind": "acroform-visible",
+        "source": inspect_pdf(source, [value for value in expected_fields.values() if value]),
+        "output": inspect_pdf(output, [value for value in expected_fields.values() if value]),
+        "sourceForm": source_structure,
+        "outputForm": output_structure,
+        "originalPrefixPreserved": output_bytes.startswith(source_bytes),
+        "visual": compare_form_render(
+            source,
+            output,
+            pathlib.Path(payload["renderRoot"]),
+            payload["poppler"],
+            source_structure,
+            expected_fields,
+        ),
+    }
+
+
 def main() -> None:
     payload = json.load(sys.stdin)
     kind = payload.get("kind")
@@ -476,6 +655,8 @@ def main() -> None:
         evidence = overflow_refusal(payload)
     elif kind == "active-content-sanitize":
         evidence = active_content_sanitize(payload)
+    elif kind == "acroform-visible":
+        evidence = acroform_visible(payload)
     else:
         raise ValueError(f"unsupported PDF oracle kind: {kind}")
     evidence["toolchain"] = {

@@ -274,11 +274,56 @@ try {
       "import sys",
       "c=canvas.Canvas(sys.argv[1])",
       "c.drawString(72,720,'Approval')",
-      "c.acroForm.textfield(name='sender.city',tooltip='City',x=72,y=670,width=180,height=24,value='')",
+      "form=c.acroForm",
+      "form.textfield(name='sender.city',tooltip='City',x=72,y=670,width=180,height=24,value='')",
+      "form.radio(name='company_type',value='LLC',selected=False,x=72,y=620,buttonStyle='circle')",
+      "form.radio(name='company_type',value='Corporation',selected=False,x=140,y=620,buttonStyle='circle')",
+      "form.checkbox(name='terms_ack',checked=False,x=72,y=570,buttonStyle='check')",
       "c.save()",
     ].join(";"), formSource], { status: 0 });
     const formFilled = path.join(tempRoot, "form-filled.pdf");
-    parseResult(run(integrationPython, [path.join(scriptsRoot, "pypdf_edit.py"), "fill-form", formSource, formFilled, "--strategy", "incremental", "--field", "sender.city=Shanghai"], { status: 0 }));
+    const formMutation = parseResult(run(integrationPython, [path.join(scriptsRoot, "pypdf_edit.py"), "fill-form", formSource, formFilled, "--strategy", "incremental", "--field", "sender.city=Shanghai", "--field", "company_type=LLC", "--field", "terms_ack=Yes"], { status: 0 }));
+    assert.equal(formMutation.operation.fieldEvidence["sender.city"].fieldType, "/Tx");
+    assert.equal(formMutation.operation.fieldEvidence.company_type.appearanceState, "/LLC");
+    assert.equal(formMutation.operation.fieldEvidence.terms_ack.appearanceState, "/Yes");
+    assert.equal(formMutation.originalPrefixPreserved, true);
+    const formEvidence = parseResult(run(integrationPython, ["-c", [
+      "import json, pypdf, sys",
+      "reader = pypdf.PdfReader(sys.argv[1], strict=True)",
+      "fields = reader.get_fields() or {}",
+      "widgets = []",
+      "for page in reader.pages:",
+      "    for reference in page.get('/Annots', []) or []:",
+      "        widget = reference.get_object()",
+      "        if str(widget.get('/Subtype', '')) != '/Widget':",
+      "            continue",
+      "        parent = widget.get('/Parent')",
+      "        parent = parent.get_object() if parent else widget",
+      "        name = str(widget.get('/T') or parent.get('/T') or '')",
+      "        widgets.append({'name': name, 'state': str(widget.get('/AS', '')), 'appearance': widget.get('/AP') is not None})",
+      "result = {",
+      "    'values': {name: str(field.get('/V', '')) for name, field in fields.items()},",
+      "    'readOnly': {name: bool(int(field.get('/Ff', 0) or 0) & 1) for name, field in fields.items()},",
+      "    'needAppearances': reader.trailer['/Root']['/AcroForm'].get('/NeedAppearances', False) == True,",
+      "    'widgets': widgets,",
+      "}",
+      "print(json.dumps(result))",
+    ].join("\n"), formFilled], { status: 0 }));
+    assert.equal(formEvidence.values["sender.city"], "Shanghai");
+    assert.equal(formEvidence.values.company_type, "/LLC");
+    assert.equal(formEvidence.values.terms_ack, "/Yes");
+    assert.equal(formEvidence.readOnly["sender.city"], false);
+    assert.equal(formEvidence.readOnly.company_type, false);
+    assert.equal(formEvidence.readOnly.terms_ack, false);
+    assert.equal(formEvidence.needAppearances, false);
+    assert.equal(formEvidence.widgets.every((widget) => widget.appearance), true);
+    assert.deepEqual(formEvidence.widgets.filter((widget) => widget.name === "company_type").map((widget) => widget.state), ["/LLC", "/Off"]);
+    assert.deepEqual(formEvidence.widgets.filter((widget) => widget.name === "terms_ack").map((widget) => widget.state), ["/Yes"]);
+
+    const invalidRadioOutput = path.join(tempRoot, "form-invalid-radio.pdf");
+    const invalidRadio = run(integrationPython, [path.join(scriptsRoot, "pypdf_edit.py"), "fill-form", formSource, invalidRadioOutput, "--strategy", "incremental", "--field", "company_type=Partnership"], { status: 2 });
+    assert.match(invalidRadio.stderr, /no appearance state 'Partnership'/);
+    assert.equal(await fs.stat(invalidRadioOutput).then(() => true, () => false), false);
 
     const rewriteOps = path.join(tempRoot, "rewrite-ops.json");
     await fs.writeFile(rewriteOps, JSON.stringify([

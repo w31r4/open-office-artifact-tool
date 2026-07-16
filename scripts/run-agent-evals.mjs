@@ -252,6 +252,8 @@ elif kind == "acroform-profile":
     c.drawString(210, 460, "LLC")
     form.radio(name="company_type", value="Corporation", selected=False, x=260, y=455, buttonStyle="circle")
     c.drawString(280, 460, "Corporation")
+    c.drawString(72, 415, "Existing acknowledgment (preserve)")
+    form.checkbox(name="terms_ack", checked=True, x=260, y=410, buttonStyle="check")
     c.save()
 elif kind in {"attachment-portfolio", "active-content"}:
     from pypdf import PdfReader, PdfWriter
@@ -622,7 +624,7 @@ async function scorePrepared(item, prepared, options = {}) {
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement, overflow-refusal, and active-content sanitize PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement, overflow-refusal, AcroForm appearance-preservation, and active-content sanitize PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {

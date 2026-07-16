@@ -133,7 +133,7 @@ python3 scripts/pypdf_edit.py fill-form input.pdf tmp/pdfs/filled.pdf \
   --strategy incremental --field 'sender.city=Shanghai'
 ```
 
-Inspect signatures, DocMDP, FieldMDP, and field locks first. Use `--allow-signed` only after policy review. Use `--flatten` only with `rewrite`, after confirming that interactivity should be removed. See [forms and annotations](tasks/forms_annotations.md).
+Inspect signatures, DocMDP, FieldMDP, field types, appearance states, and field locks first. Use `--allow-signed` only after policy review. Use `--flatten` only with `rewrite`, after confirming that interactivity should be removed. The shipped pypdf primitive resolves radio/checkbox values against actual appearance-state names and fails closed when post-write `/V` and widget `/AS` do not agree. See [forms and annotations](tasks/forms_annotations.md).
 
 ## Sign And Verify
 

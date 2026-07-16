@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   extractCompletedCommands,
+  gradeAcroFormEvidence,
   gradeActiveContentSanitizeEvidence,
   gradeBoundedReplaceEvidence,
   gradeOverflowRefusalEvidence,
@@ -171,6 +172,97 @@ const mutatedOverflowChecks = gradeOverflowRefusalEvidence({
   item: overflowItem,
 });
 assert.equal(mutatedOverflowChecks.find((entry) => entry.id === "pdf-trace:no-mutation-after-failed-preflight")?.passed, false);
+
+const formItem = cases.find((item) => item.id === "pdf-acroform-visible-preserved");
+const formFieldNames = Object.keys(formItem.grade.machine.fields);
+const formSourceFields = Object.fromEntries(formFieldNames.map((name) => [name, {
+  fieldType: name === "company_type" ? "/Btn" : "/Tx",
+  value: "",
+  defaultValue: "",
+  readOnly: false,
+  states: name === "company_type" ? ["/LLC", "/Corporation"] : [],
+}]));
+formSourceFields.terms_ack = { fieldType: "/Btn", value: "/Yes", defaultValue: "", readOnly: false, states: ["/Off", "/Yes"] };
+const formOutputFields = structuredClone(formSourceFields);
+for (const [name, value] of Object.entries(formItem.grade.machine.fields)) {
+  formOutputFields[name].value = name === "company_type" ? `/${value}` : value;
+}
+const formWidgets = [
+  ["full_name", "/Tx", [190, 88, 450, 112], []],
+  ["address", "/Tx", [190, 133, 450, 157], []],
+  ["effective_date", "/Tx", [190, 178, 450, 202], []],
+  ["tin", "/Tx", [190, 223, 450, 247], []],
+  ["signature", "/Tx", [190, 268, 450, 292], []],
+  ["company_type", "/Btn", [190, 317, 210, 337], ["/LLC", "/Off"]],
+  ["company_type", "/Btn", [260, 317, 280, 337], ["/Corporation", "/Off"]],
+  ["terms_ack", "/Btn", [260, 362, 280, 382], ["/Off", "/Yes"]],
+].map(([name, fieldType, rect, appearanceStates]) => ({
+  page: 1,
+  name,
+  fieldType,
+  rect,
+  appearancePresent: true,
+  appearanceStates,
+  selectedState: "/Off",
+  readOnly: false,
+}));
+formWidgets[7].selectedState = "/Yes";
+const outputFormWidgets = structuredClone(formWidgets);
+outputFormWidgets[5].selectedState = "/LLC";
+const formWidgetChanges = formWidgets.map((widget, index) => ({
+  name: widget.name,
+  page: 1,
+  fieldType: widget.fieldType,
+  appearanceStates: widget.appearanceStates,
+  expectedChange: [0, 1, 2, 5].includes(index),
+  changedPixelsBBox: [0, 1, 2, 5].includes(index) ? [4, 4, 20, 18] : null,
+  changedInteriorPixelsBBox: [0, 1, 2, 5].includes(index) ? [1, 1, 16, 14] : null,
+}));
+const formEvidence = {
+  source: { sha256: "form-source-sha", pageCount: 1, pages: [{ page: 1, width: 612, height: 792, rotation: 0 }], decodedStreamErrors: [], startxrefCount: 1, eofCount: 1 },
+  output: { sha256: "form-output-sha", pageCount: 1, pages: [{ page: 1, width: 612, height: 792, rotation: 0 }], decodedStreamErrors: [], startxrefCount: 2, eofCount: 2 },
+  sourceForm: { acroFormPresent: true, needAppearances: false, fieldTreeRoots: 7, fields: formSourceFields, widgets: formWidgets },
+  outputForm: { acroFormPresent: true, needAppearances: false, fieldTreeRoots: 7, fields: formOutputFields, widgets: outputFormWidgets },
+  originalPrefixPreserved: true,
+  visual: {
+    renderer: "poppler-pdftoppm",
+    sourcePageCount: 1,
+    outputPageCount: 1,
+    pages: [{ page: 1, sameDimensions: true, nonBlank: true, changedOnlyWithinAllowedMasks: true, changedOutsideAllowedMasksBBox: null }],
+    widgetChanges: formWidgetChanges,
+  },
+};
+const formAudit = {
+  status: "succeeded",
+  source: { sha256: "form-source-sha" },
+  output: { sha256: "form-output-sha" },
+  provider: { actual: "pypdf", version: "6.10.0", silentFallback: false },
+  savePolicy: { strategy: "incremental" },
+  preflight: { probeCompleted: true, planCompleted: true },
+  operation: { type: "fill-form" },
+};
+const formCommands = [
+  "python pypdf_edit.py inspect inputs/source.pdf --output tmp/inspect.json",
+  "python pdf_provider.py check --provider pypdf --require",
+  "python pdf_provider.py plan --task fill-form --provider pypdf --strategy incremental",
+  "python pypdf_edit.py fill-form inputs/source.pdf outputs/form-filled.pdf --strategy incremental",
+  "pdftoppm -png outputs/form-filled.pdf tmp/form-page",
+  "python pdf_audit.py validate outputs/audit.json --artifact outputs/form-filled.pdf",
+];
+const formChecks = gradeAcroFormEvidence({ evidence: formEvidence, audit: formAudit, commands: formCommands, item: formItem });
+assert.equal(formChecks.every((entry) => entry.passed), true);
+assert.equal(summarizeCaseScore(formChecks, formItem.grade).rawScorePercent, 100);
+const brokenRadioEvidence = structuredClone(formEvidence);
+brokenRadioEvidence.outputForm.widgets[5].selectedState = "/Off";
+const brokenRadioChecks = gradeAcroFormEvidence({ evidence: brokenRadioEvidence, audit: formAudit, commands: formCommands, item: formItem });
+assert.equal(brokenRadioChecks.find((entry) => entry.id === "pdf-machine:radio-appearance-state")?.passed, false);
+const formBypassChecks = gradeAcroFormEvidence({
+  evidence: formEvidence,
+  audit: formAudit,
+  commands: [...formCommands, "writer = PdfWriter(reader, incremental=True); writer.update_page_form_field_values(None, values)"],
+  item: formItem,
+});
+assert.equal(formBypassChecks.find((entry) => entry.id === "pdf-trace:no-ad-hoc-pypdf-writer")?.passed, false);
 
 const activeItem = cases.find((item) => item.id === "pdf-active-content-public-sanitize");
 const activeTerms = activeItem.grade.machine.residueTerms;
