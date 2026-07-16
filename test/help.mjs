@@ -10,10 +10,11 @@ import {
   node,
   PdfArtifact,
   Presentation,
+  text,
   Workbook,
 } from "open-office-artifact-tool";
 import { HELP_CATALOG as LEAF_HELP_CATALOG } from "../src/help/index.mjs";
-import { node as leafNode } from "../src/presentation/compose.mjs";
+import { node as leafNode, text as leafText } from "../src/presentation/compose.mjs";
 import { FileBlob as LeafFileBlob } from "../src/shared/file-blob.mjs";
 
 assert.deepEqual(Object.keys(rootApi).sort(), [
@@ -22,14 +23,15 @@ assert.deepEqual(Object.keys(rootApi).sort(), [
   "PresentationFile", "Range", "Shape", "Slide", "SpreadsheetFile",
   "TableElement", "Workbook", "Worksheet", "box", "chart", "column", "grid",
   "helpArtifact", "image", "layers", "node", "paragraph", "renderArtifact",
-  "row", "rule", "run", "shape", "table", "verifyArtifact", "visualQaArtifact",
+  "row", "rule", "run", "shape", "table", "text", "verifyArtifact", "visualQaArtifact",
 ].sort(), "root public export contract changed");
 assert.strictEqual(HELP_CATALOG, LEAF_HELP_CATALOG, "root must re-export the help catalog binding");
 assert.strictEqual(node, leafNode, "root must re-export the Compose binding");
+assert.strictEqual(text, leafText, "root must re-export the reference-compatible text Compose binding");
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 258);
+assert.equal(HELP_CATALOG.length, 259);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -77,6 +79,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "compose.text"));
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /picture-bullet.*relative-action hyperlinks.*Custom-show links.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /nextSlide.*previousSlide.*firstSlide.*lastSlide.*endShow.*customShow links.*fail closed/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
@@ -244,7 +247,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 44);
+assert.equal(presentationCatalog.length, 45);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
@@ -347,6 +350,9 @@ assert.match(workbook.help("fx.SUMPRODUCT").ndjson, /products/);
 assert.match(workbook.help("fx.HLOOKUP").ndjson, /first row/);
 assert.match(workbook.help("fx.IFERROR").ndjson, /formula error/);
 assert.match(workbook.help("fx.AVERAGEIFS").ndjson, /criteria ranges/);
+const formulaHelpCatalog = workbook.help("fx.*", { search: "financial|logical", maxChars: 100_000 }).ndjson;
+assert.match(formulaHelpCatalog, /fx\.IF/);
+assert.match(formulaHelpCatalog, /fx\.PMT/);
 assert.match(presentation.help("slide.compose").ndjson, /compose tree/);
 assert.match(presentation.help("slide.addNotes").ndjson, /speaker notes/);
 assert.match(presentation.help("slide.connectors.add").ndjson, /connector line/);

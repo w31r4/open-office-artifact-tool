@@ -1025,6 +1025,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
+| `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
 | `exportPptxWithOpenChestnut` | api | Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, and source-free bar/line/pie charts. Imported Master/Layout, notes, comments, themes, native OLE/diagram/contentPart, and other advanced package graphs are preserved unchanged and edits fail closed. |
 | `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts. Master/Layout graphs, notes, comments, themes, native OLE/diagram/contentPart objects, and unsupported content remain source-bound and read-only; eligible OLE XLSX payloads may be inspected but not replaced. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
@@ -1061,11 +1062,11 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export. |
 | `slide.comments.addThread` | api | Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only. |
-| `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
+| `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Build grouped-shape trees for model inspect, layout, and SVG preview. Source-free p:grpSp authoring is outside the OpenChestnut 0.2 boundary, while imported groups remain opaque and read-only. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile. |
-| `slide.shapes.add` | api | Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout. |
+| `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output. |
 
 ### presentation details
@@ -1100,6 +1101,19 @@ Create an editable text block with name, className/style text tokens, and stable
 **Schema returns:**
 
 - `node` (object) — Paragraph compose node.
+
+#### `compose.text`
+
+Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper.
+
+**Schema parameters:**
+
+- `children` (string|string[]|object[]) required — Text or run-like children passed as the first argument.
+- `props` (object) — Paragraph name, className, style, sizing, and placement metadata passed as the second argument.
+
+**Schema returns:**
+
+- `node` (object) — Reference-template-compatible alias that returns the same paragraph compose node.
 
 #### `exportPptxWithOpenChestnut`
 
@@ -1632,11 +1646,11 @@ Create model-level comment threads for inspect and preview. OpenChestnut 0.2 doe
 
 #### `slide.compose`
 
-Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects.
+Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects.
 
 **Schema parameters:**
 
-- `node` (object) required — Compose tree rooted in row, column, grid, layers, box, paragraph, shape, table, chart, image, or rule.
+- `node` (object) required — Compose tree rooted in row, column, grid, layers, box, paragraph/text, shape, table, chart, image, or rule.
 - `frame` (object) — Pixel materialization frame; defaults to an inset slide frame.
 
 **Schema returns:**
@@ -1701,12 +1715,13 @@ Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit
 
 #### `slide.shapes.add`
 
-Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout.
+Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout.
 
 **Schema parameters:**
 
 - `name` (string) — Inspectable shape name.
-- `geometry` (string) — Shape geometry such as rect or ellipse.
+- `geometry` (string) — rect, ellipse, roundRect, textbox, or custom. Custom requires customPaths.
+- `customPaths` (object[]) — For geometry custom, 1-64 literal DrawingML paths with positive integer width/height and bounded moveTo, lineTo, cubicBezTo, and close commands. Guides, handles, connection sites, arcs, quadratic curves, text rectangles, and path-specific paint overrides are not authored.
 - `position` (object) — Pixel left/top/width/height frame.
 - `transform` (object) — Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. OpenChestnut authors/imports this direct DrawingML transform on supported shapes; complex or unknown native transform graphs remain read-only.
 - `text` (string|string[]|object|object[]) — Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks.

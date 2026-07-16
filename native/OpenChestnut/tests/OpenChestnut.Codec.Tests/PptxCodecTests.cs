@@ -61,6 +61,81 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void LiteralCustomGeometryAuthorsImportsEditsAndValidates()
+    {
+        var request = ExportRequest();
+        var shape = request.Artifact.Presentation.Slides[0].Elements[0].Shape;
+        shape.Geometry = "custom";
+        var path = new PresentationCustomGeometryPath { Width = 21_600, Height = 21_600 };
+        path.Commands.Add(new PresentationCustomGeometryCommand
+        {
+            MoveTo = new PresentationCustomGeometryPoint { X = 1_000, Y = 2_000 },
+        });
+        path.Commands.Add(new PresentationCustomGeometryCommand
+        {
+            LineTo = new PresentationCustomGeometryPoint { X = 20_000, Y = 2_000 },
+        });
+        path.Commands.Add(new PresentationCustomGeometryCommand
+        {
+            CubicBezierTo = new PresentationCustomGeometryCubicBezier
+            {
+                Control1 = new PresentationCustomGeometryPoint { X = 21_000, Y = 6_000 },
+                Control2 = new PresentationCustomGeometryPoint { X = 18_000, Y = 19_000 },
+                End = new PresentationCustomGeometryPoint { X = 10_800, Y = 20_000 },
+            },
+        });
+        path.Commands.Add(new PresentationCustomGeometryCommand { Close = true });
+        shape.CustomPaths.Add(path);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var properties = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>().Single().ShapeProperties!;
+            Assert.Null(properties.GetFirstChild<A.PresetGeometry>());
+            var geometry = properties.GetFirstChild<A.CustomGeometry>()!;
+            var nativePath = Assert.Single(geometry.GetFirstChild<A.PathList>()!.Elements<A.Path>());
+            Assert.Equal(21_600U, nativePath.Width!.Value);
+            Assert.Equal(21_600U, nativePath.Height!.Value);
+            Assert.Collection(nativePath.ChildElements,
+                command => Assert.IsType<A.MoveTo>(command),
+                command => Assert.IsType<A.LineTo>(command),
+                command => Assert.IsType<A.CubicBezierCurveTo>(command),
+                command => Assert.IsType<A.CloseShapePath>(command));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedElement = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements);
+        Assert.True(importedElement.Source.Editable);
+        Assert.Equal("custom", importedElement.Shape.Geometry);
+        var importedPath = Assert.Single(importedElement.Shape.CustomPaths);
+        Assert.Equal(4, importedPath.Commands.Count);
+        Assert.Equal(20_000, importedPath.Commands[1].LineTo.X);
+
+        importedPath.Commands[1].LineTo.X = 19_500;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(19_500, Assert.Single(Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements).Shape.CustomPaths).Commands[1].LineTo.X);
+
+        var missingPaths = ExportRequest();
+        missingPaths.Artifact.Presentation.Slides[0].Elements[0].Shape.Geometry = "custom";
+        var missingPathsResponse = Invoke(missingPaths);
+        Assert.False(missingPathsResponse.Ok);
+        Assert.Equal("invalid_presentation_geometry", Assert.Single(missingPathsResponse.Diagnostics).Code);
+
+        var misplacedPaths = ExportRequest();
+        misplacedPaths.Artifact.Presentation.Slides[0].Elements[0].Shape.CustomPaths.Add(path.Clone());
+        var misplacedPathsResponse = Invoke(misplacedPaths);
+        Assert.False(misplacedPathsResponse.Ok);
+        Assert.Equal("invalid_presentation_geometry", Assert.Single(misplacedPathsResponse.Diagnostics).Code);
+    }
+
+    [Fact]
     public void CoreShapesConnectorsAndLiteralChartsAuthorImportAndEdit()
     {
         var request = ExportRequest();

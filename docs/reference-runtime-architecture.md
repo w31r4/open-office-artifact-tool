@@ -118,7 +118,7 @@ The npm package contains:
 - the proto and generated JavaScript wire binding;
 - `runtime/open-chestnut` WASM/runtime assets;
 - integrity manifest, SBOM, and license notices;
-- the four reference Skills.
+- four native reference plugin bundles containing five Skills, including the separate `excel-live-control` route.
 
 It excludes C# source/build output, repository-only scripts/tests, and removed legacy codec modules. Normal package use therefore works without a local .NET SDK.
 
@@ -144,7 +144,7 @@ The first extraction phase moves Help, presentation Compose, binary conversion, 
 1. Protocol generation/lint and protocol-version checks.
 2. C# unit tests for each codec and opaque/failure profiles.
 3. JavaScript facade roundtrips and strict option rejection.
-4. Documents, Spreadsheets, Presentations, and PDF Skill workflows.
+4. Native plugin validation plus audited Documents, Spreadsheets, Excel live-control routing, Presentations, and PDF Skill workflows.
 5. Semantic inspect/verify and render/visual QA.
 6. Open XML SDK package validation plus optional LibreOffice/native Office checks.
 7. Clean-install probes with `dotnet` absent from `PATH`.

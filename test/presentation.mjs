@@ -52,6 +52,36 @@ await assert.rejects(
   /presentation theme customization/i,
 );
 
+const customGeometryPresentation = Presentation.create({ slideSize: { width: 400, height: 240 } });
+const customGeometrySlide = customGeometryPresentation.slides.add({ name: "Custom geometry" });
+const customGeometryShape = customGeometrySlide.shapes.add({
+  name: "literal-custom-path",
+  geometry: "custom",
+  position: { left: 20, top: 20, width: 180, height: 120 },
+  fill: "#DBEAFE",
+  line: { fill: "#2563EB", width: 2 },
+  customPaths: [{
+    width: 21_600,
+    height: 21_600,
+    commands: [
+      { moveTo: { x: 1_000, y: 2_000 } },
+      { lineTo: { x: 20_000, y: 2_000 } },
+      { cubicBezTo: { x1: 21_000, y1: 6_000, x2: 18_000, y2: 19_000, x: 10_800, y: 20_000 } },
+      { close: {} },
+    ],
+  }],
+});
+assert.equal(customGeometryShape.customPaths[0].commands.length, 4);
+assert.match(await (await customGeometrySlide.export()).text(), /<path d="M 1000 2000 L 20000 2000 C /);
+assert.throws(
+  () => customGeometrySlide.shapes.add({ geometry: "custom", customPaths: [{ width: 100, height: 100, commands: [{ arcTo: {} }] }] }),
+  /unsupported command arcTo/,
+);
+assert.throws(
+  () => customGeometrySlide.shapes.add({ geometry: "custom", customPaths: [{ width: 0, height: 100, commands: [{ close: true }] }] }),
+  /width and height must be positive/,
+);
+
 // The canonical file facade always crosses the OpenChestnut C# WASM layer.
 const deck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const coreSlide = deck.slides.add({ name: "Core objects" });

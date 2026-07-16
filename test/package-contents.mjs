@@ -10,12 +10,13 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
-const maxPackedBytes = 8_000_000;
-const maxUnpackedBytes = 16_700_000;
+const maxPackedBytes = 9_500_000;
+const maxUnpackedBytes = 22_750_000;
 
 for (const required of [
   "THIRD_PARTY_NOTICES.md",
   "docs/api.md",
+  "docs/reference-skills.md",
   "proto/open_office/artifact/v1/office_artifact.proto",
   "src/generated/open_office/artifact/v1/office_artifact_pb.js",
   "src/codecs/open-chestnut.mjs",
@@ -54,6 +55,7 @@ for (const required of [
   "src/presentation/ooxml-theme.mjs",
   "src/presentation/group-shapes.mjs",
   "src/presentation/compose.mjs",
+  "src/presentation/custom-geometry.mjs",
   "src/presentation/text-paragraphs.mjs",
   "src/presentation/ooxml-masters.mjs",
   "src/presentation/ooxml-modern-comments.mjs",
@@ -72,31 +74,38 @@ for (const required of [
   "src/spreadsheet/pivots.mjs",
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
-  "skills/spreadsheets/SKILL.md",
-  "skills/shared/visual-baselines.mjs",
-  "skills/spreadsheets/scripts/verify-workbook.mjs",
-  "skills/spreadsheets/fixtures/formula-summary.json",
-  "skills/spreadsheets/fixtures/open-chestnut-basic.json",
-  "skills/presentations/fixtures/open-chestnut-preservation.json",
-  "skills/spreadsheets/fixtures/structured-intersection.json",
-  "skills/documents/SKILL.md",
-  "skills/documents/scripts/verify-document.mjs",
-  "skills/documents/fixtures/business-brief.json",
-  "skills/documents/fixtures/open-chestnut-comments.json",
-  "skills/documents/fixtures/open-chestnut-merged-table.json",
-  "skills/documents/fixtures/open-chestnut-numbering-edit.json",
-  "skills/documents/fixtures/package-comments.json",
-  "skills/documents/fixtures/package-numbering.json",
-  "skills/documents/fixtures/package-settings.json",
-  "skills/presentations/SKILL.md",
-  "skills/presentations/scripts/verify-presentation.mjs",
-  "skills/presentations/fixtures/agent-readiness.json",
-  "skills/presentations/fixtures/package-drawing.json",
-  "skills/presentations/fixtures/package-notes-comments.json",
-  "skills/presentations/fixtures/modern-comments.json",
-  "skills/pdf/SKILL.md",
-  "skills/pdf/scripts/verify-pdf.mjs",
-  "skills/pdf/fixtures/qa-report.json",
+  "skills/documents/.codex-plugin/plugin.json",
+  "skills/documents/README.md",
+  "skills/documents/assets/icon.png",
+  "skills/documents/skills/documents/SKILL.md",
+  "skills/documents/skills/documents/agents/openai.yaml",
+  "skills/documents/skills/documents/LICENSE.txt",
+  "skills/documents/skills/documents/render_docx.py",
+  "skills/documents/skills/documents/scripts/docx_ooxml_patch.py",
+  "skills/documents/skills/documents/tasks/create_edit.md",
+  "skills/spreadsheets/.codex-plugin/plugin.json",
+  "skills/spreadsheets/.app.json",
+  "skills/spreadsheets/README.md",
+  "skills/spreadsheets/skills/spreadsheets/SKILL.md",
+  "skills/spreadsheets/skills/spreadsheets/agents/openai.yaml",
+  "skills/spreadsheets/skills/spreadsheets/API_QUICK_START.md",
+  "skills/spreadsheets/skills/excel-live-control/SKILL.md",
+  "skills/spreadsheets/skills/excel-live-control/agents/openai.yaml",
+  "skills/spreadsheets/skills/excel-live-control/assets/file-spreadsheet.png",
+  "skills/presentations/.codex-plugin/plugin.json",
+  "skills/presentations/README.md",
+  "skills/presentations/skills/presentations/SKILL.md",
+  "skills/presentations/skills/presentations/agents/openai.yaml",
+  "skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md",
+  "skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs",
+  "skills/presentations/skills/presentations/container_tools/slides_test.py",
+  "skills/presentations/skills/presentations/builtin_templates_support/scripts/create-presentation.mjs",
+  "skills/presentations/skills/presentations/assets/builtin_templates/codex-grid-layout-library/artifact-tool-compose/index.mjs",
+  "skills/presentations/skills/presentations/assets/builtin_templates/codex-grid-layout-library/assets/previews/layout-library.png",
+  "skills/pdf/.codex-plugin/plugin.json",
+  "skills/pdf/README.md",
+  "skills/pdf/skills/pdf/SKILL.md",
+  "skills/pdf/skills/pdf/agents/openai.yaml",
 ]) {
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }
@@ -112,6 +121,7 @@ for (const removed of [
   "src/presentation/ooxml-picture-bullets.mjs",
 ]) assert.ok(!files.includes(removed), `npm package must not contain removed legacy Office implementation ${removed}`);
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
+assert.ok(files.every((file) => !file.includes(".DS_Store") && !file.includes("__pycache__") && !file.endsWith(".pyc")), "npm package must exclude local metadata and Python bytecode");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
 assert.ok(files.every((file) => !file.startsWith("native/OpenChestnut/") && !file.startsWith("scripts/")), "npm runtime package must not duplicate repository-only OpenChestnut source or build tooling");
 assert.ok(!files.includes("docs/coverage.md") && !files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md") && !files.includes("native/OpenChestnut/README.md"), "npm runtime package must exclude repository-only coverage, release history, and subsystem implementation notes");

@@ -8,7 +8,9 @@ import {
   nativePresentationRenderStatus,
   runPresentationFixture,
   verifyPresentationFile,
-} from "../skills/presentations/scripts/workflow.mjs";
+} from "./skill-harness/presentations/scripts/workflow.mjs";
+
+const fixtureDir = path.join("test", "skill-harness", "presentations", "fixtures");
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-presentation-skill-test-"));
 const baselineDir = path.join(root, "baselines");
@@ -22,7 +24,7 @@ function itemByName(items, name) {
 }
 
 try {
-  const readiness = await runPresentationFixture("skills/presentations/fixtures/agent-readiness.json", {
+  const readiness = await runPresentationFixture(path.join(fixtureDir, "agent-readiness.json"), {
     outputDir: path.join(root, "agent-readiness"),
     nativeRender,
     baselineDir,
@@ -78,7 +80,7 @@ try {
     assert.ok(compared.nativeRender.pages.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
   }
 
-  const roundtrip = await runPresentationFixture("skills/presentations/fixtures/open-chestnut-preservation.json", {
+  const roundtrip = await runPresentationFixture(path.join(fixtureDir, "open-chestnut-preservation.json"), {
     outputDir: path.join(root, "roundtrip"),
     nativeRender,
   });
@@ -97,7 +99,7 @@ try {
   assert.equal(editedChart.title, "After roundtrip");
   assert.deepEqual(editedChart.series[0].values, [8, 14, 6]);
 
-  const packageDrawing = await runPresentationFixture("skills/presentations/fixtures/package-drawing.json", {
+  const packageDrawing = await runPresentationFixture(path.join(fixtureDir, "package-drawing.json"), {
     outputDir: path.join(root, "package-drawing"),
     nativeRender,
   });
@@ -109,7 +111,7 @@ try {
   assert.equal(itemByName(drawingSlide.images.items, "Agent status").alt, "Green package status");
   assert.equal(itemByName(drawingSlide.charts.items, "Agent readiness chart").series[0].values[1], 100);
 
-  const coreReview = await runPresentationFixture("skills/presentations/fixtures/modern-comments.json", {
+  const coreReview = await runPresentationFixture(path.join(fixtureDir, "modern-comments.json"), {
     outputDir: path.join(root, "core-review"),
     nativeRender,
   });
@@ -118,7 +120,7 @@ try {
   assert.equal(itemByName(coreReview.qa.presentation.slides.getItem(0).images.items, "review-status").alt, "Green review status");
   assert.equal(itemByName(coreReview.qa.presentation.slides.getItem(0).connectors.items, "visual-to-delivery").line.endArrow, "triangle");
 
-  const coreEvidence = await runPresentationFixture("skills/presentations/fixtures/package-notes-comments.json", {
+  const coreEvidence = await runPresentationFixture(path.join(fixtureDir, "package-notes-comments.json"), {
     outputDir: path.join(root, "core-evidence"),
     nativeRender,
   });
@@ -133,26 +135,26 @@ try {
   assert.equal(itemByName(evidenceSlide.charts.items, "evidence-pie").chartType, "pie");
 
   const convergenceFiles = [
-    "skills/presentations/SKILL.md",
-    "skills/presentations/scripts/workflow.mjs",
-    "skills/presentations/scripts/run-fixture.mjs",
+    "test/skill-harness/presentations/scripts/workflow.mjs",
+    "test/skill-harness/presentations/scripts/run-fixture.mjs",
     ...[
       "agent-readiness.json",
       "modern-comments.json",
       "open-chestnut-preservation.json",
       "package-drawing.json",
       "package-notes-comments.json",
-    ].map((name) => path.join("skills/presentations/fixtures", name)),
+    ].map((name) => path.join(fixtureDir, name)),
   ];
   for (const file of convergenceFiles) {
     const source = await fs.readFile(file, "utf8");
     assert.doesNotMatch(source, /\b(?:codec|initialCodec|roundtripCodec)\b/i, file + " must not expose an Office path selector");
   }
-  const skillText = await fs.readFile("skills/presentations/SKILL.md", "utf8");
-  assert.match(skillText, /canonical OpenChestnut Office path/i);
-  assert.match(skillText, /roundRect/);
-  assert.match(skillText, /bar, line, and pie charts/);
-  assert.match(skillText, /PresentationFile\.patchPptx/);
+  const skillText = await fs.readFile("skills/presentations/skills/presentations/SKILL.md", "utf8");
+  const quickStartText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md", "utf8");
+  assert.match(skillText, /open-office-artifact-tool/);
+  assert.match(quickStartText, /PresentationFile\.exportPptx/);
+  assert.match(quickStartText, /open-office-artifact-tool/);
+  assert.match(skillText, /slides_test\.py/);
 
   console.log("presentation skill smoke ok");
 } finally {

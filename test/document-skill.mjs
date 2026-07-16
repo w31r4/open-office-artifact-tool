@@ -10,10 +10,10 @@ import {
   nativeDocumentRenderStatus,
   runDocumentFixture,
   verifyDocumentFile,
-} from "../skills/documents/scripts/workflow.mjs";
+} from "./skill-harness/documents/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
-const fixturesDir = path.join(repoRoot, "skills", "documents", "fixtures");
+const fixturesDir = path.join(repoRoot, "test", "skill-harness", "documents", "fixtures");
 const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-document-skill-"));
 const baselineDir = path.join(outputDir, "baselines");
 const nativeStatus = nativeDocumentRenderStatus();
@@ -158,10 +158,12 @@ try {
 
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
   assert.ok(packageJson.files.includes("skills/**"));
-  const skillText = await fs.readFile(path.join(repoRoot, "skills", "documents", "SKILL.md"), "utf8");
-  assert.match(skillText, /canonical OpenChestnut Office path/);
-  assert.match(skillText, /LibreOffice PDF plus Poppler page PNGs/);
-  assert.match(skillText, /baseline-dir/);
+  const skillText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "SKILL.md"), "utf8");
+  const pluginReadme = await fs.readFile(path.join(repoRoot, "skills", "documents", "README.md"), "utf8");
+  assert.match(pluginReadme, /open-office-artifact-tool/);
+  assert.match(pluginReadme, /OpenChestnut/);
+  assert.match(skillText, /render_docx\.py/);
+  assert.match(skillText, /python-docx/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

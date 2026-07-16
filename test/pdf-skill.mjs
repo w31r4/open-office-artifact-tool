@@ -4,14 +4,14 @@ import os from "node:os";
 import path from "node:path";
 
 import { PdfFile } from "../src/index.mjs";
-import { nativePdfRenderStatus, runPdfFixture, verifyPdfFile } from "../skills/pdf/scripts/workflow.mjs";
+import { nativePdfRenderStatus, runPdfFixture, verifyPdfFile } from "./skill-harness/pdf/scripts/workflow.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-skill-test-"));
 const baselineDir = path.join(root, "baselines");
 const nativeStatus = nativePdfRenderStatus();
 
 try {
-  const first = await runPdfFixture("skills/pdf/fixtures/qa-report.json", { outputDir: path.join(root, "fixture"), nativeRender: nativeStatus.available ? "required" : "auto", pdfjs: "required", baselineDir, writeBaseline: true });
+  const first = await runPdfFixture("test/skill-harness/pdf/fixtures/qa-report.json", { outputDir: path.join(root, "fixture"), nativeRender: nativeStatus.available ? "required" : "auto", pdfjs: "required", baselineDir, writeBaseline: true });
   assert.equal(first.qa.verify.ok, true);
   assert.equal(first.qa.pdf.pages.length, 3);
   assert.equal(first.qa.fileInspect.summary.pages, 3);

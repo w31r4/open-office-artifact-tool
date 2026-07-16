@@ -1,0 +1,51 @@
+{
+  "name": "pdf",
+  "version": "0.2.0",
+  "description": "Read, create, inspect, render, and verify PDF files in Codex.",
+  "author": {
+    "name": "w31r4",
+    "email": "w31r4@users.noreply.github.com",
+    "url": "https://github.com/w31r4/open-office-artifact-tool"
+  },
+  "homepage": "https://github.com/w31r4/open-office-artifact-tool",
+  "repository": "https://github.com/w31r4/open-office-artifact-tool",
+  "license": "MIT",
+  "keywords": [
+    "pdf",
+    "pdfs",
+    "document",
+    "documents",
+    "report",
+    "render",
+    "review",
+    "extract",
+    "extraction",
+    "pypdf",
+    "pdfplumber",
+    "reportlab"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PDF",
+    "shortDescription": "Read, create, and verify PDF files",
+    "longDescription": "Read, create, inspect, render, verify, and extract content from PDF files locally. Use PDF when the durable output or target is a PDF file and visual layout fidelity matters.",
+    "developerName": "w31r4",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "privacyPolicyURL": "https://github.com/w31r4/open-office-artifact-tool#readme",
+    "termsOfServiceURL": "https://github.com/w31r4/open-office-artifact-tool#readme",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "defaultPrompt": [
+      "Review this PDF and verify its layout",
+      "Create a polished PDF from this content",
+      "Extract tables and text from this PDF"
+    ],
+    "brandColor": "#DC2626",
+    "screenshots": []
+  }
+}

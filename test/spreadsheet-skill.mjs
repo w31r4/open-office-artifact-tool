@@ -5,10 +5,10 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { createWorkbookFromFixture, runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
+import { createWorkbookFromFixture, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
-const fixtureDir = path.join(repoRoot, "skills", "spreadsheets", "fixtures");
+const fixtureDir = path.join(repoRoot, "test", "skill-harness", "spreadsheets", "fixtures");
 const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-spreadsheet-skill-"));
 
 async function runFixture(name) {

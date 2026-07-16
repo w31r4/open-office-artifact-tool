@@ -627,7 +627,7 @@ internal static class PptxCodec
         var textBody = PptxTextCodec.Read(shape.TextBody, slideContext);
         var placeholder = PptxPlaceholderCodec.ReadIdentity(shape);
         var transform = properties?.Transform2D;
-        return new PresentationShape
+        var result = new PresentationShape
         {
             Geometry = Geometry(shape),
             LeftEmu = frame.Left,
@@ -646,6 +646,8 @@ internal static class PptxCodec
                 : null,
             Shadow = ReadShadow(properties),
         };
+        result.CustomPaths.Add(PptxCustomGeometryCodec.Read(properties?.GetFirstChild<A.CustomGeometry>()));
+        return result;
     }
 
     private static bool IsSimpleShape(P.Shape shape)
@@ -655,12 +657,14 @@ internal static class PptxCodec
         var properties = shape.ShapeProperties;
         var transform = properties?.Transform2D;
         if (properties is null || properties.Elements<A.Transform2D>().Count() != 1 || !PptxShapeTransformCodec.Supports(transform)) return false;
-        if (Geometry(shape) is not ("rect" or "ellipse" or "roundRect" or "textbox")) return false;
+        var geometry = Geometry(shape);
+        if (geometry is not ("rect" or "ellipse" or "roundRect" or "textbox" or "custom")) return false;
+        if (geometry == "custom" && !PptxCustomGeometryCodec.Supports(properties.GetFirstChild<A.CustomGeometry>())) return false;
         if (!SimpleFill(properties)) return false;
         var outline = properties.GetFirstChild<A.Outline>();
         if (outline is not null && !SimpleFill(outline)) return false;
         if (!SupportsShadow(properties)) return false;
-        if (properties.ChildElements.Any(child => child is not A.Transform2D and not A.PresetGeometry and not A.NoFill and not A.SolidFill and not A.Outline and not A.EffectList)) return false;
+        if (properties.ChildElements.Any(child => child is not A.Transform2D and not A.PresetGeometry and not A.CustomGeometry and not A.NoFill and not A.SolidFill and not A.Outline and not A.EffectList)) return false;
         return PptxTextCodec.SupportsEditing(shape.TextBody);
     }
 
@@ -736,18 +740,7 @@ internal static class PptxCodec
         extents.Cx = semantic.WidthEmu;
         extents.Cy = semantic.HeightEmu;
         PptxShapeTransformCodec.Apply(transform, semantic.Transform);
-        var geometry = properties.GetFirstChild<A.PresetGeometry>();
-        if (geometry is null)
-        {
-            geometry = new A.PresetGeometry(new A.AdjustValueList());
-            properties.InsertAfter(geometry, transform);
-        }
-        geometry.Preset = semantic.Geometry switch
-        {
-            "ellipse" => A.ShapeTypeValues.Ellipse,
-            "roundRect" => A.ShapeTypeValues.RoundRectangle,
-            _ => A.ShapeTypeValues.Rectangle,
-        };
+        PptxCustomGeometryCodec.Apply(properties, semantic);
         if (shape.NonVisualShapeProperties?.NonVisualShapeDrawingProperties is { } drawingProperties)
             drawingProperties.TextBox = semantic.Geometry == "textbox" ? true : null;
         if (!FillMatches(properties, semantic.FillRgb)) ReplaceFill(properties, semantic.FillRgb);
@@ -967,17 +960,8 @@ internal static class PptxCodec
             new A.Offset { X = semantic.LeftEmu, Y = semantic.TopEmu },
             new A.Extents { Cx = semantic.WidthEmu, Cy = semantic.HeightEmu });
         PptxShapeTransformCodec.Apply(transform, semantic.Transform);
-        var properties = new P.ShapeProperties(
-            transform,
-            new A.PresetGeometry(new A.AdjustValueList())
-            {
-                Preset = semantic.Geometry switch
-                {
-                    "ellipse" => A.ShapeTypeValues.Ellipse,
-                    "roundRect" => A.ShapeTypeValues.RoundRectangle,
-                    _ => A.ShapeTypeValues.Rectangle,
-                },
-            });
+        var properties = new P.ShapeProperties(transform);
+        PptxCustomGeometryCodec.Apply(properties, semantic);
         properties.Append(string.IsNullOrWhiteSpace(semantic.FillRgb)
             ? new A.NoFill()
             : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(semantic.FillRgb) }));
@@ -1241,6 +1225,7 @@ internal static class PptxCodec
     private static string Geometry(P.Shape shape)
     {
         if (shape.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value == true) return "textbox";
+        if (shape.ShapeProperties?.GetFirstChild<A.CustomGeometry>() is not null) return "custom";
         var value = shape.ShapeProperties?.GetFirstChild<A.PresetGeometry>()?.Preset?.Value;
         if (value is null) return "rect";
         return value.Equals(A.ShapeTypeValues.Ellipse) ? "ellipse" :
@@ -1351,8 +1336,9 @@ internal static class PptxCodec
                             throw new CodecException("invalid_presentation_placeholder", $"Presentation shape {element.Id} has inconsistent direct placeholder geometry.");
                         PptxPlaceholderCodec.ValidateDirectFrame(element.Shape.DirectFrame, element.Id);
                     }
-                    if (element.Shape.Geometry is not ("rect" or "ellipse" or "roundRect" or "textbox"))
+                    if (element.Shape.Geometry is not ("rect" or "ellipse" or "roundRect" or "textbox" or "custom"))
                         throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
+                    PptxCustomGeometryCodec.Validate(element.Shape, element.Id);
                     if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);
                     if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) PptxColor.Normalize(element.Shape.LineRgb);
                     PptxShapeTransformCodec.Validate(element.Shape.Transform, element.Id);
@@ -1941,7 +1927,9 @@ internal static class PptxCodec
                 if (transform.Extents is { } extents) { extents.Cx = 1L; extents.Cy = 1L; }
                 PptxShapeTransformCodec.Scrub(transform);
             }
+            properties.GetFirstChild<A.CustomGeometry>()?.Remove();
             if (properties.GetFirstChild<A.PresetGeometry>() is { } geometry) geometry.Preset = A.ShapeTypeValues.Rectangle;
+            else properties.InsertAfter(new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }, properties.GetFirstChild<A.Transform2D>());
             properties.GetFirstChild<A.EffectList>()?.Remove();
             foreach (var fill in properties.ChildElements.Where(child => child is A.NoFill or A.SolidFill).ToArray()) fill.Remove();
             if (properties.GetFirstChild<A.Outline>() is { } outline)

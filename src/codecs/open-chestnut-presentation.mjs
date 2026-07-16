@@ -897,8 +897,33 @@ function presentationChart(chart, original) {
 
 function presentationShape(shape, original, assetCatalog) {
   const originalShape = original?.content?.case === "shape" ? original.content.value : original;
-  if (!new Set(["rect", "ellipse", "roundRect", "textbox"]).has(shape.geometry)) {
+  if (!new Set(["rect", "ellipse", "roundRect", "textbox", "custom"]).has(shape.geometry)) {
     throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses unsupported geometry ${shape.geometry}.`, [], { code: "unsupported_presentation_features" });
+  }
+  if (shape.geometry !== "custom" && shape.customPaths?.length) {
+    throw new OpenChestnutCodecError(`Presentation shape ${shape.id} has custom paths without custom geometry.`, [], { code: "invalid_presentation_geometry" });
+  }
+  const customPaths = (shape.customPaths || []).map((path) => ({
+    width: BigInt(path.width),
+    height: BigInt(path.height),
+    commands: path.commands.map((command) => {
+      if (command.moveTo) return { command: { case: "moveTo", value: { x: BigInt(command.moveTo.x), y: BigInt(command.moveTo.y) } } };
+      if (command.lineTo) return { command: { case: "lineTo", value: { x: BigInt(command.lineTo.x), y: BigInt(command.lineTo.y) } } };
+      if (command.cubicBezTo) return {
+        command: {
+          case: "cubicBezierTo",
+          value: {
+            control1: { x: BigInt(command.cubicBezTo.x1), y: BigInt(command.cubicBezTo.y1) },
+            control2: { x: BigInt(command.cubicBezTo.x2), y: BigInt(command.cubicBezTo.y2) },
+            end: { x: BigInt(command.cubicBezTo.x), y: BigInt(command.cubicBezTo.y) },
+          },
+        },
+      };
+      return { command: { case: "close", value: true } };
+    }),
+  }));
+  if (shape.geometry === "custom" && customPaths.length === 0) {
+    throw new OpenChestnutCodecError(`Presentation shape ${shape.id} requires custom paths.`, [], { code: "invalid_presentation_geometry" });
   }
   const position = shape.position || {};
   const lineWidth = Number(shape.line?.width ?? 1);
@@ -924,6 +949,7 @@ function presentationShape(shape, original, assetCatalog) {
         lineWidthEmu: BigInt(Math.round(lineWidth * EMU_PER_POINT)),
         ...(shape.transform == null ? {} : { transform: wirePresentationTransform(shape.transform, `shape ${shape.id}`) }),
         ...(shadow ? { shadow } : {}),
+        ...(customPaths.length ? { customPaths } : {}),
       },
     },
   };
@@ -1418,6 +1444,28 @@ function modelPresentationTransform(frame) {
   return transform;
 }
 
+function modelCustomGeometryPaths(shape) {
+  return (shape.customPaths || []).map((path) => ({
+    width: Number(path.width),
+    height: Number(path.height),
+    commands: path.commands.map((command) => {
+      if (command.command.case === "moveTo") return { moveTo: { x: Number(command.command.value.x), y: Number(command.command.value.y) } };
+      if (command.command.case === "lineTo") return { lineTo: { x: Number(command.command.value.x), y: Number(command.command.value.y) } };
+      if (command.command.case === "cubicBezierTo") return {
+        cubicBezTo: {
+          x1: Number(command.command.value.control1.x),
+          y1: Number(command.command.value.control1.y),
+          x2: Number(command.command.value.control2.x),
+          y2: Number(command.command.value.control2.y),
+          x: Number(command.command.value.end.x),
+          y: Number(command.command.value.end.y),
+        },
+      };
+      return { close: {} };
+    }),
+  }));
+}
+
 function modelPlaceholderTransform(frame) {
   return modelPresentationTransform(frame);
 }
@@ -1601,6 +1649,7 @@ export async function presentationFromEnvelope(envelope) {
           id: element.id,
           name: element.name || inheritedPlaceholder?.name,
           geometry: shape.geometry || "rect",
+          ...(shape.customPaths?.length ? { customPaths: modelCustomGeometryPaths(shape) } : {}),
           position: { ...effectiveFrame },
           ...(effectiveTransform && Object.keys(effectiveTransform).length ? { transform: effectiveTransform } : {}),
           ...(placeholderIdentity ? { placeholder: {

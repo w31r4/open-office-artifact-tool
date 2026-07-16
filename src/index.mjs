@@ -30,6 +30,7 @@ import { presentationChartLineSvgAttributes, presentationChartTrendlinesSvg } fr
 import { planPresentationCustomShows, PresentationCustomShowCollection } from "./presentation/ooxml-custom-shows.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { normalizePresentationTextBodyProperties } from "./presentation/text-body-properties.mjs";
+import { normalizePresentationCustomPaths, presentationCustomPathsSvg } from "./presentation/custom-geometry.mjs";
 import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, planPresentationModernComments } from "./presentation/ooxml-modern-comments.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
 import { analyzePdfReadingOrder, inspectPdfReadingOrderIds, normalizePdfReadingOrder, pdfPageBodyTextLines, pdfReadingOrderInspectRecords, resolvePdfReadingOrder } from "./pdf/reading-order.mjs";
@@ -44,7 +45,7 @@ import { materializeComposeNode } from "./presentation/compose.mjs";
 
 export { FileBlob } from "./shared/file-blob.mjs";
 export { HELP_CATALOG } from "./help/index.mjs";
-export { box, chart, column, grid, image, layers, node, paragraph, row, rule, run, shape, table } from "./presentation/compose.mjs";
+export { box, chart, column, grid, image, layers, node, paragraph, row, rule, run, shape, table, text } from "./presentation/compose.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml";
@@ -5804,6 +5805,7 @@ export class Shape {
     this.nativeId = config.nativeId;
     this.creationId = config.creationId;
     this.geometry = config.geometry || "rect";
+    this.customPaths = normalizePresentationCustomPaths(config.customPaths, { geometry: this.geometry });
     this.name = config.name || "";
     this.position = config.position || { left: 0, top: 0, width: 160, height: 80 };
     this.transform = config.transform == null ? undefined : normalizePresentationPlaceholderTransform(config.transform, `Presentation shape ${this.name || this.id} transform`);
@@ -5822,27 +5824,29 @@ export class Shape {
   inspectRecord(kind = "shape") {
     const p = this.position;
     const paragraphs = this.text.effectiveParagraphs();
-    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, shadow: this.shadow, placeholder: this.placeholder || undefined };
+    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, customPathCount: this.customPaths.length || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, shadow: this.shadow, placeholder: this.placeholder || undefined };
   }
 
-  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, shadow: this.shadow, text: this.text.style } }; }
+  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, customPaths: this.customPaths.length ? this.customPaths : undefined, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, shadow: this.shadow, text: this.text.style } }; }
 
   toSvg() {
     const p = this.position;
     const fill = typeof this.fill === "string" ? resolveColorToken(this.fill, this.fill) : this.fill?.color || "transparent";
     const stroke = resolveColorToken(this.line?.fill || this.line?.color || "#334155", "#334155");
     const sw = this.line?.width ?? 1;
-    const rect = this.geometry === "ellipse"
+    const visual = this.geometry === "custom"
+      ? `<g fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}">${presentationCustomPathsSvg(this.customPaths, p, { escape: xmlEscape })}</g>`
+      : this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`
       : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="${xmlEscape(fill)}" stroke="${xmlEscape(stroke)}" stroke-width="${sw}"/>`;
     const text = this.text.value ? presentationParagraphsSvg(this.text.effectiveParagraphs(), p, this.text.style, { escape: xmlEscape }) : "";
-    if (!this.transform) return rect + text;
+    if (!this.transform) return visual + text;
     const cx = p.left + p.width / 2;
     const cy = p.top + p.height / 2;
     const rotation = Number(this.transform.rotationDegrees || 0);
     const flipHorizontal = this.transform.flipHorizontal === true ? -1 : 1;
     const flipVertical = this.transform.flipVertical === true ? -1 : 1;
-    return `<g transform="translate(${cx} ${cy}) rotate(${rotation}) scale(${flipHorizontal} ${flipVertical}) translate(${-cx} ${-cy})">${rect}${text}</g>`;
+    return `<g transform="translate(${cx} ${cy}) rotate(${rotation}) scale(${flipHorizontal} ${flipVertical}) translate(${-cx} ${-cy})">${visual}${text}</g>`;
   }
 
 }

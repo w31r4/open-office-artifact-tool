@@ -169,14 +169,14 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
-  { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout." },
+  { artifactKind: "presentation", kind: "api", name: "slide.shapes.add", summary: "Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout." },
   { artifactKind: "presentation", kind: "api", name: "shape.text.set", summary: "Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.setName", summary: "Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.setPosition", summary: "Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.getEmbeddedWorkbook", summary: "Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.replaceEmbeddedWorkbook", summary: "OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Build grouped-shape trees for model inspect, layout, and SVG preview. Source-free p:grpSp authoring is outside the OpenChestnut 0.2 boundary, while imported groups remain opaque and read-only." },
-  { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
+  { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
   { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output." },
   { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export." },
@@ -203,6 +203,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts. Master/Layout graphs, notes, comments, themes, native OLE/diagram/contentPart objects, and unsupported content remain source-bound and read-only; eligible OLE XLSX payloads may be inspected but not replaced." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
+  { artifactKind: "presentation", kind: "api", name: "compose.text", summary: "Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper." },
 
   { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with styles, formatted paragraphs/runs, sections, headers/footers, lists, fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain model-only or import-preserved read-only." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics." },
@@ -1072,7 +1073,8 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "report", "object", "Presentation semantic/layout QA result."),
   "slide.shapes.add": helpSchema({
     name: { type: "string", description: "Inspectable shape name." },
-    geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
+    geometry: { type: "string", description: "rect, ellipse, roundRect, textbox, or custom. Custom requires customPaths." },
+    customPaths: { type: "object[]", description: "For geometry custom, 1-64 literal DrawingML paths with positive integer width/height and bounded moveTo, lineTo, cubicBezTo, and close commands. Guides, handles, connection sites, arcs, quadratic curves, text rectangles, and path-specific paint overrides are not authored." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
     transform: { type: "object", description: "Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. OpenChestnut authors/imports this direct DrawingML transform on supported shapes; complex or unknown native transform graphs remain read-only." },
     text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks." },
@@ -1115,7 +1117,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     children: { type: "object[]", description: "Ordered mixed child definitions using kind shape, connector, groupShape, table, chart, or image." },
   }, "group", "GroupShape", "Appended model-level grouped-shape facade for resolve, inspect, layout, and SVG preview. OpenChestnut 0.2 rejects source-free group export; imported groups are read-only."),
   "slide.compose": helpSchema({
-    node: { type: "object", required: true, description: "Compose tree rooted in row, column, grid, layers, box, paragraph, shape, table, chart, image, or rule." },
+    node: { type: "object", required: true, description: "Compose tree rooted in row, column, grid, layers, box, paragraph/text, shape, table, chart, image, or rule." },
     frame: { type: "object", description: "Pixel materialization frame; defaults to an inset slide frame." },
   }, "elements", "object[]", "Materialized editable slide elements."),
   "slide.autoLayout": helpSchema({
@@ -1239,6 +1241,10 @@ const PRESENTATION_HELP_SCHEMAS = {
     className: { type: "string", description: "Text style token string." },
     style: { type: "object", description: "Explicit text style metadata." },
   }, "node", "object", "Paragraph compose node."),
+  "compose.text": helpSchema({
+    children: { type: "string|string[]|object[]", required: true, description: "Text or run-like children passed as the first argument." },
+    props: { type: "object", description: "Paragraph name, className, style, sizing, and placement metadata passed as the second argument." },
+  }, "node", "object", "Reference-template-compatible alias that returns the same paragraph compose node."),
   "PresentationFile.inspectPptx": HELP_DETAIL_OVERRIDES["PresentationFile.inspectPptx"].schema,
   "PresentationFile.patchPptx": helpSchema({
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
@@ -1615,13 +1621,17 @@ for (const item of HELP_CATALOG) {
 export function queryHelpRecords(artifactKind = "*", query = "*", options = {}) {
   const q = String(query || "*").toLowerCase();
   const search = String(options.search || "").toLowerCase();
+  const queryPattern = q.includes("*")
+    ? new RegExp(`^${q.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i")
+    : undefined;
+  const searchTerms = search.split("|").map((part) => part.trim()).filter(Boolean);
   return HELP_CATALOG.filter((item) => {
     const kindMatch = artifactKind === "*" || item.artifactKind === artifactKind || (artifactKind === "unknown" && item.artifactKind === "shared");
     if (!kindMatch) return false;
     const haystack = `${item.name}\n${item.summary}\n${item.category || ""}\n${(item.examples || []).join("\n")}\n${(item.options || item.params || []).join("\n")}\n${item.returns || ""}\n${JSON.stringify(item.schema || {})}\n${(item.notes || []).join("\n")}`.toLowerCase();
-    const queryMatch = q === "*" || item.name.toLowerCase().includes(q.replace("fx.", "")) || haystack.includes(q);
-    const searchMatch = !search || haystack.includes(search);
+    const name = item.name.toLowerCase();
+    const queryMatch = q === "*" || queryPattern?.test(name) || name.includes(q) || name.includes(q.replace(/^fx\./, "")) || haystack.includes(q);
+    const searchMatch = searchTerms.length === 0 || searchTerms.some((term) => haystack.includes(term));
     return queryMatch && searchMatch;
   });
 }
-

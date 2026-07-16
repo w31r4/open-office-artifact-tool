@@ -1172,6 +1172,37 @@ message PresentationShape {
   // structurally complex native transforms remain source-bound and read-only.
   PresentationShapeTransform transform = 13;
   PresentationShadow shadow = 14;
+  // Source-free custom DrawingML geometry. The 0.2 slice intentionally owns
+  // only literal path coordinates and move/line/cubic/close commands. Guides,
+  // handles, connection sites, arcs, quadratic curves, and per-path fill or
+  // stroke overrides remain source-bound.
+  repeated PresentationCustomGeometryPath custom_paths = 15;
+}
+
+message PresentationCustomGeometryPath {
+  int64 width = 1;
+  int64 height = 2;
+  repeated PresentationCustomGeometryCommand commands = 3;
+}
+
+message PresentationCustomGeometryCommand {
+  oneof command {
+    PresentationCustomGeometryPoint move_to = 1;
+    PresentationCustomGeometryPoint line_to = 2;
+    PresentationCustomGeometryCubicBezier cubic_bezier_to = 3;
+    bool close = 4;
+  }
+}
+
+message PresentationCustomGeometryPoint {
+  int64 x = 1;
+  int64 y = 2;
+}
+
+message PresentationCustomGeometryCubicBezier {
+  PresentationCustomGeometryPoint control_1 = 1;
+  PresentationCustomGeometryPoint control_2 = 2;
+  PresentationCustomGeometryPoint end = 3;
 }
 
 message PresentationShadow {

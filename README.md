@@ -96,14 +96,11 @@ Renderer adapters are exported for Playwright, sharp, canvas, Poppler, LibreOffi
 
 ## Reference Skills
 
-The repository ships four runnable agent Skills:
+The repository ships four native Codex plugin bundles under `skills/{documents,spreadsheets,presentations,pdf}`. Each bundle contains `.codex-plugin/plugin.json`, plugin assets, a README, and its native `skills/...` tree. Spreadsheets intentionally includes both `Spreadsheets` for local artifact authoring and `excel-live-control` for host-provided live Excel sessions, so the published surface contains five Skills in four plugins.
 
-- `skills/documents`
-- `skills/spreadsheets`
-- `skills/presentations`
-- `skills/pdf`
+The 26-slide built-in Presentation template and the core Spreadsheet example execute directly against `open-office-artifact-tool`. Full reference-instruction compatibility is tracked independently from plugin packaging; Documents, the extended Spreadsheet/Presentation guides, PDF adapter usage, and live Excel host execution remain partial rather than being hidden behind the older flat fixture Skills.
 
-The three Office Skills use the canonical facade without codec options. The PDF Skill remains independent.
+The development-only fixture runners live under `test/skill-harness` and are not included in npm. See [reference Skill compatibility](docs/reference-skills.md) for the audited boundary.
 
 ## Development
 
@@ -119,7 +116,7 @@ npm run docs:api
 
 `npm run verify:open-chestnut-build` performs the deterministic WASM build check. `npm run release:check` validates release metadata and packaged artifacts. C# source and build tooling live in the repository; the npm package contains the bundled runtime, public proto/generated JavaScript, integrity manifest, SBOM, and licenses.
 
-See [coverage](docs/coverage.md), [runtime architecture](docs/reference-runtime-architecture.md), and [release gates](docs/release.md).
+See [coverage](docs/coverage.md), [reference Skill compatibility](docs/reference-skills.md), [runtime architecture](docs/reference-runtime-architecture.md), and [release gates](docs/release.md).
 
 ## License
 

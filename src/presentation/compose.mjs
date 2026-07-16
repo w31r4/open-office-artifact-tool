@@ -1,4 +1,6 @@
+import { Buffer } from "node:buffer";
 import { resolveColorToken } from "../shared/colors.mjs";
+import { normalizePresentationTextBodyProperties } from "./text-body-properties.mjs";
 
 export function node(type, props = {}, children = []) {
   const normalizedProps = props && !Array.isArray(props) && typeof props === "object" ? props : {};
@@ -12,6 +14,9 @@ export const grid = (props = {}, children = []) => node("grid", props, children)
 export const layers = (props = {}, children = []) => node("layers", props, children);
 export const box = (props = {}, children = []) => node("box", props, children);
 export const paragraph = (props = {}, children = []) => node("paragraph", props, children);
+// Reference presentation templates use a children-first text helper. Keep it
+// as a thin alias so the resulting node is identical to `paragraph(...)`.
+export const text = (children = [], props = {}) => paragraph(props, children);
 export const run = (props = {}, children = []) => node("run", props, children);
 export const shape = (props = {}, children = []) => node("shape", props, children);
 export const image = (props = {}, children = []) => node("image", props, children);
@@ -33,8 +38,38 @@ function textFromComposeChildren(children) {
   return normalizeComposeChildren(children).map((child) => {
     if (typeof child === "string" || typeof child === "number") return String(child);
     if (isComposeNode(child)) return textFromComposeChildren(child.children);
+    if (child && typeof child === "object" && Array.isArray(child.runs)) return child.runs.map((run) => String(run?.run ?? run?.text ?? "")).join("");
     return "";
   }).join("");
+}
+
+function composeTokenRuns(runs = []) {
+  return runs.flatMap((run) => {
+    const text = String(run?.run ?? run?.text ?? "");
+    const style = run?.textStyle || run?.style || {};
+    const segments = text.split("\n");
+    return segments.flatMap((segment, index) => [
+      ...(segment ? [{ text: segment, style }] : []),
+      ...(index < segments.length - 1 ? [{ break: true, style }] : []),
+    ]);
+  });
+}
+
+function composeRichText(children) {
+  const items = normalizeComposeChildren(children);
+  if (!items.some((item) => item && typeof item === "object" && !isComposeNode(item) && Array.isArray(item.runs))) return undefined;
+  return items.map((item) => {
+    if (!item || typeof item !== "object" || isComposeNode(item) || !Array.isArray(item.runs)) return { runs: [String(item ?? "")] };
+    return {
+      runs: composeTokenRuns(item.runs),
+      ...(item.bulletCharacter != null ? { bulletCharacter: item.bulletCharacter } : {}),
+      ...(item.marginLeft != null ? { marginLeft: Number(item.marginLeft) / 9525 } : {}),
+      ...(item.indent != null ? { indent: Number(item.indent) / 9525 } : {}),
+      ...(item.spaceBefore != null ? { spaceBefore: Number(item.spaceBefore) / 75 } : {}),
+      ...(item.spaceAfter != null ? { spaceAfter: Number(item.spaceAfter) / 75 } : {}),
+      ...(item.paragraphStyle?.lineSpacingPercent != null ? { lineSpacing: Number(item.paragraphStyle.lineSpacingPercent) / 100_000 } : {}),
+    };
+  });
 }
 
 function normalizePadding(padding = {}) {
@@ -86,7 +121,52 @@ function parseTextStyle(props = {}) {
   } else if (props.style && typeof props.style === "object") {
     Object.assign(style, props.style);
   }
+  if (style.typeface != null && style.fontFamily == null) style.fontFamily = style.typeface;
+  delete style.typeface;
+  if (style.fontSize != null) {
+    const raw = String(style.fontSize).trim();
+    const number = Number(raw.replace(/(?:px|pt)$/i, ""));
+    if (Number.isFinite(number)) style.fontSize = /pt$/i.test(raw) ? number * 4 / 3 : number;
+  }
+  delete style.verticalAlignment;
+  delete style.autoFit;
+  delete style.insets;
+  delete style.wrap;
   return style;
+}
+
+function parseTextBodyProperties(props = {}) {
+  const style = props.style && typeof props.style === "object" && !Array.isArray(props.style) ? props.style : {};
+  const verticalAlignment = style.verticalAlignment ?? props.verticalAlignment;
+  const autoFit = style.autoFit ?? props.autoFit;
+  const bodyProperties = {
+    ...(style.insets ?? props.insets ? { insets: style.insets ?? props.insets } : {}),
+    ...(verticalAlignment != null ? { anchor: verticalAlignment === "middle" ? "center" : verticalAlignment } : {}),
+    ...(autoFit != null ? { autoFit: autoFit === "resizeShapeToFitText" ? "resizeShape" : autoFit } : {}),
+    ...(style.wrap ?? props.wrap ? { wrap: style.wrap ?? props.wrap } : {}),
+  };
+  return Object.keys(bodyProperties).length ? normalizePresentationTextBodyProperties(bodyProperties) : undefined;
+}
+
+function composeNodeFrame(frame, props = {}) {
+  const position = props.position;
+  if (!position || typeof position !== "object" || Array.isArray(position)) return frame;
+  const left = Number(position.left ?? 0);
+  const top = Number(position.top ?? 0);
+  const width = Number(position.width ?? (typeof props.width === "number" ? props.width : frame.width));
+  const height = Number(position.height ?? (typeof props.height === "number" ? props.height : frame.height));
+  return {
+    left: frame.left + (Number.isFinite(left) ? left : 0),
+    top: frame.top + (Number.isFinite(top) ? top : 0),
+    width: Number.isFinite(width) ? width : frame.width,
+    height: Number.isFinite(height) ? height : frame.height,
+  };
+}
+
+function composeImagePlaceholderDataUrl(props) {
+  if (props.dataUrl || props.uri || !props.prompt) return undefined;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><rect width="1000" height="1000" fill="#eaf5fb"/><path d="M0 760 330 430 560 660 1000 210V1000H0Z" fill="#c7e4f2"/><circle cx="770" cy="245" r="105" fill="#9ecfe4"/><path d="M110 160h370v38H110zm0 78h250v24H110z" fill="#ffffff" opacity=".72"/></svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
 function styleFromClassName(className = "") {
@@ -163,6 +243,7 @@ export function materializeComposeNode(slide, composeNode, frame) {
   }
   if (!isComposeNode(composeNode)) return [];
   const props = composeNode.props || {};
+  frame = composeNodeFrame(frame, props);
   const children = normalizeComposeChildren(composeNode.children).filter((child) => child !== null && child !== undefined && child !== false);
   const type = composeNode.type;
   if (type === "row" || type === "column") {
@@ -214,6 +295,7 @@ export function materializeComposeNode(slide, composeNode, frame) {
     return [surface, ...children.filter(isComposeNode).flatMap((child) => materializeComposeNode(slide, child, innerFrame(frame, pad)))];
   }
   if (type === "paragraph") {
+    const richText = composeRichText(children);
     const shape = slide.shapes.add({
       id: props.id,
       name: props.name,
@@ -221,20 +303,35 @@ export function materializeComposeNode(slide, composeNode, frame) {
       position: frame,
       fill: "transparent",
       line: { fill: "transparent", width: 0 },
-      text: textFromComposeChildren(children),
+      text: richText || textFromComposeChildren(children),
     });
     shape.text.style = parseTextStyle(props);
+    const bodyProperties = parseTextBodyProperties(props);
+    if (bodyProperties) shape.text.bodyProperties = bodyProperties;
     return [shape];
   }
   if (type === "shape") {
     const classStyle = styleFromClassName(props.className);
+    if (props.geometry === "straightConnector1") {
+      return [slide.connectors.add({
+        id: props.id,
+        name: props.name,
+        connectorType: "straight",
+        start: { x: frame.left, y: frame.top },
+        end: { x: frame.left + frame.width, y: frame.top + frame.height },
+        line: props.line || { fill: props.fill || "#334155", width: 1 },
+      })];
+    }
+    const richText = composeRichText(children);
     const shape = slide.shapes.add({
       ...props,
       position: frame,
       fill: props.fill || classStyle.fill || "transparent",
-      text: textFromComposeChildren(children) || props.text,
+      text: richText || textFromComposeChildren(children) || props.text,
     });
     shape.text.style = parseTextStyle(props);
+    const bodyProperties = parseTextBodyProperties(props);
+    if (bodyProperties) shape.text.bodyProperties = bodyProperties;
     return [shape];
   }
   if (type === "table") {
@@ -244,7 +341,13 @@ export function materializeComposeNode(slide, composeNode, frame) {
     return [slide.charts.add(props.chartType || props.type || "bar", { ...props, position: frame })];
   }
   if (type === "image") {
-    return [slide.images.add({ ...props, position: frame, alt: props.alt || textFromComposeChildren(children) || props.name })];
+    const placeholderDataUrl = composeImagePlaceholderDataUrl(props);
+    return [slide.images.add({
+      ...props,
+      position: frame,
+      alt: props.alt || textFromComposeChildren(children) || props.name,
+      ...(placeholderDataUrl ? { dataUrl: placeholderDataUrl, fit: "stretch", geometry: "rect", borderRadius: undefined } : {}),
+    })];
   }
   if (type === "rule") {
     const horizontal = (props.width ?? frame.width) >= (props.height ?? props.weight ?? 2);
@@ -260,4 +363,3 @@ export function materializeComposeNode(slide, composeNode, frame) {
   }
   return children.filter(isComposeNode).flatMap((child) => materializeComposeNode(slide, child, frame));
 }
-

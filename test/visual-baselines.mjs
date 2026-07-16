@@ -9,7 +9,7 @@ import {
   prepareNumberedVisualBaselines,
   runPngVisualQa,
   visualBaselineCountResult,
-} from "../skills/shared/visual-baselines.mjs";
+} from "./skill-harness/shared/visual-baselines.mjs";
 
 const whitePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL+YQAAAABJRU5ErkJggg==", "base64");
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-visual-baselines-"));

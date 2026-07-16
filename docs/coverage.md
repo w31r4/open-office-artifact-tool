@@ -18,7 +18,7 @@ Status meanings:
 | Opaque Office preservation | done | Imported unmodeled parts are content-type/hash/source bound. Unchanged content is preserved; unsupported edits and missing source snapshots fail closed. |
 | Low-level OOXML inspect/patch | done | Explicit, bounded package inspection and patching remain available and are never invoked automatically as a fallback. |
 | Wire protocol | done | `open_office.artifact.v1`, protocol version 2; removed `allow_lossy` field name and number are reserved. |
-| JavaScript source layering | partial | The root entry preserves the 35-symbol public API while Help, Compose, binary conversion, `FileBlob`, and inspection primitives live in dependency-leaf modules. Format models and the shared OOXML package engine remain to be extracted atomically without changing class identity or facade behavior. |
+| JavaScript source layering | partial | The root entry preserves the 36-symbol public API while Help, Compose, binary conversion, `FileBlob`, and inspection primitives live in dependency-leaf modules. Format models and the shared OOXML package engine remain to be extracted atomically without changing class identity or facade behavior. |
 
 ## Spreadsheets
 
@@ -59,6 +59,7 @@ Status meanings:
 | Fill, line, shadow | done | Basic solid/no-fill, line color/width/dash, and bounded outer shadow. Complex theme/effect graphs remain source-bound. |
 | Rich text and lists | done | Paragraphs, runs, common formatting, bullets/numbering, and bounded links. |
 | Connectors | done | Straight and polyline connectors with bounded line/arrow styling. |
+| Literal custom geometry | partial | Source-free and recognized imported DrawingML `custGeom` paths support bounded literal move, line, cubic Bézier, and close commands. Guides, handles, connection sites, arcs, quadratic curves, text rectangles, and per-path paint overrides remain source-bound. |
 | Images | done | Embedded PNG/JPEG images with bounded placement and alternative text. |
 | Tables | done | Source-free fixed rectangular tables and fixed-topology imported cell text/geometry edits. |
 | Charts | done | Source-free bar, line, and pie charts with literal categories/values. Complex/combo/external-data chart graphs remain source-bound. |
@@ -79,9 +80,12 @@ Status meanings:
 
 ## Reference Skills
 
+The published layout is four native plugin bundles and five Skills; `test/skill-harness` is development-only and is not a public Skill surface. Detailed evidence and gaps are in [reference Skill compatibility](reference-skills.md).
+
 | Skill | Status | Main workflow |
 | --- | --- | --- |
-| Documents | done | Create/import, inspect, bounded edit, canonical DOCX export, verify, render QA. |
-| Spreadsheets | done | Create/import, inspect, calculate, bounded edit, canonical XLSX export, verify, render QA. |
-| Presentations | done | Create/import, Compose/model edit, canonical PPTX export, inspect, verify, render QA. |
-| PDF | done | Create/import, inspect/extract, render, semantic verification, and visual QA through the independent PDF path. |
+| Documents | partial | Native plugin packaging and render/QA materials are present. Ordinary authoring still needs to converge from reference Python/OOXML helpers onto `DocumentModel` plus canonical OpenChestnut I/O. |
+| Spreadsheets | partial | The native plugin and reference-style core workbook example pass canonical XLSX export/import. Extended Quick API parity remains incomplete. |
+| Excel live control | partial | Native routing Skill and connector declaration are present; execution depends on a host-provided connected Excel session outside the npm package. |
+| Presentations | partial | The native plugin and complete 26-slide built-in template pass canonical OpenChestnut export/import, including bounded custom geometry. The broader reference API guide exceeds the current fail-closed PPTX boundary. |
+| PDF | partial | Native plugin packaging and the independent project PDF pipeline pass; the reference guide still needs full public-API adapter convergence. |
