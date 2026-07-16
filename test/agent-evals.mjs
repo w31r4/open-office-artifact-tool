@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
+  gradeAccessibleReportEvidence,
   gradeActiveContentSanitizeEvidence,
   gradeAttachmentQuarantineEvidence,
   gradeBoundedReplaceEvidence,
@@ -39,6 +40,58 @@ const visible = visibleCase(suite, cases.find((item) => item.id === "pdf-bounded
 assert.match(visible.prompt, /outputs\/contract-updated\.pdf/);
 assert.match(visible.prompt, /outputs\/audit\.json/);
 assert.doesNotMatch(visible.prompt, /expectedOutcome|oracleSha256|pymupdf\.readthedocs|"grade"/i);
+
+const accessibleItem = cases.find((item) => item.id === "pdf-greenfield-accessible-report");
+const accessiblePages = Array.from({ length: 6 }, (_, index) => ({ page: index + 1, width: 1224, height: 1584, nonBlank: true, inkBBox: [50, 50, 1100, 1500], touchesEdge: false, bytes: 20_000 }));
+const accessibleEvidence = {
+  source: { sha256: "accessible-source-sha" },
+  output: { sha256: "accessible-output-sha", pageCount: 6 },
+  structure: {
+    tagged: true,
+    language: "zh-CN",
+    title: "Agent Artifact Readiness",
+    roles: { H1: 1, H2: 4, H3: 7, Table: 1, TR: 5, TH: 6, TD: 9, Figure: 1, Link: 1 },
+    tables: [{ id: "risk-register", pages: [3, 4], rows: 5, headers: 6, dataCells: 9 }],
+    figuresWithAlt: 1,
+    links: [{ page: 6, uri: "https://www.w3.org/WAI/", structParent: 6 }],
+    linkObjrAssociations: 1,
+    artifactMarkers: 12,
+    rootIds: ["board-page-1/text", "summary-h2", "summary-h3", "format-pass-rate-chart", "risks-h2", "risks-h3", "risk-register", "mitigation-h3", "validation-h2", "modeled-h3", "machine-h3", "human-h3", "conclusion-h2", "conclusion-h3", "wai-guidance-link"],
+    pageText: ["封面", "摘要", "风险 级别 缓解措施", "风险 级别 缓解措施", "验证", "结论"],
+  },
+  visual: { renderer: "poppler-pdftoppm", pageCount: 6, pages: accessiblePages },
+};
+const accessibleAudit = {
+  status: "succeeded",
+  source: { sha256: "accessible-source-sha" },
+  output: { sha256: "accessible-output-sha" },
+  provider: { actual: "artifact-tool", version: "0.2.0", silentFallback: false },
+  savePolicy: { strategy: "rewrite" },
+  operation: { type: "create-accessible-report" },
+  validation: {
+    modeledVerify: { status: "passed", scope: "PdfArtifact modeled invariants" },
+    poppler: { status: "passed", pages: accessiblePages },
+    veraPdfMachine: { available: false, status: "not-run", claim: "No veraPDF machine validation was performed." },
+    humanPdfUa: { status: "required", claim: "No complete PDF/UA certification is claimed." },
+  },
+};
+const accessibleChecks = gradeAccessibleReportEvidence({
+  evidence: accessibleEvidence,
+  audit: accessibleAudit,
+  commands: ["node .agents/skills/pdf/examples/accessible-board-report.mjs inputs/report-data.json outputs/readiness-report.pdf outputs/audit.json"],
+  finalMessage: "已创建；不声明完整 PDF/UA 认证。",
+  item: accessibleItem,
+});
+assert.equal(accessibleChecks.every((entry) => entry.passed), true);
+assert.equal(summarizeCaseScore(accessibleChecks, accessibleItem.grade).rawScorePercent, 100);
+const overclaimChecks = gradeAccessibleReportEvidence({
+  evidence: accessibleEvidence,
+  audit: accessibleAudit,
+  commands: ["node .agents/skills/pdf/examples/accessible-board-report.mjs inputs/report-data.json outputs/readiness-report.pdf outputs/audit.json"],
+  finalMessage: "The report is PDF/UA certified.",
+  item: accessibleItem,
+});
+assert.equal(overclaimChecks.find((entry) => entry.id === "pdf-security:no-pdfua-overclaim")?.passed, false);
 
 const badNetwork = structuredClone(cases);
 badNetwork[0].policy.network = true;

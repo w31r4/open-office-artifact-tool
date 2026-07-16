@@ -16,6 +16,7 @@ references/AUDIT_SCHEMA.md
 references/pdf-audit-v1.schema.json
 artifact_tool/API_QUICK_START.md
 examples/public-api-end-to-end.mjs
+examples/accessible-board-report.mjs
 examples/provider-workflows.md
 examples/reportlab-report-spec.json
 examples/pymupdf-edit-operations.json

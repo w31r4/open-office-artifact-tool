@@ -68,7 +68,7 @@ Every mutation audit and security-sensitive read-only extraction audit uses the 
 
 ## Greenfield Creation
 
-Use `PdfArtifact` for a new semantic/tagged document with explicit headings, Table/TR/TH/TD structure, Figure alternative text, reading order, inspect/resolve, and modeled verification. Start with the [API quick start](artifact_tool/API_QUICK_START.md) and [public end-to-end example](examples/public-api-end-to-end.mjs).
+Use `PdfArtifact` for a new semantic/tagged document with explicit headings, Table/TR/TH/TD structure, Figure alternative text, meaningful tagged links, running artifacts, reading order, inspect/resolve, and modeled verification. Start with the [API quick start](artifact_tool/API_QUICK_START.md) and [public end-to-end example](examples/public-api-end-to-end.mjs). For a six-page CJK report with a constrained cross-page logical table and separate modeled/veraPDF/human evidence, run [the accessible board report example](examples/accessible-board-report.mjs).
 
 ```js
 import { PdfArtifact, PdfFile, verifyArtifact } from "open-office-artifact-tool";
@@ -81,6 +81,8 @@ const pdf = PdfArtifact.create({
 if (!verifyArtifact(pdf).ok) throw new Error("PDF semantic verification failed");
 await (await PdfFile.exportPdf(pdf)).save("output/pdf/readiness-report.pdf");
 ```
+
+Use `artifact: true` for repeating headers and footers, `addLink(...)` for meaningful visible URI links, and a shared table `semanticId` only for consecutive-page segments whose continuation is first and non-final segment is last in page reading order. These constraints make the logical structure explicit instead of guessing from layout.
 
 Use ReportLab for a greenfield layout-oriented PDF when the `PdfArtifact` tagged contract is not required:
 

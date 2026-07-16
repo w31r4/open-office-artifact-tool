@@ -122,6 +122,7 @@ assert.match(pdfSkillText, /silent fallback/i);
 assert.match(pdfSkillText, /original bytes/i);
 assert.ok(await exists(path.join(pdfSkillRoot, "artifact_tool", "API_QUICK_START.md")));
 assert.ok(await exists(path.join(pdfSkillRoot, "examples", "public-api-end-to-end.mjs")));
+assert.ok(await exists(path.join(pdfSkillRoot, "examples", "accessible-board-report.mjs")));
 for (const relativePath of [
   "manifest.txt",
   "references/PROVIDER_MATRIX.md",

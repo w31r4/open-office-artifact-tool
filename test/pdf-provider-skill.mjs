@@ -78,6 +78,7 @@ const requiredFiles = [
   "scripts/pdf_audit.py",
   "scripts/python_runtime.py",
   "examples/provider-workflows.md",
+  "examples/accessible-board-report.mjs",
   "examples/reportlab-report-spec.json",
   "examples/pymupdf-edit-operations.json",
   "examples/pymupdf-redaction-operations.json",
@@ -100,6 +101,7 @@ for (const pattern of [
   /original bytes/i,
   /Word-style reflow/,
   /Dynamic XFA/,
+  /accessible board report example/i,
 ]) assert.match(skillText, pattern);
 
 const pythonScripts = (await fs.readdir(scriptsRoot))

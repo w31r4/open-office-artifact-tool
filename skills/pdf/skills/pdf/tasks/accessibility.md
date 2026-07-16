@@ -2,7 +2,9 @@
 
 ## Greenfield tagged authoring
 
-`PdfArtifact` can emit explicit headings, reading order, language/title, Table/TR/TH/TD structure, Figure alternative text, decorative artifacts, and tagged marked content. Run `pdf.verify()` and `PdfFile.inspectPdf(...)` before export delivery.
+`PdfArtifact` can emit explicit headings, reading order, language/title, Table/TR/TH/TD structure including constrained logical tables spanning consecutive pages, Figure alternative text, meaningful Link annotations with OBJR association, decorative/running artifacts, and tagged marked content. Run `pdf.verify()` and `PdfFile.inspectPdf(...)` before export delivery.
+
+Use [the accessible board report example](../examples/accessible-board-report.mjs) as an executable pattern. It deliberately reports three separate results: project-modeled verification, optional veraPDF machine-rule evidence, and still-required human PDF/UA judgment.
 
 This modeled profile is not a claim of full PDF/UA conformance.
 

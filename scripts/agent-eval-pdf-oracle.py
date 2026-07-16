@@ -756,6 +756,157 @@ def acroform_visible(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def tagged_structure_evidence(file_path: pathlib.Path) -> dict[str, Any]:
+    reader = pypdf.PdfReader(str(file_path), strict=True)
+    root = resolve_pdf_value(reader.trailer["/Root"])
+    structure_root = resolve_pdf_value(root.get("/StructTreeRoot")) if isinstance(root, dict) else None
+    mark_info = resolve_pdf_value(root.get("/MarkInfo")) if isinstance(root, dict) else None
+    page_numbers: dict[tuple[int, int], int] = {}
+    for page_number, page in enumerate(reader.pages, 1):
+        reference = getattr(page, "indirect_reference", None)
+        if reference is not None:
+            page_numbers[(int(reference.idnum), int(reference.generation))] = page_number
+
+    def page_number_for(value: Any, inherited: int | None = None) -> int | None:
+        if isinstance(value, IndirectObject):
+            return page_numbers.get((int(value.idnum), int(value.generation)), inherited)
+        return inherited
+
+    roles: dict[str, int] = {}
+    records: list[dict[str, Any]] = []
+    tables: list[dict[str, Any]] = []
+    root_ids: list[str] = []
+    objr_count = 0
+    visited: set[tuple[int, int] | int] = set()
+
+    def visit(value: Any, inherited_page: int | None = None, root_child: bool = False) -> set[int]:
+        nonlocal objr_count
+        identity: tuple[int, int] | int
+        if isinstance(value, IndirectObject):
+            identity = (int(value.idnum), int(value.generation))
+        else:
+            identity = id(value)
+        if identity in visited:
+            return set()
+        resolved = resolve_pdf_value(value)
+        if not isinstance(resolved, dict):
+            return set()
+        visited.add(identity)
+        if str(resolved.get("/Type", "")) == "/OBJR":
+            objr_count += 1
+            page_number = page_number_for(resolved.get("/Pg"), inherited_page)
+            return {page_number} if page_number else set()
+        if str(resolved.get("/Type", "")) != "/StructElem":
+            return set()
+        role = str(resolved.get("/S", "")).lstrip("/")
+        roles[role] = roles.get(role, 0) + 1
+        page_number = page_number_for(resolved.get("/Pg"), inherited_page)
+        structure_id = str(resolve_pdf_value(resolved.get("/ID", "")) or "")
+        if root_child and structure_id:
+            root_ids.append(structure_id)
+        record = {
+            "role": role,
+            "id": structure_id,
+            "page": page_number,
+            "alt": str(resolve_pdf_value(resolved.get("/Alt", "")) or ""),
+        }
+        records.append(record)
+        kid_value = resolve_pdf_value(resolved.get("/K"))
+        kids = list(kid_value) if isinstance(kid_value, (list, tuple)) else [kid_value]
+        descendant_pages = {page_number} if page_number else set()
+        roles_before = dict(roles)
+        for kid in kids:
+            descendant_pages.update(visit(kid, page_number))
+        record["descendantPages"] = sorted(descendant_pages)
+        if role == "Table":
+            tables.append({
+                "id": structure_id,
+                "pages": sorted(descendant_pages),
+                "rows": roles.get("TR", 0) - roles_before.get("TR", 0),
+                "headers": roles.get("TH", 0) - roles_before.get("TH", 0),
+                "dataCells": roles.get("TD", 0) - roles_before.get("TD", 0),
+            })
+        return descendant_pages
+
+    root_kids = resolve_pdf_value(structure_root.get("/K")) if isinstance(structure_root, dict) else []
+    for kid in list(root_kids) if isinstance(root_kids, (list, tuple)) else [root_kids]:
+        visit(kid, root_child=True)
+
+    links: list[dict[str, Any]] = []
+    artifact_markers = 0
+    page_text: list[str] = []
+    for page_number, page in enumerate(reader.pages, 1):
+        page_text.append(page.extract_text() or "")
+        contents = page.get_contents()
+        if contents is not None:
+            artifact_markers += len(re.findall(rb"/Artifact\s+BMC\b", contents.get_data()))
+        for reference in page.get("/Annots", []) or []:
+            annotation = resolve_pdf_value(reference)
+            if not isinstance(annotation, dict) or str(annotation.get("/Subtype", "")) != "/Link":
+                continue
+            action = resolve_pdf_value(annotation.get("/A")) if annotation.get("/A") is not None else None
+            links.append({
+                "page": page_number,
+                "uri": str(resolve_pdf_value(action.get("/URI", "")) or "") if isinstance(action, dict) else "",
+                "structParent": int(annotation.get("/StructParent")) if annotation.get("/StructParent") is not None else None,
+                "rect": [float(value) for value in annotation.get("/Rect", [])],
+            })
+
+    title = str(getattr(reader.metadata, "title", "") or "")
+    return {
+        "tagged": isinstance(structure_root, dict) and bool(resolve_pdf_value(mark_info.get("/Marked"))) if isinstance(mark_info, dict) else False,
+        "language": str(resolve_pdf_value(root.get("/Lang", "")) or "") if isinstance(root, dict) else "",
+        "title": title,
+        "roles": roles,
+        "records": records,
+        "rootIds": root_ids,
+        "tables": tables,
+        "figuresWithAlt": sum(1 for record in records if record["role"] == "Figure" and record["alt"].strip()),
+        "links": links,
+        "linkObjrAssociations": objr_count,
+        "artifactMarkers": artifact_markers,
+        "pageStructParents": [int(page.get("/StructParents")) if page.get("/StructParents") is not None else None for page in reader.pages],
+        "parentTreePresent": isinstance(structure_root, dict) and structure_root.get("/ParentTree") is not None,
+        "pageText": page_text,
+    }
+
+
+def render_created_pdf(file_path: pathlib.Path, render_root: pathlib.Path, poppler: str, dpi: int = 144) -> dict[str, Any]:
+    shutil.rmtree(render_root, ignore_errors=True)
+    rendered = run_poppler(poppler, file_path, render_root / "output" / "page", dpi)
+    pages: list[dict[str, Any]] = []
+    for page_number, page_path in enumerate(rendered, 1):
+        with Image.open(page_path) as raw:
+            image = raw.convert("RGB")
+            difference = ImageChops.difference(image, Image.new("RGB", image.size, "white"))
+            ink_bbox = difference.getbbox()
+            touches_edge = bool(ink_bbox and (ink_bbox[0] <= 2 or ink_bbox[1] <= 2 or ink_bbox[2] >= image.width - 2 or ink_bbox[3] >= image.height - 2))
+            pages.append({
+                "page": page_number,
+                "width": image.width,
+                "height": image.height,
+                "nonBlank": ink_bbox is not None,
+                "inkBBox": list(ink_bbox) if ink_bbox else None,
+                "touchesEdge": touches_edge,
+                "bytes": page_path.stat().st_size,
+            })
+    return {"renderer": "poppler-pdftoppm", "dpi": dpi, "pageCount": len(rendered), "pages": pages}
+
+
+def accessible_report(payload: dict[str, Any]) -> dict[str, Any]:
+    source = pathlib.Path(payload["source"])
+    output = pathlib.Path(payload["output"])
+    source_bytes = source.read_bytes()
+    structure = tagged_structure_evidence(output)
+    return {
+        "kind": "accessible-report",
+        "source": {"path": str(source), "bytes": len(source_bytes), "sha256": hashlib.sha256(source_bytes).hexdigest()},
+        "output": inspect_pdf(output, []),
+        "structure": structure,
+        "visual": render_created_pdf(output, pathlib.Path(payload["renderRoot"]), payload["poppler"]),
+    }
+
+
 def main() -> None:
     payload = json.load(sys.stdin)
     kind = payload.get("kind")
@@ -769,6 +920,8 @@ def main() -> None:
         evidence = acroform_visible(payload)
     elif kind == "attachment-quarantine":
         evidence = attachment_quarantine(payload)
+    elif kind == "accessible-report":
+        evidence = accessible_report(payload)
     else:
         raise ValueError(f"unsupported PDF oracle kind: {kind}")
     evidence["toolchain"] = {

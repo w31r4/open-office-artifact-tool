@@ -127,6 +127,7 @@ for (const required of [
   "skills/pdf/skills/pdf/manifest.txt",
   "skills/pdf/skills/pdf/artifact_tool/API_QUICK_START.md",
   "skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs",
+  "skills/pdf/skills/pdf/examples/accessible-board-report.mjs",
   "skills/pdf/skills/pdf/examples/provider-workflows.md",
   "skills/pdf/skills/pdf/examples/reportlab-report-spec.json",
   "skills/pdf/skills/pdf/examples/pymupdf-edit-operations.json",

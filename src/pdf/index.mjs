@@ -180,8 +180,10 @@ class PdfPage {
     const item = typeof textOrConfig === "object" ? textOrConfig : { ...config, text: textOrConfig };
     const normalized = this.normalizeTextItem(item, this.textItems.length);
     this.textItems.push(normalized);
-    if (!this.text) this.text = normalized.text;
-    else if (!this.text.includes(normalized.text)) this.text += `\n${normalized.text}`;
+    if (!normalized.artifact) {
+      if (!this.text) this.text = normalized.text;
+      else if (!this.text.includes(normalized.text)) this.text += `\n${normalized.text}`;
+    }
     return normalized;
   }
 

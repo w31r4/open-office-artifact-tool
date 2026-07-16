@@ -5,7 +5,7 @@ function normalizedId(value) {
 
 export function pdfPageBodyTextLines(page = {}) {
   const positioned = new Set([
-    ...(page.textItems || []).map((item) => String(item.text || "").trim()),
+    ...(page.textItems || []).filter((item) => !item.artifact).map((item) => String(item.text || "").trim()),
     ...(page.links || []).map((link) => String(link.text || "").trim()),
   ].filter(Boolean));
   return String(page.text || "").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !positioned.has(line));

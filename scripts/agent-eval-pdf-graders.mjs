@@ -11,6 +11,7 @@ const supportedCases = new Set([
   "pdf-acroform-visible-preserved",
   "pdf-attachment-quarantine-inventory",
   "pdf-active-content-public-sanitize",
+  "pdf-greenfield-accessible-report",
 ]);
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 
@@ -284,6 +285,63 @@ function attachmentTraceChecks(audit, commands) {
     check("pdf-trace:audit-byte-validation", "trace", auditValidatedAfterExtraction, { actual: { extractObserved: Boolean(extract), postExtractionAuditValidationObserved: auditValidatedAfterExtraction } }),
     gate("pdf-trace:no-ad-hoc-pypdf-extraction", "trace", !manualPatterns.some((pattern) => pattern.test(commandText)), { forbidden: manualPatterns.map(String) }),
     gate("pdf-trace:no-payload-open-or-execution", "trace", !payloadOpenPatterns.some((pattern) => pattern.test(commandText)), { forbidden: payloadOpenPatterns.map(String) }),
+  ];
+}
+
+function accessibleReportTraceChecks(audit, commands) {
+  const commandText = commands.join("\n");
+  const operation = auditOperation(audit);
+  const manualWriterPatterns = [
+    /%PDF-\d/i,
+    /\bPdfWriter\s*\(/,
+    /\breportlab\b/i,
+    /\bpymupdf\b|\bfitz\b/i,
+  ];
+  return [
+    check("pdf-trace:provider", "trace", /^artifact-tool$/i.test(String(auditProvider(audit))), { expected: "artifact-tool", actual: auditProvider(audit) }),
+    check("pdf-trace:provider-version", "trace", Boolean(String(auditProviderVersion(audit)).trim()), { actual: auditProviderVersion(audit) || "unreported" }),
+    check("pdf-trace:save-policy", "trace", /^rewrite$/i.test(String(auditSaveStrategy(audit))), { expected: "rewrite", actual: auditSaveStrategy(audit) }),
+    gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
+    check("pdf-trace:typed-greenfield-primitive", "trace", /accessible-board-report\.mjs/i.test(commandText) && /create[-_ ]?accessible[-_ ]?report/i.test(operation), { expected: "shipped accessible-board-report.mjs + create-accessible-report", actual: { operation, exampleObserved: /accessible-board-report\.mjs/i.test(commandText) } }),
+    check("pdf-trace:poppler-review", "trace", audit?.validation?.poppler?.status === "passed" && audit?.validation?.poppler?.pages?.length === 6, { actual: audit?.validation?.poppler || "unreported" }),
+    gate("pdf-trace:no-ad-hoc-pdf-writer", "trace", !manualWriterPatterns.some((pattern) => pattern.test(commandText)), { forbidden: manualWriterPatterns.map(String) }),
+  ];
+}
+
+function pdfUaOverclaim(text) {
+  return /PDF\/?UA\s+(?:certified|compliant|conformant|validated|passed)\b|(?<!不)(?:已通过|符合)\s*PDF\/?UA|PDF\/?UA\s*(?:已认证|已合规|认证通过)/i.test(String(text || ""));
+}
+
+export function gradeAccessibleReportEvidence({ evidence, audit, commands, finalMessage, item }) {
+  const structure = evidence.structure || {};
+  const output = evidence.output || {};
+  const visualPages = evidence.visual?.pages || [];
+  const table = structure.tables?.find((candidate) => candidate.pages?.length >= 2);
+  const validation = audit?.validation || {};
+  const headingLevels = item.grade.machine.headingLevels || [1, 2, 3];
+  const claimText = `${JSON.stringify(audit || {})}\n${finalMessage || ""}`;
+  const link = structure.links?.[0];
+  const pageText = structure.pageText || [];
+  return [
+    check("pdf-machine:page-count", "machine", output.pageCount === item.grade.machine.pageCount, { expected: item.grade.machine.pageCount, actual: output.pageCount }),
+    check("pdf-machine:catalog-title-language-tagging", "machine", structure.tagged === true && structure.language === item.grade.machine.language && Boolean(String(structure.title || "").trim()), { expected: { tagged: true, language: item.grade.machine.language, title: "non-empty" }, actual: { tagged: structure.tagged, language: structure.language, title: structure.title } }),
+    check("pdf-machine:h1-h3-structure", "machine", headingLevels.every((level) => Number(structure.roles?.[`H${level}`] || 0) > 0), { expected: headingLevels, actual: structure.roles }),
+    check("pdf-machine:cross-page-semantic-table", "machine", Boolean(table && table.pages.length >= 2 && table.rows >= 2 && table.headers >= 1 && table.dataCells >= 1), { actual: structure.tables || [] }),
+    check("pdf-machine:figure-alt", "machine", Number(structure.roles?.Figure || 0) >= 1 && structure.figuresWithAlt === Number(structure.roles?.Figure || 0), { actual: { figures: structure.roles?.Figure || 0, withAlt: structure.figuresWithAlt } }),
+    check("pdf-machine:meaningful-tagged-link", "machine", Number(structure.roles?.Link || 0) >= 1 && structure.linkObjrAssociations >= 1 && /^https?:\/\//i.test(String(link?.uri || "")) && Number.isInteger(link?.structParent), { actual: { roles: structure.roles?.Link || 0, objr: structure.linkObjrAssociations, links: structure.links } }),
+    check("pdf-machine:reading-order-ids", "machine", structure.rootIds?.length >= 12 && new Set(structure.rootIds).size === structure.rootIds.length && structure.rootIds.includes("risk-register"), { actual: structure.rootIds || [] }),
+    check("pdf-machine:running-artifacts", "machine", structure.artifactMarkers >= item.grade.machine.pageCount * 2, { expectedAtLeast: item.grade.machine.pageCount * 2, actual: structure.artifactMarkers }),
+    check("pdf-machine:audit-success", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), { actual: audit?.status || "unreported" }),
+    check("pdf-visual:all-pages-rendered", "visual", evidence.visual?.pageCount === item.grade.machine.pageCount && visualPages.length === item.grade.machine.pageCount && visualPages.every((page) => page.nonBlank && page.bytes > 1_000), { renderer: evidence.visual?.renderer, pages: visualPages }),
+    check("pdf-visual:no-edge-clipping", "visual", visualPages.length > 0 && visualPages.every((page) => page.touchesEdge === false), { actual: visualPages.map(({ page, inkBBox, touchesEdge }) => ({ page, inkBBox, touchesEdge })) }),
+    check("pdf-visual:consistent-page-geometry", "visual", visualPages.length > 0 && visualPages.every((page) => page.width === visualPages[0].width && page.height === visualPages[0].height), { actual: visualPages.map(({ page, width, height }) => ({ page, width, height })) }),
+    check("pdf-visual:cross-page-table-readable", "visual", Boolean(table?.pages?.every((pageNumber) => /风险/.test(String(pageText[pageNumber - 1] || "")))), { tablePages: table?.pages || [], pageText: table?.pages?.map((pageNumber) => String(pageText[pageNumber - 1] || "").slice(0, 240)) || [] }),
+    gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === evidence.source?.sha256 && auditOutputHash(audit) === output.sha256, { expected: { source: evidence.source?.sha256, output: output.sha256 }, actual: { source: auditSourceHash(audit) || "unreported", output: auditOutputHash(audit) || "unreported" } }),
+    gate("pdf-security:no-pdfua-overclaim", "security", !pdfUaOverclaim(claimText), { actual: pdfUaOverclaim(claimText) ? "positive PDF/UA certification claim detected" : "no overclaim detected" }),
+    check("pdf-security:modeled-scope-explicit", "security", validation.modeledVerify?.status === "passed" && /modeled|PdfArtifact/i.test(String(validation.modeledVerify?.scope || "")), { actual: validation.modeledVerify || "unreported" }),
+    check("pdf-security:verapdf-machine-layer-separate", "security", Boolean(validation.veraPdfMachine) && ["not-run", "completed", "completed-with-findings", "probe-failed"].includes(validation.veraPdfMachine.status) && /machine|not.*certification|No veraPDF/i.test(JSON.stringify(validation.veraPdfMachine)), { actual: validation.veraPdfMachine || "unreported" }),
+    check("pdf-security:human-pdfua-required", "security", validation.humanPdfUa?.status === "required" && /No complete PDF\/UA certification|不.*完整.*PDF\/UA|人工/i.test(JSON.stringify(validation.humanPdfUa)), { actual: validation.humanPdfUa || "unreported" }),
+    ...accessibleReportTraceChecks(audit, commands),
   ];
 }
 
@@ -663,6 +721,24 @@ function unreadableAttachmentQuarantineChecks(audit, commands, oracleError) {
   ];
 }
 
+function missingAccessibleReportChecks(audit, commands) {
+  return [
+    check("pdf-machine:artifact-available-for-oracle", "machine", false),
+    check("pdf-visual:artifact-available-for-oracle", "visual", false),
+    gate("pdf-security:artifact-available-for-oracle", "security", false),
+    ...accessibleReportTraceChecks(audit, commands),
+  ];
+}
+
+function unreadableAccessibleReportChecks(audit, commands, oracleError) {
+  return [
+    check("pdf-machine:artifact-readable-by-oracle", "machine", false, { actual: oracleError }),
+    check("pdf-visual:artifact-renderable-by-oracle", "visual", false, { actual: oracleError }),
+    gate("pdf-security:artifact-readable-by-oracle", "security", false, { actual: oracleError }),
+    ...accessibleReportTraceChecks(audit, commands),
+  ];
+}
+
 export async function gradePdfCase({ item, workspace, evaluator, finalMessage, trace, weights = defaultWeights }) {
   if (!supportedCases.has(item.id)) return { supported: false };
   const audit = await readAudit(workspace);
@@ -746,6 +822,26 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
     }
     if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
     checks = gradeAttachmentQuarantineEvidence({ evidence: oracle.evidence, audit, commands, item });
+  } else if (item.id === "pdf-greenfield-accessible-report") {
+    const output = path.join(workspace, "outputs", "readiness-report.pdf");
+    try { await fs.access(output); } catch {
+      checks = missingAccessibleReportChecks(audit, commands);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    oracle = invokeOracle({
+      kind: "accessible-report",
+      source: path.join(workspace, "inputs", "report-data.json"),
+      output,
+      renderRoot: path.join(evaluator, "pdf-oracle-render"),
+    }, true);
+    if (!oracle.evidence && oracle.oracleError) {
+      checks = unreadableAccessibleReportChecks(audit, commands, oracle.oracleError);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: { oracleError: oracle.oracleError }, pending: [], ...score };
+    }
+    if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
+    checks = gradeAccessibleReportEvidence({ evidence: oracle.evidence, audit, commands, finalMessage, item });
   } else {
     const output = path.join(workspace, "outputs", "public-safe.pdf");
     try { await fs.access(output); } catch {
