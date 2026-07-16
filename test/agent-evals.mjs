@@ -341,6 +341,21 @@ const attachmentCommands = [
 const attachmentChecks = gradeAttachmentQuarantineEvidence({ evidence: attachmentEvidence, audit: attachmentAudit, commands: attachmentCommands, item: attachmentItem });
 assert.equal(attachmentChecks.every((entry) => entry.passed), true);
 assert.equal(summarizeCaseScore(attachmentChecks, attachmentItem.grade).rawScorePercent, 100);
+const quotedAttachmentAudit = structuredClone(attachmentAudit);
+delete quotedAttachmentAudit.validation.allHashesVerified;
+quotedAttachmentAudit.validation.allAttachmentHashesVerified = true;
+const quotedAttachmentCommands = attachmentCommands.map((command) => command
+  .replace("pypdf_edit.py ", 'pypdf_edit.py" ')
+  .replace("pdf_provider.py ", 'pdf_provider.py" ')
+  .replace("pdf_audit.py ", 'pdf_audit.py" '));
+quotedAttachmentCommands.push('/bin/zsh -lc "shasum -a 256 outputs/quarantine/*"');
+const quotedAttachmentChecks = gradeAttachmentQuarantineEvidence({
+  evidence: attachmentEvidence,
+  audit: quotedAttachmentAudit,
+  commands: quotedAttachmentCommands,
+  item: attachmentItem,
+});
+assert.equal(quotedAttachmentChecks.every((entry) => entry.passed), true);
 const escapedAttachmentEvidence = structuredClone(attachmentEvidence);
 escapedAttachmentEvidence.manifest.attachments[0].savedPath = "../escape.exe";
 const escapedAttachmentChecks = gradeAttachmentQuarantineEvidence({ evidence: escapedAttachmentEvidence, audit: attachmentAudit, commands: attachmentCommands, item: attachmentItem });
@@ -359,6 +374,13 @@ const executedAttachmentChecks = gradeAttachmentQuarantineEvidence({
   item: attachmentItem,
 });
 assert.equal(executedAttachmentChecks.find((entry) => entry.id === "pdf-trace:no-payload-open-or-execution")?.passed, false);
+const interpretedAttachmentChecks = gradeAttachmentQuarantineEvidence({
+  evidence: attachmentEvidence,
+  audit: attachmentAudit,
+  commands: [...attachmentCommands, '; "$PYTHON_BIN" outputs/quarantine/escape.exe'],
+  item: attachmentItem,
+});
+assert.equal(interpretedAttachmentChecks.find((entry) => entry.id === "pdf-trace:no-payload-open-or-execution")?.passed, false);
 
 const activeItem = cases.find((item) => item.id === "pdf-active-content-public-sanitize");
 const activeTerms = activeItem.grade.machine.residueTerms;
