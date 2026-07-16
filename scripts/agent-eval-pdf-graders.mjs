@@ -349,17 +349,17 @@ export function gradeAccessibleReportEvidence({ evidence, audit, commands, final
 
 function mergeStampTraceChecks(audit, commands) {
   const operation = auditOperation(audit);
-  const checkProvider = completedInvocation(commands, /pdf_provider\.py\s+check\b/i);
-  const plan = completedInvocation(commands, /pdf_provider\.py\s+plan\b/i);
-  const merge = completedInvocation(commands, /pypdf_edit\.py\s+merge-stamp\b/i);
+  const checkProvider = completedInvocation(commands, /pdf_provider\.py["']?\s+check\b/i);
+  const plan = completedInvocation(commands, /pdf_provider\.py["']?\s+plan\b/i);
+  const merge = completedInvocation(commands, /pypdf_edit\.py["']?\s+merge-stamp\b/i);
   const afterMerge = commandTextAfter(commands, merge);
   const popplerAfterMerge = /\bpdftoppm\b/i.test(afterMerge);
-  const auditAfterMerge = /pdf_audit\.py\s+validate\b/i.test(afterMerge) && (afterMerge.match(/(?:^|\s)--input(?:=|\s)/g) || []).length >= 3;
+  const auditAfterMerge = /pdf_audit\.py["']?\s+validate\b/i.test(afterMerge) && (afterMerge.match(/(?:^|\s)--input(?:=|\s)/g) || []).length >= 3;
   const manualWriterPatterns = [
     /\bPdfWriter\s*\(/,
     /\bmerge_(?:page|transformed_page)\s*\(/,
-    /reportlab\.pdfgen|from\s+reportlab/i,
-    /\b(?:fitz|pymupdf)\b/i,
+    /\bcanvas\.Canvas\s*\(/,
+    /\b(?:fitz|pymupdf)\.open\s*\(/i,
     /\/Pages\b[\s\S]{0,80}\/Kids\b/i,
   ];
   return [

@@ -20,6 +20,7 @@ import {
   loadSuite,
   makeReadOnly,
   oracleFingerprint,
+  providerRuntimeInstruction,
   removePreparedTree,
   repositoryProvenance,
   scorePrepared,
@@ -160,11 +161,12 @@ const mergeAudit = {
   operation: { type: "merge-stamp" },
 };
 const mergeCommands = [
-  "python .agents/skills/pdf/scripts/pdf_provider.py check --provider pypdf --require",
-  "python .agents/skills/pdf/scripts/pdf_provider.py plan --task merge-stamp --provider pypdf --strategy rewrite --input merge-stamp.json --output outputs/merged.pdf --require-provider",
-  "python .agents/skills/pdf/scripts/pypdf_edit.py merge-stamp merge-stamp.json outputs/merged.pdf --strategy rewrite",
+  "python -c 'from reportlab.pdfgen import canvas; print(canvas)'",
+  `"$PYTHON_BIN" "$S/pdf_provider.py" check --provider pypdf --require`,
+  `"$PYTHON_BIN" "$S/pdf_provider.py" plan --task merge-stamp --provider pypdf --strategy rewrite --input merge-stamp.json --output outputs/merged.pdf --require-provider`,
+  `"$PYTHON_BIN" "$S/pypdf_edit.py" merge-stamp merge-stamp.json outputs/merged.pdf --strategy rewrite`,
   "pdftoppm -png -r 144 outputs/merged.pdf tmp/pdfs/merged-page",
-  "python .agents/skills/pdf/scripts/pdf_audit.py validate outputs/audit.json --source merge-stamp.json --input inputs/cover.pdf --input inputs/report.pdf --input inputs/appendix.pdf --artifact outputs/merged.pdf --require-operation merge-stamp",
+  `"$PYTHON_BIN" "$S/pdf_audit.py" validate outputs/audit.json --source merge-stamp.json --input inputs/cover.pdf --input inputs/report.pdf --input inputs/appendix.pdf --artifact outputs/merged.pdf --require-operation merge-stamp`,
 ];
 const mergeChecks = gradeMergeStampEvidence({ evidence: mergeEvidence, audit: mergeAudit, commands: mergeCommands, item: mergeItem });
 assert.equal(mergeChecks.every((entry) => entry.passed), true);
@@ -173,8 +175,15 @@ const danglingMergeEvidence = structuredClone(mergeEvidence);
 danglingMergeEvidence.navigation.actual.internalLinks[0].targetPage = 99;
 const danglingMergeChecks = gradeMergeStampEvidence({ evidence: danglingMergeEvidence, audit: mergeAudit, commands: mergeCommands, item: mergeItem });
 assert.equal(danglingMergeChecks.find((entry) => entry.id === "pdf-security:navigation-resolved")?.passed, false);
+const adHocMergeChecks = gradeMergeStampEvidence({ evidence: mergeEvidence, audit: mergeAudit, commands: [...mergeCommands, "python -c 'from pypdf import PdfWriter; PdfWriter()'"], item: mergeItem });
+assert.equal(adHocMergeChecks.find((entry) => entry.id === "pdf-trace:no-ad-hoc-pdf-writer")?.passed, false);
 await fs.rm(mergePathAlias);
 await fs.rm(mergePathRoot, { recursive: true, force: true });
+
+const providerInstruction = providerRuntimeInstruction(mergeItem, { OPEN_OFFICE_AGENT_EVAL_PYTHON: "/opt/eval python/bin/python3" });
+assert.match(providerInstruction, /OPEN_OFFICE_PDF_PROVIDER_PYTHON="\/opt\/eval python\/bin\/python3"/);
+assert.match(providerInstruction, /Do not replace it/);
+assert.equal(providerRuntimeInstruction({ family: "xlsx" }, { OPEN_OFFICE_AGENT_EVAL_PYTHON: "/opt/python" }), "");
 
 const badNetwork = structuredClone(cases);
 badNetwork[0].policy.network = true;

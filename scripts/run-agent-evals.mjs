@@ -461,6 +461,13 @@ async function packageCandidate(evaluatorDir, workspace) {
   return { tarball: path.relative(evaluatorDir, tarball), sha256: await hashFile(tarball) };
 }
 
+export function providerRuntimeInstruction(item, environment = process.env) {
+  const configured = environment.OPEN_OFFICE_AGENT_EVAL_PYTHON || environment.OPEN_OFFICE_PDF_PROVIDER_PYTHON;
+  if (item?.family !== "pdf" || !configured) return "";
+  const interpreter = path.resolve(configured);
+  return `\n## Prepared provider runtime\n\nThis isolated trial supplies the authoritative PDF provider interpreter below. Export it before every PDF Python probe, plan, mutation, scan, and audit command. Do not replace it, install another environment, or fall back to system Python.\n\n\`\`\`bash\nexport OPEN_OFFICE_PDF_PROVIDER_PYTHON=${JSON.stringify(interpreter)}\n\`\`\`\n`;
+}
+
 async function prepareCase(suite, item, options) {
   if (item.status !== "ready") fail(`${item.id} is asset-required; add pinned files under evals/assets before preparing it`);
   const subject = options.subject || "candidate";
@@ -485,7 +492,7 @@ async function prepareCase(suite, item, options) {
     inputHashes[input.to] = await fingerprintPath(target);
   }
   const packageRecord = await packageCandidate(evaluator, workspace);
-  const prompt = visibleCase(suite, item).prompt;
+  const prompt = `${visibleCase(suite, item).prompt}${providerRuntimeInstruction(item)}`;
   await fs.writeFile(path.join(workspace, "PROMPT.md"), `${prompt}\n`, "utf8");
   const workspaceHashes = {};
   for (const relative of ["PROMPT.md", "package.json", "package-lock.json", ".agents", "node_modules"]) {
@@ -693,7 +700,7 @@ async function scorePrepared(item, prepared, options = {}) {
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement, overflow-refusal, AcroForm appearance-preservation, attachment-quarantine, active-content sanitize, and greenfield accessible-report PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Prepared PDF trials also declare one authoritative provider interpreter in PROMPT.md when the runner was given OPEN_OFFICE_AGENT_EVAL_PYTHON or OPEN_OFFICE_PDF_PROVIDER_PYTHON; the same interpreter is used for generated fixtures and hidden oracles. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. All seven ready PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. The remaining 19 asset-required cases never claim full success before pinned corpus or PKI fixtures exist.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {
