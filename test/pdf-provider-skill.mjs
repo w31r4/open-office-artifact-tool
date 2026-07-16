@@ -325,6 +325,78 @@ try {
     assert.match(invalidRadio.stderr, /no appearance state 'Partnership'/);
     assert.equal(await fs.stat(invalidRadioOutput).then(() => true, () => false), false);
 
+    const attachmentFixtureScript = path.join(tempRoot, "attachment-fixture.py");
+    await fs.writeFile(attachmentFixtureScript, [
+      "import pathlib, sys",
+      "from reportlab.lib.pagesizes import letter",
+      "from reportlab.pdfgen import canvas",
+      "from pypdf import PdfReader, PdfWriter",
+      "from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject, RectangleObject, TextStringObject",
+      "out = pathlib.Path(sys.argv[1])",
+      "base = out.with_suffix('.base.pdf')",
+      "c = canvas.Canvas(str(base), pagesize=letter, invariant=1)",
+      "c.drawString(72, 680, 'Attachment quarantine fixture')",
+      "c.save()",
+      "writer = PdfWriter(clone_from=PdfReader(str(base)))",
+      "for name, payload, mime in [('../escape.exe', b'MZ-safe-fixture', 'application#2Fvnd.microsoft.portable-executable'), ('report.txt', b'first', 'text#2Fplain'), ('report.txt', b'second', 'text#2Fplain')]:",
+      "    embedded = writer.add_attachment(name, payload)",
+      "    embedded.subtype = NameObject('/' + mime)",
+      "stream = DecodedStreamObject()",
+      "stream.set_data(b'page-level-review')",
+      "stream[NameObject('/Type')] = NameObject('/EmbeddedFile')",
+      "stream[NameObject('/Subtype')] = NameObject('/text#2Fplain')",
+      "stream_ref = writer._add_object(stream)",
+      "filespec = DictionaryObject({NameObject('/Type'): NameObject('/Filespec'), NameObject('/F'): TextStringObject('report.txt'), NameObject('/UF'): TextStringObject('report.txt'), NameObject('/EF'): DictionaryObject({NameObject('/F'): stream_ref, NameObject('/UF'): stream_ref})})",
+      "annotation = DictionaryObject({NameObject('/Type'): NameObject('/Annot'), NameObject('/Subtype'): NameObject('/FileAttachment'), NameObject('/Rect'): RectangleObject((500, 680, 520, 700)), NameObject('/FS'): writer._add_object(filespec), NameObject('/Contents'): TextStringObject('Page attachment'), NameObject('/F'): NumberObject(4)})",
+      "writer.add_annotation(0, annotation)",
+      "with out.open('wb') as handle: writer.write(handle)",
+      "base.unlink()",
+    ].join("\n"), "utf8");
+    const attachmentSource = path.join(tempRoot, "attachment-source.pdf");
+    run(integrationPython, [attachmentFixtureScript, attachmentSource], { status: 0 });
+    const attachmentSourceHash = crypto.createHash("sha256").update(await fs.readFile(attachmentSource)).digest("hex");
+    const attachmentInspect = parseResult(run(integrationPython, [path.join(scriptsRoot, "pypdf_edit.py"), "inspect", attachmentSource], { status: 0 }));
+    assert.equal(attachmentInspect.summary.attachments, 4);
+    assert.equal(attachmentInspect.summary.documentAttachments, 3);
+    assert.equal(attachmentInspect.summary.pageAttachments, 1);
+    const quarantineDirectory = path.join(tempRoot, "quarantine");
+    const attachmentManifest = path.join(tempRoot, "attachments.json");
+    const attachmentResult = parseResult(run(integrationPython, [
+      path.join(scriptsRoot, "pypdf_edit.py"), "extract-attachments", attachmentSource, quarantineDirectory,
+      "--manifest", attachmentManifest,
+    ], { status: 0 }));
+    assert.equal(attachmentResult.schema, "open-office-artifact-tool.pdf-attachments.v1");
+    assert.equal(attachmentResult.strategy, "read-only");
+    assert.equal(attachmentResult.silentFallback, false);
+    assert.equal(attachmentResult.source.sha256, attachmentSourceHash);
+    assert.equal(attachmentResult.validation.sourceUnchanged, true);
+    assert.equal(attachmentResult.validation.documentAttachments, 3);
+    assert.equal(attachmentResult.validation.pageAttachments, 1);
+    assert.equal(attachmentResult.validation.attachmentsOpenedOrExecuted, false);
+    assert.equal(attachmentResult.attachments.length, 4);
+    assert.equal(new Set(attachmentResult.attachments.map((entry) => entry.savedName.toLowerCase())).size, 4);
+    assert.ok(attachmentResult.attachments.some((entry) => entry.displayName === "../escape.exe" && entry.savedName === "escape.exe" && entry.nameSanitized));
+    assert.equal(attachmentResult.attachments.filter((entry) => entry.displayName === "report.txt").length, 3);
+    assert.equal(attachmentResult.attachments.filter((entry) => entry.scope === "page").length, 1);
+    for (const entry of attachmentResult.attachments) {
+      const saved = path.join(tempRoot, entry.savedPath);
+      const bytes = await fs.readFile(saved);
+      assert.equal(bytes.length, entry.bytes);
+      assert.equal(crypto.createHash("sha256").update(bytes).digest("hex"), entry.sha256);
+      assert.equal(path.relative(quarantineDirectory, saved).startsWith(".."), false);
+    }
+    assert.equal(crypto.createHash("sha256").update(await fs.readFile(attachmentSource)).digest("hex"), attachmentSourceHash);
+    await assert.rejects(fs.access(path.join(tempRoot, "escape.exe")));
+    const limitedDirectory = path.join(tempRoot, "quarantine-limited");
+    const limitedManifest = path.join(tempRoot, "attachments-limited.json");
+    const limited = run(integrationPython, [
+      path.join(scriptsRoot, "pypdf_edit.py"), "extract-attachments", attachmentSource, limitedDirectory,
+      "--manifest", limitedManifest, "--max-attachments", "3",
+    ], { status: 2 });
+    assert.match(limited.stderr, /4 attachments; max-attachments is 3/);
+    await assert.rejects(fs.access(limitedDirectory));
+    await assert.rejects(fs.access(limitedManifest));
+
     const rewriteOps = path.join(tempRoot, "rewrite-ops.json");
     await fs.writeFile(rewriteOps, JSON.stringify([
       { type: "insert_textbox", page: 1, rect: [72, 650, 420, 690], text: "Reviewed through PyMuPDF", font_size: 11, color: [0.05, 0.35, 0.42] },

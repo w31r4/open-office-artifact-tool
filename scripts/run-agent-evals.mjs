@@ -258,7 +258,7 @@ elif kind == "acroform-profile":
 elif kind in {"attachment-portfolio", "active-content"}:
     from pypdf import PdfReader, PdfWriter
     from pypdf.annotations import Text
-    from pypdf.generic import DictionaryObject, NameObject, TextStringObject, create_string_object
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject, RectangleObject, TextStringObject, create_string_object
     temporary = out.with_suffix(".base.pdf")
     c = canvas.Canvas(str(temporary), pagesize=letter, invariant=1)
     base_page(c, "Public Release Review", 1)
@@ -277,7 +277,35 @@ elif kind in {"attachment-portfolio", "active-content"}:
     attachments = [("report.txt", b"first"), ("report.txt", b"second"), ("unicode-\u6d4b\u8bd5.txt", b"unicode"), ("../escape.exe", b"MZ-not-executable"), ("archive.zip", b"PK-not-opened")]
     if kind == "active-content":
         attachments[0] = ("internal-review.txt", b"ATTACHMENT-CANARY-4D27")
-    for name, payload in attachments: writer.add_attachment(name, payload)
+    mime_types = {".txt": "text/plain", ".zip": "application/zip", ".exe": "application/vnd.microsoft.portable-executable"}
+    for name, payload in attachments:
+        embedded = writer.add_attachment(name, payload)
+        suffix = pathlib.Path(name.replace("\\\\", "/")).suffix.lower()
+        embedded.subtype = NameObject("/" + mime_types.get(suffix, "application/octet-stream").replace("/", "#2F"))
+    if kind == "attachment-portfolio":
+        page_payload = b"page-level-review"
+        page_stream = DecodedStreamObject()
+        page_stream.set_data(page_payload)
+        page_stream[NameObject("/Type")] = NameObject("/EmbeddedFile")
+        page_stream[NameObject("/Subtype")] = NameObject("/text#2Fplain")
+        page_stream_reference = writer._add_object(page_stream)
+        page_filespec = DictionaryObject({
+            NameObject("/Type"): NameObject("/Filespec"),
+            NameObject("/F"): TextStringObject("report.txt"),
+            NameObject("/UF"): TextStringObject("report.txt"),
+            NameObject("/Desc"): TextStringObject("Page-level reviewer attachment"),
+            NameObject("/EF"): DictionaryObject({NameObject("/F"): page_stream_reference, NameObject("/UF"): page_stream_reference}),
+        })
+        page_annotation = DictionaryObject({
+            NameObject("/Type"): NameObject("/Annot"),
+            NameObject("/Subtype"): NameObject("/FileAttachment"),
+            NameObject("/Rect"): RectangleObject((500, 680, 520, 700)),
+            NameObject("/FS"): writer._add_object(page_filespec),
+            NameObject("/Contents"): TextStringObject("Page-level reviewer attachment"),
+            NameObject("/Name"): NameObject("/PushPin"),
+            NameObject("/F"): NumberObject(4),
+        })
+        writer.add_annotation(0, page_annotation)
     if kind == "active-content":
         writer.add_js("app.alert('JS-CANARY-2F61');")
         writer._root_object["/Names"]["/JavaScript"]["/Names"][0] = create_string_object("00000000-0000-0000-0000-000000000001")

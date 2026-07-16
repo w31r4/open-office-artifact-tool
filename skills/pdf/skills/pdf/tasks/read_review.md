@@ -25,6 +25,23 @@ Extraction is not layout fidelity. Compare extracted text/table candidates again
 
 `PdfFile.importPdf(..., { parser: createPdfjsParser(), preferParser: true })` is useful for agent-facing inspect/QA of an arbitrary PDF, but the result is a reconstructed model. Never export that model as an edit to the original file.
 
+## Attachment quarantine
+
+Never write an embedded filename directly to disk. A FileSpec may contain `../`, absolute paths, platform separators, control characters, reserved device names, or duplicate names. Inventory and extract through the shipped read-only primitive:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pypdf_edit.py inspect input.pdf \
+  --output tmp/pdfs/pypdf-inspect.json
+"$PYTHON_BIN" scripts/pypdf_edit.py extract-attachments input.pdf outputs/quarantine \
+  --manifest outputs/attachments.json \
+  --max-attachments 1000 \
+  --max-total-bytes 1073741824 \
+  --max-attachment-bytes 536870912
+```
+
+The manifest records provider/version, immutable source hash, scope (`document` or `page`), page/annotation identity, display name, internal key, MIME and its evidence source, decoded byte size, SHA-256, sanitized saved name/path, and transaction validation. Duplicate or colliding names receive deterministic suffixes and remain separate. A malformed FileSpec, unreadable stream, exceeded budget, pre-existing destination, hash mismatch, or source change fails closed and removes partial quarantine output. The primitive never opens, executes, imports, or recursively extracts an attachment.
+
 ## Review output
 
 Report confirmed facts separately from inferences:

@@ -6,11 +6,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mimetypes
 import os
 from pathlib import Path
+import re
+import shutil
 import sys
 import tempfile
 from typing import Any
+import unicodedata
 
 
 class ProviderError(RuntimeError):
@@ -108,6 +112,7 @@ def signature_policy(reader) -> dict[str, Any]:
 def inspect_reader(reader, source: Path, version: str) -> dict[str, Any]:
     annotations = []
     widgets = 0
+    page_attachment_names = []
     for page_number, page in enumerate(reader.pages, 1):
         page_annots = page.get("/Annots") or []
         for reference in page_annots:
@@ -116,6 +121,9 @@ def inspect_reader(reader, source: Path, version: str) -> dict[str, Any]:
                 subtype = str(annotation.get("/Subtype", ""))
                 if subtype == "/Widget":
                     widgets += 1
+                if subtype == "/FileAttachment":
+                    filespec = resolve(annotation.get("/FS"))
+                    page_attachment_names.append(str(resolve(filespec.get("/UF") or filespec.get("/F") or "")))
                 annotations.append({
                     "page": page_number,
                     "subtype": subtype or None,
@@ -127,9 +135,10 @@ def inspect_reader(reader, source: Path, version: str) -> dict[str, Any]:
                 annotations.append({"page": page_number, "error": str(exc)})
     fields = reader.get_fields() or {}
     try:
-        attachment_names = sorted(str(name) for name in reader.attachments.keys())
+        document_attachment_names = [str(attachment.name) for attachment in reader.attachment_list]
     except Exception:
-        attachment_names = []
+        document_attachment_names = []
+    attachment_names = document_attachment_names + page_attachment_names
     metadata = plain(reader.metadata or {})
     return {
         "provider": "pypdf",
@@ -144,6 +153,8 @@ def inspect_reader(reader, source: Path, version: str) -> dict[str, Any]:
             "widgets": widgets,
             "annotations": len(annotations),
             "attachments": len(attachment_names),
+            "documentAttachments": len(document_attachment_names),
+            "pageAttachments": len(page_attachment_names),
         },
         "metadata": metadata,
         "fields": {str(name): plain(field) for name, field in fields.items()},
@@ -184,6 +195,241 @@ def resolve(value: Any) -> Any:
         return value.get_object()
     except Exception:
         return value
+
+
+def pdf_name_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    raw = str(resolve(value))
+    if raw.startswith("/"):
+        raw = raw[1:]
+    return re.sub(r"#([0-9A-Fa-f]{2})", lambda match: chr(int(match.group(1), 16)), raw) or None
+
+
+def attachment_mime(declared: Any, display_name: str) -> tuple[str, str]:
+    decoded = pdf_name_text(declared)
+    if decoded and "/" in decoded:
+        return decoded, "declared"
+    guessed = mimetypes.guess_type(display_name, strict=False)[0]
+    return guessed or "application/octet-stream", "inferred" if guessed else "default"
+
+
+def indirect_identity(value: Any) -> str | None:
+    reference = getattr(resolve(value), "indirect_reference", None)
+    if reference is None:
+        return None
+    return f"{int(reference.idnum)} {int(reference.generation)} R"
+
+
+def filespec_payload(filespec: Any) -> tuple[bytes, Any, str, str]:
+    filespec = resolve(filespec)
+    if not isinstance(filespec, dict):
+        raise ProviderError("file attachment has no readable FileSpec dictionary")
+    display_name = str(resolve(filespec.get("/UF") or filespec.get("/F") or "attachment"))
+    internal_key = str(resolve(filespec.get("/F") or filespec.get("/UF") or display_name))
+    embedded = resolve(filespec.get("/EF"))
+    if not isinstance(embedded, dict):
+        raise ProviderError(f"attachment {display_name!r} has no embedded-file dictionary")
+    stream = resolve(embedded.get("/UF") or embedded.get("/F"))
+    if stream is None or not hasattr(stream, "get_data"):
+        raise ProviderError(f"attachment {display_name!r} has no readable embedded-file stream")
+    try:
+        payload = bytes(stream.get_data())
+    except Exception as exc:
+        raise ProviderError(f"attachment {display_name!r} stream could not be decoded: {exc}") from exc
+    return payload, stream.get("/Subtype"), display_name, internal_key
+
+
+def attachment_sources(reader) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    try:
+        document_attachments = list(reader.attachment_list)
+    except Exception as exc:
+        raise ProviderError(f"document attachment name tree could not be read: {exc}") from exc
+    for ordinal, attachment in enumerate(document_attachments, 1):
+        try:
+            payload = bytes(attachment.content)
+        except Exception as exc:
+            raise ProviderError(f"document attachment {attachment.name!r} could not be decoded: {exc}") from exc
+        display_name = str(attachment.alternative_name or attachment.name or "attachment")
+        sources.append({
+            "scope": "document",
+            "page": None,
+            "annotationIndex": None,
+            "internalKey": str(attachment.name),
+            "displayName": display_name,
+            "declaredMime": attachment.subtype,
+            "sourceIdentity": indirect_identity(attachment.pdf_object) or f"document:{ordinal}",
+            "payload": payload,
+        })
+    for page_number, page in enumerate(reader.pages, 1):
+        for annotation_index, reference in enumerate(page.get("/Annots", []) or []):
+            annotation = resolve(reference)
+            if not isinstance(annotation, dict) or str(annotation.get("/Subtype", "")) != "/FileAttachment":
+                continue
+            payload, declared_mime, display_name, internal_key = filespec_payload(annotation.get("/FS"))
+            sources.append({
+                "scope": "page",
+                "page": page_number,
+                "annotationIndex": annotation_index,
+                "internalKey": internal_key,
+                "displayName": display_name,
+                "declaredMime": declared_mime,
+                "sourceIdentity": indirect_identity(annotation) or f"page:{page_number}:annotation:{annotation_index}",
+                "payload": payload,
+            })
+    return sources
+
+
+WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+
+
+def safe_attachment_name(display_name: str, ordinal: int, used: set[str]) -> tuple[str, bool]:
+    normalized = unicodedata.normalize("NFC", display_name).replace("\\", "/")
+    leaf = normalized.rsplit("/", 1)[-1]
+    leaf = "".join("_" if unicodedata.category(character).startswith("C") else character for character in leaf)
+    leaf = re.sub(r"[^\w.() -]", "_", leaf, flags=re.UNICODE)
+    leaf = re.sub(r"\s+", "_", leaf).strip(" ._")
+    if not leaf or leaf in {".", ".."}:
+        leaf = f"attachment-{ordinal}"
+    stem = Path(leaf).stem[:96].strip(" ._") or f"attachment-{ordinal}"
+    suffix = Path(leaf).suffix[:24]
+    if stem.casefold() in WINDOWS_RESERVED_NAMES:
+        stem = f"_{stem}"
+    candidate = f"{stem}{suffix}"
+    duplicate = 1
+    while candidate.casefold() in used:
+        duplicate += 1
+        candidate = f"{stem}__{duplicate}{suffix}"
+    used.add(candidate.casefold())
+    return candidate, candidate != display_name
+
+
+def extract_attachments(args: argparse.Namespace, reader, version: str) -> dict[str, Any]:
+    source = args.input.expanduser().resolve()
+    output_directory = args.output_directory.expanduser().resolve()
+    manifest = args.manifest.expanduser().resolve() if args.manifest else None
+    if output_directory == source or manifest == source:
+        raise ProviderError("source PDF, quarantine directory, and manifest must be distinct")
+    if output_directory.exists():
+        raise ProviderError("quarantine output directory must not already exist")
+    if manifest is not None and manifest.exists():
+        raise ProviderError("attachment manifest must not already exist")
+    if manifest is not None and manifest == output_directory or output_directory in manifest.parents:
+        raise ProviderError("attachment manifest must be outside the quarantine directory")
+    for value, label in [
+        (args.max_attachments, "max-attachments"),
+        (args.max_total_bytes, "max-total-bytes"),
+        (args.max_attachment_bytes, "max-attachment-bytes"),
+    ]:
+        if value < 1:
+            raise ProviderError(f"--{label} must be positive")
+
+    source_before = file_record(source)
+    sources = attachment_sources(reader)
+    if len(sources) > args.max_attachments:
+        raise ProviderError(f"PDF has {len(sources)} attachments; max-attachments is {args.max_attachments}")
+    total_bytes = sum(len(entry["payload"]) for entry in sources)
+    if total_bytes > args.max_total_bytes:
+        raise ProviderError(f"decoded attachments total {total_bytes} bytes; max-total-bytes is {args.max_total_bytes}")
+    oversized = [entry["displayName"] for entry in sources if len(entry["payload"]) > args.max_attachment_bytes]
+    if oversized:
+        raise ProviderError(
+            f"attachment {oversized[0]!r} exceeds max-attachment-bytes {args.max_attachment_bytes}"
+        )
+
+    output_directory.parent.mkdir(parents=True, exist_ok=True)
+    if manifest is not None:
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+    temporary_directory = Path(tempfile.mkdtemp(prefix=f".{output_directory.name}.", dir=output_directory.parent))
+    temporary_manifest: Path | None = None
+    promoted_directory = False
+    used_names: set[str] = set()
+    records: list[dict[str, Any]] = []
+    try:
+        for ordinal, entry in enumerate(sources, 1):
+            saved_name, sanitized = safe_attachment_name(entry["displayName"], ordinal, used_names)
+            destination = (temporary_directory / saved_name).resolve()
+            if temporary_directory.resolve() not in destination.parents:
+                raise ProviderError(f"attachment {entry['displayName']!r} escaped the quarantine directory")
+            destination.write_bytes(entry["payload"])
+            written = destination.read_bytes()
+            if written != entry["payload"]:
+                raise ProviderError(f"attachment {entry['displayName']!r} failed byte-for-byte verification")
+            mime, mime_source = attachment_mime(entry["declaredMime"], entry["displayName"])
+            records.append({
+                "index": ordinal,
+                "scope": entry["scope"],
+                "page": entry["page"],
+                "annotationIndex": entry["annotationIndex"],
+                "internalKey": entry["internalKey"],
+                "displayName": entry["displayName"],
+                "sourceIdentity": entry["sourceIdentity"],
+                "mime": mime,
+                "mimeSource": mime_source,
+                "bytes": len(written),
+                "sha256": hashlib.sha256(written).hexdigest(),
+                "savedName": saved_name,
+                "savedPath": Path(os.path.relpath(
+                    output_directory / saved_name,
+                    manifest.parent if manifest else output_directory.parent,
+                )).as_posix(),
+                "nameSanitized": sanitized,
+            })
+        source_after = file_record(source)
+        if source_after != source_before:
+            raise ProviderError("source PDF changed during read-only attachment extraction")
+        result = {
+            "schema": "open-office-artifact-tool.pdf-attachments.v1",
+            "provider": "pypdf",
+            "providerVersion": version,
+            "strategy": "read-only",
+            "silentFallback": False,
+            "source": source_before,
+            "outputDirectory": str(output_directory),
+            "budgets": {
+                "maxAttachments": args.max_attachments,
+                "maxTotalBytes": args.max_total_bytes,
+                "maxAttachmentBytes": args.max_attachment_bytes,
+            },
+            "attachments": records,
+            "validation": {
+                "sourceUnchanged": True,
+                "attachmentCount": len(records),
+                "documentAttachments": sum(record["scope"] == "document" for record in records),
+                "pageAttachments": sum(record["scope"] == "page" for record in records),
+                "totalBytes": total_bytes,
+                "allHashesVerified": True,
+                "allPathsContained": True,
+                "duplicateNamesSeparated": len({record["savedName"].casefold() for record in records}) == len(records),
+                "attachmentsOpenedOrExecuted": False,
+            },
+        }
+        rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        if manifest is not None:
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{manifest.name}.", suffix=".tmp", dir=manifest.parent, delete=False
+            ) as stream:
+                temporary_manifest = Path(stream.name)
+                stream.write(rendered.encode("utf-8"))
+        temporary_directory.replace(output_directory)
+        promoted_directory = True
+        if manifest is not None:
+            temporary_manifest.replace(manifest)
+            temporary_manifest = None
+        return result
+    except Exception:
+        if promoted_directory:
+            shutil.rmtree(output_directory, ignore_errors=True)
+        raise
+    finally:
+        shutil.rmtree(temporary_directory, ignore_errors=True)
+        if temporary_manifest is not None:
+            temporary_manifest.unlink(missing_ok=True)
 
 
 def button_appearance_states(field: Any, reader=None, name: str | None = None) -> set[str]:
@@ -404,6 +650,20 @@ def parser() -> argparse.ArgumentParser:
     inspect.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024)
     inspect.add_argument("--max-pages", type=int, default=2_000)
 
+    extract = subparsers.add_parser(
+        "extract-attachments",
+        help="extract document-level and page-level attachments into a path-safe quarantine directory",
+    )
+    extract.add_argument("input", type=Path)
+    extract.add_argument("output_directory", type=Path)
+    extract.add_argument("--manifest", type=Path, help="optional JSON inventory path outside the quarantine directory")
+    extract.add_argument("--password-env")
+    extract.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024)
+    extract.add_argument("--max-pages", type=int, default=2_000)
+    extract.add_argument("--max-attachments", type=int, default=1_000)
+    extract.add_argument("--max-total-bytes", type=int, default=1024 * 1024 * 1024)
+    extract.add_argument("--max-attachment-bytes", type=int, default=512 * 1024 * 1024)
+
     def mutation(name: str):
         command = subparsers.add_parser(name)
         command.add_argument("input", type=Path)
@@ -456,6 +716,9 @@ def main() -> int:
                 destination.write_text(rendered + "\n", "utf-8")
             else:
                 print(rendered)
+        elif args.command == "extract-attachments":
+            result = extract_attachments(args, reader, pypdf.__version__)
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         else:
             result = write_mutation(args, reader, PdfWriter, Text, NameObject, pypdf.__version__)
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

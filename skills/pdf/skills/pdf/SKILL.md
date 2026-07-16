@@ -31,7 +31,7 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Greenfield tagged document, explicit reading order, inspect/verify | `PdfArtifact` / `PdfFile` |
 | Greenfield visual/layout PDF | ReportLab |
 | Text, words, geometry, table candidates | pdfplumber |
-| Basic structure, forms, annotations, merge/split/stamp | pypdf |
+| Basic structure, path-safe attachment quarantine, forms, annotations, merge/split/stamp | pypdf |
 | Existing-PDF page/content/image edits, forms, annotations, redaction/scrub | PyMuPDF |
 | Native page/file evidence and final raster QA | Poppler |
 | Structural diagnosis/recovery/rewrite | qpdf; pikepdf is planned but has no shipped adapter |
@@ -104,6 +104,18 @@ pdftoppm -png -r 144 input.pdf tmp/pdfs/pages/page
 ```
 
 PDF.js through `createPdfjsParser()` is useful for agent-facing extraction, inspect, layout, and QA. Its result is a reconstructed view, not an editable native object graph. Extracted tables are heuristic candidates and must be checked against rendered geometry. See [read and review](tasks/read_review.md).
+
+For untrusted embedded files, use the typed read-only quarantine primitive. It inventories document-level and page-level attachments separately, keeps duplicate display names as distinct files, neutralizes path traversal and portable reserved names, enforces count/decoded-byte budgets, verifies every extracted SHA-256, and rechecks that the source PDF did not change. It never opens or executes a payload:
+
+```bash
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pypdf_edit.py inspect input.pdf \
+  --output tmp/pdfs/pypdf-inspect.json
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pypdf_edit.py extract-attachments input.pdf outputs/quarantine \
+  --manifest outputs/attachments.json \
+  --max-attachments 1000 --max-total-bytes 1073741824
+```
+
+Treat `attachments.json` as the authoritative mapping from raw display name/internal key/scope to the sanitized saved path. Do not derive output paths yourself, and do not inspect archive or executable contents unless a later explicitly sandboxed workflow requests it.
 
 ## Edit An Existing PDF
 

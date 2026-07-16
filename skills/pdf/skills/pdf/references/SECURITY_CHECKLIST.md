@@ -8,6 +8,7 @@ Treat PDFs as untrusted structured programs.
 - Record SHA-256, bytes, and file name.
 - Set page/object/stream/time limits where the provider exposes them.
 - Do not execute embedded JavaScript, launch actions, attachments, media, or external links.
+- Extract attachments only through a path-confined quarantine primitive with duplicate-name separation, count/byte budgets, and per-file SHA-256; never trust a FileSpec filename or recursively open payloads by default.
 - Detect encryption and request the authorized password rather than bypassing controls.
 
 ## Before mutation

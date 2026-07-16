@@ -2,6 +2,18 @@
 
 Run these from the PDF Skill directory. Always substitute task-local source/output paths and inspect the operation JSON before execution.
 
+## pypdf attachment quarantine
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pypdf_edit.py inspect input.pdf \
+  --output tmp/pdfs/pypdf-inspect.json
+"$PYTHON_BIN" scripts/pypdf_edit.py extract-attachments input.pdf outputs/quarantine \
+  --manifest outputs/attachments.json
+```
+
+Use only the `savedPath` values in the manifest. Raw display names and internal keys are evidence, never filesystem paths. The command preserves duplicate names as separate files, confines traversal names to the quarantine directory, verifies decoded bytes and hashes, and does not open payloads.
+
 ## ReportLab greenfield PDF
 
 ```bash
