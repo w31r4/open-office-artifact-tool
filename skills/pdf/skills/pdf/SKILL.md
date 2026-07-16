@@ -156,9 +156,12 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
   --input tmp/pdfs/merge-stamp.json --output outputs/merged.pdf --require-provider
 "$PYTHON_BIN" scripts/pypdf_edit.py merge-stamp \
   tmp/pdfs/merge-stamp.json outputs/merged.pdf --strategy rewrite
+"$PYTHON_BIN" scripts/poppler_compare.py merge-stamp \
+  tmp/pdfs/merge-stamp.json outputs/merged.pdf \
+  --report tmp/pdfs/merge-visual-qa.json --render-dir tmp/pdfs/merge-rendered
 ```
 
-The sequence must include every source page exactly once. Encrypted input, ambiguous named-destination collisions, unresolved navigation, duplicate/omitted pages, unsupported rotated-page stamp placement, and unacknowledged signatures fail closed before output promotion. See [merge, reorder, and stamp](tasks/transform.md).
+The sequence must include every source page exactly once. The typed Poppler comparison maps every output page back to its declared source page, requires non-watermarked pages to remain pixel-identical, requires watermarked pages to change, and detects geometry, blank-page, or dark-background drift. Treat its structured pass/fail evidence as the visual delivery gate; a subjective thumbnail impression alone must not override a passing comparison. Encrypted input, ambiguous named-destination collisions, unresolved navigation, duplicate/omitted pages, unsupported rotated-page stamp placement, and unacknowledged signatures fail closed before output promotion. See [merge, reorder, and stamp](tasks/transform.md).
 
 ## Forms And Annotations
 

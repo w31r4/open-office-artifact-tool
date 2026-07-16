@@ -27,6 +27,7 @@ scripts/pdf_provider.py
 scripts/reportlab_create.py
 scripts/pdfplumber_extract.py
 scripts/pypdf_edit.py
+scripts/poppler_compare.py
 scripts/pymupdf_edit.py
 scripts/residue_scan.py
 scripts/pdf_audit.py

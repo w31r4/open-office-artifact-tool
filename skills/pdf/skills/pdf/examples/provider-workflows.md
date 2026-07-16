@@ -30,9 +30,12 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
   --input tmp/pdfs/merge-stamp.json --output outputs/merged.pdf --require-provider
 "$PYTHON_BIN" scripts/pypdf_edit.py merge-stamp \
   tmp/pdfs/merge-stamp.json outputs/merged.pdf --strategy rewrite
+"$PYTHON_BIN" scripts/poppler_compare.py merge-stamp \
+  tmp/pdfs/merge-stamp.json outputs/merged.pdf \
+  --report tmp/pdfs/merge-visual-qa.json --render-dir tmp/pdfs/merge-rendered
 ```
 
-The result JSON proves source hashes, final page mapping/geometry, navigation targets, and watermark text/opacity. Bind the manifest plus every PDF source in the canonical audit, then render all output pages through Poppler.
+The result JSON proves source hashes, final page mapping/geometry, navigation targets, and watermark text/opacity. The comparison report proves the declared source-to-output pixel invariants through Poppler. Bind the manifest plus every PDF source in the canonical audit.
 
 ## ReportLab greenfield PDF
 

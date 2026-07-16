@@ -165,7 +165,7 @@ const mergeCommands = [
   `"$PYTHON_BIN" "$S/pdf_provider.py" check --provider pypdf --require`,
   `"$PYTHON_BIN" "$S/pdf_provider.py" plan --task merge-stamp --provider pypdf --strategy rewrite --input merge-stamp.json --output outputs/merged.pdf --require-provider`,
   `"$PYTHON_BIN" "$S/pypdf_edit.py" merge-stamp merge-stamp.json outputs/merged.pdf --strategy rewrite`,
-  "pdftoppm -png -r 144 outputs/merged.pdf tmp/pdfs/merged-page",
+  `"$PYTHON_BIN" "$S/poppler_compare.py" merge-stamp merge-stamp.json outputs/merged.pdf --report merge-visual.json --render-dir merge-rendered`,
   `"$PYTHON_BIN" "$S/pdf_audit.py" validate outputs/audit.json --source merge-stamp.json --input inputs/cover.pdf --input inputs/report.pdf --input inputs/appendix.pdf --artifact outputs/merged.pdf --require-operation merge-stamp`,
 ];
 const mergeChecks = gradeMergeStampEvidence({ evidence: mergeEvidence, audit: mergeAudit, commands: mergeCommands, item: mergeItem });

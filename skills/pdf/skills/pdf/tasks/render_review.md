@@ -31,3 +31,5 @@ Inspect every page, not only the first. Check:
 Semantic or structural verification can pass while text is visually clipped. The independent greenfield forward test reproduced this exact failure, so Poppler page review cannot be skipped.
 
 When a baseline exists, compare page count and pixel images with declared thresholds, but still inspect material differences. Record renderer/version/DPI and keep diff evidence for release-critical outputs.
+
+For a manifest-driven merge/reorder/stamp, use `scripts/poppler_compare.py merge-stamp` instead of relying on thumbnail judgment. It provides page-to-source mapping, pixel stability, changed bounding boxes, blank-state evidence, and dark-pixel ratios. A passing typed comparison is authoritative for those declared invariants; subjective inspection can add findings but must not invent a blocking defect without reproducible contrary evidence.

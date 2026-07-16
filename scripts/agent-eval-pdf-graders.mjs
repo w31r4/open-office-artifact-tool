@@ -353,7 +353,7 @@ function mergeStampTraceChecks(audit, commands) {
   const plan = completedInvocation(commands, /pdf_provider\.py["']?\s+plan\b/i);
   const merge = completedInvocation(commands, /pypdf_edit\.py["']?\s+merge-stamp\b/i);
   const afterMerge = commandTextAfter(commands, merge);
-  const popplerAfterMerge = /\bpdftoppm\b/i.test(afterMerge);
+  const popplerAfterMerge = /poppler_compare\.py["']?\s+merge-stamp\b/i.test(afterMerge);
   const auditAfterMerge = /pdf_audit\.py["']?\s+validate\b/i.test(afterMerge) && (afterMerge.match(/(?:^|\s)--input(?:=|\s)/g) || []).length >= 3;
   const manualWriterPatterns = [
     /\bPdfWriter\s*\(/,

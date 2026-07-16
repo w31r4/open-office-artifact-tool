@@ -84,6 +84,7 @@ const requiredFiles = [
   "examples/pymupdf-edit-operations.json",
   "examples/pymupdf-redaction-operations.json",
   "examples/merge-stamp-manifest.json",
+  "scripts/poppler_compare.py",
 ];
 for (const file of requiredFiles) assert.ok(manifest.includes(file), `PDF manifest is missing ${file}`);
 
@@ -408,6 +409,15 @@ try {
     assert.equal(Object.keys(mergeEvidence.named).length, 6);
     assert.deepEqual(mergeEvidence.watermarks, [0, 0, 1, 1, 0, 0]);
     assert.deepEqual(mergeEvidence.sizes, [[612, 792], [595.2756, 841.8898], [792, 612], [792, 612], [595.2756, 841.8898], [595.2756, 841.8898]]);
+    const mergeVisualReport = path.join(tempRoot, "merge-visual-report.json");
+    const mergeVisual = parseResult(run(integrationPython, [
+      path.join(scriptsRoot, "poppler_compare.py"), "merge-stamp", mergeSpec, mergeOutput,
+      "--report", mergeVisualReport, "--render-dir", path.join(tempRoot, "merge-rendered"),
+    ], { status: 0 }));
+    assert.equal(mergeVisual.schema, "open-office-artifact-tool.pdf-poppler-compare.v1");
+    assert.equal(mergeVisual.status, "passed");
+    assert.deepEqual(mergeVisual.pages.map((entry) => entry.pixelStable), [true, true, false, false, true, true]);
+    assert.equal(mergeVisual.pages.every((entry) => entry.passed), true);
     const incompleteMergeSpec = path.join(tempRoot, "merge-stamp-incomplete.json");
     await fs.writeFile(incompleteMergeSpec, JSON.stringify({
       schema: "open-office-artifact-tool.pdf-merge-stamp.v1",

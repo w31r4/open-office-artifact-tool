@@ -27,6 +27,10 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
   --require-provider
 "$PYTHON_BIN" scripts/pypdf_edit.py merge-stamp \
   tmp/pdfs/merge-stamp.json outputs/merged.pdf --strategy rewrite
+"$PYTHON_BIN" scripts/poppler_compare.py merge-stamp \
+  tmp/pdfs/merge-stamp.json outputs/merged.pdf \
+  --report tmp/pdfs/merge-visual-qa.json \
+  --render-dir tmp/pdfs/merge-rendered
 ```
 
 `pypdf_edit.py` imports every source once so pypdf can translate its navigation graph, reorders the resulting page-tree references, then applies ReportLab-generated transparent overlays through pypdf. It transactionally reopens the result and verifies page boxes/rotation, page order, watermark text/opacity, outlines, named destinations, internal links, and source immutability before promoting the output.
@@ -40,8 +44,6 @@ For a multi-source operation, the canonical audit `source` is the exact merge ma
   --source tmp/pdfs/merge-stamp.json \
   --input inputs/cover.pdf --input inputs/report.pdf --input inputs/appendix.pdf \
   --artifact outputs/merged.pdf --require-operation merge-stamp
-pdfinfo outputs/merged.pdf
-pdftoppm -png -r 144 outputs/merged.pdf tmp/pdfs/merged-page
 ```
 
-Inspect every rendered page. Confirm watermark legibility and transparency, unchanged non-target pages, intended page sizes/orientations, and working navigation in a PDF viewer.
+The typed comparison renders every source and output page with Poppler, checks the manifest page mapping, requires non-watermarked pages to be pixel-identical, requires watermarked pages to change, and fails on dimension, blank-state, or excessive dark-pixel drift. Use its JSON status as the visual delivery gate. Inspect its rendered pages for watermark legibility and navigation, but do not delete a passing artifact based only on a subjective thumbnail impression.
