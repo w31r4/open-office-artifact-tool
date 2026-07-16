@@ -32,7 +32,8 @@ troubleshooting/libreoffice_headless.md
 troubleshooting/run_splitting.md
 references/design_presets.md
 references/header_templates.md
-examples/end_to_end_smoke_test.md
+artifact_tool/API_QUICK_START.md
+examples/openchestnut-end-to-end.mjs
 scripts/watermark_audit_remove.py
 scripts/internal_nav.py
 scripts/xlsx_to_docx_table.py

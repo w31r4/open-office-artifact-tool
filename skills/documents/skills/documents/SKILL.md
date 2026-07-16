@@ -1,6 +1,6 @@
 ---
 name: documents
-description: Create, edit, redline, and comment on `.docx`, Word, and Google Docs-targeted document artifacts inside the container, with a strict render-and-verify workflow. Use `render_docx.py` to generate page PNGs (and optional PDF) for visual QA, then iterate until layout is flawless before delivering the final document.
+description: Create, import, edit, redline, comment, and verify `.docx`, Word, and Google Docs-targeted artifacts with the public `open-office-artifact-tool` DocumentModel and bundled OpenChestnut codec. Use the packaged render workflow for page-level visual QA before delivery.
 ---
 
 # Documents Skill (Read • Create • Edit • Redline • Comment)
@@ -11,8 +11,9 @@ them visually.
 
 ## Tools + Contract
 
-- Use Codex workspace dependencies for docx artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
-- For document creation and deterministic OOXML edits, it is still acceptable to use the bundled Python/OOXML helper scripts in this skill package when the JS surface is incomplete.
+- Use Codex workspace dependencies for DOCX artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
+- For ordinary DOCX creation, import, semantic editing, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
+- Python and direct OOXML helpers are reserved for explicit low-level package patches, specialized audits, and render/QA operations documented by this Skill. They are never an automatic authoring fallback. If an imported construct cannot be edited through the supported model, narrow the edit or report the fail-closed boundary.
 - Run any builder or helper file from a writable workspace or temp directory, not from the managed dependency directory itself.
 - Final user-facing responses should describe only the requested document result. Do not link QA intermediates unless the user explicitly asks for them.
 
@@ -20,7 +21,7 @@ them visually.
 
 For a net-new Google Docs request, create and visually verify a local `.docx` with this skill first. The native Google Docs deliverable must then be produced by the Google Drive plugin's document import action, `mcp__codex_apps__google_drive_import_document`, with `upload_mode: "native_google_docs"`.
 
-Before rendering or importing any Google Docs-targeted DOCX, run the deterministic title sanitizer:
+After OpenChestnut export and before rendering or importing any Google Docs-targeted DOCX, run the deterministic title sanitizer as an explicit compatibility patch:
 
 ```bash
 python scripts/google_docs_title_sanitize.py input.docx --out sanitized.docx
@@ -79,7 +80,7 @@ Before writing content, read `references/design_presets.md` and choose exactly o
 
 If the destination is Google Docs, choose `google_docs_default`. Google Docs-targeted documents should feel native: Arial-based typography, black hierarchy, simple title treatment.
 
-For Google Docs-targeted documents, never create the title with the built-in Word `Title` paragraph style, including `doc.add_paragraph(..., style="Title")` or `doc.add_paragraph(style="Title")`. Always create a plain paragraph and apply the selected style-sheet title tokens directly: font family, size, color, weight, spacing, and border/rule settings. For `google_docs_default`, that means Arial 26 pt, black, normal weight, 0 pt before, 3 pt after, and no underline, bottom border, horizontal rule, or other Word-template residue. This instruction is not the enforcement layer; `scripts/google_docs_title_sanitize.py` is the deterministic enforcement layer and must still run before render/import.
+For Google Docs-targeted documents, never assign the built-in Word `Title` paragraph style. Create a named `DocumentModel` paragraph style and apply the selected token values directly: font family, size, color, weight, spacing, and border/rule settings. For `google_docs_default`, that means Arial 26 pt, black, normal weight, 0 pt before, 3 pt after, and no underline, bottom border, horizontal rule, or other Word-template residue. This instruction is not the enforcement layer; `scripts/google_docs_title_sanitize.py` is the explicit deterministic post-export patch and must still run before render/import.
 
 If creating a new first-page header, cover, or title block for a non-Google-docs document, also read `references/header_templates.md` and choose one header pattern before drafting. For `google_docs_default`, keep the opening block simple unless the user explicitly requests richer first-page furniture.
 
@@ -92,7 +93,7 @@ Then resolve the preset into a token map and apply the tokens consistently:
 
 Baseline geometry for all presets: US Letter portrait, 1 inch margins, 9360 DXA usable width, real Word styles for Normal/Title/Subtitle/Heading 1/Heading 2/Heading 3, real Word numbering for lists, and DXA table widths only.
 
-Tables must use explicit Word geometry. Build rows first, compute exact DXA column widths, then use `scripts/table_geometry.py` or equivalent logic so `tblW`, `tblInd`, `tblGrid`, and every `tcW` agree. Set table indent to the start cell margin token (`120` DXA by default) so the visible outer border aligns with surrounding paragraph text. Do not rely on autofit, percentage widths, centered default tables, fixed row heights, or tables as layout/divider hacks.
+Tables must use explicit Word geometry. Compute exact DXA widths, then pass matching `widthDxa`, `indentDxa`, `columnWidthsDxa`, and `cellMarginsDxa` values to `DocumentModel.addTable(...)`. Set table indent to the start cell margin token (`120` DXA by default) so the visible outer border aligns with surrounding paragraph text. `scripts/table_geometry.py` is an audit or explicit package-patch tool for an existing DOCX, not the ordinary authoring path. Do not rely on autofit, percentage widths, centered default tables, fixed row heights, or tables as layout/divider hacks.
 
 Lists must use real numbering definitions. Never create fake bullets with Unicode bullet text, hyphen-prefixed paragraphs, manual numbers, or newline-separated list items inside one paragraph. Wrapped list lines must align under the item text, not under the marker.
 
@@ -198,25 +199,28 @@ When the user asks to edit an existing document, preserve the original and make 
 ## Quick start (common one-liners)
 
 ```bash
-# 0) Sanitize Google Docs-targeted title blocks before render/import
+# 0) Run the shipped public-API/OpenChestnut create-import-edit-export example
+node examples/openchestnut-end-to-end.mjs output.docx
+
+# 1) Sanitize Google Docs-targeted title blocks after OpenChestnut export
 python scripts/google_docs_title_sanitize.py input.docx --out sanitized.docx
 python scripts/google_docs_title_sanitize.py sanitized.docx --check
 
-# 1) Render any DOCX to PNGs (visual QA)
+# 2) Render any DOCX to PNGs (visual QA)
 python render_docx.py input.docx --output_dir out
 
-# 2) Remove reviewer comments (finalization)
+# 3) Remove reviewer comments (explicit package-level finalization)
 python scripts/comments_strip.py input.docx --out no_comments.docx
 
-# 3) Accept tracked changes (finalization)
+# 4) Accept tracked changes (explicit package-level finalization)
 python scripts/accept_tracked_changes.py input.docx --mode accept --out accepted.docx
 
-# 4) Accessibility audit (+ optional safe fixes)
+# 5) Accessibility audit (+ optional explicit package fixes)
 python scripts/a11y_audit.py input.docx
 python scripts/a11y_audit.py input.docx --out_json a11y_report.json
 python scripts/a11y_audit.py input.docx --fix_image_alt from_filename --out a11y_fixed.docx
 
-# 5) Redact sensitive text (layout-preserving by default)
+# 6) Redact sensitive text (explicit package patch; layout-preserving by default)
 python scripts/redact_docx.py input.docx redacted.docx --emails --phones
 ```
 
@@ -230,6 +234,9 @@ Root:
 - SKILL.md: short overview + routing
 - manifest.txt: machine-readable list of files to download (one relative path per line)
 - render_docx.py: canonical DOCX→PNG renderer (container-safe LO profile + writable HOME + verbose logs)
+
+Artifact tool:
+- artifact_tool/API_QUICK_START.md: public `DocumentModel`/`DocumentFile` and OpenChestnut workflow
 
 References:
 - references/design_presets.md: preset-first design tokens, archetype aliases, OOXML conversions, and preset audit checklist
@@ -268,10 +275,10 @@ Troubleshooting:
 
 Scripts:
 
-**Core building blocks (importable helpers):**
-- `scripts/docx_ooxml_patch.py` — low-level OOXML patch helper (tracked changes, comments, hyperlinks, relationships). Other scripts reuse this.
+**Explicit package-patch building blocks (importable helpers):**
+- `scripts/docx_ooxml_patch.py` — low-level OOXML patch helper (tracked changes, comments, hyperlinks, relationships). Other scripts reuse this; ordinary authoring does not.
 - `scripts/fields_materialize.py` — materialize `SEQ`/`REF` field *display text* for deterministic headless rendering/QA.
-- `scripts/table_geometry.py` — apply/audit exact Word table geometry for python-docx tables (`tblW`, `tblInd`, `tblGrid`, and every `tcW` match).
+- `scripts/table_geometry.py` — apply/audit exact Word table geometry in an existing package (`tblW`, `tblInd`, `tblGrid`, and every `tcW` match).
 
 **High-leverage utilities (also importable, but commonly invoked as CLIs):**
 - `render_docx.py` — canonical DOCX → PNG renderer (optional PDF via `--emit_pdf`; do not deliver intermediates unless asked).
@@ -305,7 +312,7 @@ Scripts:
 > `scripts/xlsx_to_docx_table.py` also marks header rows as repeating headers (`w:tblHeader`) to improve a11y and multi-page tables.
 
 Examples:
-- examples/end_to_end_smoke_test.md
+- `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → edit → export → import vertical slice
 
 > Note: `manifest.txt` is **machine-readable** and is used by download tooling. It must contain only relative file paths (one per line).
 
@@ -371,12 +378,13 @@ This is a quick index so you can jump from a helper script to the right task gui
 "80/20" here means: follow the simplest workflow that covers *most* DOCX tasks reliably.
 
 **Golden path (don’t mix-and-match unless debugging):**
-1. **Author/edit with `python-docx`** (paragraphs, runs, styles, tables, headers/footers).
-2. **Render → inspect PNGs immediately** (DOCX → PNGs). Treat this as your feedback loop.
-3. **Fix and repeat** until the PNGs are visually perfect.
-4. **Only if needed**: use OOXML patching for tracked changes, comments, hyperlinks, or fields.
-5. **Re-render and inspect again** after *any* OOXML patch or layout-sensitive change.
-6. **Deliver only after the latest PNG review passes** (all pages, 100% zoom).
+1. **Author or import/edit with `DocumentModel` and `DocumentFile`** from `open-office-artifact-tool`.
+2. **Export through OpenChestnut, re-import, and run semantic `verify()`/`inspect()` assertions** for the requested content.
+3. **Render → inspect PNGs immediately** (DOCX → PNGs). Treat this as your feedback loop.
+4. **Fix and repeat** until the PNGs are visually perfect.
+5. **Only when explicitly required by an unsupported advanced package feature**: run the narrow OOXML patch documented for that feature. Never silently substitute Python authoring.
+6. **Re-import or structurally inspect, then re-render** after *any* package patch or layout-sensitive change.
+7. **Deliver only after the latest semantic and PNG reviews pass** (all pages, 100% zoom).
 
 ## Visual review (recommended)
 Use the packaged renderer (dedicated LibreOffice profile + writable HOME):

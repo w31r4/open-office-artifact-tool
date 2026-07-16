@@ -29,11 +29,14 @@ document presets do not replace the template's visual system.
    shorten it, use another documented source pattern, or add a cloned pattern
    that `artifact.md` permits. Do not silently shrink text or overlay a second
    design system.
-5. For an existing text or relationship-backed slot, prefer a task-local
-   package patch built on `scripts/docx_ooxml_patch.py`; this preserves untouched
-   package parts byte-for-byte. Use `python-docx` only when the planned edit
-   needs its object model and the preserve-only package comparison still passes.
-   Do not rebuild unaffected package parts.
+5. Import the retained DOCX with `DocumentFile.importDocx(...)`, resolve each
+   recognized editable slot by semantic ID or bounded content search, and make
+   the smallest `DocumentModel` edit. Export through OpenChestnut and compare
+   the preserve-only package inventory. If a required slot is source-bound or
+   OpenChestnut rejects the edit, stop and report the fidelity blocker. A
+   task-local `scripts/docx_ooxml_patch.py` operation is allowed only when the
+   user explicitly requests that low-level package mutation; never switch the
+   whole document to another authoring engine. Do not rebuild unaffected parts.
 6. Use `scripts/content_controls.py list` to locate content controls, but do not
    use its `fill` command in template-following mode because it reconstructs the
    control content. For a verified plain-text control, use a task-local package

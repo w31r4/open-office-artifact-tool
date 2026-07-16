@@ -18,4 +18,4 @@ The plugin tree is versioned directly under `skills/documents` in the public rep
 
 ## Compatibility status
 
-The native plugin package and render/QA materials are ready. Its reference Python authoring and OOXML mutation helpers are transitional until ordinary create/import/edit/export instructions are routed through `DocumentModel` and OpenChestnut; direct package scripts remain valid only as explicit low-level patch or QA tools.
+The native plugin package, public `DocumentModel`/OpenChestnut ordinary create-import-edit-export workflow, and render/QA materials are ready. Python and direct OOXML helpers remain packaged only for explicit advanced package patches and specialized QA; unsupported model edits fail closed rather than switching authoring engines.

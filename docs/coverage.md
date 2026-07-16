@@ -84,7 +84,7 @@ The published layout is four native plugin bundles and five Skills; `test/skill-
 
 | Skill | Status | Main workflow |
 | --- | --- | --- |
-| Documents | partial | Native plugin packaging and render/QA materials are present. Ordinary authoring still needs to converge from reference Python/OOXML helpers onto `DocumentModel` plus canonical OpenChestnut I/O. |
+| Documents | partial | Native packaging plus the ordinary public-API create/import/edit/export workflow are runnable and tested through canonical OpenChestnut, semantic assertions, and real LibreOffice page QA. Python/OOXML helpers are explicit advanced package-patch or audit tools only. The broader reference tasks for tracked revisions, content controls, complex fields, and other source-bound features remain partial. |
 | Spreadsheets | partial | The native plugin and reference-style core workbook example pass canonical XLSX export/import. Extended Quick API parity remains incomplete. |
 | Excel live control | partial | Native routing Skill and connector declaration are present; execution depends on a host-provided connected Excel session outside the npm package. |
 | Presentations | partial | The native plugin and complete 26-slide built-in template pass canonical OpenChestnut export/import, including bounded custom geometry. The broader reference API guide exceeds the current fail-closed PPTX boundary. |

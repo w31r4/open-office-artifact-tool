@@ -8,8 +8,8 @@ Use this reference when creating a new DOCX or a major repackage that needs firs
 2. Use exactly one first-page header pattern. Do not mix centered-cover, memo metadata, metric-strip, and quote treatments in the same opening block.
 3. Set the running section header/footer first, then build the visible first-page title block.
 4. Replace sample text, colors, and metadata with the document's actual content. Keep the structure, hierarchy, and spacing intent.
-5. Treat these snippets as inspiration, not a dependency. If helper names differ, implement the same Word-native effects with `python-docx`: real paragraphs, paragraph borders for rules, explicit table geometry for metadata grids, and standard section headers/footers.
-6. No border bottoms for header
+5. Treat the historical snippets below as design pseudocode, not executable authoring code. Translate supported effects to `DocumentModel.addParagraph`, `addTable`, `addHeader`, and `addFooter`, then export with `DocumentFile.exportDocx`. If an effect is outside the public model, omit or simplify it, or report the boundary; do not switch to another authoring engine.
+6. Use real semantic blocks and explicit geometry. A direct OOXML patch is allowed only when the user explicitly requests the unsupported low-level effect and the result passes structural and render QA.
 
 ## Pattern Picker
 
@@ -26,19 +26,19 @@ Default to `memo_masthead` for serious internal or technical documents, `proposa
 
 ## Shared Helper Contract
 
-The examples assume local helpers like `set_section_header`, `set_section_footer`, `add_title`, `add_subtitle`, `add_kicker`, `add_para`, `add_spacer`, `add_metadata_rows`, `add_inline_metadata_grid`, `add_metric_strip`, and `paragraph_border_bottom`.
+The pseudocode assumes conceptual helpers like `set_section_header`, `set_section_footer`, `add_title`, `add_subtitle`, `add_kicker`, `add_para`, `add_spacer`, `add_metadata_rows`, `add_inline_metadata_grid`, `add_metric_strip`, and `paragraph_border_bottom`. Implement the supported subset with the public Documents API.
 
 If those helpers are unavailable, recreate the effects directly:
 
-- Running header/footer: use `section.header` and `section.footer`.
-- Title stack: use normal Word paragraphs with explicit size, bold/italic, color, alignment, and spacing.
-- Metadata grid: use a small fixed-width table with explicit DXA geometry and cell margins.
-- Bottom rule: use a paragraph border, not a fake table or repeated characters.
-- Metric strip: use a fixed-width table with clear fill, compact labels, and enough cell padding.
+- Running header/footer: use `document.addHeader(...)` and `document.addFooter(...)` with explicit `sectionIndex` when needed.
+- Title stack: use named paragraph styles and `document.addParagraph(...)` with explicit size, weight, color, alignment, and spacing.
+- Metadata grid: use `document.addTable(...)` with exact DXA width, column widths, indent, and cell margins.
+- Bottom rule: omit it unless the selected public style boundary supports the effect; never fake it with a table or repeated characters.
+- Metric strip: use a semantic fixed-width table only when it represents real comparable metadata.
 
 ## `memo_masthead`
 
-```python
+```text
 def set_run_font(run, name="Arial", size=None, color=None, bold=None, italic=None):
     run.font.name = name
     run._element.rPr.rFonts.set(qn("w:ascii"), name)
@@ -109,7 +109,7 @@ def page_memo_masthead(doc, section):
 
 ## `proposal_centerpiece`
 
-```python
+```text
 def page_proposal_centerpiece(doc, section):
     set_section_header(
         section,
@@ -177,7 +177,7 @@ def page_proposal_centerpiece(doc, section):
 
 ## `editorial_cover`
 
-```python
+```text
 def page_editorial_cover(doc, section):
     set_section_header(
         section,
@@ -250,7 +250,7 @@ def page_editorial_cover(doc, section):
 
 ## `customer_pack`
 
-```python
+```text
 def page_customer_pack(doc, section):
     set_section_header(
         section,
@@ -289,7 +289,7 @@ def page_customer_pack(doc, section):
 
 ## `workshop_agenda`
 
-```python
+```text
 def page_workshop_agenda(doc, section):
     set_section_header(
         section,
@@ -325,7 +325,7 @@ def page_workshop_agenda(doc, section):
 
 ## `customer_story`
 
-```python
+```text
 def page_customer_story(doc, section):
     set_section_header(
         section,

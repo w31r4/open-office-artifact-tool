@@ -163,7 +163,11 @@ try {
   assert.match(pluginReadme, /open-office-artifact-tool/);
   assert.match(pluginReadme, /OpenChestnut/);
   assert.match(skillText, /render_docx\.py/);
-  assert.match(skillText, /python-docx/);
+  assert.match(skillText, /DocumentModel/);
+  assert.match(skillText, /DocumentFile/);
+  assert.match(skillText, /OpenChestnut/);
+  assert.match(skillText, /artifact_tool\/API_QUICK_START\.md/);
+  assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

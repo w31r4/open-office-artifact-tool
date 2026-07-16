@@ -1,62 +1,66 @@
-# Task: Section breaks + mixed page layout (portrait/landscape, margins, page size)
+# Task: Section breaks and mixed page layout
 
 ## Goal
-Safely handle documents with mixed layouts without breaking headers/footers.
 
-## Key concept: sections
-In DOCX, page layout is controlled by **sections**. A section defines:
-- page size
-- orientation (portrait/landscape)
-- margins
-- header/footer settings and linkage
+Use public `DocumentModel` section blocks without breaking page geometry or
+section-scoped headers and footers.
 
-If anything looks wrong after an edit (suddenly landscape pages, header disappears, etc.), suspect sections.
+## Key concept
 
-## How to audit
+A section block inserts a break before the content that follows it. It defines
+page size, orientation, and margins for the following section. Do not append an
+unused section block at the end of a document; that can produce a blank page.
+
+## Audit an existing package
+
 ```bash
-python scripts/section_audit.py /mnt/data/input.docx
+python scripts/section_audit.py input.docx
 ```
 
-Look for:
-- multiple sections
-- orientation changes
-- headers/footers linked to previous when you expected them not to be
+The script is an audit, not an authoring engine. Use it to inventory section
+count, geometry, and header/footer relationships before a semantic edit.
 
-## Creating a landscape section with python-docx (pattern)
-```python
-from docx import Document
-from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.section import WD_ORIENT
+## Public API pattern
 
-doc = Document()
-doc.add_paragraph("Portrait page")
+```js
+import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
 
-sec2 = doc.add_section(WD_SECTION.NEW_PAGE)
-sec2.orientation = WD_ORIENT.LANDSCAPE
-sec2.page_width, sec2.page_height = sec2.page_height, sec2.page_width
-doc.add_paragraph("Landscape page")
+const document = DocumentModel.create({ blocks: [] });
+document.addParagraph("Portrait-section evidence.");
 
-doc.save("out.docx")
+document.addSection({
+  name: "landscape-evidence",
+  breakType: "nextPage",
+  orientation: "landscape",
+  pageSize: { widthTwips: 15840, heightTwips: 12240 },
+  margins: { top: 720, right: 900, bottom: 720, left: 900 },
+});
+document.addParagraph("Landscape-section evidence.");
+
+document.addHeader("Landscape appendix", {
+  referenceType: "default",
+  sectionIndex: 1,
+});
+document.addFooter("1", {
+  referenceType: "default",
+  sectionIndex: 1,
+  fieldInstruction: "PAGE",
+});
+
+await (await DocumentFile.exportDocx(document)).save("out.docx");
 ```
 
-## Header/footer linkage gotcha
-Each new section can inherit header/footer via **Link to Previous**.
-If you need a different header/footer, you must break the linkage.
-In Word UI: Header/Footer tools → toggle "Link to Previous".
+Imported section relationship/linkage graphs beyond the modeled section
+boundary are source-bound. If changing one would invalidate source evidence,
+OpenChestnut fails closed; do not flatten the document to force the edit.
 
-python-docx exposes `section.header.is_linked_to_previous` and `section.footer.is_linked_to_previous`.
+## Render review
 
-## Render → PNG review checklist (sections)
-- Landscape pages are actually landscape (and only the intended ones)
-- Margins look consistent with expectations
-- Header/footer appears on all pages where expected
-- "Different first page" behaves as intended
-- Odd/even headers are correct (if enabled)
+- Only the intended pages change orientation.
+- Page size and margins match the explicit twip values.
+- Headers and footers appear in the intended section.
+- First/even variants behave as requested.
+- No empty trailing page was introduced.
 
-## Common pitfalls
-- Forgetting to swap width/height after setting landscape
-- Editing only the first section’s header/footer and assuming it applies to later sections
-- A continuous section break changing margins unexpectedly
-
-**Renderer note:** when a document mixes page sizes/orientations, `render_docx.py` computes DPI from the first section. If you care about exact pixel sizes, pass an explicit `--dpi`.
+When a document mixes page sizes or orientations, pass an explicit `--dpi` to
+`render_docx.py` if exact output pixel dimensions matter.

@@ -1,44 +1,67 @@
-# Task: Heading hierarchy + multilevel numbering (H1/H2/H3)
+# Task: Heading hierarchy and numbering
 
 ## Goal
-Produce structured documents that are consistent, readable, and TOC-friendly.
 
-## Rules of thumb
-1. **Use paragraph styles**, not direct formatting.
-   - Good: `p.style = doc.styles["Heading 1"]`
-   - Bad: make text 16pt bold in a Normal paragraph and hope it behaves like a heading.
-2. Keep heading hierarchy consistent: don’t jump from Heading 1 → Heading 3 unless the document truly skips a level.
-3. Numbered headings are *not* the same thing as bullet lists. If you need Word’s multilevel numbering, use a template where the numbering definitions already exist (DOTX), or accept that it’s brittle to generate from scratch.
+Produce a consistent, readable hierarchy using public `DocumentModel` styles
+and real list blocks.
 
-## Minimal python-docx patterns
+## Rules
 
-### Set heading styles
-```python
-from docx import Document
+1. Use named paragraph styles, not repeated direct formatting.
+2. Keep the hierarchy consistent; do not jump from level 1 to level 3 without a
+   real structural reason.
+3. Do not type manual heading numbers or bullet characters into paragraph text.
+   Use `addListItem(...)` for ordinary numbered/bulleted content.
+4. Imported complex multilevel heading-numbering graphs are source-bound. Do
+   not rebuild or flatten them when OpenChestnut rejects an edit.
 
-doc = Document()
-doc.add_paragraph("Executive Summary", style="Heading 1")
-doc.add_paragraph("Background", style="Heading 2")
-doc.add_paragraph("Prior Work", style="Heading 3")
-doc.save("out.docx")
+## Public API pattern
+
+```js
+import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
+
+const document = DocumentModel.create({ blocks: [] });
+for (const [id, fontSize, spaceBeforeTwips] of [
+  ["Heading1", 18, 280],
+  ["Heading2", 14, 220],
+  ["Heading3", 12, 160],
+]) {
+  document.styles.add(id, {
+    name: id.replace(/(\d)/, " $1"),
+    type: "paragraph",
+    basedOn: "Normal",
+    fontSize,
+    bold: true,
+    keepNext: true,
+    spaceBeforeTwips,
+    spaceAfterTwips: 80,
+  });
+}
+
+document.addParagraph("Executive Summary", { styleId: "Heading1" });
+document.addParagraph("Background", { styleId: "Heading2" });
+document.addParagraph("Prior Work", { styleId: "Heading3" });
+document.addListItem("First action", {
+  listType: "number",
+  numberFormat: "decimal",
+  levelText: "%1.",
+  numberingId: 41,
+  abstractNumberingId: 4,
+});
+
+await (await DocumentFile.exportDocx(document)).save("out.docx");
 ```
 
-### Avoid direct formatting
-If you must adjust typography, do it by editing the style definitions (template) rather than changing every paragraph.
+Complex automatic TOCs and outline-linked multilevel heading numbering are not
+source-free authoring features in the current model. Preserve imported versions
+unchanged or report that boundary.
 
-## Validate structure quickly
+## Validate and render
+
 ```bash
-python scripts/heading_audit.py /mnt/data/input.docx
+python scripts/heading_audit.py input.docx
+python render_docx.py input.docx --output_dir out
 ```
 
-## Render → PNG review checklist (headings)
-- Heading sizes/weights are consistent across the document
-- Spacing before/after headings is consistent
-- Indentation is consistent (especially for numbered headings)
-- No "fake headings" (big bold Normal text) are used for actual sections
-- TOC (if present) reflects heading hierarchy correctly
-
-## Common pitfalls
-- Mixing manual numbering (“1. ” typed in text) with TOC-generated numbering
-- Using Normal paragraphs with bold/size changes instead of Heading styles
-- Having different documents disagree on what Heading 1/2/3 look like (solve with templates)
+Inspect every page for consistent size, weight, spacing, indentation, and no
+fake headings or manual markers.

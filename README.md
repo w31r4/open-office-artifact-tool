@@ -98,7 +98,7 @@ Renderer adapters are exported for Playwright, sharp, canvas, Poppler, LibreOffi
 
 The repository ships four native Codex plugin bundles under `skills/{documents,spreadsheets,presentations,pdf}`. Each bundle contains `.codex-plugin/plugin.json`, plugin assets, a README, and its native `skills/...` tree. Spreadsheets intentionally includes both `Spreadsheets` for local artifact authoring and `excel-live-control` for host-provided live Excel sessions, so the published surface contains five Skills in four plugins.
 
-The 26-slide built-in Presentation template and the core Spreadsheet example execute directly against `open-office-artifact-tool`. Full reference-instruction compatibility is tracked independently from plugin packaging; Documents, the extended Spreadsheet/Presentation guides, PDF adapter usage, and live Excel host execution remain partial rather than being hidden behind the older flat fixture Skills.
+The 26-slide built-in Presentation template, core Spreadsheet example, and ordinary Documents create/import/edit/export example execute directly against `open-office-artifact-tool`; the Office workflows use canonical OpenChestnut I/O. Full reference-instruction compatibility is tracked independently from plugin packaging: advanced Documents tasks, the extended Spreadsheet/Presentation guides, PDF adapter usage, and live Excel host execution remain partial rather than being hidden behind the older flat fixture Skills.
 
 The development-only fixture runners live under `test/skill-harness` and are not included in npm. See [reference Skill compatibility](docs/reference-skills.md) for the audited boundary.
 

@@ -6,6 +6,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import {
+  DocumentFile,
   FileBlob,
   PresentationFile,
   SpreadsheetFile,
@@ -86,6 +87,21 @@ assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "scripts")), fal
 assert.equal(await exists(path.join(skillsRoot, "presentations", "fixtures")), false);
 assert.ok(await exists(path.join(repoRoot, "test", "skill-harness", "spreadsheets", "scripts", "workflow.mjs")));
 
+const documentsSkillRoot = path.join(skillsRoot, "documents", "skills", "documents");
+const documentsManifest = (await fs.readFile(path.join(documentsSkillRoot, "manifest.txt"), "utf8"))
+  .split(/\r?\n/)
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+assert.equal(new Set(documentsManifest).size, documentsManifest.length, "Documents manifest must not contain duplicates");
+for (const entry of documentsManifest) {
+  assert.equal(path.isAbsolute(entry), false, `Documents manifest entry must be relative: ${entry}`);
+  assert.ok(!entry.split("/").includes(".."), `Documents manifest entry must stay inside the Skill: ${entry}`);
+  assert.ok(await exists(path.join(documentsSkillRoot, entry)), `Documents manifest entry is missing: ${entry}`);
+}
+assert.ok(documentsManifest.includes("artifact_tool/API_QUICK_START.md"));
+assert.ok(documentsManifest.includes("examples/openchestnut-end-to-end.mjs"));
+assert.ok(!documentsManifest.includes("examples/end_to_end_smoke_test.md"));
+
 const spreadsheetApp = JSON.parse(await fs.readFile(path.join(skillsRoot, "spreadsheets", ".app.json"), "utf8"));
 assert.equal(
   spreadsheetApp.apps.connected_documents.id,
@@ -110,6 +126,21 @@ const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-reference-
 const previousPackageDir = process.env.OPEN_OFFICE_ARTIFACT_TOOL_PACKAGE_DIR;
 try {
   process.env.OPEN_OFFICE_ARTIFACT_TOOL_PACKAGE_DIR = repoRoot;
+
+  const { createDocument } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-end-to-end.mjs"
+  );
+  const docxPath = path.join(tempRoot, "openchestnut-decision-brief.docx");
+  const authoredDocument = await createDocument(docxPath);
+  assert.equal(authoredDocument.verification.ok, true);
+  assert.match(authoredDocument.inspection.ndjson, /Launch readiness decision brief/);
+  const documentRoundTrip = await DocumentFile.importDocx(await FileBlob.load(docxPath));
+  assert.equal(documentRoundTrip.blocks.find((block) => block.kind === "table")?.getCell(1, 1).value, "Verified");
+  assert.equal(documentRoundTrip.blocks.filter((block) => block.kind === "listItem").length, 3);
+  assert.equal(documentRoundTrip.comments[0]?.text, "Recommendation wording verified for the release record.");
+  assert.equal(documentRoundTrip.headers[0]?.text, "LAUNCH READINESS | DECISION BRIEF");
+  assert.equal(documentRoundTrip.footers[0]?.fieldInstruction, "PAGE");
+
   const { ensureArtifactToolWorkspace, importArtifactTool } = await import(
     "../skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs"
   );

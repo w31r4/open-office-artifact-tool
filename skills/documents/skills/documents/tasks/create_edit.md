@@ -1,52 +1,86 @@
-# Task: Create / edit a DOCX
+# Task: Create or edit a DOCX
 
-## Default tool: python-docx
-Use `python-docx` for:
-- paragraphs/runs
-- built-in heading styles (Heading 1 / Heading 2)
-- tables (structure + cell text + basic formatting)
-- simple headers/footers and margins
+Use this workflow for ordinary document authoring and semantic edits. Read
+`../artifact_tool/API_QUICK_START.md` before implementing the builder.
 
-Exception: for Google Docs-targeted output, do not use the built-in Word
-`Title` style. Build the title as a plain paragraph with explicit run and
-paragraph formatting, then run `scripts/google_docs_title_sanitize.py` before
-render/import.
+## Default tool: DocumentModel + OpenChestnut
 
-## Practical python-docx gotchas
+Use the public `open-office-artifact-tool` package for:
 
-### 1) Header/footer tables require a width
-When adding tables to headers/footers, `add_table` requires an explicit width:
+- paragraphs, formatted runs, and named styles;
+- real numbered or character-bulleted lists;
+- fixed-geometry tables;
+- sections, headers, footers, hyperlinks, and simple fields;
+- PNG/JPEG inline images and classic comments;
+- DOCX import, export, inspect, resolve, verification, and model preview.
 
-```python
-from docx.shared import Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+`DocumentFile.importDocx(...)` and `DocumentFile.exportDocx(...)` always use the
+bundled OpenChestnut C# WebAssembly codec. Do not pass codec selectors, lossy
+options, or a Python authoring fallback.
 
-section = doc.sections[0]
-footer = section.footer
-table = footer.add_table(rows=1, cols=3, width=Inches(6.5))
-# Align text inside each cell
-table.rows[0].cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+## Create
+
+1. Resolve Node.js and the package directory with the workspace dependency
+   loader.
+2. Create a writable task directory and an ES module builder.
+3. Choose a design preset from `../references/design_presets.md` and translate
+   it into explicit `DocumentModel` styles and geometry.
+4. Build semantic paragraphs, lists, and tables. Do not fake lists with text
+   markers or use tables as prose layout containers.
+5. Export through `DocumentFile.exportDocx(...)`, re-import the resulting DOCX,
+   and assert the important content with `inspect()` and `verify()`.
+6. Run the render loop in `verify_render.md` and inspect every page.
+
+From the Skill root, the packaged runnable example covers the complete vertical
+slice:
+
+```bash
+node examples/openchestnut-end-to-end.mjs output.docx
 ```
 
-### 2) Fonts can require setting both `run.font.name` and `w:rFonts`
-Some renderers/Word builds don’t respect only `run.font.name`:
+## Edit an existing document
 
-```python
-from docx.oxml.ns import qn
+```js
+import {
+  DocumentFile,
+  FileBlob,
+} from "open-office-artifact-tool";
 
-run.font.name = "Gill Sans"
-run._element.rPr.rFonts.set(qn("w:ascii"), "Gill Sans")
-run._element.rPr.rFonts.set(qn("w:hAnsi"), "Gill Sans")
+const document = await DocumentFile.importDocx(await FileBlob.load("input.docx"));
+const target = document.blocks.find(
+  (block) => block.kind === "paragraph" && block.text.includes("old wording"),
+);
+if (!target) throw new Error("Target paragraph was not found.");
+
+document.resolve(`${target.id}/text`).text = "replacement wording";
+const report = document.verify({ visualQa: true });
+if (!report.ok) throw new Error(report.ndjson || JSON.stringify(report.issues));
+
+const output = await DocumentFile.exportDocx(document);
+await output.save("edited.docx");
 ```
 
-### 3) “Clear header paragraph” isn’t always one call
-If you need to replace an existing header paragraph, remove runs (or replace the paragraph XML). Avoid assuming a `clear()` method exists.
+Preserve the original and make minimal, local changes. Imported advanced
+content is source-bound: if OpenChestnut rejects an edit, narrow the edit or
+report the unsupported boundary instead of flattening or rebuilding the file.
 
-### 4) Tracked changes and comments are not first-class
-If the user requests *real* tracked changes or *real* Word comments, plan for OOXML patching (see `ooxml/`).
+## Explicit low-level package patches
 
-## After every meaningful batch of edits: render and review
-Use the loop from `tasks/verify_render.md` (DOCX → PNG) to avoid shipping layout defects. (Internally the renderer uses a PDF step; `--emit_pdf` can persist it if needed.)
+The Python and OOXML scripts in this Skill are allowed only when the requested
+operation is explicitly package-level and is not an ordinary model edit, for
+example accepting imported tracked revisions, applying the Google Docs title
+sanitizer, or auditing package relationships. Run the narrow documented script
+after OpenChestnut export, then structurally inspect and re-render the result.
+Never switch the whole document to `python-docx` because one construct is
+unsupported.
+
+## After every meaningful batch
+
+Export, re-import or structurally inspect, render to PNG, and review every page.
+Use `verify_render.md`; an SVG/model preview complements native rendering but
+does not replace it.
 
 ## Output hygiene
-Keep `/mnt/data` clean: deliverables only unless the user asks for intermediate render artifacts.
+
+Keep the task output directory clean and return only the requested final
+deliverable unless the user asks for QA intermediates.

@@ -177,7 +177,7 @@ colors:
 
 Google Docs-specific guidance:
 
-- Build titles as plain paragraphs with explicit formatting from the selected style-sheet title tokens. Never use the built-in Word `Title` paragraph style for Google Docs-targeted output, including `doc.add_paragraph(..., style="Title")` or `doc.add_paragraph(style="Title")`. For `google_docs_default`, apply Arial 26 pt black normal-weight run formatting, 0 pt before, 3 pt after, and no border/rule styling.
+- Build titles with `DocumentModel.addParagraph(...)` and a named paragraph style containing the selected explicit tokens. Never assign the built-in Word `Title` style for Google Docs-targeted output. For `google_docs_default`, apply Arial 26 pt black normal-weight formatting, 0 pt before, 3 pt after, and no border/rule styling.
 - Prefer prose sections, short bullets, and simple numbered lists over callouts, metadata grids, section bands, or dense tables.
 - Keep the first page simple: title, optional short subtitle or one-line metadata, then body content. Do not add running headers, footer rules, cover treatments, mastheads, or decorative title furniture unless the user explicitly asks for them.
 - Use black for title, headings, body text, and emphasis. A muted gray is acceptable only for light secondary metadata when it improves scanability.
