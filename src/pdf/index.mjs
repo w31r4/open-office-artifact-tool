@@ -12,6 +12,8 @@ import { decodePngRgba } from "../shared/png.mjs";
 import { fileBlobFromRenderOutput, LAYOUT_MIME, renderTypeForOptions } from "../shared/render-output.mjs";
 import { attrEscape, xmlEscape } from "../shared/xml.mjs";
 import { inspectPdfFigureAccessibility, normalizePdfFigureAccessibility, normalizePdfHeadingLevel, pdfFigureAccessibilityIssue, pdfHeadingNestingIssues } from "./accessibility.mjs";
+import { mergePdfSemanticTableGroups, pdfCrossPageTableIssues } from "./cross-page-tables.mjs";
+import { inspectPdfLinks, normalizePdfLink, pdfLinkAnnotationRect, pdfLinkIssues } from "./links.mjs";
 import { analyzePdfReadingOrder, inspectPdfReadingOrderIds, normalizePdfReadingOrder, pdfPageBodyTextLines, pdfReadingOrderInspectRecords, resolvePdfReadingOrder } from "./reading-order.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./table-grid.mjs";
 
@@ -65,6 +67,7 @@ class PdfTable {
   constructor(page, config = {}) {
     this.page = page;
     this.id = config.id || aid("ptb");
+    this.semanticId = config.semanticId || config.logicalId || config.continuationOf;
     this.name = config.name || "";
     this.values = (config.values || [[]]).map((row) => [...row]);
     this.cellConfigs = (config.cells || config.cellConfigs || []).map((cell) => ({ ...cell, headers: Array.isArray(cell.headers) ? [...cell.headers] : undefined }));
@@ -86,10 +89,10 @@ class PdfTable {
     return owner ? new PdfTableCell(this, owner.row, owner.column) : undefined;
   }
   cellInspectRecords(pageIndex) { return serializePdfTableCells(this).map((cell) => ({ kind: "tableCell", page: pageIndex + 1, tableId: this.id, ...cell })); }
-  inspectRecord(pageIndex) { const grid = this.grid(); return { kind: "table", id: this.id, page: pageIndex + 1, name: this.name || undefined, rows: grid.rows, cols: grid.columns, cells: grid.cells.length, bbox: this.bbox, values: this.values, source: this.source || undefined }; }
+  inspectRecord(pageIndex) { const grid = this.grid(); return { kind: "table", id: this.id, semanticId: this.semanticId, page: pageIndex + 1, name: this.name || undefined, rows: grid.rows, cols: grid.columns, cells: grid.cells.length, bbox: this.bbox, values: this.values, source: this.source || undefined }; }
   toJSON() {
     const cells = this.grid().cells.map(({ id, row, column, rowSpan, columnSpan, role, scope, headers, value }) => ({ id, row, column, rowSpan, columnSpan, role, scope, headers, value }));
-    return { id: this.id, name: this.name, values: this.values, cells, bbox: this.bbox, source: this.source };
+    return { id: this.id, semanticId: this.semanticId, name: this.name, values: this.values, cells, bbox: this.bbox, source: this.source };
   }
 }
 
@@ -142,6 +145,16 @@ class PdfChart {
   toJSON() { return { id: this.id, name: this.name, title: this.title, alt: this.alt, decorative: this.decorative, chartType: this.chartType, categories: this.categories, series: this.series, bbox: this.bbox }; }
 }
 
+class PdfLink {
+  constructor(page, config = {}) {
+    this.page = page;
+    Object.assign(this, normalizePdfLink(config, aid("pln")));
+  }
+
+  inspectRecord(pageIndex) { return { kind: "link", id: this.id, page: pageIndex + 1, text: this.text, url: this.url, bbox: this.bbox }; }
+  toJSON() { return { id: this.id, text: this.text, url: this.url, bbox: this.bbox }; }
+}
+
 class PdfPage {
   constructor(artifact, config = {}) {
     this.artifact = artifact;
@@ -152,6 +165,7 @@ class PdfPage {
     this.tables = (config.tables || []).map((table) => new PdfTable(this, table));
     this.images = (config.images || []).map((image) => new PdfImage(this, image));
     this.charts = (config.charts || []).map((chart) => new PdfChart(this, chart));
+    this.links = (config.links || []).map((link) => new PdfLink(this, link));
     this.textItems = (config.textItems || []).map((item, index) => this.normalizeTextItem(item, index));
     this.regions = (config.regions || []).map((region, index) => ({ id: region.id || `${this.id}/rg/${index + 1}`, kind: region.kind || "region", bbox: region.bbox || [0, 0, this.width, this.height], label: region.label }));
     this.readingOrder = normalizePdfReadingOrder(config.readingOrder);
@@ -159,7 +173,7 @@ class PdfPage {
 
   normalizeTextItem(item = {}, index = this.textItems?.length || 0) {
     const bbox = pdfTextItemBBox(item);
-    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, bold: Boolean(item.bold), italic: Boolean(item.italic), headingLevel: normalizePdfHeadingLevel(item.headingLevel), dir: item.dir, flowId: item.flowId, paragraphIndex: item.paragraphIndex, lineIndex: item.lineIndex };
+    return { id: item.id || `${this.id}/txt/${index + 1}`, text: String(item.text ?? item.str ?? ""), bbox, fontName: item.fontName || item.fontFamily, fontSize: item.fontSize || item.size, color: item.color, bold: Boolean(item.bold), italic: Boolean(item.italic), headingLevel: normalizePdfHeadingLevel(item.headingLevel), artifact: Boolean(item.artifact ?? item.decorative), dir: item.dir, flowId: item.flowId, paragraphIndex: item.paragraphIndex, lineIndex: item.lineIndex };
   }
 
   addText(textOrConfig = "", config = {}) {
@@ -174,13 +188,14 @@ class PdfPage {
   addTable(config = {}) { const table = new PdfTable(this, config); this.tables.push(table); return table; }
   addImage(config = {}) { const image = new PdfImage(this, config); this.images.push(image); return image; }
   addChart(config = {}) { const chart = new PdfChart(this, config); this.charts.push(chart); return chart; }
+  addLink(config = {}) { const link = new PdfLink(this, config); this.links.push(link); if (!this.text) this.text = link.text; else if (!this.text.includes(link.text)) this.text += `\n${link.text}`; return link; }
   setReadingOrder(order) { this.readingOrder = normalizePdfReadingOrder(order); return this; }
-  inspectRecord(index) { const readingOrder = analyzePdfReadingOrder(this); return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, textItems: this.textItems.length, tables: this.tables.length, images: this.images.length, charts: this.charts.length, regions: this.regions.length, readingOrderItems: readingOrder.declaredIds.length, explicitReadingOrder: readingOrder.explicit, validReadingOrder: readingOrder.valid }; }
+  inspectRecord(index) { const readingOrder = analyzePdfReadingOrder(this); return { kind: "page", id: this.id, page: index + 1, width: this.width, height: this.height, textPreview: this.text.slice(0, 300), textChars: this.text.length, textItems: this.textItems.length, tables: this.tables.length, images: this.images.length, charts: this.charts.length, links: this.links.length, regions: this.regions.length, readingOrderItems: readingOrder.declaredIds.length, explicitReadingOrder: readingOrder.explicit, validReadingOrder: readingOrder.valid }; }
   textRecord(index) { return { kind: "text", id: `${this.id}/text`, page: index + 1, text: this.text, textChars: this.text.length, textItems: this.textItems.length }; }
   textItemRecords(index) { return this.textItems.map((item) => ({ kind: "textItem", page: index + 1, ...item })); }
   regionRecords(index) { return this.regions.map((region) => ({ ...region, kind: "region", regionKind: region.kind || "region", page: index + 1 })); }
   readingOrderRecords(index) { return pdfReadingOrderInspectRecords(this, index); }
-  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()), charts: this.charts.map((chart) => chart.toJSON()), readingOrder: this.readingOrder }; }
+  toJSON() { return { id: this.id, text: this.text, width: this.width, height: this.height, textItems: this.textItems, regions: this.regions, tables: this.tables.map((table) => table.toJSON()), images: this.images.map((image) => image.toJSON()), charts: this.charts.map((chart) => chart.toJSON()), links: this.links.map((link) => link.toJSON()), readingOrder: this.readingOrder }; }
 }
 
 function pdfTextWidth(text, fontSize = 12) {
@@ -313,7 +328,7 @@ export class PdfArtifact {
   constructor(options = {}) {
     this.id = options.id || aid("pdf");
     this.metadata = options.metadata || {};
-    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [], images: options.images || [], charts: options.charts || [] }];
+    const pages = options.pages || [{ text: options.text || "", tables: options.tables || [], images: options.images || [], charts: options.charts || [], links: options.links || [] }];
     this.pages = pages.map((page) => new PdfPage(this, page));
   }
 
@@ -362,6 +377,7 @@ export class PdfArtifact {
   addTable(config = {}) { return (this.pages[0] || this.addPage()).addTable(config); }
   addImage(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addImage(config); }
   addChart(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addChart(config); }
+  addLink(config = {}) { const pageIndex = Number(config.pageIndex ?? config.page ?? 0); return (this.pages[pageIndex] || this.pages[0] || this.addPage()).addLink(config); }
   extractText(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.map((page) => page.text).join("\n\n"); }
   extractTables(options = {}) { const pages = options.page == null ? this.pages : [this.pages[Number(options.page) - 1]].filter(Boolean); return pages.flatMap((page, index) => page.tables.map((table) => ({ page: options.page || index + 1, id: table.id, name: table.name, values: table.values, cells: serializePdfTableCells(table), bbox: table.bbox }))); }
   resolve(id) {
@@ -385,12 +401,14 @@ export class PdfArtifact {
       if (image) return image;
       const chart = page.charts.find((item) => item.id === id);
       if (chart) return chart;
+      const link = page.links.find((item) => item.id === id);
+      if (link) return link;
     }
     return undefined;
   }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["page", "text", "table", "image", "chart", "readingOrder"]);
+    const kinds = normalizeKinds(options.kind, ["page", "text", "table", "image", "chart", "link", "readingOrder"]);
     const records = [];
     this.pages.forEach((page, index) => {
       if (kinds.has("page")) records.push(page.inspectRecord(index));
@@ -401,6 +419,7 @@ export class PdfArtifact {
       if (kinds.has("tableCell")) records.push(...page.tables.flatMap((table) => table.cellInspectRecords(index)));
       if (kinds.has("image")) records.push(...page.images.map((image) => image.inspectRecord(index)));
       if (kinds.has("chart")) records.push(...page.charts.map((chart) => chart.inspectRecord(index)));
+      if (kinds.has("link")) records.push(...page.links.map((link) => link.inspectRecord(index)));
       if (kinds.has("readingOrder")) records.push(...page.readingOrderRecords(index));
     });
     return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
