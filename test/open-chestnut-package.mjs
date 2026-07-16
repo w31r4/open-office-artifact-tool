@@ -12,7 +12,14 @@ try {
   const report = JSON.parse(packed.stdout)[0];
   const tarball = path.join(temporary, report.filename);
   assert.ok(fs.existsSync(tarball), `npm pack did not create ${tarball}`);
-  run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", tarball], temporary);
+  const dependencyTarballs = packProductionDependencies(temporary);
+  // Exercise a real npm install without making a release gate depend on the
+  // registry. Optional renderer peers are intentionally outside this core
+  // OpenChestnut/PDF probe and remain covered by package metadata tests.
+  run("npm", [
+    "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
+    "--omit=dev", "--legacy-peer-deps", "--no-save", tarball, ...dependencyTarballs,
+  ], temporary);
 
   const probe = String.raw`
     import {
@@ -82,4 +89,19 @@ function run(command, args, cwd, environment = {}) {
   });
   assert.equal(result.status, 0, `${command} ${args.join(" ")} failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
   return result;
+}
+
+function packProductionDependencies(temporary) {
+  const lock = JSON.parse(fs.readFileSync(path.join(repoRoot, "package-lock.json"), "utf8"));
+  const destination = path.join(temporary, "dependency-tarballs");
+  fs.mkdirSync(destination, { recursive: true });
+  return Object.entries(lock.packages || {})
+    .filter(([location, metadata]) => location.startsWith("node_modules/") && !metadata.dev && !metadata.optional && !metadata.peer)
+    .map(([location]) => {
+      const source = path.join(repoRoot, location);
+      assert.ok(fs.existsSync(source), `npm ci production dependency is missing: ${location}`);
+      const packed = run("npm", ["pack", source, "--json", "--ignore-scripts", "--pack-destination", destination], repoRoot);
+      const report = JSON.parse(packed.stdout)[0];
+      return path.join(destination, report.filename);
+    });
 }
