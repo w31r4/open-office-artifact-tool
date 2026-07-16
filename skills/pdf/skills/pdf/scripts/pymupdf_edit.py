@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -16,6 +17,80 @@ from typing import Any
 
 class ProviderError(RuntimeError):
     pass
+
+
+TEXT_FIT_ABSOLUTE_TOLERANCE_PT = 0.0001
+TEXT_FIT_RELATIVE_TOLERANCE = 0.000001
+TEXT_FIT_MAX_TOLERANCE_PT = 0.0005
+
+
+def text_width_fit(text_width: float, available_width: float) -> dict[str, float | bool]:
+    """Accept float-quantization noise without creating visible layout slack."""
+    if not math.isfinite(text_width) or not math.isfinite(available_width) or text_width < 0 or available_width < 0:
+        raise ProviderError("replacement text and box widths must be finite non-negative numbers")
+    overflow = max(0.0, text_width - available_width)
+    tolerance = min(
+        TEXT_FIT_MAX_TOLERANCE_PT,
+        max(
+            TEXT_FIT_ABSOLUTE_TOLERANCE_PT,
+            max(abs(text_width), abs(available_width)) * TEXT_FIT_RELATIVE_TOLERANCE,
+        ),
+    )
+    return {
+        "fits": overflow <= tolerance,
+        "textWidth": text_width,
+        "availableWidth": available_width,
+        "overflow": overflow,
+        "tolerance": tolerance,
+    }
+
+
+def replacement_source_span(pymupdf, page, term: str, bounds) -> dict[str, Any]:
+    candidates = []
+    for block in page.get_text("dict").get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                if term not in str(span.get("text") or ""):
+                    continue
+                span_bounds = pymupdf.Rect(span.get("bbox"))
+                if not span_bounds.intersects(bounds):
+                    continue
+                candidates.append({"span": span, "direction": tuple(line.get("dir") or ())})
+    if len(candidates) != 1:
+        raise ProviderError(
+            "replace_text requires each match to resolve to exactly one source text span; "
+            f"found {len(candidates)} candidates"
+        )
+    candidate = candidates[0]
+    direction = candidate["direction"]
+    if len(direction) != 2 or not math.isclose(direction[0], 1.0, abs_tol=0.000001) or not math.isclose(direction[1], 0.0, abs_tol=0.000001):
+        raise ProviderError("replace_text supports only horizontal source text; rotated or skewed text requires an explicit specialist workflow")
+    span = candidate["span"]
+    origin = span.get("origin")
+    if not isinstance(origin, (list, tuple)) or len(origin) != 2:
+        raise ProviderError("replace_text source span has no usable baseline origin")
+    return span
+
+
+def builtin_font_alias(source_font: str) -> str | None:
+    base_name = source_font.rsplit("+", 1)[-1]
+    aliases = {
+        "Courier": "cour",
+        "Courier-Bold": "cobo",
+        "Courier-BoldOblique": "cobi",
+        "Courier-Oblique": "coit",
+        "Helvetica": "helv",
+        "Helvetica-Bold": "hebo",
+        "Helvetica-BoldOblique": "hebi",
+        "Helvetica-Oblique": "heit",
+        "Times-Bold": "tibo",
+        "Times-BoldItalic": "tibi",
+        "Times-Italic": "tiit",
+        "Times-Roman": "tiro",
+    }
+    return aliases.get(base_name)
 
 
 def accepted_license(value: str | None) -> str:
@@ -416,14 +491,24 @@ def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: s
                 quads = page.search_for(term, quads=True)
                 for quad in quads:
                     bounds = pymupdf.Rect(quad.rect)
+                    source_span = replacement_source_span(pymupdf, page, term, bounds)
+                    source_font = str(source_span.get("font") or "")
+                    font_name = operation.get("font_name") or builtin_font_alias(source_font)
+                    if not font_name:
+                        raise ProviderError(
+                            f"replace_text cannot preserve source font {source_font!r}; provide a supported font_name in an explicitly reviewed operation"
+                        )
                     page.add_redact_annot(bounds, fill=color(operation.get("fill", [1, 1, 1]), "fill"), cross_out=False)
                     replacement_overlays.append({
                         "pageIndex": page_index,
                         "rect": bounds,
                         "replacement": replacement,
-                        "fontName": str(operation.get("font_name") or "helv"),
-                        "fontSize": number(operation.get("font_size", max(4, bounds.height * 0.75)), "font_size"),
-                        "color": color(operation.get("color", [0, 0, 0])),
+                        "fontName": str(font_name),
+                        "fontSize": number(operation.get("font_size", source_span.get("size")), "font_size"),
+                        "color": color(operation["color"]) if operation.get("color") is not None else pymupdf.sRGB_to_pdf(int(source_span.get("color") or 0)),
+                        "baseline": float(source_span["origin"][1]),
+                        "sourceFont": source_font,
+                        "sourceFontSize": float(source_span.get("size") or 0),
                     })
                 if quads:
                     redaction_pages.add(page_index)
@@ -441,17 +526,29 @@ def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: s
         page.apply_redactions(images=2, graphics=1, text=0)
     if redaction_pages:
         applied.append({"type": "apply_redactions", "pages": [page + 1 for page in sorted(redaction_pages)]})
+    fit_checks = []
     for overlay in replacement_overlays:
         page = doc.load_page(overlay["pageIndex"])
         available_width = overlay["rect"].width
         text_width = pymupdf.get_text_length(overlay["replacement"], fontname=overlay["fontName"], fontsize=overlay["fontSize"])
-        if text_width > available_width:
+        fit = text_width_fit(text_width, available_width)
+        fit_checks.append({
+            "page": overlay["pageIndex"] + 1,
+            "sourceFont": overlay["sourceFont"],
+            "sourceFontSize": overlay["sourceFontSize"],
+            "outputFont": overlay["fontName"],
+            "outputFontSize": overlay["fontSize"],
+            "baseline": overlay["baseline"],
+            **fit,
+        })
+        if not fit["fits"]:
             raise ProviderError(
-                f"replacement text width {text_width:.2f} exceeds the original box width {available_width:.2f}; "
+                f"replacement text width {text_width:.6f} exceeds the original box width {available_width:.6f} "
+                f"by {fit['overflow']:.6f}pt (numeric tolerance {fit['tolerance']:.6f}pt); "
                 "general PDF reflow is intentionally unsupported"
             )
         page.insert_text(
-            (overlay["rect"].x0, overlay["rect"].y1 - max(0.5, overlay["rect"].height * 0.12)),
+            (overlay["rect"].x0, overlay["baseline"]),
             overlay["replacement"],
             fontname=overlay["fontName"],
             fontsize=overlay["fontSize"],
@@ -459,7 +556,7 @@ def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: s
             overlay=True,
         )
     if replacement_overlays:
-        applied.append({"type": "replacement_overlays", "count": len(replacement_overlays), "reflow": False})
+        applied.append({"type": "replacement_overlays", "count": len(replacement_overlays), "reflow": False, "fitChecks": fit_checks})
     return applied
 
 

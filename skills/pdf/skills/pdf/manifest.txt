@@ -12,6 +12,8 @@ references/PROVIDER_MATRIX.md
 references/SAVE_POLICIES.md
 references/SECURITY_CHECKLIST.md
 references/PRODUCT_BOUNDARIES.md
+references/AUDIT_SCHEMA.md
+references/pdf-audit-v1.schema.json
 artifact_tool/API_QUICK_START.md
 examples/public-api-end-to-end.mjs
 examples/provider-workflows.md
@@ -24,6 +26,7 @@ scripts/pdfplumber_extract.py
 scripts/pypdf_edit.py
 scripts/pymupdf_edit.py
 scripts/residue_scan.py
+scripts/pdf_audit.py
 SKILL.md
 agents/openai.yaml
 assets/file-document.png

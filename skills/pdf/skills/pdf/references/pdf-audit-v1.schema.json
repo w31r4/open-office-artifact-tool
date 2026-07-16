@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-office-artifact-tool.invalid/schemas/pdf-audit-v1.schema.json",
+  "title": "open-office-artifact-tool PDF mutation audit v1",
+  "type": "object",
+  "required": ["schema", "status", "source", "output", "provider", "savePolicy", "preflight", "operation", "validation"],
+  "properties": {
+    "schema": { "const": "open-office-artifact-tool.pdf-audit.v1" },
+    "status": { "enum": ["succeeded", "failed_closed"] },
+    "source": { "$ref": "#/$defs/fileEvidence" },
+    "output": { "oneOf": [{ "$ref": "#/$defs/fileEvidence" }, { "type": "null" }] },
+    "provider": {
+      "type": "object",
+      "required": ["actual", "version", "silentFallback"],
+      "properties": {
+        "actual": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "licenseChoice": { "type": "string", "minLength": 1 },
+        "silentFallback": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "savePolicy": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": { "enum": ["rewrite", "incremental", "sanitize"] }
+      },
+      "additionalProperties": true
+    },
+    "preflight": {
+      "type": "object",
+      "required": ["probeCompleted", "planCompleted"],
+      "properties": {
+        "probeCompleted": { "type": "boolean" },
+        "planCompleted": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "operation": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "type": "string", "minLength": 1 } },
+      "additionalProperties": true
+    },
+    "validation": { "type": "object" },
+    "reason": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "succeeded" } } },
+      "then": {
+        "properties": {
+          "output": { "$ref": "#/$defs/fileEvidence" },
+          "preflight": {
+            "properties": {
+              "probeCompleted": { "const": true },
+              "planCompleted": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed_closed" } } },
+      "then": { "required": ["reason"], "properties": { "output": { "type": "null" } } }
+    }
+  ],
+  "$defs": {
+    "fileEvidence": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -15,7 +15,7 @@ Never catch a provider failure and silently retry through another provider. Ther
 
 ## Choose The Route First
 
-Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](references/SAVE_POLICIES.md), [security checklist](references/SECURITY_CHECKLIST.md), and [product boundaries](references/PRODUCT_BOUNDARIES.md) before mutating an imported file.
+Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](references/SAVE_POLICIES.md), [audit schema](references/AUDIT_SCHEMA.md), [security checklist](references/SECURITY_CHECKLIST.md), and [product boundaries](references/PRODUCT_BOUNDARIES.md) before mutating an imported file.
 
 | Need | Route |
 | --- | --- |
@@ -30,10 +30,10 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | PDF/A or PDF/UA machine rules | veraPDF |
 | Scanned-PDF OCR | OCRmyPDF is planned; strict image residue OCR currently uses separately installed Tesseract through PyMuPDF |
 
-Probe before work:
+Probe and validate the route before work. Every mutation needs a provider-specific availability probe and `pdf_provider.py plan`; for a PyMuPDF mutation, both commands below are mandatory preflight and must finish before `pymupdf_edit.py edit`. Running either after mutation only for the audit does not satisfy this contract:
 
 ```bash
-python3 scripts/pdf_provider.py check --provider all
+python3 scripts/pymupdf_edit.py probe --accept-license agpl
 python3 scripts/pdf_provider.py plan \
   --task edit-content --provider pymupdf --strategy rewrite \
   --input input.pdf --output tmp/pdfs/edited.pdf \
@@ -53,6 +53,8 @@ For every imported PDF:
 5. Reopen the output independently, verify the intended delta, render every page with Poppler, and retain an audit record.
 
 An incremental update preserves the exact old byte prefix by design. It does not prove that DocMDP permits the change or that the earlier signer endorses the new revision.
+
+Every mutation audit uses the canonical `open-office-artifact-tool.pdf-audit.v1` envelope. Keep the exact camelCase fields `source`, `output`, `provider.actual`, `provider.version`, `provider.silentFallback`, `savePolicy.strategy`, `preflight`, `operation.type`, and `validation`; do not invent naming aliases. Before delivery, run `scripts/pdf_audit.py validate` against the source and output bytes. See the [audit schema](references/AUDIT_SCHEMA.md).
 
 ## Greenfield Creation
 
@@ -97,6 +99,8 @@ PDF.js through `createPdfjsParser()` is useful for agent-facing extraction, insp
 
 PyMuPDF is the explicit advanced provider selected for this project. It operates directly on the original bytes/file or a byte-identical transactional copy and supports bounded page operations, positioned text, image insertion/replacement, annotations, AcroForm values, real redactions, scrub, rewrite, and incremental save.
 
+Run the mandatory provider probe and route plan above before this mutation command. For `replace_text` under `sanitize`, use `--task redact --strategy sanitize --invalidate-signatures` in the plan.
+
 ```bash
 python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
   --strategy rewrite \
@@ -106,7 +110,7 @@ python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
 
 The shipped operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `rotate_page`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. Unsupported operations fail; there is no fallback.
 
-General Word-style reflow is not available for an ordinary imported PDF. `replace_text` is a bounded redaction plus same-box overlay and rejects a replacement that does not fit. Use a trusted source model or explicitly create a reconstructed new document when broad reflow is required. See [edit existing](tasks/edit_existing.md).
+General Word-style reflow is not available for an ordinary imported PDF. `replace_text` is a bounded redaction plus same-box overlay for one horizontal source span: it preserves the source baseline and default style, reports its measured fit evidence, and allows only a fixed sub-millipoint numerical tolerance. Cross-span, rotated, or genuinely overflowing replacements fail closed. Use a trusted source model or explicitly create a reconstructed new document when broad reflow is required. See [edit existing](tasks/edit_existing.md).
 
 ## Forms And Annotations
 
@@ -195,3 +199,4 @@ See [provider setup](tasks/provider_setup.md). Do not add MuPDF.NET alongside Py
 - pyHanko and veraPDF evidence exists when signatures or conformance were requested.
 - `pdfinfo` and Poppler rendering succeeded for every final page, followed by visual review.
 - Final file and audit evidence are in the requested locations; no temporary file is presented as the deliverable.
+- `pdf_audit.py validate` accepts the canonical audit and recomputed source/output hashes.

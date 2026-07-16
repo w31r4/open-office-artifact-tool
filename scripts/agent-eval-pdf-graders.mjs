@@ -101,6 +101,8 @@ export function extractCompletedCommands(trace) {
 function boundedTraceChecks(audit, commands) {
   const commandText = commands.join("\n");
   const operation = auditOperation(audit);
+  const probeIndex = commandText.search(/pymupdf_edit\.py\s+probe\b/i);
+  const editIndex = commandText.search(/pymupdf_edit\.py\s+edit\b/i);
   const bypassPatterns = [
     /\bupdate_stream\s*\(/i,
     /\bset_contents\s*\(/i,
@@ -111,7 +113,7 @@ function boundedTraceChecks(audit, commands) {
     check("pdf-trace:provider-version", "trace", Boolean(String(auditProviderVersion(audit)).trim()), { actual: auditProviderVersion(audit) || "unreported" }),
     check("pdf-trace:save-policy", "trace", /^sanitize$/i.test(String(auditSaveStrategy(audit))), { expected: "sanitize", actual: auditSaveStrategy(audit) }),
     gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
-    check("pdf-trace:capability-probe", "trace", /pymupdf_edit\.py\s+probe\b/i.test(commandText), { expected: "shipped PyMuPDF capability probe" }),
+    check("pdf-trace:capability-probe", "trace", probeIndex >= 0 && editIndex >= 0 && probeIndex < editIndex, { expected: "shipped PyMuPDF capability probe before mutation", actual: { probeObserved: probeIndex >= 0, editObserved: editIndex >= 0, preflightOrder: probeIndex >= 0 && editIndex >= 0 && probeIndex < editIndex } }),
     check("pdf-trace:typed-edit-primitive", "trace", /pymupdf_edit\.py\s+edit\b/i.test(commandText) && /replace[_ -]?text/i.test(operation), { expected: "pymupdf_edit.py edit + replace_text", actual: operation || "unreported" }),
     check("pdf-trace:no-content-stream-bypass", "trace", !bypassPatterns.some((pattern) => pattern.test(commandText)), { forbidden: bypassPatterns.map(String) }),
   ];

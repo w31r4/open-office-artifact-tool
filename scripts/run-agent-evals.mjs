@@ -164,6 +164,18 @@ async function hashFile(filePath) {
   return sha256(await fs.readFile(filePath));
 }
 
+function repositoryProvenance() {
+  const head = run("git", ["rev-parse", "HEAD"]).stdout.trim();
+  const status = run("git", ["status", "--porcelain=v1", "--untracked-files=all"]).stdout;
+  const trackedDiff = run("git", ["diff", "--binary", "HEAD", "--"]).stdout;
+  return {
+    head,
+    dirty: status.trim().length > 0,
+    statusSha256: sha256(Buffer.from(status, "utf8")),
+    trackedDiffSha256: sha256(Buffer.from(trackedDiff, "utf8")),
+  };
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || repoRoot,
@@ -411,13 +423,19 @@ async function prepareCase(suite, item, options) {
   for (const relative of ["PROMPT.md", "package.json", "package-lock.json", ".agents", "node_modules"]) {
     workspaceHashes[relative] = await fingerprintPath(path.join(workspace, relative));
   }
+  const repository = repositoryProvenance();
   const runRecord = {
     suite: suite.id,
     case: item.id,
     subject,
     trial,
     preparedAt: new Date().toISOString(),
-    git: run("git", ["rev-parse", "HEAD"]).stdout.trim(),
+    git: repository.head,
+    gitWorktree: {
+      dirty: repository.dirty,
+      statusSha256: repository.statusSha256,
+      trackedDiffSha256: repository.trackedDiffSha256,
+    },
     package: packageRecord,
     referencePackageNamePatches,
     skillSha256: await hashTree(installedSkill),
@@ -626,7 +644,7 @@ export async function main(argv = process.argv.slice(2)) {
   } else fail(`unknown command ${command}\n\n${help()}`);
 }
 
-export { fingerprintPath, loadSuite, makeReadOnly, oracleFingerprint, removePreparedTree, scorePrepared, validateSuite, visibleCase };
+export { fingerprintPath, loadSuite, makeReadOnly, oracleFingerprint, removePreparedTree, repositoryProvenance, scorePrepared, validateSuite, visibleCase };
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 if (entryPath === fileURLToPath(import.meta.url)) await main();

@@ -16,6 +16,7 @@ import {
   makeReadOnly,
   oracleFingerprint,
   removePreparedTree,
+  repositoryProvenance,
   scorePrepared,
   validateSuite,
   visibleCase,
@@ -24,6 +25,12 @@ import {
 const { suite, cases } = await loadSuite();
 assert.deepEqual(validateSuite(suite, cases), { cases: 26, pdfCases: 19, ready: 7 });
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 7);
+
+const repository = repositoryProvenance();
+assert.match(repository.head, /^[0-9a-f]{40}$/);
+assert.equal(typeof repository.dirty, "boolean");
+assert.match(repository.statusSha256, /^[0-9a-f]{64}$/);
+assert.match(repository.trackedDiffSha256, /^[0-9a-f]{64}$/);
 
 const visible = visibleCase(suite, cases.find((item) => item.id === "pdf-bounded-contract-id-replace"));
 assert.match(visible.prompt, /outputs\/contract-updated\.pdf/);
@@ -122,6 +129,13 @@ const bypassChecks = gradeBoundedReplaceEvidence({ evidence: boundedEvidence, au
 assert.equal(bypassChecks.filter((entry) => entry.category !== "trace").every((entry) => entry.passed), true);
 assert.equal(bypassChecks.find((entry) => entry.id === "pdf-trace:no-content-stream-bypass")?.passed, false);
 assert.equal(summarizeCaseScore(bypassChecks, boundedItem.grade).rawScorePercent, 90);
+const postHocProbeChecks = gradeBoundedReplaceEvidence({
+  evidence: boundedEvidence,
+  audit: boundedAudit,
+  commands: [boundedCommands[1], boundedCommands[0]],
+  item: boundedItem,
+});
+assert.equal(postHocProbeChecks.find((entry) => entry.id === "pdf-trace:capability-probe")?.passed, false);
 
 const overflowItem = cases.find((item) => item.id === "pdf-overflow-replace-refusal");
 const overflowEvidence = {

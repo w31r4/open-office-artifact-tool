@@ -14,6 +14,16 @@ High-trust redaction is a destructive security workflow, never a visual overlay.
 
 ## Operations
 
+Before mutation, prove the exact adapter surface and bind the destructive route:
+
+```bash
+python3 scripts/pymupdf_edit.py probe --accept-license agpl
+python3 scripts/pdf_provider.py plan \
+  --task redact --provider pymupdf --strategy sanitize \
+  --input input.pdf --output tmp/pdfs/sanitized.pdf \
+  --accept-license agpl --invalidate-signatures --require-provider
+```
+
 ```json
 [
   { "type": "redact_text", "term": "Customer Secret", "fill": [0, 0, 0] },
@@ -33,3 +43,5 @@ python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
 If an image-bearing page requires OCR and Tesseract/PyMuPDF OCR cannot run, the strict residue gate fails. Install/configure OCR, repeat the scan, and do not deliver an incompletely scanned file.
 
 Opaque black rectangles, annotation-only redactions, incremental writes, or text-extraction-only checks are not acceptable. Keep the original and QA evidence under restricted access according to the user's data-handling requirements.
+
+Emit the canonical [`open-office-artifact-tool.pdf-audit.v1`](../references/AUDIT_SCHEMA.md) record, including residue and render evidence under `validation`, and run `scripts/pdf_audit.py validate` against the final sanitized bytes.

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -13,7 +14,7 @@ function run(executable, args, options = {}) {
   const result = spawnSync(executable, args, {
     cwd: options.cwd || repoRoot,
     encoding: "utf8",
-    env: { ...process.env, ...options.env },
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1", ...options.env },
     maxBuffer: 20 * 1024 * 1024,
   });
   if (options.status !== undefined) {
@@ -57,6 +58,8 @@ const requiredFiles = [
   "references/SAVE_POLICIES.md",
   "references/SECURITY_CHECKLIST.md",
   "references/PRODUCT_BOUNDARIES.md",
+  "references/AUDIT_SCHEMA.md",
+  "references/pdf-audit-v1.schema.json",
   "tasks/create.md",
   "tasks/read_review.md",
   "tasks/edit_existing.md",
@@ -72,6 +75,7 @@ const requiredFiles = [
   "scripts/pypdf_edit.py",
   "scripts/pymupdf_edit.py",
   "scripts/residue_scan.py",
+  "scripts/pdf_audit.py",
   "examples/provider-workflows.md",
   "examples/reportlab-report-spec.json",
   "examples/pymupdf-edit-operations.json",
@@ -106,12 +110,67 @@ const compile = run(python, [
   ...pythonScripts,
 ], { status: 0 });
 assert.equal(compile.stderr, "");
+const auditSchema = JSON.parse(await fs.readFile(path.join(skillRoot, "references", "pdf-audit-v1.schema.json"), "utf8"));
+assert.equal(auditSchema.properties.schema.const, "open-office-artifact-tool.pdf-audit.v1");
+const fitUnit = run(python, ["-c", [
+  "import importlib.util,sys",
+  "spec=importlib.util.spec_from_file_location('pymupdf_edit',sys.argv[1])",
+  "module=importlib.util.module_from_spec(spec)",
+  "spec.loader.exec_module(module)",
+  "quantized=module.text_width_fit(81.9169996380806,81.91697692871094)",
+  "assert quantized['fits'] and 0 < quantized['overflow'] <= quantized['tolerance']",
+  "overflow=module.text_width_fit(81.9185,81.91697692871094)",
+  "assert not overflow['fits'] and overflow['overflow'] > overflow['tolerance']",
+  "wide=module.text_width_fit(20000.0004,20000)",
+  "assert wide['fits'] and wide['tolerance'] <= 0.0005",
+  "wide_overflow=module.text_width_fit(20000.0006,20000)",
+  "assert not wide_overflow['fits']",
+].join(";"), path.join(scriptsRoot, "pymupdf_edit.py")], { status: 0 });
+assert.equal(fitUnit.stderr, "");
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-provider-skill-"));
 try {
   const dummyInput = path.join(tempRoot, "input.pdf");
   const dummyOutput = path.join(tempRoot, "output.pdf");
   await fs.writeFile(dummyInput, "%PDF-1.4\n%%EOF\n", "ascii");
+  const auditArtifact = path.join(tempRoot, "audit-artifact.pdf");
+  await fs.writeFile(auditArtifact, "%PDF-1.4\naudit artifact\n%%EOF\n", "ascii");
+  const evidence = async (target) => {
+    const bytes = await fs.readFile(target);
+    return { path: target, bytes: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex") };
+  };
+  const auditPath = path.join(tempRoot, "audit.json");
+  await fs.writeFile(auditPath, JSON.stringify({
+    schema: "open-office-artifact-tool.pdf-audit.v1",
+    status: "succeeded",
+    source: await evidence(dummyInput),
+    output: await evidence(auditArtifact),
+    provider: { actual: "pymupdf", version: "test", silentFallback: false },
+    savePolicy: { strategy: "sanitize" },
+    preflight: { probeCompleted: true, planCompleted: true },
+    operation: { type: "replace_text" },
+    validation: {},
+  }), "utf8");
+  const auditValidation = parseResult(run(python, [path.join(scriptsRoot, "pdf_audit.py"), "validate", auditPath, "--source", dummyInput, "--artifact", auditArtifact, "--require-operation", "replace_text"], { status: 0 }));
+  assert.equal(auditValidation.ok, true);
+  await fs.appendFile(auditArtifact, "mutated");
+  const staleAudit = run(python, [path.join(scriptsRoot, "pdf_audit.py"), "validate", auditPath, "--source", dummyInput, "--artifact", auditArtifact], { status: 2 });
+  assert.match(staleAudit.stderr, /bytes\/hash do not match/);
+  const refusalAuditPath = path.join(tempRoot, "refusal-audit.json");
+  await fs.writeFile(refusalAuditPath, JSON.stringify({
+    schema: "open-office-artifact-tool.pdf-audit.v1",
+    status: "failed_closed",
+    source: await evidence(dummyInput),
+    output: null,
+    provider: { actual: "pymupdf", version: "test", silentFallback: false },
+    savePolicy: { strategy: "sanitize" },
+    preflight: { probeCompleted: true, planCompleted: false },
+    operation: { type: "replace_text" },
+    validation: {},
+    reason: "replacement does not fit",
+  }), "utf8");
+  const refusalValidation = parseResult(run(python, [path.join(scriptsRoot, "pdf_audit.py"), "validate", refusalAuditPath, "--source", dummyInput, "--require-operation", "replace_text"], { status: 0 }));
+  assert.equal(refusalValidation.status, "failed_closed");
 
   const check = parseResult(run(python, [path.join(scriptsRoot, "pdf_provider.py"), "check", "--provider", "all"], { status: 0 }));
   assert.ok(check.providers.length >= 12);
@@ -250,6 +309,67 @@ try {
     const overflow = run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", sourcePath, overflowOutput, "--strategy", "sanitize", "--operations", overflowOps, "--sensitive-term", "Customer Secret", "--accept-license", "agpl", "--invalidate-signatures"], { status: 2 });
     assert.match(overflow.stderr, /general PDF reflow/);
     await assert.rejects(fs.access(overflowOutput));
+
+    const toleranceSource = path.join(tempRoot, "tolerance-source.pdf");
+    run(integrationPython, ["-c", [
+      "from reportlab.lib.pagesizes import letter",
+      "from reportlab.pdfgen import canvas",
+      "import sys",
+      "c=canvas.Canvas(sys.argv[1],pagesize=letter,invariant=1)",
+      "c.setFont('Helvetica',11)",
+      "c.drawString(84,628,'Contract ID: ACME-2025-041')",
+      "c.save()",
+    ].join(";"), toleranceSource], { status: 0 });
+    const toleranceOps = path.join(tempRoot, "tolerance-ops.json");
+    await fs.writeFile(toleranceOps, JSON.stringify([
+      { type: "replace_text", page: 1, term: "ACME-2025-041", replacement: "ACME-2026-041" },
+    ]), "utf8");
+    const toleranceOutput = path.join(tempRoot, "tolerance-output.pdf");
+    const toleranceResult = parseResult(run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", toleranceSource, toleranceOutput, "--strategy", "sanitize", "--operations", toleranceOps, "--sensitive-term", "ACME-2025-041", "--accept-license", "agpl", "--invalidate-signatures"], { status: 0 }));
+    const fitEvidence = toleranceResult.operations.find((operation) => operation.type === "replacement_overlays")?.fitChecks?.[0];
+    assert.equal(fitEvidence?.fits, true);
+    assert.ok(fitEvidence.overflow > 0 && fitEvidence.overflow <= fitEvidence.tolerance);
+    assert.equal(fitEvidence.sourceFont, "Helvetica");
+    assert.equal(fitEvidence.sourceFontSize, 11);
+    assert.equal(fitEvidence.outputFont, "helv");
+    assert.equal(fitEvidence.outputFontSize, 11);
+    const toleranceExtraction = path.join(tempRoot, "tolerance-extraction.json");
+    run(integrationPython, [path.join(scriptsRoot, "pdfplumber_extract.py"), toleranceOutput, "--output", toleranceExtraction], { status: 0 });
+    const toleranceText = JSON.parse(await fs.readFile(toleranceExtraction, "utf8")).pages[0].text;
+    assert.doesNotMatch(toleranceText, /ACME-2025-041/);
+    assert.match(toleranceText, /ACME-2026-041/);
+
+    const beyondToleranceOps = path.join(tempRoot, "beyond-tolerance-ops.json");
+    await fs.writeFile(beyondToleranceOps, JSON.stringify([
+      { type: "replace_text", page: 1, term: "ACME-2025-041", replacement: "ACME-2026-041", font_name: "helv", font_size: 11.0002 },
+    ]), "utf8");
+    const beyondToleranceOutput = path.join(tempRoot, "beyond-tolerance-output.pdf");
+    const beyondTolerance = run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", toleranceSource, beyondToleranceOutput, "--strategy", "sanitize", "--operations", beyondToleranceOps, "--sensitive-term", "ACME-2025-041", "--accept-license", "agpl", "--invalidate-signatures"], { status: 2 });
+    assert.match(beyondTolerance.stderr, /numeric tolerance .*general PDF reflow/);
+    await assert.rejects(fs.access(beyondToleranceOutput));
+
+    const rotatedSource = path.join(tempRoot, "rotated-source.pdf");
+    run(integrationPython, ["-c", [
+      "from reportlab.lib.pagesizes import letter",
+      "from reportlab.pdfgen import canvas",
+      "import sys",
+      "c=canvas.Canvas(sys.argv[1],pagesize=letter,invariant=1)",
+      "c.saveState()",
+      "c.translate(160,420)",
+      "c.rotate(90)",
+      "c.setFont('Helvetica',11)",
+      "c.drawString(0,0,'ROTATED-ID')",
+      "c.restoreState()",
+      "c.save()",
+    ].join(";"), rotatedSource], { status: 0 });
+    const rotatedOps = path.join(tempRoot, "rotated-ops.json");
+    await fs.writeFile(rotatedOps, JSON.stringify([
+      { type: "replace_text", page: 1, term: "ROTATED-ID", replacement: "UPDATED-ID" },
+    ]), "utf8");
+    const rotatedOutput = path.join(tempRoot, "rotated-output.pdf");
+    const rotated = run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rotatedSource, rotatedOutput, "--strategy", "sanitize", "--operations", rotatedOps, "--sensitive-term", "ROTATED-ID", "--accept-license", "agpl", "--invalidate-signatures"], { status: 2 });
+    assert.match(rotated.stderr, /only horizontal source text|rotated or skewed text/);
+    await assert.rejects(fs.access(rotatedOutput));
 
     const imageOps = path.join(tempRoot, "image-ops.json");
     await fs.writeFile(imageOps, JSON.stringify([{ type: "insert_image", page: 1, rect: [470, 630, 540, 700], path: path.join(repoRoot, "skills", "pdf", "assets", "icon.png") }]), "utf8");
