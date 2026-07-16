@@ -243,7 +243,7 @@ function pdfMargins(value) {
 }
 
 function pdfLayoutRecordsForPage(pageLayout, pageArrayIndex) {
-  const pageRecord = { kind: pageLayout.kind, id: pageLayout.id, page: pageLayout.page, width: pageLayout.width, height: pageLayout.height, unit: pageLayout.unit, textChars: pageLayout.text?.textChars || 0, textPreview: String(pageLayout.text?.text || "").slice(0, 300), tables: pageLayout.tables.length, images: pageLayout.images.length, charts: pageLayout.charts.length, regions: pageLayout.regions.length, textItems: pageLayout.textItems.length };
+  const pageRecord = { kind: pageLayout.kind, id: pageLayout.id, page: pageLayout.page, width: pageLayout.width, height: pageLayout.height, unit: pageLayout.unit, textChars: pageLayout.text?.textChars || 0, textPreview: String(pageLayout.text?.text || "").slice(0, 300), tables: pageLayout.tables.length, images: pageLayout.images.length, charts: pageLayout.charts.length, links: pageLayout.links.length, regions: pageLayout.regions.length, textItems: pageLayout.textItems.length };
   const entries = [{ pageArrayIndex, collection: "page", record: pageRecord }];
   if (pageLayout.text) entries.push({ pageArrayIndex, collection: "text", record: pageLayout.text });
   pageLayout.textItems.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "textItems", itemIndex, record }));
@@ -251,6 +251,7 @@ function pdfLayoutRecordsForPage(pageLayout, pageArrayIndex) {
   pageLayout.tables.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "tables", itemIndex, record: { ...record, textPreview: record.values.map((row) => row.map((cell) => String(cell ?? "")).join(" ")).join(" ") } }));
   pageLayout.images.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "images", itemIndex, record }));
   pageLayout.charts.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "charts", itemIndex, record }));
+  pageLayout.links.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "links", itemIndex, record }));
   pageLayout.readingOrder.forEach((record, itemIndex) => entries.push({ pageArrayIndex, collection: "readingOrder", itemIndex, record }));
   return entries;
 }
@@ -276,7 +277,7 @@ function pdfLayoutSlice(layout, options = {}) {
   }
   const keepByPage = new Map();
   const ensurePageKeep = (pageArrayIndex) => {
-    if (!keepByPage.has(pageArrayIndex)) keepByPage.set(pageArrayIndex, { full: false, text: false, textItems: new Set(), regions: new Set(), tables: new Set(), images: new Set(), charts: new Set(), readingOrder: new Set() });
+    if (!keepByPage.has(pageArrayIndex)) keepByPage.set(pageArrayIndex, { full: false, text: false, textItems: new Set(), regions: new Set(), tables: new Set(), images: new Set(), charts: new Set(), links: new Set(), readingOrder: new Set() });
     return keepByPage.get(pageArrayIndex);
   };
   for (const entryIndex of keepEntries) {
@@ -298,6 +299,7 @@ function pdfLayoutSlice(layout, options = {}) {
       tables: pageLayout.tables.filter((_, index) => keep.tables.has(index)),
       images: keep.images ? pageLayout.images.filter((_, index) => keep.images.has(index)) : [],
       charts: keep.charts ? pageLayout.charts.filter((_, index) => keep.charts.has(index)) : [],
+      links: keep.links ? pageLayout.links.filter((_, index) => keep.links.has(index)) : [],
       readingOrder: keep.readingOrder ? pageLayout.readingOrder.filter((_, index) => keep.readingOrder.has(index)) : [],
     };
   }).filter(Boolean);
@@ -435,13 +437,14 @@ export class PdfArtifact {
       for (const error of readingOrderAnalysis.errors) issues.push(verificationIssue("pdf", error.code, `PDF page ${pageIndex + 1} reading order: ${error.message}`, { page: pageIndex + 1, id: error.id }));
       const headingById = new Map(page.textItems.filter((item) => item.headingLevel != null).map((item) => [item.id, item.headingLevel]));
       if (readingOrderAnalysis.valid) headingSequence.push(...resolvePdfReadingOrder(page).flatMap((entry) => entry.kind === "text" ? [{ id: entry.id, page: pageIndex + 1, level: 1 }] : headingById.has(entry.id) ? [{ id: entry.id, page: pageIndex + 1, level: headingById.get(entry.id) }] : []));
-      if (!page.text.trim() && page.tables.length === 0 && page.images.length === 0 && page.charts.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, images, or charts.`, { page: pageIndex + 1 }));
+      if (!page.text.trim() && page.textItems.length === 0 && page.tables.length === 0 && page.images.length === 0 && page.charts.length === 0 && page.links.length === 0) issues.push(verificationIssue("pdf", "emptyPage", `PDF page ${pageIndex + 1} has no modeled text, tables, images, charts, or links.`, { page: pageIndex + 1 }));
       if (page.textItems.length && !page.text.trim()) issues.push(verificationIssue("pdf", "textExtractionMismatch", `PDF page ${pageIndex + 1} has positioned text items but no extracted page text.`, { severity: "warning", page: pageIndex + 1 }));
       if (page.textItems.some((item) => !item.text)) issues.push(verificationIssue("pdf", "emptyTextItem", `PDF page ${pageIndex + 1} contains an empty positioned text item.`, { severity: "warning", page: pageIndex + 1 }));
       if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(page.text)) issues.push(verificationIssue("pdf", "textExtractionControlChars", `PDF page ${pageIndex + 1} extracted text contains control characters.`, { page: pageIndex + 1 }));
       if (page.width <= 0 || page.height <= 0) issues.push(verificationIssue("pdf", "invalidPageGeometry", `PDF page ${pageIndex + 1} has invalid page geometry.`, { page: pageIndex + 1, width: page.width, height: page.height }));
       if (/[\u2010-\u2015]/.test(page.text)) issues.push(verificationIssue("pdf", "unicodeDash", `PDF page ${pageIndex + 1} contains a Unicode dash; use ASCII hyphen for compatibility.`, { page: pageIndex + 1 }));
       for (const item of page.textItems) {
+        if (item.artifact && item.headingLevel != null) issues.push(verificationIssue("pdf", "artifactHeading", `PDF artifact text item ${item.id} cannot also be a semantic heading.`, { page: pageIndex + 1, id: item.id }));
         const [left, top, width, height] = item.bbox || [];
         if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height) || left < 0 || top < 0 || width < 0 || height < 0 || left + width > page.width || top + height > page.height) {
           issues.push(verificationIssue("pdf", "textItemOutOfBounds", `PDF text item ${item.id} extends outside page ${pageIndex + 1}.`, { severity: "warning", page: pageIndex + 1, id: item.id, bbox: item.bbox }));
@@ -488,7 +491,15 @@ export class PdfArtifact {
           issues.push(verificationIssue("pdf", "chartOutOfBounds", `PDF chart ${chart.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: chart.id, bbox: chart.bbox }));
         }
       }
+      for (const link of page.links) {
+        for (const error of pdfLinkIssues(link)) issues.push(verificationIssue("pdf", error.code, error.message, { page: pageIndex + 1, id: link.id, url: link.url }));
+        const [left, top, width, height] = link.bbox || [];
+        if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height) || left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > page.width || top + height > page.height) {
+          issues.push(verificationIssue("pdf", "linkOutOfBounds", `PDF link ${link.id} extends outside page ${pageIndex + 1}.`, { page: pageIndex + 1, id: link.id, bbox: link.bbox }));
+        }
+      }
     });
+    for (const error of pdfCrossPageTableIssues(this.pages)) issues.push(verificationIssue("pdf", error.code, error.message, { page: error.page, id: error.id || error.semanticId, semanticId: error.semanticId }));
     for (const error of pdfHeadingNestingIssues(headingSequence)) issues.push(verificationIssue("pdf", error.code, `PDF heading sequence: ${error.message}`, { page: error.page, id: error.id, headingLevel: error.level, previousHeadingLevel: error.previousLevel }));
     return verificationResult("pdf", issues, options);
   }
@@ -516,9 +527,10 @@ export class PdfArtifact {
           text: { kind: "text", id: `${page.id}/text`, page: pageNumber, text: page.text, textChars: page.text.length, bbox: [0, 0, page.width, page.height] },
           textItems: page.textItems.map((item) => ({ kind: "textItem", page: pageNumber, ...item })),
           regions: page.regions.map((region) => ({ kind: "region", regionKind: region.kind || "region", page: pageNumber, ...region })),
-          tables: page.tables.map((table) => ({ kind: "table", id: table.id, page: pageNumber, name: table.name || undefined, values: table.values, cells: serializePdfTableCells(table), bbox: table.bbox, source: table.source || undefined })),
+          tables: page.tables.map((table) => ({ kind: "table", id: table.id, semanticId: table.semanticId, page: pageNumber, name: table.name || undefined, values: table.values, cells: serializePdfTableCells(table), bbox: table.bbox, source: table.source || undefined })),
           images: page.images.map((image) => ({ kind: "image", id: image.id, page: pageNumber, name: image.name || undefined, alt: image.alt, decorative: image.decorative, bbox: image.bbox, fit: image.fit, hasDataUrl: Boolean(image.dataUrl), uri: image.uri, prompt: image.prompt, isMask: image.isMask || undefined, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
           charts: page.charts.map((chart) => ({ kind: "chart", id: chart.id, page: pageNumber, name: chart.name || undefined, title: chart.title, alt: chart.alt, decorative: chart.decorative, chartType: chart.chartType, categories: chart.categories, series: chart.series, bbox: chart.bbox })),
+          links: page.links.map((link) => ({ kind: "link", id: link.id, page: pageNumber, text: link.text, url: link.url, bbox: link.bbox })),
           readingOrder: page.readingOrderRecords(pageIndex),
         };
       }),
@@ -544,11 +556,12 @@ export class PdfFile {
     const objects = [...text.matchAll(/\b\d+\s+\d+\s+obj\b/g)].length;
     const readingOrderIds = inspectPdfReadingOrderIds(text);
     const figureAccessibility = inspectPdfFigureAccessibility(text);
+    const linkAccessibility = inspectPdfLinks(text);
     const structureRoles = {};
     for (const match of text.matchAll(/\/Type\s*\/StructElem\b[\s\S]*?\/S\s*\/([A-Za-z0-9]+)/g)) structureRoles[match[1]] = (structureRoles[match[1]] || 0) + 1;
     const headingLevels = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`H${index + 1}`, structureRoles[`H${index + 1}`] || 0]));
     const records = [
-      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, headings: Object.values(headingLevels).reduce((sum, count) => sum + count, 0), headingLevels, readingOrderIds, readingOrderItems: readingOrderIds.length, ...figureAccessibility, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, tableCellIds: [...text.matchAll(/\/S\s*\/(?:TH|TD)\b[\s\S]*?\/ID\s*(?:\([^)]*\)|<[A-Fa-f0-9]+>)/g)].length, rowSpans: [...text.matchAll(/\/RowSpan\s+[2-9]\d*/g)].length, columnSpans: [...text.matchAll(/\/ColSpan\s+[2-9]\d*/g)].length, headerAssociations: [...text.matchAll(/\/Headers\s*\[[^\]]+\]/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
+      { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, headings: Object.values(headingLevels).reduce((sum, count) => sum + count, 0), headingLevels, readingOrderIds, readingOrderItems: readingOrderIds.length, ...figureAccessibility, ...linkAccessibility, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, tableCellIds: [...text.matchAll(/\/S\s*\/(?:TH|TD)\b[\s\S]*?\/ID\s*(?:\([^)]*\)|<[A-Fa-f0-9]+>)/g)].length, rowSpans: [...text.matchAll(/\/RowSpan\s+[2-9]\d*/g)].length, columnSpans: [...text.matchAll(/\/ColSpan\s+[2-9]\d*/g)].length, headerAssociations: [...text.matchAll(/\/Headers\s*\[[^\]]+\]/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
@@ -728,7 +741,12 @@ function pdfPageSvg(page) {
     return `<rect x="${left}" y="${top}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/><text x="${left + 8}" y="${top + 18}" font-family="Helvetica" font-size="11" fill="#92400e">${xmlEscape(image.alt || image.prompt || image.uri || image.name || "image")}</text>`;
   }).join("");
   const charts = (page.charts || []).map(pdfChartSvg).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}${images}${charts}</svg>`;
+  const links = (page.links || []).map((link) => {
+    const [left, top, linkWidth, linkHeight] = link.bbox || [72, 700, 240, 16];
+    const fontSize = Math.max(8, Math.min(12, Number(linkHeight) * 0.72));
+    return `<a href="${attrEscape(link.url)}" data-link-id="${attrEscape(link.id)}"><text x="${left}" y="${Number(top) + fontSize}" font-family="Helvetica" font-size="${fontSize}" fill="#005ea8" text-decoration="underline">${xmlEscape(link.text)}</text></a>`;
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${text}${tables}${images}${charts}${links}</svg>`;
 }
 
 function escapePdfString(text) {
@@ -1160,6 +1178,16 @@ function pdfPositionedTextCommands(page, fontState) {
   });
 }
 
+function pdfLinkCommands(page, link, fontState) {
+  const [left, top, width, height] = link.bbox.map(Number);
+  const fontSize = Math.max(8, Math.min(12, height * 0.72));
+  const baselineTop = top + Math.max(1, (height - fontSize) / 2);
+  return [
+    pdfTextCommand(page, pdfFitText(link.text, width, fontSize, fontState), left, baselineTop, { fontSize, color: "#005ea8", fontState }),
+    pdfLineCommand(page, left, top + height - 1, left + width, top + height - 1, { color: "#005ea8", width: 0.6 }),
+  ];
+}
+
 function pdfTableSemanticRows(page, table, fontState) {
   const grid = table.grid();
   return Array.from({ length: Math.max(1, grid.rows) }, (_, row) => ({
@@ -1304,11 +1332,12 @@ function pdfSemanticPlan(page, assetByImage, fontState) {
   const positionedItems = page.textItems.filter((item) => String(item.text || "").trim());
   pdfPositionedTextCommands(page, fontState).forEach((command, index) => {
     const item = positionedItems[index];
-    contentGroups.push({ role: item.headingLevel ? `H${item.headingLevel}` : "P", commands: [command], sourceId: item.id, structureId: item.id });
+    contentGroups.push({ role: item.headingLevel ? `H${item.headingLevel}` : "P", artifact: item.artifact, commands: [command], sourceId: item.id, structureId: item.id });
   });
-  page.tables.forEach((table) => contentGroups.push({ role: "Table", title: table.name || "Data table", children: pdfTableSemanticRows(page, table, fontState), sourceId: table.id, structureId: table.id }));
+  page.tables.forEach((table) => contentGroups.push({ role: "Table", title: table.name || "Data table", semanticId: table.semanticId, children: pdfTableSemanticRows(page, table, fontState), sourceId: table.id, structureId: table.id }));
   page.images.forEach((image) => contentGroups.push({ role: "Figure", alt: image.alt, artifact: image.decorative, commands: pdfImageCommands(page, image, assetByImage.get(image), fontState), sourceId: image.id, structureId: image.id }));
   page.charts.forEach((chart) => contentGroups.push({ role: "Figure", alt: chart.alt, artifact: chart.decorative, commands: pdfChartCommands(page, chart, fontState), sourceId: chart.id, structureId: chart.id }));
+  page.links.forEach((link) => contentGroups.push({ role: "Link", title: link.text, link, commands: pdfLinkCommands(page, link, fontState), sourceId: link.id, structureId: link.id }));
   const semanticContentGroups = contentGroups.filter((group) => !group.artifact);
   let mcid = 0;
   for (const leaf of pdfSemanticLeaves(semanticContentGroups)) leaf.mcid = mcid++;
@@ -1318,7 +1347,7 @@ function pdfSemanticPlan(page, assetByImage, fontState) {
     groupsBySourceId.get(group.sourceId).push(group);
   }
   const semanticGroups = resolvePdfReadingOrder(page).flatMap((entry) => groupsBySourceId.get(entry.id) || []);
-  return { contentGroups, semanticGroups };
+  return { contentGroups, semanticGroups, parentTreeLeaves: pdfSemanticLeaves(semanticContentGroups) };
 }
 
 function pdfSemanticNodes(groups) {
@@ -1333,6 +1362,13 @@ function pdfMarkedContent(group) {
   if (group.artifact) return `/Artifact BMC\n${group.commands.join("\n")}\nEMC`;
   if (Array.isArray(group.children)) return group.children.map(pdfMarkedContent).join("\n");
   return `/${group.role} << /MCID ${group.mcid} >> BDC\n${group.commands.join("\n")}\nEMC`;
+}
+
+function pdfAssignSemanticPage(groups, pageObjectId) {
+  for (const group of groups) {
+    group.pageObjectId = pageObjectId;
+    pdfAssignSemanticPage(group.children || [], pageObjectId);
+  }
 }
 
 function pdfToUnicodeCmap(fontState) {
@@ -1371,6 +1407,8 @@ function pdfEmbeddedFontObjectBodies(fontState, ids) {
 
 function buildMinimalPdf(artifact, options = {}) {
   const pages = artifact.pages.length ? artifact.pages : [new PdfPage(artifact)];
+  const crossPageTableIssues = pdfCrossPageTableIssues(pages);
+  if (crossPageTableIssues.length) throw new Error(`Invalid cross-page PDF table: ${crossPageTableIssues.map((issue) => `${issue.code}: ${issue.message}`).join(" ")}`);
   const metadata = Buffer.from(JSON.stringify(artifact.toJSON()), "utf8").toString("base64");
   const tagged = options.tagged !== false;
   const language = String(options.language || options.lang || artifact.metadata?.language || artifact.metadata?.lang || "en-US");
@@ -1390,11 +1428,21 @@ function buildMinimalPdf(artifact, options = {}) {
     const contentObjectId = nextObjectId++;
     const assetByImage = new Map(imageAssets.map((asset) => [asset.image, asset]));
     const semanticPlan = pdfSemanticPlan(page, assetByImage, fontState);
-    return { page, imageAssets, assetByImage, pageObjectId, contentObjectId, ...semanticPlan };
+    pdfAssignSemanticPage(semanticPlan.contentGroups, pageObjectId);
+    const annotations = page.links.map((link) => {
+      const group = semanticPlan.contentGroups.find((candidate) => candidate.link === link);
+      const annotation = { link, group, objectId: nextObjectId++ };
+      group.annotation = annotation;
+      return annotation;
+    });
+    return { page, imageAssets, annotations, assetByImage, pageObjectId, contentObjectId, ...semanticPlan };
   });
+  mergePdfSemanticTableGroups(plans);
   const structTreeRootObjectId = tagged ? nextObjectId++ : undefined;
   const parentTreeObjectId = tagged ? nextObjectId++ : undefined;
   if (tagged) for (const plan of plans) for (const group of pdfSemanticNodes(plan.semanticGroups)) group.structureObjectId = nextObjectId++;
+  let nextStructParentKey = plans.length;
+  if (tagged) for (const plan of plans) for (const annotation of plan.annotations) annotation.structParent = nextStructParentKey++;
   const infoObjectId = nextObjectId++;
   const objects = new Map();
   const taggedCatalog = tagged ? ` /StructTreeRoot ${structTreeRootObjectId} 0 R /MarkInfo << /Marked true >> /Lang ${pdfStringToken(language)}` : "";
@@ -1406,23 +1454,30 @@ function buildMinimalPdf(artifact, options = {}) {
     objects.set(4, Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", "ascii"));
   }
   for (const [pageIndex, plan] of plans.entries()) {
-    const { page, imageAssets, contentGroups } = plan;
+    const { page, imageAssets, annotations, contentGroups } = plan;
     const commands = tagged ? contentGroups.map(pdfMarkedContent) : pdfSemanticLeaves(contentGroups).flatMap((group) => group.commands);
     const content = Buffer.from(`${commands.join("\n")}\n`, "ascii");
     const xobjects = imageAssets.length ? `/XObject << ${imageAssets.map((asset) => `/${asset.resourceName} ${asset.objectId} 0 R`).join(" ")} >>` : "";
     const structParents = tagged ? ` /StructParents ${pageIndex}` : "";
+    const annots = annotations.length ? ` /Annots [${annotations.map((annotation) => `${annotation.objectId} 0 R`).join(" ")}]` : "";
     const fontResources = fontState ? `/F1 ${embeddedFontIds.type0} 0 R /F2 ${embeddedFontIds.type0} 0 R` : "/F1 3 0 R /F2 4 0 R";
-    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << ${fontResources} >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R${structParents} >>`, "ascii"));
+    objects.set(plan.pageObjectId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(page.width || 612)} ${pdfNumber(page.height || 792)}] /Resources << /Font << ${fontResources} >> ${xobjects} >> /Contents ${plan.contentObjectId} 0 R${structParents}${annots} >>`, "ascii"));
     objects.set(plan.contentObjectId, Buffer.concat([Buffer.from(`<< /Length ${content.byteLength} >>\nstream\n`, "ascii"), content, Buffer.from("endstream", "ascii")]));
     for (const asset of imageAssets) objects.set(asset.objectId, Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace ${asset.colorSpace} /BitsPerComponent 8 /Filter ${asset.filter} /Length ${asset.streamBytes.byteLength} >>\nstream\n`, "ascii"), asset.streamBytes, Buffer.from("\nendstream", "ascii")]));
+    for (const annotation of annotations) {
+      const rect = pdfLinkAnnotationRect(page, annotation.link).map(pdfNumber).join(" ");
+      const structParent = tagged ? ` /StructParent ${annotation.structParent}` : "";
+      objects.set(annotation.objectId, Buffer.from(`<< /Type /Annot /Subtype /Link /Rect [${rect}] /Border [0 0 0] /Contents ${pdfStringToken(annotation.link.text)} /A << /S /URI /URI ${pdfStringToken(annotation.link.url)} >>${structParent} >>`, "ascii"));
+    }
   }
   if (tagged) {
     const structureRefs = plans.flatMap((plan) => plan.semanticGroups.map((group) => `${group.structureObjectId} 0 R`));
-    objects.set(structTreeRootObjectId, Buffer.from(`<< /Type /StructTreeRoot /K [${structureRefs.join(" ")}] /ParentTree ${parentTreeObjectId} 0 R /ParentTreeNextKey ${plans.length} >>`, "ascii"));
-    const parentTreeNums = plans.map((plan, pageIndex) => `${pageIndex} [${pdfSemanticLeaves(plan.semanticGroups).sort((left, right) => left.mcid - right.mcid).map((group) => `${group.structureObjectId} 0 R`).join(" ")}]`).join(" ");
+    objects.set(structTreeRootObjectId, Buffer.from(`<< /Type /StructTreeRoot /K [${structureRefs.join(" ")}] /ParentTree ${parentTreeObjectId} 0 R /ParentTreeNextKey ${nextStructParentKey} >>`, "ascii"));
+    const pageParentTreeNums = plans.map((plan, pageIndex) => `${pageIndex} [${plan.parentTreeLeaves.sort((left, right) => left.mcid - right.mcid).map((group) => `${group.structureObjectId} 0 R`).join(" ")}]`);
+    const annotationParentTreeNums = plans.flatMap((plan) => plan.annotations.map((annotation) => `${annotation.structParent} ${annotation.group.structureObjectId} 0 R`));
+    const parentTreeNums = [...pageParentTreeNums, ...annotationParentTreeNums].join(" ");
     objects.set(parentTreeObjectId, Buffer.from(`<< /Nums [${parentTreeNums}] >>`, "ascii"));
-    for (const plan of plans) {
-      const writeStructureGroup = (group, parentObjectId) => {
+    const writeStructureGroup = (group, parentObjectId) => {
         const alt = group.alt ? ` /Alt ${pdfStringToken(group.alt)}` : "";
         const titleEntry = group.title ? ` /T ${pdfStringToken(group.title)}` : "";
         const tableAttributeEntries = group.tableAttributes ? [
@@ -1434,12 +1489,13 @@ function buildMinimalPdf(artifact, options = {}) {
         ].filter(Boolean) : [];
         const attributes = tableAttributeEntries.length ? ` /A << ${tableAttributeEntries.join(" ")} >>` : "";
         const structureId = group.structureId ? ` /ID ${pdfStringToken(group.structureId)}` : "";
-        const kid = Array.isArray(group.children) ? `[${group.children.map((child) => `${child.structureObjectId} 0 R`).join(" ")}]` : group.mcid;
-        objects.set(group.structureObjectId, Buffer.from(`<< /Type /StructElem /S /${group.role} /P ${parentObjectId} 0 R /Pg ${plan.pageObjectId} 0 R /K ${kid}${alt}${titleEntry}${structureId}${attributes} >>`, "ascii"));
+        const annotationKid = group.annotation ? ` << /Type /OBJR /Obj ${group.annotation.objectId} 0 R /Pg ${group.pageObjectId} 0 R >>` : "";
+        const kid = Array.isArray(group.children) ? `[${group.children.map((child) => `${child.structureObjectId} 0 R`).join(" ")}]` : annotationKid ? `[${group.mcid}${annotationKid}]` : group.mcid;
+        const pageReference = group.spansPages ? "" : ` /Pg ${group.pageObjectId} 0 R`;
+        objects.set(group.structureObjectId, Buffer.from(`<< /Type /StructElem /S /${group.role} /P ${parentObjectId} 0 R${pageReference} /K ${kid}${alt}${titleEntry}${structureId}${attributes} >>`, "ascii"));
         for (const child of group.children || []) writeStructureGroup(child, group.structureObjectId);
-      };
-      for (const group of plan.semanticGroups) writeStructureGroup(group, structTreeRootObjectId);
     }
+    for (const plan of plans) for (const group of plan.semanticGroups) writeStructureGroup(group, structTreeRootObjectId);
   }
   objects.set(infoObjectId, Buffer.from(`<< /Title ${pdfStringToken(title)} /Creator (open-office-artifact-tool) /Producer (open-office-artifact-tool clean-room PDF writer) >>`, "ascii"));
   const header = Buffer.from(`%PDF-1.7\n%OPEN_OFFICE_ARTIFACT ${metadata}\n`, "ascii");

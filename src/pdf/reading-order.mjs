@@ -4,7 +4,10 @@ function normalizedId(value) {
 }
 
 export function pdfPageBodyTextLines(page = {}) {
-  const positioned = new Set((page.textItems || []).map((item) => String(item.text || "").trim()).filter(Boolean));
+  const positioned = new Set([
+    ...(page.textItems || []).map((item) => String(item.text || "").trim()),
+    ...(page.links || []).map((link) => String(link.text || "").trim()),
+  ].filter(Boolean));
   return String(page.text || "").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !positioned.has(line));
 }
 
@@ -12,10 +15,11 @@ export function pdfReadingOrderEntries(page = {}) {
   const entries = [];
   const bodyLines = pdfPageBodyTextLines(page);
   if (bodyLines.length) entries.push({ id: `${page.id}/text`, kind: "text", label: bodyLines[0] });
-  for (const item of page.textItems || []) if (String(item.text || "").trim()) entries.push({ id: String(item.id), kind: "textItem", label: String(item.text) });
+  for (const item of page.textItems || []) if (!item.artifact && String(item.text || "").trim()) entries.push({ id: String(item.id), kind: "textItem", label: String(item.text) });
   for (const table of page.tables || []) entries.push({ id: String(table.id), kind: "table", label: table.name || "Data table" });
   for (const image of page.images || []) if (!image.decorative) entries.push({ id: String(image.id), kind: "image", label: image.alt || image.name || "Image" });
   for (const chart of page.charts || []) if (!chart.decorative) entries.push({ id: String(chart.id), kind: "chart", label: chart.alt || chart.title || chart.name || "Chart" });
+  for (const link of page.links || []) entries.push({ id: String(link.id), kind: "link", label: link.text || link.url || "Link" });
   return entries;
 }
 

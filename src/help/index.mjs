@@ -257,23 +257,24 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
-  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.page.setReadingOrder", summary: "Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, and charts by stable ID without changing visual paint order." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level, inspect/resolve/layout records, and SVG preview rendering." },
+  { artifactKind: "pdf", kind: "api", name: "PdfArtifact.create", summary: "Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, charts, links, and explicit reading order." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addPage", summary: "Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, charts, and links." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.page.setReadingOrder", summary: "Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, charts, and links by stable ID without changing visual paint order." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addText", summary: "Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level or decorative Artifact semantics, inspect/resolve/layout records, and SVG preview rendering." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addFlowText", summary: "Wrap long text into positioned lines and automatically append pages when the configured content box is full." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addTable", summary: "Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, a page-space bounding box, and optional semanticId joining constrained consecutive-page segments into one logical Table." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addImage", summary: "Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alternative text or explicit decorative-artifact semantics, and a page-space bounding box." },
   { artifactKind: "pdf", kind: "api", name: "pdf.addChart", summary: "Add a modeled bar/line chart region with categories, series, title, meaningful alternative text or decorative-artifact semantics, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.addLink", summary: "Add a meaningful visible http, https, or mailto link with stable ID, page-space bounding box, tagged Link structure, URI annotation, OBJR association, and explicit reading-order participation." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractText", summary: "Extract modeled text across all pages or a selected page." },
   { artifactKind: "pdf", kind: "api", name: "pdf.extractTables", summary: "Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.inspect", summary: "Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.resolve", summary: "Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links." },
   { artifactKind: "pdf", kind: "api", name: "pdf.render", summary: "Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing." },
-  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, links, and target/search context slicing." },
+  { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text, Link annotation/URI/StructParent, Artifact counts, font evidence, structure roles/table attributes, and marked-content count." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
@@ -483,7 +484,7 @@ const HELP_DETAIL_OVERRIDES = {
         id: { type: "string", description: "Optional stable artifact ID." },
         metadata: { type: "object", description: "Clean-room metadata preserved through generated-PDF roundtrip." },
         text: { type: "string", description: "Convenience text for a single default page." },
-        pages: { type: "object[]", description: "Page models with width, height, text, textItems, regions, tables, images, charts, and optional complete readingOrder ID arrays." },
+        pages: { type: "object[]", description: "Page models with width, height, text, textItems, regions, tables, images, charts, links, and optional complete readingOrder ID arrays." },
       },
       returns: { pdf: { type: "PdfArtifact", description: "Editable modeled PDF artifact." } },
     },
@@ -500,6 +501,7 @@ const HELP_DETAIL_OVERRIDES = {
         tables: { type: "object[]", description: "Modeled page tables." },
         images: { type: "object[]", description: "Modeled page images." },
         charts: { type: "object[]", description: "Modeled page charts." },
+        links: { type: "object[]", description: "Modeled visible URI links." },
         readingOrder: { type: "string[]|object[]", description: "Optional complete logical order of all semantic page items as stable IDs or objects with IDs." },
       },
       returns: { page: { type: "PdfPage", description: "Appended editable page facade." } },
@@ -509,7 +511,7 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["page.setReadingOrder([`${page.id}/text`, image.id, heading.id, table.id, chart.id])"],
     schema: {
       parameters: {
-        order: { type: "string[]|object[]", required: true, description: "Complete page sequence containing each semantic body-text, positioned-text, table, image, and chart target exactly once." },
+        order: { type: "string[]|object[]", required: true, description: "Complete page sequence containing each semantic body-text, positioned-text, table, image, chart, and link target exactly once; artifact text and decorative figures are excluded." },
       },
       returns: { page: { type: "PdfPage", description: "The same editable page facade for chaining." } },
     },
@@ -527,6 +529,7 @@ const HELP_DETAIL_OVERRIDES = {
         bold: { type: "boolean", description: "Bold text flag." },
         italic: { type: "boolean", description: "Italic text flag." },
         headingLevel: { type: "number", description: "Optional semantic PDF heading level from 1 through 6; visual styling remains independent." },
+        artifact: { type: "boolean", description: "Mark repeating/decorative text such as running headers and footers as PDF Artifact content and exclude it from reading order. Cannot be combined with headingLevel." },
       },
       returns: { textItem: { type: "object", description: "Positioned text item with stable ID." } },
     },
@@ -554,6 +557,7 @@ const HELP_DETAIL_OVERRIDES = {
       parameters: {
         name: { type: "string", description: "Inspectable table name." },
         values: { type: "unknown[][]", required: true, description: "Rectangular or ragged cell value matrix." },
+        semanticId: { type: "string", description: "Optional logical table identity shared by constrained segments on consecutive pages. A continuation must be first and a non-final segment last in page reading order." },
         cells: { type: "object[]", description: "Optional zero-based cell overrides with id, row, column, value, rowSpan, columnSpan, TH/TD role, Row/Column/Both scope, and header ID array." },
         bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points." },
         source: { type: "string", description: "Optional extraction/source provenance." },
@@ -593,6 +597,18 @@ const HELP_DETAIL_OVERRIDES = {
       returns: { chart: { type: "PdfChart", description: "Inspectable chart facade with stable ID." } },
     },
   },
+  "pdf.addLink": {
+    examples: ["pdf.addLink({ pageIndex: 0, text: 'W3C accessibility guidance', url: 'https://www.w3.org/WAI/', bbox: [72, 700, 240, 18] })"],
+    schema: {
+      parameters: {
+        pageIndex: { type: "number", description: "Zero-based target page index." },
+        text: { type: "string", required: true, description: "Visible text that meaningfully describes the destination; generic text and raw URLs fail verification." },
+        url: { type: "string", required: true, description: "Absolute http, https, or mailto destination." },
+        bbox: { type: "number[]", description: "Page-space [left, top, width, height] in points for visible text and the URI annotation." },
+      },
+      returns: { link: { type: "PdfLink", description: "Inspectable link facade with stable ID." } },
+    },
+  },
   "pdf.extractText": {
     examples: ["pdf.extractText({ page: 2 })"],
     schema: {
@@ -610,7 +626,7 @@ const HELP_DETAIL_OVERRIDES = {
   "pdf.inspect": {
     schema: {
       parameters: {
-        kind: { type: "string", description: "Comma-separated page, text, textItem, readingOrder, region, table, tableCell, image, and chart record kinds." },
+        kind: { type: "string", description: "Comma-separated page, text, textItem, readingOrder, region, table, tableCell, image, chart, and link record kinds." },
         search: { type: "string", description: "Case-insensitive record filter." },
         target: { type: "string", description: "Stable ID/anchor target; targetId, id, and anchor are aliases." },
         before: { type: "number", description: "Records of context before target matches." },
@@ -625,7 +641,7 @@ const HELP_DETAIL_OVERRIDES = {
   "pdf.resolve": {
     examples: ["pdf.resolve('pg-1/txt/1')"],
     schema: {
-      parameters: { id: { type: "string", required: true, description: "Stable artifact, page, text, text-item, reading-order, region, table, table-cell, image, or chart ID." } },
+      parameters: { id: { type: "string", required: true, description: "Stable artifact, page, text, text-item, reading-order, region, table, table-cell, image, chart, or link ID." } },
       returns: { object: { type: "object|undefined", description: "Resolved editable facade/record or undefined." } },
     },
   },

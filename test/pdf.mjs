@@ -293,6 +293,87 @@ assert.equal(decorativeInspect.summary.artifacts, 1);
 assert.match(await decorativeBlob.text(), /\/Artifact BMC/);
 assert.equal((await PdfFile.importPdf(decorativeBlob)).pages[0].images[0].decorative, true);
 
+const accessibleLinkPdf = PdfArtifact.create({
+  metadata: { title: "Accessible links", language: "en-US" },
+  pages: [{ id: "accessible-link-page", text: "Accessible link report" }],
+});
+const headerArtifact = accessibleLinkPdf.addText("Board accessibility report", { id: "running-header", bbox: [72, 28, 300, 12], fontSize: 9, artifact: true });
+const footerArtifact = accessibleLinkPdf.addText("Page 1 of 1", { id: "running-footer", bbox: [72, 752, 120, 12], fontSize: 9, artifact: true });
+const guidanceLink = accessibleLinkPdf.addLink({ id: "accessibility-guidance", text: "W3C PDF accessibility guidance", url: "https://www.w3.org/WAI/", bbox: [72, 150, 240, 18] });
+accessibleLinkPdf.pages[0].setReadingOrder(["accessible-link-page/text", guidanceLink]);
+assert.equal(accessibleLinkPdf.verify().ok, true);
+assert.equal(accessibleLinkPdf.resolve(guidanceLink.id), guidanceLink);
+assert.equal(accessibleLinkPdf.resolve(headerArtifact.id), headerArtifact);
+assert.equal(accessibleLinkPdf.resolve(footerArtifact.id), footerArtifact);
+assert.deepEqual(accessibleLinkPdf.pages[0].readingOrderRecords(0).map((record) => record.targetId), ["accessible-link-page/text", guidanceLink.id]);
+assert.match(accessibleLinkPdf.inspect({ kind: "link" }).ndjson, /W3C PDF accessibility guidance/);
+assert.equal(accessibleLinkPdf.layoutJson().pages[0].links[0].url, "https://www.w3.org/WAI/");
+const accessibleLinkBlob = await PdfFile.exportPdf(accessibleLinkPdf);
+const accessibleLinkInspect = await PdfFile.inspectPdf(accessibleLinkBlob);
+assert.equal(accessibleLinkInspect.summary.artifacts, 2);
+assert.equal(accessibleLinkInspect.summary.linkAnnotations, 1);
+assert.equal(accessibleLinkInspect.summary.uriActions, 1);
+assert.equal(accessibleLinkInspect.summary.linkStructParents, 1);
+assert.equal(accessibleLinkInspect.summary.structureRoles.Link, 1);
+const accessibleLinkText = await accessibleLinkBlob.text();
+assert.match(accessibleLinkText, /\/Subtype \/Link/);
+assert.match(accessibleLinkText, /\/S \/URI/);
+assert.match(accessibleLinkText, /\/StructParent \d+/);
+assert.match(accessibleLinkText, /\/S \/Link/);
+assert.match(accessibleLinkText, /\/Type \/OBJR/);
+assert.equal((await PdfFile.importPdf(accessibleLinkBlob)).pages[0].links[0].url, "https://www.w3.org/WAI/");
+
+const invalidLinkPdf = PdfArtifact.create({ pages: [{ text: "Unsafe link" }] });
+invalidLinkPdf.addLink({ text: "click here", url: "javascript:alert(1)" });
+assert.match(invalidLinkPdf.verify().ndjson, /genericLinkText/);
+assert.match(invalidLinkPdf.verify().ndjson, /unsafeLinkProtocol/);
+const artifactHeadingPdf = PdfArtifact.create({ pages: [{ text: "Artifact heading", textItems: [{ id: "artifact-h2", text: "Not semantic", bbox: [72, 28, 200, 12], headingLevel: 2, artifact: true }] }] });
+assert.match(artifactHeadingPdf.verify().ndjson, /artifactHeading/);
+
+const crossPageTablePdf = PdfArtifact.create({
+  metadata: { title: "Cross-page table", language: "en-US" },
+  pages: [
+    {
+      id: "cross-table-page-1",
+      text: "Risk register",
+      tables: [{ id: "risk-register-part-1", semanticId: "risk-register", name: "Risk register", values: [["Risk", "Owner"], ["Supply", "Operations"]], bbox: [72, 620, 468, 72] }],
+      readingOrder: ["cross-table-page-1/text", "risk-register-part-1"],
+    },
+    {
+      id: "cross-table-page-2",
+      text: "Mitigation details",
+      textItems: [{ id: "mitigation-h2", text: "Mitigation details", headingLevel: 2, bbox: [72, 220, 300, 24] }],
+      tables: [{ id: "risk-register-part-2", semanticId: "risk-register", name: "Risk register continued", values: [["Risk", "Owner"], ["Security", "Engineering"]], bbox: [72, 72, 468, 72] }],
+      readingOrder: ["risk-register-part-2", "mitigation-h2"],
+    },
+  ],
+});
+assert.equal(crossPageTablePdf.verify().ok, true);
+assert.equal(crossPageTablePdf.layoutJson().pages[0].tables[0].semanticId, "risk-register");
+const crossPageTableBlob = await PdfFile.exportPdf(crossPageTablePdf);
+const crossPageTableInspect = await PdfFile.inspectPdf(crossPageTableBlob);
+assert.equal(crossPageTableInspect.summary.tableStructures, 1);
+assert.equal(crossPageTableInspect.summary.tableRows, 4);
+assert.equal(crossPageTableInspect.summary.tableHeaders, 4);
+assert.equal(crossPageTableInspect.summary.tableDataCells, 4);
+assert.deepEqual(crossPageTableInspect.summary.readingOrderIds, ["cross-table-page-1/text", "risk-register", "mitigation-h2"]);
+const crossPageTableText = await crossPageTableBlob.text();
+assert.equal([...crossPageTableText.matchAll(/\/S \/Table\b/g)].length, 1);
+assert.match(crossPageTableText, /\/ID \(risk-register\)/);
+assert.equal((await PdfFile.importPdf(crossPageTableBlob)).pages[1].tables[0].semanticId, "risk-register");
+
+const invalidCrossPageColumns = PdfArtifact.create({ pages: [
+  { id: "columns-page-1", text: "Columns", tables: [{ id: "columns-part-1", semanticId: "columns-table", values: [["A", "B"]] }], readingOrder: ["columns-page-1/text", "columns-part-1"] },
+  { id: "columns-page-2", text: "", tables: [{ id: "columns-part-2", semanticId: "columns-table", values: [["A", "B", "C"]] }], readingOrder: ["columns-part-2"] },
+] });
+assert.match(invalidCrossPageColumns.verify().ndjson, /crossPageTableColumnMismatch/);
+await assert.rejects(() => PdfFile.exportPdf(invalidCrossPageColumns), /Invalid cross-page PDF table.*crossPageTableColumnMismatch/);
+const invalidCrossPageOrder = PdfArtifact.create({ pages: [
+  { id: "order-page-1", text: "Order", tables: [{ id: "order-part-1", semanticId: "order-table", values: [["A"]] }], textItems: [{ id: "after-table", text: "Interleaved", bbox: [72, 300, 100, 12] }], readingOrder: ["order-page-1/text", "order-part-1", "after-table"] },
+  { id: "order-page-2", text: "", tables: [{ id: "order-part-2", semanticId: "order-table", values: [["B"]] }], readingOrder: ["order-part-2"] },
+] });
+assert.match(invalidCrossPageOrder.verify().ndjson, /crossPageTableInterleaving/);
+
 const missingAltPdf = PdfArtifact.create({ text: "Missing alt" });
 missingAltPdf.addImage({ dataUrl: image.dataUrl });
 assert.match(missingAltPdf.verify().ndjson, /missingFigureAltText/);
