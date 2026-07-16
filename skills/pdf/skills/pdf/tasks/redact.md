@@ -65,7 +65,7 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
   --require-inert --require-single-revision
 ```
 
-`--require-inert` fails on active action names, attachments, comment annotations, populated form values, personal metadata, links, or invisible text. The adapter removes isolated invisible text only when its rectangle does not overlap visible text; otherwise it deletes the transactional output and fails closed. Scrub-only sanitization needs no placeholder `--sensitive-term`. Any `redact_text`, `redact_rect`, or `replace_text` operation still requires explicit sensitive terms and the residue/OCR gate.
+`--require-inert` fails on active action names, including inert-looking `null` dictionary entries, attachments, comment annotations, populated form values, personal metadata, links, or invisible text. The typed adapter physically removes those null active-content names after provider scrub and reports the affected xrefs; it refuses an unfamiliar object serialization rather than requiring caller-side object edits. It removes isolated invisible text only when its rectangle does not overlap visible text; otherwise it deletes the transactional output and fails closed. Scrub-only sanitization needs no placeholder `--sensitive-term`. Any `redact_text`, `redact_rect`, or `replace_text` operation still requires explicit sensitive terms and the residue/OCR gate.
 
 Opaque black rectangles, annotation-only redactions, incremental writes, or text-extraction-only checks are not acceptable. Keep the original and QA evidence under restricted access according to the user's data-handling requirements.
 

@@ -164,7 +164,7 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
   --require-inert --require-single-revision
 ```
 
-This bounded primitive removes root/additional JavaScript, launch/submit actions, attachments, comments, populated widget defaults, personal metadata, and isolated invisible text before the provider scrub. Invisible text that overlaps visible text fails closed because rectangle removal would damage the visible page. A scrub-only job does not invent a fake sensitive term; any redaction/replacement operation still requires explicit `--sensitive-term` values.
+This bounded primitive removes root/additional JavaScript, launch/submit actions, attachments, comments, populated widget defaults, personal metadata, and isolated invisible text before the provider scrub. After scrub it also physically removes active-content dictionary names that PyMuPDF represents as `null`; an unfamiliar object serialization fails closed instead of inviting a caller-side object rewrite. Invisible text that overlaps visible text fails closed because rectangle removal would damage the visible page. A scrub-only job does not invent a fake sensitive term; any redaction/replacement operation still requires explicit `--sensitive-term` values.
 
 Image-bearing pages require Tesseract-backed OCR. If OCR is unavailable or any scan is incomplete, the operation deletes the transactional output and fails closed. Incremental redaction, opaque overlays, and text-extraction-only checks are forbidden. See [redact and sanitize](tasks/redact.md).
 

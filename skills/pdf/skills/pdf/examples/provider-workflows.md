@@ -55,7 +55,7 @@ For an active-content public copy without term redaction, use `[ { "type": "scru
   --require-inert --require-single-revision
 ```
 
-The gate covers active action names, attachments, comments, populated widgets, personal metadata, links, and invisible text. If invisible text overlaps visible content, the typed provider refuses the operation instead of redacting the visible page.
+The gate covers active action names, including null-valued dictionary entries, attachments, comments, populated widgets, personal metadata, links, and invisible text. The typed provider physically removes null active-content names after scrub; callers must not patch xrefs or content streams themselves. If invisible text overlaps visible content, the provider refuses the operation instead of redacting the visible page.
 
 After semantic and Poppler checks, write the canonical audit envelope from [`AUDIT_SCHEMA.md`](../references/AUDIT_SCHEMA.md), then bind it to the delivered bytes:
 

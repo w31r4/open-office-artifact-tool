@@ -22,6 +22,18 @@ class ProviderError(RuntimeError):
 TEXT_FIT_ABSOLUTE_TOLERANCE_PT = 0.0001
 TEXT_FIT_RELATIVE_TOLERANCE = 0.000001
 TEXT_FIT_MAX_TOLERANCE_PT = 0.0005
+ACTIVE_CONTENT_NULL_KEYS = frozenset({
+    "AA",
+    "EmbeddedFiles",
+    "ImportData",
+    "JavaScript",
+    "JS",
+    "Launch",
+    "OpenAction",
+    "RichMedia",
+    "SubmitForm",
+    "XFA",
+})
 
 
 def text_width_fit(text_width: float, available_width: float) -> dict[str, float | bool]:
@@ -330,6 +342,55 @@ def sanitize_active_content(pymupdf, doc) -> dict[str, Any]:
         "actionKeysRemoved": action_keys_removed,
         "nameTreeKeysRemoved": name_tree_keys_removed,
     }
+
+
+def remove_null_active_content_keys(doc) -> list[dict[str, Any]]:
+    """Physically remove active-content dictionary keys left as null by scrub.
+
+    PyMuPDF's public key setter represents deletion as a null value. A strict
+    public-copy residue scan must not leave those active-content names in the
+    rewritten object graph, even when their values are inert. PyMuPDF renders
+    indirect dictionaries one key/value pair per line; refuse unfamiliar
+    serialization instead of applying a broad textual rewrite.
+    """
+    removed_records = []
+    for xref in range(1, doc.xref_length()):
+        try:
+            existing_keys = set(doc.xref_get_keys(xref) or [])
+        except Exception:
+            continue
+        candidates = {
+            key
+            for key in ACTIVE_CONTENT_NULL_KEYS & existing_keys
+            if doc.xref_get_key(xref, key)[0] == "null"
+        }
+        if not candidates:
+            continue
+
+        original = doc.xref_object(xref, compressed=False) or ""
+        retained_lines = []
+        removed_keys = []
+        for line in original.splitlines():
+            tokens = line.strip().split()
+            if len(tokens) == 2 and tokens[0].startswith("/") and tokens[1] == "null":
+                key = tokens[0][1:]
+                if key in candidates:
+                    removed_keys.append(key)
+                    continue
+            retained_lines.append(line)
+        if set(removed_keys) != candidates:
+            missing = sorted(candidates - set(removed_keys))
+            raise ProviderError(
+                f"cannot safely remove null active-content keys {missing} from xref {xref}; "
+                "provider object serialization was not the expected one-entry-per-line form"
+            )
+
+        doc.update_object(xref, "\n".join(retained_lines))
+        remaining = ACTIVE_CONTENT_NULL_KEYS & set(doc.xref_get_keys(xref) or [])
+        if remaining:
+            raise ProviderError(f"active-content keys remain in xref {xref}: {sorted(remaining)}")
+        removed_records.append({"xref": xref, "keys": sorted(removed_keys)})
+    return removed_records
 
 
 def load_operations(path: Path) -> list[dict[str, Any]]:
@@ -651,13 +712,14 @@ def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: s
     return applied
 
 
-def save_document(pymupdf, doc, strategy: str, temporary: Path) -> None:
+def save_document(pymupdf, doc, strategy: str, temporary: Path) -> dict[str, Any]:
     if strategy == "incremental":
         if not doc.can_save_incrementally():
             raise ProviderError("Document.can_save_incrementally() is false; refusing a rewrite fallback")
         doc.saveIncr()
-        return
+        return {"nullActiveContentKeysRemoved": []}
     temporary.unlink(missing_ok=True)
+    null_active_content_keys_removed = []
     if strategy == "sanitize":
         doc.scrub(
             attached_files=True,
@@ -677,6 +739,7 @@ def save_document(pymupdf, doc, strategy: str, temporary: Path) -> None:
         catalog = doc.pdf_catalog()
         if catalog > 0:
             doc.xref_set_key(catalog, "PageMode", "/UseNone")
+        null_active_content_keys_removed = remove_null_active_content_keys(doc)
         doc.save(
             str(temporary),
             garbage=4,
@@ -700,6 +763,7 @@ def save_document(pymupdf, doc, strategy: str, temporary: Path) -> None:
             use_objstms=1,
             encryption=pymupdf.PDF_ENCRYPT_KEEP,
         )
+    return {"nullActiveContentKeysRemoved": null_active_content_keys_removed}
 
 
 def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, Any]:
@@ -749,9 +813,13 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
         before_policy = signature_policy(doc)
         validate_signed_mutation(before_policy, args.strategy, args)
         applied = apply_operations(pymupdf, doc, operations, args.strategy)
+        active_cleanup = None
         if args.strategy == "sanitize":
-            applied.append(sanitize_active_content(pymupdf, doc))
-        save_document(pymupdf, doc, args.strategy, temporary)
+            active_cleanup = sanitize_active_content(pymupdf, doc)
+            applied.append(active_cleanup)
+        save_details = save_document(pymupdf, doc, args.strategy, temporary)
+        if active_cleanup is not None:
+            active_cleanup.update(save_details)
         doc.close()
         doc = None
 

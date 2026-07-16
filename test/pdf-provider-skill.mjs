@@ -340,6 +340,10 @@ try {
     assert.equal(activeCleanup.hiddenTextSpansRemoved.length, 1);
     assert.ok(activeCleanup.actionKeysRemoved.length >= 2);
     assert.ok(activeCleanup.nameTreeKeysRemoved.length >= 2);
+    assert.ok(activeCleanup.nullActiveContentKeysRemoved.some((entry) => entry.keys.includes("OpenAction")));
+    assert.ok(activeCleanup.nullActiveContentKeysRemoved.some((entry) => entry.keys.includes("AA")));
+    assert.ok(activeCleanup.nullActiveContentKeysRemoved.some((entry) => entry.keys.includes("JavaScript")));
+    assert.ok(activeCleanup.nullActiveContentKeysRemoved.some((entry) => entry.keys.includes("EmbeddedFiles")));
     const activeOutputScan = parseResult(run(integrationPython, [path.join(scriptsRoot, "residue_scan.py"), activeOutput, "--require-inert", "--require-single-revision"], { status: 0 }));
     assert.equal(activeOutputScan.ok, true);
     assert.equal(activeOutputScan.summary.attachments, 0);
