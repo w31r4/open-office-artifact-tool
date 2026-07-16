@@ -73,7 +73,11 @@ On 2026-07-16, the 0.2.0 convergence worktree passed the complete local gate on 
 - `npm run verify:open-chestnut-build` compared 39 audited files; both builds produced the same 38-file, 13,996,220-byte runtime.
 - Render-backed gates ran with LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, and the installed Playwright Chromium runtime.
 
-Hosted exact-SHA evidence must be recorded after this worktree is committed and pushed; it is not inferred from an earlier commit.
+## Hosted evidence
+
+The code-bearing 0.2.0 convergence commit `04bbb9fabc7e71c8f066cb57daa88b6f880f70fb` passed the hosted Linux `ci` workflow in [GitHub Actions run 29476486480](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29476486480) on 2026-07-16. The run completed with conclusion `success`; this evidence is tied to that exact SHA rather than inferred from an earlier build.
+
+`npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing
 
