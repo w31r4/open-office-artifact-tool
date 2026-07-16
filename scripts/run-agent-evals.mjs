@@ -190,7 +190,7 @@ function run(command, args, options = {}) {
 
 const pythonGenerators = String.raw`
 import json, pathlib, sys
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.pdfgen import canvas
 
 kind = sys.argv[1]
@@ -198,10 +198,11 @@ out = pathlib.Path(sys.argv[2])
 out.parent.mkdir(parents=True, exist_ok=True)
 
 def base_page(c, title, page, pages=1):
+    width, height = c._pagesize
     c.setFont("Helvetica-Bold", 15)
-    c.drawString(72, 744, title)
+    c.drawString(72, height - 48, title)
     c.setFont("Helvetica", 9)
-    c.drawRightString(540, 36, f"Page {page} of {pages}")
+    c.drawRightString(width - 72, 36, f"Page {page} of {pages}")
 
 if kind == "contract-five-page":
     c = canvas.Canvas(str(out), pagesize=letter, invariant=1)
@@ -228,15 +229,22 @@ elif kind == "overflow-table":
     c.save()
 elif kind.startswith("merge-"):
     page_counts = {"merge-cover": 1, "merge-report": 2, "merge-appendix": 3}
+    page_sizes = {"merge-cover": letter, "merge-report": landscape(letter), "merge-appendix": A4}
     count = page_counts[kind]
     label = kind.removeprefix("merge-").title()
-    c = canvas.Canvas(str(out), pagesize=letter, invariant=1)
+    width, height = page_sizes[kind]
+    c = canvas.Canvas(str(out), pagesize=(width, height), invariant=1)
     for page in range(1, count + 1):
         base_page(c, label, page, count)
         c.setFont("Helvetica", 12)
-        c.drawString(72, 680, f"{label} source page {page}")
+        c.drawString(72, height - 112, f"{label} source page {page}")
         c.bookmarkPage(f"{label.lower()}-{page}")
         c.addOutlineEntry(f"{label} {page}", f"{label.lower()}-{page}", 0)
+        target = page % count + 1
+        c.setFillColorRGB(0.05, 0.25, 0.65)
+        c.drawString(72, height - 150, f"Internal link to {label} page {target}")
+        c.linkRect("", f"{label.lower()}-{target}", (68, height - 156, 280, height - 132), relative=0, thickness=1)
+        c.setFillColorRGB(0, 0, 0)
         c.showPage()
     c.save()
 elif kind == "acroform-profile":

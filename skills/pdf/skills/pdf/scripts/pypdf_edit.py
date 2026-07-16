@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Inspect or make bounded form/annotation edits with an explicit pypdf save policy."""
+"""Inspect or make bounded structural/form/annotation edits with explicit pypdf policy."""
 
 from __future__ import annotations
 
 import argparse
+from io import BytesIO
 import hashlib
 import json
 import mimetypes
@@ -15,6 +16,10 @@ import sys
 import tempfile
 from typing import Any
 import unicodedata
+
+
+MERGE_STAMP_SCHEMA = "open-office-artifact-tool.pdf-merge-stamp.v1"
+MERGE_STAMP_RESULT_SCHEMA = "open-office-artifact-tool.pdf-merge-stamp-result.v1"
 
 
 class ProviderError(RuntimeError):
@@ -561,6 +566,488 @@ def parse_rect(value: str) -> tuple[float, float, float, float]:
     return values
 
 
+def page_reference_key(page: Any) -> tuple[int, int]:
+    reference = getattr(page, "indirect_reference", None)
+    if reference is None:
+        raise ProviderError("page has no indirect object identity")
+    return int(reference.idnum), int(reference.generation)
+
+
+def page_geometry(page: Any) -> dict[str, Any]:
+    boxes: dict[str, list[float]] = {}
+    for name in ("mediabox", "cropbox", "trimbox", "bleedbox", "artbox"):
+        box = getattr(page, name)
+        boxes[name] = [float(box.left), float(box.bottom), float(box.right), float(box.top)]
+    return {"boxes": boxes, "rotation": int(page.get("/Rotate", 0) or 0)}
+
+
+def destination_page_number(reader: Any, destination: Any) -> int | None:
+    destination = resolve(destination)
+    if destination is None:
+        return None
+    if isinstance(destination, str):
+        named = reader.named_destinations.get(destination)
+        return reader.get_destination_page_number(named) + 1 if named is not None else None
+    try:
+        number = reader.get_destination_page_number(destination)
+        if number >= 0:
+            return number + 1
+    except Exception:
+        pass
+    if isinstance(destination, (list, tuple)) and destination:
+        target = destination[0]
+        target = resolve(target)
+        target_reference = getattr(target, "indirect_reference", None)
+        for page_number, page in enumerate(reader.pages, 1):
+            reference = getattr(page, "indirect_reference", None)
+            if reference is not None and target_reference is not None:
+                if (int(reference.idnum), int(reference.generation)) == (
+                    int(target_reference.idnum), int(target_reference.generation)
+                ):
+                    return page_number
+            if target is page:
+                return page_number
+    return None
+
+
+def outline_records(reader: Any) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+
+    def walk(items: list[Any], parents: tuple[str, ...] = ()) -> None:
+        previous_title: str | None = None
+        for item in items:
+            if isinstance(item, list):
+                walk(item, parents + ((previous_title,) if previous_title else ()))
+                continue
+            title = str(getattr(item, "title", item))
+            page = destination_page_number(reader, item)
+            if page is None:
+                raise ProviderError(f"outline item {title!r} has an unresolved destination")
+            records.append({"title": title, "page": page, "parentPath": list(parents)})
+            previous_title = title
+
+    walk(list(reader.outline or []))
+    return records
+
+
+def named_destination_records(reader: Any) -> dict[str, int]:
+    records: dict[str, int] = {}
+    for name, destination in reader.named_destinations.items():
+        page = destination_page_number(reader, destination)
+        if page is None:
+            raise ProviderError(f"named destination {name!r} has an unresolved page")
+        records[str(name)] = page
+    return records
+
+
+def internal_link_records(reader: Any) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for source_page, page in enumerate(reader.pages, 1):
+        for reference in page.get("/Annots", []) or []:
+            annotation = resolve(reference)
+            if not isinstance(annotation, dict) or str(annotation.get("/Subtype", "")) != "/Link":
+                continue
+            destination = annotation.get("/Dest")
+            action = resolve(annotation.get("/A")) if annotation.get("/A") is not None else None
+            if destination is None and isinstance(action, dict) and str(action.get("/S", "")) == "/GoTo":
+                destination = action.get("/D")
+            if destination is None:
+                continue
+            target_page = destination_page_number(reader, destination)
+            if target_page is None:
+                raise ProviderError(f"internal link on page {source_page} has an unresolved destination")
+            records.append({
+                "page": source_page,
+                "targetPage": target_page,
+                "rect": [float(value) for value in annotation.get("/Rect", [])],
+            })
+    return records
+
+
+def navigation_evidence(reader: Any) -> dict[str, Any]:
+    return {
+        "outlines": outline_records(reader),
+        "namedDestinations": named_destination_records(reader),
+        "internalLinks": internal_link_records(reader),
+    }
+
+
+def render_watermark(PdfReader: Any, width: float, height: float, watermark: dict[str, Any]) -> Any:
+    try:
+        from reportlab.pdfgen import canvas
+    except ImportError as exc:
+        raise ProviderError("reportlab is required to render the pypdf watermark overlay") from exc
+    stream = BytesIO()
+    document = canvas.Canvas(stream, pagesize=(width, height), invariant=1, pageCompression=1)
+    document.saveState()
+    document.setFillAlpha(watermark["opacity"])
+    document.setFillColorRGB(0.35, 0.35, 0.35)
+    document.setFont("Helvetica-Bold", watermark["fontSize"])
+    document.translate(width / 2, height / 2)
+    document.rotate(watermark["angle"])
+    document.drawCentredString(0, -watermark["fontSize"] / 3, watermark["text"])
+    document.restoreState()
+    document.save()
+    stream.seek(0)
+    return PdfReader(stream, strict=True).pages[0]
+
+
+def normalized_merge_manifest(args: argparse.Namespace, PdfReader: Any) -> dict[str, Any]:
+    manifest_path = args.manifest.expanduser().resolve()
+    if not manifest_path.is_file():
+        raise ProviderError("merge-stamp manifest must be an existing JSON file")
+    if manifest_path.stat().st_size > args.max_manifest_bytes:
+        raise ProviderError(f"merge-stamp manifest exceeds max-manifest-bytes {args.max_manifest_bytes}")
+    try:
+        raw = json.loads(manifest_path.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ProviderError(f"merge-stamp manifest is not valid UTF-8 JSON: {exc}") from exc
+    if not isinstance(raw, dict) or raw.get("schema") != MERGE_STAMP_SCHEMA:
+        raise ProviderError(f"merge-stamp manifest schema must be {MERGE_STAMP_SCHEMA!r}")
+    source_specs = raw.get("sources")
+    if not isinstance(source_specs, list) or not (2 <= len(source_specs) <= args.max_inputs):
+        raise ProviderError(f"merge-stamp sources must contain between 2 and {args.max_inputs} entries")
+
+    sources: list[dict[str, Any]] = []
+    source_by_id: dict[str, dict[str, Any]] = {}
+    source_paths: set[Path] = set()
+    total_bytes = 0
+    total_pages = 0
+    all_named_destinations: dict[str, str] = {}
+    for spec in source_specs:
+        if not isinstance(spec, dict):
+            raise ProviderError("every merge-stamp source must be an object")
+        source_id = spec.get("id")
+        source_path_value = spec.get("path")
+        if not isinstance(source_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", source_id):
+            raise ProviderError("source id must be 1-64 portable characters")
+        if source_id in source_by_id:
+            raise ProviderError(f"duplicate merge-stamp source id {source_id!r}")
+        if not isinstance(source_path_value, str) or not source_path_value.strip():
+            raise ProviderError(f"source {source_id!r} path must be a non-empty string")
+        source_path = Path(source_path_value).expanduser()
+        if not source_path.is_absolute():
+            source_path = manifest_path.parent / source_path
+        source_path = source_path.resolve()
+        if source_path in source_paths:
+            raise ProviderError(f"source path appears more than once: {source_path}")
+        if not source_path.is_file():
+            raise ProviderError(f"source {source_id!r} is not an existing PDF: {source_path}")
+        if source_path in {manifest_path, args.output.expanduser().resolve()}:
+            raise ProviderError("manifest, source PDFs, and output PDF must all be distinct")
+        record = file_record(source_path)
+        total_bytes += int(record["bytes"])
+        if total_bytes > args.max_total_bytes:
+            raise ProviderError(f"source PDFs exceed max-total-bytes {args.max_total_bytes}")
+        reader = PdfReader(str(source_path), strict=False)
+        if reader.is_encrypted:
+            raise ProviderError(
+                f"source {source_id!r} is encrypted; merge-stamp has no explicit output-encryption policy"
+            )
+        page_count = len(reader.pages)
+        if page_count < 1:
+            raise ProviderError(f"source {source_id!r} has no pages")
+        total_pages += page_count
+        if total_pages > args.max_pages:
+            raise ProviderError(f"source PDFs exceed max-pages {args.max_pages}")
+        signature = signature_policy(reader)
+        signed = signature["hasSignatureFields"] or signature["hasDocMDP"] or signature["hasFieldMDP"] or signature["hasPerms"]
+        if signed and not args.invalidate_signatures:
+            raise ProviderError(
+                f"source {source_id!r} is signed/signature-constrained; rewrite requires --invalidate-signatures"
+            )
+        navigation = navigation_evidence(reader)
+        for name in navigation["namedDestinations"]:
+            if name in all_named_destinations:
+                raise ProviderError(
+                    f"named destination {name!r} collides between sources "
+                    f"{all_named_destinations[name]!r} and {source_id!r}"
+                )
+            all_named_destinations[name] = source_id
+        source = {
+            "id": source_id,
+            "path": source_path,
+            "reader": reader,
+            "record": record,
+            "pageCount": page_count,
+            "signaturePolicy": signature,
+            "navigation": navigation,
+        }
+        sources.append(source)
+        source_by_id[source_id] = source
+        source_paths.add(source_path)
+
+    sequence_specs = raw.get("sequence")
+    if not isinstance(sequence_specs, list) or not sequence_specs:
+        raise ProviderError("merge-stamp sequence must be a non-empty array")
+    sequence: list[dict[str, Any]] = []
+    selected: list[tuple[str, int]] = []
+    for segment in sequence_specs:
+        if not isinstance(segment, dict) or segment.get("source") not in source_by_id:
+            raise ProviderError("every sequence segment must reference a declared source")
+        source_id = str(segment["source"])
+        page_spec = segment.get("pages")
+        if page_spec == "all":
+            pages = list(range(1, source_by_id[source_id]["pageCount"] + 1))
+        elif isinstance(page_spec, list) and page_spec and all(isinstance(page, int) and not isinstance(page, bool) for page in page_spec):
+            pages = list(page_spec)
+        else:
+            raise ProviderError("sequence pages must be 'all' or a non-empty array of one-based integers")
+        for page in pages:
+            if page < 1 or page > source_by_id[source_id]["pageCount"]:
+                raise ProviderError(f"sequence page {page} is outside source {source_id!r}")
+            selected.append((source_id, page))
+        sequence.append({"source": source_id, "pages": pages})
+    expected = [(source["id"], page) for source in sources for page in range(1, source["pageCount"] + 1)]
+    if len(selected) != len(set(selected)):
+        raise ProviderError("merge-stamp sequence must not duplicate a source page")
+    if set(selected) != set(expected):
+        missing = sorted(set(expected) - set(selected))
+        extra = sorted(set(selected) - set(expected))
+        raise ProviderError(f"merge-stamp sequence must select every source page exactly once; missing={missing}, extra={extra}")
+
+    watermark_specs = raw.get("watermarks")
+    if not isinstance(watermark_specs, list) or not watermark_specs:
+        raise ProviderError("merge-stamp watermarks must be a non-empty array")
+    watermarks: list[dict[str, Any]] = []
+    watermarked_sources: set[str] = set()
+    for watermark in watermark_specs:
+        if not isinstance(watermark, dict) or watermark.get("source") not in source_by_id:
+            raise ProviderError("every watermark must reference a declared source")
+        source_id = str(watermark["source"])
+        if source_id in watermarked_sources:
+            raise ProviderError(f"source {source_id!r} has more than one watermark definition")
+        text = watermark.get("text")
+        opacity = watermark.get("opacity")
+        angle = watermark.get("angle", 45)
+        font_size = watermark.get("fontSize", 48)
+        if not isinstance(text, str) or not text.strip() or len(text) > 128:
+            raise ProviderError("watermark text must contain 1-128 characters")
+        if not isinstance(opacity, (int, float)) or isinstance(opacity, bool) or not (0 < float(opacity) <= 1):
+            raise ProviderError("watermark opacity must be greater than 0 and at most 1")
+        if not isinstance(angle, (int, float)) or isinstance(angle, bool) or not (-360 <= float(angle) <= 360):
+            raise ProviderError("watermark angle must be between -360 and 360 degrees")
+        if not isinstance(font_size, (int, float)) or isinstance(font_size, bool) or not (6 <= float(font_size) <= 240):
+            raise ProviderError("watermark fontSize must be between 6 and 240 points")
+        rotated = [
+            page_number
+            for page_number, page in enumerate(source_by_id[source_id]["reader"].pages, 1)
+            if int(page.get("/Rotate", 0) or 0) % 360 != 0
+        ]
+        if rotated:
+            raise ProviderError(
+                f"watermark source {source_id!r} has rotated page dictionaries {rotated}; "
+                "this bounded primitive preserves them but cannot guarantee upright stamp placement"
+            )
+        watermarks.append({
+            "source": source_id,
+            "text": text,
+            "opacity": float(opacity),
+            "angle": float(angle),
+            "fontSize": float(font_size),
+        })
+        watermarked_sources.add(source_id)
+
+    return {
+        "manifestPath": manifest_path,
+        "manifestRecord": file_record(manifest_path),
+        "sources": sources,
+        "sequence": sequence,
+        "selected": selected,
+        "watermarks": watermarks,
+        "totalBytes": total_bytes,
+        "totalPages": total_pages,
+    }
+
+
+def rewrite_page_tree(writer: Any, ordered_references: list[Any], NameObject: Any, ArrayObject: Any, NumberObject: Any) -> None:
+    pages_root = resolve(writer.root_object["/Pages"])
+    if not isinstance(pages_root, dict):
+        raise ProviderError("writer page tree is unavailable")
+    existing = list(pages_root.get("/Kids", []) or [])
+    if len(existing) != len(ordered_references):
+        raise ProviderError("writer page tree does not match the selected source-page count")
+    pages_root[NameObject("/Kids")] = ArrayObject(ordered_references)
+    pages_root[NameObject("/Count")] = NumberObject(len(ordered_references))
+
+
+def page_opacities(page: Any) -> list[float]:
+    resources = resolve(page.get("/Resources"))
+    states = resolve(resources.get("/ExtGState")) if isinstance(resources, dict) else None
+    values: list[float] = []
+    if isinstance(states, dict):
+        for state in states.values():
+            state = resolve(state)
+            if isinstance(state, dict) and state.get("/ca") is not None:
+                values.append(float(state["/ca"]))
+    return sorted(values)
+
+
+def merge_stamp(args: argparse.Namespace, pypdf: Any, PdfReader: Any, PdfWriter: Any, version: str) -> dict[str, Any]:
+    from pypdf import Transformation
+    from pypdf.generic import ArrayObject, NameObject, NumberObject
+
+    output = args.output.expanduser().resolve()
+    manifest = normalized_merge_manifest(args, PdfReader)
+    if output == manifest["manifestPath"]:
+        raise ProviderError("merge-stamp manifest and output must differ")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    writer = PdfWriter()
+    page_references: dict[tuple[str, int], Any] = {}
+    for source in manifest["sources"]:
+        offset = len(writer.pages)
+        writer.append(source["reader"], import_outline=True)
+        for page_number in range(1, source["pageCount"] + 1):
+            page = writer.pages[offset + page_number - 1]
+            if page.indirect_reference is None:
+                raise ProviderError("pypdf did not assign an indirect reference to an imported page")
+            page_references[(source["id"], page_number)] = page.indirect_reference
+
+    ordered_references = [page_references[identity] for identity in manifest["selected"]]
+    rewrite_page_tree(writer, ordered_references, NameObject, ArrayObject, NumberObject)
+    output_page_map = {identity: index for index, identity in enumerate(manifest["selected"], 1)}
+    watermark_records: list[dict[str, Any]] = []
+    for watermark in manifest["watermarks"]:
+        target_pages = [
+            output_page_map[(watermark["source"], source_page)]
+            for source_page in range(1, next(source["pageCount"] for source in manifest["sources"] if source["id"] == watermark["source"]) + 1)
+        ]
+        for output_page in target_pages:
+            page = ordered_references[output_page - 1].get_object()
+            box = page.mediabox
+            width = float(box.width)
+            height = float(box.height)
+            overlay = render_watermark(PdfReader, width, height, watermark)
+            page.merge_transformed_page(
+                overlay,
+                Transformation().translate(tx=float(box.left), ty=float(box.bottom)),
+                over=True,
+                expand=False,
+            )
+        watermark_records.append({**watermark, "outputPages": target_pages})
+
+    source_records_before = {source["id"]: source["record"] for source in manifest["sources"]}
+    temporary_name: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent, delete=False) as stream:
+            temporary_name = Path(stream.name)
+        writer.write(str(temporary_name))
+        if not temporary_name.read_bytes().startswith(b"%PDF-"):
+            raise ProviderError("provider output is not a PDF")
+        result_reader = PdfReader(str(temporary_name), strict=True)
+        if len(result_reader.pages) != manifest["totalPages"]:
+            raise ProviderError("provider output page count does not match the merge manifest")
+
+        geometry_records: list[dict[str, Any]] = []
+        for output_page, (source_id, source_page) in enumerate(manifest["selected"], 1):
+            source = next(item for item in manifest["sources"] if item["id"] == source_id)
+            expected_geometry = page_geometry(source["reader"].pages[source_page - 1])
+            actual_geometry = page_geometry(result_reader.pages[output_page - 1])
+            if actual_geometry != expected_geometry:
+                raise ProviderError(
+                    f"page geometry changed for {source_id} page {source_page}: "
+                    f"expected {expected_geometry}, got {actual_geometry}"
+                )
+            geometry_records.append({
+                "outputPage": output_page,
+                "source": source_id,
+                "sourcePage": source_page,
+                **actual_geometry,
+            })
+
+        expected_outlines: list[dict[str, Any]] = []
+        expected_named: dict[str, int] = {}
+        expected_links: list[dict[str, Any]] = []
+        for source in manifest["sources"]:
+            for record in source["navigation"]["outlines"]:
+                expected_outlines.append({**record, "page": output_page_map[(source["id"], record["page"])]})
+            for name, page in source["navigation"]["namedDestinations"].items():
+                expected_named[name] = output_page_map[(source["id"], page)]
+            for record in source["navigation"]["internalLinks"]:
+                expected_links.append({
+                    **record,
+                    "page": output_page_map[(source["id"], record["page"])],
+                    "targetPage": output_page_map[(source["id"], record["targetPage"])],
+                })
+        actual_navigation = navigation_evidence(result_reader)
+        sort_records = lambda records: sorted(records, key=lambda record: json.dumps(record, sort_keys=True))
+        if sort_records(actual_navigation["outlines"]) != sort_records(expected_outlines):
+            raise ProviderError("output outline destinations do not match the reordered source pages")
+        if actual_navigation["namedDestinations"] != expected_named:
+            raise ProviderError("output named destinations do not match the reordered source pages")
+        if sort_records(actual_navigation["internalLinks"]) != sort_records(expected_links):
+            raise ProviderError("output internal links do not match the reordered source pages")
+
+        watermark_validation: list[dict[str, Any]] = []
+        all_watermark_texts = {watermark["text"] for watermark in watermark_records}
+        for watermark in watermark_records:
+            target_pages = set(watermark["outputPages"])
+            page_counts = []
+            for page_number, page in enumerate(result_reader.pages, 1):
+                count = (page.extract_text() or "").count(watermark["text"])
+                expected_count = 1 if page_number in target_pages else 0
+                if count != expected_count:
+                    raise ProviderError(
+                        f"watermark {watermark['text']!r} count on page {page_number} is {count}, expected {expected_count}"
+                    )
+                opacities = page_opacities(page)
+                if page_number in target_pages and not any(abs(value - watermark["opacity"]) <= 0.001 for value in opacities):
+                    raise ProviderError(
+                        f"watermark opacity {watermark['opacity']} is not present on output page {page_number}"
+                    )
+                page_counts.append({"page": page_number, "count": count, "opacities": opacities})
+            watermark_validation.append({**watermark, "pages": page_counts})
+        if not all_watermark_texts:
+            raise ProviderError("merge-stamp produced no watermark validation terms")
+
+        source_records_after = {source["id"]: file_record(source["path"]) for source in manifest["sources"]}
+        if source_records_after != source_records_before:
+            raise ProviderError("one or more source PDFs changed during merge-stamp")
+        temporary_name.replace(output)
+        temporary_name = None
+    finally:
+        if temporary_name is not None:
+            temporary_name.unlink(missing_ok=True)
+
+    return {
+        "schema": MERGE_STAMP_RESULT_SCHEMA,
+        "provider": "pypdf",
+        "providerVersion": version,
+        "helperProvider": "reportlab",
+        "strategy": "rewrite",
+        "silentFallback": False,
+        "manifest": manifest["manifestRecord"],
+        "sources": [
+            {
+                "id": source["id"],
+                **source["record"],
+                "pages": source["pageCount"],
+                "signaturePolicyBefore": source["signaturePolicy"],
+            }
+            for source in manifest["sources"]
+        ],
+        "output": file_record(output),
+        "operation": {
+            "type": "merge-stamp",
+            "sequence": manifest["sequence"],
+            "watermarks": watermark_records,
+        },
+        "validation": {
+            "allSourcesUnchanged": True,
+            "pageCount": manifest["totalPages"],
+            "pageMap": geometry_records,
+            "pageGeometryPreserved": True,
+            "navigation": {
+                "outlines": expected_outlines,
+                "namedDestinations": expected_named,
+                "internalLinks": expected_links,
+                "preserved": True,
+            },
+            "watermarks": watermark_validation,
+        },
+    }
+
+
 def write_mutation(args: argparse.Namespace, reader, PdfWriter, Text, NameObject, version: str) -> dict[str, Any]:
     source = args.input.expanduser().resolve()
     output = args.output.expanduser().resolve()
@@ -685,6 +1172,19 @@ def parser() -> argparse.ArgumentParser:
     note.add_argument("--rect", required=True)
     note.add_argument("--text", required=True)
     note.add_argument("--open", action="store_true")
+
+    merge = subparsers.add_parser(
+        "merge-stamp",
+        help="merge and reorder complete source PDFs, preserve navigation, and selectively watermark by source id",
+    )
+    merge.add_argument("manifest", type=Path)
+    merge.add_argument("output", type=Path)
+    merge.add_argument("--strategy", choices=["rewrite"], required=True)
+    merge.add_argument("--invalidate-signatures", action="store_true")
+    merge.add_argument("--max-manifest-bytes", type=int, default=1024 * 1024)
+    merge.add_argument("--max-inputs", type=int, default=100)
+    merge.add_argument("--max-total-bytes", type=int, default=2 * 1024 * 1024 * 1024)
+    merge.add_argument("--max-pages", type=int, default=10_000)
     return root
 
 
@@ -695,6 +1195,12 @@ def main() -> int:
     output_on_failure = getattr(args, "output", None) if args.command != "inspect" else None
     try:
         pypdf, PdfReader, PdfWriter, Text, NameObject = require_pypdf()
+        if args.command == "merge-stamp":
+            if args.max_manifest_bytes < 1 or args.max_inputs < 2 or args.max_total_bytes < 1 or args.max_pages < 1:
+                raise ProviderError("merge-stamp budgets must be positive and max-inputs must be at least 2")
+            result = merge_stamp(args, pypdf, PdfReader, PdfWriter, pypdf.__version__)
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
         source = args.input.expanduser().resolve()
         if not source.is_file():
             raise ProviderError("input must be an existing PDF")
