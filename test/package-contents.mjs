@@ -84,6 +84,7 @@ for (const required of [
   "skills/documents/SKILL.md",
   "skills/documents/scripts/verify-document.mjs",
   "skills/documents/fixtures/business-brief.json",
+  "skills/documents/fixtures/open-chestnut-comments.json",
   "skills/documents/fixtures/open-chestnut-merged-table.json",
   "skills/documents/fixtures/open-chestnut-numbering-edit.json",
   "skills/documents/fixtures/package-comments.json",

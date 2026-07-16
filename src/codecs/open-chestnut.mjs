@@ -1699,6 +1699,63 @@ function documentField(block, original) {
   return { instruction, display };
 }
 
+function documentCommentSnapshot(comment) {
+  return {
+    id: comment.id,
+    targetId: comment.targetId,
+    author: comment.author,
+    initials: comment.initials,
+    date: comment.date,
+    text: comment.text,
+    resolved: comment.resolved,
+    parentId: comment.parentId,
+    paraId: comment.paraId,
+    durableId: comment.durableId,
+    dateUtc: comment.dateUtc,
+    person: comment.person,
+    intelligentPlaceholder: comment.intelligentPlaceholder,
+  };
+}
+
+function documentComment(comment, slot) {
+  const advanced = [
+    ["parentId", comment.parentId],
+    ["resolved", comment.resolved === true],
+    ["paraId", comment.paraId],
+    ["durableId", comment.durableId],
+    ["dateUtc", comment.dateUtc],
+    ["person", comment.person],
+    ["intelligentPlaceholder", comment.intelligentPlaceholder === true],
+  ].filter(([, value]) => value != null && value !== false);
+  if (advanced.length) {
+    throw new OpenChestnutCodecError(`Document comment ${comment.id} uses extended comment fields outside the classic OpenChestnut slice: ${advanced.map(([name]) => name).join(", ")}.`, [], { code: "unsupported_document_comment_features" });
+  }
+  if (slot && (comment.id !== slot.wire.id || comment.targetId !== slot.wire.targetBlockId)) {
+    throw new OpenChestnutCodecError(`Document comment ${comment.id} identity and target are source-bound.`, [], { code: "unsupported_document_comment_edit" });
+  }
+  if (slot && JSON.stringify(documentCommentSnapshot(comment)) === JSON.stringify(slot.publicSnapshot)) return slot.wire;
+  const author = String(comment.author ?? "");
+  const initials = comment.initials == null ? undefined : String(comment.initials);
+  const text = String(comment.text ?? "");
+  if (!author || author.length > 255) throw new OpenChestnutCodecError(`Document comment ${comment.id} author must contain 1 through 255 characters.`, [], { code: "invalid_document_comment" });
+  if (initials !== undefined && (!initials || initials.length > 9)) throw new OpenChestnutCodecError(`Document comment ${comment.id} initials must contain 1 through 9 characters when present.`, [], { code: "invalid_document_comment" });
+  if (text.length > 1_000_000) throw new OpenChestnutCodecError(`Document comment ${comment.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_comment" });
+  let createdAt;
+  if (comment.date != null) {
+    createdAt = String(comment.date);
+    if (createdAt.length > 64 || Number.isNaN(Date.parse(createdAt))) throw new OpenChestnutCodecError(`Document comment ${comment.id} date must be an ISO 8601 date-time of at most 64 characters.`, [], { code: "invalid_document_comment" });
+  }
+  return {
+    id: slot?.wire.id || comment.id,
+    targetBlockId: comment.targetId,
+    author,
+    text,
+    initials,
+    createdAt,
+    source: slot?.wire.source,
+  };
+}
+
 function unchangedSourceBlock(block, original) {
   switch (original.content.case) {
     case "paragraph": {
@@ -1838,7 +1895,6 @@ function unsupportedDocumentCollections(document) {
   const unsupported = [];
   for (const [label, value] of [
     ["bookmarks", document.bookmarks],
-    ["comments", document.comments],
     ["bibliography sources", document.bibliographySources],
     ["headers", document.headers],
     ["footers", document.footers],
@@ -1862,6 +1918,9 @@ function documentEnvelope(document) {
   if (state && state.blocks.length !== document.blocks.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.blocks.length}-block topology; the document contains ${document.blocks.length} blocks.`, [], { code: "document_topology_changed" });
   }
+  if (state && state.comments.length !== document.comments.length) {
+    throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.comments.length}-comment topology; the document contains ${document.comments.length} comments.`, [], { code: "document_comment_topology_changed" });
+  }
   const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
   return {
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
@@ -1875,6 +1934,7 @@ function documentEnvelope(document) {
         id: document.id,
         name: document.name,
         blocks: document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block))),
+        comments: document.comments.map((comment, index) => documentComment(comment, state?.comments[index])),
       },
     },
   };
@@ -1998,11 +2058,23 @@ function documentFromEnvelope(envelope) {
         throw new OpenChestnutCodecError(`Document block ${block.id} has no supported wire content.`, [], { code: "invalid_document_artifact" });
     }
   });
-  const document = DocumentModel.create({ name: source.name || "Imported document", styles, blocks });
+  const comments = source.comments.map((comment) => ({
+    id: comment.id,
+    targetId: comment.targetBlockId,
+    author: comment.author,
+    initials: comment.initials,
+    date: comment.createdAt,
+    text: comment.text,
+  }));
+  const document = DocumentModel.create({ name: source.name || "Imported document", styles, blocks, comments });
   document.id = source.id || document.id;
+  const commentSlots = source.comments.map((wire, index) => ({
+    wire,
+    publicSnapshot: documentCommentSnapshot(document.comments[index]),
+  }));
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, blocks: source.blocks },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, blocks: source.blocks, comments: commentSlots },
     writable: true,
   });
   return document;

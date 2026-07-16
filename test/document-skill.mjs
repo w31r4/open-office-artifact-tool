@@ -240,6 +240,29 @@ try {
   const numberingEditXml = await numberingEditZip.file("word/numbering.xml").async("text");
   assert.match(numberingEditXml, /<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0">[\s\S]*?<w:start w:val="5"\s*\/>[\s\S]*?<w:numFmt w:val="lowerRoman"\s*\/>[\s\S]*?<w:lvlText w:val="%1\."\s*\/>/);
 
+  const classicComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "open-chestnut-comments.json"), {
+    outputDir: path.join(outputDir, "open-chestnut-comments"),
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(classicComments.initialCodec, "open-chestnut");
+  assert.equal(classicComments.roundtripCodec, "open-chestnut");
+  assert.equal(classicComments.qa.summary.packageOk, true);
+  assert.equal(classicComments.qa.summary.verifyOk, true);
+  assert.equal(classicComments.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  const classicCommentsDocument = await importDocxWithOpenChestnut(await FileBlob.load(classicComments.docxPath));
+  assert.equal(classicCommentsDocument.comments.length, 1);
+  assert.equal(classicCommentsDocument.comments[0].author, "Lead reviewer");
+  assert.equal(classicCommentsDocument.comments[0].initials, "LR");
+  assert.equal(classicCommentsDocument.comments[0].date, "2026-07-16T09:30:00+08:00");
+  assert.equal(classicCommentsDocument.comments[0].text, "Approved after source-bound review.");
+  assert.equal(classicCommentsDocument.comments[0].targetId, classicCommentsDocument.blocks[1].id);
+  const classicCommentsZip = await JSZip.loadAsync(await fs.readFile(classicComments.docxPath));
+  const classicCommentsDocumentXml = await classicCommentsZip.file("word/document.xml").async("text");
+  const classicCommentsPartXml = await classicCommentsZip.file("word/comments.xml").async("text");
+  assert.match(classicCommentsDocumentXml, /<w:commentRangeStart w:id="0"\s*\/>[\s\S]*?<w:commentRangeEnd w:id="0"\s*\/>[\s\S]*?<w:commentReference w:id="0"\s*\/>/);
+  assert.match(classicCommentsPartXml, /w:author="Lead reviewer"/);
+  assert.match(classicCommentsPartXml, /Approved after source-bound review\./);
+
   const packageComments = await runDocumentFixture(path.join(repoRoot, "skills", "documents", "fixtures", "package-comments.json"), {
     outputDir: path.join(outputDir, "package-comments"),
     nativeRender: nativeStatus.available ? "required" : "auto",

@@ -442,6 +442,17 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         if (Object.prototype.hasOwnProperty.call(edit, "listType")) listItem.listType = String(edit.listType);
         continue;
       }
+      if (edit.kind === "comment") {
+        const comment = imported.comments.find((item) =>
+          (!edit.matchText || item.text === edit.matchText) &&
+          (!edit.matchAuthor || item.author === edit.matchAuthor));
+        assert.ok(comment, `Missing source-bound classic comment fixture target ${edit.matchText || edit.matchAuthor || "(unspecified)"}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "text")) comment.text = String(edit.text);
+        if (Object.prototype.hasOwnProperty.call(edit, "author")) comment.author = String(edit.author);
+        if (Object.prototype.hasOwnProperty.call(edit, "initials")) comment.initials = edit.initials == null ? undefined : String(edit.initials);
+        if (Object.prototype.hasOwnProperty.call(edit, "date")) comment.date = edit.date == null ? undefined : String(edit.date);
+        continue;
+      }
       throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);
     }
     docx = await DocumentFile.exportDocx(imported, { codec: "open-chestnut" });

@@ -38,8 +38,8 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
-| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables and direct text-marker numbering graphs, plus source-bound hyperlinks/simple fields/table text, recognized direct table-formatting edits, and coherent numbering-definition group edits through the bundled OpenChestnut codec. |
-| `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut. |
+| `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with loss-aware block and exact-profile classic-comment source bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed. |
 
 ### document details
 
@@ -598,7 +598,7 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 
 #### `exportDocxWithOpenChestnut`
 
-Experimentally export bounded DocumentModel paragraphs/runs/tables, including validated source-free gridSpan/vMerge tables and direct text-marker numbering graphs, plus source-bound hyperlinks/simple fields/table text, recognized direct table-formatting edits, and coherent numbering-definition group edits through the bundled OpenChestnut codec.
+Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut.
 
 **Schema parameters:**
 
@@ -612,7 +612,7 @@ Experimentally export bounded DocumentModel paragraphs/runs/tables, including va
 
 #### `importDocxWithOpenChestnut`
 
-Experimentally import DOCX bytes through OpenChestnut with loss-aware block source bindings for fail-closed advanced-content preservation.
+Experimentally import DOCX bytes through OpenChestnut with loss-aware block and exact-profile classic-comment source bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed.
 
 **Schema parameters:**
 

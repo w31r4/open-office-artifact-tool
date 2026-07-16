@@ -49,6 +49,7 @@ internal static class DocxCodec
             var block = ReadBodyBlock(element, ordinal++, checked((uint)bodyIndex), ref semanticItems, limits, context);
             document.Blocks.Add(block);
         }
+        DocxClassicCommentCodec.Read(context, body, document, ref semanticItems, limits, diagnostics);
 
         var envelope = new ArtifactEnvelope
         {
@@ -96,6 +97,7 @@ internal static class DocxCodec
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
             foreach (var block in envelope.Document.Blocks) body.Append(BuildBlock(block, context));
+            DocxClassicCommentCodec.Author(context, body, envelope.Document);
             body.Append(new W.SectionProperties());
             mainPart.Document.Save();
         }
@@ -113,6 +115,7 @@ internal static class DocxCodec
             envelope.Source,
             limits,
             OpcPackageProfile.Docx);
+        DocxClassicCommentCodec.AssertModeledCommentsWereNotRemoved(sourceBytes, envelope.Document);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -315,6 +318,7 @@ internal static class DocxCodec
                     element.Remove();
                 }
             }
+            DocxClassicCommentCodec.ApplySource(context, body, envelope.Document);
             mainPart.Document!.Save();
         }
 
@@ -524,8 +528,9 @@ internal static class DocxCodec
             throw new CodecException("invalid_document_artifact", "Artifact envelope does not contain a document payload.");
         if ((ulong)envelope.Document.Blocks.Count > limits.MaxCells)
             throw new CodecException("document_item_budget_exceeded", $"Document has {envelope.Document.Blocks.Count} blocks and exceeds max_cells ({limits.MaxCells}).");
+        DocxClassicCommentCodec.Validate(envelope.Document, limits);
 
-        ulong semanticItems = 0;
+        ulong semanticItems = checked((ulong)envelope.Document.Comments.Count);
         foreach (var block in envelope.Document.Blocks)
         {
             switch (block.ContentCase)

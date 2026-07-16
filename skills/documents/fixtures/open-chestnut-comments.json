@@ -1,0 +1,50 @@
+{
+  "name": "open-chestnut-comments",
+  "outputName": "open-chestnut-comments.docx",
+  "initialCodec": "open-chestnut",
+  "roundtripCodec": "open-chestnut",
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "name": "Title",
+      "text": "OpenChestnut classic comment review",
+      "styleId": "Title"
+    },
+    {
+      "kind": "paragraph",
+      "name": "ReviewTarget",
+      "text": "The package evidence is ready for review.",
+      "styleId": "Normal"
+    }
+  ],
+  "comments": [
+    {
+      "name": "ReviewComment",
+      "targetName": "ReviewTarget",
+      "author": "Reviewer",
+      "initials": "RV",
+      "date": "2026-07-16T08:00:00Z",
+      "text": "Check the package evidence."
+    }
+  ],
+  "openChestnutEdits": [
+    {
+      "kind": "comment",
+      "matchText": "Check the package evidence.",
+      "matchAuthor": "Reviewer",
+      "author": "Lead reviewer",
+      "initials": "LR",
+      "date": "2026-07-16T09:30:00+08:00",
+      "text": "Approved after source-bound review."
+    }
+  ],
+  "expectInspect": [
+    { "kind": "comment", "pattern": "Check the package evidence" },
+    { "kind": "paragraph", "pattern": "package evidence is ready" }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "required",
+    "inspectKind": "document,paragraph,comment,layout"
+  }
+}

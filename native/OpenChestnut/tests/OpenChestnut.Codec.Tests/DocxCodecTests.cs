@@ -48,6 +48,152 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void ClassicCommentsAuthorImportAndEditFixedTopology()
+    {
+        var authored = Invoke(ClassicCommentExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = package.MainDocumentPart!;
+            var comments = mainPart.WordprocessingCommentsPart!.Comments!.Elements<W.Comment>().ToArray();
+            Assert.Equal(2, comments.Length);
+            Assert.Equal("Review this paragraph.", comments[0].InnerText);
+            Assert.Equal("2026-07-16T08:00:00Z", comments[0].GetAttribute("date", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+            var paragraph = mainPart.Document!.Body!.Elements<W.Paragraph>().Single();
+            Assert.Equal(2, paragraph.Elements<W.CommentRangeStart>().Count());
+            Assert.Equal(2, paragraph.Elements<W.CommentRangeEnd>().Count());
+            Assert.Equal(2, paragraph.Descendants<W.CommentReference>().Count());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.False(imported.Artifact.Document.Blocks[0].Source.Editable);
+        Assert.Collection(imported.Artifact.Document.Comments,
+            comment =>
+            {
+                Assert.Equal("document/comment/1", comment.Id);
+                Assert.Equal("document/block/1", comment.TargetBlockId);
+                Assert.Equal("Reviewer", comment.Author);
+                Assert.Equal("RV", comment.Initials);
+                Assert.Equal("2026-07-16T08:00:00Z", comment.CreatedAt);
+                Assert.True(comment.Source.Editable);
+                Assert.Equal("0", comment.Source.NativeCommentId);
+                Assert.NotEmpty(comment.Source.CommentElementSha256);
+                Assert.NotEmpty(comment.Source.SemanticSha256);
+                Assert.NotEmpty(comment.Source.ResidualSha256);
+                Assert.NotEmpty(comment.Source.AnchorSha256);
+            },
+            comment =>
+            {
+                Assert.Equal("Second reviewer", comment.Author);
+                Assert.False(comment.HasCreatedAt);
+            });
+
+        var edited = imported.Artifact.Document.Comments[0];
+        edited.Author = "Lead reviewer";
+        edited.Text = "Approved after source-bound review.";
+        edited.ClearInitials();
+        edited.CreatedAt = "2026-07-16T09:30:00+08:00";
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        Assert.Equal("opaque_content_preserved", Assert.Single(exported.Diagnostics).Code);
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var comments = package.MainDocumentPart!.WordprocessingCommentsPart!.Comments!.Elements<W.Comment>().ToArray();
+            Assert.Equal("Lead reviewer", comments[0].Author?.Value);
+            Assert.Null(comments[0].Initials);
+            Assert.Equal("2026-07-16T09:30:00+08:00", comments[0].GetAttribute("date", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+            Assert.Equal("Approved after source-bound review.", comments[0].InnerText);
+            Assert.Equal("Keep the evidence link.", comments[1].InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var reimported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        Assert.Equal("Approved after source-bound review.", reimported.Artifact.Document.Comments[0].Text);
+        Assert.False(reimported.Artifact.Document.Comments[0].HasInitials);
+    }
+
+    [Fact]
+    public void ClassicCommentsFailClosedOnTopologyBindingAndComplexBodies()
+    {
+        var authored = Invoke(ClassicCommentExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+
+        var removed = imported.Artifact.Clone();
+        removed.Document.Comments.RemoveAt(1);
+        var topology = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = removed,
+        });
+        Assert.False(topology.Ok);
+        Assert.Equal("document_comment_topology_changed", Assert.Single(topology.Diagnostics).Code);
+
+        var tampered = imported.Artifact.Clone();
+        tampered.Document.Comments[0].Source.AnchorSha256 = new string('0', 64);
+        var binding = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = tampered,
+        });
+        Assert.False(binding.Ok);
+        Assert.Equal("document_comment_source_binding_mismatch", Assert.Single(binding.Diagnostics).Code);
+
+        var complex = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddSecondCommentBodyRun(authored.File.ToByteArray())),
+        });
+        Assert.True(complex.Ok, Diagnostics(complex));
+        Assert.Empty(complex.Artifact.Document.Comments);
+        Assert.Contains(complex.Diagnostics, item => item.Code == "unsupported_document_comments_preserved");
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(complex.Artifact.OpaqueOpc.SourcePackage.Data.ToByteArray(), unchanged.File.ToByteArray());
+    }
+
+    [Fact]
     public void SourcePreservingExportEditsFixedTopologyTableTextAndKeepsFormatting()
     {
         var authored = Invoke(ExportRequest());
@@ -1486,6 +1632,48 @@ public sealed class DocxCodecTests
         };
     }
 
+    private static CodecRequest ClassicCommentExportRequest()
+    {
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/paragraph",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Commented source paragraph" },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = paragraph.Paragraph.Text });
+        var document = new DocumentArtifact { Id = "document/comments", Name = "Classic comments fixture" };
+        document.Blocks.Add(paragraph);
+        document.Comments.Add(new DocumentComment
+        {
+            Id = "comment/review",
+            TargetBlockId = paragraph.Id,
+            Author = "Reviewer",
+            Initials = "RV",
+            CreatedAt = "2026-07-16T08:00:00Z",
+            Text = "Review this paragraph.",
+        });
+        document.Comments.Add(new DocumentComment
+        {
+            Id = "comment/link",
+            TargetBlockId = paragraph.Id,
+            Author = "Second reviewer",
+            Initials = "SR",
+            Text = "Keep the evidence link.",
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
     private static CodecRequest HyperlinkExportRequest()
     {
         var document = new DocumentArtifact { Id = "document/hyperlink", Name = "Hyperlink fixture" };
@@ -1668,6 +1856,20 @@ public sealed class DocxCodecTests
             field.Dirty = true;
             field.Elements<W.Run>().Single().PrependChild(new W.RunProperties(new W.Bold()));
             document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSecondCommentBodyRun(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var comment = document.MainDocumentPart!.WordprocessingCommentsPart!.Comments!.Elements<W.Comment>().First();
+            comment.Elements<W.Paragraph>().Single().Append(new W.Run(new W.Text(" preserved rich body")));
+            document.MainDocumentPart.WordprocessingCommentsPart.Comments.Save();
         }
         return stream.ToArray();
     }

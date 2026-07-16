@@ -7,6 +7,7 @@ import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
 import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationElementSourceBindingSchema, PresentationImageSchema, PresentationImageTransformSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationOpaqueElementSchema, PresentationPlaceholderFrameSchema, PresentationPlaceholderIdentitySchema, PresentationPlaceholderSchema, PresentationShapeSchema, PresentationShapeTransformSchema, PresentationSlideSchema, PresentationTableCellSchema, PresentationTableRowSchema, PresentationTableSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartDataLabelPosition, SpreadsheetChartDataLabelsArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import { PresentationElementSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { DocumentArtifactSchema, DocumentCommentSchema, DocumentCommentSourceBindingSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -358,6 +359,11 @@ assert.equal(toBinary(DocumentHyperlinkSchema, create(DocumentHyperlinkSchema, {
 assert.equal(toBinary(DocumentFieldSchema, create(DocumentFieldSchema, { instruction: "PAGE" }))[0], 0x0a, "Document field instructions must use field 1.");
 assert.equal(toBinary(DocumentParagraphSchema, create(DocumentParagraphSchema, { numbering: { numberingId: 7 } }))[0], 0x1a, "Document paragraph numbering must use additive field 3.");
 assert.equal(toBinary(DocumentNumberingSchema, create(DocumentNumberingSchema, { numberingId: 7 }))[0], 0x08, "Document numbering IDs must use field 1.");
+assert.equal(toBinary(DocumentArtifactSchema, create(DocumentArtifactSchema, { comments: [{ id: "comment/1" }] }))[0], 0x22, "Document classic comments must use additive document field 4.");
+assert.equal(toBinary(DocumentCommentSchema, create(DocumentCommentSchema, { initials: "RV" }))[0], 0x2a, "Document comment initials must preserve optional field 5.");
+assert.equal(toBinary(DocumentCommentSchema, create(DocumentCommentSchema, { createdAt: "2026-07-16T08:00:00Z" }))[0], 0x32, "Document comment timestamps must preserve optional field 6.");
+assert.equal(toBinary(DocumentCommentSchema, create(DocumentCommentSchema, { source: { nativeCommentId: "0" } }))[0], 0x3a, "Document comment source bindings must use field 7.");
+assert.equal(toBinary(DocumentCommentSourceBindingSchema, create(DocumentCommentSourceBindingSchema, { anchorSha256: "x" }))[0], 0x32, "Document comment anchor hashes must use source-binding field 6.");
 assert.deepEqual([...toBinary(DocumentTableSchema, create(DocumentTableSchema, { gridColumns: 3 }))], [0x10, 0x03], "Document table grid width must use additive field 2.");
 assert.equal(toBinary(DocumentTableSchema, create(DocumentTableSchema, { formatting: { widthDxa: 1 } }))[0], 0x1a, "Document table formatting must use additive field 3.");
 assert.deepEqual([...toBinary(DocumentTableFormattingSchema, create(DocumentTableFormattingSchema, { widthDxa: 1 }))], [0x08, 0x01], "Document table formatting width must use field 1.");
@@ -2398,6 +2404,57 @@ assert.equal(docxImported.blocks[1].borderColor, "445566");
 assert.equal(docxImported.blocks[1].borderSize, 8);
 assert.equal(docxImported.blocks[1].headerFill, "E2E8F0");
 assert.equal(docxImported.verify().ok, true);
+
+const classicCommentDocument = DocumentModel.create({
+  name: "OpenChestnut classic comments",
+  blocks: [{ kind: "paragraph", text: "Review the source-bound paragraph.", styleId: "Normal" }],
+});
+classicCommentDocument.addComment(classicCommentDocument.blocks[0], "Check this evidence.", {
+  author: "Reviewer",
+  initials: "RV",
+  date: "2026-07-16T08:00:00Z",
+});
+const classicCommentDocx = await exportDocxWithOpenChestnut(classicCommentDocument);
+const classicCommentZip = await JSZip.loadAsync(classicCommentDocx.bytes);
+assert.match(await classicCommentZip.file("word/document.xml").async("text"), /<w:commentRangeStart w:id="0"\s*\/>[\s\S]*?<w:commentRangeEnd w:id="0"\s*\/>[\s\S]*?<w:commentReference w:id="0"\s*\/>/);
+const classicCommentXml = await classicCommentZip.file("word/comments.xml").async("text");
+assert.match(classicCommentXml, /<w:comment\b[^>]*w:id="0"/);
+assert.match(classicCommentXml, /<w:comment\b[^>]*w:author="Reviewer"/);
+assert.match(classicCommentXml, /<w:comment\b[^>]*w:initials="RV"/);
+assert.match(classicCommentXml, /<w:comment\b[^>]*w:date="2026-07-16T08:00:00Z"/);
+assert.match(classicCommentXml, /Check this evidence\./);
+const classicCommentImported = await importDocxWithOpenChestnut(classicCommentDocx);
+assert.equal(classicCommentImported.comments.length, 1);
+assert.equal(classicCommentImported.comments[0].targetId, classicCommentImported.blocks[0].id);
+assert.equal(classicCommentImported.comments[0].author, "Reviewer");
+assert.equal(classicCommentImported.comments[0].text, "Check this evidence.");
+classicCommentImported.comments[0].author = "Lead reviewer";
+classicCommentImported.comments[0].initials = undefined;
+classicCommentImported.comments[0].date = "2026-07-16T09:30:00+08:00";
+classicCommentImported.comments[0].text = "Approved after source-bound review.";
+const editedClassicCommentDocx = await exportDocxWithOpenChestnut(classicCommentImported);
+const editedClassicCommentXml = await (await JSZip.loadAsync(editedClassicCommentDocx.bytes)).file("word/comments.xml").async("text");
+assert.match(editedClassicCommentXml, /w:author="Lead reviewer"/);
+assert.doesNotMatch(editedClassicCommentXml, /w:initials=/);
+assert.match(editedClassicCommentXml, /w:date="2026-07-16T09:30:00\+08:00"/);
+assert.match(editedClassicCommentXml, /Approved after source-bound review\./);
+const editedClassicCommentRoundTrip = await importDocxWithOpenChestnut(editedClassicCommentDocx);
+assert.equal(editedClassicCommentRoundTrip.comments[0].text, "Approved after source-bound review.");
+assert.equal(editedClassicCommentRoundTrip.comments[0].date, "2026-07-16T09:30:00+08:00");
+
+const commentTopologyImported = await importDocxWithOpenChestnut(classicCommentDocx);
+commentTopologyImported.addComment(commentTopologyImported.blocks[0], "Unsafe addition");
+await assert.rejects(
+  exportDocxWithOpenChestnut(commentTopologyImported),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "document_comment_topology_changed",
+);
+const extendedCommentDocument = DocumentModel.create({ blocks: [{ kind: "paragraph", text: "Extended comment" }] });
+extendedCommentDocument.addComment(extendedCommentDocument.blocks[0], "Unsupported resolved state", { resolved: true });
+await assert.rejects(
+  exportDocxWithOpenChestnut(extendedCommentDocument),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_document_comment_features" && /resolved/.test(error.message),
+);
+
 docxImported.blocks[1].values[0][1] = "84";
 const tableEditedDocx = await exportDocxWithOpenChestnut(docxImported);
 const tableEditedRoundTrip = await DocumentFile.importDocx(tableEditedDocx, { preferNative: true });
