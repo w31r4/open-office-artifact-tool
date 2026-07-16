@@ -1,6 +1,6 @@
 # API catalog
 
-Generated from `HELP_CATALOG` in `src/index.mjs`.
+Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 
 ## document
 

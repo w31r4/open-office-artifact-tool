@@ -17,7 +17,7 @@ export function ndjson(records, maxChars = Infinity) {
   return { ndjson: text, truncated };
 }
 
-function inspectTargetTokens(options = {}) {
+export function inspectTargetTokens(options = {}) {
   const raw = options.target ?? options.targetId ?? options.id ?? options.anchor;
   if (raw == null || raw === "") return [];
   const values = Array.isArray(raw) ? raw : [raw];
@@ -33,7 +33,7 @@ function inspectTargetTokens(options = {}) {
   return out.map((value) => String(value ?? "").trim()).filter(Boolean);
 }
 
-function inspectRecordMatchesTarget(record, targets) {
+export function inspectRecordMatchesTarget(record, targets) {
   if (!targets.length) return true;
   if (!record) return false;
   const candidates = new Set();

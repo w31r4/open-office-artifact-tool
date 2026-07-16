@@ -1,14 +1,32 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import * as rootApi from "open-office-artifact-tool";
 
 import {
   DocumentModel,
+  FileBlob,
   helpArtifact,
   HELP_CATALOG,
+  node,
   PdfArtifact,
   Presentation,
   Workbook,
 } from "open-office-artifact-tool";
+import { HELP_CATALOG as LEAF_HELP_CATALOG } from "../src/help/index.mjs";
+import { node as leafNode } from "../src/presentation/compose.mjs";
+import { FileBlob as LeafFileBlob } from "../src/shared/file-blob.mjs";
+
+assert.deepEqual(Object.keys(rootApi).sort(), [
+  "ChartElement", "DocumentFile", "DocumentModel", "FileBlob", "GroupShape",
+  "HELP_CATALOG", "ImageElement", "PdfArtifact", "PdfFile", "Presentation",
+  "PresentationFile", "Range", "Shape", "Slide", "SpreadsheetFile",
+  "TableElement", "Workbook", "Worksheet", "box", "chart", "column", "grid",
+  "helpArtifact", "image", "layers", "node", "paragraph", "renderArtifact",
+  "row", "rule", "run", "shape", "table", "verifyArtifact", "visualQaArtifact",
+].sort(), "root public export contract changed");
+assert.strictEqual(HELP_CATALOG, LEAF_HELP_CATALOG, "root must re-export the help catalog binding");
+assert.strictEqual(node, leafNode, "root must re-export the Compose binding");
+assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 
 assert.ok(HELP_CATALOG.length >= 40);
 assert.equal(HELP_CATALOG.length, 258);

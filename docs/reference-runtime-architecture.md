@@ -122,6 +122,23 @@ The npm package contains:
 
 It excludes C# source/build output, repository-only scripts/tests, and removed legacy codec modules. Normal package use therefore works without a local .NET SDK.
 
+## JavaScript source-module discipline
+
+`src/index.mjs` remains the package composition root and compatibility barrel. Splitting it must not change the root export names, constructor identities, package subpaths, or facade behavior.
+
+The target dependency direction is intentionally one-way:
+
+```text
+shared binary / FileBlob / inspection
+  -> Help and presentation Compose
+  -> format models and shared OOXML package tools
+  -> root compatibility barrel
+```
+
+New leaf modules must not import the root entry. The root re-exports the original binding instead of wrapping or copying classes and functions, so `instanceof` and strict identity checks remain stable. Renderer, native-bridge, and JSX internals now import their leaf dependencies directly. The OpenChestnut adapters still temporarily import root model bindings; that dependency will be removed only after the corresponding format models move as atomic clusters. Office facade methods retain their dynamic OpenChestnut imports to avoid a model/adapter cycle.
+
+The first extraction phase moves Help, presentation Compose, binary conversion, `FileBlob`, and inspection primitives out of the root. Later phases will move the shared OOXML package engine, then the Spreadsheet, Presentation, Document, and PDF domains as atomic dependency clusters. Each phase is behavior-preserving: moving and rewiring are kept separate from feature changes and renaming.
+
 ## Verification layers
 
 1. Protocol generation/lint and protocol-version checks.

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { HELP_CATALOG } from "../src/index.mjs";
+import { HELP_CATALOG } from "../src/help/index.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = path.join(repoRoot, "docs", "api.md");
@@ -17,7 +17,7 @@ for (const item of HELP_CATALOG) {
 const lines = [
   "# API catalog",
   "",
-  "Generated from `HELP_CATALOG` in `src/index.mjs`.",
+  "Generated from `HELP_CATALOG` in `src/help/index.mjs`.",
   "",
 ];
 

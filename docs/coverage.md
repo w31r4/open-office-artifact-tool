@@ -18,6 +18,7 @@ Status meanings:
 | Opaque Office preservation | done | Imported unmodeled parts are content-type/hash/source bound. Unchanged content is preserved; unsupported edits and missing source snapshots fail closed. |
 | Low-level OOXML inspect/patch | done | Explicit, bounded package inspection and patching remain available and are never invoked automatically as a fallback. |
 | Wire protocol | done | `open_office.artifact.v1`, protocol version 2; removed `allow_lossy` field name and number are reserved. |
+| JavaScript source layering | partial | The root entry preserves the 35-symbol public API while Help, Compose, binary conversion, `FileBlob`, and inspection primitives live in dependency-leaf modules. Format models and the shared OOXML package engine remain to be extracted atomically without changing class identity or facade behavior. |
 
 ## Spreadsheets
 
