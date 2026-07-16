@@ -5,7 +5,8 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel, Presentation, PresentationFile, Workbook, SpreadsheetFile } from "../src/index.mjs";
 import { createLibreOfficeRenderer } from "../src/renderers/libreoffice.mjs";
 import { createPopplerRenderer } from "../src/renderers/poppler.mjs";
-import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationElementSourceBindingSchema, PresentationImageSchema, PresentationImageTransformSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationOpaqueElementSchema, PresentationPlaceholderFrameSchema, PresentationPlaceholderIdentitySchema, PresentationPlaceholderSchema, PresentationShapeSchema, PresentationShapeTransformSchema, PresentationSlideSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartDataLabelPosition, SpreadsheetChartDataLabelsArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { ArtifactFamily, CellArtifactSchema, CodecOperation, DocumentBlockSchema, DocumentFieldSchema, DocumentHyperlinkSchema, DocumentNumberingSchema, DocumentParagraphSchema, DocumentSourceBindingSchema, DocumentTableCellMarginsSchema, DocumentTableCellSchema, DocumentTableFormattingSchema, DocumentTableSchema, PresentationArtifactSchema, PresentationBackgroundSchema, PresentationElementSourceBindingSchema, PresentationImageSchema, PresentationImageTransformSchema, PresentationLayoutSchema, PresentationLayoutSourceBindingSchema, PresentationMasterSchema, PresentationMasterSourceBindingSchema, PresentationMasterTextStylesSchema, PresentationOpaqueElementSchema, PresentationPlaceholderFrameSchema, PresentationPlaceholderIdentitySchema, PresentationPlaceholderSchema, PresentationShapeSchema, PresentationShapeTransformSchema, PresentationSlideSchema, PresentationTableCellSchema, PresentationTableRowSchema, PresentationTableSchema, PresentationTextBodyPropertiesSchema, PresentationTextBodySchema, PresentationTextParagraphSchema, PresentationTextRunSchema, SpreadsheetCalculationArtifactSchema, SpreadsheetChartArtifactSchema, SpreadsheetChartAxisArtifactSchema, SpreadsheetChartDataLabelPosition, SpreadsheetChartDataLabelsArtifactSchema, SpreadsheetChartLineDashStyle, SpreadsheetChartLineGrouping, SpreadsheetChartLineOptionsArtifactSchema, SpreadsheetChartLineStyleArtifactSchema, SpreadsheetChartMarkerArtifactSchema, SpreadsheetChartMarkerSymbol, SpreadsheetChartSeriesArtifactSchema, SpreadsheetChartSourceBindingSchema, SpreadsheetChartTextStyleArtifactSchema, SpreadsheetChartType, SpreadsheetConnectionArtifactSchema, SpreadsheetDefinedNameArtifactSchema, SpreadsheetImageArtifactSchema, SpreadsheetImageSourceBindingSchema, SpreadsheetImageTransformArtifactSchema, SpreadsheetOneCellAnchorArtifactSchema, SpreadsheetTableArtifactSchema, SpreadsheetTableColorArtifactSchema, SpreadsheetTableColumnArtifactSchema, SpreadsheetTableFilterArtifactSchema, SpreadsheetTableIconArtifactSchema, SpreadsheetTableQueryArtifactSchema, SpreadsheetTableQueryFieldArtifactSchema, SpreadsheetTableQueryRefreshArtifactSchema, SpreadsheetTableSortConditionArtifactSchema, SpreadsheetTableSortStateArtifactSchema, SpreadsheetTableValueFilterArtifactSchema, SpreadsheetWorkbookViewArtifactSchema, SpreadsheetWorkbookViewSourceBindingSchema, SpreadsheetWorksheetSourceBindingSchema, SpreadsheetWorksheetViewSourceBindingSchema, SpreadsheetWorksheetVisibility, WorkbookArtifactSchema, WorksheetArtifactSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
+import { PresentationElementSchema } from "../src/generated/open_office/artifact/v1/office_artifact_pb.js";
 import {
   OpenChestnutCodecError,
   exportDocxWithOpenChestnut,
@@ -486,6 +487,11 @@ assert.deepEqual(
 assert.deepEqual([...toBinary(PresentationImageTransformSchema, create(PresentationImageTransformSchema, { rotationAngle60000: -1 }))], [0x08, 0x01], "Presentation image rotation must use optional sint32 field 1.");
 assert.deepEqual([...toBinary(PresentationImageTransformSchema, create(PresentationImageTransformSchema, { flipHorizontal: false }))], [0x10, 0x00], "Presentation image horizontal flips must preserve explicit false on field 2.");
 assert.deepEqual([...toBinary(PresentationImageTransformSchema, create(PresentationImageTransformSchema, { flipVertical: true }))], [0x18, 0x01], "Presentation image vertical flips must use optional field 3.");
+assert.deepEqual([...toBinary(PresentationElementSchema, create(PresentationElementSchema, { content: { case: "table", value: {} } }))], [0x6a, 0x00], "Presentation tables must use additive element field 13.");
+assert.deepEqual([...toBinary(PresentationTableSchema, create(PresentationTableSchema, { leftEmu: 1n, topEmu: 2n, widthEmu: 3n, heightEmu: 4n, columnWidthsEmu: [1n, 2n] }))], [0x08, 0x01, 0x10, 0x02, 0x18, 0x03, 0x20, 0x04, 0x2a, 0x02, 0x01, 0x02], "Presentation tables must retain their independent frame and fixed-grid fields 1-5.");
+assert.deepEqual([...toBinary(PresentationTableRowSchema, create(PresentationTableRowSchema, { heightEmu: 1n, cells: [{ text: "a" }] }))], [0x08, 0x01, 0x12, 0x03, 0x0a, 0x01, 0x61], "Presentation table rows must carry height and ordered cells on fields 1-2.");
+assert.deepEqual([...toBinary(PresentationTableCellSchema, create(PresentationTableCellSchema, { text: "a" }))], [0x0a, 0x01, 0x61], "Presentation table cells must carry plain text on field 1.");
+assert.deepEqual([...toBinary(PresentationTableSchema, create(PresentationTableSchema, { firstRow: false, bandedRows: true }))], [0x38, 0x00, 0x40, 0x01], "Presentation table style flags must preserve optional false/true presence on fields 7-8.");
 assert.equal(toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x3a, "Presentation master background hashes must use additive field 7.");
 assert.deepEqual([...toBinary(PresentationMasterSourceBindingSchema, create(PresentationMasterSourceBindingSchema, { backgroundEditable: true }))], [0x40, 0x01], "Presentation master background editability must use additive field 8.");
 assert.equal(toBinary(PresentationLayoutSourceBindingSchema, create(PresentationLayoutSourceBindingSchema, { backgroundSemanticSha256: "x" }))[0], 0x2a, "Presentation layout background hashes must use additive field 5.");
@@ -2766,13 +2772,20 @@ await assert.rejects(
 );
 
 const minimalPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
-minimalPresentation.slides.add({ name: "Overview" }).shapes.add({
+const minimalPresentationSlide = minimalPresentation.slides.add({ name: "Overview" });
+minimalPresentationSlide.shapes.add({
   name: "Title",
   geometry: "rect",
   position: { left: 60, top: 40, width: 860, height: 70 },
   fill: "#FFFFFF",
   line: { fill: "#334155", width: 1 },
   text: "OpenChestnut presentation",
+});
+minimalPresentationSlide.tables.add({
+  name: "Metrics table",
+  position: { left: 60, top: 150, width: 480, height: 180 },
+  values: [["Metric", "Value"], ["Revenue", "$42M"]],
+  styleOptions: { headerRow: true, bandedRows: false },
 });
 const pptxExported = await exportPptxWithOpenChestnut(minimalPresentation);
 assert.deepEqual([...pptxExported.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
@@ -2782,7 +2795,24 @@ assert.equal((await PresentationFile.inspectPptx(pptxExported)).ok, true);
 const pptxImported = await importPptxWithOpenChestnut(pptxExported);
 assert.equal(pptxImported.slides.count, 1);
 assert.equal(pptxImported.slides.getItem(0).shapes.items[0].text.value, "OpenChestnut presentation");
+assert.deepEqual(pptxImported.slides.getItem(0).tables.items[0].values, [["Metric", "Value"], ["Revenue", "$42M"]]);
+assert.equal(pptxImported.slides.getItem(0).tables.items[0].styleOptions.headerRow, true);
 assert.equal(pptxImported.verify().ok, true);
+const importedMetricsTable = pptxImported.slides.getItem(0).tables.items[0];
+importedMetricsTable.name = "Edited metrics table";
+importedMetricsTable.position = { left: 80, top: 170, width: 600, height: 220 };
+importedMetricsTable.cells.set(1, 1, "$47M");
+const editedMetricsPptx = await exportPptxWithOpenChestnut(pptxImported);
+const editedMetricsRoundTrip = await importPptxWithOpenChestnut(editedMetricsPptx);
+const editedMetricsTable = editedMetricsRoundTrip.slides.getItem(0).tables.items[0];
+assert.equal(editedMetricsTable.name, "Edited metrics table");
+assert.deepEqual(editedMetricsTable.position, { left: 80, top: 170, width: 600, height: 220 });
+assert.equal(editedMetricsTable.values[1][1], "$47M");
+editedMetricsTable.rows = 3;
+await assert.rejects(
+  exportPptxWithOpenChestnut(editedMetricsRoundTrip),
+  (error) => error instanceof OpenChestnutCodecError && error.code === "unsupported_presentation_edit",
+);
 
 const masterStylePresentation = Presentation.create({
   slideSize: { width: 1280, height: 720 },

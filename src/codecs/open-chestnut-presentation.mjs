@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ImageElement, Presentation, Shape } from "../index.mjs";
+import { ImageElement, Presentation, Shape, TableElement } from "../index.mjs";
 import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
@@ -777,6 +777,94 @@ function presentationImageReadOnlySnapshot(image) {
   });
 }
 
+function distributePresentationTableSize(total, count, ownerLabel) {
+  const slots = Number(count);
+  if (!Number.isInteger(slots) || slots < 1) {
+    throw new OpenChestnutCodecError(`Presentation table ${ownerLabel} must contain at least one row and column.`, [], { code: "invalid_presentation_table" });
+  }
+  const base = total / BigInt(slots);
+  const remainder = Number(total % BigInt(slots));
+  if (base < 1n) throw new OpenChestnutCodecError(`Presentation table ${ownerLabel} is too small for its grid.`, [], { code: "invalid_presentation_table" });
+  return Array.from({ length: slots }, (_, index) => base + (index < remainder ? 1n : 0n));
+}
+
+function scalePresentationTableSize(values, total, ownerLabel) {
+  const source = values.map((value) => BigInt(value));
+  const sourceTotal = source.reduce((sum, value) => sum + value, 0n);
+  if (!source.length || sourceTotal < 1n) return distributePresentationTableSize(total, source.length, ownerLabel);
+  const scaled = source.map((value) => ({ value: (value * total) / sourceTotal, remainder: (value * total) % sourceTotal }));
+  let missing = total - scaled.reduce((sum, item) => sum + item.value, 0n);
+  for (const index of scaled.map((item, index) => ({ index, remainder: item.remainder })).sort((left, right) => left.remainder === right.remainder ? left.index - right.index : left.remainder > right.remainder ? -1 : 1).map((item) => item.index)) {
+    if (missing <= 0n) break;
+    scaled[index].value += 1n;
+    missing -= 1n;
+  }
+  if (scaled.some((item) => item.value < 1n)) {
+    throw new OpenChestnutCodecError(`Presentation table ${ownerLabel} is too small for its imported grid.`, [], { code: "invalid_presentation_table" });
+  }
+  return scaled.map((item) => item.value);
+}
+
+function presentationTable(table, original) {
+  const originalTable = original?.content?.case === "table" ? original.content.value : undefined;
+  const rows = Number(table.rows);
+  const columns = Number(table.columns);
+  if (!Number.isInteger(rows) || rows < 1 || rows > 2048 || !Number.isInteger(columns) || columns < 1 || columns > 256 ||
+      table.values.length !== rows || table.values.some((row) => !Array.isArray(row) || row.length !== columns)) {
+    throw new OpenChestnutCodecError(`Presentation table ${table.id} requires a rectangular 1-2048 by 1-256 value matrix.`, [], { code: "invalid_presentation_table" });
+  }
+  const position = table.position || {};
+  const leftEmu = emuFromPixels(position.left, `${table.id}.position.left`);
+  const topEmu = emuFromPixels(position.top, `${table.id}.position.top`);
+  const widthEmu = emuFromPixels(position.width, `${table.id}.position.width`);
+  const heightEmu = emuFromPixels(position.height, `${table.id}.position.height`);
+  if (widthEmu < 1n || heightEmu < 1n) throw new OpenChestnutCodecError(`Presentation table ${table.id} requires positive width and height.`, [], { code: "invalid_presentation_table" });
+  if (originalTable && (originalTable.rows.length !== rows || originalTable.columnWidthsEmu.length !== columns)) {
+    throw new OpenChestnutCodecError(`Source-preserving PPTX export requires presentation table ${table.id}'s original fixed topology.`, [], { code: "presentation_table_topology_changed" });
+  }
+  const columnWidthsEmu = originalTable
+    ? scalePresentationTableSize(originalTable.columnWidthsEmu, widthEmu, `${table.id} columns`)
+    : distributePresentationTableSize(widthEmu, columns, `${table.id} columns`);
+  const rowHeightsEmu = originalTable
+    ? scalePresentationTableSize(originalTable.rows.map((row) => row.heightEmu), heightEmu, `${table.id} rows`)
+    : distributePresentationTableSize(heightEmu, rows, `${table.id} rows`);
+  return {
+    id: original?.id || table.id,
+    name: String(table.name || original?.name || ""),
+    source: original?.source,
+    content: {
+      case: "table",
+      value: {
+        leftEmu,
+        topEmu,
+        widthEmu,
+        heightEmu,
+        columnWidthsEmu,
+        rows: table.values.map((row, rowIndex) => ({
+          heightEmu: rowHeightsEmu[rowIndex],
+          cells: row.map((value) => ({ text: String(value ?? "") })),
+        })),
+        ...(originalTable?.firstRow === undefined ? { firstRow: Boolean(table.styleOptions?.headerRow) } : { firstRow: originalTable.firstRow }),
+        ...(originalTable?.bandedRows === undefined ? { bandedRows: Boolean(table.styleOptions?.bandedRows) } : { bandedRows: originalTable.bandedRows }),
+      },
+    },
+  };
+}
+
+function presentationTableReadOnlySnapshot(table) {
+  return JSON.stringify({
+    id: table.id,
+    nativeId: table.nativeId,
+    creationId: table.creationId,
+    rows: table.rows,
+    columns: table.columns,
+    style: table.style,
+    styleOptions: table.styleOptions,
+    border: table.border,
+    mergeRange: table.mergeRange,
+  });
+}
+
 function directSlideElements(slide) {
   return [
     ...slide.shapes.items,
@@ -804,7 +892,6 @@ function unsupportedPresentationFeatures(presentation) {
     if (slide.speakerNotes?.text) unsupported.push(`${prefix} speaker notes`);
     if (slide.background?.fill) unsupported.push(`${prefix} background`);
     if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
-    if (slide.tables?.items?.length) unsupported.push(`${prefix} tables`);
     if (slide.charts?.items?.length) unsupported.push(`${prefix} charts`);
     if (slide.connectors?.items?.length) unsupported.push(`${prefix} connectors`);
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
@@ -922,16 +1009,24 @@ export function presentationEnvelope(presentation, protocolVersion) {
               }
               return presentationImage(entry.model, entry.wire, assetCatalog);
             }
+            if (entry.wire.content.case === "table") {
+              if (presentationTableReadOnlySnapshot(entry.model) !== entry.snapshot) {
+                throw new OpenChestnutCodecError(`Presentation table ${entry.model.id} changed outside its name/frame/plain-text boundary.`, [], { code: "unsupported_presentation_edit" });
+              }
+              return presentationTable(entry.model, entry.wire);
+            }
             const placementEditable = entry.wire.source?.editable === true;
             if (opaquePresentationSnapshot(entry.model, { includePlacement: !placementEditable }) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} changed outside its ${placementEditable ? "name/frame" : "read-only"} native-object boundary.`, [], { code: "unsupported_presentation_edit" });
             if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire, assetCatalog);
             return entry.wire;
           })
         : directSlideElements(slide)
-          .filter((element) => element instanceof Shape || element instanceof ImageElement)
+          .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement)
           .map((element) => element instanceof ImageElement
             ? presentationImage(element, undefined, assetCatalog)
-            : presentationShape(element, undefined, assetCatalog)),
+            : element instanceof TableElement
+              ? presentationTable(element, undefined)
+              : presentationShape(element, undefined, assetCatalog)),
     };
   });
   return {
@@ -1286,6 +1381,25 @@ export async function presentationFromEnvelope(envelope) {
           geometry: "rect",
           ...(image.transform ? { transform: modelPresentationTransform(image.transform) } : {}),
         });
+      } else if (element.content.case === "table") {
+        const table = element.content.value;
+        model = slide.tables.add({
+          id: element.id,
+          name: element.name,
+          position: {
+            left: Number(table.leftEmu) / EMU_PER_PIXEL,
+            top: Number(table.topEmu) / EMU_PER_PIXEL,
+            width: Number(table.widthEmu) / EMU_PER_PIXEL,
+            height: Number(table.heightEmu) / EMU_PER_PIXEL,
+          },
+          values: table.rows.map((row) => row.cells.map((cell) => cell.text)),
+          rows: table.rows.length,
+          columns: table.columnWidthsEmu.length,
+          styleOptions: {
+            headerRow: table.firstRow === true,
+            bandedRows: table.bandedRows === true,
+          },
+        });
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
         const sourcePart = sourceSlide.source?.partPath;
@@ -1323,6 +1437,8 @@ export async function presentationFromEnvelope(envelope) {
           ? opaquePresentationSnapshot(model, { includePlacement: element.source?.editable !== true })
           : element.content.case === "image"
             ? presentationImageReadOnlySnapshot(model)
+            : element.content.case === "table"
+              ? presentationTableReadOnlySnapshot(model)
             : undefined,
       });
     }

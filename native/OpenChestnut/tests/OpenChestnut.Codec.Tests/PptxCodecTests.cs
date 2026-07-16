@@ -792,6 +792,92 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void TopLevelTablesAuthorImportEditResizeAndFailClosedOnMergedCells()
+    {
+        var request = ExportRequest();
+        var table = new PresentationTable
+        {
+            LeftEmu = 500_000,
+            TopEmu = 1_300_000,
+            WidthEmu = 4_000_000,
+            HeightEmu = 1_600_000,
+            FirstRow = true,
+            BandedRows = false,
+        };
+        table.ColumnWidthsEmu.Add([1_500_000, 2_500_000]);
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 600_000,
+            Cells = { new PresentationTableCell { Text = "Metric" }, new PresentationTableCell { Text = "Value" } },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 1_000_000,
+            Cells = { new PresentationTableCell { Text = "Revenue" }, new PresentationTableCell { Text = "$42M" } },
+        });
+        request.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/table/1",
+            Name = "Authored metrics",
+            Table = table,
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var native = Assert.Single(package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Table>());
+            Assert.Equal([1_500_000L, 2_500_000L], native.GetFirstChild<A.TableGrid>()!.Elements<A.GridColumn>().Select(column => column.Width!.Value));
+            Assert.Equal(["Metric", "Value", "Revenue", "$42M"], native.Descendants<A.Text>().Select(text => text.Text));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedTable = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table);
+        Assert.True(importedTable.Source.Editable);
+        Assert.True(importedTable.Table.HasFirstRow);
+        Assert.True(importedTable.Table.FirstRow);
+        Assert.True(importedTable.Table.HasBandedRows);
+        Assert.False(importedTable.Table.BandedRows);
+        Assert.Equal("Revenue", importedTable.Table.Rows[1].Cells[0].Text);
+
+        importedTable.Name = "Edited metrics";
+        importedTable.Table.LeftEmu = 750_000;
+        importedTable.Table.WidthEmu = 5_000_000;
+        importedTable.Table.HeightEmu = 2_000_000;
+        importedTable.Table.ColumnWidthsEmu.Clear();
+        importedTable.Table.ColumnWidthsEmu.Add([2_000_000, 3_000_000]);
+        importedTable.Table.Rows[0].HeightEmu = 750_000;
+        importedTable.Table.Rows[1].HeightEmu = 1_250_000;
+        importedTable.Table.Rows[1].Cells[1].Text = "$47M";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripTable = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table);
+        Assert.Equal("Edited metrics", roundTripTable.Name);
+        Assert.Equal(750_000L, roundTripTable.Table.LeftEmu);
+        Assert.Equal(5_000_000L, roundTripTable.Table.WidthEmu);
+        Assert.Equal([2_000_000L, 3_000_000L], roundTripTable.Table.ColumnWidthsEmu);
+        Assert.Equal("$47M", roundTripTable.Table.Rows[1].Cells[1].Text);
+
+        var topologyChanged = Import(edited.File.ToByteArray());
+        topologyChanged.Artifact.Presentation.Slides[0].Elements[1].Table.Rows[0].Cells.Add(new PresentationTableCell { Text = "extra" });
+        var topologyRejected = Export(topologyChanged.Artifact);
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("invalid_presentation_table", Assert.Single(topologyRejected.Diagnostics).Code);
+
+        var mergedSource = ReplaceZipText(edited.File.ToByteArray(), "ppt/slides/slide1.xml", xml =>
+            xml.Replace("<a:tc>", "<a:tc gridSpan=\"2\">", StringComparison.Ordinal));
+        var merged = Import(mergedSource);
+        Assert.True(merged.Ok, Diagnostics(merged));
+        var opaque = Assert.Single(Assert.Single(merged.Artifact.Presentation.Slides).Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Opaque);
+        Assert.False(opaque.Source.Editable);
+    }
+
+    [Fact]
     public void NativeObjectGraphClassifiesAndPreservesOleDiagramAndContentPart()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
